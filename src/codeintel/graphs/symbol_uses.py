@@ -34,7 +34,7 @@ def build_symbol_use_edges(
     cfg: SymbolUsesConfig,
 ) -> None:
     """
-    Populate graph.symbol_use_edges from `index.scip.json`. 
+    Populate graph.symbol_use_edges from `index.scip.json`.
 
     The SCIP JSON is expected to be an array of documents:
       { "relative_path": str, "occurrences": [...], "symbols": [...] }

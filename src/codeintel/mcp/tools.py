@@ -110,9 +110,7 @@ class McpServerConfig(BaseModel):
           - CODEINTEL_MCP_MAX_ROWS      (int, default 200)
           - CODEINTEL_MCP_TIMEOUT_SEC   (float, default 10.0)
         """
-        repo_root = Path(
-            os.environ.get("CODEINTEL_REPO_ROOT", ".")
-        ).expanduser().resolve()
+        repo_root = Path(os.environ.get("CODEINTEL_REPO_ROOT", ".")).expanduser().resolve()
 
         repo = os.environ.get("CODEINTEL_REPO", repo_root.name)
         commit = os.environ.get("CODEINTEL_COMMIT", "HEAD")

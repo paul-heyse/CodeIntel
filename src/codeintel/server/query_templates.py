@@ -14,7 +14,6 @@ QUERY_TEMPLATES = {
         FROM docs.v_function_summary
         WHERE urn = :urn;
     """,
-
     # 2) Look up a function by file + qualified name (e.g., for a code lens).
     "function_summary_by_path_and_qualname": """
         SELECT *
@@ -22,7 +21,6 @@ QUERY_TEMPLATES = {
         WHERE rel_path = :rel_path
           AND qualname = :qualname;
     """,
-
     # 3) Global top-N high-risk functions.
     "top_high_risk_functions": """
         SELECT *
@@ -31,7 +29,6 @@ QUERY_TEMPLATES = {
         ORDER BY risk_score DESC
         LIMIT :limit;
     """,
-
     # 4) High-risk functions within a specific file.
     "high_risk_functions_in_file": """
         SELECT *
@@ -40,7 +37,6 @@ QUERY_TEMPLATES = {
           AND risk_level IN ('high', 'medium')
         ORDER BY risk_score DESC;
     """,
-
     # 5) Untested or very low coverage functions in a file.
     "untested_functions_in_file": """
         SELECT *
@@ -53,7 +49,6 @@ QUERY_TEMPLATES = {
           )
         ORDER BY coverage_ratio ASC NULLS FIRST;
     """,
-
     # 6) Untested/low coverage functions for a module (via modules path).
     "untested_functions_in_module": """
         SELECT f.*
@@ -68,7 +63,6 @@ QUERY_TEMPLATES = {
           )
         ORDER BY f.coverage_ratio ASC NULLS FIRST;
     """,
-
     # 7) Call graph neighborhood around a function (one hop).
     # direction: 'incoming', 'outgoing', or 'both'
     "callgraph_neighbors": """
@@ -80,7 +74,6 @@ QUERY_TEMPLATES = {
           OR (:direction = 'both' AND (caller_goid_h128 = :goid_h128
                                        OR callee_goid_h128 = :goid_h128));
     """,
-
     # 8) Tests that exercise a function (by GOID).
     "tests_for_function": """
         SELECT *
@@ -88,7 +81,6 @@ QUERY_TEMPLATES = {
         WHERE function_goid_h128 = :goid_h128
         ORDER BY test_status DESC, coverage_ratio DESC;
     """,
-
     # 9) Functions impacted by changes to a given file:
     #   - Functions defined in this file
     #   - Plus their direct callers and callees.
@@ -118,7 +110,6 @@ QUERY_TEMPLATES = {
           ON f.function_goid_h128 = i.goid_h128
         ORDER BY f.risk_score DESC;
     """,
-
     # 10) Files with the most high-risk functions.
     "files_with_most_high_risk_functions": """
         SELECT

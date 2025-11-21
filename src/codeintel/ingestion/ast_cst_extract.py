@@ -212,11 +212,7 @@ class AstCstVisitor(cst.CSTVisitor):
         name = getattr(node, "name", None)
         fn_name = name.value if isinstance(name, cst.Name) else None
         parent_qual = self._current_qualname()
-        qualname = (
-            f"{parent_qual}.{fn_name}"
-            if parent_qual
-            else f"{self.module_name}.{fn_name}"
-        )
+        qualname = f"{parent_qual}.{fn_name}" if parent_qual else f"{self.module_name}.{fn_name}"
 
         self._scope_stack.append(fn_name or "<lambda>")
         self.metrics.function_count += 1
@@ -333,9 +329,7 @@ class AstCstVisitor(cst.CSTVisitor):
         return type(expr).__name__
 
 
-def _load_module_map(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
-) -> dict[str, str]:
+def _load_module_map(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> dict[str, str]:
     """Return a mapping of relative file paths to module names from core.modules."""
     rows = con.execute(
         """

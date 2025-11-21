@@ -79,11 +79,10 @@ def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
             if has_return:
                 return_annotated += 1
 
-            fully_typed = all(
-                arg.annotation is not None
-                for arg in params
-                if arg.arg not in ("self", "cls")
-            ) and has_return
+            fully_typed = (
+                all(arg.annotation is not None for arg in params if arg.arg not in ("self", "cls"))
+                and has_return
+            )
             if not fully_typed:
                 untyped_defs += 1
 

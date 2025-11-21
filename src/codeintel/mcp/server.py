@@ -58,7 +58,7 @@ def get_function_summary(
       - rel_path AND qualname.
 
     The returned object includes risk, coverage, and type info aggregated
-    from docs.v_function_summary and analytics tables. 
+    from docs.v_function_summary and analytics tables.
     """
     row = backend.get_function_summary(
         urn=urn,
@@ -86,7 +86,7 @@ def list_high_risk_functions(
       - urn, rel_path, qualname
       - risk_score, risk_level
       - coverage_ratio, tested
-      - complexity_bucket, typedness_bucket, hotspot_score. 
+      - complexity_bucket, typedness_bucket, hotspot_score.
     """
     return backend.list_high_risk_functions(
         min_risk=min_risk,
@@ -107,7 +107,7 @@ def get_callgraph_neighbors(
     direction:
       - "out": functions this function calls
       - "in":  functions that call this function
-      - "both": both directions (default) 
+      - "both": both directions (default)
     """
     if direction not in ("in", "out", "both"):
         raise ValueError('direction must be "in", "out", or "both"')
@@ -167,7 +167,7 @@ def read_dataset_rows(
     Return a small slice of a dataset as JSON rows.
 
     Use this sparingly; large scans should go through Parquet/JSONL artifacts
-    under Document Output/, not through MCP. 
+    under Document Output/, not through MCP.
     """
     return backend.read_dataset_rows(dataset_name=dataset_name, limit=limit, offset=offset)
 

@@ -155,7 +155,7 @@ def ingest_config_values(
                     keypath,
                     [],  # reference_paths
                     [],  # reference_modules
-                    0,   # reference_count
+                    0,  # reference_count
                 ],
             )
             count += 1
