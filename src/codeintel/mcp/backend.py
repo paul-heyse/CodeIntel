@@ -8,7 +8,9 @@ from typing import Any, Protocol
 import duckdb
 
 
-def _fetch_one_dict(cur: duckdb.DuckDBPyConnection, sql: str, params: list[Any]) -> dict[str, Any] | None:
+def _fetch_one_dict(
+    cur: duckdb.DuckDBPyConnection, sql: str, params: list[Any]
+) -> dict[str, Any] | None:
     """
     Execute a parameterized query and return the first row as a dict.
 
@@ -34,7 +36,9 @@ def _fetch_one_dict(cur: duckdb.DuckDBPyConnection, sql: str, params: list[Any])
     return {col: row[idx] for idx, col in enumerate(cols)}
 
 
-def _fetch_all_dicts(cur: duckdb.DuckDBPyConnection, sql: str, params: list[Any]) -> list[dict[str, Any]]:
+def _fetch_all_dicts(
+    cur: duckdb.DuckDBPyConnection, sql: str, params: list[Any]
+) -> list[dict[str, Any]]:
     """
     Execute a parameterized query and return all rows as dictionaries.
 

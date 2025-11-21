@@ -169,6 +169,7 @@ class TestToFunctionEdge(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection() -> duckdb.DuckDBPyConnection:
     """
     Retrieve the shared DuckDB connection from the FastAPI app state.
@@ -311,6 +312,7 @@ def _resolve_goid_from_docs(
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get(
     "/function/summary/by-urn",

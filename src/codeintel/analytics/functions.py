@@ -228,8 +228,13 @@ def compute_function_metrics_and_types(
         rel_path = str(row["rel_path"]).replace("\\", "/")
         goids_by_file.setdefault(rel_path, []).append(row.to_dict())
 
-    con.execute("DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?", [cfg.repo, cfg.commit])
-    con.execute("DELETE FROM analytics.function_types WHERE repo = ? AND commit = ?", [cfg.repo, cfg.commit])
+    con.execute(
+        "DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?",
+        [cfg.repo, cfg.commit],
+    )
+    con.execute(
+        "DELETE FROM analytics.function_types WHERE repo = ? AND commit = ?", [cfg.repo, cfg.commit]
+    )
 
     metrics_rows: list[tuple] = []
     types_rows: list[tuple] = []
@@ -260,11 +265,7 @@ def compute_function_metrics_and_types(
             node = node_map.get((start_line, end_line))
             if node is None:
                 # Fallback: try loose containment match.
-                candidates = [
-                    n
-                    for (s, e), n in node_map.items()
-                    if s <= start_line <= e
-                ]
+                candidates = [n for (s, e), n in node_map.items() if s <= start_line <= e]
                 node = candidates[0] if candidates else None
             if node is None:
                 log.debug(
@@ -295,8 +296,8 @@ def compute_function_metrics_and_types(
             # Parameters
             assert isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             args = node.args
-            all_params = list(getattr(args, "posonlyargs", [])) + list(args.args) + list(
-                args.kwonlyargs
+            all_params = (
+                list(getattr(args, "posonlyargs", [])) + list(args.args) + list(args.kwonlyargs)
             )
             if args.vararg is not None:
                 all_params.append(args.vararg)
@@ -354,9 +355,13 @@ def compute_function_metrics_and_types(
                 param_typed_ratio = 1.0
 
             unannotated_params = total_params - annotated_params
-            fully_typed = total_params > 0 and annotated_params == total_params and has_return_annotation
+            fully_typed = (
+                total_params > 0 and annotated_params == total_params and has_return_annotation
+            )
             untyped = annotated_params == 0 and not has_return_annotation
-            partial_typed = not fully_typed and not untyped and (annotated_params > 0 or has_return_annotation)
+            partial_typed = (
+                not fully_typed and not untyped and (annotated_params > 0 or has_return_annotation)
+            )
 
             if fully_typed:
                 typedness_bucket = "typed"
@@ -365,7 +370,9 @@ def compute_function_metrics_and_types(
             else:
                 typedness_bucket = "untyped"
 
-            typedness_source = "annotations" if (annotated_params > 0 or has_return_annotation) else "unknown"
+            typedness_source = (
+                "annotations" if (annotated_params > 0 or has_return_annotation) else "unknown"
+            )
 
             # function_metrics row
             metrics_rows.append(

@@ -17,44 +17,35 @@ JSONL_DATASETS: dict[str, str] = {
     # GOIDs / crosswalk
     "core.goids": "goids.jsonl",
     "core.goid_crosswalk": "goid_crosswalk.jsonl",
-
     # Call graph
     "graph.call_graph_nodes": "call_graph_nodes.jsonl",
     "graph.call_graph_edges": "call_graph_edges.jsonl",
-
     # CFG / DFG
     "graph.cfg_blocks": "cfg_blocks.jsonl",
     "graph.cfg_edges": "cfg_edges.jsonl",
     "graph.dfg_edges": "dfg_edges.jsonl",
-
     # Import / symbol uses
     "graph.import_graph_edges": "import_graph_edges.jsonl",
     "graph.symbol_use_edges": "symbol_use_edges.jsonl",
-
     # AST / CST
     "core.ast_nodes": "ast_nodes.jsonl",
     "core.ast_metrics": "ast_metrics.jsonl",
     "core.cst_nodes": "cst_nodes.jsonl",
-
     # Modules / config / diagnostics
     "core.modules": "modules.jsonl",
     "analytics.config_values": "config_values.jsonl",
     "analytics.static_diagnostics": "static_diagnostics.jsonl",
-
     # AST analytics / typing
     "analytics.hotspots": "hotspots.jsonl",
     "analytics.typedness": "typedness.jsonl",
-
     # Function analytics
     "analytics.function_metrics": "function_metrics.jsonl",
     "analytics.function_types": "function_types.jsonl",
-
     # Coverage + tests
     "analytics.coverage_lines": "coverage_lines.jsonl",
     "analytics.coverage_functions": "coverage_functions.jsonl",
     "analytics.test_catalog": "test_catalog.jsonl",
     "analytics.test_coverage_edges": "test_coverage_edges.jsonl",
-
     # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.jsonl",
 }
@@ -171,7 +162,9 @@ def export_repo_map_json(
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
 
-    df = con.execute("SELECT repo, commit, modules, overlays, generated_at FROM core.repo_map").fetch_df()
+    df = con.execute(
+        "SELECT repo, commit, modules, overlays, generated_at FROM core.repo_map"
+    ).fetch_df()
     if df.empty:
         log.warning("core.repo_map is empty; skipping repo_map.json export")
         return None
@@ -183,7 +176,9 @@ def export_repo_map_json(
         "commit": row["commit"],
         "modules": row["modules"],
         "overlays": row.get("overlays") if "overlays" in df.columns else {},
-        "generated_at": row["generated_at"].isoformat() if hasattr(row["generated_at"], "isoformat") else str(row["generated_at"]),
+        "generated_at": row["generated_at"].isoformat()
+        if hasattr(row["generated_at"], "isoformat")
+        else str(row["generated_at"]),
     }
 
     output_path = document_output_dir / "repo_map.json"

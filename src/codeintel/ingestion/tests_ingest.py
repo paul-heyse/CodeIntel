@@ -118,9 +118,9 @@ def ingest_tests(
         con.execute(
             insert_sql,
             [
-                nodeid,          # test_id
-                None,            # test_goid_h128 (filled later)
-                None,            # urn (filled later)
+                nodeid,  # test_id
+                None,  # test_goid_h128 (filled later)
+                None,  # urn (filled later)
                 repo,
                 commit,
                 rel_path,

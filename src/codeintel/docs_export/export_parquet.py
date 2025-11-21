@@ -15,44 +15,35 @@ PARQUET_DATASETS: dict[str, str] = {
     # GOIDs / crosswalk
     "core.goids": "goids.parquet",
     "core.goid_crosswalk": "goid_crosswalk.parquet",
-
     # Call graph
     "graph.call_graph_nodes": "call_graph_nodes.parquet",
     "graph.call_graph_edges": "call_graph_edges.parquet",
-
     # CFG / DFG
     "graph.cfg_blocks": "cfg_blocks.parquet",
     "graph.cfg_edges": "cfg_edges.parquet",
     "graph.dfg_edges": "dfg_edges.parquet",
-
     # Import / symbol uses
     "graph.import_graph_edges": "import_graph_edges.parquet",
     "graph.symbol_use_edges": "symbol_use_edges.parquet",
-
     # AST / CST
     "core.ast_nodes": "ast_nodes.parquet",
     "core.ast_metrics": "ast_metrics.parquet",
     "core.cst_nodes": "cst_nodes.parquet",
-
     # Modules / config / diagnostics
     "core.modules": "modules.parquet",
     "analytics.config_values": "config_values.parquet",
     "analytics.static_diagnostics": "static_diagnostics.parquet",
-
     # AST analytics / typing
     "analytics.hotspots": "hotspots.parquet",
     "analytics.typedness": "typedness.parquet",
-
     # Function analytics
     "analytics.function_metrics": "function_metrics.parquet",
     "analytics.function_types": "function_types.parquet",
-
     # Coverage + tests
     "analytics.coverage_lines": "coverage_lines.parquet",
     "analytics.coverage_functions": "coverage_functions.parquet",
     "analytics.test_catalog": "test_catalog.parquet",
     "analytics.test_coverage_edges": "test_coverage_edges.parquet",
-
     # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.parquet",
 }

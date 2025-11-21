@@ -34,7 +34,6 @@ TABLE_DDL: dict[str, str] = {
         created_at TIMESTAMP
     );
     """,
-
     "core.goid_crosswalk": """
     CREATE TABLE IF NOT EXISTS core.goid_crosswalk (
         goid         TEXT,
@@ -51,7 +50,6 @@ TABLE_DDL: dict[str, str] = {
         updated_at   TIMESTAMP
     );
     """,
-
     "core.ast_nodes": """
     CREATE TABLE IF NOT EXISTS core.ast_nodes (
         path            TEXT,
@@ -68,7 +66,6 @@ TABLE_DDL: dict[str, str] = {
         hash            TEXT
     );
     """,
-
     "core.ast_metrics": """
     CREATE TABLE IF NOT EXISTS core.ast_metrics (
         rel_path    TEXT,
@@ -81,7 +78,6 @@ TABLE_DDL: dict[str, str] = {
         generated_at TIMESTAMP
     );
     """,
-
     "core.modules": """
     CREATE TABLE IF NOT EXISTS core.modules (
         module   TEXT,
@@ -93,7 +89,6 @@ TABLE_DDL: dict[str, str] = {
         owners   JSON
     );
     """,
-
     "core.repo_map": """
     CREATE TABLE IF NOT EXISTS core.repo_map (
         repo         TEXT,
@@ -103,7 +98,6 @@ TABLE_DDL: dict[str, str] = {
         generated_at TIMESTAMP
     );
     """,
-
     "core.cst_nodes": """
     CREATE TABLE IF NOT EXISTS core.cst_nodes (
         path         TEXT,
@@ -115,7 +109,6 @@ TABLE_DDL: dict[str, str] = {
         qnames       JSON
     );
     """,
-
     # -------------------------------------------------------------------------
     # graph schema: call graph, CFG, DFG, imports, symbol uses
     # -------------------------------------------------------------------------
@@ -129,7 +122,6 @@ TABLE_DDL: dict[str, str] = {
         rel_path  TEXT
     );
     """,
-
     "graph.call_graph_edges": """
     CREATE TABLE IF NOT EXISTS graph.call_graph_edges (
         caller_goid_h128 DECIMAL(38,0),
@@ -144,7 +136,6 @@ TABLE_DDL: dict[str, str] = {
         evidence_json    JSON
     );
     """,
-
     "graph.cfg_blocks": """
     CREATE TABLE IF NOT EXISTS graph.cfg_blocks (
         function_goid_h128 DECIMAL(38,0),
@@ -160,7 +151,6 @@ TABLE_DDL: dict[str, str] = {
         out_degree         INTEGER
     );
     """,
-
     "graph.cfg_edges": """
     CREATE TABLE IF NOT EXISTS graph.cfg_edges (
         function_goid_h128 DECIMAL(38,0),
@@ -172,7 +162,6 @@ TABLE_DDL: dict[str, str] = {
         dst                TEXT
     );
     """,
-
     "graph.dfg_edges": """
     CREATE TABLE IF NOT EXISTS graph.dfg_edges (
         function_goid_h128 DECIMAL(38,0),
@@ -184,7 +173,6 @@ TABLE_DDL: dict[str, str] = {
         use_kind           TEXT
     );
     """,
-
     "graph.import_graph_edges": """
     CREATE TABLE IF NOT EXISTS graph.import_graph_edges (
         src_module  TEXT,
@@ -194,7 +182,6 @@ TABLE_DDL: dict[str, str] = {
         cycle_group INTEGER
     );
     """,
-
     "graph.symbol_use_edges": """
     CREATE TABLE IF NOT EXISTS graph.symbol_use_edges (
         symbol      TEXT,
@@ -204,7 +191,6 @@ TABLE_DDL: dict[str, str] = {
         same_module BOOLEAN
     );
     """,
-
     # -------------------------------------------------------------------------
     # analytics schema: metrics, typedness, coverage, tests, risk
     # -------------------------------------------------------------------------
@@ -219,7 +205,6 @@ TABLE_DDL: dict[str, str] = {
         score        DOUBLE
     );
     """,
-
     "analytics.typedness": """
     CREATE TABLE IF NOT EXISTS analytics.typedness (
         path             TEXT,
@@ -229,7 +214,6 @@ TABLE_DDL: dict[str, str] = {
         overlay_needed   BOOLEAN
     );
     """,
-
     "analytics.function_metrics": """
     CREATE TABLE IF NOT EXISTS analytics.function_metrics (
         function_goid_h128     DECIMAL(38,0),
@@ -263,7 +247,6 @@ TABLE_DDL: dict[str, str] = {
         created_at             TIMESTAMP
     );
     """,
-
     "analytics.function_types": """
     CREATE TABLE IF NOT EXISTS analytics.function_types (
         function_goid_h128   DECIMAL(38,0),
@@ -293,7 +276,6 @@ TABLE_DDL: dict[str, str] = {
         created_at           TIMESTAMP
     );
     """,
-
     "analytics.tags_index": """
     CREATE TABLE IF NOT EXISTS analytics.tags_index (
         tag         TEXT,
@@ -303,7 +285,6 @@ TABLE_DDL: dict[str, str] = {
         matches     JSON
     );
     """,
-
     "analytics.config_values": """
     CREATE TABLE IF NOT EXISTS analytics.config_values (
         config_path       TEXT,
@@ -314,7 +295,6 @@ TABLE_DDL: dict[str, str] = {
         reference_count   INTEGER
     );
     """,
-
     "analytics.static_diagnostics": """
     CREATE TABLE IF NOT EXISTS analytics.static_diagnostics (
         rel_path       TEXT,
@@ -324,7 +304,6 @@ TABLE_DDL: dict[str, str] = {
         has_errors     BOOLEAN
     );
     """,
-
     "analytics.coverage_lines": """
     CREATE TABLE IF NOT EXISTS analytics.coverage_lines (
         repo          TEXT,
@@ -338,7 +317,6 @@ TABLE_DDL: dict[str, str] = {
         created_at    TIMESTAMP
     );
     """,
-
     "analytics.coverage_functions": """
     CREATE TABLE IF NOT EXISTS analytics.coverage_functions (
         function_goid_h128 DECIMAL(38,0),
@@ -359,7 +337,6 @@ TABLE_DDL: dict[str, str] = {
         created_at         TIMESTAMP
     );
     """,
-
     "analytics.test_catalog": """
     CREATE TABLE IF NOT EXISTS analytics.test_catalog (
         test_id        TEXT,
@@ -378,7 +355,6 @@ TABLE_DDL: dict[str, str] = {
         created_at     TIMESTAMP
     );
     """,
-
     "analytics.test_coverage_edges": """
     CREATE TABLE IF NOT EXISTS analytics.test_coverage_edges (
         test_id            TEXT,
@@ -396,7 +372,6 @@ TABLE_DDL: dict[str, str] = {
         created_at         TIMESTAMP
     );
     """,
-
     "analytics.goid_risk_factors": """
     CREATE TABLE IF NOT EXISTS analytics.goid_risk_factors (
         function_goid_h128   DECIMAL(38,0),

@@ -105,8 +105,7 @@ def _make_parser() -> argparse.ArgumentParser:
 
     p_run = pipeline_sub.add_parser(
         "run",
-        help="Run pipeline steps up to one or more target steps "
-        "(e.g. risk_factors, export_docs)",
+        help="Run pipeline steps up to one or more target steps (e.g. risk_factors, export_docs)",
     )
     _add_common_repo_args(p_run)
     p_run.add_argument(
