@@ -6,7 +6,7 @@ This document describes the consolidated artifacts emitted by `generate_document
 
 **Purpose**: Stable identifier canonicalization for all Python entities (modules, functions, classes, and CFG blocks). Downstream graph tables reference GOIDs exclusively.
 
-**Origin**: `codeintel_rev.enrich.goid_builder.GOIDBuilder` walks the AST index (`build/enrich/ast/ast_nodes.*`). For each module and code element it constructs an `EntityDescriptor` and hashes it via `codeintel_rev.ids.goid.compute_goid`, which embeds repo+commit, language, relative path, kind, and normalized qualname.
+**Origin**: `CodeIntel.enrich.goid_builder.GOIDBuilder` walks the AST index (`build/enrich/ast/ast_nodes.*`). For each module and code element it constructs an `EntityDescriptor` and hashes it via `CodeIntel.ids.goid.compute_goid`, which embeds repo+commit, language, relative path, kind, and normalized qualname.
 
 **Columns**
 
@@ -51,7 +51,7 @@ This document describes the consolidated artifacts emitted by `generate_document
 
 **Purpose**: Static call graph capturing callables (nodes) and callsites (edges) across the repo. Used for impact analysis and topology-aware tooling.
 
-**Origin**: `codeintel_rev.enrich.callgraph.CallGraphBuilder`. Inputs:
+**Origin**: `CodeIntel.enrich.callgraph.CallGraphBuilder`. Inputs:
 - AST + scope info per file (`collect_python_files`).
 - Imports resolved via `_ImportResolver`.
 - Optional SCIP signal for higher-confidence matches.
@@ -88,7 +88,7 @@ Edges are deduplicated per `(caller, callee, line, column)` and sorted for deter
 
 **Purpose**: Per-function control-flow scaffolding capturing basic block structure and intra-procedural control edges.
 
-**Origin**: `codeintel_rev.enrich.cfg.CFGBuilder`. Inputs:
+**Origin**: `CodeIntel.enrich.cfg.CFGBuilder`. Inputs:
 - AST per function (via `collect_function_info`).
 - Block splitting at control constructs (if/else, loops, break/continue, try/except/finally).
 - Entry and exit blocks are synthesized for each function.
@@ -151,9 +151,9 @@ The JSON files reside directly under `Document Output/` with names matching the 
 
 ## 7. Generation Workflow Summary
 
-1. `scip-python` indexes the repository and emits `codeintel_rev/index.scip` + JSON view.
-2. `codeintel_rev.cli.enrich_pipeline all` runs LibCST, AST, analytics, and stores outputs under `codeintel_rev/io/ENRICHED`.
-3. Dedicated graph commands (`codeintel_rev.cli.enrich goids|callgraph|cfg|dfg`) consume the repo and enrichment output, emitting the graph datasets.
+1. `scip-python` indexes the repository and emits `CodeIntel/index.scip` + JSON view.
+2. `CodeIntel.cli.enrich_pipeline all` runs LibCST, AST, analytics, and stores outputs under `CodeIntel/io/ENRICHED`.
+3. Dedicated graph commands (`CodeIntel.cli.enrich goids|callgraph|cfg|dfg`) consume the repo and enrichment output, emitting the graph datasets.
 4. `generate_documents.sh` copies all artifacts into `Document Output/` and runs the Parquet→JSONL conversion for the graph tables.
 
 Downstream consumers can therefore:
@@ -165,7 +165,7 @@ Downstream consumers can therefore:
 
 **Purpose**: Per-file aggregate metrics computed during AST extraction (e.g., node counts, average nesting depth). Useful for heuristic scoring and selecting files that warrant deeper analysis.
 
-**Origin**: Produced by `codeintel_rev.enrich.ast_indexer.AstIndexer` while writing `ast_nodes.*`. Metrics are emitted via `codeintel_rev.enrich.analytics.ast_metrics`.
+**Origin**: Produced by `CodeIntel.enrich.ast_indexer.AstIndexer` while writing `ast_nodes.*`. Metrics are emitted via `CodeIntel.enrich.analytics.ast_metrics`.
 
 **Fields**
 
@@ -184,7 +184,7 @@ Downstream consumers can therefore:
 
 **Purpose**: Raw AST node rows capturing file path, node type, qualname, spans, and parent relationships. Serves as the canonical source for GOID generation, analytics, and CFG/CallGraph builders.
 
-**Origin**: `codeintel_rev.enrich.ast_indexer.AstIndexer` (LibCST-based AST extraction). Written under `enriched/ast/ast_nodes.*`, duplicated to the doc root for convenience.
+**Origin**: `CodeIntel.enrich.ast_indexer.AstIndexer` (LibCST-based AST extraction). Written under `enriched/ast/ast_nodes.*`, duplicated to the doc root for convenience.
 
 **Fields**
 
@@ -209,7 +209,7 @@ Downstream consumers can therefore:
 
 **Purpose**: Summaries of files considered “hotspots” based on change history, churn, and complexity metrics.
 
-**Origin**: `codeintel_rev.services.enrich.analytics.hotspots`. Combines git history (commits, authors) with AST metrics.
+**Origin**: `CodeIntel.services.enrich.analytics.hotspots`. Combines git history (commits, authors) with AST metrics.
 
 **Fields**
 
@@ -227,7 +227,7 @@ Downstream consumers can therefore:
 
 **Purpose**: Tracks the extent of type annotation coverage per file. Provides signal for type migration work.
 
-**Origin**: `codeintel_rev.services.enrich.exports.write_typedness_output` during the pipeline’s analytics stage.
+**Origin**: `CodeIntel.services.enrich.exports.write_typedness_output` during the pipeline’s analytics stage.
 
 **Fields**
 
@@ -243,7 +243,7 @@ Downstream consumers can therefore:
 
 **Purpose**: Per-function structural and complexity metrics keyed by GOID.
 
-**Origin**: `codeintel_rev.services.enrich.function_metrics` via `function-metrics` CLI command.
+**Origin**: `CodeIntel.services.enrich.function_metrics` via `function-metrics` CLI command.
 
 **Fields**
 
@@ -286,7 +286,7 @@ graph tables (`cfg_blocks.*`, `dfg_edges.*`).
 
 **Purpose**: Per-function typedness and signature details keyed by GOID.
 
-**Origin**: `codeintel_rev.services.enrich.function_types` via `function-types` CLI command.
+**Origin**: `CodeIntel.services.enrich.function_types` via `function-types` CLI command.
 
 **Fields**
 
@@ -325,7 +325,7 @@ Aggregates by `rel_path` align with `typedness.*` (per-file ratios); joins use
 
 **Purpose**: Canonical index of tagging rules applied to the codebase—mapping files/modules to semantic tags (e.g., “infra”, “ml”, “api”).
 
-**Origin**: `codeintel_rev.enrich.tags` when the pipeline runs with tagging enabled. The YAML file summarizes rule definitions and their matched targets.
+**Origin**: `CodeIntel.enrich.tags` when the pipeline runs with tagging enabled. The YAML file summarizes rule definitions and their matched targets.
 
 **Structure**
 
@@ -333,11 +333,11 @@ Aggregates by `rel_path` align with `typedness.*` (per-file ratios); joins use
 - tag: "api"
   description: "Public HTTP entrypoints"
   includes:
-    - "codeintel_rev/app/routes/*"
+    - "CodeIntel/app/routes/*"
   excludes:
-    - "codeintel_rev/app/routes/tests/*"
+    - "CodeIntel/app/routes/tests/*"
   matches:
-    - "codeintel_rev/app/routes/catalog_read.py"
+    - "CodeIntel/app/routes/catalog_read.py"
     - ...
 ```
 
@@ -360,7 +360,7 @@ Consumers can join SCIP symbols with GOIDs via the crosswalk’s `scip_symbol` c
 
 **Purpose**: Mapping of module metadata produced during enrichment. Each row summarizes module path, repo metadata, and aggregated stats used by tagging and analytics.
 
-**Origin**: `codeintel_rev.enrich.pipeline_helpers.build_module_row`, emitted under `enriched/modules/modules.jsonl`.
+**Origin**: `CodeIntel.enrich.pipeline_helpers.build_module_row`, emitted under `enriched/modules/modules.jsonl`.
 
 **Fields**
 
@@ -378,16 +378,16 @@ Consumers can join SCIP symbols with GOIDs via the crosswalk’s `scip_symbol` c
 
 **Purpose**: High-level repository metadata containing module-to-path mappings, checksum info, and overlay configuration used by downstream tooling.
 
-**Origin**: Emitted by `codeintel_rev.services.enrich.scan` after scanning files. Lives at `enriched/repo_map.json`, duplicated to the doc root.
+**Origin**: Emitted by `CodeIntel.services.enrich.scan` after scanning files. Lives at `enriched/repo_map.json`, duplicated to the doc root.
 
 **Structure**
 
 ```json
 {
-  "repo": "kgfoundry",
+  "repo": "CodeIntel",
   "commit": "deadbeef",
   "modules": {
-    "codeintel_rev.app.routes.catalog_read": "codeintel_rev/app/routes/catalog_read.py",
+    "CodeIntel.app.routes.catalog_read": "CodeIntel/app/routes/catalog_read.py",
     ...
   },
   "overlays": {...},
@@ -399,7 +399,7 @@ Consumers can join SCIP symbols with GOIDs via the crosswalk’s `scip_symbol` c
 
 **Purpose**: Raw CST (Concrete Syntax Tree) nodes captured by the CST build pipeline. Complementary to AST nodes, preserving full syntax (including whitespace/comments) for tools that require exact source spans.
 
-**Origin**: `codeintel_rev.cst_build.cst_cli`. After emitting `cst_nodes.jsonl.gz`, the document generation script normalizes it to `cst_nodes.jsonl`.
+**Origin**: `CodeIntel.cst_build.cst_cli`. After emitting `cst_nodes.jsonl.gz`, the document generation script normalizes it to `cst_nodes.jsonl`.
 
 **Fields**
 
@@ -419,7 +419,7 @@ The CST nodes can be joined with GOID crosswalk entries via future `cst_node_id`
 
 **Purpose**: Normalized module import graph capturing directed edges between modules along with degree metadata and cycle grouping.
 
-**Origin**: Built from LibCST import metadata during `write_graph_outputs` via `codeintel_rev.enrich.graph.io.write_import_edges`. Stored under `enriched/graphs/import_graph_edges.parquet` and mirrored to JSONL during document generation.
+**Origin**: Built from LibCST import metadata during `write_graph_outputs` via `CodeIntel.enrich.graph.io.write_import_edges`. Stored under `enriched/graphs/import_graph_edges.parquet` and mirrored to JSONL during document generation.
 
 **Columns**
 
@@ -437,7 +437,7 @@ Edges can be joined to modules (by `src_module`/`dst_module`) and to per-module 
 
 **Purpose**: SCIP-based def→use relationships linking where symbols are defined and where they are referenced across the codebase.
 
-**Origin**: Derived from the SCIP index by `codeintel_rev.uses_builder.build_use_graph` and exported via `write_uses_output`. Lives at `enriched/graphs/symbol_use_edges.parquet`.
+**Origin**: Derived from the SCIP index by `CodeIntel.uses_builder.build_use_graph` and exported via `write_uses_output`. Lives at `enriched/graphs/symbol_use_edges.parquet`.
 
 **Columns**
 
@@ -492,7 +492,7 @@ These rows complement `typedness.jsonl` and hotspots to prioritize files with st
 
 **Purpose**: Fine-grained line-level coverage captured from coverage.py runs. Use to locate uncovered regions and to join line spans to GOIDs via `goid_xwalk`.
 
-**Origin**: `codeintel_rev.cli.enrich_analytics coverage-detailed` reads the `.coverage` database (with dynamic contexts enabled) and writes `enriched/analytics/coverage/coverage_lines.{parquet,jsonl}`.
+**Origin**: `CodeIntel.cli.enrich_analytics coverage-detailed` reads the `.coverage` database (with dynamic contexts enabled) and writes `enriched/analytics/coverage/coverage_lines.{parquet,jsonl}`.
 
 **Columns**
 
@@ -539,7 +539,7 @@ These rows complement `typedness.jsonl` and hotspots to prioritize files with st
 
 **Purpose**: Canonical list of pytest tests (functions/methods/parametrized cases) with metadata needed for impact analysis.
 
-**Origin**: `codeintel_rev.cli.enrich_analytics test-analytics` reads a pytest JSON report (from `pytest-json-report`) and attaches GOID matches when available.
+**Origin**: `CodeIntel.cli.enrich_analytics test-analytics` reads a pytest JSON report (from `pytest-json-report`) and attaches GOID matches when available.
 
 **Columns**
 
@@ -588,7 +588,7 @@ These rows complement `typedness.jsonl` and hotspots to prioritize files with st
 
 **Purpose**: Aggregated risk signals per function GOID combining coverage, tests, complexity, typedness, hotspots, and static diagnostics.
 
-**Origin**: `codeintel_rev.cli.enrich_analytics risk-factors` joins analytics tables under `enriched/analytics/` (function metrics/types, coverage, tests, hotspots, typedness, static_diagnostics).
+**Origin**: `CodeIntel.cli.enrich_analytics risk-factors` joins analytics tables under `enriched/analytics/` (function metrics/types, coverage, tests, hotspots, typedness, static_diagnostics).
 
 **Columns (selected)**
 

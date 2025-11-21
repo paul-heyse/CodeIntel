@@ -69,7 +69,7 @@ This contract defines every enforceable coding constraint from our Ruff linter, 
     • Import Order and Grouping: Imports must be sorted and grouped correctly: standard library imports first, then third-party libraries, then local application imports[4]. Each group must be separated by a blank line. Within each group, maintain alphabetical order by module name.
     • No Duplicate Imports: Code must not import the same module more than once. If something is already imported, reuse it instead of importing again.
     • Standard Aliases: Certain libraries must be imported using their conventional aliases. For example, import NumPy as np, pandas as pd, and matplotlib.pyplot as plt[5]. Do not deviate from established aliases (e.g., do not import pandas as pandas or as a non-standard name).
-    • Banned Imports: The use of specific disallowed modules or APIs is forbidden. In particular, must not import kgfoundry._namespace_proxy (use kgfoundry.tooling_bridge instead)[6]. Adhere to any project-specific banned import rules defined by the configuration.
+    • Banned Imports: The use of specific disallowed modules or APIs is forbidden. In particular, must not import CodeIntel._namespace_proxy (use CodeIntel.tooling_bridge instead)[6]. Adhere to any project-specific banned import rules defined by the configuration.
     • No Private Module Imports: Code must not import names from other packages that are marked as private (names starting with _)[7]. Import public APIs only.
     • No Star Imports: Wildcard imports (e.g. from module import *) are not allowed. Always import explicitly what is needed to avoid namespace pollution and ensure clarity.
     • No Useless Aliases: Avoid import aliases that do nothing. For example, must not do import numpy as numpy or import module as module (aliasing to the same name)[8].
@@ -678,7 +678,7 @@ If any answer is “no,” revise the test to move it closer to production reali
 | Full CPU | `pip install codeintel-rev[all]` | Minimal + FAISS CPU + DuckDB + SPLADE + XTR | Matches CI "full" job; safest default on CPU hosts. |
 | Targeted | `pip install codeintel-rev[faiss-cpu]`, etc. | Individual extras (`faiss-cpu`, `duckdb`, `splade`, `xtr`) | Use when trimming runtime images to feature-specific subsets. |
 
-`src/kgfoundry_common/typing/heavy_deps.py` is the single source of truth for heavy modules and install hints; the `gate_import()` helper and typing-gates checker both pull from this registry.
+`src/CodeIntel_common/typing/heavy_deps.py` is the single source of truth for heavy modules and install hints; the `gate_import()` helper and typing-gates checker both pull from this registry.
 
 ---
 
@@ -735,7 +735,7 @@ Read these first when editing configs or debugging local vs CI drift:
 
 **Purpose**: Prevent runtime imports of heavy optional dependencies (numpy, fastapi, FAISS) when they're only used in type hints. This ensures tooling stays lightweight and import-clean.
 
-> Heavy dependency metadata (module names, min versions, install extras) lives in `src/kgfoundry_common/typing/heavy_deps.py`. Update that file whenever a new gated dependency is introduced.
+> Heavy dependency metadata (module names, min versions, install extras) lives in `src/CodeIntel_common/typing/heavy_deps.py`. Update that file whenever a new gated dependency is introduced.
 
 ### 1. Postponed Annotations (PEP 563)
 
@@ -756,9 +756,9 @@ python -m tools.lint.apply_postponed_annotations src/ tools/ docs/_scripts/
 Use canonical typing imports instead of direct imports from heavy libraries:
 
 **Canonical façades** (re-export safe type-only helpers):
-- `kgfoundry_common.typing` — Core type aliases and runtime helpers
-- `tools.typing` — Tooling scripts (re-export from kgfoundry_common.typing)
-- `docs.typing` — Documentation scripts (re-export from kgfoundry_common.typing)
+- `CodeIntel_common.typing` — Core type aliases and runtime helpers
+- `tools.typing` — Tooling scripts (re-export from CodeIntel_common.typing)
+- `docs.typing` — Documentation scripts (re-export from CodeIntel_common.typing)
 
 **Type-only imports MUST be guarded**:
 ```python
@@ -777,7 +777,7 @@ def process(vectors: np.ndarray, app: FastAPI | None = None) -> None:
 
 **Runtime access to heavy types** (when genuinely required):
 ```python
-from kgfoundry_common.typing import gate_import
+from CodeIntel_common.typing import gate_import
 
 # Inside a function that actually needs numpy at runtime:
 np = gate_import("numpy", "array reshaping in process()")
@@ -793,7 +793,7 @@ result = np.reshape(data, (10, 10))
 - `EXE002` — Missing shebang for executable files
 
 Per-file ignores are defined in `pyproject.toml` for:
-- Façade modules (`src/kgfoundry_common/typing`, `tools/typing`, `docs/typing`)
+- Façade modules (`src/CodeIntel_common/typing`, `tools/typing`, `docs/typing`)
 - Special internal packages (`docs/_types`, `docs/_scripts`)
 
 ### 5. Development Workflow
@@ -813,7 +813,7 @@ Per-file ignores are defined in `pyproject.toml` for:
 ### Using heavy types safely (recipe)
 
 1. Always add `from __future__ import annotations` and guard heavy imports with `if TYPE_CHECKING:`.
-2. Reach for facade aliases from `codeintel_rev.typing` (`NDArrayF32`, `NDArrayI64`, `gate_import`, `HEAVY_DEPS`) instead of raw types.
+2. Reach for facade aliases from `CodeIntel.typing` (`NDArrayF32`, `NDArrayI64`, `gate_import`, `HEAVY_DEPS`) instead of raw types.
 3. For runtime access, wrap modules with `LazyModule` so that imports happen only when a function actually executes.
 4. Keep signatures and docstrings aligned with the façade aliases so lint/type gates remain clean.
 
@@ -830,8 +830,8 @@ def search(query: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 ```python
 from typing import TYPE_CHECKING, cast
-from codeintel_rev._lazy_imports import LazyModule
-from codeintel_rev.typing import NDArrayF32
+from CodeIntel._lazy_imports import LazyModule
+from CodeIntel.typing import NDArrayF32
 
 if TYPE_CHECKING:
     import numpy as np
@@ -843,7 +843,7 @@ def search(query: NDArrayF32) -> tuple[NDArrayF32, NDArrayF32]:
     return scores, query
 ```
 
-This pattern keeps `python -c "import codeintel_rev"` working on minimal hosts while preserving precise types for Ruff/pyright/pyrefly.
+This pattern keeps `python -c "import CodeIntel"` working on minimal hosts while preserving precise types for Ruff/pyright/pyrefly.
 
 ---
 
@@ -872,7 +872,7 @@ This pattern keeps `python -c "import codeintel_rev"` working on minimal hosts w
   - Parametrize edge cases with `@pytest.mark.parametrize`
   - No reliance on test order or realtime; use fixed seeds
 - **Helper fixtures:** prefer the utilities in `tests/_helpers/` (e.g.,
-  contexts) and the typed gate overrides (`kgfoundry_common.typing.override_gate_import`,
+  contexts) and the typed gate overrides (`CodeIntel_common.typing.override_gate_import`,
   `faiss_runtime.override_parameter_application`) instead of ad-hoc monkeypatching.
 - Entire suite runs on CPU; GPU markers have been removed
 - **Coverage (local whenever core paths change):**
@@ -904,8 +904,8 @@ This pattern keeps `python -c "import codeintel_rev"` working on minimal hosts w
 
 Example `PATH_MAP`:
 ```
-/workspace => /workspaces/kgfoundry
-/app       => /workspaces/kgfoundry
+/workspace => /workspaces/CodeIntel
+/app       => /workspaces/CodeIntel
 ```
 
 ---
@@ -939,7 +939,7 @@ codeintel indexctl publish --version v1
 **Problem Details Reference:**
 - Example: `schema/examples/problem_details/search-missing-index.json`
 - Schema: RFC 9457 Problem Details format
-- Implementation: `src/kgfoundry_common/errors/`
+- Implementation: `src/CodeIntel_common/errors/`
 
 ---
 

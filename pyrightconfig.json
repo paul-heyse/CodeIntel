@@ -6,7 +6,7 @@
   "venv": ".venv",
   "useLibraryCodeForTypes": true,
   "stubPath": "src/stubs",
-  "include": ["src", "codeintel_rev", "tools", "tests", "docs", "bin"],
+  "include": ["src", "CodeIntel", "tools", "tests", "docs", "bin"],
   "exclude": [
     ".git",
     ".venv",
@@ -24,7 +24,7 @@
       "pythonVersion": "3.13"
     },
     {
-      "root": "CodeGraphRAG",
+      "root": "CodeIntel",
       "extraPaths": [
         "src",
         "tests",

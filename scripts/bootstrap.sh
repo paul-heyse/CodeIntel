@@ -286,7 +286,7 @@ import sysconfig
 print(sysconfig.get_paths()["purelib"])
 PY
 )"
-  local pth_file="${site_packages}/kgfoundry_src.pth"
+  local pth_file="${site_packages}/CodeIntel_src.pth"
   if [ ! -f "${pth_file}" ] || ! grep -qx "$(pwd)/src" "${pth_file}"; then
     printf "%s\n" "$(pwd)/src" > "${pth_file}"
     ok "Ensured ${pth_file} points to src"
