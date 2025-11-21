@@ -3,36 +3,36 @@ name = "codegraphrag"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = "==3.13.*"
 dependencies = [
-    "ast-grep-py>=0.40.0",
-    "basedpyright>=1.34.0",
+    "ast-grep-py",
+    "basedpyright",
     "cython",
-    "docstr-coverage>=2.3.2",
-    "docstring-parser>=0.17.0",
+    "docstr-coverage",
+    "docstring-parser",
     "duckdb",
-    "fastapi>=0.121.3",
-    "fastmcp>=2.13.1",
-    "libcst>=1.8.6",
-    "mcp[cli]>=1.22.0",
-    "msgspec>=0.19.0",
-    "plotly>=6.5.0",
-    "pyarrow>=22.0.0",
-    "pydantic>=2.12.4",
-    "pydoclint>=0.8.2",
-    "pydocstyle>=6.3.0",
+    "fastapi",
+    "fastmcp",
+    "libcst",
+    "mcp[cli]",
+    "msgspec",
+    "plotly",
+    "pyarrow",
+    "pydantic",
+    "pydoclint",
+    "pydocstyle",
     "pyrefly",
-    "pyright>=1.1.407",
-    "pytest>=9.0.1",
-    "pytest-cov>=7.0.0",
-    "pytest-logging>=2015.11.4",
-    "rich>=14.2.0",
+    "pyright",
+    "pytest",
+    "pytest-cov",
+    "pytest-logging",
+    "rich",
     "ruff",
-    "tree-sitter>=0.25.2",
-    "tree-sitter-language-pack>=0.11.0",
-    "typer>=0.20.0",
-    "uuid6>=2025.0.1",
-    "vulture>=2.14",
+    "tree-sitter",
+    "tree-sitter-language-pack",
+    "typer",
+    "uuid6",
+    "vulture",
 ]
 
 
@@ -144,11 +144,6 @@ exclude = [
 ]
 
 
-
-[tool.uv]
-# Allow pre-releases in resolution so uv can select dev/nightly builds of vLLM.
-# (Default behavior is "if-necessary-or-explicit"; "allow" is simplest here.)
-prerelease = "allow"
 
 [tool.pydoclint]
 exclude = ""

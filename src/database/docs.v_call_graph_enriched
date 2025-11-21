@@ -1,0 +1,24 @@
+CREATE OR REPLACE VIEW docs.v_call_graph_enriched AS
+SELECT
+  e.caller_goid_h128,
+  gc.urn             AS caller_urn,
+  gc.qualname        AS caller_qualname,
+  e.callee_goid_h128,
+  gcallee.urn        AS callee_urn,
+  gcallee.qualname   AS callee_qualname,
+  e.callsite_path,
+  e.callsite_line,
+  e.kind,
+  e.resolved_via,
+  e.confidence,
+  rc.risk_level      AS caller_risk_level,
+  rcallee.risk_level AS callee_risk_level
+FROM graph.call_graph_edges e
+LEFT JOIN core.goids gc
+  ON gc.goid_h128 = e.caller_goid_h128
+LEFT JOIN core.goids gcallee
+  ON gcallee.goid_h128 = e.callee_goid_h128
+LEFT JOIN analytics.goid_risk_factors rc
+  ON rc.function_goid_h128 = e.caller_goid_h128
+LEFT JOIN analytics.goid_risk_factors rcallee
+  ON rcallee.function_goid_h128 = e.callee_goid_h128;

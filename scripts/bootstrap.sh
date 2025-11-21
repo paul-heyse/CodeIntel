@@ -20,8 +20,8 @@ PIN_PYTHON="${PIN_PYTHON:-1}"             # 1=uv python pin <ver>
 GENERATE_PATH_MAP="${GENERATE_PATH_MAP:-1}" # 1=create docs/_build/path_map.txt if in container
 USE_LOCK="${USE_LOCK:-no}"                 # yes|no|auto -> --locked only when explicitly requested
 EDITOR_URI_TEMPLATE_DEFAULT='vscode-remote://dev-container+{container_id}{path}:{line}'
-UV_MIN_VERSION="${UV_MIN_VERSION:-0.9.6}"  # Require uv version >= 0.9.6
-EXCLUDE_EXTRAS="${EXCLUDE_EXTRAS:-gpu}"   # comma/space-separated extras to skip during uv sync
+UV_MIN_VERSION="${UV_MIN_VERSION:-0.9.10}"  # Require uv version >= 0.9.6
+INCLUDE_EXTRAS="${INCLUDE_EXTRAS:-${UV_EXTRAS:-}}" # comma/space-separated extras to include
 
 # ------------- CLI flags -------------
 # Support a few handy flags so CI or developers can tailor behavior.
@@ -137,12 +137,14 @@ fi
 ensure_uv() {
   local current_version=""
   if have uv; then
-    current_version="$(uv --version 2>/dev/null | head -n1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1)"
+    current_version="$(
+      uv --version 2>/dev/null | head -n1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1
+    )"
     if version_ge "${current_version}" "${UV_MIN_VERSION}"; then
       ok "uv present: $(uv --version | head -n1)"
       return 0
     fi
-    warn "uv version ${current_version:-unknown} detected; upgrading to latest (need >= ${UV_MIN_VERSION})."
+    warn "uv version ${current_version:-unknown} detected; upgrading (need >= ${UV_MIN_VERSION})."
   else
     warn "uv not found; installing user-local uv (no sudo)."
   fi
@@ -153,10 +155,13 @@ ensure_uv() {
   if ! have uv; then
     export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.local/share/uv/bin:$PATH"
   fi
-  have uv || { err "uv still not on PATH after install. Add it to PATH, then re-run."; exit 1; }
+  if ! have uv; then
+    err "uv still not on PATH after install. Add it to PATH, then re-run."
+    exit 1
+  fi
   current_version="$(uv --version 2>/dev/null | head -n1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1)"
   if ! version_ge "${current_version}" "${UV_MIN_VERSION}"; then
-    err "Installed uv version ${current_version:-unknown} does not satisfy requirement (>= ${UV_MIN_VERSION})."
+    err "Installed uv version ${current_version:-unknown} is below ${UV_MIN_VERSION}."
     exit 1
   fi
   ok "Installed uv: $(uv --version | head -n1)"
@@ -185,21 +190,22 @@ sync_env() {
     auto) [ -f uv.lock ] && lock_flag="--locked" ;;
     yes)  lock_flag="--locked" ;;
     no)   lock_flag="" ;;
-    *)    warn "--use-lock must be auto|yes|no (got: ${USE_LOCK}); defaulting to auto"; [ -f uv.lock ] && lock_flag="--locked" ;;
+    *)    warn "--use-lock must be auto|yes|no (got: ${USE_LOCK}); defaulting to auto"
+          [ -f uv.lock ] && lock_flag="--locked" ;;
   esac
 
-  local -a sync_cmd=("uv" "sync" "--frozen" "--no-default-groups")
+  local -a sync_cmd=("uv" "sync" "--frozen")
   if [ -n "${lock_flag}" ]; then
     sync_cmd+=("${lock_flag}")
   fi
 
-  if [ -n "${EXCLUDE_EXTRAS:-}" ]; then
-    local normalized="${EXCLUDE_EXTRAS//,/ }"
+  if [ -n "${INCLUDE_EXTRAS:-}" ]; then
+    local normalized="${INCLUDE_EXTRAS//,/ }"
     local extra=""
     for extra in ${normalized}; do
       extra="${extra// /}"
       if [ -n "${extra}" ]; then
-        sync_cmd+=("--no-extra" "${extra}")
+        sync_cmd+=("--extra" "${extra}")
       fi
     done
   fi
@@ -318,14 +324,6 @@ ensure_uv
 ensure_python "${PY_VER_DEFAULT}"
 sync_env
 activate_project_env
-if [ -d .wheelhouse ]; then
-  ok ".wheelhouse directory already present"
-else
-  # uv pip install honors [tool.uv.pip]::find-links=.wheelhouse; ensure it exists so
-  # the editable install doesn't fail on fresh clones where the directory is absent.
-  mkdir -p .wheelhouse
-  ok "Created .wheelhouse directory for uv find-links"
-fi
 info "Installing project package in editable mode…"
 uv pip install -e .
 ok "Editable install complete"
