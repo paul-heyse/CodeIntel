@@ -1,0 +1,36 @@
+{
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Linux",
+  "venvPath": ".",
+  "venv": ".venv",
+  "useLibraryCodeForTypes": true,
+  "stubPath": "src/stubs",
+  "include": ["src", "codeintel_rev", "tools", "tests", "docs", "bin"],
+  "exclude": [
+    ".git",
+    ".venv",
+    ".ruff_cache",
+    ".pytest_cache",
+    "docs/**",
+  ],
+  "executionEnvironments": [
+    {
+      "root": "src",
+      "extraPaths": [
+        "src",
+        "tests",
+      ],
+      "pythonVersion": "3.13"
+    },
+    {
+      "root": "CodeGraphRAG",
+      "extraPaths": [
+        "src",
+        "tests",
+      ],
+      "pythonVersion": "3.13"
+    },
+
+  ]
+}

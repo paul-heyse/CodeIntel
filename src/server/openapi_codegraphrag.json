@@ -1,0 +1,268 @@
+{
+  "openapi": "3.2.0",
+  "info": {
+    "title": "CodeGraphRAG Metadata API",
+    "version": "0.1.0",
+    "description": "Read-only API over DuckDB views exposing stitched code-intel metadata (functions, call graph, tests, risk)."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Local CodeGraphRAG API"
+    }
+  ],
+  "paths": {
+    "/function/summary/by-urn": {
+      "get": {
+        "summary": "Get function summary by GOID URN",
+        "operationId": "functionSummaryByUrn",
+        "parameters": [
+          {
+            "name": "urn",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "GOID URN for the function, e.g. goid:repo/path#python:function:pkg.mod.func?s=10&e=20"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Function summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FunctionSummary" }
+              }
+            }
+          },
+          "404": {
+            "description": "Function not found"
+          }
+        }
+      }
+    },
+    "/function/summary/by-goid": {
+      "get": {
+        "summary": "Get function summary by numeric GOID",
+        "operationId": "functionSummaryByGoid",
+        "parameters": [
+          {
+            "name": "goid_h128",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" },
+            "description": "Numeric GOID (128-bit hash, stored as decimal)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Function summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FunctionSummary" }
+              }
+            }
+          },
+          "404": {
+            "description": "Function not found"
+          }
+        }
+      }
+    },
+    "/function/callgraph": {
+      "get": {
+        "summary": "Get call graph neighborhood for a function",
+        "operationId": "functionCallgraph",
+        "parameters": [
+          {
+            "name": "urn",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "GOID URN of the function. Required if goid_h128 is not provided."
+          },
+          {
+            "name": "goid_h128",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "format": "int64" },
+            "description": "Numeric GOID of the function. Required if urn is not provided."
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["both", "incoming", "outgoing"],
+              "default": "both"
+            },
+            "description": "Which edges to return relative to the function."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of call graph edges around the function",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/CallGraphEdge" }
+                }
+              }
+            }
+          },
+          "400": { "description": "Bad request (missing parameters)" },
+          "404": { "description": "Function not found" }
+        }
+      }
+    },
+    "/tests/for-function": {
+      "get": {
+        "summary": "List tests that exercise a function",
+        "operationId": "testsForFunction",
+        "parameters": [
+          {
+            "name": "urn",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "GOID URN of the function. Required if goid_h128 is not provided."
+          },
+          {
+            "name": "goid_h128",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "format": "int64" },
+            "description": "Numeric GOID of the function. Required if urn is not provided."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tests linked to the function via coverage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/TestToFunctionEdge" }
+                }
+              }
+            }
+          },
+          "400": { "description": "Bad request (missing parameters)" },
+          "404": { "description": "Function not found" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "FunctionSummary": {
+        "type": "object",
+        "description": "Per-function summary, combining risk, coverage, typedness, complexity, and ownership.",
+        "properties": {
+          "function_goid_h128": { "type": "integer", "format": "int64" },
+          "urn": { "type": "string" },
+          "repo": { "type": "string" },
+          "commit": { "type": "string" },
+          "rel_path": { "type": "string" },
+          "language": { "type": "string" },
+          "kind": { "type": "string" },
+          "qualname": { "type": "string" },
+          "loc": { "type": "integer", "nullable": true },
+          "logical_loc": { "type": "integer", "nullable": true },
+          "cyclomatic_complexity": { "type": "integer", "nullable": true },
+          "complexity_bucket": { "type": "string", "nullable": true },
+          "typedness_bucket": { "type": "string", "nullable": true },
+          "typedness_source": { "type": "string", "nullable": true },
+          "hotspot_score": { "type": "number", "format": "float", "nullable": true },
+          "file_typed_ratio": { "type": "number", "format": "float", "nullable": true },
+          "static_error_count": { "type": "integer", "nullable": true },
+          "has_static_errors": { "type": "boolean", "nullable": true },
+          "executable_lines": { "type": "integer", "nullable": true },
+          "covered_lines": { "type": "integer", "nullable": true },
+          "coverage_ratio": { "type": "number", "format": "float", "nullable": true },
+          "tested": { "type": "boolean", "nullable": true },
+          "test_count": { "type": "integer", "nullable": true },
+          "failing_test_count": { "type": "integer", "nullable": true },
+          "last_test_status": { "type": "string", "nullable": true },
+          "risk_score": { "type": "number", "format": "float", "nullable": true },
+          "risk_level": { "type": "string", "nullable": true },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "nullable": true
+          },
+          "owners": {
+            "type": "array",
+            "items": { "type": "string" },
+            "nullable": true
+          },
+          "created_at": { "type": "string", "format": "date-time", "nullable": true }
+        },
+        "required": ["function_goid_h128", "urn", "repo", "rel_path", "qualname"]
+      },
+      "CallGraphEdge": {
+        "type": "object",
+        "description": "Single edge in the call graph, enriched with caller/callee names and risk.",
+        "properties": {
+          "caller_goid_h128": { "type": "integer", "format": "int64", "nullable": true },
+          "caller_urn": { "type": "string", "nullable": true },
+          "caller_rel_path": { "type": "string", "nullable": true },
+          "caller_qualname": { "type": "string", "nullable": true },
+          "caller_risk_level": { "type": "string", "nullable": true },
+          "caller_risk_score": { "type": "number", "format": "float", "nullable": true },
+          "callee_goid_h128": { "type": "integer", "format": "int64", "nullable": true },
+          "callee_urn": { "type": "string", "nullable": true },
+          "callee_rel_path": { "type": "string", "nullable": true },
+          "callee_qualname": { "type": "string", "nullable": true },
+          "callee_risk_level": { "type": "string", "nullable": true },
+          "callee_risk_score": { "type": "number", "format": "float", "nullable": true },
+          "callsite_path": { "type": "string", "nullable": true },
+          "callsite_line": { "type": "integer", "nullable": true },
+          "callsite_col": { "type": "integer", "nullable": true },
+          "language": { "type": "string", "nullable": true },
+          "kind": { "type": "string", "nullable": true },
+          "resolved_via": { "type": "string", "nullable": true },
+          "confidence": { "type": "number", "format": "float", "nullable": true }
+        }
+      },
+      "TestToFunctionEdge": {
+        "type": "object",
+        "description": "Link between a pytest test and a function it covers.",
+        "properties": {
+          "test_id": { "type": "string" },
+          "test_goid_h128": { "type": "integer", "format": "int64", "nullable": true },
+          "test_urn": { "type": "string", "nullable": true },
+          "test_repo": { "type": "string", "nullable": true },
+          "test_commit": { "type": "string", "nullable": true },
+          "test_rel_path": { "type": "string", "nullable": true },
+          "test_qualname": { "type": "string", "nullable": true },
+          "test_kind": { "type": "string", "nullable": true },
+          "test_status": { "type": "string", "nullable": true },
+          "duration_ms": { "type": "number", "format": "float", "nullable": true },
+          "markers": {
+            "type": "array",
+            "items": { "type": "string" },
+            "nullable": true
+          },
+          "parametrized": { "type": "boolean", "nullable": true },
+          "flaky": { "type": "boolean", "nullable": true },
+          "function_goid_h128": { "type": "integer", "format": "int64", "nullable": true },
+          "function_urn": { "type": "string", "nullable": true },
+          "function_rel_path": { "type": "string", "nullable": true },
+          "function_qualname": { "type": "string", "nullable": true },
+          "function_language": { "type": "string", "nullable": true },
+          "function_kind": { "type": "string", "nullable": true },
+          "function_risk_score": { "type": "number", "format": "float", "nullable": true },
+          "function_risk_level": { "type": "string", "nullable": true },
+          "covered_lines": { "type": "integer", "nullable": true },
+          "executable_lines": { "type": "integer", "nullable": true },
+          "coverage_ratio": { "type": "number", "format": "float", "nullable": true },
+          "edge_last_status": { "type": "string", "nullable": true },
+          "edge_created_at": { "type": "string", "format": "date-time", "nullable": true }
+        },
+        "required": ["test_id"]
+      }
+    }
+  }
+}

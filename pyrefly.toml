@@ -1,0 +1,31 @@
+project-includes = ["src"]
+project-excludes = [
+    "**/.venv/**",
+    "**/__pycache__/**",
+]
+search-path = [".", "src"]
+python-version = "3.13.9"
+
+# Type-check behavior
+infer-with-first-use = true
+untyped-def-behavior = "check-and-infer-return-type"
+permissive-ignores = false
+replace-imports-with-any = [
+]
+ignore-missing-source = false
+ignore-errors-in-generated-code = false
+
+# Opt into powerful optional errors
+[errors]
+implicit-any = true
+implicitly-defined-attribute = true
+implicit-abstract-class = true
+assert-type = true
+
+# Optional per-path strictness toggles if you need to refine behavior later.
+# [[overrides]]
+# paths = ["src/**"]
+# implicit-any = true
+# [[overrides]]
+# paths = ["tests/**"]
+# assert-type = false

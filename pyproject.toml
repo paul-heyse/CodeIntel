@@ -1,0 +1,166 @@
+[project]
+name = "codegraphrag"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "ast-grep-py>=0.40.0",
+    "basedpyright>=1.34.0",
+    "cython",
+    "docstr-coverage>=2.3.2",
+    "docstring-parser>=0.17.0",
+    "duckdb",
+    "fastapi>=0.121.3",
+    "fastmcp>=2.13.1",
+    "libcst>=1.8.6",
+    "mcp[cli]>=1.22.0",
+    "msgspec>=0.19.0",
+    "plotly>=6.5.0",
+    "pyarrow>=22.0.0",
+    "pydantic>=2.12.4",
+    "pydoclint>=0.8.2",
+    "pydocstyle>=6.3.0",
+    "pyrefly",
+    "pyright>=1.1.407",
+    "pytest>=9.0.1",
+    "pytest-cov>=7.0.0",
+    "pytest-logging>=2015.11.4",
+    "rich>=14.2.0",
+    "ruff",
+    "tree-sitter>=0.25.2",
+    "tree-sitter-language-pack>=0.11.0",
+    "typer>=0.20.0",
+    "uuid6>=2025.0.1",
+    "vulture>=2.14",
+]
+
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+required-version = ">=0.14.2"
+output-format = "grouped"
+src = ["src"]
+extend-exclude = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+    "F",
+    "E4",
+    "E7",
+    "E9",
+    "I",
+    "N",
+    "UP",
+    "SIM",
+    "C4",
+    "B",
+    "RUF",
+    "ANN",
+    "D",
+    "RET",
+    "RSE",
+    "TRY",
+    "EM",
+    "G",
+    "LOG",
+    "ISC",
+    "TID",
+    "ICN",
+    "TD",
+    "ERA",
+    "PGH",
+    "C90",
+    "PLR",
+    "W",
+    "A",
+    "ARG",
+    "BLE",
+    "DTZ",
+    "PTH",
+    "PIE",
+    "S",
+    "PT",
+    "T20",
+    "PLW",
+    "PLC",
+    "PERF",
+    "YTT",
+    "PYI",
+    "TC",      # Type-checking imports (typing gates enforcement)
+    "SLOT",
+    "FBT",
+    "SLF",
+    "ASYNC",
+    "INP",     # Input validation (implicit namespace packages)
+    "EXE",     # Executable shebang checks
+    "FIX",
+    "NPY",
+    "PD",
+    "PLE",
+    "DOC",
+]
+ignore = ["Q", "E203", "D203", "D213", "D205", "TC001", "TC002", "TC003"]
+preview = true
+extend-select = ["RUF100", "D401", "D417"]
+
+# Typing gates enforcement: escalate these to errors via explicit config
+extend-ignore = []  # Placeholder for potential future ignores
+# Note: TC, INP, EXE rules are ERRORS by default; PLC2701 (typing-only import) treated specially per-file
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-branches = 12
+max-returns = 6
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.flake8-type-checking]
+strict = true
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.vulture]
+# Strict, but still manageable threshold.
+min_confidence = 90
+
+# Where to scan by default. (You can add "tests" too, but that can be noisy.)
+# Include the whitelist module so intentionally referenced names stay marked as used.
+paths = ["src"]
+
+exclude = [
+  ".git/*", ".hg/*", ".venv", ".venv/*", ".venv/**", "**/.venv/**",
+  ".ruff_cache/*", ".pytest_cache/*"
+]
+
+
+
+[tool.uv]
+# Allow pre-releases in resolution so uv can select dev/nightly builds of vLLM.
+# (Default behavior is "if-necessary-or-explicit"; "allow" is simplest here.)
+prerelease = "allow"
+
+[tool.pydoclint]
+exclude = ""
+allow-init-docstring = true  # Project policy: document constructor parameters in __init__ docstrings
+ignore-underscore-args = true
+
+[tool.pydocstyle]
+convention = "numpy"
+add-ignore = []
+
+[tool.codegraphrag.docstrings.policy]
+coverage-threshold = 0.9
+coverage-action = "error"
+missing-params-action = "error"
+missing-returns-action = "error"
