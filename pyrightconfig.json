@@ -6,7 +6,7 @@
   "venv": ".venv",
   "useLibraryCodeForTypes": true,
   "stubPath": "src/stubs",
-  "include": ["src", "CodeIntel", "tools", "tests", "docs", "bin"],
+  "include": ["src", "tests", "docs"],
   "exclude": [
     ".git",
     ".venv",
@@ -17,14 +17,6 @@
   "executionEnvironments": [
     {
       "root": "src",
-      "extraPaths": [
-        "src",
-        "tests",
-      ],
-      "pythonVersion": "3.13"
-    },
-    {
-      "root": "CodeIntel",
       "extraPaths": [
         "src",
         "tests",

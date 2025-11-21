@@ -1,0 +1,35 @@
+CREATE OR REPLACE VIEW docs.v_function_summary AS
+SELECT
+  g.goid_h128            AS function_goid_h128,
+  g.urn,
+  g.repo,
+  g.commit,
+  g.rel_path,
+  g.language,
+  g.kind,
+  g.qualname,
+  fm.loc,
+  fm.logical_loc,
+  fm.cyclomatic_complexity,
+  fm.complexity_bucket,
+  ft.typedness_bucket,
+  ft.fully_typed,
+  cf.coverage_ratio,
+  cf.tested,
+  rf.risk_score,
+  rf.risk_level,
+  rf.test_count,
+  rf.failing_test_count,
+  rf.last_test_status,
+  rf.tags,
+  rf.owners
+FROM core.goids g
+LEFT JOIN analytics.function_metrics fm
+  ON fm.function_goid_h128 = g.goid_h128
+LEFT JOIN analytics.function_types ft
+  ON ft.function_goid_h128 = g.goid_h128
+LEFT JOIN analytics.coverage_functions cf
+  ON cf.function_goid_h128 = g.goid_h128
+LEFT JOIN analytics.goid_risk_factors rf
+  ON rf.function_goid_h128 = g.goid_h128
+WHERE g.kind IN ('function','method');

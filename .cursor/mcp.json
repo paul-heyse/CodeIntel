@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "codeintel": {
+      "command": "python",
+      "args": ["-m", "codeintel.mcp"],
+      "env": {
+        "CODEINTEL_REPO_ROOT": "/absolute/path/to/your/repo",
+        "CODEINTEL_REPO": "my-org/my-repo",
+        "CODEINTEL_COMMIT": "deadbeef",          // or leave unset and handle in server
+        "CODEINTEL_DB_PATH": "/absolute/path/to/your/repo/build/db/codeintel.duckdb"
+      }
+    }
+  }
+}
