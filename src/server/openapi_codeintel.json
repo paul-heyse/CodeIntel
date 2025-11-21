@@ -1,14 +1,14 @@
 {
   "openapi": "3.2.0",
   "info": {
-    "title": "CodeGraphRAG Metadata API",
+    "title": "CodeIntel Metadata API",
     "version": "0.1.0",
     "description": "Read-only API over DuckDB views exposing stitched code-intel metadata (functions, call graph, tests, risk)."
   },
   "servers": [
     {
       "url": "http://localhost:8000",
-      "description": "Local CodeGraphRAG API"
+      "description": "Local CodeIntel API"
     }
   ],
   "paths": {
