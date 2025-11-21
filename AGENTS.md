@@ -37,7 +37,7 @@
     ```bash
     scripts/bootstrap.sh
     ```
-    then run "uv sync && uv sync --extra gpu"
+    then run "uv sync"
 
 2) **Implement**
    - Code to the typed API sketch.
