@@ -6,7 +6,7 @@ import duckdb
 import pytest
 
 from codeintel.mcp import errors
-from codeintel.mcp.backend import DuckDBBackend
+from codeintel.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
 
 
 @pytest.fixture
@@ -142,3 +142,26 @@ def test_read_dataset_rows_unknown(backend: DuckDBBackend) -> None:
     """Unknown dataset names raise MCP errors."""
     with pytest.raises(errors.McpError):
         backend.read_dataset_rows(dataset_name="missing")
+
+
+def test_dataset_rows_clamping(backend: DuckDBBackend) -> None:
+    """Limits/offsets clamp with messages instead of raising."""
+    backend.dataset_tables = {"functions": "docs.v_function_summary"}
+    resp = backend.read_dataset_rows(dataset_name="functions", limit=1000, offset=-2)
+    if resp.limit != MAX_ROWS_LIMIT or resp.offset != 0:
+        pytest.fail("Expected clamped limit/offset values")
+    codes = {m.code for m in resp.meta.messages}
+    if not {"limit_clamped", "offset_invalid"} <= codes:
+        pytest.fail(f"Unexpected message codes: {codes}")
+    if resp.rows:
+        pytest.fail("Expected no rows when clamping with invalid offset")
+
+
+def test_tests_for_function_not_found(backend: DuckDBBackend) -> None:
+    """Missing test edges returns message instead of raising."""
+    resp = backend.get_tests_for_function(goid_h128=999, limit=5)
+    if resp.tests:
+        pytest.fail("Expected no tests for missing function")
+    codes = [m.code for m in resp.meta.messages]
+    if "not_found" not in codes:
+        pytest.fail(f"Expected not_found message; got {codes}")

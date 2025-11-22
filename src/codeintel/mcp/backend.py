@@ -15,6 +15,8 @@ from codeintel.mcp.models import (
     FileSummaryResponse,
     FunctionSummaryResponse,
     HighRiskFunctionsResponse,
+    Message,
+    ResponseMeta,
     TestsForFunctionResponse,
     ViewRow,
 )
@@ -24,8 +26,87 @@ VALID_DIRECTIONS = frozenset({"in", "out", "both"})
 RowDict = dict[str, object]
 
 
+@dataclass(frozen=True)
+class ClampResult:
+    """Result of clamping limit/offset values with messaging."""
+
+    applied: int
+    messages: list[Message] = field(default_factory=list)
+    has_error: bool = False
+
+
+def _clamp_limit_value(requested: int | None, *, default: int) -> ClampResult:
+    """
+    Clamp a requested limit to safe bounds, returning warnings instead of errors.
+
+    Returns
+    -------
+    ClampResult
+        Applied limit plus any informational/warning/error messages for callers.
+    """
+    messages: list[Message] = []
+    limit = default if requested is None else requested
+
+    if limit < 0:
+        messages.append(
+            Message(
+                code="limit_invalid",
+                severity="error",
+                detail="limit must be non-negative",
+                context={"requested": limit},
+            )
+        )
+        return ClampResult(applied=0, messages=messages, has_error=True)
+
+    max_limit = MAX_ROWS_LIMIT
+    if limit > max_limit:
+        messages.append(
+            Message(
+                code="limit_clamped",
+                severity="warning",
+                detail=f"Requested {limit} rows; delivering {max_limit} (max allowed).",
+                context={"requested": limit, "applied": max_limit, "max": max_limit},
+            )
+        )
+        limit = max_limit
+
+    return ClampResult(applied=limit, messages=messages, has_error=False)
+
+
+def _clamp_offset_value(offset: int) -> ClampResult:
+    """
+    Clamp an offset to a non-negative value, returning messaging instead of raising.
+
+    Returns
+    -------
+    ClampResult
+        Applied offset plus any informational/warning/error messages for callers.
+    """
+    if offset < 0:
+        return ClampResult(
+            applied=0,
+            messages=[
+                Message(
+                    code="offset_invalid",
+                    severity="error",
+                    detail="offset must be non-negative",
+                    context={"requested": offset},
+                )
+            ],
+            has_error=True,
+        )
+    return ClampResult(applied=offset)
+
+
 def _column_exists(con: duckdb.DuckDBPyConnection, table: str, column: str) -> bool:
-    """Return True when a table or view exposes the given column."""
+    """
+    Return True when a table or view exposes the given column.
+
+    Returns
+    -------
+    bool
+        True if the column exists, otherwise False.
+    """
     info_sql = f"PRAGMA table_info('{table}')"
     rows = con.execute(info_sql).fetchall()
     return any(col[1] == column for col in rows)
@@ -286,6 +367,7 @@ class DuckDBBackend(QueryBackend):
         FunctionSummaryResponse
             Wrapped function summary payload.
         """
+        meta = ResponseMeta()
         summary: ViewRow | None = None
         if urn:
             row = _fetch_one_dict(
@@ -334,7 +416,18 @@ class DuckDBBackend(QueryBackend):
                 )
             )
 
-        return FunctionSummaryResponse(found=bool(summary), summary=summary)
+        if summary is None:
+            meta.messages.append(
+                Message(
+                    code="not_found",
+                    severity="info",
+                    detail="Function not found",
+                    context={"urn": urn, "goid_h128": goid_h128, "rel_path": rel_path, "qualname": qualname},
+                )
+            )
+            return FunctionSummaryResponse(found=False, summary=None, meta=meta)
+
+        return FunctionSummaryResponse(found=True, summary=summary, meta=meta)
 
     def list_high_risk_functions(
         self,
@@ -348,20 +441,20 @@ class DuckDBBackend(QueryBackend):
 
         Returns
         -------
-        list[RowDict]
-            High-risk function rows sorted by risk_score.
-
-        Raises
-        ------
-        errors.invalid_argument
-            Raised when `limit` exceeds the allowed maximum.
+        HighRiskFunctionsResponse
+            High-risk function rows sorted by risk_score plus metadata.
         """
         extra_clause = " AND tested = TRUE" if tested_only else ""
-        if limit > MAX_ROWS_LIMIT:
-            message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
-            raise errors.invalid_argument(message)
-        safe_limit = max(0, limit)
-        params: list[object] = [self.repo, self.commit, min_risk, safe_limit]
+        clamp = _clamp_limit_value(limit, default=limit)
+        meta = ResponseMeta(
+            requested_limit=limit,
+            applied_limit=clamp.applied,
+            messages=list(clamp.messages),
+        )
+        if clamp.has_error:
+            return HighRiskFunctionsResponse(functions=[], truncated=False, meta=meta)
+
+        params: list[object] = [self.repo, self.commit, min_risk, clamp.applied]
         sql = (
             """
             SELECT
@@ -386,8 +479,9 @@ class DuckDBBackend(QueryBackend):
         )
         rows = _fetch_all_dicts(self.con, sql, params)
         models = [ViewRow.model_validate(r) for r in rows]
-        truncated = safe_limit > 0 and len(rows) == safe_limit
-        return HighRiskFunctionsResponse(functions=models, truncated=truncated)
+        truncated = clamp.applied > 0 and len(rows) == clamp.applied
+        meta.truncated = truncated
+        return HighRiskFunctionsResponse(functions=models, truncated=truncated, meta=meta)
 
     def get_callgraph_neighbors(
         self,
@@ -407,16 +501,19 @@ class DuckDBBackend(QueryBackend):
         Raises
         ------
         errors.invalid_argument
-            Raised when `direction` is not one of {'in','out','both'} or when
-            `limit` exceeds bounds.
+            If direction is not one of {'in','out','both'}.
         """
         if direction not in VALID_DIRECTIONS:
             message = "direction must be one of {'in','out','both'}"
             raise errors.invalid_argument(message)
-        if limit > MAX_ROWS_LIMIT:
-            message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
-            raise errors.invalid_argument(message)
-        safe_limit = max(0, limit)
+        clamp = _clamp_limit_value(limit, default=limit)
+        meta = ResponseMeta(
+            requested_limit=limit,
+            applied_limit=clamp.applied,
+            messages=list(clamp.messages),
+        )
+        if clamp.has_error:
+            return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=meta)
         outgoing: list[ViewRow] = []
         incoming: list[ViewRow] = []
 
@@ -428,7 +525,7 @@ class DuckDBBackend(QueryBackend):
                 ORDER BY callee_qualname
                 LIMIT ?
             """
-            out_rows = _fetch_all_dicts(self.con, out_sql, [goid_h128, safe_limit])
+            out_rows = _fetch_all_dicts(self.con, out_sql, [goid_h128, clamp.applied])
             outgoing = [ViewRow.model_validate(r) for r in out_rows]
 
         if direction in {"in", "both"}:
@@ -439,10 +536,13 @@ class DuckDBBackend(QueryBackend):
                 ORDER BY caller_qualname
                 LIMIT ?
             """
-            in_rows = _fetch_all_dicts(self.con, in_sql, [goid_h128, safe_limit])
+            in_rows = _fetch_all_dicts(self.con, in_sql, [goid_h128, clamp.applied])
             incoming = [ViewRow.model_validate(r) for r in in_rows]
 
-        return CallGraphNeighborsResponse(outgoing=outgoing, incoming=incoming)
+        meta.truncated = clamp.applied > 0 and (
+            len(outgoing) == clamp.applied or len(incoming) == clamp.applied
+        )
+        return CallGraphNeighborsResponse(outgoing=outgoing, incoming=incoming, meta=meta)
 
     def get_tests_for_function(
         self,
@@ -471,53 +571,75 @@ class DuckDBBackend(QueryBackend):
         Raises
         ------
         errors.invalid_argument
-            Raised when identifiers are missing or the requested limit is invalid.
+            Raised when identifiers are missing.
         """
         if goid_h128 is None and urn is None:
             message = "Must provide goid_h128 or urn."
             raise errors.invalid_argument(message)
 
-        repo_col = "test_repo" if _column_exists(self.con, "docs.v_test_to_function", "test_repo") else "repo"
-        commit_col = (
-            "test_commit" if _column_exists(self.con, "docs.v_test_to_function", "test_commit") else "commit"
+        clamp = _clamp_limit_value(limit, default=MAX_ROWS_LIMIT)
+        meta = ResponseMeta(
+            requested_limit=limit,
+            applied_limit=clamp.applied,
+            messages=list(clamp.messages),
+        )
+        if clamp.has_error:
+            return TestsForFunctionResponse(tests=[], meta=meta)
+
+        columns = {
+            col[1]
+            for col in self.con.execute("PRAGMA table_info('docs.v_test_to_function')").fetchall()
+        }
+        repo_field = (
+            "test_repo"
+            if "test_repo" in columns
+            else ("repo" if "repo" in columns else None)
+        )
+        commit_field = (
+            "test_commit"
+            if "test_commit" in columns
+            else ("commit" if "commit" in columns else None)
         )
 
-        if limit is None:
-            safe_limit = MAX_ROWS_LIMIT
-        elif limit > MAX_ROWS_LIMIT:
-            message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
-            raise errors.invalid_argument(message)
-        else:
-            safe_limit = max(0, limit)
+        where_clauses = []
+        params: list[object] = []
+
+        if repo_field is not None:
+            where_clauses.append(f"{repo_field} = ?")
+            params.append(self.repo)
+        if commit_field is not None:
+            where_clauses.append(f"{commit_field} = ?")
+            params.append(self.commit)
+
         if goid_h128 is not None:
-            rows = _fetch_all_dicts(
-                self.con,
-                f"""
-                SELECT *
-                FROM docs.v_test_to_function
-                WHERE {repo_col} = ?
-                  AND {commit_col} = ?
-                  AND function_goid_h128 = ?
-                ORDER BY test_id
-                LIMIT ?
-                """,
-                [self.repo, self.commit, goid_h128, safe_limit],
-            )
+            where_clauses.append("function_goid_h128 = ?")
+            params.append(goid_h128)
         else:
-            rows = _fetch_all_dicts(
-                self.con,
-                f"""
-                SELECT *
-                FROM docs.v_test_to_function
-                WHERE {repo_col} = ?
-                  AND {commit_col} = ?
-                  AND urn = ?
-                ORDER BY test_id
-                LIMIT ?
-                """,
-                [self.repo, self.commit, urn, safe_limit],
+            where_clauses.append("urn = ?")
+            params.append(urn)
+
+        where_sql = " AND ".join(where_clauses) if where_clauses else "TRUE"
+        sql = "\n".join(
+            [
+                "SELECT *",
+                "FROM docs.v_test_to_function",
+                "WHERE " + where_sql,
+                "ORDER BY test_id",
+                "LIMIT ?",
+            ]
+        )
+        rows = _fetch_all_dicts(self.con, sql, [*params, clamp.applied])
+        meta.truncated = clamp.applied > 0 and len(rows) == clamp.applied
+        if not rows:
+            meta.messages.append(
+                Message(
+                    code="not_found",
+                    severity="info",
+                    detail="No tests found for function",
+                    context={"urn": urn, "goid_h128": goid_h128},
+                )
             )
-        return TestsForFunctionResponse(tests=[ViewRow.model_validate(r) for r in rows])
+        return TestsForFunctionResponse(tests=[ViewRow.model_validate(r) for r in rows], meta=meta)
 
     def get_file_summary(
         self,
@@ -543,7 +665,17 @@ class DuckDBBackend(QueryBackend):
             [rel_path],
         )
         if not file_row:
-            return FileSummaryResponse(found=False, file=None)
+            meta = ResponseMeta(
+                messages=[
+                    Message(
+                        code="not_found",
+                        severity="info",
+                        detail="File not found",
+                        context={"rel_path": rel_path},
+                    )
+                ]
+            )
+            return FileSummaryResponse(found=False, file=None, meta=meta)
 
         funcs = _fetch_all_dicts(
             self.con,
@@ -559,7 +691,11 @@ class DuckDBBackend(QueryBackend):
         )
         file_payload = dict(file_row)
         file_payload["functions"] = [ViewRow.model_validate(r) for r in funcs]
-        return FileSummaryResponse(found=True, file=ViewRow.model_validate(file_payload))
+        return FileSummaryResponse(
+            found=True,
+            file=ViewRow.model_validate(file_payload),
+            meta=ResponseMeta(),
+        )
 
     def list_datasets(self) -> list[DatasetDescriptor]:
         """
@@ -605,18 +741,43 @@ class DuckDBBackend(QueryBackend):
             message = f"Unknown dataset: {dataset_name}"
             raise errors.invalid_argument(message)
 
-        if limit > MAX_ROWS_LIMIT:
-            message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
-            raise errors.invalid_argument(message)
-        safe_limit = max(0, limit)
-        safe_offset = max(0, offset)
-        relation = self.con.table(table).limit(safe_limit, safe_offset)
+        limit_clamp = _clamp_limit_value(limit, default=limit)
+        offset_clamp = _clamp_offset_value(offset)
+        meta = ResponseMeta(
+            requested_limit=limit,
+            applied_limit=limit_clamp.applied,
+            requested_offset=offset,
+            applied_offset=offset_clamp.applied,
+            messages=[*limit_clamp.messages, *offset_clamp.messages],
+        )
+
+        if limit_clamp.has_error or offset_clamp.has_error:
+            return DatasetRowsResponse(
+                dataset=dataset_name,
+                limit=limit_clamp.applied,
+                offset=offset_clamp.applied,
+                rows=[],
+                meta=meta,
+            )
+
+        relation = self.con.table(table).limit(limit_clamp.applied, offset_clamp.applied)
         rows = relation.fetchall()
         cols = [desc[0] for desc in relation.description]
         mapped = [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
+        meta.truncated = limit_clamp.applied > 0 and len(mapped) == limit_clamp.applied
+        if not mapped:
+            meta.messages.append(
+                Message(
+                    code="dataset_empty",
+                    severity="info",
+                    detail="Dataset returned no rows for the requested slice.",
+                    context={"dataset": dataset_name, "offset": offset_clamp.applied},
+                )
+            )
         return DatasetRowsResponse(
             dataset=dataset_name,
-            limit=safe_limit,
-            offset=safe_offset,
+            limit=limit_clamp.applied,
+            offset=offset_clamp.applied,
             rows=[ViewRow.model_validate(r) for r in mapped],
+            meta=meta,
         )

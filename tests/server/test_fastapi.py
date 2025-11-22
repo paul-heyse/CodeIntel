@@ -11,7 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from codeintel.mcp.backend import DuckDBBackend
+from codeintel.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
 from codeintel.mcp.config import McpServerConfig
 from codeintel.server.fastapi import ApiAppConfig, BackendResource, create_app
 
@@ -210,10 +210,17 @@ def test_dataset_rows_unknown_dataset(client: TestClient) -> None:
 
 
 def test_dataset_rows_limit_clamped(client: TestClient) -> None:
-    """Reject dataset reads that exceed configured limits."""
-    response = client.get("/datasets/v_function_summary", params={"limit": 500})
-    if response.status_code != HTTPStatus.BAD_REQUEST:
-        pytest.fail("Expected limit validation for oversized dataset request")
+    """Clamp dataset reads that exceed configured limits with messaging."""
+    response = client.get("/datasets/v_function_summary", params={"limit": 2000})
+    if response.status_code != HTTPStatus.OK:
+        pytest.fail("Expected clamped success for oversized dataset request")
+    payload = response.json()
+    meta = payload.get("meta") or {}
+    messages = {m.get("code") for m in meta.get("messages", [])}
+    if "limit_clamped" not in messages:
+        pytest.fail(f"Expected limit_clamped message; got {messages}")
+    if payload.get("limit") != MAX_ROWS_LIMIT:
+        pytest.fail("Expected applied limit to match server maximum")
 
 
 def test_dataset_rows_success(client: TestClient) -> None:
