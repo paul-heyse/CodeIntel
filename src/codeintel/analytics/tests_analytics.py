@@ -14,30 +14,9 @@ import duckdb
 from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
+from codeintel.config.models import TestCoverageConfig
+
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class TestCoverageConfig:
-    """
-    Configuration for deriving test coverage edges.
-
-    Parameters
-    ----------
-    repo:
-        Repository slug.
-    commit:
-        Commit SHA.
-    repo_root:
-        Path to the repository root containing the coverage file.
-    coverage_file:
-        Optional explicit path to a coverage.py database (defaults to repo_root/.coverage).
-    """
-
-    repo: str
-    commit: str
-    repo_root: Path
-    coverage_file: Path | None = None
 
 
 @dataclass

@@ -4,95 +4,14 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
-from pathlib import Path
 
 import duckdb
 import libcst as cst
-from libcst import helpers
+
+from codeintel.config.models import ImportGraphConfig
+from codeintel.graphs.import_resolver import collect_import_edges
 
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class ImportGraphConfig:
-    """
-    Configuration for constructing the import graph of a repo snapshot.
-
-    Parameters
-    ----------
-    repo : str
-        Repository slug for tagging rows.
-    commit : str
-        Commit SHA corresponding to the snapshot.
-    repo_root : Path
-        Root directory where source files are located.
-    """
-
-    repo: str
-    commit: str
-    repo_root: Path
-
-
-class _ImportCollector(cst.CSTVisitor):
-    """
-    Collects module imports for a single source module.
-
-    This is a best-effort builder; relative imports are resolved
-    conservatively to the current module's package.
-    """
-
-    def __init__(self, module_name: str) -> None:
-        self.module_name = module_name
-        self.edges: set[tuple[str, str]] = set()  # (src_module, dst_module)
-
-    @staticmethod
-    def _module_str(node: cst.CSTNode) -> str | None:
-        full_name = helpers.get_full_name_for_node(node)
-        if full_name:
-            return full_name
-        if isinstance(node, cst.Name):
-            return node.value
-        if isinstance(node, cst.Attribute):
-            parts: list[str] = []
-            cur: cst.BaseExpression | cst.Name = node
-            while isinstance(cur, cst.Attribute):
-                parts.append(cur.attr.value)
-                cur = cur.value
-            if isinstance(cur, cst.Name):
-                parts.append(cur.value)
-            parts.reverse()
-            return ".".join(parts) if parts else None
-        return None
-
-    def visit_import(self, node: cst.Import) -> None:
-        for name in node.names:
-            # e.g. import foo.bar as baz -> "foo.bar"
-            module_str = self._module_str(name.name)
-            if module_str:
-                self.edges.add((self.module_name, module_str))
-
-    def visit_import_from(self, node: cst.ImportFrom) -> None:
-        # Absolute or relative base module
-        if node.module is not None:
-            base = self._module_str(node.module)
-        else:
-            # simple relative heuristic: use current package
-            parts = self.module_name.split(".")
-            base = ".".join(parts[:-1]) if len(parts) > 1 else self.module_name
-
-        if base is None:
-            return
-
-        if isinstance(node.names, cst.ImportStar):
-            self.edges.add((self.module_name, base))
-        else:
-            for _alias in node.names:
-                self.edges.add((self.module_name, base))
-
-
-_ImportCollector.visit_Import = _ImportCollector.visit_import
-_ImportCollector.visit_ImportFrom = _ImportCollector.visit_import_from
 
 
 def _tarjan_scc(graph: dict[str, set[str]]) -> dict[str, int]:
@@ -199,9 +118,7 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
             log.exception("Failed to parse %s for import graph", file_path)
             continue
 
-        visitor = _ImportCollector(module_name=module_name)
-        module.visit(visitor)
-        raw_edges.update(visitor.edges)
+        raw_edges.update(collect_import_edges(module_name, module))
 
     # Build fan-out / fan-in / SCCs
     if not raw_edges:

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import duckdb
 
+from codeintel.config.models import TypingIngestConfig
 from codeintel.types import PyreflyError
 
 log = logging.getLogger(__name__)
@@ -39,7 +40,6 @@ class AnnotationInfo:
     params_ratio: float
     returns_ratio: float
     untyped_defs: int
-
 
 def _iter_python_files(repo_root: Path) -> Iterable[Path]:
     yield from repo_root.rglob("*.py")
@@ -201,9 +201,7 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
 
 def ingest_typing_signals(
     con: duckdb.DuckDBPyConnection,
-    repo_root: Path,
-    repo: str,
-    commit: str,
+    cfg: TypingIngestConfig,
 ) -> None:
     """
     Populate per-file typedness and static diagnostics.
@@ -216,7 +214,7 @@ def ingest_typing_signals(
       * Pyrefly drives static error counts; annotation_ratio is computed from Python AST
         (params & returns).
     """
-    repo_root = repo_root.resolve()
+    repo_root = cfg.repo_root
 
     # Compute annotation info for each Python file
     annotation_info: dict[str, AnnotationInfo] = {}
@@ -227,16 +225,6 @@ def ingest_typing_signals(
             annotation_info[rel_path] = info
 
     pyrefly_errors = _run_pyrefly(repo_root)
-
-    # Clear existing rows for this snapshot
-    con.execute(
-        "DELETE FROM analytics.typedness WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)",
-        [repo, commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.static_diagnostics WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)",
-        [repo, commit],
-    )
 
     insert_typedness = """
         INSERT INTO analytics.typedness (
@@ -255,6 +243,8 @@ def ingest_typing_signals(
 
     all_paths = set(annotation_info.keys()) | set(pyrefly_errors.keys())
 
+    typedness_rows: list[list[object]] = []
+    diag_rows: list[list[object]] = []
     for rel_path in sorted(all_paths):
         info = annotation_info.get(
             rel_path, AnnotationInfo(params_ratio=0.0, returns_ratio=0.0, untyped_defs=0)
@@ -270,31 +260,48 @@ def ingest_typing_signals(
         }
         overlay_needed = bool(total_errors > 0 or info.untyped_defs > 0)
 
-        con.execute(
-            insert_typedness,
+        typedness_rows.append(
             [
                 rel_path,
                 total_errors,
                 annotation_ratio,  # DuckDB JSON column
                 info.untyped_defs,
                 overlay_needed,
-            ],
+            ]
         )
 
-        con.execute(
-            insert_diag,
+        diag_rows.append(
             [
                 rel_path,
                 pf_errors,
                 py_errors,
                 total_errors,
                 has_errors,
-            ],
+            ]
         )
+
+    con.execute("BEGIN")
+    try:
+        con.execute(
+            "DELETE FROM analytics.typedness WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)",
+            [cfg.repo, cfg.commit],
+        )
+        con.execute(
+            "DELETE FROM analytics.static_diagnostics WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)",
+            [cfg.repo, cfg.commit],
+        )
+        if typedness_rows:
+            con.executemany(insert_typedness, typedness_rows)
+        if diag_rows:
+            con.executemany(insert_diag, diag_rows)
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
 
     log.info(
         "Typedness & static diagnostics ingested for %d files in %s@%s",
         len(all_paths),
-        repo,
-        commit,
+        cfg.repo,
+        cfg.commit,
     )

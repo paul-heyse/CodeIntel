@@ -10,36 +10,49 @@ from typing import Protocol
 
 import duckdb
 
-from codeintel.analytics.ast_metrics import HotspotsConfig, build_hotspots
-from codeintel.analytics.coverage_analytics import (
+from codeintel.analytics.ast_metrics import build_hotspots
+from codeintel.analytics.coverage_analytics import compute_coverage_functions
+from codeintel.analytics.functions import compute_function_metrics_and_types
+from codeintel.analytics.tests_analytics import compute_test_coverage_edges
+from codeintel.config.models import (
+    CallGraphConfig,
+    CFGBuilderConfig,
+    ConfigIngestConfig,
     CoverageAnalyticsConfig,
-    compute_coverage_functions,
-)
-from codeintel.analytics.functions import (
+    CoverageIngestConfig,
+    DocstringConfig,
     FunctionAnalyticsConfig,
-    compute_function_metrics_and_types,
-)
-from codeintel.analytics.tests_analytics import (
+    GoidBuilderConfig,
+    HotspotsConfig,
+    ImportGraphConfig,
+    PathsConfig,
+    PyAstIngestConfig,
+    RepoScanConfig,
+    ScipIngestConfig,
+    SymbolUsesConfig,
     TestCoverageConfig,
-    compute_test_coverage_edges,
+    TestsIngestConfig,
+    TypingIngestConfig,
 )
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.graphs.callgraph_builder import CallGraphConfig, build_call_graph
-from codeintel.graphs.cfg_builder import CFGBuilderConfig, build_cfg_and_dfg
-from codeintel.graphs.goid_builder import GoidBuilderConfig, build_goids
-from codeintel.graphs.import_graph import ImportGraphConfig, build_import_graph
-from codeintel.graphs.symbol_uses import SymbolUsesConfig, build_symbol_use_edges
+from codeintel.graphs.callgraph_builder import build_call_graph
+from codeintel.graphs.cfg_builder import build_cfg_and_dfg
+from codeintel.graphs.goid_builder import build_goids
+from codeintel.graphs.import_graph import build_import_graph
+from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.ingestion import (
-    ast_cst_extract,
     config_ingest,
     coverage_ingest,
+    cst_extract,
     docstrings_ingest,
+    py_ast_extract,
     repo_scan,
     scip_ingest,
     tests_ingest,
     typing_ingest,
 )
+from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.storage.views import create_all_views
 
 log = logging.getLogger(__name__)
@@ -102,9 +115,11 @@ class RepoScanStep:
         _log_step(self.name)
         repo_scan.ingest_repo(
             con=con,
-            repo_root=ctx.repo_root,
-            repo=ctx.repo,
-            commit=ctx.commit,
+            cfg=RepoScanConfig.from_paths(
+                repo_root=ctx.repo_root,
+                repo=ctx.repo,
+                commit=ctx.commit,
+            ),
         )
 
 
@@ -118,31 +133,58 @@ class SCIPIngestStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Register SCIP artifacts and populate SCIP symbols in crosswalk."""
         _log_step(self.name)
-        cfg = scip_ingest.ScipIngestConfig(
+        paths_cfg = PathsConfig(
             repo_root=ctx.repo_root,
-            repo=ctx.repo,
-            commit=ctx.commit,
             build_dir=ctx.build_dir,
+            db_path=ctx.db_path,
             document_output_dir=ctx.document_output_dir,
         )
-        scip_ingest.ingest_scip(con=con, cfg=cfg)
+        cfg = ScipIngestConfig.from_paths(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            paths=paths_cfg,
+        )
+        result = scip_ingest.ingest_scip(con=con, cfg=cfg)
+        ctx.extra["scip_ingest"] = result
+        if isinstance(result, ScipIngestResult) and result.status != "success":
+            log.info("SCIP ingestion %s: %s", result.status, result.reason or "no reason provided")
 
 
 @dataclass
-class AstCstStep:
-    """Parse AST/CST and compute per-file metrics."""
+class CSTStep:
+    """Parse CST and persist rows."""
 
-    name: str = "ast_cst"
+    name: str = "cst_extract"
     deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
-        """Extract AST/CST rows and metrics into core schema."""
+        """Extract CST rows into core.cst_nodes."""
         _log_step(self.name)
-        ast_cst_extract.ingest_ast_and_cst(
+        cst_extract.ingest_cst(
             con=con,
             repo_root=ctx.repo_root,
             repo=ctx.repo,
             commit=ctx.commit,
+        )
+
+
+@dataclass
+class AstStep:
+    """Parse stdlib AST and persist rows/metrics."""
+
+    name: str = "ast_extract"
+    deps: Sequence[str] = ("repo_scan",)
+
+    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+        """Extract AST rows and metrics into core tables."""
+        _log_step(self.name)
+        py_ast_extract.ingest_python_ast(
+            con=con,
+            cfg=PyAstIngestConfig.from_paths(
+                repo_root=ctx.repo_root,
+                repo=ctx.repo,
+                commit=ctx.commit,
+            ),
         )
 
 
@@ -156,12 +198,12 @@ class CoverageIngestStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Ingest line-level coverage signals."""
         _log_step(self.name)
-        coverage_ingest.ingest_coverage_lines(
-            con=con,
+        cfg = CoverageIngestConfig.from_paths(
             repo_root=ctx.repo_root,
             repo=ctx.repo,
             commit=ctx.commit,
         )
+        coverage_ingest.ingest_coverage_lines(con=con, cfg=cfg)
 
 
 @dataclass
@@ -174,12 +216,12 @@ class TestsIngestStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Ingest pytest test catalog."""
         _log_step(self.name)
-        tests_ingest.ingest_tests(
-            con=con,
+        cfg = TestsIngestConfig.from_paths(
             repo_root=ctx.repo_root,
             repo=ctx.repo,
             commit=ctx.commit,
         )
+        tests_ingest.ingest_tests(con=con, cfg=cfg)
 
 
 @dataclass
@@ -194,9 +236,11 @@ class TypingIngestStep:
         _log_step(self.name)
         typing_ingest.ingest_typing_signals(
             con=con,
-            repo_root=ctx.repo_root,
-            repo=ctx.repo,
-            commit=ctx.commit,
+            cfg=TypingIngestConfig.from_paths(
+                repo_root=ctx.repo_root,
+                repo=ctx.repo,
+                commit=ctx.commit,
+            ),
         )
 
 
@@ -210,7 +254,7 @@ class DocstringsIngestStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Ingest docstrings for all Python modules."""
         _log_step(self.name)
-        cfg = docstrings_ingest.DocstringConfig(
+        cfg = DocstringConfig.from_paths(
             repo_root=ctx.repo_root,
             repo=ctx.repo,
             commit=ctx.commit,
@@ -230,7 +274,7 @@ class ConfigIngestStep:
         _log_step(self.name)
         config_ingest.ingest_config_values(
             con=con,
-            repo_root=ctx.repo_root,
+            cfg=ConfigIngestConfig.from_paths(repo_root=ctx.repo_root),
         )
 
 
@@ -244,12 +288,12 @@ class GoidsStep:
     """Build core.goids and core.goid_crosswalk from AST."""
 
     name: str = "goids"
-    deps: Sequence[str] = ("ast_cst",)
+    deps: Sequence[str] = ("ast_extract",)
 
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Build GOID registry and crosswalk tables."""
         _log_step(self.name)
-        cfg = GoidBuilderConfig(repo=ctx.repo, commit=ctx.commit, language="python")
+        cfg = GoidBuilderConfig.from_paths(repo=ctx.repo, commit=ctx.commit, language="python")
         build_goids(con, cfg)
 
 
@@ -258,12 +302,12 @@ class CallGraphStep:
     """Build graph.call_graph_nodes and graph.call_graph_edges."""
 
     name: str = "callgraph"
-    deps: Sequence[str] = ("goids", "ast_cst", "repo_scan")
+    deps: Sequence[str] = ("goids", "repo_scan")
 
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Construct static call graph nodes and edges."""
         _log_step(self.name)
-        cfg = CallGraphConfig(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
+        cfg = CallGraphConfig.from_paths(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
         build_call_graph(con, cfg)
 
 
@@ -277,7 +321,7 @@ class CFGStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Create minimal CFG/DFG scaffolding."""
         _log_step(self.name)
-        cfg = CFGBuilderConfig(repo=ctx.repo, commit=ctx.commit)
+        cfg = CFGBuilderConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
         build_cfg_and_dfg(con, cfg)
 
 
@@ -291,7 +335,7 @@ class ImportGraphStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Construct module import graph edges."""
         _log_step(self.name)
-        cfg = ImportGraphConfig(
+        cfg = ImportGraphConfig.from_paths(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
@@ -310,7 +354,10 @@ class SymbolUsesStep:
         """Derive symbol definition→use edges from SCIP JSON."""
         _log_step(self.name)
         scip_json = ctx.build_dir / "scip" / "index.scip.json"
-        cfg = SymbolUsesConfig(
+        if not scip_json.is_file():
+            log.info("Skipping symbol_uses: SCIP JSON missing at %s", scip_json)
+            return
+        cfg = SymbolUsesConfig.from_paths(
             repo_root=ctx.repo_root,
             scip_json_path=scip_json,
             repo=ctx.repo,
@@ -329,15 +376,15 @@ class HotspotsStep:
     """Build analytics.hotspots from core.ast_metrics plus git churn."""
 
     name: str = "hotspots"
-    deps: Sequence[str] = ("ast_cst",)
+    deps: Sequence[str] = ("ast_extract",)
 
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Compute file-level hotspot scores."""
         _log_step(self.name)
-        cfg = HotspotsConfig(
+        cfg = HotspotsConfig.from_paths(
+            repo_root=ctx.repo_root,
             repo=ctx.repo,
             commit=ctx.commit,
-            repo_root=ctx.repo_root,
         )
         build_hotspots(con, cfg)
 
@@ -352,7 +399,7 @@ class FunctionAnalyticsStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Compute per-function metrics and typedness."""
         _log_step(self.name)
-        cfg = FunctionAnalyticsConfig(
+        cfg = FunctionAnalyticsConfig.from_paths(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
@@ -370,7 +417,7 @@ class CoverageAnalyticsStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Aggregate line coverage to function spans."""
         _log_step(self.name)
-        cfg = CoverageAnalyticsConfig(repo=ctx.repo, commit=ctx.commit)
+        cfg = CoverageAnalyticsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
         compute_coverage_functions(con, cfg)
 
 
@@ -384,7 +431,7 @@ class TestCoverageEdgesStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Derive test-to-function edges using coverage contexts."""
         _log_step(self.name)
-        cfg = TestCoverageConfig(
+        cfg = TestCoverageConfig.from_paths(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
@@ -564,7 +611,8 @@ PIPELINE_STEPS: dict[str, PipelineStep] = {
     # ingestion
     "repo_scan": RepoScanStep(),
     "scip_ingest": SCIPIngestStep(),
-    "ast_cst": AstCstStep(),
+    "cst_extract": CSTStep(),
+    "ast_extract": AstStep(),
     "coverage_ingest": CoverageIngestStep(),
     "tests_ingest": TestsIngestStep(),
     "typing_ingest": TypingIngestStep(),

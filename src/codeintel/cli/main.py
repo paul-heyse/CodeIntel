@@ -227,11 +227,19 @@ def _cmd_docs_export(args: argparse.Namespace) -> int:
     -------
     int
         Exit code (0 on success).
+
+    Raises
+    ------
+    RuntimeError
+        If document_output_dir could not be resolved.
     """
     cfg = _build_config_from_args(args)
     con = _open_connection(cfg, read_only=True)
 
-    out_dir = cfg.document_output_dir
+    out_dir = cfg.paths.document_output_dir
+    if out_dir is None:
+        message = "document_output_dir was not resolved"
+        raise RuntimeError(message)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     LOG.info("Exporting Parquet + JSONL datasets into %s", out_dir)

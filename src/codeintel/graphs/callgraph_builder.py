@@ -6,34 +6,16 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 import duckdb
 import libcst as cst
 from libcst import MetadataWrapper, metadata
 
+from codeintel.config.models import CallGraphConfig
+from codeintel.graphs.import_resolver import collect_aliases
+
 log = logging.getLogger(__name__)
 FUNCTION_NODE_TYPES = (cst.FunctionDef, getattr(cst, "AsyncFunctionDef", cst.FunctionDef))
-
-
-@dataclass
-class CallGraphConfig:
-    """
-    Configuration for constructing a call graph for a repo snapshot.
-
-    Parameters
-    ----------
-    repo : str
-        Repository slug for tagging rows.
-    commit : str
-        Commit SHA corresponding to the analyzed snapshot.
-    repo_root : Path
-        Root directory containing the repository source files.
-    """
-
-    repo: str
-    commit: str
-    repo_root: Path
 
 
 @dataclass(frozen=True)
@@ -219,51 +201,6 @@ def _attr_to_str(node: cst.CSTNode) -> str:
     return ""
 
 
-class _ImportAliasCollector(cst.CSTVisitor):
-    """Collect import and from-import aliases for a module."""
-
-    def __init__(self) -> None:
-        self.aliases: dict[str, str] = {}
-
-    def visit(self, node: cst.CSTNode) -> bool:
-        if isinstance(node, cst.Import):
-            self._handle_import(node)
-        elif isinstance(node, cst.ImportFrom):
-            self._handle_import_from(node)
-        return True
-
-    def _handle_import(self, node: cst.Import) -> None:
-        for alias in node.names:
-            target = _attr_to_str(cast("cst.CSTNode", alias.name))
-            asname_node = alias.asname.name if alias.asname else None
-            asname = (
-                _attr_to_str(cast("cst.CSTNode", asname_node))
-                if asname_node is not None
-                else target.split(".")[-1]
-            )
-            if target:
-                self.aliases[asname] = target
-
-    def _handle_import_from(self, node: cst.ImportFrom) -> None:
-        if node.module is None:
-            return
-        module = _attr_to_str(node.module)
-        if not module:
-            return
-        names = node.names
-        if isinstance(names, cst.ImportStar):
-            return
-        for alias in cast("list[cst.ImportAlias]", names):
-            target = f"{module}.{_attr_to_str(cast('cst.CSTNode', alias.name))}"
-            asname_node = alias.asname.name if alias.asname else None
-            asname = (
-                _attr_to_str(cast("cst.CSTNode", asname_node))
-                if asname_node is not None
-                else _attr_to_str(cast("cst.CSTNode", alias.name))
-            )
-            self.aliases[asname] = target
-
-
 def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> None:
     """
     Populate call graph nodes and edges for a repository snapshot.
@@ -410,14 +347,13 @@ def _collect_edges(
             log.warning("File missing or unreadable for callgraph %s: %s", file_path, exc)
             continue
 
-        alias_collector = _ImportAliasCollector()
-        module.visit(alias_collector)
+        alias_collector = collect_aliases(module)
         visitor = _FileCallGraphVisitor(
             rel_path=rel_path,
             func_goids_by_span=func_goids_by_span,
             callee_by_name=callee_by_name,
             global_callee_by_name=global_callee_by_name,
-            import_aliases=alias_collector.aliases,
+            import_aliases=alias_collector,
         )
         MetadataWrapper(module).visit(visitor)
         edges.extend(visitor.edges)

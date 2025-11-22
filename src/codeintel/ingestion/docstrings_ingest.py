@@ -13,16 +13,9 @@ from typing import Protocol, cast
 import duckdb
 from docstring_parser import DocstringStyle, ParseError, parse
 
+from codeintel.config.models import DocstringConfig
+
 log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class DocstringConfig:
-    """Configuration for docstring ingestion."""
-
-    repo_root: Path
-    repo: str
-    commit: str
 
 
 class DocstringProto(Protocol):

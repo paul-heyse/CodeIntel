@@ -79,3 +79,8 @@ def run_pipeline(
         log.info("==> Running step: %s", step.name)
         step.run(ctx, con)
         log.info("<== Finished step: %s", step.name)
+
+    scip_result = ctx.extra.get("scip_ingest")
+    scip_status = getattr(scip_result, "status", None) if scip_result is not None else None
+    if scip_status is not None and scip_status != "success":
+        log.warning("Pipeline completed with partial output (SCIP status=%s)", scip_status)

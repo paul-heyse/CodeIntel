@@ -13,6 +13,9 @@ from typing import cast
 import duckdb
 import yaml
 
+from codeintel.config.models import ConfigIngestConfig
+from codeintel.config.schemas.sql_builder import ensure_schema, prepared_statements
+
 log = logging.getLogger(__name__)
 
 CONFIG_EXTENSIONS = {".yaml", ".yml", ".toml", ".json", ".ini", ".cfg", ".env"}
@@ -155,7 +158,7 @@ def _flatten_config(
 
 def ingest_config_values(
     con: duckdb.DuckDBPyConnection,
-    repo_root: Path,
+    cfg: ConfigIngestConfig,
 ) -> None:
     """
     Populate analytics.config_values from configuration files.
@@ -169,21 +172,9 @@ def ingest_config_values(
     A later analytics step can fill reference_paths/modules by scanning
     AST/uses.
     """
-    repo_root = repo_root.resolve()
+    repo_root = cfg.repo_root
 
-    # Clear table (single repo per DB assumption)
-    con.execute("DELETE FROM analytics.config_values")
-
-    insert_sql = """
-        INSERT INTO analytics.config_values (
-            config_path, format, key,
-            reference_paths, reference_modules, reference_count
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-    """
-
-    count = 0
-
+    rows: list[list[object]] = []
     for path in _iter_config_files(repo_root):
         rel_path = path.relative_to(repo_root).as_posix()
         fmt = _detect_format(path)
@@ -192,9 +183,7 @@ def ingest_config_values(
             continue
 
         for keypath, _ in _flatten_config(data):
-            # We don't store the value itself; only keypaths + references.
-            con.execute(
-                insert_sql,
+            rows.append(
                 [
                     rel_path,
                     fmt,
@@ -202,8 +191,20 @@ def ingest_config_values(
                     [],  # reference_paths
                     [],  # reference_modules
                     0,  # reference_count
-                ],
+                ]
             )
-            count += 1
 
-    log.info("config_values ingested: %d keys across config files", count)
+    ensure_schema(con, "analytics.config_values")
+    stmt = prepared_statements("analytics.config_values")
+
+    con.execute("BEGIN")
+    try:
+        con.execute("DELETE FROM analytics.config_values")
+        if rows:
+            con.executemany(stmt.insert_sql, rows)
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+    log.info("config_values ingested: %d keys across config files", len(rows))

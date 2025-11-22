@@ -8,24 +8,12 @@ execution ratios, which downstream risk scoring relies on.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 
 import duckdb
 
+from codeintel.config.models import CoverageAnalyticsConfig
+
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class CoverageAnalyticsConfig:
-    """
-    Configuration for computing per-function coverage.
-
-    We aggregate coverage_lines over GOID spans for functions/methods,
-    matching the coverage_functions spec from README_METADATA. :contentReference[oaicite:2]{index=2}
-    """
-
-    repo: str
-    commit: str
 
 
 def compute_coverage_functions(

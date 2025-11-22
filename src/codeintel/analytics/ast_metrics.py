@@ -19,35 +19,13 @@ from pathlib import Path
 
 import duckdb
 
+from codeintel.config.models import HotspotsConfig
+
 log = logging.getLogger(__name__)
 MAX_STDERR_CHARS = 500
 GIT_OK_CODES = {0, 1}
 NUMSTAT_FIELDS = 3
 ChurnSummary = dict[str, int]
-
-
-@dataclass
-class HotspotsConfig:
-    """
-    Configuration describing the repository snapshot used to compute hotspots.
-
-    Parameters
-    ----------
-    repo : str
-        Repository name used for tagging analytics rows.
-    commit : str
-        Commit SHA corresponding to the ingestion batch.
-    repo_root : Path
-        Filesystem root where the repository working tree is located.
-    max_commits : int, optional
-        Maximum number of commits to scan from git history when deriving churn
-        metrics. Defaults to 2000 to keep the log query fast.
-    """
-
-    repo: str
-    commit: str
-    repo_root: Path
-    max_commits: int = 2000  # limit git log depth for performance
 
 
 @dataclass

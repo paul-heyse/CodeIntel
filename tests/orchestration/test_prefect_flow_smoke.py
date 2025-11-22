@@ -22,6 +22,8 @@ def test_prefect_flow_minimal(tmp_path: Path, prefect_quiet_env: None) -> None:
     This is a lightweight guardrail; full data population is covered elsewhere.
     """
     _ = prefect_quiet_env  # ensure harness/quiet logging fixtures are applied
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("CODEINTEL_SKIP_SCIP", "true")
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
     (repo_root / ".git").mkdir(parents=True, exist_ok=True)
@@ -40,5 +42,5 @@ def test_prefect_flow_minimal(tmp_path: Path, prefect_quiet_env: None) -> None:
         commit="deadbeef",
         db_path=db_path,
         build_dir=build_dir,
-        skip_scip=True,
     )
+    monkeypatch.undo()

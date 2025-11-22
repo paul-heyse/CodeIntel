@@ -9,44 +9,44 @@ import shutil
 from asyncio.subprocess import PIPE
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import duckdb
+
+from codeintel.config.models import ScipIngestConfig
 
 log = logging.getLogger(__name__)
 MISSING_BINARY_EXIT_CODE = 127
 
 
 @dataclass(frozen=True)
-class ScipIngestConfig:
-    """Configuration for SCIP ingestion."""
+class ScipIngestResult:
+    """Outcome of SCIP ingestion."""
 
-    repo_root: Path
-    repo: str
-    commit: str
-    build_dir: Path
-    document_output_dir: Path
-    scip_python_bin: str = "scip-python"
-    scip_bin: str = "scip"
+    status: Literal["success", "unavailable", "failed"]
+    index_scip: Path | None
+    index_json: Path | None
+    reason: str | None = None
 
 
-def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> Path | None:
+def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> ScipIngestResult:
     """
     Run scip-python + scip print, register view, and backfill SCIP symbols.
 
     Returns
     -------
-    Path | None
-        Path to index.scip.json on success, otherwise None.
-
-    Raises
-    ------
-    RuntimeError
-        If SCIP binaries are unavailable or indexing/print fails.
+    ScipIngestResult
+        Status and artifact paths. Unavailable/failed states do not raise.
     """
     repo_root = cfg.repo_root.resolve()
     if not (repo_root / ".git").is_dir():
-        log.warning("Skipping SCIP ingestion: %s is not a git repository", repo_root)
-        return None
+        reason = "SCIP ingestion requires a git repository (.git missing)"
+        log.warning(reason)
+        return ScipIngestResult(status="unavailable", index_scip=None, index_json=None, reason=reason)
+
+    probe_result = _probe_binaries(cfg)
+    if probe_result is not None:
+        return probe_result
 
     scip_dir = cfg.build_dir.resolve() / "scip"
     scip_dir.mkdir(parents=True, exist_ok=True)
@@ -58,10 +58,12 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> Path |
 
     if not _run_scip_python(cfg.scip_python_bin, repo_root, index_scip):
         message = f"SCIP indexing failed for {cfg.repo}@{cfg.commit}"
-        raise RuntimeError(message)
+        log.warning(message)
+        return ScipIngestResult(status="failed", index_scip=None, index_json=None, reason=message)
     if not _run_scip_print(cfg.scip_bin, index_scip, index_json):
         message = f"SCIP JSON export failed for {cfg.repo}@{cfg.commit}"
-        raise RuntimeError(message)
+        log.warning(message)
+        return ScipIngestResult(status="failed", index_scip=index_scip, index_json=None, reason=message)
 
     shutil.copy2(index_scip, doc_dir / "index.scip")
     shutil.copy2(index_json, doc_dir / "index.scip.json")
@@ -76,7 +78,33 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> Path |
 
     _update_scip_symbols(con, index_json)
     log.info("SCIP index ingested for %s@%s", cfg.repo, cfg.commit)
-    return index_json
+    return ScipIngestResult(status="success", index_scip=index_scip, index_json=index_json)
+
+
+def _probe_binaries(cfg: ScipIngestConfig) -> ScipIngestResult | None:
+    """
+    Ensure SCIP binaries exist and respond to --version.
+
+    Returns
+    -------
+    ScipIngestResult | None
+        Unavailable result when probes fail; otherwise None.
+    Returns None when binaries look usable; otherwise an unavailable result.
+    """
+    missing: list[str] = []
+    missing = [binary for binary in (cfg.scip_python_bin, cfg.scip_bin) if shutil.which(binary) is None]
+    if missing:
+        reason = f"Missing SCIP binaries: {', '.join(missing)}"
+        log.warning(reason)
+        return ScipIngestResult(status="unavailable", index_scip=None, index_json=None, reason=reason)
+
+    for binary in (cfg.scip_python_bin, cfg.scip_bin):
+        code, _, stderr = _run_command([binary, "--version"], cwd=cfg.repo_root)
+        if code != 0:
+            reason = f"{binary} --version failed (code {code}): {stderr.strip()}"
+            log.warning(reason)
+            return ScipIngestResult(status="unavailable", index_scip=None, index_json=None, reason=reason)
+    return None
 
 
 def _run_scip_python(binary: str, repo_root: Path, output_path: Path) -> bool:

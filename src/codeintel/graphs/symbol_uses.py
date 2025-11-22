@@ -4,34 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
 import duckdb
 
+from codeintel.config.models import SymbolUsesConfig
 from codeintel.types import ScipDocument
 
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class SymbolUsesConfig:
-    """
-    Configuration for deriving symbol use edges.
-
-    Parameters
-    ----------
-    repo_root : Path
-        Root of the repository containing source files.
-    scip_json_path : Path
-        Path to the `index.scip.json` document produced by scip-python.
-    """
-
-    repo_root: Path
-    scip_json_path: Path
-    repo: str
-    commit: str
 
 
 def build_symbol_use_edges(
