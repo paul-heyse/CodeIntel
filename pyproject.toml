@@ -35,6 +35,7 @@ dependencies = [
     "pytest",
     "pytest-cov",
     "pytest-logging",
+    "pytest-json-report",
     "pytest-xdist>=3.8.0",
     "rich",
     "ruff",
@@ -45,6 +46,7 @@ dependencies = [
     "uuid6",
     "vulture",
     "xxhash>=3.6.0",
+    "prefect>=3.6.4",
 ]
 
 [project.scripts]

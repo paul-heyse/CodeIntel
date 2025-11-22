@@ -7,7 +7,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import duckdb
 
@@ -90,7 +90,7 @@ def export_jsonl_for_table(
     rel = con.table(table_name)
     write_json = getattr(rel, "write_json", None)
     if write_json is not None:
-        callable_write_json = cast("Callable[..., Any]", write_json)
+        callable_write_json = cast("Callable[..., object]", write_json)
         callable_write_json(str(output_path), array=False)
         return
 

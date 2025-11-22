@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -314,6 +315,8 @@ def _edges_for_file(
 def compute_test_coverage_edges(
     con: duckdb.DuckDBPyConnection,
     cfg: TestCoverageConfig,
+    *,
+    coverage_loader: Callable[[TestCoverageConfig], Coverage | None] = _load_coverage_data,
 ) -> None:
     """
     Populate analytics.test_coverage_edges by combining coverage contexts with GOIDs.
@@ -324,7 +327,7 @@ def compute_test_coverage_edges(
     """
     log.info("Computing test_coverage_edges for repo=%s commit=%s", cfg.repo, cfg.commit)
 
-    cov = _load_coverage_data(cfg)
+    cov = coverage_loader(cfg)
     if cov is None:
         return
 

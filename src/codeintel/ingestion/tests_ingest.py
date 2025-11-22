@@ -7,9 +7,10 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import duckdb
+
+from codeintel.types import PytestTestEntry
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def _find_default_report(repo_root: Path) -> Path | None:
     return None
 
 
-def _load_tests_from_report(report_path: Path) -> list[dict[str, Any]]:
+def _load_tests_from_report(report_path: Path) -> list[PytestTestEntry]:
     with report_path.open("r", encoding="utf8") as f:
         data = json.load(f)
 
@@ -84,7 +85,7 @@ class TestCatalogRow:
         """Return canonical test kind based on parametrization."""
         return "parametrized_case" if self.parametrized else "function"
 
-    def to_params(self, repo: str, commit: str, created_at: datetime) -> list[Any]:
+    def to_params(self, repo: str, commit: str, created_at: datetime) -> list[object]:
         """
         Convert the row into parameter order matching analytics.test_catalog.
 
@@ -99,7 +100,7 @@ class TestCatalogRow:
 
         Returns
         -------
-        list[Any]
+        list[object]
             Parameter list aligned with analytics.test_catalog schema.
         """
         return [
@@ -120,13 +121,13 @@ class TestCatalogRow:
         ]
 
 
-def _build_row(test: dict[str, Any]) -> TestCatalogRow | None:
+def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
     """
     Build a TestCatalogRow from a pytest JSON test entry.
 
     Parameters
     ----------
-    test : dict[str, Any]
+    test : PytestTestEntry
         Raw test entry from pytest-json-report.
 
     Returns

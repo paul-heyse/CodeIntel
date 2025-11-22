@@ -8,8 +8,8 @@ from typing import Any, cast
 
 import duckdb
 import pytest
+from coverage import Coverage
 
-from codeintel.analytics import tests_analytics
 from codeintel.analytics.tests_analytics import (
     EdgeContext,
     FunctionRow,
@@ -148,9 +148,7 @@ def test_edges_for_file_uses_test_meta() -> None:
         pytest.fail(f"Expected coverage_ratio {expected_cov_ratio}, got {edge[10]}")
 
 
-def test_compute_test_coverage_edges_with_fake_coverage(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
     """compute_test_coverage_edges should join coverage contexts with test GOIDs."""
     repo_root = tmp_path / "repo"
     pkg_dir = repo_root / "pkg"
@@ -258,11 +256,10 @@ def test_compute_test_coverage_edges_with_fake_coverage(
         def get_data(self) -> _FakeData:
             return _FakeData([str(target_file)], self._contexts)
 
-    monkeypatch.setattr(
-        tests_analytics, "_load_coverage_data", lambda cfg_arg: _FakeCoverage(cfg_arg.repo_root)
-    )
+    def fake_loader(cfg_arg: TestCoverageConfig) -> Coverage:
+        return _FakeCoverage(cfg_arg.repo_root)  # type: ignore[return-value]
 
-    compute_test_coverage_edges(con, cfg)
+    compute_test_coverage_edges(con, cfg, coverage_loader=fake_loader)
 
     _assert_single_edge(con)
 
