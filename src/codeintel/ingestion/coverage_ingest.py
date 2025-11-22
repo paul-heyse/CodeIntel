@@ -3,11 +3,32 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
-from coverage import Coverage
+from coverage import Coverage, CoverageData
+from coverage.exceptions import CoverageException
+
+
+@dataclass(frozen=True)
+class CoverageInsertContext:
+    """Shared context for inserting coverage rows."""
+
+    repo: str
+    commit: str
+    insert_sql: str
+    now: datetime
+
+
+@dataclass(frozen=True)
+class CoverageFileInfo:
+    """Resolved coverage file paths used during ingestion."""
+
+    measured_path: Path
+    rel_path: str
+
 
 log = logging.getLogger(__name__)
 
@@ -70,48 +91,66 @@ def ingest_coverage_lines(
 
     now = datetime.now(UTC)
 
-    for abs_path in data.measured_files():
-        abs_path = Path(abs_path).resolve()
+    insert_ctx = CoverageInsertContext(
+        repo=repo,
+        commit=commit,
+        insert_sql=insert_sql,
+        now=now,
+    )
+
+    for measured in data.measured_files():
+        measured_path = Path(measured).resolve()
         try:
-            rel_path = abs_path.relative_to(repo_root).as_posix()
+            rel_path = measured_path.relative_to(repo_root).as_posix()
         except ValueError:
-            # Outside repo; ignore (e.g. venv, stdlib)
             continue
-
-        try:
-            _, statements, _, missing, executed = cov.analysis2(str(abs_path))
-        except Exception as exc:
-            log.warning("coverage.analysis2 failed for %s: %s", abs_path, exc)
-            continue
-
-        statements_set = set(statements)
-        executed_set = set(executed)
-        # coverage.py 5+ has contexts_by_lineno; if missing, context_count=0.
-        try:
-            contexts_by_lineno: dict[int, set] = data.contexts_by_lineno(str(abs_path)) or {}
-        except Exception:
-            contexts_by_lineno = {}
-
-        for line in sorted(statements_set):
-            is_executable = True
-            is_covered = line in executed_set
-            hits = 1 if is_covered else 0
-            contexts = contexts_by_lineno.get(line)
-            context_count = len(contexts) if contexts else 0
-
-            con.execute(
-                insert_sql,
-                [
-                    repo,
-                    commit,
-                    rel_path,
-                    line,
-                    is_executable,
-                    is_covered,
-                    hits,
-                    context_count,
-                    now,
-                ],
-            )
+        file_info = CoverageFileInfo(measured_path=measured_path, rel_path=rel_path)
+        _ingest_file_coverage(con=con, cov=cov, data=data, file_info=file_info, ctx=insert_ctx)
 
     log.info("coverage_lines ingested for %s@%s", repo, commit)
+
+
+def _ingest_file_coverage(
+    *,
+    con: duckdb.DuckDBPyConnection,
+    cov: Coverage,
+    data: CoverageData,
+    file_info: CoverageFileInfo,
+    ctx: CoverageInsertContext,
+) -> None:
+    try:
+        _, statements, _, _missing, executed = cov.analysis2(str(file_info.measured_path))
+    except CoverageException as exc:
+        log.warning("coverage.analysis2 failed for %s: %s", file_info.measured_path, exc)
+        return
+
+    statements_set = set(statements)
+    executed_set = set(executed)
+    try:
+        contexts_raw = data.contexts_by_lineno(str(file_info.measured_path)) or {}
+        contexts_by_lineno: dict[int, set[str]] = {
+            line: set(ctxs) for line, ctxs in contexts_raw.items()
+        }
+    except CoverageException:
+        contexts_by_lineno = {}
+
+    for line in sorted(statements_set):
+        is_covered = line in executed_set
+        hits = 1 if is_covered else 0
+        contexts = contexts_by_lineno.get(line)
+        context_count = len(contexts) if contexts else 0
+
+        con.execute(
+            ctx.insert_sql,
+            [
+                ctx.repo,
+                ctx.commit,
+                file_info.rel_path,
+                line,
+                True,
+                is_covered,
+                hits,
+                context_count,
+                ctx.now,
+            ],
+        )

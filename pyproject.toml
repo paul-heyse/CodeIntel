@@ -11,6 +11,7 @@ requires-python = "==3.13.*"
 dependencies = [
     "anyio>=4.11.0",
     "ast-grep-py",
+    "asyncio>=4.0.0",
     "basedpyright",
     "cython",
     "docstr-coverage",
@@ -22,6 +23,8 @@ dependencies = [
     "libcst",
     "mcp[cli]",
     "msgspec",
+    "numpy>=2.3.5",
+    "pandas>=2.3.3",
     "plotly",
     "pyarrow",
     "pydantic",
@@ -32,13 +35,16 @@ dependencies = [
     "pytest",
     "pytest-cov",
     "pytest-logging",
+    "pytest-xdist>=3.8.0",
     "rich",
     "ruff",
     "tree-sitter",
     "tree-sitter-language-pack",
+    "tree-sitter-python>=0.25.0",
     "typer",
     "uuid6",
     "vulture",
+    "xxhash>=3.6.0",
 ]
 
 [project.scripts]

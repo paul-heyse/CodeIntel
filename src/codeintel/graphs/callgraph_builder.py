@@ -75,10 +75,14 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         self.edges: list[tuple] = []
 
     def _pos(self, node: cst.CSTNode) -> tuple[metadata.CodePosition, metadata.CodePosition] | None:
-        pos = self.get_metadata(metadata.PositionProvider, node, None)
-        if pos is None:
+        try:
+            pos = self.get_metadata(metadata.PositionProvider, node)
+        except KeyError:
+            return None
+        if not isinstance(pos, metadata.CodeRange):
             return None
         return pos.start, pos.end
+
     def visit(self, node: cst.CSTNode) -> bool:
         if isinstance(node, FUNCTION_NODE_TYPES):
             span = self._pos(node)
@@ -87,6 +91,8 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             start, end = span
             key = (start.line, end.line)
             self.current_function_goid = self.func_goids_by_span.get(key)
+            if self.current_function_goid is None:
+                self.current_function_goid = self.func_goids_by_span.get((start.line, start.line))
             return True
 
         if isinstance(node, cst.Call):
@@ -98,6 +104,9 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             self.current_function_goid = None
 
     def _handle_call(self, node: cst.Call) -> None:
+        if self.current_function_goid is None and self.func_goids_by_span:
+            # Fallback: single-function module or span mismatch
+            self.current_function_goid = next(iter(self.func_goids_by_span.values()))
         if self.current_function_goid is None:
             return
 
@@ -107,7 +116,7 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         start, _end = span
 
         callee_name, attr_chain = self._extract_callee(node.func)
-        callee_goid, resolved_via, confidence = self._resolve_callee(callee_name, attr_chain)
+        callee_goid, resolved_via, confidence = self.resolve_callee(callee_name, attr_chain)
         kind = "direct" if callee_goid is not None else "unresolved"
 
         evidence = {
@@ -139,17 +148,23 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         # For Attribute chains: obj.foo.bar(...)
         if isinstance(expr, cst.Attribute):
             names: list[str] = []
-            cur = expr
-            while isinstance(cur, cst.Attribute):
-                names.append(cur.attr.value)
-                cur = cur.value
-            if isinstance(cur, cst.Name):
-                names.append(cur.value)
+            attr_node = expr
+            while isinstance(attr_node, cst.Attribute):
+                names.append(attr_node.attr.value)
+                base = attr_node.value
+                if isinstance(base, cst.Attribute):
+                    attr_node = base
+                    continue
+                if isinstance(base, cst.Name):
+                    names.append(base.value)
+                break
             names.reverse()
             return names[-1], names
         return "", []
 
-    def _resolve_callee(self, callee_name: str, attr_chain: list[str]) -> tuple[int | None, str, float]:
+    def resolve_callee(
+        self, callee_name: str, attr_chain: list[str]
+    ) -> tuple[int | None, str, float]:
         """
         Resolve callee GOID via simple name and attribute heuristics.
 
@@ -176,8 +191,14 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
                 root = attr_chain[0]
                 alias_target = self.import_aliases.get(root)
                 if alias_target:
-                    qualified = alias_target if len(attr_chain) == 1 else ".".join([alias_target, *attr_chain[1:]])
-                    goid = self.callee_by_name.get(qualified) or self.global_callee_by_name.get(qualified)
+                    qualified = (
+                        alias_target
+                        if len(attr_chain) == 1
+                        else ".".join([alias_target, *attr_chain[1:]])
+                    )
+                    goid = self.callee_by_name.get(qualified) or self.global_callee_by_name.get(
+                        qualified
+                    )
                     if goid is not None:
                         resolved_via = "import_alias"
                         confidence = 0.7
@@ -374,6 +395,7 @@ def _collect_edges(
         for row in file_funcs:
             end_line = row.end_line if row.end_line is not None else row.start_line
             func_goids_by_span[row.start_line, end_line] = row.goid
+            func_goids_by_span[row.start_line, row.start_line] = row.goid
             local_name = row.qualname.rsplit(".", maxsplit=1)[-1]
             callee_by_name.setdefault(local_name, row.goid)
             callee_by_name.setdefault(row.qualname, row.goid)
@@ -429,3 +451,60 @@ def _persist_call_graph_edges(con: duckdb.DuckDBPyConnection, edges: list[tuple]
         """,
         edges,
     )
+
+
+def collect_edges_for_testing(repo_root: Path, func_rows: list[FunctionRow]) -> list[tuple]:
+    """
+    Collect call graph edges for tests without touching DuckDB state.
+
+    Parameters
+    ----------
+    repo_root : Path
+        Filesystem root for the repository.
+    func_rows : list[FunctionRow]
+        Function metadata rows to seed the collector.
+
+    Returns
+    -------
+    list[tuple]
+        Call edge tuples mirroring `_collect_edges` output.
+    """
+    return _collect_edges(repo_root, func_rows, _callee_map(func_rows))
+
+
+def resolve_callee_for_testing(
+    callee_name: str,
+    attr_chain: list[str],
+    callee_by_name: dict[str, int],
+    global_callee_by_name: dict[str, int],
+    import_aliases: dict[str, str],
+) -> tuple[int | None, str, float]:
+    """
+    Resolve a callee GOID for tests without traversing the full CST.
+
+    Parameters
+    ----------
+    callee_name : str
+        Base callee name extracted from the call expression.
+    attr_chain : list[str]
+        Attribute chain for the callee (e.g., ["pkg", "module", "func"]).
+    callee_by_name : dict[str, int]
+        Local mapping from names to GOIDs within the file.
+    global_callee_by_name : dict[str, int]
+        Repository-wide mapping used when a local match is missing.
+    import_aliases : dict[str, str]
+        Import aliases collected for the file being analyzed.
+
+    Returns
+    -------
+    tuple[int | None, str, float]
+        GOID (or None if unresolved), resolution source, and confidence score.
+    """
+    visitor = _FileCallGraphVisitor(
+        rel_path="",
+        func_goids_by_span={},
+        callee_by_name=callee_by_name,
+        global_callee_by_name=global_callee_by_name,
+        import_aliases=import_aliases,
+    )
+    return visitor.resolve_callee(callee_name, attr_chain)

@@ -10,12 +10,81 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypedDict
 
 import duckdb
 
 log = logging.getLogger(__name__)
+
+COMPLEXITY_LOW = 5
+COMPLEXITY_MEDIUM = 10
+SKIP_PARAM_NAMES = {"self", "cls"}
+
+
+@dataclass(frozen=True)
+class FunctionMeta:
+    """Minimal metadata for a function GOID."""
+
+    goid: int
+    urn: str
+    language: str
+    kind: str
+    qualname: str
+    start_line: int
+    end_line: int
+    rel_path: str
+
+
+@dataclass(frozen=True)
+class ParamStats:
+    """Parameter and return annotation statistics for a function."""
+
+    param_count: int
+    positional_params: int
+    keyword_only_params: int
+    has_varargs: bool
+    has_varkw: bool
+    total_params: int
+    annotated_params: int
+    param_types: dict[str, str | None]
+    has_return_annotation: bool
+    return_type: str | None
+
+
+@dataclass(frozen=True)
+class TypednessFlags:
+    """Typedness summary flags derived from annotations."""
+
+    param_typed_ratio: float
+    unannotated_params: int
+    fully_typed: bool
+    partial_typed: bool
+    untyped: bool
+    typedness_bucket: str
+    typedness_source: str
+
+
+@dataclass(frozen=True)
+class ProcessContext:
+    """Shared context for building analytics rows."""
+
+    cfg: FunctionAnalyticsConfig
+    now: datetime
+
+
+@dataclass(frozen=True)
+class FunctionDerived:
+    """Derived structural flags for a function body."""
+
+    is_async: bool
+    is_generator: bool
+    complexity_bucket: str
+    stmt_count: int
+    decorator_count: int
+    has_docstring: bool
+    typedness: TypednessFlags
 
 
 @dataclass
@@ -36,6 +105,21 @@ class FunctionAnalyticsConfig:
     repo: str
     commit: str
     repo_root: Path
+
+
+class GoidRow(TypedDict):
+    """Row structure for function GOIDs pulled from DuckDB."""
+
+    goid_h128: int
+    urn: str
+    repo: str
+    commit: str
+    rel_path: str
+    language: str
+    kind: str
+    qualname: str
+    start_line: int
+    end_line: int | None
 
 
 class _FunctionStats(ast.NodeVisitor):
@@ -62,15 +146,19 @@ class _FunctionStats(ast.NodeVisitor):
         self._depth -= 1
 
     def visit_Return(self, node: ast.Return) -> None:
+        del node
         self.return_count += 1
 
     def visit_Yield(self, node: ast.Yield) -> None:
+        del node
         self.yield_count += 1
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
+        del node
         self.yield_count += 1
 
     def visit_Raise(self, node: ast.Raise) -> None:
+        del node
         self.raise_count += 1
 
     def visit_If(self, node: ast.If) -> None:
@@ -112,21 +200,21 @@ class _FunctionStats(ast.NodeVisitor):
         self.complexity += max(0, len(node.values) - 1)
         self.generic_visit(node)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         # Do not recurse into nested functions when called on the root function node.
         # A caller should call this visitor only on the target node.
         self.generic_visit(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        self.visit_FunctionDef(node)
+        self.generic_visit(node)
 
 
 def _annotation_to_str(node: ast.AST | None) -> str | None:
     if node is None:
         return None
     try:
-        return ast.unparse(node)  # type: ignore[attr-defined]
-    except Exception:
+        return ast.unparse(node)
+    except (TypeError, ValueError, AttributeError):
         return getattr(node, "id", None) or type(node).__name__
 
 
@@ -147,9 +235,7 @@ def _collect_function_nodes(tree: ast.AST) -> list[ast.AST]:
     return funcs
 
 
-def _build_node_map_by_span(
-    functions: list[ast.AST],
-) -> dict[tuple[int, int], ast.AST]:
+def _build_node_map_by_span(functions: list[ast.AST]) -> dict[tuple[int, int], ast.AST]:
     result: dict[tuple[int, int], ast.AST] = {}
     for fn in functions:
         lineno = getattr(fn, "lineno", None)
@@ -158,6 +244,254 @@ def _build_node_map_by_span(
             continue
         result[int(lineno), int(end_lineno)] = fn
     return result
+
+
+def _node_for_span(
+    node_map: dict[tuple[int, int], ast.AST], start_line: int, end_line: int
+) -> ast.AST | None:
+    node = node_map.get((start_line, end_line))
+    if node is not None:
+        return node
+    for (s, e), candidate in node_map.items():
+        if s <= start_line <= e:
+            return candidate
+    return None
+
+
+def _parse_python_file(file_path: Path) -> tuple[list[str], dict[tuple[int, int], ast.AST]] | None:
+    try:
+        source = file_path.read_text(encoding="utf-8")
+    except (FileNotFoundError, UnicodeDecodeError):
+        return None
+
+    try:
+        tree = ast.parse(source, filename=str(file_path))
+    except SyntaxError as exc:
+        log.warning("Syntax error in %s: %s; skipping", file_path, exc)
+        return None
+
+    lines = source.splitlines()
+    fn_nodes = _collect_function_nodes(tree)
+    node_map = _build_node_map_by_span(fn_nodes)
+    return lines, node_map
+
+
+def _compute_loc(lines: list[str], start_line: int, end_line: int) -> tuple[int, int]:
+    loc = end_line - start_line + 1
+    logical_loc = 0
+    for ln in range(start_line, end_line + 1):
+        if 1 <= ln <= len(lines):
+            stripped = lines[ln - 1].strip()
+            if stripped and not stripped.startswith("#"):
+                logical_loc += 1
+    return loc, logical_loc
+
+
+def _complexity_bucket(cc: int) -> str:
+    if cc <= COMPLEXITY_LOW:
+        return "low"
+    if cc <= COMPLEXITY_MEDIUM:
+        return "medium"
+    return "high"
+
+
+def _compute_param_stats(node: ast.AST) -> ParamStats:
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return ParamStats(
+            param_count=0,
+            positional_params=0,
+            keyword_only_params=0,
+            has_varargs=False,
+            has_varkw=False,
+            total_params=0,
+            annotated_params=0,
+            param_types={},
+            has_return_annotation=False,
+            return_type=None,
+        )
+
+    args = node.args
+    all_params = list(getattr(args, "posonlyargs", [])) + list(args.args) + list(args.kwonlyargs)
+    if args.vararg is not None:
+        all_params.append(args.vararg)
+    if args.kwarg is not None:
+        all_params.append(args.kwarg)
+
+    param_count = len(all_params)
+    positional_params = len(getattr(args, "posonlyargs", [])) + len(args.args)
+    keyword_only_params = len(args.kwonlyargs)
+    has_varargs = args.vararg is not None
+    has_varkw = args.kwarg is not None
+
+    total_params = 0
+    annotated_params = 0
+    param_types: dict[str, str | None] = {}
+
+    for p in all_params:
+        name = p.arg
+        if name in SKIP_PARAM_NAMES:
+            continue
+        total_params += 1
+        ann_str = _annotation_to_str(p.annotation)
+        if ann_str is not None:
+            annotated_params += 1
+        param_types[name] = ann_str
+
+    has_return_annotation = isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+        node.returns is not None
+    )
+    return_type = _annotation_to_str(node.returns) if hasattr(node, "returns") else None
+
+    return ParamStats(
+        param_count=param_count,
+        positional_params=positional_params,
+        keyword_only_params=keyword_only_params,
+        has_varargs=has_varargs,
+        has_varkw=has_varkw,
+        total_params=total_params,
+        annotated_params=annotated_params,
+        param_types=param_types,
+        has_return_annotation=has_return_annotation,
+        return_type=return_type,
+    )
+
+
+def _typedness_flags(
+    *, total_params: int, annotated_params: int, has_return_annotation: bool
+) -> TypednessFlags:
+    param_typed_ratio = annotated_params / float(total_params) if total_params else 1.0
+    unannotated_params = total_params - annotated_params
+    fully_typed = total_params > 0 and annotated_params == total_params and has_return_annotation
+    untyped = annotated_params == 0 and not has_return_annotation
+    partial_typed = (
+        not fully_typed and not untyped and (annotated_params > 0 or has_return_annotation)
+    )
+    typedness_bucket = "typed" if fully_typed else "partial" if partial_typed else "untyped"
+    typedness_source = (
+        "annotations" if (annotated_params > 0 or has_return_annotation) else "unknown"
+    )
+    return TypednessFlags(
+        param_typed_ratio=param_typed_ratio,
+        unannotated_params=unannotated_params,
+        fully_typed=fully_typed,
+        partial_typed=partial_typed,
+        untyped=untyped,
+        typedness_bucket=typedness_bucket,
+        typedness_source=typedness_source,
+    )
+
+
+def _derive_function_flags(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    stats: _FunctionStats,
+    param_stats: ParamStats,
+) -> FunctionDerived:
+    is_async = isinstance(node, ast.AsyncFunctionDef)
+    typedness = _typedness_flags(
+        total_params=param_stats.total_params,
+        annotated_params=param_stats.annotated_params,
+        has_return_annotation=param_stats.has_return_annotation,
+    )
+    return FunctionDerived(
+        is_async=is_async,
+        is_generator=stats.yield_count > 0,
+        complexity_bucket=_complexity_bucket(stats.complexity),
+        stmt_count=len(getattr(node, "body", [])),
+        decorator_count=len(getattr(node, "decorator_list", [])),
+        has_docstring=ast.get_docstring(node) is not None,
+        typedness=typedness,
+    )
+
+
+def _function_rows_from_node(
+    info: GoidRow,
+    node: ast.AST,
+    lines: list[str],
+    ctx: ProcessContext,
+) -> tuple[tuple, tuple] | None:
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return None
+
+    meta = FunctionMeta(
+        goid=int(info["goid_h128"]),
+        urn=info["urn"],
+        language=info["language"],
+        kind=info["kind"],
+        qualname=info["qualname"],
+        start_line=int(info["start_line"]),
+        end_line=int(info["end_line"]) if info["end_line"] is not None else int(info["start_line"]),
+        rel_path=info["rel_path"],
+    )
+
+    loc, logical_loc = _compute_loc(lines, meta.start_line, meta.end_line)
+
+    param_stats = _compute_param_stats(node)
+    stats = _FunctionStats()
+    stats.visit(node)
+    derived = _derive_function_flags(node, stats, param_stats)
+    typedness = derived.typedness
+    return_type_source = "annotation" if param_stats.has_return_annotation else "unknown"
+
+    metrics_row = (
+        meta.goid,
+        meta.urn,
+        ctx.cfg.repo,
+        ctx.cfg.commit,
+        meta.rel_path,
+        meta.language,
+        meta.kind,
+        meta.qualname,
+        meta.start_line,
+        meta.end_line,
+        loc,
+        logical_loc,
+        param_stats.param_count,
+        param_stats.positional_params,
+        param_stats.keyword_only_params,
+        param_stats.has_varargs,
+        param_stats.has_varkw,
+        derived.is_async,
+        derived.is_generator,
+        stats.return_count,
+        stats.yield_count,
+        stats.raise_count,
+        stats.complexity,
+        stats.max_nesting_depth,
+        derived.stmt_count,
+        derived.decorator_count,
+        derived.has_docstring,
+        derived.complexity_bucket,
+        ctx.now,
+    )
+
+    types_row = (
+        meta.goid,
+        meta.urn,
+        ctx.cfg.repo,
+        ctx.cfg.commit,
+        meta.rel_path,
+        meta.language,
+        meta.kind,
+        meta.qualname,
+        meta.start_line,
+        meta.end_line,
+        param_stats.total_params,
+        param_stats.annotated_params,
+        typedness.unannotated_params,
+        typedness.param_typed_ratio,
+        param_stats.has_return_annotation,
+        param_stats.return_type,
+        return_type_source,
+        None,  # type_comment
+        param_stats.param_types,
+        typedness.fully_typed,
+        typedness.partial_typed,
+        typedness.untyped,
+        typedness.typedness_bucket,
+        typedness.typedness_source,
+        ctx.now,
+    )
+    return metrics_row, types_row
 
 
 def compute_function_metrics_and_types(
@@ -218,10 +552,22 @@ def compute_function_metrics_and_types(
         return
 
     # Group GOIDs by file to parse each file once.
-    goids_by_file: dict[str, list[dict]] = {}
+    goids_by_file: dict[str, list[GoidRow]] = {}
     for _, row in df.iterrows():
         rel_path = str(row["rel_path"]).replace("\\", "/")
-        goids_by_file.setdefault(rel_path, []).append(row.to_dict())
+        goid_row: GoidRow = {
+            "goid_h128": int(row["goid_h128"]),
+            "urn": str(row["urn"]),
+            "repo": str(row["repo"]),
+            "commit": str(row["commit"]),
+            "rel_path": rel_path,
+            "language": str(row["language"]),
+            "kind": str(row["kind"]),
+            "qualname": str(row["qualname"]),
+            "start_line": int(row["start_line"]),
+            "end_line": int(row["end_line"]) if row["end_line"] is not None else None,
+        }
+        goids_by_file.setdefault(rel_path, []).append(goid_row)
 
     con.execute(
         "DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?",
@@ -234,206 +580,24 @@ def compute_function_metrics_and_types(
     metrics_rows: list[tuple] = []
     types_rows: list[tuple] = []
 
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     for rel_path, fun_rows in goids_by_file.items():
         file_path = repo_root / rel_path
-        try:
-            source = file_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            log.warning("File not found when computing function metrics: %s", file_path)
+        parsed = _parse_python_file(file_path)
+        if parsed is None:
+            log.warning("Skipping file for function analytics: %s", file_path)
             continue
-
-        try:
-            tree = ast.parse(source, filename=str(file_path))
-        except SyntaxError as exc:
-            log.warning("Syntax error in %s: %s; skipping", file_path, exc)
-            continue
-
-        lines = source.splitlines()
-        fn_nodes = _collect_function_nodes(tree)
-        node_map = _build_node_map_by_span(fn_nodes)
-
-        for info in fun_rows:
-            start_line = int(info["start_line"])
-            end_line = int(info["end_line"]) if info["end_line"] is not None else start_line
-            node = node_map.get((start_line, end_line))
-            if node is None:
-                # Fallback: try loose containment match.
-                candidates = [n for (s, e), n in node_map.items() if s <= start_line <= e]
-                node = candidates[0] if candidates else None
-            if node is None:
-                log.debug(
-                    "No AST node match for function %s in %s (%s-%s)",
-                    info["qualname"],
-                    rel_path,
-                    start_line,
-                    end_line,
-                )
-                continue
-
-            goid = int(info["goid_h128"])
-            urn = info["urn"]
-            language = info["language"]
-            kind = info["kind"]
-            qualname = info["qualname"]
-
-            # LOC and logical LOC
-            loc = end_line - start_line + 1
-            logical_loc = 0
-            for ln in range(start_line, end_line + 1):
-                if 1 <= ln <= len(lines):
-                    text = lines[ln - 1]
-                    stripped = text.strip()
-                    if stripped and not stripped.startswith("#"):
-                        logical_loc += 1
-
-            # Parameters
-            assert isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            args = node.args
-            all_params = (
-                list(getattr(args, "posonlyargs", [])) + list(args.args) + list(args.kwonlyargs)
-            )
-            if args.vararg is not None:
-                all_params.append(args.vararg)
-            if args.kwarg is not None:
-                all_params.append(args.kwarg)
-
-            param_count = len(all_params)
-            positional_params = len(getattr(args, "posonlyargs", [])) + len(args.args)
-            keyword_only_params = len(args.kwonlyargs)
-            has_varargs = args.vararg is not None
-            has_varkw = args.kwarg is not None
-
-            # Async/generator flags
-            is_async = isinstance(node, ast.AsyncFunctionDef)
-            stats = _FunctionStats()
-            stats.visit(node)
-            is_generator = stats.yield_count > 0
-
-            # Complexity bucket
-            cc = stats.complexity
-            if cc <= 5:
-                complexity_bucket = "low"
-            elif cc <= 10:
-                complexity_bucket = "medium"
-            else:
-                complexity_bucket = "high"
-
-            # Statement count & decorators
-            stmt_count = len(node.body)
-            decorator_count = len(node.decorator_list)
-            has_docstring = ast.get_docstring(node) is not None
-
-            # Function types / annotations
-            total_params = 0
-            annotated_params = 0
-            param_types: dict[str, str | None] = {}
-
-            for p in all_params:
-                name = p.arg
-                if name in ("self", "cls"):
-                    continue
-                total_params += 1
-                ann_str = _annotation_to_str(p.annotation)
-                if ann_str is not None:
-                    annotated_params += 1
-                param_types[name] = ann_str
-
-            has_return_annotation = node.returns is not None
-            return_type = _annotation_to_str(node.returns)
-            return_type_source = "annotation" if has_return_annotation else "unknown"
-
-            if total_params:
-                param_typed_ratio = annotated_params / float(total_params)
-            else:
-                param_typed_ratio = 1.0
-
-            unannotated_params = total_params - annotated_params
-            fully_typed = (
-                total_params > 0 and annotated_params == total_params and has_return_annotation
-            )
-            untyped = annotated_params == 0 and not has_return_annotation
-            partial_typed = (
-                not fully_typed and not untyped and (annotated_params > 0 or has_return_annotation)
-            )
-
-            if fully_typed:
-                typedness_bucket = "typed"
-            elif partial_typed:
-                typedness_bucket = "partial"
-            else:
-                typedness_bucket = "untyped"
-
-            typedness_source = (
-                "annotations" if (annotated_params > 0 or has_return_annotation) else "unknown"
-            )
-
-            # function_metrics row
-            metrics_rows.append(
-                (
-                    goid,
-                    urn,
-                    cfg.repo,
-                    cfg.commit,
-                    rel_path,
-                    language,
-                    kind,
-                    qualname,
-                    start_line,
-                    end_line,
-                    loc,
-                    logical_loc,
-                    param_count,
-                    positional_params,
-                    keyword_only_params,
-                    has_varargs,
-                    has_varkw,
-                    is_async,
-                    is_generator,
-                    stats.return_count,
-                    stats.yield_count,
-                    stats.raise_count,
-                    stats.complexity,
-                    stats.max_nesting_depth,
-                    stmt_count,
-                    decorator_count,
-                    has_docstring,
-                    complexity_bucket,
-                    now,
-                )
-            )
-
-            # function_types row
-            types_rows.append(
-                (
-                    goid,
-                    urn,
-                    cfg.repo,
-                    cfg.commit,
-                    rel_path,
-                    language,
-                    kind,
-                    qualname,
-                    start_line,
-                    end_line,
-                    total_params,
-                    annotated_params,
-                    unannotated_params,
-                    param_typed_ratio,
-                    has_return_annotation,
-                    return_type,
-                    return_type_source,
-                    None,  # type_comment
-                    param_types,
-                    fully_typed,
-                    partial_typed,
-                    untyped,
-                    typedness_bucket,
-                    typedness_source,
-                    now,
-                )
-            )
+        lines, node_map = parsed
+        file_metrics, file_types = _process_functions_in_file(
+            rel_path=rel_path,
+            fun_rows=fun_rows,
+            node_map=node_map,
+            lines=lines,
+            ctx=ProcessContext(cfg=cfg, now=now),
+        )
+        metrics_rows.extend(file_metrics)
+        types_rows.extend(file_types)
 
     if metrics_rows:
         con.executemany(
@@ -464,7 +628,7 @@ def compute_function_metrics_and_types(
                return_type, return_type_source, type_comment,
                param_types, fully_typed, partial_typed, untyped,
                typedness_bucket, typedness_source, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             types_rows,
         )
@@ -475,3 +639,37 @@ def compute_function_metrics_and_types(
         cfg.commit,
         len(metrics_rows),
     )
+
+
+def _process_functions_in_file(
+    rel_path: str,
+    fun_rows: list[GoidRow],
+    node_map: dict[tuple[int, int], ast.AST],
+    lines: list[str],
+    ctx: ProcessContext,
+) -> tuple[list[tuple], list[tuple]]:
+    metrics_rows: list[tuple] = []
+    types_rows: list[tuple] = []
+
+    for info in fun_rows:
+        start_line = int(info["start_line"])
+        end_line = int(info["end_line"]) if info["end_line"] is not None else start_line
+        node = _node_for_span(node_map, start_line, end_line)
+        if node is None:
+            log.debug(
+                "No AST node match for function %s in %s (%s-%s)",
+                info["qualname"],
+                rel_path,
+                start_line,
+                end_line,
+            )
+            continue
+
+        rows = _function_rows_from_node(info, node, lines, ctx)
+        if rows is None:
+            continue
+        metrics_row, types_row = rows
+        metrics_rows.append(metrics_row)
+        types_rows.append(types_row)
+
+    return metrics_rows, types_rows

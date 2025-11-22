@@ -6,8 +6,9 @@ import configparser
 import json
 import logging
 import tomllib  # Python 3.11+
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import cast
 
 import duckdb
 import yaml
@@ -40,40 +41,73 @@ def _detect_format(path: Path) -> str:
     return "other"
 
 
-def _load_config(path: Path, fmt: str) -> dict:
+def _load_config(path: Path, fmt: str) -> dict[str, object]:
     try:
         text = path.read_text(encoding="utf8")
     except (OSError, UnicodeDecodeError):
         return {}
 
+    parser_map: dict[str, Callable[[str, Path], dict[str, object]]] = {
+        "yaml": _parse_yaml,
+        "toml": _parse_toml,
+        "json": _parse_json,
+        "ini": _parse_ini,
+        "env": _parse_env,
+    }
+    parser = parser_map.get(fmt)
+
+    if parser is None:
+        return {}
+    return parser(text, path)
+
+
+def _parse_yaml(text: str, path: Path) -> dict[str, object]:
     try:
-        if fmt == "yaml":
-            return yaml.safe_load(text) or {}
-        if fmt == "toml":
-            return tomllib.loads(text) or {}
-        if fmt == "json":
-            return json.loads(text) or {}
-        if fmt == "ini":
-            parser = configparser.ConfigParser()
-            parser.read_string(text)
-            data = {}
-            for section in parser.sections():
-                data[section] = dict(parser.items(section))
-            return data
-        if fmt == "env":
-            data = {}
-            for line in text.splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                data[key.strip()] = value.strip()
-            return data
-    except Exception as exc:
-        log.warning("Failed to parse config file %s (%s): %s", path, fmt, exc)
+        return yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        log.warning("Failed to parse YAML config %s: %s", path, exc)
         return {}
 
-    return {}
+
+def _parse_toml(text: str, path: Path) -> dict[str, object]:
+    try:
+        return tomllib.loads(text) or {}
+    except tomllib.TOMLDecodeError as exc:
+        log.warning("Failed to parse TOML config %s: %s", path, exc)
+        return {}
+
+
+def _parse_json(text: str, path: Path) -> dict[str, object]:
+    try:
+        return json.loads(text) or {}
+    except json.JSONDecodeError as exc:
+        log.warning("Failed to parse JSON config %s: %s", path, exc)
+        return {}
+
+
+def _parse_ini(text: str, path: Path) -> dict[str, object]:
+    parser = configparser.ConfigParser()
+    try:
+        parser.read_string(text)
+    except configparser.Error as exc:
+        log.warning("Failed to parse INI config %s: %s", path, exc)
+        return {}
+    data: dict[str, dict[str, str]] = {}
+    for section in parser.sections():
+        data[section] = dict(parser.items(section))
+    return cast("dict[str, object]", data)
+
+
+def _parse_env(text: str, path: Path) -> dict[str, object]:
+    del path
+    data: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        data[key.strip()] = value.strip()
+    return cast("dict[str, object]", data)
 
 
 def _flatten_config(
@@ -157,7 +191,7 @@ def ingest_config_values(
         if not data:
             continue
 
-        for keypath, value in _flatten_config(data):
+        for keypath, _ in _flatten_config(data):
             # We don't store the value itself; only keypaths + references.
             con.execute(
                 insert_sql,

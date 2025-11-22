@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from fnmatch import fnmatch
 from pathlib import Path
+from typing import TypedDict
 
 import duckdb
 import yaml
@@ -31,34 +32,25 @@ IGNORE_DIRS = {
 
 @dataclass
 class ModuleRow:
-    """
-    Representation of a single discovered module.
-
-    Parameters
-    ----------
-    module : str
-        Dotted module path derived from the file location.
-    path : str
-        Repository-relative file path.
-    repo : str
-        Repository slug.
-    commit : str
-        Commit SHA for the snapshot being ingested.
-    language : str, optional
-        Language identifier, defaults to "python".
-    tags : list[str] | None, optional
-        Optional classification tags for the module.
-    owners : list[str] | None, optional
-        Optional list of owners for the module.
-    """
+    """Representation of a single discovered module."""
 
     module: str
     path: str
     repo: str
     commit: str
     language: str = "python"
-    tags: list[str] = None
-    owners: list[str] = None
+    tags: list[str] = field(default_factory=list)
+    owners: list[str] = field(default_factory=list)
+
+
+class TagEntry(TypedDict, total=False):
+    """Classification rules applied to repository paths."""
+
+    tag: str
+    description: str | None
+    includes: list[str]
+    excludes: list[str]
+    matches: list[str]
 
 
 def _iter_python_files(repo_root: Path) -> Iterable[Path]:
@@ -91,7 +83,7 @@ def relpath_to_module(rel_path: Path | str) -> str:
     return ".".join(Path(rel_path).with_suffix("").parts)
 
 
-def _load_tags_index(tags_index_path: Path) -> list[dict]:
+def _load_tags_index(tags_index_path: Path) -> list[TagEntry]:
     if not tags_index_path.is_file():
         log.info("tags_index.yaml not found at %s", tags_index_path)
         return []
@@ -108,7 +100,7 @@ def _load_tags_index(tags_index_path: Path) -> list[dict]:
 
 def _write_tags_index_table(
     con: duckdb.DuckDBPyConnection,
-    tags_entries: list[dict],
+    tags_entries: list[TagEntry],
 ) -> None:
     # This table does not carry repo/commit; assume one-repo-per-DB.
     con.execute("DELETE FROM analytics.tags_index")
@@ -127,7 +119,7 @@ def _write_tags_index_table(
         con.execute(insert_sql, [tag, description, includes, excludes, matches])
 
 
-def _tags_for_path(rel_path: str, tags_entries: list[dict]) -> list[str]:
+def _tags_for_path(rel_path: str, tags_entries: list[TagEntry]) -> list[str]:
     tags: list[str] = []
 
     for entry in tags_entries:
@@ -144,8 +136,9 @@ def _tags_for_path(rel_path: str, tags_entries: list[dict]) -> list[str]:
             continue
 
         if includes and any(fnmatch(rel_path, pattern) for pattern in includes):
-            if not excludes or not any(fnmatch(rel_path, pattern) for pattern in excludes):
-                tags.append(tag)
+            if excludes and any(fnmatch(rel_path, pattern) for pattern in excludes):
+                continue
+            tags.append(tag)
 
     return sorted(set(tags))
 

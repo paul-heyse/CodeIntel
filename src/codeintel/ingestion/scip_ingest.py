@@ -44,6 +44,10 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> Path |
         If SCIP binaries are unavailable or indexing/print fails.
     """
     repo_root = cfg.repo_root.resolve()
+    if not (repo_root / ".git").is_dir():
+        log.warning("Skipping SCIP ingestion: %s is not a git repository", repo_root)
+        return None
+
     scip_dir = cfg.build_dir.resolve() / "scip"
     scip_dir.mkdir(parents=True, exist_ok=True)
     doc_dir = cfg.document_output_dir.resolve()
@@ -165,7 +169,11 @@ def _run_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, st
             stderr=PIPE,
         )
         stdout_b, stderr_b = await proc.communicate()
-        return proc.returncode, stdout_b.decode(), stderr_b.decode()
+        return (
+            proc.returncode if proc.returncode is not None else 1,
+            stdout_b.decode(),
+            stderr_b.decode(),
+        )
 
     try:
         return asyncio.run(_exec())

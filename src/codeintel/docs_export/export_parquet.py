@@ -70,12 +70,21 @@ def export_parquet_for_table(
     Notes
     -----
     Uses `COPY (SELECT * FROM <table>) TO <path> (FORMAT PARQUET)`. The export
-    assumes the database already scopes data to a single repo/commit.
+    assumes the database already scopes data to a single repo/commit. Table
+    names are validated against the known dataset mapping to avoid unsafe SQL.
+
+    Raises
+    ------
+    ValueError
+        If the requested table is not in the allowed export mapping.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    sql = f"COPY (SELECT * FROM {table_name}) TO ? (FORMAT PARQUET);"
+    if table_name not in PARQUET_DATASETS:
+        message = f"Refusing to export unknown table: {table_name}"
+        raise ValueError(message)
     log.info("Exporting %s -> %s", table_name, output_path)
-    con.execute(sql, [str(output_path)])
+    rel = con.table(table_name)
+    rel.write_parquet(str(output_path))
 
 
 def export_all_parquet(

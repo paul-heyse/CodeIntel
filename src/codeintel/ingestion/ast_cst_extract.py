@@ -64,7 +64,7 @@ class CstRow:
     path: str
     node_id: str
     kind: str
-    span: dict
+    span: dict[str, list[int]]
     text_preview: str
     parents: list[str]
     qnames: list[str]
@@ -122,7 +122,7 @@ class AstCstVisitor(cst.CSTVisitor):
         self._depth: int = 0
 
     # Generic hooks to track depth and metrics.node_count
-    def visit(self, node: cst.CSTNode) -> bool:
+    def on_visit(self, node: cst.CSTNode) -> bool:
         """
         Track traversal depth, record CST metadata, and handle AST bookkeeping.
 
@@ -148,9 +148,9 @@ class AstCstVisitor(cst.CSTVisitor):
 
         return True
 
-    def leave(self, node: cst.CSTNode) -> None:
+    def on_leave(self, original_node: cst.CSTNode) -> None:
         """Pop traversal depth and parent stacks after visiting a node."""
-        if isinstance(node, (cst.ClassDef, *FUNCTION_NODE_TYPES)) and self._scope_stack:
+        if isinstance(original_node, (cst.ClassDef, *FUNCTION_NODE_TYPES)) and self._scope_stack:
             self._scope_stack.pop()
         self._parent_kinds.pop()
         self._depth -= 1
@@ -205,7 +205,9 @@ class AstCstVisitor(cst.CSTVisitor):
         self.metrics.function_count += 1
 
         decorators = getattr(node, "decorators", []) or []
-        node_type = "AsyncFunctionDef" if isinstance(node, FUNCTION_NODE_TYPES[1]) else "FunctionDef"
+        node_type = (
+            "AsyncFunctionDef" if isinstance(node, FUNCTION_NODE_TYPES[1]) else "FunctionDef"
+        )
         self._record_ast_row(
             node=node,
             descriptor=AstDescriptor(
@@ -233,14 +235,18 @@ class AstCstVisitor(cst.CSTVisitor):
 
     def _record_ast_row(self, node: cst.CSTNode, *, descriptor: AstDescriptor) -> None:
         """Append an AstRow describing the current node and its position."""
-        pos = self.get_metadata(metadata.PositionProvider, node, None)
-        if pos is None:
+        try:
+            pos = self.get_metadata(metadata.PositionProvider, node)
+        except KeyError:
             lineno = end_lineno = col = end_col = None
         else:
-            lineno = pos.start.line
-            col = pos.start.column
-            end_lineno = pos.end.line
-            end_col = pos.end.column
+            if not isinstance(pos, metadata.CodeRange):
+                lineno = end_lineno = col = end_col = None
+            else:
+                lineno = pos.start.line
+                col = pos.start.column
+                end_lineno = pos.end.line
+                end_col = pos.end.column
 
         # Simple stable hash based on location + type + qualname
         h = hashlib.blake2b(
@@ -267,8 +273,11 @@ class AstCstVisitor(cst.CSTVisitor):
 
     def _record_cst_row(self, node: cst.CSTNode) -> None:
         """Append a CstRow capturing span, parents, and preview text."""
-        pos = self.get_metadata(metadata.PositionProvider, node, None)
-        if pos is None:
+        try:
+            pos = self.get_metadata(metadata.PositionProvider, node)
+        except KeyError:
+            return
+        if not isinstance(pos, metadata.CodeRange):
             return
 
         start = pos.start

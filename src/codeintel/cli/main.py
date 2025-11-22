@@ -5,12 +5,12 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 import duckdb
 
-from codeintel.config.models import CodeIntelConfig
+from codeintel.config.models import CodeIntelConfig, PathsConfig, RepoConfig
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.orchestration.pipeline import run_pipeline
@@ -19,6 +19,7 @@ from codeintel.storage.duckdb_client import DuckDBClient, DuckDBConfig
 from codeintel.storage.views import create_all_views
 
 LOG = logging.getLogger("codeintel.cli")
+CommandHandler = Callable[[argparse.Namespace], int]
 
 
 # ---------------------------------------------------------------------------
@@ -141,14 +142,14 @@ def _make_parser() -> argparse.ArgumentParser:
 
 
 def _build_config_from_args(args: argparse.Namespace) -> CodeIntelConfig:
-    return CodeIntelConfig.from_cli_args(
+    paths_cfg = PathsConfig(
         repo_root=args.repo_root,
-        db_path=args.db_path,
         build_dir=args.build_dir,
+        db_path=args.db_path,
         document_output_dir=args.document_output_dir,
-        repo=args.repo,
-        commit=args.commit,
     )
+    repo_cfg = RepoConfig(repo=args.repo, commit=args.commit)
+    return CodeIntelConfig.from_cli_args(repo_cfg=repo_cfg, paths_cfg=paths_cfg)
 
 
 def _open_connection(cfg: CodeIntelConfig, *, read_only: bool) -> duckdb.DuckDBPyConnection:
@@ -270,7 +271,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 1
 
     try:
-        return int(args.func(args))  # type: ignore[misc]
+        func: CommandHandler = args.func
+        return int(func(args))
     except Exception:
         LOG.exception("Command failed")
         return 1

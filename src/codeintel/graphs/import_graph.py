@@ -9,6 +9,7 @@ from pathlib import Path
 
 import duckdb
 import libcst as cst
+from libcst import helpers
 
 log = logging.getLogger(__name__)
 
@@ -45,20 +46,43 @@ class _ImportCollector(cst.CSTVisitor):
         self.module_name = module_name
         self.edges: set[tuple[str, str]] = set()  # (src_module, dst_module)
 
+    @staticmethod
+    def _module_str(node: cst.CSTNode) -> str | None:
+        full_name = helpers.get_full_name_for_node(node)
+        if full_name:
+            return full_name
+        if isinstance(node, cst.Name):
+            return node.value
+        if isinstance(node, cst.Attribute):
+            parts: list[str] = []
+            cur: cst.BaseExpression | cst.Name = node
+            while isinstance(cur, cst.Attribute):
+                parts.append(cur.attr.value)
+                cur = cur.value
+            if isinstance(cur, cst.Name):
+                parts.append(cur.value)
+            parts.reverse()
+            return ".".join(parts) if parts else None
+        return None
+
     def visit_import(self, node: cst.Import) -> None:
         for name in node.names:
             # e.g. import foo.bar as baz -> "foo.bar"
-            module_str = name.name.code
-            self.edges.add((self.module_name, module_str))
+            module_str = self._module_str(name.name)
+            if module_str:
+                self.edges.add((self.module_name, module_str))
 
     def visit_import_from(self, node: cst.ImportFrom) -> None:
         # Absolute or relative base module
         if node.module is not None:
-            base = node.module.code
+            base = self._module_str(node.module)
         else:
             # simple relative heuristic: use current package
             parts = self.module_name.split(".")
             base = ".".join(parts[:-1]) if len(parts) > 1 else self.module_name
+
+        if base is None:
+            return
 
         if isinstance(node.names, cst.ImportStar):
             self.edges.add((self.module_name, base))
@@ -159,7 +183,7 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
     # Collect raw edges
     raw_edges: set[tuple[str, str]] = set()
     for _, row in df_modules.iterrows():
-        module_name = row["module"]
+        module_name = str(row["module"])
         rel_path = str(row["path"]).replace("\\", "/")
         file_path = repo_root / rel_path
 

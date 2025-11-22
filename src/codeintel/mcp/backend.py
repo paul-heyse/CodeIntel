@@ -18,6 +18,9 @@ from codeintel.mcp.models import (
     TestsForFunctionResponse,
 )
 
+MAX_ROWS_LIMIT = 500
+VALID_DIRECTIONS = frozenset({"in", "out", "both"})
+
 
 def _fetch_one_dict(
     cur: duckdb.DuckDBPyConnection, sql: str, params: list[Any]
@@ -158,6 +161,7 @@ class DuckDBBackend(QueryBackend):
         if not self.dataset_tables:
             self.dataset_tables = {
                 # core
+                "docstrings": "core.docstrings",
                 "goids": "core.goids",
                 "goid_crosswalk": "core.goid_crosswalk",
                 "modules": "core.modules",
@@ -255,9 +259,14 @@ class DuckDBBackend(QueryBackend):
         Raises
         ------
         errors.McpError
-            If insufficient identifiers are provided.
+            If insufficient identifiers are provided (invalid_argument).
+
+        Returns
+        -------
+        FunctionSummaryResponse
+            Wrapped function summary payload.
         """
-        summary: dict[str, Any] | None
+        summary: dict[str, Any] | None = None
         if urn:
             summary = _fetch_one_dict(
                 self.con,
@@ -269,7 +278,7 @@ class DuckDBBackend(QueryBackend):
                 """,
                 [self.repo, self.commit, urn],
             )
-        if goid_h128 is not None:
+        elif goid_h128 is not None:
             summary = _fetch_one_dict(
                 self.con,
                 """
@@ -280,7 +289,7 @@ class DuckDBBackend(QueryBackend):
                 """,
                 [self.repo, self.commit, goid_h128],
             )
-        if rel_path and qualname:
+        elif rel_path and qualname:
             summary = _fetch_one_dict(
                 self.con,
                 """
@@ -293,7 +302,14 @@ class DuckDBBackend(QueryBackend):
             )
         else:
             message = "Must provide urn or goid_h128 or (rel_path + qualname)."
-            raise errors.invalid_argument(message)
+            raise errors.McpError(
+                detail=errors.ProblemDetail(
+                    type="https://example.com/problems/invalid-argument",
+                    title="Invalid argument",
+                    detail=message,
+                    status=400,
+                )
+            )
 
         return FunctionSummaryResponse(found=bool(summary), summary=summary)
 
@@ -311,9 +327,18 @@ class DuckDBBackend(QueryBackend):
         -------
         list[dict[str, Any]]
             High-risk function rows sorted by risk_score.
+
+        Raises
+        ------
+        errors.invalid_argument
+            Raised when `limit` exceeds the allowed maximum.
         """
         extra_clause = " AND tested = TRUE" if tested_only else ""
-        params: list[Any] = [self.repo, self.commit, min_risk, limit]
+        if limit > MAX_ROWS_LIMIT:
+            message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
+            raise errors.invalid_argument(message)
+        safe_limit = max(0, limit)
+        params: list[Any] = [self.repo, self.commit, min_risk, safe_limit]
         sql = (
             """
             SELECT
@@ -337,7 +362,8 @@ class DuckDBBackend(QueryBackend):
             """
         )
         rows = _fetch_all_dicts(self.con, sql, params)
-        return HighRiskFunctionsResponse(functions=rows)
+        truncated = safe_limit > 0 and len(rows) == safe_limit
+        return HighRiskFunctionsResponse(functions=rows, truncated=truncated)
 
     def get_callgraph_neighbors(
         self,
@@ -353,7 +379,20 @@ class DuckDBBackend(QueryBackend):
         -------
         dict[str, list[dict[str, Any]]]
             Mapping with "outgoing" and "incoming" edge lists.
+
+        Raises
+        ------
+        errors.invalid_argument
+            Raised when `direction` is not one of {'in','out','both'} or when
+            `limit` exceeds bounds.
         """
+        if direction not in VALID_DIRECTIONS:
+            message = "direction must be one of {'in','out','both'}"
+            raise errors.invalid_argument(message)
+        if limit > MAX_ROWS_LIMIT:
+            message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
+            raise errors.invalid_argument(message)
+        safe_limit = max(0, limit)
         outgoing: list[dict[str, Any]] = []
         incoming: list[dict[str, Any]] = []
 
@@ -365,7 +404,7 @@ class DuckDBBackend(QueryBackend):
                 ORDER BY callee_qualname
                 LIMIT ?
             """
-            outgoing = _fetch_all_dicts(self.con, out_sql, [goid_h128, limit])
+            outgoing = _fetch_all_dicts(self.con, out_sql, [goid_h128, safe_limit])
 
         if direction in {"in", "both"}:
             in_sql = """
@@ -375,7 +414,7 @@ class DuckDBBackend(QueryBackend):
                 ORDER BY caller_qualname
                 LIMIT ?
             """
-            incoming = _fetch_all_dicts(self.con, in_sql, [goid_h128, limit])
+            incoming = _fetch_all_dicts(self.con, in_sql, [goid_h128, safe_limit])
 
         return CallGraphNeighborsResponse(outgoing=outgoing, incoming=incoming)
 
@@ -384,24 +423,41 @@ class DuckDBBackend(QueryBackend):
         *,
         goid_h128: int | None = None,
         urn: str | None = None,
+        limit: int | None = None,
     ) -> TestsForFunctionResponse:
         """
         Query docs.v_test_to_function for tests that hit a given function.
 
+        Parameters
+        ----------
+        goid_h128:
+            GOID hash of the function under test.
+        urn:
+            URN of the function under test when the GOID is unknown.
+        limit:
+            Maximum number of rows to return (clamped to MAX_ROWS_LIMIT when unset).
+
         Returns
         -------
-        list[dict[str, Any]]
-            Rows from docs.v_test_to_function.
+        TestsForFunctionResponse
+            Wrapped test rows.
 
         Raises
         ------
-        errors.McpError
-            If neither goid_h128 nor urn is provided.
+        errors.invalid_argument
+            Raised when identifiers are missing or the requested limit is invalid.
         """
         if goid_h128 is None and urn is None:
             message = "Must provide goid_h128 or urn."
             raise errors.invalid_argument(message)
 
+        if limit is None:
+            safe_limit = MAX_ROWS_LIMIT
+        elif limit > MAX_ROWS_LIMIT:
+            message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
+            raise errors.invalid_argument(message)
+        else:
+            safe_limit = max(0, limit)
         if goid_h128 is not None:
             rows = _fetch_all_dicts(
                 self.con,
@@ -410,19 +466,22 @@ class DuckDBBackend(QueryBackend):
                 FROM docs.v_test_to_function
                 WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
                 ORDER BY test_id
+                LIMIT ?
                 """,
-                [self.repo, self.commit, goid_h128],
+                [self.repo, self.commit, goid_h128, safe_limit],
             )
-        rows = _fetch_all_dicts(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_test_to_function
-            WHERE repo = ? AND commit = ? AND urn = ?
-            ORDER BY test_id
-            """,
-            [self.repo, self.commit, urn],
-        )
+        else:
+            rows = _fetch_all_dicts(
+                self.con,
+                """
+                SELECT *
+                FROM docs.v_test_to_function
+                WHERE repo = ? AND commit = ? AND urn = ?
+                ORDER BY test_id
+                LIMIT ?
+                """,
+                [self.repo, self.commit, urn, safe_limit],
+            )
         return TestsForFunctionResponse(tests=rows)
 
     def get_file_summary(
@@ -496,21 +555,32 @@ class DuckDBBackend(QueryBackend):
 
         Raises
         ------
-        errors.McpError
-            If the dataset_name is unknown.
+        errors.invalid_argument
+            Raised when dataset_name is unknown or when `limit` exceeds the
+            allowed maximum.
 
         Returns
         -------
-        list[dict[str, Any]]
-            Rows fetched from the dataset.
+        DatasetRowsResponse
+            Dataset slice payload with applied limits and offset.
         """
         table = self.dataset_tables.get(dataset_name)
         if not table:
             message = f"Unknown dataset: {dataset_name}"
             raise errors.invalid_argument(message)
 
-        relation = self.con.table(table).limit(limit, offset)
+        if limit > MAX_ROWS_LIMIT:
+            message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
+            raise errors.invalid_argument(message)
+        safe_limit = max(0, limit)
+        safe_offset = max(0, offset)
+        relation = self.con.table(table).limit(safe_limit, safe_offset)
         rows = relation.fetchall()
         cols = [desc[0] for desc in relation.description]
         mapped = [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
-        return DatasetRowsResponse(dataset=dataset_name, limit=limit, offset=offset, rows=mapped)
+        return DatasetRowsResponse(
+            dataset=dataset_name,
+            limit=safe_limit,
+            offset=safe_offset,
+            rows=mapped,
+        )

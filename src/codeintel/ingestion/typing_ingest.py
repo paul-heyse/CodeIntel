@@ -12,6 +12,7 @@ from asyncio.subprocess import PIPE
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -108,7 +109,11 @@ def _run_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, st
             stderr=PIPE,
         )
         stdout_b, stderr_b = await proc.communicate()
-        return proc.returncode, stdout_b.decode(), stderr_b.decode()
+        return (
+            proc.returncode if proc.returncode is not None else 1,
+            stdout_b.decode(),
+            stderr_b.decode(),
+        )
 
     try:
         return asyncio.run(_exec())
@@ -175,7 +180,7 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
     finally:
         output_path.unlink(missing_ok=True)
 
-    errors: list[dict] = payload.get("errors") or []
+    errors: list[dict[str, Any]] = payload.get("errors") or []
     errors_by_file: dict[str, int] = {}
     for diag in errors:
         if diag.get("severity") != "error":
@@ -222,9 +227,15 @@ def ingest_typing_signals(
 
     pyrefly_errors = _run_pyrefly(repo_root)
 
-    # Clear tables (one repo per DB assumption)
-    con.execute("DELETE FROM analytics.typedness")
-    con.execute("DELETE FROM analytics.static_diagnostics")
+    # Clear existing rows for this snapshot
+    con.execute(
+        "DELETE FROM analytics.typedness WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)",
+        [repo, commit],
+    )
+    con.execute(
+        "DELETE FROM analytics.static_diagnostics WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)",
+        [repo, commit],
+    )
 
     insert_typedness = """
         INSERT INTO analytics.typedness (
