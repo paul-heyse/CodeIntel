@@ -13,6 +13,8 @@ from typing import TypedDict
 import duckdb
 import yaml
 
+from codeintel.storage.schemas import apply_all_schemas
+
 log = logging.getLogger(__name__)
 
 IGNORE_DIRS = {
@@ -178,6 +180,7 @@ def ingest_repo(
     tags_index_path = tags_index_path or (repo_root / "tags_index.yaml")
 
     log.info("Scanning repo %s at %s", repo, repo_root)
+    apply_all_schemas(con)
 
     tags_entries = _load_tags_index(tags_index_path)
     if tags_entries:

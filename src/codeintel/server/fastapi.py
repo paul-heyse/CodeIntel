@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from codeintel.mcp import errors
-from codeintel.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
+from codeintel.mcp.backend import DuckDBBackend
 from codeintel.mcp.config import McpServerConfig
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
@@ -140,62 +140,6 @@ def load_api_config() -> ApiAppConfig:
     return ApiAppConfig(server=server_cfg, read_only=read_only)
 
 
-def clamp_limit(requested: int, cfg: McpServerConfig) -> int:
-    """
-    Validate and clamp request limits against configuration.
-
-    Parameters
-    ----------
-    requested:
-        Requested limit from the client.
-    cfg:
-        Server configuration providing maximums.
-
-    Returns
-    -------
-    int
-        Safe limit value within configured bounds.
-
-    Raises
-    ------
-    errors.invalid_argument
-        If the requested limit is negative or exceeds allowed bounds.
-    """
-    max_limit = min(cfg.max_rows_per_call, MAX_ROWS_LIMIT)
-    if requested < 0:
-        message = "limit must be non-negative"
-        raise errors.invalid_argument(message)
-    if requested > max_limit:
-        message = f"limit cannot exceed {max_limit}"
-        raise errors.invalid_argument(message)
-    return requested
-
-
-def clamp_offset(offset: int) -> int:
-    """
-    Validate offsets to avoid negative scans.
-
-    Parameters
-    ----------
-    offset:
-        Requested offset value.
-
-    Returns
-    -------
-    int
-        Non-negative offset.
-
-    Raises
-    ------
-    errors.invalid_argument
-        If the offset is negative.
-    """
-    if offset < 0:
-        message = "offset must be non-negative"
-        raise errors.invalid_argument(message)
-    return offset
-
-
 def create_backend_resource(cfg: ApiAppConfig) -> BackendResource:
     """
     Instantiate the DuckDB backend for the API.
@@ -274,6 +218,19 @@ def install_exception_handlers(app: FastAPI) -> None:
             detail="Request validation failed",
             status=status.HTTP_400_BAD_REQUEST,
             data={"errors": exc.errors()},
+        )
+        return problem_response(problem)
+
+    @app.exception_handler(Exception)
+    def _handle_unexpected(
+        _request: Request,
+        exc: Exception,
+    ) -> JSONResponse:
+        problem = ProblemDetail(
+            type="https://example.com/problems/backend-failure",
+            title="Backend failure",
+            detail=str(exc),
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
         return problem_response(problem)
 
@@ -432,13 +389,9 @@ def build_functions_router() -> APIRouter:
         HighRiskFunctionsResponse
             High-risk functions and truncation flag.
         """
-        safe_limit = clamp_limit(
-            config.server.default_limit if limit is None else limit,
-            config.server,
-        )
         result = backend.list_high_risk_functions(
             min_risk=min_risk,
-            limit=safe_limit,
+            limit=config.server.default_limit if limit is None else limit,
             tested_only=tested_only,
         )
         return HighRiskFunctionsResponse(functions=result.functions, truncated=result.truncated)
@@ -464,14 +417,10 @@ def build_functions_router() -> APIRouter:
         CallGraphNeighborsResponse
             Incoming and outgoing edges adjacent to the function.
         """
-        safe_limit = clamp_limit(
-            config.server.default_limit if limit is None else limit,
-            config.server,
-        )
         return backend.get_callgraph_neighbors(
             goid_h128=goid_h128,
             direction=direction,
-            limit=safe_limit,
+            limit=config.server.default_limit if limit is None else limit,
         )
 
     @router.get(
@@ -495,14 +444,10 @@ def build_functions_router() -> APIRouter:
         TestsForFunctionResponse
             Tests linked to the requested function.
         """
-        safe_limit = clamp_limit(
-            config.server.default_limit if limit is None else limit,
-            config.server,
-        )
         return backend.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
-            limit=safe_limit,
+            limit=config.server.default_limit if limit is None else limit,
         )
 
     @router.get(
@@ -581,15 +526,10 @@ def build_datasets_router() -> APIRouter:
         DatasetRowsResponse
             Dataset slice with pagination metadata.
         """
-        safe_limit = clamp_limit(
-            config.server.default_limit if limit is None else limit,
-            config.server,
-        )
-        safe_offset = clamp_offset(offset)
         return backend.read_dataset_rows(
             dataset_name=dataset_name,
-            limit=safe_limit,
-            offset=safe_offset,
+            limit=config.server.default_limit if limit is None else limit,
+            offset=offset,
         )
 
     return router

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -38,11 +40,32 @@ class ProblemDetail(BaseModel):
     data: dict[str, object] | None = None
 
 
+class Message(BaseModel):
+    """Structured message attached to responses."""
+
+    code: str
+    severity: Literal["info", "warning", "error"]
+    detail: str
+    context: dict[str, object] | None = None
+
+
+class ResponseMeta(BaseModel):
+    """Response metadata including clamping and messaging."""
+
+    requested_limit: int | None = None
+    applied_limit: int | None = None
+    requested_offset: int | None = None
+    applied_offset: int | None = None
+    truncated: bool = False
+    messages: list[Message] = Field(default_factory=list)
+
+
 class FunctionSummaryResponse(BaseModel):
     """Response wrapper for function summary lookups."""
 
     found: bool
     summary: ViewRow | None = None
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
 
 class HighRiskFunctionsResponse(BaseModel):
@@ -50,6 +73,7 @@ class HighRiskFunctionsResponse(BaseModel):
 
     functions: list[ViewRow]
     truncated: bool = False
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
 
 class CallGraphNeighborsResponse(BaseModel):
@@ -57,12 +81,14 @@ class CallGraphNeighborsResponse(BaseModel):
 
     outgoing: list[ViewRow]
     incoming: list[ViewRow]
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
 
 class TestsForFunctionResponse(BaseModel):
     """Tests that exercise a given function."""
 
     tests: list[ViewRow]
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
 
 class FileSummaryResponse(BaseModel):
@@ -70,6 +96,7 @@ class FileSummaryResponse(BaseModel):
 
     found: bool
     file: ViewRow | None = None
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
 
 class DatasetDescriptor(BaseModel):
@@ -87,3 +114,4 @@ class DatasetRowsResponse(BaseModel):
     limit: int
     offset: int
     rows: list[ViewRow]
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
