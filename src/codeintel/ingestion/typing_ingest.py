@@ -12,9 +12,10 @@ from asyncio.subprocess import PIPE
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import duckdb
+
+from codeintel.types import PyreflyError
 
 log = logging.getLogger(__name__)
 MISSING_BINARY_EXIT_CODE = 127
@@ -180,7 +181,7 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
     finally:
         output_path.unlink(missing_ok=True)
 
-    errors: list[dict[str, Any]] = payload.get("errors") or []
+    errors: list[PyreflyError] = payload.get("errors") or []
     errors_by_file: dict[str, int] = {}
     for diag in errors:
         if diag.get("severity") != "error":

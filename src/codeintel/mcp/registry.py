@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -20,7 +19,7 @@ from codeintel.mcp.models import (
 )
 
 
-def _wrap(tool: Callable[..., Any]) -> Callable[..., Any]:
+def _wrap(tool: Callable[..., object]) -> Callable[..., object]:
     """
     Wrap a backend-facing tool to normalize McpError into ProblemDetail payloads.
 
@@ -49,7 +48,7 @@ def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
-    ) -> dict[str, Any] | dict[str, ProblemDetail]:
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: FunctionSummaryResponse = backend.get_function_summary(
             urn=urn,
             goid_h128=goid_h128,
@@ -65,13 +64,13 @@ def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
         limit: int = 50,
         *,
         tested_only: bool = False,
-    ) -> dict[str, Any] | dict[str, ProblemDetail]:
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: HighRiskFunctionsResponse = backend.list_high_risk_functions(
             min_risk=min_risk,
             limit=limit,
             tested_only=tested_only,
         )
-        return {"functions": resp.functions, "truncated": resp.truncated}
+        return resp.model_dump()
 
     @mcp.tool()
     @_wrap
@@ -79,7 +78,7 @@ def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
         goid_h128: int,
         direction: str = "both",
         limit: int = 50,
-    ) -> dict[str, Any] | dict[str, ProblemDetail]:
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: CallGraphNeighborsResponse = backend.get_callgraph_neighbors(
             goid_h128=goid_h128,
             direction=direction,
@@ -92,22 +91,22 @@ def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
     def get_tests_for_function(
         goid_h128: int | None = None,
         urn: str | None = None,
-    ) -> dict[str, Any] | dict[str, ProblemDetail]:
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: TestsForFunctionResponse = backend.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
         )
-        return {"tests": resp.tests}
+        return resp.model_dump()
 
     @mcp.tool()
     @_wrap
-    def get_file_summary(rel_path: str) -> dict[str, Any] | dict[str, ProblemDetail]:
+    def get_file_summary(rel_path: str) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: FileSummaryResponse = backend.get_file_summary(rel_path=rel_path)
         return resp.model_dump()
 
     @mcp.tool()
     @_wrap
-    def list_datasets() -> list[dict[str, Any]]:
+    def list_datasets() -> list[dict[str, object]]:
         return [descriptor.model_dump() for descriptor in backend.list_datasets()]
 
     @mcp.tool()
@@ -116,7 +115,7 @@ def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
         dataset_name: str,
         limit: int = 50,
         offset: int = 0,
-    ) -> dict[str, Any] | dict[str, ProblemDetail]:
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: DatasetRowsResponse = backend.read_dataset_rows(
             dataset_name=dataset_name,
             limit=limit,

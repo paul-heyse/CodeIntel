@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Protocol
 
 import duckdb
 
@@ -16,15 +16,24 @@ from codeintel.mcp.models import (
     FunctionSummaryResponse,
     HighRiskFunctionsResponse,
     TestsForFunctionResponse,
+    ViewRow,
 )
 
 MAX_ROWS_LIMIT = 500
 VALID_DIRECTIONS = frozenset({"in", "out", "both"})
+RowDict = dict[str, object]
+
+
+def _column_exists(con: duckdb.DuckDBPyConnection, table: str, column: str) -> bool:
+    """Return True when a table or view exposes the given column."""
+    info_sql = f"PRAGMA table_info('{table}')"
+    rows = con.execute(info_sql).fetchall()
+    return any(col[1] == column for col in rows)
 
 
 def _fetch_one_dict(
-    cur: duckdb.DuckDBPyConnection, sql: str, params: list[Any]
-) -> dict[str, Any] | None:
+    cur: duckdb.DuckDBPyConnection, sql: str, params: list[object]
+) -> RowDict | None:
     """
     Execute a parameterized query and return the first row as a dict.
 
@@ -39,7 +48,7 @@ def _fetch_one_dict(
 
     Returns
     -------
-    dict[str, Any] | None
+    dict[str, object] | None
         Row dictionary if present, otherwise None.
     """
     result = cur.execute(sql, params)
@@ -51,8 +60,8 @@ def _fetch_one_dict(
 
 
 def _fetch_all_dicts(
-    cur: duckdb.DuckDBPyConnection, sql: str, params: list[Any]
-) -> list[dict[str, Any]]:
+    cur: duckdb.DuckDBPyConnection, sql: str, params: list[object]
+) -> list[RowDict]:
     """
     Execute a parameterized query and return all rows as dictionaries.
 
@@ -67,7 +76,7 @@ def _fetch_all_dicts(
 
     Returns
     -------
-    list[dict[str, Any]]
+    list[dict[str, object]]
         List of row dictionaries.
     """
     result = cur.execute(sql, params)
@@ -207,6 +216,11 @@ class DuckDBBackend(QueryBackend):
         -------
         int | None
             GOID hash if found, otherwise None.
+
+        Raises
+        ------
+        errors.backend_failure
+            If the retrieved GOID has an unexpected type.
         """
         if goid_h128 is not None:
             return goid_h128
@@ -238,7 +252,13 @@ class DuckDBBackend(QueryBackend):
 
         if not row:
             return None
-        return int(row["function_goid_h128"])
+        value = row.get("function_goid_h128")
+        if value is None:
+            return None
+        if isinstance(value, (int, float, str)):
+            return int(value)
+        message = f"Unexpected goid type: {type(value)!r}"
+        raise errors.backend_failure(message)
 
     def get_function_summary(
         self,
@@ -253,7 +273,7 @@ class DuckDBBackend(QueryBackend):
 
         Returns
         -------
-        dict[str, Any] | None
+        RowDict | None
             Function summary if found, otherwise None.
 
         Raises
@@ -266,9 +286,9 @@ class DuckDBBackend(QueryBackend):
         FunctionSummaryResponse
             Wrapped function summary payload.
         """
-        summary: dict[str, Any] | None = None
+        summary: ViewRow | None = None
         if urn:
-            summary = _fetch_one_dict(
+            row = _fetch_one_dict(
                 self.con,
                 """
                 SELECT *
@@ -278,8 +298,9 @@ class DuckDBBackend(QueryBackend):
                 """,
                 [self.repo, self.commit, urn],
             )
+            summary = ViewRow.model_validate(row) if row else None
         elif goid_h128 is not None:
-            summary = _fetch_one_dict(
+            row = _fetch_one_dict(
                 self.con,
                 """
                 SELECT *
@@ -289,8 +310,9 @@ class DuckDBBackend(QueryBackend):
                 """,
                 [self.repo, self.commit, goid_h128],
             )
+            summary = ViewRow.model_validate(row) if row else None
         elif rel_path and qualname:
-            summary = _fetch_one_dict(
+            row = _fetch_one_dict(
                 self.con,
                 """
                 SELECT *
@@ -300,6 +322,7 @@ class DuckDBBackend(QueryBackend):
                 """,
                 [self.repo, self.commit, rel_path, qualname],
             )
+            summary = ViewRow.model_validate(row) if row else None
         else:
             message = "Must provide urn or goid_h128 or (rel_path + qualname)."
             raise errors.McpError(
@@ -325,7 +348,7 @@ class DuckDBBackend(QueryBackend):
 
         Returns
         -------
-        list[dict[str, Any]]
+        list[RowDict]
             High-risk function rows sorted by risk_score.
 
         Raises
@@ -338,7 +361,7 @@ class DuckDBBackend(QueryBackend):
             message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
             raise errors.invalid_argument(message)
         safe_limit = max(0, limit)
-        params: list[Any] = [self.repo, self.commit, min_risk, safe_limit]
+        params: list[object] = [self.repo, self.commit, min_risk, safe_limit]
         sql = (
             """
             SELECT
@@ -362,8 +385,9 @@ class DuckDBBackend(QueryBackend):
             """
         )
         rows = _fetch_all_dicts(self.con, sql, params)
+        models = [ViewRow.model_validate(r) for r in rows]
         truncated = safe_limit > 0 and len(rows) == safe_limit
-        return HighRiskFunctionsResponse(functions=rows, truncated=truncated)
+        return HighRiskFunctionsResponse(functions=models, truncated=truncated)
 
     def get_callgraph_neighbors(
         self,
@@ -377,7 +401,7 @@ class DuckDBBackend(QueryBackend):
 
         Returns
         -------
-        dict[str, list[dict[str, Any]]]
+        dict[str, list[RowDict]]
             Mapping with "outgoing" and "incoming" edge lists.
 
         Raises
@@ -393,8 +417,8 @@ class DuckDBBackend(QueryBackend):
             message = f"limit cannot exceed {MAX_ROWS_LIMIT}"
             raise errors.invalid_argument(message)
         safe_limit = max(0, limit)
-        outgoing: list[dict[str, Any]] = []
-        incoming: list[dict[str, Any]] = []
+        outgoing: list[ViewRow] = []
+        incoming: list[ViewRow] = []
 
         if direction in {"out", "both"}:
             out_sql = """
@@ -404,7 +428,8 @@ class DuckDBBackend(QueryBackend):
                 ORDER BY callee_qualname
                 LIMIT ?
             """
-            outgoing = _fetch_all_dicts(self.con, out_sql, [goid_h128, safe_limit])
+            out_rows = _fetch_all_dicts(self.con, out_sql, [goid_h128, safe_limit])
+            outgoing = [ViewRow.model_validate(r) for r in out_rows]
 
         if direction in {"in", "both"}:
             in_sql = """
@@ -414,7 +439,8 @@ class DuckDBBackend(QueryBackend):
                 ORDER BY caller_qualname
                 LIMIT ?
             """
-            incoming = _fetch_all_dicts(self.con, in_sql, [goid_h128, safe_limit])
+            in_rows = _fetch_all_dicts(self.con, in_sql, [goid_h128, safe_limit])
+            incoming = [ViewRow.model_validate(r) for r in in_rows]
 
         return CallGraphNeighborsResponse(outgoing=outgoing, incoming=incoming)
 
@@ -451,6 +477,11 @@ class DuckDBBackend(QueryBackend):
             message = "Must provide goid_h128 or urn."
             raise errors.invalid_argument(message)
 
+        repo_col = "test_repo" if _column_exists(self.con, "docs.v_test_to_function", "test_repo") else "repo"
+        commit_col = (
+            "test_commit" if _column_exists(self.con, "docs.v_test_to_function", "test_commit") else "commit"
+        )
+
         if limit is None:
             safe_limit = MAX_ROWS_LIMIT
         elif limit > MAX_ROWS_LIMIT:
@@ -461,10 +492,12 @@ class DuckDBBackend(QueryBackend):
         if goid_h128 is not None:
             rows = _fetch_all_dicts(
                 self.con,
-                """
+                f"""
                 SELECT *
                 FROM docs.v_test_to_function
-                WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
+                WHERE {repo_col} = ?
+                  AND {commit_col} = ?
+                  AND function_goid_h128 = ?
                 ORDER BY test_id
                 LIMIT ?
                 """,
@@ -473,16 +506,18 @@ class DuckDBBackend(QueryBackend):
         else:
             rows = _fetch_all_dicts(
                 self.con,
-                """
+                f"""
                 SELECT *
                 FROM docs.v_test_to_function
-                WHERE repo = ? AND commit = ? AND urn = ?
+                WHERE {repo_col} = ?
+                  AND {commit_col} = ?
+                  AND urn = ?
                 ORDER BY test_id
                 LIMIT ?
                 """,
                 [self.repo, self.commit, urn, safe_limit],
             )
-        return TestsForFunctionResponse(tests=rows)
+        return TestsForFunctionResponse(tests=[ViewRow.model_validate(r) for r in rows])
 
     def get_file_summary(
         self,
@@ -494,7 +529,7 @@ class DuckDBBackend(QueryBackend):
 
         Returns
         -------
-        dict[str, Any] | None
+        RowDict | None
             File summary with nested functions, or None if missing.
         """
         file_row = _fetch_one_dict(
@@ -518,12 +553,13 @@ class DuckDBBackend(QueryBackend):
             WHERE rel_path = ?
               AND repo = ?
               AND commit = ?
-            ORDER BY start_line
+            ORDER BY qualname
             """,
             [rel_path, self.repo, self.commit],
         )
-        file_row["functions"] = funcs
-        return FileSummaryResponse(found=True, file=file_row)
+        file_payload = dict(file_row)
+        file_payload["functions"] = [ViewRow.model_validate(r) for r in funcs]
+        return FileSummaryResponse(found=True, file=ViewRow.model_validate(file_payload))
 
     def list_datasets(self) -> list[DatasetDescriptor]:
         """
@@ -531,7 +567,7 @@ class DuckDBBackend(QueryBackend):
 
         Returns
         -------
-        list[dict[str, Any]]
+        list[dict[str, object]]
             Dataset metadata entries.
         """
         return [
@@ -582,5 +618,5 @@ class DuckDBBackend(QueryBackend):
             dataset=dataset_name,
             limit=safe_limit,
             offset=safe_offset,
-            rows=mapped,
+            rows=[ViewRow.model_validate(r) for r in mapped],
         )

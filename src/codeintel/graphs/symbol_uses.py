@@ -6,9 +6,11 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import cast
 
 import duckdb
+
+from codeintel.types import ScipDocument
 
 log = logging.getLogger(__name__)
 
@@ -30,14 +32,6 @@ class SymbolUsesConfig:
     scip_json_path: Path
     repo: str
     commit: str
-
-
-class ScipDoc(TypedDict, total=False):
-    """Typed representation of a SCIP JSON document."""
-
-    relative_path: str
-    occurrences: list[dict[str, Any]]
-    symbols: list[dict[str, Any]]
 
 
 def build_symbol_use_edges(
@@ -82,7 +76,7 @@ def build_symbol_use_edges(
     )
 
 
-def _load_scip_docs(scip_path: Path) -> list[ScipDoc] | None:
+def _load_scip_docs(scip_path: Path) -> list[ScipDocument] | None:
     if not scip_path.exists():
         log.warning("SCIP JSON not found at %s; skipping symbol_use_edges", scip_path)
         return None
@@ -97,7 +91,7 @@ def _load_scip_docs(scip_path: Path) -> list[ScipDoc] | None:
     if not isinstance(docs_raw, list):
         log.warning("SCIP JSON root is not a list; aborting symbol_use_edges build.")
         return None
-    return [cast("ScipDoc", doc) for doc in docs_raw if isinstance(doc, dict)]
+    return [cast("ScipDocument", doc) for doc in docs_raw if isinstance(doc, dict)]
 
 
 def _module_map(con: duckdb.DuckDBPyConnection, cfg: SymbolUsesConfig) -> dict[str, str]:
@@ -116,7 +110,7 @@ def _module_map(con: duckdb.DuckDBPyConnection, cfg: SymbolUsesConfig) -> dict[s
     return module_by_path
 
 
-def _build_def_map(docs: list[ScipDoc]) -> dict[str, str]:
+def _build_def_map(docs: list[ScipDocument]) -> dict[str, str]:
     def_path_by_symbol: dict[str, str] = {}
     for doc in docs:
         rel_path = doc.get("relative_path")
@@ -136,7 +130,7 @@ def _build_def_map(docs: list[ScipDoc]) -> dict[str, str]:
 
 
 def _build_symbol_edges(
-    docs: list[ScipDoc],
+    docs: list[ScipDocument],
     def_path_by_symbol: dict[str, str],
     module_by_path: dict[str, str],
 ) -> list[tuple]:

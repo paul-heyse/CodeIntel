@@ -252,5 +252,14 @@ class CodeIntelConfig(BaseModel):
         -------
         Path
             Absolute path to the Document Output directory.
+
+        Raises
+        ------
+        RuntimeError
+            If the paths config was not resolved and document_output_dir is None.
         """
-        return self.paths.document_output_dir
+        doc_dir = self.paths.document_output_dir
+        if doc_dir is None:
+            message = "document_output_dir was not resolved; call PathsConfig._resolve_paths first."
+            raise RuntimeError(message)
+        return doc_dir

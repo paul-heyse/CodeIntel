@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -59,7 +59,7 @@ class McpServerConfig(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _expand_paths(cls, values: dict[str, Any]) -> dict[str, Any]:
+    def _expand_paths(cls, values: dict[str, object]) -> dict[str, object]:
         """
         Normalize repo_root and db_path to absolute paths early.
 

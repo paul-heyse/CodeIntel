@@ -2,9 +2,29 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pydantic import BaseModel, ConfigDict, Field
 
-from pydantic import BaseModel, Field
+
+class ViewRow(BaseModel):
+    """Generic row wrapper for DuckDB view/table results."""
+
+    model_config = ConfigDict(extra="allow")
+
+    def __getitem__(self, key: str) -> object:
+        """
+        Allow dict-style access for compatibility with legacy code/tests.
+
+        Parameters
+        ----------
+        key : str
+            Field name to retrieve.
+
+        Returns
+        -------
+        object
+            Value for the requested field.
+        """
+        return self.model_dump()[key]
 
 
 class ProblemDetail(BaseModel):
@@ -15,41 +35,41 @@ class ProblemDetail(BaseModel):
     detail: str | None = None
     status: int | None = None
     instance: str | None = None
-    data: dict[str, Any] | None = None
+    data: dict[str, object] | None = None
 
 
 class FunctionSummaryResponse(BaseModel):
     """Response wrapper for function summary lookups."""
 
     found: bool
-    summary: dict[str, Any] | None = None
+    summary: ViewRow | None = None
 
 
 class HighRiskFunctionsResponse(BaseModel):
     """Response wrapper for high-risk function listings."""
 
-    functions: list[dict[str, Any]]
+    functions: list[ViewRow]
     truncated: bool = False
 
 
 class CallGraphNeighborsResponse(BaseModel):
     """Incoming/outgoing call graph edges."""
 
-    outgoing: list[dict[str, Any]]
-    incoming: list[dict[str, Any]]
+    outgoing: list[ViewRow]
+    incoming: list[ViewRow]
 
 
 class TestsForFunctionResponse(BaseModel):
     """Tests that exercise a given function."""
 
-    tests: list[dict[str, Any]]
+    tests: list[ViewRow]
 
 
 class FileSummaryResponse(BaseModel):
     """Summary of a file plus nested function rows."""
 
     found: bool
-    file: dict[str, Any] | None = None
+    file: ViewRow | None = None
 
 
 class DatasetDescriptor(BaseModel):
@@ -66,4 +86,4 @@ class DatasetRowsResponse(BaseModel):
     dataset: str
     limit: int
     offset: int
-    rows: list[dict[str, Any]]
+    rows: list[ViewRow]
