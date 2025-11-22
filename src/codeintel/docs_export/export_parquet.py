@@ -29,6 +29,7 @@ PARQUET_DATASETS: dict[str, str] = {
     "core.ast_nodes": "ast_nodes.parquet",
     "core.ast_metrics": "ast_metrics.parquet",
     "core.cst_nodes": "cst_nodes.parquet",
+    "core.docstrings": "docstrings.parquet",
     # Modules / config / diagnostics
     "core.modules": "modules.parquet",
     "analytics.config_values": "config_values.parquet",

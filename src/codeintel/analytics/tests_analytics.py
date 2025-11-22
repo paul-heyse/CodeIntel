@@ -58,7 +58,9 @@ def _load_coverage_data(cfg: TestCoverageConfig) -> Coverage | None:
     return cov
 
 
-def _functions_by_path(con: duckdb.DuckDBPyConnection, cfg: TestCoverageConfig) -> dict[str, list[dict]]:
+def _functions_by_path(
+    con: duckdb.DuckDBPyConnection, cfg: TestCoverageConfig
+) -> dict[str, list[dict]]:
     funcs = con.execute(
         """
         SELECT
