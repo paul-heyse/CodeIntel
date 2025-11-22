@@ -4,28 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
 
 import duckdb
 
+from codeintel.config.models import CFGBuilderConfig
+
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class CFGBuilderConfig:
-    """
-    Configuration for deriving control-flow/data-flow graph placeholders.
-
-    Parameters
-    ----------
-    repo : str
-        Repository slug being analyzed.
-    commit : str
-        Commit SHA corresponding to the snapshot.
-    """
-
-    repo: str
-    commit: str
 
 
 def build_cfg_and_dfg(con: duckdb.DuckDBPyConnection, cfg: CFGBuilderConfig) -> None:

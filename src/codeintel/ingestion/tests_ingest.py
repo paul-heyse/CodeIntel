@@ -10,6 +10,8 @@ from pathlib import Path
 
 import duckdb
 
+from codeintel.config.models import TestsIngestConfig
+from codeintel.config.schemas.sql_builder import ensure_schema, prepared_statements
 from codeintel.types import PytestTestEntry
 
 log = logging.getLogger(__name__)
@@ -166,11 +168,7 @@ def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
 
 def ingest_tests(
     con: duckdb.DuckDBPyConnection,
-    repo_root: Path,
-    repo: str,
-    commit: str,
-    *,
-    pytest_report_path: Path | None = None,
+    cfg: TestsIngestConfig,
 ) -> None:
     """
     Ingest a pytest JSON report into analytics.test_catalog.
@@ -178,9 +176,8 @@ def ingest_tests(
     This step does NOT compute test_coverage_edges; those are derived
     later in an analytics step by combining coverage contexts with GOIDs.
     """
-    repo_root = repo_root.resolve()
-    if pytest_report_path is None:
-        pytest_report_path = _find_default_report(repo_root)
+    repo_root = cfg.repo_root
+    pytest_report_path = cfg.pytest_report_path or _find_default_report(repo_root)
 
     if pytest_report_path is None or not pytest_report_path.is_file():
         log.warning("Pytest JSON report not found; skipping test_catalog ingestion")
@@ -191,7 +188,10 @@ def ingest_tests(
         log.warning("No tests found in pytest report %s", pytest_report_path)
         return
 
-    con.execute("DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?", [repo, commit])
+    ensure_schema(con, "analytics.test_catalog")
+    test_stmt = prepared_statements("analytics.test_catalog")
+    if test_stmt.delete_sql is not None:
+        con.execute(test_stmt.delete_sql, [cfg.repo, cfg.commit])
 
     now = datetime.now(UTC)
     rows: list[TestCatalogRow] = []
@@ -205,16 +205,8 @@ def ingest_tests(
         return
 
     con.executemany(
-        """
-        INSERT INTO analytics.test_catalog (
-            test_id, test_goid_h128, urn,
-            repo, commit, rel_path, qualname,
-            kind, status, duration_ms, markers,
-            parametrized, flaky, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [row.to_params(repo, commit, now) for row in rows],
+        test_stmt.insert_sql,
+        [row.to_params(cfg.repo, cfg.commit, now) for row in rows],
     )
 
-    log.info("test_catalog ingested from %s for %s@%s", pytest_report_path, repo, commit)
+    log.info("test_catalog ingested from %s for %s@%s", pytest_report_path, cfg.repo, cfg.commit)

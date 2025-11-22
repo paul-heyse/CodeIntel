@@ -13,6 +13,7 @@ from typing import TypedDict
 import duckdb
 import yaml
 
+from codeintel.config.models import RepoScanConfig
 from codeintel.storage.schemas import apply_all_schemas
 
 log = logging.getLogger(__name__)
@@ -111,14 +112,17 @@ def _write_tags_index_table(
         INSERT INTO analytics.tags_index (tag, description, includes, excludes, matches)
         VALUES (?, ?, ?, ?, ?)
     """
-
+    values = []
     for entry in tags_entries:
         tag = entry.get("tag")
         description = entry.get("description")
         includes = entry.get("includes") or []
         excludes = entry.get("excludes") or []
         matches = entry.get("matches") or []
-        con.execute(insert_sql, [tag, description, includes, excludes, matches])
+        values.append([tag, description, includes, excludes, matches])
+
+    if values:
+        con.executemany(insert_sql, values)
 
 
 def _tags_for_path(rel_path: str, tags_entries: list[TagEntry]) -> list[str]:
@@ -147,11 +151,7 @@ def _tags_for_path(rel_path: str, tags_entries: list[TagEntry]) -> list[str]:
 
 def ingest_repo(
     con: duckdb.DuckDBPyConnection,
-    repo_root: Path,
-    repo: str,
-    commit: str,
-    *,
-    tags_index_path: Path | None = None,
+    cfg: RepoScanConfig,
 ) -> None:
     """
     Scan the repository and populate module metadata tables.
@@ -166,20 +166,13 @@ def ingest_repo(
     ----------
     con:
         DuckDB connection.
-    repo_root:
-        Filesystem path to the repo root.
-    repo:
-        Repo identifier slug.
-    commit:
-        Commit SHA for this analysis run.
-    tags_index_path:
-        Optional explicit path to tags_index.yaml. Defaults to
-        `<repo_root>/tags_index.yaml`.
+    cfg:
+        Repository context and optional tags_index override.
     """
-    repo_root = repo_root.resolve()
-    tags_index_path = tags_index_path or (repo_root / "tags_index.yaml")
+    repo_root = cfg.repo_root
+    tags_index_path = cfg.tags_index_path or (repo_root / "tags_index.yaml")
 
-    log.info("Scanning repo %s at %s", repo, repo_root)
+    log.info("Scanning repo %s at %s", cfg.repo, repo_root)
     apply_all_schemas(con)
 
     tags_entries = _load_tags_index(tags_index_path)
@@ -196,8 +189,8 @@ def ingest_repo(
         modules[module] = ModuleRow(
             module=module,
             path=rel_path,
-            repo=repo,
-            commit=commit,
+            repo=cfg.repo,
+            commit=cfg.commit,
             language="python",
             tags=tags,
             owners=[],  # owner inference can be added later
@@ -205,20 +198,19 @@ def ingest_repo(
 
     log.info("Discovered %d Python modules", len(modules))
 
-    # Truncate existing rows for this repo/commit.
-    con.execute(
-        "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-
-    insert_modules = """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """
-
-    for m in modules.values():
+    con.execute("BEGIN")
+    try:
+        # Truncate existing rows for this repo/commit.
         con.execute(
-            insert_modules,
+            "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
+            [cfg.repo, cfg.commit],
+        )
+
+        insert_modules = """
+            INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        module_values = [
             [
                 m.module,
                 m.path,
@@ -227,24 +219,32 @@ def ingest_repo(
                 m.language,
                 m.tags or [],
                 m.owners or [],
-            ],
+            ]
+            for m in modules.values()
+        ]
+        if module_values:
+            con.executemany(insert_modules, module_values)
+
+        # core.repo_map: single row per (repo, commit)
+        con.execute(
+            "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+            [cfg.repo, cfg.commit],
         )
 
-    # core.repo_map: single row per (repo, commit)
-    con.execute(
-        "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
+        modules_json = {m.module: m.path for m in modules.values()}
+        now = datetime.now(UTC)
 
-    modules_json = {m.module: m.path for m in modules.values()}
-    now = datetime.now(UTC)
+        con.execute(
+            """
+            INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [cfg.repo, cfg.commit, modules_json, {}, now],
+        )
 
-    con.execute(
-        """
-        INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        [repo, commit, modules_json, {}, now],
-    )
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
 
-    log.info("repo_map and modules written for %s@%s", repo, commit)
+    log.info("repo_map and modules written for %s@%s", cfg.repo, cfg.commit)

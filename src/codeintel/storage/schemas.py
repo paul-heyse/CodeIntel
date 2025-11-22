@@ -50,32 +50,32 @@ TABLE_DDL: dict[str, str] = {
         updated_at   TIMESTAMP
     );
     """,
-    "core.ast_nodes": """
-    CREATE TABLE IF NOT EXISTS core.ast_nodes (
-        path            TEXT,
-        node_type       TEXT,
-        name            TEXT,
-        qualname        TEXT,
-        lineno          INTEGER,
-        end_lineno      INTEGER,
-        col_offset      INTEGER,
-        end_col_offset  INTEGER,
-        parent_qualname TEXT,
-        decorators      JSON,
-        docstring       TEXT,
-        hash            TEXT
-    );
-    """,
+"core.ast_nodes": """
+CREATE TABLE IF NOT EXISTS core.ast_nodes (
+    path            TEXT NOT NULL,
+    node_type       TEXT NOT NULL,
+    name            TEXT,
+    qualname        TEXT,
+    lineno          INTEGER,
+    end_lineno      INTEGER,
+    col_offset      INTEGER,
+    end_col_offset  INTEGER,
+    parent_qualname TEXT,
+    decorators      JSON,
+    docstring       TEXT,
+    hash            TEXT NOT NULL
+);
+""",
     "core.ast_metrics": """
     CREATE TABLE IF NOT EXISTS core.ast_metrics (
-        rel_path    TEXT,
-        node_count  INTEGER,
-        function_count INTEGER,
-        class_count INTEGER,
-        avg_depth   DOUBLE,
-        max_depth   INTEGER,
-        complexity  DOUBLE,
-        generated_at TIMESTAMP
+        rel_path        TEXT NOT NULL,
+        node_count      INTEGER NOT NULL,
+        function_count  INTEGER NOT NULL,
+        class_count     INTEGER NOT NULL,
+        avg_depth       DOUBLE NOT NULL,
+        max_depth       INTEGER NOT NULL,
+        complexity      DOUBLE NOT NULL,
+        generated_at    TIMESTAMP NOT NULL
     );
     """,
     "core.modules": """
@@ -98,17 +98,17 @@ TABLE_DDL: dict[str, str] = {
         generated_at TIMESTAMP
     );
     """,
-    "core.cst_nodes": """
-    CREATE TABLE IF NOT EXISTS core.cst_nodes (
-        path         TEXT,
-        node_id      TEXT,
-        kind         TEXT,
-        span         JSON,
-        text_preview TEXT,
-        parents      JSON,
-        qnames       JSON
-    );
-    """,
+"core.cst_nodes": """
+CREATE TABLE IF NOT EXISTS core.cst_nodes (
+    path         TEXT NOT NULL,
+    node_id      TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    span         JSON NOT NULL,
+    text_preview TEXT,
+    parents      JSON,
+    qnames       JSON
+);
+""",
     "core.docstrings": """
     CREATE TABLE IF NOT EXISTS core.docstrings (
         repo           TEXT,
@@ -308,12 +308,12 @@ TABLE_DDL: dict[str, str] = {
     """,
     "analytics.config_values": """
     CREATE TABLE IF NOT EXISTS analytics.config_values (
-        config_path       TEXT,
-        format            TEXT,
-        key               TEXT,
+        config_path       TEXT NOT NULL,
+        format            TEXT NOT NULL,
+        key               TEXT NOT NULL,
         reference_paths   JSON,
         reference_modules JSON,
-        reference_count   INTEGER
+        reference_count   INTEGER NOT NULL
     );
     """,
     "analytics.static_diagnostics": """
@@ -327,15 +327,15 @@ TABLE_DDL: dict[str, str] = {
     """,
     "analytics.coverage_lines": """
     CREATE TABLE IF NOT EXISTS analytics.coverage_lines (
-        repo          TEXT,
-        commit        TEXT,
-        rel_path      TEXT,
-        line          INTEGER,
-        is_executable BOOLEAN,
-        is_covered    BOOLEAN,
-        hits          INTEGER,
-        context_count INTEGER,
-        created_at    TIMESTAMP
+        repo          TEXT NOT NULL,
+        commit        TEXT NOT NULL,
+        rel_path      TEXT NOT NULL,
+        line          INTEGER NOT NULL,
+        is_executable BOOLEAN NOT NULL,
+        is_covered    BOOLEAN NOT NULL,
+        hits          INTEGER NOT NULL,
+        context_count INTEGER NOT NULL,
+        created_at    TIMESTAMP NOT NULL
     );
     """,
     "analytics.coverage_functions": """
@@ -358,19 +358,19 @@ TABLE_DDL: dict[str, str] = {
         created_at         TIMESTAMP
     );
     """,
-    "analytics.test_catalog": """
-    CREATE TABLE IF NOT EXISTS analytics.test_catalog (
-        test_id        TEXT,
-        test_goid_h128 DECIMAL(38,0),
-        urn            TEXT,
-        repo           TEXT,
-        commit         TEXT,
-        rel_path       TEXT,
-        qualname       TEXT,
-        kind           TEXT,
-        status         TEXT,
-        duration_ms    DOUBLE,
-        markers        JSON,
+"analytics.test_catalog": """
+CREATE TABLE IF NOT EXISTS analytics.test_catalog (
+    test_id        TEXT NOT NULL,
+    test_goid_h128 DECIMAL(38,0),
+    urn            TEXT,
+    repo           TEXT NOT NULL,
+    commit         TEXT NOT NULL,
+    rel_path       TEXT NOT NULL,
+    qualname       TEXT,
+    kind           TEXT,
+    status         TEXT,
+    duration_ms    DOUBLE,
+    markers        JSON,
         parametrized   BOOLEAN,
         flaky          BOOLEAN,
         created_at     TIMESTAMP

@@ -9,18 +9,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
+import pandas as pd
+
+from codeintel.config.models import GoidBuilderConfig
 
 log = logging.getLogger(__name__)
 DECIMAL_38_MAX = 10**38 - 1
-
-
-@dataclass(frozen=True)
-class GoidBuilderConfig:
-    """Configuration for building GOIDs."""
-
-    repo: str
-    commit: str
-    language: str = "python"
 
 
 @dataclass(frozen=True)
@@ -53,6 +47,33 @@ def _relpath_to_module(path: str | Path) -> str:
     """
     rel_path = Path(path).with_suffix("")
     return ".".join(rel_path.parts)
+
+
+def _safe_int(value: object, default: int | None = None) -> int | None:
+    """
+    Convert optional values to int, treating pandas nulls as missing.
+
+    Returns
+    -------
+    int | None
+        Integer value when conversion succeeds; otherwise the provided default.
+    """
+    if value is None or isinstance(value, (pd.Series, pd.DataFrame)):
+        return default
+
+    try:
+        if bool(pd.isna(value)):
+            return default
+    except (TypeError, ValueError):
+        return default
+
+    if not isinstance(value, (int, float, str, bool)):
+        return default
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _compute_goid(descriptor: GoidDescriptor) -> int:
@@ -144,9 +165,7 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
         node_type = str(row["node_type"])
         qualname = str(row["qualname"])
         parent_qualname_raw = row["parent_qualname"]
-        parent_qualname = (
-            str(parent_qualname_raw) if parent_qualname_raw is not None else None
-        )
+        parent_qualname = str(parent_qualname_raw) if parent_qualname_raw is not None else None
 
         if node_type == "Module":
             kind = "module"
@@ -157,8 +176,8 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
         else:
             kind = "function"
 
-        start_line = int(row["lineno"]) if row["lineno"] is not None else 1
-        end_line = int(row["end_lineno"]) if row["end_lineno"] is not None else None
+        start_line = _safe_int(row["lineno"], default=1) or 1
+        end_line = _safe_int(row["end_lineno"])
 
         descriptor = GoidDescriptor(
             repo=cfg.repo,

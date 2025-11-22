@@ -1,61 +1,60 @@
 #!/usr/bin/env bash
 #
-# Trigger the export_docs Prefect deployment to generate Document Output artifacts.
+## Generate document_output artifacts by running the Prefect flow directly.
+## Defaults assume this repository is checked out at $PWD.
 
 set -euo pipefail
 
-if [[ $# -lt 3 ]]; then
-  cat <<'USAGE'
-Usage: generate_documents.sh <repo_root> <repo_slug> <commit_sha> [db_path] [build_dir] [skip_scip]
-
-Examples:
-  ./generate_documents.sh /home/paul/CodeIntel myorg/repo deadbeef
-  ./generate_documents.sh /repo org/repo abc123 /repo/build/db/codeintel.duckdb /repo/build true
-
-Arguments:
-  repo_root  : Path to the repository root (must exist).
-  repo_slug  : Repository slug (e.g., org/repo).
-  commit_sha : Commit SHA for this run.
-  db_path    : Optional path to the DuckDB file (default: <repo_root>/build/db/codeintel.duckdb).
-  build_dir  : Optional build directory (default: <repo_root>/build).
-  skip_scip  : Optional boolean to bypass SCIP ingestion (default: false).
-USAGE
-  exit 1
-fi
-
-repo_root=$(realpath "$1")
-repo_slug=$2
-commit_sha=$3
-db_path=${4:-"$repo_root/build/db/codeintel.duckdb"}
+repo_root=${1:-"$(pwd)"}
+repo_slug=${2:-"paul-heyse/CodeIntel"}
+commit_sha=${3:-""}
+db_path=${4:-"$repo_root/build/db/codeintel_prefect.duckdb"}
 build_dir=${5:-"$repo_root/build"}
-skip_scip=${6:-false}
+skip_scip=${6:-true}
 
-if [[ ! -d "$repo_root" ]]; then
-  echo "repo_root does not exist: $repo_root" >&2
-  exit 1
+if [[ -z "$commit_sha" ]]; then
+  if git -C "$repo_root" rev-parse --verify HEAD >/dev/null 2>&1; then
+    commit_sha=$(git -C "$repo_root" rev-parse HEAD)
+  else
+    commit_sha="unknown"
+  fi
 fi
 
 db_path=$(realpath -m "$db_path")
 build_dir=$(realpath -m "$build_dir")
+repo_root=$(realpath -m "$repo_root")
 
-mkdir -p "$build_dir" "$(dirname "$db_path")"
+mkdir -p "$build_dir" "$(dirname "$db_path")" "$repo_root/document_output"
 
-params=$(cat <<EOF
-{
-  "repo_root": "$repo_root",
-  "repo": "$repo_slug",
-  "commit": "$commit_sha",
-  "db_path": "$db_path",
-  "build_dir": "$build_dir",
-  "skip_scip": $skip_scip
-}
-EOF
+export GEN_DOCS_REPO_ROOT="$repo_root"
+export GEN_DOCS_REPO="$repo_slug"
+export GEN_DOCS_COMMIT="$commit_sha"
+export GEN_DOCS_DB_PATH="$db_path"
+export GEN_DOCS_BUILD_DIR="$build_dir"
+export GEN_DOCS_SKIP_SCIP="$skip_scip"
+export CODEINTEL_SKIP_SCIP="$skip_scip"
+
+echo "Running export_docs_flow directly (no external Prefect services needed)..."
+uv run python - <<'PY'
+from pathlib import Path
+import os
+
+from codeintel.orchestration.prefect_flow import export_docs_flow
+
+repo_root = Path(os.environ["GEN_DOCS_REPO_ROOT"])
+repo = os.environ["GEN_DOCS_REPO"]
+commit = os.environ["GEN_DOCS_COMMIT"]
+db_path = Path(os.environ["GEN_DOCS_DB_PATH"])
+build_dir = Path(os.environ["GEN_DOCS_BUILD_DIR"])
+skip_scip = os.environ["GEN_DOCS_SKIP_SCIP"].lower() == "true"
+
+export_docs_flow(
+    repo_root=repo_root,
+    repo=repo,
+    commit=commit,
+    db_path=db_path,
+    build_dir=build_dir,
 )
+PY
 
-echo "Registering deployment..."
-uv run prefect deploy prefect_deployments/export_docs.yaml
-
-echo "Triggering export_docs deployment..."
-uv run prefect deployment run export_docs_flow/export_docs --params "$params"
-
-echo "Done. Check ${repo_root}/Document Output for generated artifacts."
+echo "Done. Check ${repo_root}/document_output/ for generated artifacts."

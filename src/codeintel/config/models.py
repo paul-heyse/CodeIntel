@@ -8,9 +8,11 @@ settings.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 
 class RepoConfig(BaseModel):
@@ -203,6 +205,22 @@ class CodeIntelConfig(BaseModel):
         description="Default pipeline target(s) when none are specified",
     )
 
+    @property
+    def document_output_dir(self) -> Path:
+        """
+        Document Output directory resolved in paths config.
+
+        Raises
+        ------
+        RuntimeError
+            If document_output_dir was not populated.
+        """
+        doc_dir = self.paths.document_output_dir
+        if doc_dir is None:
+            message = "document_output_dir was not resolved; ensure PathsConfig._resolve_paths ran."
+            raise RuntimeError(message)
+        return doc_dir
+
     @classmethod
     def from_cli_args(
         cls,
@@ -243,23 +261,491 @@ class CodeIntelConfig(BaseModel):
             default_targets=default_targets or ["export_docs"],
         )
 
-    @property
-    def document_output_dir(self) -> Path:
+
+# ---------------------------------------------------------------------------
+# Ingestion step configs
+# ---------------------------------------------------------------------------
+
+
+class RepoScanConfig(BaseModel):
+    """Configuration for repository scanning into core.modules."""
+
+    repo_root: Path
+    repo: str
+    commit: str
+    tags_index_path: Path | None = None
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo_root: Path,
+        repo: str,
+        commit: str,
+        tags_index_path: Path | None = None,
+    ) -> Self:
         """
-        Directory where documentation-ready artifacts are written.
+        Create a RepoScanConfig from repository context.
 
         Returns
         -------
-        Path
-            Absolute path to the Document Output directory.
-
-        Raises
-        ------
-        RuntimeError
-            If the paths config was not resolved and document_output_dir is None.
+        Self
+            Normalized scan configuration.
         """
-        doc_dir = self.paths.document_output_dir
-        if doc_dir is None:
-            message = "document_output_dir was not resolved; call PathsConfig._resolve_paths first."
-            raise RuntimeError(message)
-        return doc_dir
+        return cls(repo_root=repo_root, repo=repo, commit=commit, tags_index_path=tags_index_path)
+
+    @field_validator("repo_root", mode="before")
+    @classmethod
+    def _resolve_root(cls, value: Path | str) -> Path:
+        return Path(value).resolve()
+
+    @field_validator("tags_index_path", mode="before")
+    @classmethod
+    def _resolve_tags(cls, value: Path | str | None) -> Path | None:
+        return Path(value).resolve() if value is not None else None
+
+
+class CoverageIngestConfig(BaseModel):
+    """Configuration for ingesting coverage lines."""
+
+    repo_root: Path
+    repo: str
+    commit: str
+    coverage_file: Path | None = Field(default=None)
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo_root: Path,
+        repo: str,
+        commit: str,
+        coverage_file: Path | None = None,
+        tools: ToolsConfig | None = None,
+    ) -> Self:
+        """
+        Build coverage ingestion settings using repo context and tool defaults.
+
+        Returns
+        -------
+        Self
+            Normalized coverage ingestion configuration.
+        """
+        resolved = coverage_file or (tools.coverage_file if tools else None)
+        return cls(repo_root=repo_root, repo=repo, commit=commit, coverage_file=resolved)
+
+    @field_validator("repo_root", mode="before")
+    @classmethod
+    def _resolve_repo_root(cls, value: Path | str) -> Path:
+        return Path(value).resolve()
+
+    @field_validator("coverage_file", mode="before")
+    @classmethod
+    def _default_coverage_file(
+        cls,
+        value: Path | str | None,
+        info: ValidationInfo,
+    ) -> Path | None:
+        if value is None:
+            repo_root = info.data.get("repo_root")
+            return Path(repo_root) / ".coverage" if repo_root is not None else None
+        return Path(value).resolve()
+
+
+class TestsIngestConfig(BaseModel):
+    """Configuration for pytest test catalog ingestion."""
+
+    repo_root: Path
+    repo: str
+    commit: str
+    pytest_report_path: Path | None = Field(default=None)
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo_root: Path,
+        repo: str,
+        commit: str,
+        pytest_report_path: Path | None = None,
+        tools: ToolsConfig | None = None,
+    ) -> Self:
+        """
+        Build tests ingestion settings using repo context and tool defaults.
+
+        Returns
+        -------
+        Self
+            Normalized tests ingestion configuration.
+        """
+        resolved = pytest_report_path or (tools.pytest_report_path if tools else None)
+        return cls(repo_root=repo_root, repo=repo, commit=commit, pytest_report_path=resolved)
+
+    @field_validator("repo_root", mode="before")
+    @classmethod
+    def _resolve_repo_root(cls, value: Path | str) -> Path:
+        return Path(value).resolve()
+
+    @field_validator("pytest_report_path", mode="before")
+    @classmethod
+    def _resolve_report(cls, value: Path | str | None) -> Path | None:
+        return Path(value).resolve() if value is not None else None
+
+
+class TypingIngestConfig(BaseModel):
+    """Configuration for typedness and static diagnostic ingestion."""
+
+    repo_root: Path
+    repo: str
+    commit: str
+
+    @classmethod
+    def from_paths(cls, *, repo_root: Path, repo: str, commit: str) -> Self:
+        """
+        Build typing ingestion settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized typing ingestion configuration.
+        """
+        return cls(repo_root=repo_root, repo=repo, commit=commit)
+
+    @field_validator("repo_root", mode="before")
+    @classmethod
+    def _resolve_repo_root(cls, value: Path | str) -> Path:
+        return Path(value).resolve()
+
+
+class ConfigIngestConfig(BaseModel):
+    """Configuration for config-values ingestion."""
+
+    repo_root: Path = Field(..., description="Repository root containing config files.")
+
+    @classmethod
+    def from_paths(cls, *, repo_root: Path) -> Self:
+        """
+        Build config-values ingestion settings for a repository root.
+
+        Returns
+        -------
+        Self
+            Normalized config ingestion configuration.
+        """
+        return cls(repo_root=repo_root)
+
+    @field_validator("repo_root", mode="before")
+    @classmethod
+    def _resolve_repo_root(cls, value: Path | str) -> Path:
+        return Path(value).resolve()
+
+
+class PyAstIngestConfig(BaseModel):
+    """Configuration for stdlib AST ingestion."""
+
+    repo_root: Path
+    repo: str
+    commit: str
+
+    @classmethod
+    def from_paths(cls, *, repo_root: Path, repo: str, commit: str) -> Self:
+        """
+        Build AST ingestion settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized AST ingestion configuration.
+        """
+        return cls(repo_root=repo_root, repo=repo, commit=commit)
+
+    @field_validator("repo_root", mode="before")
+    @classmethod
+    def _resolve_repo_root(cls, value: Path | str) -> Path:
+        return Path(value).resolve()
+
+
+# ---------------------------------------------------------------------------
+# Dataclass configs (graphs, analytics, ingestion steps using dataclasses)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ScipIngestConfig:
+    """Configuration for SCIP ingestion."""
+
+    repo_root: Path
+    repo: str
+    commit: str
+    build_dir: Path
+    document_output_dir: Path
+    scip_python_bin: str = "scip-python"
+    scip_bin: str = "scip"
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        paths: PathsConfig,
+        tools: ToolsConfig | None = None,
+    ) -> Self:
+        """
+        Create SCIP ingest settings from shared path/tool configuration.
+
+        Returns
+        -------
+        Self
+            Normalized SCIP ingest configuration.
+        """
+        doc_dir = paths.document_output_dir or (paths.repo_root / "Document Output")
+        return cls(
+            repo_root=paths.repo_root,
+            repo=repo,
+            commit=commit,
+            build_dir=paths.build_dir,
+            document_output_dir=doc_dir,
+            scip_python_bin=tools.scip_python_bin if tools else "scip-python",
+            scip_bin=tools.scip_bin if tools else "scip",
+        )
+
+
+@dataclass(frozen=True)
+class DocstringConfig:
+    """Configuration for docstring ingestion."""
+
+    repo_root: Path
+    repo: str
+    commit: str
+
+    @classmethod
+    def from_paths(cls, *, repo_root: Path, repo: str, commit: str) -> Self:
+        """
+        Build docstring ingestion settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized docstring ingestion configuration.
+        """
+        return cls(repo_root=repo_root, repo=repo, commit=commit)
+
+
+@dataclass(frozen=True)
+class CallGraphConfig:
+    """Configuration for constructing a call graph for a repo snapshot."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
+        """
+        Build call graph settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized call graph configuration.
+        """
+        return cls(repo=repo, commit=commit, repo_root=repo_root)
+
+
+@dataclass(frozen=True)
+class CFGBuilderConfig:
+    """Configuration for control/data-flow scaffolding."""
+
+    repo: str
+    commit: str
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str) -> Self:
+        """
+        Build CFG/DFG settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized CFG builder configuration.
+        """
+        return cls(repo=repo, commit=commit)
+
+
+@dataclass(frozen=True)
+class GoidBuilderConfig:
+    """Configuration for building GOIDs."""
+
+    repo: str
+    commit: str
+    language: str = "python"
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str, language: str = "python") -> Self:
+        """
+        Build GOID settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized GOID builder configuration.
+        """
+        return cls(repo=repo, commit=commit, language=language)
+
+
+@dataclass(frozen=True)
+class ImportGraphConfig:
+    """Configuration for constructing the import graph of a repo snapshot."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
+        """
+        Build import graph settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized import graph configuration.
+        """
+        return cls(repo=repo, commit=commit, repo_root=repo_root)
+
+
+@dataclass(frozen=True)
+class SymbolUsesConfig:
+    """Configuration for deriving symbol use edges."""
+
+    repo_root: Path
+    scip_json_path: Path
+    repo: str
+    commit: str
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo_root: Path,
+        repo: str,
+        commit: str,
+        scip_json_path: Path | None = None,
+        build_dir: Path | None = None,
+    ) -> Self:
+        """
+        Build symbol-uses settings, defaulting SCIP JSON under the build directory.
+
+        Returns
+        -------
+        Self
+            Normalized symbol uses configuration.
+        """
+        resolved_json = scip_json_path
+        if resolved_json is None and build_dir is not None:
+            resolved_json = build_dir / "scip" / "index.scip.json"
+        if resolved_json is None:
+            resolved_json = repo_root / "build" / "scip" / "index.scip.json"
+        return cls(repo_root=repo_root, scip_json_path=resolved_json, repo=repo, commit=commit)
+
+
+@dataclass(frozen=True)
+class HotspotsConfig:
+    """Configuration for file-level hotspot scoring."""
+
+    repo_root: Path
+    repo: str
+    commit: str
+    max_commits: int = 2000
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo_root: Path,
+        repo: str,
+        commit: str,
+        max_commits: int = 2000,
+    ) -> Self:
+        """
+        Build hotspot analytics settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized hotspot configuration.
+        """
+        return cls(repo_root=repo_root, repo=repo, commit=commit, max_commits=max_commits)
+
+
+@dataclass(frozen=True)
+class CoverageAnalyticsConfig:
+    """Configuration for aggregating coverage into functions."""
+
+    repo: str
+    commit: str
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str) -> Self:
+        """
+        Build coverage analytics settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized coverage analytics configuration.
+        """
+        return cls(repo=repo, commit=commit)
+
+
+@dataclass(frozen=True)
+class FunctionAnalyticsConfig:
+    """Configuration for function metrics and typedness analytics."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
+        """
+        Build function analytics settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized function analytics configuration.
+        """
+        return cls(repo=repo, commit=commit, repo_root=repo_root)
+
+
+@dataclass(frozen=True)
+class TestCoverageConfig:
+    """Configuration for deriving test coverage edges."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    coverage_file: Path | None = None
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        coverage_file: Path | None = None,
+        tools: ToolsConfig | None = None,
+    ) -> Self:
+        """
+        Build test coverage settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized test coverage configuration.
+        """
+        resolved = coverage_file or (tools.coverage_file if tools else None)
+        return cls(repo=repo, commit=commit, repo_root=repo_root, coverage_file=resolved)

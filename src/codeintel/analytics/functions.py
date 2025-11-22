@@ -16,6 +16,8 @@ from typing import TypedDict
 
 import duckdb
 
+from codeintel.config.models import FunctionAnalyticsConfig
+
 log = logging.getLogger(__name__)
 
 COMPLEXITY_LOW = 5
@@ -85,26 +87,6 @@ class FunctionDerived:
     decorator_count: int
     has_docstring: bool
     typedness: TypednessFlags
-
-
-@dataclass
-class FunctionAnalyticsConfig:
-    """
-    Configuration describing the repository snapshot used for function analytics.
-
-    Parameters
-    ----------
-    repo : str
-        Repository identifier stored alongside analytics rows.
-    commit : str
-        Commit SHA of the snapshot being analyzed.
-    repo_root : Path
-        Filesystem path to the repository root where source files are read.
-    """
-
-    repo: str
-    commit: str
-    repo_root: Path
 
 
 class GoidRow(TypedDict):

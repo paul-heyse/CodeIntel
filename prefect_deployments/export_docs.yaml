@@ -1,47 +1,47 @@
 ### Prefect deployment for export_docs_flow (Prefect 3)
 
-flow_name: export_docs_flow
-name: export-docs
-entrypoint: src/codeintel/orchestration/prefect_flow.py:export_docs_flow
-work_pool:
-  name: local-process
-  work_queue_name: default
-  job_variables: {}
-parameter_openapi_schema:
-  title: Parameters
-  type: object
-  properties:
-    repo_root:
-      type: string
-      format: path
-      description: Path to repository root
-    repo:
-      type: string
-      description: Repository slug (org/repo)
-    commit:
-      type: string
-      description: Commit SHA
-    db_path:
-      type: string
-      format: path
-      description: Path to DuckDB database file
-    build_dir:
-      type: string
-      format: path
-      description: Build directory containing intermediates
-    targets:
-      type: array
-      items:
-        type: string
-      default:
-        - export_docs
-  required:
-    - repo_root
-    - repo
-    - commit
-    - db_path
-    - build_dir
-version: 1
-tags: []
-description: Prefect deployment for CodeIntel export_docs pipeline
-parameter_defaults: {}
+deployments:
+  - name: export-docs
+    flow_name: export_docs_flow
+    entrypoint: src/codeintel/orchestration/prefect_flow.py:export_docs_flow
+    work_pool:
+      name: local-process
+      work_queue_name: default
+      job_variables: {}
+    parameter_openapi_schema:
+      title: Parameters
+      type: object
+      properties:
+        repo_root:
+          type: string
+          format: path
+          description: Path to repository root
+        repo:
+          type: string
+          description: Repository slug (org/repo)
+        commit:
+          type: string
+          description: Commit SHA
+        db_path:
+          type: string
+          format: path
+          description: Path to DuckDB database file
+        build_dir:
+          type: string
+          format: path
+          description: Build directory containing intermediates
+        skip_scip:
+          type: boolean
+          description: Skip SCIP ingestion (requires pre-existing build/scip artifacts)
+          default: true
+      required:
+        - repo_root
+        - repo
+        - commit
+        - db_path
+        - build_dir
+    parameter_defaults:
+      skip_scip: true
+    version: 1
+    tags: []
+    description: Prefect deployment for CodeIntel export_docs pipeline
