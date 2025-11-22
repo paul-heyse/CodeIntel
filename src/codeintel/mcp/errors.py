@@ -14,11 +14,26 @@ class McpError(Exception):
     detail: ProblemDetail
 
     def __str__(self) -> str:
+        """
+        Return a concise string for logging/diagnostics.
+
+        Returns
+        -------
+        str
+            Concise representation of the problem.
+        """
         return f"{self.detail.title}: {self.detail.detail or ''}".strip()
 
 
 def invalid_argument(message: str) -> McpError:
-    """Construct an invalid-argument problem."""
+    """
+    Construct an invalid-argument problem.
+
+    Returns
+    -------
+    McpError
+        Error wrapping a ProblemDetail payload.
+    """
     return McpError(
         detail=ProblemDetail(
             type="https://example.com/problems/invalid-argument",
@@ -30,7 +45,14 @@ def invalid_argument(message: str) -> McpError:
 
 
 def not_found(message: str) -> McpError:
-    """Construct a not-found problem."""
+    """
+    Construct a not-found problem.
+
+    Returns
+    -------
+    McpError
+        Error wrapping a ProblemDetail payload.
+    """
     return McpError(
         detail=ProblemDetail(
             type="https://example.com/problems/not-found",
@@ -42,7 +64,14 @@ def not_found(message: str) -> McpError:
 
 
 def backend_failure(message: str) -> McpError:
-    """Construct a backend-failure problem."""
+    """
+    Construct a backend-failure problem.
+
+    Returns
+    -------
+    McpError
+        Error wrapping a ProblemDetail payload.
+    """
     return McpError(
         detail=ProblemDetail(
             type="https://example.com/problems/backend-failure",

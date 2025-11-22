@@ -313,6 +313,8 @@ class SymbolUsesStep:
         cfg = SymbolUsesConfig(
             repo_root=ctx.repo_root,
             scip_json_path=scip_json,
+            repo=ctx.repo,
+            commit=ctx.commit,
         )
         build_symbol_use_edges(con, cfg)
 
@@ -434,7 +436,7 @@ class RiskFactorsStep:
             ft.typedness_bucket,
             ft.typedness_source,
             h.score                       AS hotspot_score,
-            ty.annotation_ratio->>'params'::DOUBLE AS file_typed_ratio,
+            CAST(ty.annotation_ratio->>'params' AS DOUBLE) AS file_typed_ratio,
             sd.total_errors               AS static_error_count,
             sd.has_errors                 AS has_static_errors,
             cf.executable_lines,

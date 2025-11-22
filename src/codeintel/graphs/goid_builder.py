@@ -11,6 +11,7 @@ from pathlib import Path
 import duckdb
 
 log = logging.getLogger(__name__)
+DECIMAL_38_MAX = 10**38 - 1
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,7 @@ def _compute_goid(descriptor: GoidDescriptor) -> int:
         f"{descriptor.start_line}:{descriptor.end_line}"
     )
     digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=16).digest()
-    return int.from_bytes(digest, "big")
+    return int.from_bytes(digest, "big") % DECIMAL_38_MAX
 
 
 def _build_urn(descriptor: GoidDescriptor) -> str:
@@ -140,16 +141,18 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
 
     for _, row in df.iterrows():
         rel_path = str(row["path"]).replace("\\", "/")
-        node_type = row["node_type"]
-        qualname = row["qualname"]
-        parent_qualname = row["parent_qualname"]
+        node_type = str(row["node_type"])
+        qualname = str(row["qualname"])
+        parent_qualname_raw = row["parent_qualname"]
+        parent_qualname = (
+            str(parent_qualname_raw) if parent_qualname_raw is not None else None
+        )
 
-        module_path = _relpath_to_module(Path(rel_path))
         if node_type == "Module":
             kind = "module"
         elif node_type == "ClassDef":
             kind = "class"
-        elif parent_qualname and parent_qualname != module_path:
+        elif parent_qualname and parent_qualname != _relpath_to_module(Path(rel_path)):
             kind = "method"
         else:
             kind = "function"
@@ -191,7 +194,7 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
             (
                 urn,
                 cfg.language,
-                module_path,
+                _relpath_to_module(Path(rel_path)),
                 rel_path,
                 start_line,
                 end_line,

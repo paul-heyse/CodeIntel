@@ -8,16 +8,22 @@ prioritize files that change frequently and carry structural complexity.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
-import subprocess
-from collections import defaultdict
-from dataclasses import dataclass
+import shutil
+from asyncio.subprocess import PIPE, create_subprocess_exec
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
 
 log = logging.getLogger(__name__)
+MAX_STDERR_CHARS = 500
+GIT_OK_CODES = {0, 1}
+NUMSTAT_FIELDS = 3
+ChurnSummary = dict[str, int]
 
 
 @dataclass
@@ -44,7 +50,33 @@ class HotspotsConfig:
     max_commits: int = 2000  # limit git log depth for performance
 
 
-def _collect_git_file_stats(cfg: HotspotsConfig) -> dict[str, dict]:
+@dataclass
+class FileChurn:
+    """Aggregated churn details for a single file."""
+
+    commits: set[str] = field(default_factory=set)
+    authors: set[str] = field(default_factory=set)
+    lines_added: int = 0
+    lines_deleted: int = 0
+
+    def to_summary(self) -> dict[str, int]:
+        """
+        Summarize churn counts for persistence.
+
+        Returns
+        -------
+        dict[str, int]
+            Counts keyed by commit/author/lines added/deleted.
+        """
+        return {
+            "commit_count": len(self.commits),
+            "author_count": len(self.authors),
+            "lines_added": self.lines_added,
+            "lines_deleted": self.lines_deleted,
+        }
+
+
+def _collect_git_file_stats(cfg: HotspotsConfig) -> dict[str, ChurnSummary]:
     """
     Collect per-file churn statistics from `git log --numstat`.
 
@@ -70,7 +102,21 @@ def _collect_git_file_stats(cfg: HotspotsConfig) -> dict[str, dict]:
     pipelines to proceed even in shallow or detached checkouts. Complexity is
     proportional to the number of git log entries inspected.
     """
+    if cfg.max_commits <= 0:
+        return {}
+
+    git_lines = _run_git_log(cfg)
+    if git_lines is None:
+        return {}
+    return _parse_git_log_lines(git_lines)
+
+
+def _run_git_log(cfg: HotspotsConfig) -> list[str] | None:
     repo_root = cfg.repo_root.resolve()
+    if shutil.which("git") is None:
+        log.warning("git not found; hotspot analytics will have zero churn data.")
+        return None
+
     cmd = [
         "git",
         "log",
@@ -80,72 +126,70 @@ def _collect_git_file_stats(cfg: HotspotsConfig) -> dict[str, dict]:
         "--pretty=format:COMMIT\t%H\t%an",
         "--no-renames",
     ]
-
     try:
-        proc = subprocess.run(
-            cmd,
-            cwd=repo_root,
-            check=False,
-            capture_output=True,
-            text=True,
+        return asyncio.run(_run_git_log_async(cmd, repo_root))
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_run_git_log_async(cmd, repo_root))
+        finally:
+            loop.close()
+
+
+async def _run_git_log_async(cmd: list[str], repo_root: Path) -> list[str] | None:
+    try:
+        proc = await create_subprocess_exec(
+            *cmd,
+            cwd=str(repo_root),
+            stdout=PIPE,
+            stderr=PIPE,
         )
     except FileNotFoundError:
         log.warning("git not found; hotspot analytics will have zero churn data.")
-        return {}
+        return None
 
-    if proc.returncode not in (0, 1):
+    stdout_bytes, stderr_bytes = await proc.communicate()
+    stdout = stdout_bytes.decode() if stdout_bytes else ""
+    stderr = stderr_bytes.decode() if stderr_bytes else ""
+
+    if proc.returncode not in GIT_OK_CODES:
         log.warning(
             "git log exited with code %s; stdout=%s stderr=%s",
             proc.returncode,
-            proc.stdout[:500],
-            proc.stderr[:500],
+            stdout[:MAX_STDERR_CHARS],
+            stderr[:MAX_STDERR_CHARS],
         )
+    return stdout.splitlines()
 
-    stats: dict[str, dict] = defaultdict(
-        lambda: {
-            "commits": set(),
-            "authors": set(),
-            "lines_added": 0,
-            "lines_deleted": 0,
-        }
-    )
 
+def _parse_git_log_lines(lines: Iterable[str]) -> dict[str, ChurnSummary]:
+    stats: dict[str, FileChurn] = {}
     current_commit = None
     current_author = None
 
-    for line in (proc.stdout or "").splitlines():
-        if not line:
+    for raw_line in lines:
+        if not raw_line:
             continue
-        if line.startswith("COMMIT\t"):
-            _, commit_hash, author = line.split("\t", 2)
+        if raw_line.startswith("COMMIT\t"):
+            _, commit_hash, author = raw_line.split("\t", 2)
             current_commit = commit_hash
             current_author = author
             continue
 
-        # numstat line: "<added>\t<deleted>\t<path>"
-        parts = line.split("\t")
-        if len(parts) != 3 or current_commit is None or current_author is None:
+        parts = raw_line.split("\t")
+        if len(parts) != NUMSTAT_FIELDS or current_commit is None or current_author is None:
             continue
         added_s, deleted_s, path = parts
-        try:
-            added = int(added_s) if added_s != "-" else 0
-            deleted = int(deleted_s) if deleted_s != "-" else 0
-        except ValueError:
-            added = deleted = 0
+        added = int(added_s) if added_s.isdigit() else 0
+        deleted = int(deleted_s) if deleted_s.isdigit() else 0
 
-        rel_path = path.replace("\\", "/")
-        s = stats[rel_path]
-        s["commits"].add(current_commit)
-        s["authors"].add(current_author)
-        s["lines_added"] += added
-        s["lines_deleted"] += deleted
+        churn = stats.setdefault(path.replace("\\", "/"), FileChurn())
+        churn.commits.add(current_commit)
+        churn.authors.add(current_author)
+        churn.lines_added += added
+        churn.lines_deleted += deleted
 
-    # Collapse sets to counts
-    for rel_path, s in stats.items():
-        s["commit_count"] = len(s["commits"])
-        s["author_count"] = len(s["authors"])
-
-    return stats
+    return {path: churn.to_summary() for path, churn in stats.items()}
 
 
 def build_hotspots(con: duckdb.DuckDBPyConnection, cfg: HotspotsConfig) -> None:

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -25,7 +27,7 @@ def _find_default_report(repo_root: Path) -> Path | None:
     return None
 
 
-def _load_tests_from_report(report_path: Path) -> list[dict]:
+def _load_tests_from_report(report_path: Path) -> list[dict[str, Any]]:
     with report_path.open("r", encoding="utf8") as f:
         data = json.load(f)
 
@@ -64,6 +66,103 @@ def _nodeid_to_path_and_qualname(nodeid: str) -> tuple[str, str | None]:
     return rel_path, qualname
 
 
+@dataclass(frozen=True)
+class TestCatalogRow:
+    """Normalized representation of a pytest test case."""
+
+    test_id: str
+    rel_path: str
+    qualname: str | None
+    status: str
+    duration_ms: float
+    markers: list[str]
+    parametrized: bool
+    flaky: bool
+
+    @property
+    def kind(self) -> str:
+        """Return canonical test kind based on parametrization."""
+        return "parametrized_case" if self.parametrized else "function"
+
+    def to_params(self, repo: str, commit: str, created_at: datetime) -> list[Any]:
+        """
+        Convert the row into parameter order matching analytics.test_catalog.
+
+        Parameters
+        ----------
+        repo : str
+            Repository name for scoping.
+        commit : str
+            Commit hash for scoping.
+        created_at : datetime
+            Timestamp for the ingestion event.
+
+        Returns
+        -------
+        list[Any]
+            Parameter list aligned with analytics.test_catalog schema.
+        """
+        return [
+            self.test_id,
+            None,  # test_goid_h128 (filled later)
+            None,  # urn (filled later)
+            repo,
+            commit,
+            self.rel_path,
+            self.qualname,
+            self.kind,
+            self.status,
+            self.duration_ms,
+            self.markers,
+            self.parametrized,
+            self.flaky,
+            created_at,
+        ]
+
+
+def _build_row(test: dict[str, Any]) -> TestCatalogRow | None:
+    """
+    Build a TestCatalogRow from a pytest JSON test entry.
+
+    Parameters
+    ----------
+    test : dict[str, Any]
+        Raw test entry from pytest-json-report.
+
+    Returns
+    -------
+    TestCatalogRow | None
+        Normalized row when nodeid is present, otherwise None.
+    """
+    nodeid = test.get("nodeid")
+    if not nodeid:
+        return None
+
+    rel_path, qualname = _nodeid_to_path_and_qualname(nodeid)
+
+    status = test.get("outcome") or test.get("status") or "unknown"
+    call = test.get("call") or {}
+    duration_s = call.get("duration") or 0.0
+    duration_ms = float(duration_s) * 1000.0
+
+    keywords = test.get("keywords") or {}
+    markers = sorted([k for k, v in keywords.items() if v])
+
+    parametrized = "[" in nodeid and "]" in nodeid
+    flaky = "flaky" in markers
+
+    return TestCatalogRow(
+        test_id=nodeid,
+        rel_path=rel_path,
+        qualname=qualname,
+        status=status,
+        duration_ms=duration_ms,
+        markers=markers,
+        parametrized=parametrized,
+        flaky=flaky,
+    )
+
+
 def ingest_tests(
     con: duckdb.DuckDBPyConnection,
     repo_root: Path,
@@ -93,7 +192,19 @@ def ingest_tests(
 
     con.execute("DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?", [repo, commit])
 
-    insert_sql = """
+    now = datetime.now(UTC)
+    rows: list[TestCatalogRow] = []
+    for test in tests:
+        row = _build_row(test)
+        if row is not None:
+            rows.append(row)
+
+    if not rows:
+        log.warning("No valid tests found in pytest report %s", pytest_report_path)
+        return
+
+    con.executemany(
+        """
         INSERT INTO analytics.test_catalog (
             test_id, test_goid_h128, urn,
             repo, commit, rel_path, qualname,
@@ -101,48 +212,8 @@ def ingest_tests(
             parametrized, flaky, created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """
-
-    now = datetime.now(UTC)
-
-    for t in tests:
-        nodeid = t.get("nodeid")
-        if not nodeid:
-            continue
-
-        rel_path, qualname = _nodeid_to_path_and_qualname(nodeid)
-
-        status = t.get("outcome") or t.get("status") or "unknown"
-        call = t.get("call") or {}
-        duration_s = call.get("duration") or 0.0
-        duration_ms = float(duration_s) * 1000.0
-
-        keywords = t.get("keywords") or {}
-        markers = sorted([k for k, v in keywords.items() if v])
-
-        parametrized = "[" in nodeid and "]" in nodeid
-        flaky = "flaky" in markers
-
-        kind = "parametrized_case" if parametrized else "function"
-
-        con.execute(
-            insert_sql,
-            [
-                nodeid,  # test_id
-                None,  # test_goid_h128 (filled later)
-                None,  # urn (filled later)
-                repo,
-                commit,
-                rel_path,
-                qualname,
-                kind,
-                status,
-                duration_ms,
-                markers,
-                parametrized,
-                flaky,
-                now,
-            ],
-        )
+        """,
+        [row.to_params(repo, commit, now) for row in rows],
+    )
 
     log.info("test_catalog ingested from %s for %s@%s", pytest_report_path, repo, commit)

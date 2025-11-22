@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, model_validator
 
 McpMode = Literal["local_db", "remote_api"]
 
@@ -57,8 +57,9 @@ class McpServerConfig(BaseModel):
         description="Backend timeout (seconds) for HTTP calls in remote_api mode",
     )
 
-    @root_validator(pre=True)
-    def _expand_paths(self, values: dict[str, object]) -> dict[str, object]:
+    @model_validator(mode="before")
+    @classmethod
+    def _expand_paths(cls, values: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize repo_root and db_path to absolute paths early.
 
@@ -86,42 +87,39 @@ class McpServerConfig(BaseModel):
 
         return values
 
-    @root_validator
-    def _check_backend(self, values: dict[str, object]) -> dict[str, object]:
+    @model_validator(mode="after")
+    def _check_backend(self) -> McpServerConfig:
         """
         Ensure db_path or api_base_url is present for the configured backend mode.
 
-        Parameters
-        ----------
-        values : dict
-            Normalized values captured by Pydantic.
-
         Returns
         -------
-        dict
-            Values with inferred defaults applied.
+        McpServerConfig
+            Instance with inferred defaults applied.
 
         Raises
         ------
         ValueError
             If the mode is unsupported or remote_api is missing api_base_url.
         """
-        mode: McpMode = values.get("mode", "local_db")
-        db_path: Path | None = values.get("db_path")
-        api_base_url: str | None = values.get("api_base_url")
+        mode: McpMode = self.mode
+        db_path = self.db_path
+        api_base_url = self.api_base_url
 
         if mode == "local_db":
             if db_path is None:
                 # If missing, default to <repo_root>/build/db/codeintel.duckdb
-                repo_root: Path = values["repo_root"]
-                values["db_path"] = (repo_root / "build" / "db" / "codeintel.duckdb").resolve()
+                repo_root = self.repo_root
+                self.db_path = (repo_root / "build" / "db" / "codeintel.duckdb").resolve()
         elif mode == "remote_api":
             if not api_base_url:
-                raise ValueError("api_base_url is required when mode='remote_api'")
+                message = "api_base_url is required when mode='remote_api'"
+                raise ValueError(message)
         else:
-            raise ValueError(f"Unsupported McpMode: {mode}")
+            message = f"Unsupported McpMode: {mode}"
+            raise ValueError(message)
 
-        return values
+        return self
 
     @classmethod
     def from_env(cls) -> McpServerConfig:

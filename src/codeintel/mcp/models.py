@@ -29,6 +29,7 @@ class HighRiskFunctionsResponse(BaseModel):
     """Response wrapper for high-risk function listings."""
 
     functions: list[dict[str, Any]]
+    truncated: bool = False
 
 
 class CallGraphNeighborsResponse(BaseModel):

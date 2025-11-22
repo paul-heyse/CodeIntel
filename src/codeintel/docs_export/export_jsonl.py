@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import duckdb
 
@@ -72,12 +74,28 @@ def export_jsonl_for_table(
     Notes
     -----
     Uses `COPY (SELECT * FROM <table>) TO <path> (FORMAT JSON, ARRAY FALSE)`
-    so each row is serialized as a single JSON object per line.
+    so each row is serialized as a single JSON object per line. Table names are
+    validated against the known dataset mapping to avoid unsafe SQL injection.
+
+    Raises
+    ------
+    ValueError
+        If the requested table is not in the allowed export mapping.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    sql = f"COPY (SELECT * FROM {table_name}) TO ? (FORMAT JSON, ARRAY FALSE);"
+    if table_name not in JSONL_DATASETS:
+        message = f"Refusing to export unknown table: {table_name}"
+        raise ValueError(message)
     log.info("Exporting %s -> %s", table_name, output_path)
-    con.execute(sql, [str(output_path)])
+    rel = con.table(table_name)
+    write_json = getattr(rel, "write_json", None)
+    if write_json is not None:
+        callable_write_json = cast("Callable[..., Any]", write_json)
+        callable_write_json(str(output_path), array=False)
+        return
+
+    df = rel.df()
+    df.to_json(output_path, orient="records", lines=True, date_format="iso")
 
 
 def export_all_jsonl(
@@ -126,7 +144,7 @@ def export_all_jsonl(
     # Optionally write a small manifest
     index_path = document_output_dir / "index.json"
     manifest = {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(UTC).isoformat(),
         "files": [p.name for p in written],
     }
     index_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

@@ -199,13 +199,14 @@ def compute_coverage_functions(
 
     con.execute(insert_sql, [cfg.repo, cfg.commit])
 
-    n = con.execute(
+    row = con.execute(
         """
         SELECT COUNT(*)
         FROM analytics.coverage_functions
         WHERE repo = ? AND commit = ?
         """,
         [cfg.repo, cfg.commit],
-    ).fetchone()[0]
+    ).fetchone()
+    n = int(row[0]) if row is not None else 0
 
     log.info("coverage_functions populated: %d rows for %s@%s", n, cfg.repo, cfg.commit)

@@ -12,11 +12,11 @@ untyped-def-behavior = "check-and-infer-return-type"
 permissive-ignores = false
 replace-imports-with-any = [
 ]
-ignore-missing-source = false
 ignore-errors-in-generated-code = false
 
 # Opt into powerful optional errors
 [errors]
+missing-source = true
 implicit-any = true
 implicitly-defined-attribute = true
 implicit-abstract-class = true

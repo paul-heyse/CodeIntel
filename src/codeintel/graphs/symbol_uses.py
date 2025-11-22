@@ -6,6 +6,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, TypedDict, cast
 
 import duckdb
 
@@ -27,6 +28,16 @@ class SymbolUsesConfig:
 
     repo_root: Path
     scip_json_path: Path
+    repo: str
+    commit: str
+
+
+class ScipDoc(TypedDict, total=False):
+    """Typed representation of a SCIP JSON document."""
+
+    relative_path: str
+    occurrences: list[dict[str, Any]]
+    symbols: list[dict[str, Any]]
 
 
 def build_symbol_use_edges(
@@ -42,28 +53,70 @@ def build_symbol_use_edges(
     We treat occurrences with symbol_roles bit 1 as definitions,
     and bit 2 as references, producing edges def_path -> use_path.
     """
-    repo_root = cfg.repo_root.resolve()
     scip_path = cfg.scip_json_path
 
+    docs = _load_scip_docs(scip_path)
+    if docs is None:
+        return
+
+    module_by_path = _module_map(con, cfg)
+    def_path_by_symbol = _build_def_map(docs)
+    rows = _build_symbol_edges(docs, def_path_by_symbol, module_by_path)
+
+    con.execute("DELETE FROM graph.symbol_use_edges")
+
+    if rows:
+        con.executemany(
+            """
+            INSERT INTO graph.symbol_use_edges
+              (symbol, def_path, use_path, same_file, same_module)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+
+    log.info(
+        "symbol_use_edges build complete: %d edges from %s",
+        len(rows),
+        scip_path,
+    )
+
+
+def _load_scip_docs(scip_path: Path) -> list[ScipDoc] | None:
     if not scip_path.exists():
         log.warning("SCIP JSON not found at %s; skipping symbol_use_edges", scip_path)
-        return
+        return None
 
-    with scip_path.open("r", encoding="utf-8") as f:
-        docs = json.load(f)
+    try:
+        with scip_path.open("r", encoding="utf-8") as f:
+            docs_raw = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("Failed to read %s: %s", scip_path, exc)
+        return None
 
-    if not isinstance(docs, list):
+    if not isinstance(docs_raw, list):
         log.warning("SCIP JSON root is not a list; aborting symbol_use_edges build.")
-        return
+        return None
+    return [cast("ScipDoc", doc) for doc in docs_raw if isinstance(doc, dict)]
 
-    # Map path -> module for same_module flag
-    df_modules = con.execute("SELECT path, module FROM core.modules").fetch_df()
+
+def _module_map(con: duckdb.DuckDBPyConnection, cfg: SymbolUsesConfig) -> dict[str, str]:
+    df_modules = con.execute(
+        """
+        SELECT path, module
+        FROM core.modules
+        WHERE repo = ? AND commit = ?
+        """,
+        [cfg.repo, cfg.commit],
+    ).fetch_df()
     module_by_path: dict[str, str] = {}
     if not df_modules.empty:
         for _, row in df_modules.iterrows():
-            module_by_path[str(row["path"]).replace("\\", "/")] = row["module"]
+            module_by_path[str(row["path"]).replace("\\", "/")] = str(row["module"])
+    return module_by_path
 
-    # 1) First pass: map symbol -> def_path
+
+def _build_def_map(docs: list[ScipDoc]) -> dict[str, str]:
     def_path_by_symbol: dict[str, str] = {}
     for doc in docs:
         rel_path = doc.get("relative_path")
@@ -79,8 +132,14 @@ def build_symbol_use_edges(
             is_def = bool(roles & 1)  # definition bit
             if is_def and symbol not in def_path_by_symbol:
                 def_path_by_symbol[symbol] = rel_path
+    return def_path_by_symbol
 
-    # 2) Second pass: references -> edges
+
+def _build_symbol_edges(
+    docs: list[ScipDoc],
+    def_path_by_symbol: dict[str, str],
+    module_by_path: dict[str, str],
+) -> list[tuple]:
     rows: list[tuple] = []
 
     for doc in docs:
@@ -108,21 +167,4 @@ def build_symbol_use_edges(
             same_module = m_def is not None and m_def == m_use
 
             rows.append((symbol, def_path, use_path, same_file, same_module))
-
-    con.execute("DELETE FROM graph.symbol_use_edges")
-
-    if rows:
-        con.executemany(
-            """
-            INSERT INTO graph.symbol_use_edges
-              (symbol, def_path, use_path, same_file, same_module)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
-
-    log.info(
-        "symbol_use_edges build complete: %d edges from %s",
-        len(rows),
-        scip_path,
-    )
+    return rows
