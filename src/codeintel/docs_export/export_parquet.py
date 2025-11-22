@@ -66,11 +66,6 @@ def export_parquet_for_table(
     output_path : Path
         Destination path for the Parquet file.
 
-    Returns
-    -------
-    None
-        Data is written to disk.
-
     Notes
     -----
     Uses `COPY (SELECT * FROM <table>) TO <path> (FORMAT PARQUET)`. The export

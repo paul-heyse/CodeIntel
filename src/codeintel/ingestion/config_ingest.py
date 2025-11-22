@@ -77,7 +77,7 @@ def _load_config(path: Path, fmt: str) -> dict:
 
 
 def _flatten_config(
-    obj,
+    obj: object,
     prefix: str = "",
 ) -> list[tuple[str, object]]:
     """
@@ -89,6 +89,18 @@ def _flatten_config(
     [('service.database.host', 'db')]
     >>> _flatten_config(["a", {"b": 2}])
     [('0', 'a'), ('1.b', 2)]
+
+    Parameters
+    ----------
+    obj :
+        Arbitrary nested mapping or sequence parsed from a config file.
+    prefix : str, optional
+        Prefix applied to generated keypaths; used during recursion.
+
+    Returns
+    -------
+    list of tuple[str, object]
+        Flattened keypaths paired with their leaf values.
     """
     items: list[tuple[str, object]] = []
 

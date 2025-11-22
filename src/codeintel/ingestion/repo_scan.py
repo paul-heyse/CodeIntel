@@ -74,6 +74,23 @@ def _path_to_module(repo_root: Path, path: Path) -> str:
     return ".".join(rel.parts)
 
 
+def relpath_to_module(rel_path: Path | str) -> str:
+    """
+    Convert a repository-relative Python path to a dotted module name.
+
+    Parameters
+    ----------
+    rel_path:
+        Repo-relative path to a .py file.
+
+    Returns
+    -------
+    str
+        Dotted module path.
+    """
+    return ".".join(Path(rel_path).with_suffix("").parts)
+
+
 def _load_tags_index(tags_index_path: Path) -> list[dict]:
     if not tags_index_path.is_file():
         log.info("tags_index.yaml not found at %s", tags_index_path)

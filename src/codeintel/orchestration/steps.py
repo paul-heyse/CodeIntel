@@ -10,7 +10,6 @@ from typing import Protocol
 
 import duckdb
 
-# Analytics builders
 from codeintel.analytics.ast_metrics import HotspotsConfig, build_hotspots
 from codeintel.analytics.coverage_analytics import (
     CoverageAnalyticsConfig,
@@ -20,17 +19,17 @@ from codeintel.analytics.functions import (
     FunctionAnalyticsConfig,
     compute_function_metrics_and_types,
 )
+from codeintel.analytics.tests_analytics import (
+    TestCoverageConfig,
+    compute_test_coverage_edges,
+)
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.graphs.callgraph_builder import CallGraphConfig, build_call_graph
 from codeintel.graphs.cfg_builder import CFGBuilderConfig, build_cfg_and_dfg
-
-# Graph builders
 from codeintel.graphs.goid_builder import GoidBuilderConfig, build_goids
 from codeintel.graphs.import_graph import ImportGraphConfig, build_import_graph
 from codeintel.graphs.symbol_uses import SymbolUsesConfig, build_symbol_use_edges
-
-# Ingestion builders
 from codeintel.ingestion import (
     ast_cst_extract,
     config_ingest,
@@ -116,16 +115,16 @@ class SCIPIngestStep:
     deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
-        """Ingest SCIP binary and JSON outputs if available."""
+        """Register SCIP artifacts and populate SCIP symbols in crosswalk."""
         _log_step(self.name)
-        scip_ingest.ingest_scip(
-            con=con,
+        cfg = scip_ingest.ScipIngestConfig(
             repo_root=ctx.repo_root,
             repo=ctx.repo,
             commit=ctx.commit,
             build_dir=ctx.build_dir,
             document_output_dir=ctx.document_output_dir,
         )
+        scip_ingest.ingest_scip(con=con, cfg=cfg)
 
 
 @dataclass
@@ -355,6 +354,24 @@ class CoverageAnalyticsStep:
 
 
 @dataclass
+class TestCoverageEdgesStep:
+    """Build analytics.test_coverage_edges from coverage contexts."""
+
+    name: str = "test_coverage_edges"
+    deps: Sequence[str] = ("coverage_ingest", "tests_ingest", "goids")
+
+    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+        """Derive test-to-function edges using coverage contexts."""
+        _log_step(self.name)
+        cfg = TestCoverageConfig(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+        )
+        compute_test_coverage_edges(con, cfg)
+
+
+@dataclass
 class RiskFactorsStep:
     """Aggregate analytics into analytics.goid_risk_factors."""
 
@@ -364,7 +381,8 @@ class RiskFactorsStep:
         "coverage_functions",
         "hotspots",
         "typing_ingest",
-        "tests_ingest",  # test_coverage_edges builder can be separate
+        "tests_ingest",
+        "test_coverage_edges",
         "config_ingest",  # indirectly for tags/owners via modules
     )
 
@@ -499,7 +517,14 @@ class ExportDocsStep:
     """Export all Parquet + JSONL datasets into Document Output/."""
 
     name: str = "export_docs"
-    deps: Sequence[str] = ("risk_factors",)
+    deps: Sequence[str] = (
+        "risk_factors",
+        "callgraph",
+        "cfg",
+        "import_graph",
+        "symbol_uses",
+        "scip_ingest",
+    )
 
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Create views and export Parquet/JSONL artifacts."""
@@ -533,6 +558,7 @@ PIPELINE_STEPS: dict[str, PipelineStep] = {
     "hotspots": HotspotsStep(),
     "function_metrics": FunctionAnalyticsStep(),
     "coverage_functions": CoverageAnalyticsStep(),
+    "test_coverage_edges": TestCoverageEdgesStep(),
     "risk_factors": RiskFactorsStep(),
     # export
     "export_docs": ExportDocsStep(),

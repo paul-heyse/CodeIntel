@@ -58,8 +58,20 @@ class McpServerConfig(BaseModel):
     )
 
     @root_validator(pre=True)
-    def _expand_paths(cls, values):
-        """Normalize repo_root and db_path to absolute paths early."""
+    def _expand_paths(self, values: dict[str, object]) -> dict[str, object]:
+        """
+        Normalize repo_root and db_path to absolute paths early.
+
+        Parameters
+        ----------
+        values : dict
+            Raw values provided to the model.
+
+        Returns
+        -------
+        dict
+            Updated values with expanded path fields.
+        """
         repo_root = values.get("repo_root") or "."
         if not isinstance(repo_root, Path):
             repo_root = Path(str(repo_root))
@@ -75,8 +87,25 @@ class McpServerConfig(BaseModel):
         return values
 
     @root_validator
-    def _check_backend(cls, values):
-        """Ensure db_path or api_base_url is present for the configured backend mode."""
+    def _check_backend(self, values: dict[str, object]) -> dict[str, object]:
+        """
+        Ensure db_path or api_base_url is present for the configured backend mode.
+
+        Parameters
+        ----------
+        values : dict
+            Normalized values captured by Pydantic.
+
+        Returns
+        -------
+        dict
+            Values with inferred defaults applied.
+
+        Raises
+        ------
+        ValueError
+            If the mode is unsupported or remote_api is missing api_base_url.
+        """
         mode: McpMode = values.get("mode", "local_db")
         db_path: Path | None = values.get("db_path")
         api_base_url: str | None = values.get("api_base_url")
@@ -109,6 +138,11 @@ class McpServerConfig(BaseModel):
           - CODEINTEL_MCP_DEFAULT_LIMIT (int, default 50)
           - CODEINTEL_MCP_MAX_ROWS      (int, default 200)
           - CODEINTEL_MCP_TIMEOUT_SEC   (float, default 10.0)
+
+        Returns
+        -------
+        McpServerConfig
+            Configuration assembled from environment values.
         """
         repo_root = Path(os.environ.get("CODEINTEL_REPO_ROOT", ".")).expanduser().resolve()
 

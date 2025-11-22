@@ -167,11 +167,6 @@ def build_hotspots(con: duckdb.DuckDBPyConnection, cfg: HotspotsConfig) -> None:
     cfg : HotspotsConfig
         Repository metadata and git scan configuration used to scope the build.
 
-    Returns
-    -------
-    None
-        Results are written directly into the `analytics.hotspots` table.
-
     Notes
     -----
     - Time complexity is O(n) over the number of files in `core.ast_metrics`

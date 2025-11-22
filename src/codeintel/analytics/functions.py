@@ -184,11 +184,6 @@ def compute_function_metrics_and_types(
     cfg : FunctionAnalyticsConfig
         Repository metadata and file-system root used to locate source files.
 
-    Returns
-    -------
-    None
-        Results are persisted to DuckDB tables.
-
     Notes
     -----
     - The function reads each source file once and reuses the parsed AST for

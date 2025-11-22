@@ -59,6 +59,11 @@ def get_function_summary(
 
     The returned object includes risk, coverage, and type info aggregated
     from docs.v_function_summary and analytics tables.
+
+    Returns
+    -------
+    dict
+        Response payload containing a `found` flag and `summary` row.
     """
     row = backend.get_function_summary(
         urn=urn,
@@ -87,6 +92,11 @@ def list_high_risk_functions(
       - risk_score, risk_level
       - coverage_ratio, tested
       - complexity_bucket, typedness_bucket, hotspot_score.
+
+    Returns
+    -------
+    list[dict]
+        Function summaries ordered by risk_score.
     """
     return backend.list_high_risk_functions(
         min_risk=min_risk,
@@ -108,6 +118,16 @@ def get_callgraph_neighbors(
       - "out": functions this function calls
       - "in":  functions that call this function
       - "both": both directions (default)
+
+    Returns
+    -------
+    dict
+        Neighboring call graph edges keyed by direction.
+
+    Raises
+    ------
+    ValueError
+        If `direction` is not one of {"in", "out", "both"}.
     """
     if direction not in ("in", "out", "both"):
         raise ValueError('direction must be "in", "out", or "both"')
@@ -124,7 +144,14 @@ def get_tests_for_function(
     goid_h128: int | None = None,
     urn: str | None = None,
 ) -> list[dict]:
-    """List tests that exercise a given function from docs.v_test_to_function."""
+    """
+    List tests that exercise a given function from docs.v_test_to_function.
+
+    Returns
+    -------
+    list[dict]
+        Test rows covering the function.
+    """
     return backend.get_tests_for_function(goid_h128=goid_h128, urn=urn)
 
 
@@ -138,6 +165,11 @@ def get_file_summary(
     Useful for:
       - "Tell me about this file, its hotspot status, and key functions."
       - "Which functions in this file are high risk or poorly tested?"
+
+    Returns
+    -------
+    dict
+        Payload with `found` flag and file summary row when present.
     """
     row = backend.get_file_summary(rel_path=rel_path)
     return {"found": bool(row), "file": row}
@@ -153,6 +185,11 @@ def list_datasets() -> list[dict]:
 
     The resulting entries are intended for small samples fetched via
     `read_dataset_rows` rather than bulk export.
+
+    Returns
+    -------
+    list[dict]
+        Dataset descriptors suitable for sampling.
     """
     return backend.list_datasets()
 
@@ -168,6 +205,11 @@ def read_dataset_rows(
 
     Use this sparingly; large scans should go through Parquet/JSONL artifacts
     under Document Output/, not through MCP.
+
+    Returns
+    -------
+    list[dict]
+        Rows from the requested dataset limited by `limit` and `offset`.
     """
     return backend.read_dataset_rows(dataset_name=dataset_name, limit=limit, offset=offset)
 
