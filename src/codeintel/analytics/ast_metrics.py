@@ -20,6 +20,8 @@ from pathlib import Path
 import duckdb
 
 from codeintel.config.models import HotspotsConfig
+from codeintel.ingestion.common import run_batch
+from codeintel.models.rows import HotspotRow, hotspot_row_to_tuple
 
 log = logging.getLogger(__name__)
 MAX_STDERR_CHARS = 500
@@ -235,7 +237,7 @@ def build_hotspots(con: duckdb.DuckDBPyConnection, cfg: HotspotsConfig) -> None:
 
     con.execute("DELETE FROM analytics.hotspots")
 
-    rows: list[tuple] = []
+    rows: list[HotspotRow] = []
     for _, row in df_ast.iterrows():
         rel_path = str(row["rel_path"]).replace("\\", "/")
         complexity = float(row["complexity"]) if row["complexity"] is not None else 0.0
@@ -262,27 +264,23 @@ def build_hotspots(con: duckdb.DuckDBPyConnection, cfg: HotspotsConfig) -> None:
         )
 
         rows.append(
-            (
-                rel_path,
-                commit_count,
-                author_count,
-                lines_added,
-                lines_deleted,
-                complexity,
-                score,
+            HotspotRow(
+                rel_path=rel_path,
+                commit_count=commit_count,
+                author_count=author_count,
+                lines_added=lines_added,
+                lines_deleted=lines_deleted,
+                complexity=complexity,
+                score=score,
             )
         )
 
-    if rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.hotspots
-              (rel_path, commit_count, author_count,
-               lines_added, lines_deleted, complexity, score)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+    run_batch(
+        con,
+        "analytics.hotspots",
+        [hotspot_row_to_tuple(row) for row in rows],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
 
     log.info(
         "Hotspots build complete for repo=%s commit=%s: %d files",

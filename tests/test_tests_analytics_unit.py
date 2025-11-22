@@ -140,12 +140,12 @@ def test_edges_for_file_uses_test_meta() -> None:
     expected_test_goid = 456
     expected_urn = "goid:demo/repo#python:function:test"
     expected_cov_ratio = 1.0
-    if edge[1] != expected_test_goid:
-        pytest.fail(f"Expected test_goid_h128 {expected_test_goid}, got {edge[1]}")
-    if edge[3] != expected_urn:
-        pytest.fail(f"Expected URN {expected_urn}, got {edge[3]}")
-    if edge[10] != expected_cov_ratio:
-        pytest.fail(f"Expected coverage_ratio {expected_cov_ratio}, got {edge[10]}")
+    if edge["test_goid_h128"] != expected_test_goid:
+        pytest.fail(f"Expected test_goid_h128 {expected_test_goid}, got {edge['test_goid_h128']}")
+    if edge["urn"] != expected_urn:
+        pytest.fail(f"Expected URN {expected_urn}, got {edge['urn']}")
+    if edge["coverage_ratio"] != expected_cov_ratio:
+        pytest.fail(f"Expected coverage_ratio {expected_cov_ratio}, got {edge['coverage_ratio']}")
 
 
 def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:

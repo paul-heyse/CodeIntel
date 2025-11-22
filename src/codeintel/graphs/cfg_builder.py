@@ -8,6 +8,8 @@ import logging
 import duckdb
 
 from codeintel.config.models import CFGBuilderConfig
+from codeintel.ingestion.common import run_batch
+from codeintel.models.rows import CFGBlockRow, cfg_block_to_tuple
 
 log = logging.getLogger(__name__)
 
@@ -55,16 +57,12 @@ def build_cfg_and_dfg(con: duckdb.DuckDBPyConnection, cfg: CFGBuilderConfig) -> 
             [cfg.repo, cfg.commit],
         ).fetch_df()
 
-    con.execute("DELETE FROM graph.cfg_blocks")
-    con.execute("DELETE FROM graph.cfg_edges")
-    con.execute("DELETE FROM graph.dfg_edges")
-
-    block_rows: list[tuple] = []
+    block_rows: list[CFGBlockRow] = []
 
     if not df_funcs.empty:
         for _, row in df_funcs.iterrows():
             goid = int(row["function_goid_h128"])
-            rel_path = row["rel_path"]
+            rel_path = str(row["rel_path"])
             start_line = int(row["start_line"])
             end_line = int(row["end_line"]) if row["end_line"] is not None else start_line
 
@@ -75,32 +73,29 @@ def build_cfg_and_dfg(con: duckdb.DuckDBPyConnection, cfg: CFGBuilderConfig) -> 
             stmts_json = json.dumps([])
 
             block_rows.append(
-                (
-                    goid,
-                    block_idx,
-                    block_id,
-                    label,
-                    rel_path,
-                    start_line,
-                    end_line,
-                    kind,
-                    stmts_json,
-                    0,  # in_degree
-                    0,  # out_degree
+                CFGBlockRow(
+                    function_goid_h128=goid,
+                    block_idx=block_idx,
+                    block_id=block_id,
+                    label=label,
+                    file_path=rel_path,
+                    start_line=start_line,
+                    end_line=end_line,
+                    kind=kind,
+                    stmts_json=stmts_json,
+                    in_degree=0,
+                    out_degree=0,
                 )
             )
 
-    if block_rows:
-        con.executemany(
-            """
-            INSERT INTO graph.cfg_blocks
-              (function_goid_h128, block_idx, block_id, label,
-               file_path, start_line, end_line, kind,
-               stmts_json, in_degree, out_degree)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            block_rows,
-        )
+    run_batch(
+        con,
+        "graph.cfg_blocks",
+        [cfg_block_to_tuple(row) for row in block_rows],
+        delete_params=[],
+        scope="cfg_blocks",
+    )
+    # Edges remain empty placeholders; run_batch keeps tables consistent.
 
     log.info(
         "CFG/DFG build (minimal) complete for repo=%s commit=%s: %d blocks, 0 edges",

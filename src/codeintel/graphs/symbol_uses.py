@@ -10,6 +10,8 @@ from typing import cast
 import duckdb
 
 from codeintel.config.models import SymbolUsesConfig
+from codeintel.ingestion.common import load_module_map, run_batch
+from codeintel.models.rows import SymbolUseRow, symbol_use_to_tuple
 from codeintel.types import ScipDocument
 
 log = logging.getLogger(__name__)
@@ -34,21 +36,17 @@ def build_symbol_use_edges(
     if docs is None:
         return
 
-    module_by_path = _module_map(con, cfg)
+    module_by_path = load_module_map(con, cfg.repo, cfg.commit)
     def_path_by_symbol = _build_def_map(docs)
     rows = _build_symbol_edges(docs, def_path_by_symbol, module_by_path)
 
-    con.execute("DELETE FROM graph.symbol_use_edges")
-
-    if rows:
-        con.executemany(
-            """
-            INSERT INTO graph.symbol_use_edges
-              (symbol, def_path, use_path, same_file, same_module)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+    run_batch(
+        con,
+        "graph.symbol_use_edges",
+        [symbol_use_to_tuple(row) for row in rows],
+        delete_params=[],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
 
     log.info(
         "symbol_use_edges build complete: %d edges from %s",
@@ -75,22 +73,6 @@ def _load_scip_docs(scip_path: Path) -> list[ScipDocument] | None:
     return [cast("ScipDocument", doc) for doc in docs_raw if isinstance(doc, dict)]
 
 
-def _module_map(con: duckdb.DuckDBPyConnection, cfg: SymbolUsesConfig) -> dict[str, str]:
-    df_modules = con.execute(
-        """
-        SELECT path, module
-        FROM core.modules
-        WHERE repo = ? AND commit = ?
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetch_df()
-    module_by_path: dict[str, str] = {}
-    if not df_modules.empty:
-        for _, row in df_modules.iterrows():
-            module_by_path[str(row["path"]).replace("\\", "/")] = str(row["module"])
-    return module_by_path
-
-
 def _build_def_map(docs: list[ScipDocument]) -> dict[str, str]:
     def_path_by_symbol: dict[str, str] = {}
     for doc in docs:
@@ -114,8 +96,8 @@ def _build_symbol_edges(
     docs: list[ScipDocument],
     def_path_by_symbol: dict[str, str],
     module_by_path: dict[str, str],
-) -> list[tuple]:
-    rows: list[tuple] = []
+) -> list[SymbolUseRow]:
+    rows: list[SymbolUseRow] = []
 
     for doc in docs:
         use_path = doc.get("relative_path")
@@ -141,5 +123,13 @@ def _build_symbol_edges(
             m_use = module_by_path.get(use_path)
             same_module = m_def is not None and m_def == m_use
 
-            rows.append((symbol, def_path, use_path, same_file, same_module))
+            rows.append(
+                SymbolUseRow(
+                    symbol=symbol,
+                    def_path=def_path,
+                    use_path=use_path,
+                    same_file=same_file,
+                    same_module=same_module,
+                )
+            )
     return rows

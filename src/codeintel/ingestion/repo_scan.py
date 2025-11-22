@@ -14,7 +14,9 @@ import duckdb
 import yaml
 
 from codeintel.config.models import RepoScanConfig
+from codeintel.ingestion.common import run_batch
 from codeintel.storage.schemas import apply_all_schemas
+from codeintel.utils.paths import normalize_rel_path, relpath_to_module
 
 log = logging.getLogger(__name__)
 
@@ -64,28 +66,6 @@ def _iter_python_files(repo_root: Path) -> Iterable[Path]:
         yield path
 
 
-def _path_to_module(repo_root: Path, path: Path) -> str:
-    rel = path.relative_to(repo_root).with_suffix("")
-    return ".".join(rel.parts)
-
-
-def relpath_to_module(rel_path: Path | str) -> str:
-    """
-    Convert a repository-relative Python path to a dotted module name.
-
-    Parameters
-    ----------
-    rel_path:
-        Repo-relative path to a .py file.
-
-    Returns
-    -------
-    str
-        Dotted module path.
-    """
-    return ".".join(Path(rel_path).with_suffix("").parts)
-
-
 def _load_tags_index(tags_index_path: Path) -> list[TagEntry]:
     if not tags_index_path.is_file():
         log.info("tags_index.yaml not found at %s", tags_index_path)
@@ -106,12 +86,6 @@ def _write_tags_index_table(
     tags_entries: list[TagEntry],
 ) -> None:
     # This table does not carry repo/commit; assume one-repo-per-DB.
-    con.execute("DELETE FROM analytics.tags_index")
-
-    insert_sql = """
-        INSERT INTO analytics.tags_index (tag, description, includes, excludes, matches)
-        VALUES (?, ?, ?, ?, ?)
-    """
     values = []
     for entry in tags_entries:
         tag = entry.get("tag")
@@ -121,8 +95,7 @@ def _write_tags_index_table(
         matches = entry.get("matches") or []
         values.append([tag, description, includes, excludes, matches])
 
-    if values:
-        con.executemany(insert_sql, values)
+    run_batch(con, "analytics.tags_index", values, delete_params=[], scope="tags_index")
 
 
 def _tags_for_path(rel_path: str, tags_entries: list[TagEntry]) -> list[str]:
@@ -182,8 +155,8 @@ def ingest_repo(
     modules: dict[str, ModuleRow] = {}
 
     for path in _iter_python_files(repo_root):
-        rel_path = path.relative_to(repo_root).as_posix()
-        module = _path_to_module(repo_root, path)
+        rel_path = normalize_rel_path(path.relative_to(repo_root))
+        module = relpath_to_module(rel_path)
         tags = _tags_for_path(rel_path, tags_entries)
 
         modules[module] = ModuleRow(
@@ -198,53 +171,34 @@ def ingest_repo(
 
     log.info("Discovered %d Python modules", len(modules))
 
-    con.execute("BEGIN")
-    try:
-        # Truncate existing rows for this repo/commit.
-        con.execute(
-            "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
-            [cfg.repo, cfg.commit],
-        )
-
-        insert_modules = """
-            INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """
-        module_values = [
-            [
-                m.module,
-                m.path,
-                m.repo,
-                m.commit,
-                m.language,
-                m.tags or [],
-                m.owners or [],
-            ]
-            for m in modules.values()
+    module_values = [
+        [
+            m.module,
+            m.path,
+            m.repo,
+            m.commit,
+            m.language,
+            m.tags or [],
+            m.owners or [],
         ]
-        if module_values:
-            con.executemany(insert_modules, module_values)
+        for m in modules.values()
+    ]
+    run_batch(
+        con,
+        "core.modules",
+        module_values,
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
 
-        # core.repo_map: single row per (repo, commit)
-        con.execute(
-            "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
-            [cfg.repo, cfg.commit],
-        )
-
-        modules_json = {m.module: m.path for m in modules.values()}
-        now = datetime.now(UTC)
-
-        con.execute(
-            """
-            INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            [cfg.repo, cfg.commit, modules_json, {}, now],
-        )
-
-        con.execute("COMMIT")
-    except Exception:
-        con.execute("ROLLBACK")
-        raise
+    modules_json = {m.module: m.path for m in modules.values()}
+    now = datetime.now(UTC)
+    run_batch(
+        con,
+        "core.repo_map",
+        [[cfg.repo, cfg.commit, modules_json, {}, now]],
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
 
     log.info("repo_map and modules written for %s@%s", cfg.repo, cfg.commit)

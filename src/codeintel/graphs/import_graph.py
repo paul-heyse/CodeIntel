@@ -10,6 +10,9 @@ import libcst as cst
 
 from codeintel.config.models import ImportGraphConfig
 from codeintel.graphs.import_resolver import collect_import_edges
+from codeintel.ingestion.common import run_batch
+from codeintel.models.rows import ImportEdgeRow, import_edge_to_tuple
+from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
 
@@ -103,7 +106,7 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
     raw_edges: set[tuple[str, str]] = set()
     for _, row in df_modules.iterrows():
         module_name = str(row["module"])
-        rel_path = str(row["path"]).replace("\\", "/")
+        rel_path = normalize_rel_path(str(row["path"]))
         file_path = repo_root / rel_path
 
         try:
@@ -121,11 +124,6 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
         raw_edges.update(collect_import_edges(module_name, module))
 
     # Build fan-out / fan-in / SCCs
-    if not raw_edges:
-        con.execute("DELETE FROM graph.import_graph_edges")
-        log.info("No imports found; import graph edges cleared.")
-        return
-
     graph: dict[str, set[str]] = defaultdict(set)
     for src, dst in raw_edges:
         graph[src].add(dst)
@@ -138,26 +136,24 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
         fan_out[src] += 1
         fan_in[dst] += 1
 
-    rows: list[tuple] = []
+    rows: list[ImportEdgeRow] = []
     for src, dst in sorted(raw_edges):
         rows.append(
-            (
-                src,
-                dst,
-                fan_out.get(src, 0),
-                fan_in.get(dst, 0),
-                scc.get(src, -1),
+            ImportEdgeRow(
+                src_module=src,
+                dst_module=dst,
+                src_fan_out=fan_out.get(src, 0),
+                dst_fan_in=fan_in.get(dst, 0),
+                cycle_group=scc.get(src, -1),
             )
         )
 
-    con.execute("DELETE FROM graph.import_graph_edges")
-    con.executemany(
-        """
-        INSERT INTO graph.import_graph_edges
-          (src_module, dst_module, src_fan_out, dst_fan_in, cycle_group)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        rows,
+    run_batch(
+        con,
+        "graph.import_graph_edges",
+        [import_edge_to_tuple(row) for row in rows],
+        delete_params=[],
+        scope="import_graph_edges",
     )
 
     log.info(

@@ -12,7 +12,9 @@ from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
 from codeintel.config.models import CoverageIngestConfig
-from codeintel.config.schemas.sql_builder import ensure_schema, prepared_statements
+from codeintel.ingestion.common import run_batch, should_skip_missing_file
+from codeintel.models.rows import CoverageLineRow, coverage_line_to_tuple
+from codeintel.utils.paths import normalize_rel_path
 
 
 @dataclass(frozen=True)
@@ -21,7 +23,6 @@ class CoverageInsertContext:
 
     repo: str
     commit: str
-    insert_sql: str
     now: datetime
     coverage_file: Path
 
@@ -59,48 +60,33 @@ def ingest_coverage_lines(
     repo_root = cfg.repo_root
     coverage_file = cfg.coverage_file
 
-    if coverage_file is None or not coverage_file.is_file():
-        log.warning("Coverage file %s not found; skipping coverage ingestion", coverage_file)
+    if coverage_file is None or should_skip_missing_file(coverage_file, logger=log, label="coverage file"):
         return
 
     cov = Coverage(data_file=str(coverage_file))
     cov.load()
     data = cov.get_data()
 
-    ensure_schema(con, "analytics.coverage_lines")
-    coverage_stmt = prepared_statements("analytics.coverage_lines")
-
     now = datetime.now(UTC)
 
-    insert_ctx = CoverageInsertContext(
-        repo=cfg.repo,
-        commit=cfg.commit,
-        insert_sql=coverage_stmt.insert_sql,
-        now=now,
-        coverage_file=coverage_file,
-    )
+    insert_ctx = CoverageInsertContext(repo=cfg.repo, commit=cfg.commit, now=now, coverage_file=coverage_file)
 
-    rows: list[list[object]] = []
+    rows: list[CoverageLineRow] = []
     for measured in data.measured_files():
         measured_path = Path(measured).resolve()
         try:
-            rel_path = measured_path.relative_to(repo_root).as_posix()
+            rel_path = normalize_rel_path(measured_path.relative_to(repo_root))
         except ValueError:
             continue
         file_info = CoverageFileInfo(measured_path=measured_path, rel_path=rel_path)
         rows.extend(_collect_file_coverage(cov=cov, data=data, file_info=file_info, ctx=insert_ctx))
 
-    con.execute("BEGIN")
-    try:
-        if coverage_stmt.delete_sql is not None:
-            con.execute(coverage_stmt.delete_sql, [cfg.repo, cfg.commit])
-        if rows:
-            con.executemany(coverage_stmt.insert_sql, rows)
-        con.execute("COMMIT")
-    except Exception:
-        con.execute("ROLLBACK")
-        raise
-
+    run_batch(
+        con,
+        "analytics.coverage_lines",
+        [coverage_line_to_tuple(r) for r in rows],
+        delete_params=[cfg.repo, cfg.commit],
+    )
     log.info("coverage_lines ingested for %s@%s", cfg.repo, cfg.commit)
 
 
@@ -110,8 +96,8 @@ def _collect_file_coverage(
     data: CoverageData,
     file_info: CoverageFileInfo,
     ctx: CoverageInsertContext,
-) -> list[list[object]]:
-    rows: list[list[object]] = []
+) -> list[CoverageLineRow]:
+    rows: list[CoverageLineRow] = []
     try:
         _, statements, _, _missing, executed = cov.analysis2(str(file_info.measured_path))
     except CoverageException as exc:
@@ -135,16 +121,16 @@ def _collect_file_coverage(
         context_count = len(contexts) if contexts else 0
 
         rows.append(
-            [
-                ctx.repo,
-                ctx.commit,
-                file_info.rel_path,
-                line,
-                True,
-                is_covered,
-                hits,
-                context_count,
-                ctx.now,
-            ]
+            CoverageLineRow(
+                repo=ctx.repo,
+                commit=ctx.commit,
+                rel_path=file_info.rel_path,
+                line=line,
+                is_executable=True,
+                is_covered=is_covered,
+                hits=hits,
+                context_count=context_count,
+                created_at=ctx.now,
+            )
         )
     return rows

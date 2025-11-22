@@ -12,6 +12,9 @@ import duckdb
 import pandas as pd
 
 from codeintel.config.models import GoidBuilderConfig
+from codeintel.ingestion.common import run_batch
+from codeintel.models.rows import GoidCrosswalkRow, GoidRow, goid_crosswalk_to_tuple, goid_to_tuple
+from codeintel.utils.paths import relpath_to_module
 
 log = logging.getLogger(__name__)
 DECIMAL_38_MAX = 10**38 - 1
@@ -45,8 +48,7 @@ def _relpath_to_module(path: str | Path) -> str:
     str
         Dotted module path derived from the relative path.
     """
-    rel_path = Path(path).with_suffix("")
-    return ".".join(rel_path.parts)
+    return relpath_to_module(path)
 
 
 def _safe_int(value: object, default: int | None = None) -> int | None:
@@ -122,6 +124,71 @@ def _build_urn(descriptor: GoidDescriptor) -> str:
     return f"{base}?s={descriptor.start_line}&e={descriptor.end_line}"
 
 
+def _build_goid_entries(row: pd.Series, cfg: GoidBuilderConfig, now: datetime) -> tuple[GoidRow, GoidCrosswalkRow]:
+    rel_path = str(row["path"]).replace("\\", "/")
+    node_type = str(row["node_type"])
+    qualname = str(row["qualname"])
+    parent_qualname_raw = row["parent_qualname"]
+    parent_qualname = str(parent_qualname_raw) if parent_qualname_raw is not None else None
+
+    if node_type == "Module":
+        kind = "module"
+    elif node_type == "ClassDef":
+        kind = "class"
+    elif parent_qualname and parent_qualname != _relpath_to_module(Path(rel_path)):
+        kind = "method"
+    else:
+        kind = "function"
+
+    start_line = _safe_int(row["lineno"], default=1) or 1
+    end_line = _safe_int(row["end_lineno"])
+
+    descriptor = GoidDescriptor(
+        repo=cfg.repo,
+        commit=cfg.commit,
+        language=cfg.language,
+        rel_path=rel_path,
+        kind=kind,
+        qualname=qualname,
+        start_line=start_line,
+        end_line=end_line,
+    )
+
+    goid_h128 = _compute_goid(descriptor)
+    urn = _build_urn(descriptor)
+
+    goid_row = GoidRow(
+        goid_h128=goid_h128,
+        urn=urn,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        rel_path=rel_path,
+        language=cfg.language,
+        kind=kind,
+        qualname=qualname,
+        start_line=start_line,
+        end_line=end_line,
+        created_at=now,
+    )
+
+    xwalk_row = GoidCrosswalkRow(
+        goid=urn,
+        lang=cfg.language,
+        module_path=_relpath_to_module(Path(rel_path)),
+        file_path=rel_path,
+        start_line=start_line,
+        end_line=end_line,
+        scip_symbol=None,
+        ast_qualname=qualname,
+        cst_node_id=None,
+        chunk_id=None,
+        symbol_id=None,
+        updated_at=now,
+    )
+
+    return goid_row, xwalk_row
+
+
 def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
     """
     Populate core.goids and core.goid_crosswalk from core.ast_nodes.
@@ -152,101 +219,30 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
         log.warning("No AST nodes found in core.ast_nodes; cannot build GOIDs.")
         return
 
-    con.execute("DELETE FROM core.goids WHERE repo = ? AND commit = ?", [cfg.repo, cfg.commit])
-    con.execute("DELETE FROM core.goid_crosswalk")
-
-    goid_rows: list[tuple] = []
-    xwalk_rows: list[tuple] = []
+    goid_rows: list[GoidRow] = []
+    xwalk_rows: list[GoidCrosswalkRow] = []
 
     now = datetime.now(UTC)
 
     for _, row in df.iterrows():
-        rel_path = str(row["path"]).replace("\\", "/")
-        node_type = str(row["node_type"])
-        qualname = str(row["qualname"])
-        parent_qualname_raw = row["parent_qualname"]
-        parent_qualname = str(parent_qualname_raw) if parent_qualname_raw is not None else None
+        goid_row, xwalk_row = _build_goid_entries(row, cfg, now)
+        goid_rows.append(goid_row)
+        xwalk_rows.append(xwalk_row)
 
-        if node_type == "Module":
-            kind = "module"
-        elif node_type == "ClassDef":
-            kind = "class"
-        elif parent_qualname and parent_qualname != _relpath_to_module(Path(rel_path)):
-            kind = "method"
-        else:
-            kind = "function"
-
-        start_line = _safe_int(row["lineno"], default=1) or 1
-        end_line = _safe_int(row["end_lineno"])
-
-        descriptor = GoidDescriptor(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            language=cfg.language,
-            rel_path=rel_path,
-            kind=kind,
-            qualname=qualname,
-            start_line=start_line,
-            end_line=end_line,
-        )
-
-        goid_h128 = _compute_goid(descriptor)
-        urn = _build_urn(descriptor)
-
-        goid_rows.append(
-            (
-                goid_h128,
-                urn,
-                cfg.repo,
-                cfg.commit,
-                rel_path,
-                cfg.language,
-                kind,
-                qualname,
-                start_line,
-                end_line,
-                now,
-            )
-        )
-
-        xwalk_rows.append(
-            (
-                urn,
-                cfg.language,
-                _relpath_to_module(Path(rel_path)),
-                rel_path,
-                start_line,
-                end_line,
-                None,
-                qualname,
-                None,
-                None,
-                None,
-                now,
-            )
-        )
-
-    if goid_rows:
-        con.executemany(
-            """
-            INSERT INTO core.goids
-              (goid_h128, urn, repo, commit, rel_path, language, kind,
-               qualname, start_line, end_line, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            goid_rows,
-        )
-
-    if xwalk_rows:
-        con.executemany(
-            """
-            INSERT INTO core.goid_crosswalk
-              (goid, lang, module_path, file_path, start_line, end_line,
-               scip_symbol, ast_qualname, cst_node_id, chunk_id, symbol_id, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            xwalk_rows,
-        )
+    run_batch(
+        con,
+        "core.goids",
+        [goid_to_tuple(row) for row in goid_rows],
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
+    run_batch(
+        con,
+        "core.goid_crosswalk",
+        [goid_crosswalk_to_tuple(row) for row in xwalk_rows],
+        delete_params=[],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
 
     log.info(
         "GOID build complete for repo=%s commit=%s: %d entities",
