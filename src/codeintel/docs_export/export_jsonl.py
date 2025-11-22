@@ -31,6 +31,7 @@ JSONL_DATASETS: dict[str, str] = {
     "core.ast_nodes": "ast_nodes.jsonl",
     "core.ast_metrics": "ast_metrics.jsonl",
     "core.cst_nodes": "cst_nodes.jsonl",
+    "core.docstrings": "docstrings.jsonl",
     # Modules / config / diagnostics
     "core.modules": "modules.jsonl",
     "analytics.config_values": "config_values.jsonl",

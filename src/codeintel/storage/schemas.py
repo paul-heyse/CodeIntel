@@ -109,6 +109,27 @@ TABLE_DDL: dict[str, str] = {
         qnames       JSON
     );
     """,
+    "core.docstrings": """
+    CREATE TABLE IF NOT EXISTS core.docstrings (
+        repo           TEXT,
+        commit         TEXT,
+        rel_path       TEXT,
+        module         TEXT,
+        qualname       TEXT,
+        kind           TEXT,
+        lineno         INTEGER,
+        end_lineno     INTEGER,
+        raw_docstring  TEXT,
+        style          TEXT,
+        short_desc     TEXT,
+        long_desc      TEXT,
+        params         JSON,
+        returns        JSON,
+        raises         JSON,
+        examples       JSON,
+        created_at     TIMESTAMP
+    );
+    """,
     # -------------------------------------------------------------------------
     # graph schema: call graph, CFG, DFG, imports, symbol uses
     # -------------------------------------------------------------------------

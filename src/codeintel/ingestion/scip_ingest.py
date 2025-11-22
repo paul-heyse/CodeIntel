@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shutil
+from asyncio.subprocess import PIPE
 from dataclasses import dataclass
 from pathlib import Path
-from subprocess import CalledProcessError, run  # noqa: S404
 
 import duckdb
 
 log = logging.getLogger(__name__)
+MISSING_BINARY_EXIT_CODE = 127
 
 
 @dataclass(frozen=True)
@@ -74,52 +76,43 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> Path |
 
 
 def _run_scip_python(binary: str, repo_root: Path, output_path: Path) -> bool:
-    try:
-        proc = run(  # noqa: S603
-            [binary, "index", str(repo_root), "--output", str(output_path)],
-            check=True,
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-        )
-        if proc.stderr:
-            log.debug("scip-python stderr: %s", proc.stderr.strip())
-        success = True
-    except FileNotFoundError:
+    code, stdout, stderr = _run_command(
+        [binary, "index", str(repo_root), "--output", str(output_path)],
+        cwd=repo_root,
+    )
+    if code == 0:
+        if stderr:
+            log.debug("scip-python stderr: %s", stderr.strip())
+        return True
+    if code == MISSING_BINARY_EXIT_CODE:
         log.warning("scip-python binary %r not found; skipping SCIP indexing", binary)
-        success = False
-    except CalledProcessError as exc:
-        log.warning("scip-python index failed: %s", exc)
-        success = False
-    return success
+        return False
+    log.warning("scip-python index failed (code %s): %s", code, stderr.strip() or stdout.strip())
+    return False
 
 
 def _run_scip_print(binary: str, index_scip: Path, output_json: Path) -> bool:
-    try:
-        proc = run(  # noqa: S603
-            [binary, "print", "--format", "json", str(index_scip)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        output_json.write_text(proc.stdout or "", encoding="utf8")
-        if proc.stderr:
-            log.debug("scip print stderr: %s", proc.stderr.strip())
-        success = True
-    except FileNotFoundError:
+    code, stdout, stderr = _run_command(
+        [binary, "print", "--format", "json", str(index_scip)],
+        cwd=index_scip.parent,
+    )
+    if code == 0:
+        output_json.write_text(stdout or "", encoding="utf8")
+        if stderr:
+            log.debug("scip print stderr: %s", stderr.strip())
+        return True
+    if code == MISSING_BINARY_EXIT_CODE:
         log.warning("scip binary %r not found; skipping SCIP JSON export", binary)
-        success = False
-    except CalledProcessError as exc:
-        log.warning("scip print failed: %s", exc)
-        success = False
-    return success
+        return False
+    log.warning("scip print failed (code %s): %s", code, stderr.strip() or stdout.strip())
+    return False
 
 
 def _update_scip_symbols(con: duckdb.DuckDBPyConnection, index_json: Path) -> None:
     """Populate core.goid_crosswalk.scip_symbol by matching SCIP definitions to GOIDs."""
     try:
         docs = json.loads(index_json.read_text(encoding="utf8"))
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, json.JSONDecodeError) as exc:
         log.warning("Failed to parse %s for SCIP symbols: %s", index_json, exc)
         return
 
@@ -161,3 +154,20 @@ def _update_scip_symbols(con: duckdb.DuckDBPyConnection, index_json: Path) -> No
             updates,
         )
         log.info("Updated SCIP symbols for %d GOIDs", len(updates))
+
+
+def _run_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
+    async def _exec() -> tuple[int, str, str]:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            cwd=str(cwd) if cwd is not None else None,
+            stdout=PIPE,
+            stderr=PIPE,
+        )
+        stdout_b, stderr_b = await proc.communicate()
+        return proc.returncode, stdout_b.decode(), stderr_b.decode()
+
+    try:
+        return asyncio.run(_exec())
+    except FileNotFoundError as exc:
+        return MISSING_BINARY_EXIT_CODE, "", str(exc)

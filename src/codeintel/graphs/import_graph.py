@@ -61,12 +61,11 @@ class _ImportCollector(cst.CSTVisitor):
             base = ".".join(parts[:-1]) if len(parts) > 1 else self.module_name
 
         if isinstance(node.names, cst.ImportStar):
-            # from foo import *
             self.edges.add((self.module_name, base))
         else:
-            for alias in node.names:
-                # from foo import bar -> edge from src -> foo
+            for _alias in node.names:
                 self.edges.add((self.module_name, base))
+
 
 _ImportCollector.visit_Import = _ImportCollector.visit_import
 _ImportCollector.visit_ImportFrom = _ImportCollector.visit_import_from
@@ -172,8 +171,8 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
 
         try:
             module = cst.parse_module(source)
-        except Exception as exc:
-            log.exception("Failed to parse %s for import graph: %s", file_path, exc)
+        except Exception:
+            log.exception("Failed to parse %s for import graph", file_path)
             continue
 
         visitor = _ImportCollector(module_name=module_name)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ import libcst as cst
 from libcst import metadata
 
 log = logging.getLogger(__name__)
+FUNCTION_NODE_TYPES = (cst.FunctionDef, getattr(cst, "AsyncFunctionDef", cst.FunctionDef))
 
 
 @dataclass
@@ -36,6 +38,18 @@ class AstRow:
     decorators: list[str]
     docstring: str | None
     hash: str
+
+
+@dataclass
+class AstDescriptor:
+    """Descriptor capturing logical AST identity for a node."""
+
+    node_type: str
+    name: str | None
+    qualname: str | None
+    parent_qualname: str | None
+    decorators: list[str]
+    docstring: str | None
 
 
 @dataclass
@@ -110,7 +124,7 @@ class AstCstVisitor(cst.CSTVisitor):
     # Generic hooks to track depth and metrics.node_count
     def visit(self, node: cst.CSTNode) -> bool:
         """
-        Track traversal depth, record CST metadata, and continue recursion.
+        Track traversal depth, record CST metadata, and handle AST bookkeeping.
 
         Returns
         -------
@@ -122,106 +136,45 @@ class AstCstVisitor(cst.CSTVisitor):
         self.metrics.depths.append(self._depth)
         self._parent_kinds.append(type(node).__name__)
         self._record_cst_row(node)
+
+        if isinstance(node, (cst.If, cst.For, cst.While, cst.Try, cst.With)):
+            self.metrics.complexity += 1
+        elif isinstance(node, cst.Module):
+            self._record_module(node)
+        elif isinstance(node, cst.ClassDef):
+            self._record_class(node)
+        elif isinstance(node, FUNCTION_NODE_TYPES):
+            self._record_function(node)
+
         return True
 
     def leave(self, node: cst.CSTNode) -> None:
         """Pop traversal depth and parent stacks after visiting a node."""
+        if isinstance(node, (cst.ClassDef, *FUNCTION_NODE_TYPES)) and self._scope_stack:
+            self._scope_stack.pop()
         self._parent_kinds.pop()
         self._depth -= 1
 
-    # Complexity heuristics: count control-flow-ish nodes
-    def visit_if(self, node: cst.If) -> bool:
-        """
-        Increment heuristic complexity for `if` statements.
+    # Helpers
 
-        Returns
-        -------
-        bool
-            True to continue traversal.
-        """
-        self.metrics.complexity += 1
-        return True
-
-    def visit_for(self, node: cst.For) -> bool:
-        """
-        Increment heuristic complexity for `for` loops.
-
-        Returns
-        -------
-        bool
-            True to continue traversal.
-        """
-        self.metrics.complexity += 1
-        return True
-
-    def visit_while(self, node: cst.While) -> bool:
-        """
-        Increment heuristic complexity for `while` loops.
-
-        Returns
-        -------
-        bool
-            True to continue traversal.
-        """
-        self.metrics.complexity += 1
-        return True
-
-    def visit_try(self, node: cst.Try) -> bool:
-        """
-        Increment heuristic complexity for `try` statements.
-
-        Returns
-        -------
-        bool
-            True to continue traversal.
-        """
-        self.metrics.complexity += 1
-        return True
-
-    def visit_with(self, node: cst.With) -> bool:
-        """
-        Increment heuristic complexity for context manager blocks.
-
-        Returns
-        -------
-        bool
-            True to continue traversal.
-        """
-        self.metrics.complexity += 1
-        return True
-
-    # AST rows for modules, classes, functions
-
-    def visit_module(self, node: cst.Module) -> bool:
-        """
-        Record the module root and reset traversal scope.
-
-        Returns
-        -------
-        bool
-            True to traverse into module children.
-        """
+    def _record_module(self, node: cst.Module) -> None:
+        """Record the module root and reset traversal scope."""
         qualname = self.module_name
         self._scope_stack = []  # root scope
         self._record_ast_row(
             node=node,
-            node_type="Module",
-            name=self.module_name.split(".")[-1],
-            qualname=qualname,
-            parent_qualname=None,
-            decorators=[],
+            descriptor=AstDescriptor(
+                node_type="Module",
+                name=self.module_name.split(".")[-1],
+                qualname=qualname,
+                parent_qualname=None,
+                decorators=[],
+                docstring=self._extract_docstring_from_module(node),
+            ),
         )
-        return True
 
-    def visit_class_def(self, node: cst.ClassDef) -> bool:
-        """
-        Record class definitions and push them onto the scope stack.
-
-        Returns
-        -------
-        bool
-            True to traverse into class members.
-        """
+    def _record_class(self, node: cst.ClassDef) -> None:
+        """Record class definitions and push them onto the scope stack."""
         name = node.name.value
         parent_qual = self._current_qualname()
         qualname = f"{parent_qual}.{name}" if parent_qual else f"{self.module_name}.{name}"
@@ -229,63 +182,20 @@ class AstCstVisitor(cst.CSTVisitor):
         self.metrics.class_count += 1
         self._record_ast_row(
             node=node,
-            node_type="ClassDef",
-            name=name,
-            qualname=qualname,
-            parent_qualname=parent_qual or self.module_name,
-            decorators=[self._decorator_to_str(d.decorator) for d in node.decorators],
+            descriptor=AstDescriptor(
+                node_type="ClassDef",
+                name=name,
+                qualname=qualname,
+                parent_qualname=parent_qual or self.module_name,
+                decorators=[self._decorator_to_str(d.decorator) for d in node.decorators],
+                docstring=self._extract_docstring_from_suite(node.body),
+            ),
         )
-        return True
 
-    def leave_class_def(self, node: cst.ClassDef) -> None:
-        """Pop the class scope when leaving a class definition."""
-        if self._scope_stack:
-            self._scope_stack.pop()
-
-    def visit_function_def(self, node: cst.FunctionDef) -> bool:
-        """
-        Handle synchronous function definitions.
-
-        Returns
-        -------
-        bool
-            True to traverse into the function body.
-        """
-        return self._visit_function_like(node, async_kind=False)
-
-    def leave_function_def(self, node: cst.FunctionDef) -> None:
-        """Pop scope when exiting a synchronous function."""
-        if self._scope_stack:
-            self._scope_stack.pop()
-
-    def visit_async_function_def(self, node: cst.AsyncFunctionDef) -> bool:
-        """
-        Handle asynchronous function definitions.
-
-        Returns
-        -------
-        bool
-            True to traverse into the async function body.
-        """
-        return self._visit_function_like(node, async_kind=True)
-
-    def leave_async_function_def(self, node: cst.AsyncFunctionDef) -> None:
-        """Pop scope when exiting an async function."""
-        if self._scope_stack:
-            self._scope_stack.pop()
-
-    # Helpers
-
-    def _visit_function_like(self, node: cst.BaseStatement, async_kind: bool) -> bool:
-        """
-        Shared logic for recording function or async function AST rows.
-
-        Returns
-        -------
-        bool
-            True to continue traversing into the function body.
-        """
-        # node.name works for FunctionDef/AsyncFunctionDef
+    def _record_function(self, node: cst.CSTNode) -> None:
+        """Record function or async function AST rows and push scope."""
+        if not isinstance(node, FUNCTION_NODE_TYPES):
+            return
         name = getattr(node, "name", None)
         fn_name = name.value if isinstance(name, cst.Name) else None
         parent_qual = self._current_qualname()
@@ -295,40 +205,33 @@ class AstCstVisitor(cst.CSTVisitor):
         self.metrics.function_count += 1
 
         decorators = getattr(node, "decorators", []) or []
+        node_type = "AsyncFunctionDef" if isinstance(node, FUNCTION_NODE_TYPES[1]) else "FunctionDef"
         self._record_ast_row(
             node=node,
-            node_type="AsyncFunctionDef" if async_kind else "FunctionDef",
-            name=fn_name,
-            qualname=qualname,
-            parent_qualname=parent_qual or self.module_name,
-            decorators=[self._decorator_to_str(d.decorator) for d in decorators],
+            descriptor=AstDescriptor(
+                node_type=node_type,
+                name=fn_name,
+                qualname=qualname,
+                parent_qualname=parent_qual or self.module_name,
+                decorators=[self._decorator_to_str(d.decorator) for d in decorators],
+                docstring=self._extract_docstring_from_suite(getattr(node, "body", None)),
+            ),
         )
-        return True
 
-
-    def _current_qualname(self) -> str | None:
+    def _current_qualname(self) -> str:
         """
         Return the current fully qualified name for the traversal scope.
 
         Returns
         -------
-        str | None
-            Fully qualified name including nested scopes, or None at module root.
+        str
+            Fully qualified name including nested scopes.
         """
         if not self._scope_stack:
             return self.module_name
         return f"{self.module_name}." + ".".join(self._scope_stack)
 
-    def _record_ast_row(
-        self,
-        node: cst.CSTNode,
-        *,
-        node_type: str,
-        name: str | None,
-        qualname: str | None,
-        parent_qualname: str | None,
-        decorators: list[str],
-    ) -> None:
+    def _record_ast_row(self, node: cst.CSTNode, *, descriptor: AstDescriptor) -> None:
         """Append an AstRow describing the current node and its position."""
         pos = self.get_metadata(metadata.PositionProvider, node, None)
         if pos is None:
@@ -340,23 +243,24 @@ class AstCstVisitor(cst.CSTVisitor):
             end_col = pos.end.column
 
         # Simple stable hash based on location + type + qualname
-        h = hashlib.sha1(
-            f"{self.rel_path}:{node_type}:{qualname}:{lineno}:{end_lineno}".encode()
+        h = hashlib.blake2b(
+            f"{self.rel_path}:{descriptor.node_type}:{descriptor.qualname}:{lineno}:{end_lineno}".encode(),
+            digest_size=16,
         ).hexdigest()
 
         self.ast_rows.append(
             AstRow(
                 path=self.rel_path,
-                node_type=node_type,
-                name=name,
-                qualname=qualname,
+                node_type=descriptor.node_type,
+                name=descriptor.name,
+                qualname=descriptor.qualname,
                 lineno=lineno,
                 end_lineno=end_lineno,
                 col_offset=col,
                 end_col_offset=end_col,
-                parent_qualname=parent_qualname,
-                decorators=decorators,
-                docstring=None,  # can be filled later if needed
+                parent_qualname=descriptor.parent_qualname,
+                decorators=descriptor.decorators,
+                docstring=descriptor.docstring,
                 hash=h,
             )
         )
@@ -371,21 +275,21 @@ class AstCstVisitor(cst.CSTVisitor):
         end = pos.end
         span = {"start": [start.line, start.column], "end": [end.line, end.column]}
 
-        # Derive text preview from span
-        try:
+        # Derive text preview from span with bounds checks
+        snippet = ""
+        if 0 < start.line <= len(self.source_lines) and 0 < end.line <= len(self.source_lines):
             if start.line == end.line:
                 line = self.source_lines[start.line - 1]
                 snippet = line[start.column : end.column]
             else:
-                lines = self.source_lines[start.line - 1 : end.line]
-                lines[0] = lines[0][start.column :]
-                lines[-1] = lines[-1][: end.column]
-                snippet = "".join(lines)
-        except Exception:
-            snippet = ""
+                lines = list(self.source_lines[start.line - 1 : end.line])
+                if lines:
+                    lines[0] = lines[0][start.column :]
+                    lines[-1] = lines[-1][: end.column]
+                    snippet = "".join(lines)
 
         kind = type(node).__name__
-        parents = [k for k in self._parent_kinds[:-1]]  # exclude self
+        parents = list(self._parent_kinds[:-1])  # exclude self
         qnames = [self._current_qualname()] if self._scope_stack else [self.module_name]
 
         node_id = f"{self.rel_path}:{kind}:{start.line}:{start.column}:{end.line}:{end.column}"
@@ -420,19 +324,65 @@ class AstCstVisitor(cst.CSTVisitor):
         # Fallback: class name of expression
         return type(expr).__name__
 
+    @staticmethod
+    def _extract_docstring_from_module(node: cst.Module) -> str | None:
+        """
+        Return the module-level docstring, if present.
 
-AstCstVisitor.visit_If = AstCstVisitor.visit_if
-AstCstVisitor.visit_For = AstCstVisitor.visit_for
-AstCstVisitor.visit_While = AstCstVisitor.visit_while
-AstCstVisitor.visit_Try = AstCstVisitor.visit_try
-AstCstVisitor.visit_With = AstCstVisitor.visit_with
-AstCstVisitor.visit_Module = AstCstVisitor.visit_module
-AstCstVisitor.visit_ClassDef = AstCstVisitor.visit_class_def
-AstCstVisitor.leave_ClassDef = AstCstVisitor.leave_class_def
-AstCstVisitor.visit_FunctionDef = AstCstVisitor.visit_function_def
-AstCstVisitor.leave_FunctionDef = AstCstVisitor.leave_function_def
-AstCstVisitor.visit_AsyncFunctionDef = AstCstVisitor.visit_async_function_def
-AstCstVisitor.leave_AsyncFunctionDef = AstCstVisitor.leave_async_function_def
+        Returns
+        -------
+        str | None
+            Evaluated docstring text or None when absent.
+        """
+        return AstCstVisitor._extract_docstring_from_body(node.body)
+
+    @staticmethod
+    def _extract_docstring_from_suite(suite: cst.BaseSuite | None) -> str | None:
+        """
+        Extract a docstring from an indented or simple suite.
+
+        Returns
+        -------
+        str | None
+            Evaluated docstring text or None when absent.
+        """
+        if suite is None:
+            return None
+        if isinstance(suite, cst.IndentedBlock):
+            return AstCstVisitor._extract_docstring_from_body(suite.body)
+        if isinstance(suite, cst.SimpleStatementSuite):
+            return AstCstVisitor._extract_docstring_from_body(suite.body)
+        return None
+
+    @staticmethod
+    def _extract_docstring_from_body(body: Sequence[cst.CSTNode]) -> str | None:
+        """
+        Mirror ast.get_docstring semantics for the first statement in a body.
+
+        Returns
+        -------
+        str | None
+            Evaluated docstring text or None when absent.
+        """
+        if not body:
+            return None
+        first = body[0]
+        if not (isinstance(first, cst.SimpleStatementLine) and first.body):
+            return None
+        expr = first.body[0]
+        if not isinstance(expr, cst.Expr):
+            return None
+        value = expr.value
+        if not isinstance(value, cst.SimpleString):
+            return None
+        try:
+            raw_val = value.evaluated_value
+        except ValueError:
+            raw_val = None
+
+        if isinstance(raw_val, bytes):
+            raw_val = raw_val.decode("utf-8", "replace")
+        return raw_val if isinstance(raw_val, str) else None
 
 
 def _load_module_map(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> dict[str, str]:
@@ -452,7 +402,7 @@ def _load_module_map(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> 
         """,
         [repo, commit],
     ).fetchall()
-    return {path: module for (path, module) in rows}
+    return dict(rows)
 
 
 def ingest_ast_and_cst(
@@ -477,10 +427,28 @@ def ingest_ast_and_cst(
         log.warning("No modules found in core.modules for %s@%s", repo, commit)
         return
 
-    # Clear previous AST/CST for safety (single repo per DB assumption).
-    con.execute("DELETE FROM core.ast_nodes")
-    con.execute("DELETE FROM core.ast_metrics")
-    con.execute("DELETE FROM core.cst_nodes")
+    # Clear previous AST/CST for this repo/commit only.
+    con.execute(
+        """
+        DELETE FROM core.ast_nodes
+        WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)
+        """,
+        [repo, commit],
+    )
+    con.execute(
+        """
+        DELETE FROM core.ast_metrics
+        WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)
+        """,
+        [repo, commit],
+    )
+    con.execute(
+        """
+        DELETE FROM core.cst_nodes
+        WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)
+        """,
+        [repo, commit],
+    )
 
     insert_ast = """
         INSERT INTO core.ast_nodes (
@@ -524,8 +492,8 @@ def ingest_ast_and_cst(
             wrapper = metadata.MetadataWrapper(cst.parse_module(source))
             visitor = AstCstVisitor(rel_path=rel_path, module_name=module_name, source=source)
             wrapper.visit(visitor)
-        except Exception as exc:
-            log.exception("Failed to parse %s: %s", file_path, exc)
+        except Exception:
+            log.exception("Failed to parse %s", file_path)
             continue
 
         # Insert AST rows

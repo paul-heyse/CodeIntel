@@ -34,6 +34,7 @@ from codeintel.ingestion import (
     ast_cst_extract,
     config_ingest,
     coverage_ingest,
+    docstrings_ingest,
     repo_scan,
     scip_ingest,
     tests_ingest,
@@ -197,6 +198,24 @@ class TypingIngestStep:
             repo=ctx.repo,
             commit=ctx.commit,
         )
+
+
+@dataclass
+class DocstringsIngestStep:
+    """Extract and persist structured docstrings."""
+
+    name: str = "docstrings_ingest"
+    deps: Sequence[str] = ("repo_scan",)
+
+    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+        """Ingest docstrings for all Python modules."""
+        _log_step(self.name)
+        cfg = docstrings_ingest.DocstringConfig(
+            repo_root=ctx.repo_root,
+            repo=ctx.repo,
+            commit=ctx.commit,
+        )
+        docstrings_ingest.ingest_docstrings(con, cfg)
 
 
 @dataclass
@@ -547,6 +566,7 @@ PIPELINE_STEPS: dict[str, PipelineStep] = {
     "coverage_ingest": CoverageIngestStep(),
     "tests_ingest": TestsIngestStep(),
     "typing_ingest": TypingIngestStep(),
+    "docstrings_ingest": DocstringsIngestStep(),
     "config_ingest": ConfigIngestStep(),
     # graphs
     "goids": GoidsStep(),

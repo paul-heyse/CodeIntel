@@ -7,6 +7,17 @@ from typing import Any, Protocol
 
 import duckdb
 
+from codeintel.mcp import errors
+from codeintel.mcp.models import (
+    CallGraphNeighborsResponse,
+    DatasetDescriptor,
+    DatasetRowsResponse,
+    FileSummaryResponse,
+    FunctionSummaryResponse,
+    HighRiskFunctionsResponse,
+    TestsForFunctionResponse,
+)
+
 
 def _fetch_one_dict(
     cur: duckdb.DuckDBPyConnection, sql: str, params: list[Any]
@@ -72,7 +83,7 @@ class QueryBackend(Protocol):
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> FunctionSummaryResponse:
         """Return a function summary from docs.v_function_summary."""
         ...
 
@@ -82,7 +93,7 @@ class QueryBackend(Protocol):
         min_risk: float = 0.7,
         limit: int = 50,
         tested_only: bool = False,
-    ) -> list[dict[str, Any]]:
+    ) -> HighRiskFunctionsResponse:
         """List high-risk functions from analytics.goid_risk_factors."""
         ...
 
@@ -92,7 +103,7 @@ class QueryBackend(Protocol):
         goid_h128: int,
         direction: str = "both",
         limit: int = 50,
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> CallGraphNeighborsResponse:
         """Return incoming/outgoing call graph neighbors."""
         ...
 
@@ -101,7 +112,7 @@ class QueryBackend(Protocol):
         *,
         goid_h128: int | None = None,
         urn: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> TestsForFunctionResponse:
         """List tests that exercised a function."""
         ...
 
@@ -109,11 +120,11 @@ class QueryBackend(Protocol):
         self,
         *,
         rel_path: str,
-    ) -> dict[str, Any] | None:
+    ) -> FileSummaryResponse:
         """Return file summary plus function rows."""
         ...
 
-    def list_datasets(self) -> list[dict[str, Any]]:
+    def list_datasets(self) -> list[DatasetDescriptor]:
         """List datasets available to browse."""
         ...
 
@@ -123,7 +134,7 @@ class QueryBackend(Protocol):
         dataset_name: str,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[dict[str, Any]]:
+    ) -> DatasetRowsResponse:
         """Read rows from a dataset in small slices."""
         ...
 
@@ -232,7 +243,7 @@ class DuckDBBackend(QueryBackend):
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> FunctionSummaryResponse:
         """
         Fetch a single row from docs.v_function_summary.
 
@@ -243,11 +254,12 @@ class DuckDBBackend(QueryBackend):
 
         Raises
         ------
-        ValueError
+        errors.McpError
             If insufficient identifiers are provided.
         """
+        summary: dict[str, Any] | None
         if urn:
-            return _fetch_one_dict(
+            summary = _fetch_one_dict(
                 self.con,
                 """
                 SELECT *
@@ -258,7 +270,7 @@ class DuckDBBackend(QueryBackend):
                 [self.repo, self.commit, urn],
             )
         if goid_h128 is not None:
-            return _fetch_one_dict(
+            summary = _fetch_one_dict(
                 self.con,
                 """
                 SELECT *
@@ -269,7 +281,7 @@ class DuckDBBackend(QueryBackend):
                 [self.repo, self.commit, goid_h128],
             )
         if rel_path and qualname:
-            return _fetch_one_dict(
+            summary = _fetch_one_dict(
                 self.con,
                 """
                 SELECT *
@@ -279,8 +291,11 @@ class DuckDBBackend(QueryBackend):
                 """,
                 [self.repo, self.commit, rel_path, qualname],
             )
-        message = "Must provide urn or goid_h128 or (rel_path + qualname)."
-        raise ValueError(message)
+        else:
+            message = "Must provide urn or goid_h128 or (rel_path + qualname)."
+            raise errors.invalid_argument(message)
+
+        return FunctionSummaryResponse(found=bool(summary), summary=summary)
 
     def list_high_risk_functions(
         self,
@@ -288,7 +303,7 @@ class DuckDBBackend(QueryBackend):
         min_risk: float = 0.7,
         limit: int = 50,
         tested_only: bool = False,
-    ) -> list[dict[str, Any]]:
+    ) -> HighRiskFunctionsResponse:
         """
         Query analytics.goid_risk_factors for high-risk functions.
 
@@ -321,7 +336,8 @@ class DuckDBBackend(QueryBackend):
             LIMIT ?
             """
         )
-        return _fetch_all_dicts(self.con, sql, params)
+        rows = _fetch_all_dicts(self.con, sql, params)
+        return HighRiskFunctionsResponse(functions=rows)
 
     def get_callgraph_neighbors(
         self,
@@ -329,7 +345,7 @@ class DuckDBBackend(QueryBackend):
         goid_h128: int,
         direction: str = "both",
         limit: int = 50,
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> CallGraphNeighborsResponse:
         """
         Return incoming/outgoing edges from docs.v_call_graph_enriched.
 
@@ -361,14 +377,14 @@ class DuckDBBackend(QueryBackend):
             """
             incoming = _fetch_all_dicts(self.con, in_sql, [goid_h128, limit])
 
-        return {"outgoing": outgoing, "incoming": incoming}
+        return CallGraphNeighborsResponse(outgoing=outgoing, incoming=incoming)
 
     def get_tests_for_function(
         self,
         *,
         goid_h128: int | None = None,
         urn: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> TestsForFunctionResponse:
         """
         Query docs.v_test_to_function for tests that hit a given function.
 
@@ -379,15 +395,15 @@ class DuckDBBackend(QueryBackend):
 
         Raises
         ------
-        ValueError
+        errors.McpError
             If neither goid_h128 nor urn is provided.
         """
         if goid_h128 is None and urn is None:
             message = "Must provide goid_h128 or urn."
-            raise ValueError(message)
+            raise errors.invalid_argument(message)
 
         if goid_h128 is not None:
-            return _fetch_all_dicts(
+            rows = _fetch_all_dicts(
                 self.con,
                 """
                 SELECT *
@@ -397,7 +413,7 @@ class DuckDBBackend(QueryBackend):
                 """,
                 [self.repo, self.commit, goid_h128],
             )
-        return _fetch_all_dicts(
+        rows = _fetch_all_dicts(
             self.con,
             """
             SELECT *
@@ -407,12 +423,13 @@ class DuckDBBackend(QueryBackend):
             """,
             [self.repo, self.commit, urn],
         )
+        return TestsForFunctionResponse(tests=rows)
 
     def get_file_summary(
         self,
         *,
         rel_path: str,
-    ) -> dict[str, Any] | None:
+    ) -> FileSummaryResponse:
         """
         Return docs.v_file_summary row plus function summaries for a file.
 
@@ -432,7 +449,7 @@ class DuckDBBackend(QueryBackend):
             [rel_path],
         )
         if not file_row:
-            return None
+            return FileSummaryResponse(found=False, file=None)
 
         funcs = _fetch_all_dicts(
             self.con,
@@ -447,9 +464,9 @@ class DuckDBBackend(QueryBackend):
             [rel_path, self.repo, self.commit],
         )
         file_row["functions"] = funcs
-        return file_row
+        return FileSummaryResponse(found=True, file=file_row)
 
-    def list_datasets(self) -> list[dict[str, Any]]:
+    def list_datasets(self) -> list[DatasetDescriptor]:
         """
         List datasets that can be browsed via MCP tools.
 
@@ -459,7 +476,11 @@ class DuckDBBackend(QueryBackend):
             Dataset metadata entries.
         """
         return [
-            {"name": name, "table": table, "description": f"DuckDB table/view {table}"}
+            DatasetDescriptor(
+                name=name,
+                table=table,
+                description=f"DuckDB table/view {table}",
+            )
             for name, table in sorted(self.dataset_tables.items())
         ]
 
@@ -469,13 +490,13 @@ class DuckDBBackend(QueryBackend):
         dataset_name: str,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[dict[str, Any]]:
+    ) -> DatasetRowsResponse:
         """
         Read a slice of a dataset using DuckDB's relational API.
 
         Raises
         ------
-        ValueError
+        errors.McpError
             If the dataset_name is unknown.
 
         Returns
@@ -486,9 +507,10 @@ class DuckDBBackend(QueryBackend):
         table = self.dataset_tables.get(dataset_name)
         if not table:
             message = f"Unknown dataset: {dataset_name}"
-            raise ValueError(message)
+            raise errors.invalid_argument(message)
 
         relation = self.con.table(table).limit(limit, offset)
         rows = relation.fetchall()
         cols = [desc[0] for desc in relation.description]
-        return [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
+        mapped = [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
+        return DatasetRowsResponse(dataset=dataset_name, limit=limit, offset=offset, rows=mapped)

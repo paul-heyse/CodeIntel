@@ -6,12 +6,14 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import duckdb
 import libcst as cst
 from libcst import MetadataWrapper, metadata
 
 log = logging.getLogger(__name__)
+FUNCTION_NODE_TYPES = (cst.FunctionDef, getattr(cst, "AsyncFunctionDef", cst.FunctionDef))
 
 
 @dataclass
@@ -34,6 +36,17 @@ class CallGraphConfig:
     repo_root: Path
 
 
+@dataclass(frozen=True)
+class FunctionRow:
+    """Lightweight representation of a function GOID row."""
+
+    goid: int
+    rel_path: str
+    qualname: str
+    start_line: int
+    end_line: int | None
+
+
 class _FileCallGraphVisitor(cst.CSTVisitor):
     """
     LibCST visitor that records call edges within a single file.
@@ -50,11 +63,13 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         func_goids_by_span: dict[tuple[int, int], int],
         callee_by_name: dict[str, int],
         global_callee_by_name: dict[str, int],
+        import_aliases: dict[str, str],
     ) -> None:
         self.rel_path = rel_path
         self.func_goids_by_span = func_goids_by_span
         self.callee_by_name = callee_by_name
         self.global_callee_by_name = global_callee_by_name
+        self.import_aliases = import_aliases
 
         self.current_function_goid: int | None = None
         self.edges: list[tuple] = []
@@ -64,29 +79,25 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         if pos is None:
             return None
         return pos.start, pos.end
+    def visit(self, node: cst.CSTNode) -> bool:
+        if isinstance(node, FUNCTION_NODE_TYPES):
+            span = self._pos(node)
+            if span is None:
+                return True
+            start, end = span
+            key = (start.line, end.line)
+            self.current_function_goid = self.func_goids_by_span.get(key)
+            return True
 
-    # Track current function context ------------------------
+        if isinstance(node, cst.Call):
+            self._handle_call(node)
+        return True
 
-    def visit_function_def(self, node: cst.CSTNode) -> None:
-        span = self._pos(node)
-        if span is None:
-            return
-        start, end = span
-        key = (start.line, end.line)
-        self.current_function_goid = self.func_goids_by_span.get(key)
+    def leave(self, node: cst.CSTNode) -> None:
+        if isinstance(node, FUNCTION_NODE_TYPES):
+            self.current_function_goid = None
 
-    def leave_function_def(self, _node: cst.CSTNode) -> None:
-        self.current_function_goid = None
-
-    def visit_async_function_def(self, node: cst.CSTNode) -> None:
-        self.visit_function_def(node)
-
-    def leave_async_function_def(self, _node: cst.CSTNode) -> None:
-        self.current_function_goid = None
-
-    # Calls -------------------------------------------------
-
-    def visit_call(self, node: cst.Call) -> None:
+    def _handle_call(self, node: cst.Call) -> None:
         if self.current_function_goid is None:
             return
 
@@ -96,20 +107,13 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         start, _end = span
 
         callee_name, attr_chain = self._extract_callee(node.func)
-        callee_goid = self._resolve_callee(callee_name, attr_chain)
-
-        if callee_goid is not None:
-            kind = "direct"
-            resolved_via = "local_name"
-            confidence = 0.8
-        else:
-            kind = "unresolved"
-            resolved_via = "unresolved"
-            confidence = 0.0
+        callee_goid, resolved_via, confidence = self._resolve_callee(callee_name, attr_chain)
+        kind = "direct" if callee_goid is not None else "unresolved"
 
         evidence = {
             "callee_name": callee_name,
             "attr_chain": attr_chain or None,
+            "resolved_via": resolved_via,
         }
 
         self.edges.append(
@@ -145,36 +149,101 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             return names[-1], names
         return "", []
 
-    def _resolve_callee(self, callee_name: str, attr_chain: list[str]) -> int | None:
+    def _resolve_callee(self, callee_name: str, attr_chain: list[str]) -> tuple[int | None, str, float]:
         """
         Resolve callee GOID via simple name and attribute heuristics.
 
         Returns
         -------
-        int | None
-            GOID if resolved, otherwise None.
+        tuple[int | None, str, float]
+            (GOID, resolved_via, confidence) tuple.
         """
+        goid: int | None = None
+        resolved_via = "unresolved"
+        confidence = 0.0
+
         if callee_name in self.callee_by_name:
-            return self.callee_by_name[callee_name]
-        if attr_chain:
+            goid = self.callee_by_name[callee_name]
+            resolved_via = "local_name"
+            confidence = 0.8
+        elif attr_chain:
             joined = ".".join(attr_chain)
-            if joined in self.callee_by_name:
-                return self.callee_by_name[joined]
-            tail = attr_chain[-1]
-            return self.callee_by_name.get(tail)
-        if callee_name in self.global_callee_by_name:
-            return self.global_callee_by_name[callee_name]
-        return None
+            goid = self.callee_by_name.get(joined) or self.callee_by_name.get(attr_chain[-1])
+            if goid is not None:
+                resolved_via = "local_attr"
+                confidence = 0.75
+            else:
+                root = attr_chain[0]
+                alias_target = self.import_aliases.get(root)
+                if alias_target:
+                    qualified = alias_target if len(attr_chain) == 1 else ".".join([alias_target, *attr_chain[1:]])
+                    goid = self.callee_by_name.get(qualified) or self.global_callee_by_name.get(qualified)
+                    if goid is not None:
+                        resolved_via = "import_alias"
+                        confidence = 0.7
+
+        if goid is None and callee_name in self.global_callee_by_name:
+            goid = self.global_callee_by_name[callee_name]
+            resolved_via = "global_name"
+            confidence = 0.6
+
+        return goid, resolved_via, confidence
 
 
-_FileCallGraphVisitor.visit_FunctionDef = _FileCallGraphVisitor.visit_function_def
-_FileCallGraphVisitor.leave_FunctionDef = _FileCallGraphVisitor.leave_function_def
-_FileCallGraphVisitor.visit_AsyncFunctionDef = _FileCallGraphVisitor.visit_async_function_def
-_FileCallGraphVisitor.leave_AsyncFunctionDef = _FileCallGraphVisitor.leave_async_function_def
-_FileCallGraphVisitor.visit_Call = _FileCallGraphVisitor.visit_call
+def _attr_to_str(node: cst.CSTNode) -> str:
+    if isinstance(node, cst.Name):
+        return node.value
+    if isinstance(node, cst.Attribute):
+        return f"{_attr_to_str(node.value)}.{node.attr.value}"
+    return ""
 
 
-def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> None:  # noqa: C901, PLR0915, PLR0914
+class _ImportAliasCollector(cst.CSTVisitor):
+    """Collect import and from-import aliases for a module."""
+
+    def __init__(self) -> None:
+        self.aliases: dict[str, str] = {}
+
+    def visit(self, node: cst.CSTNode) -> bool:
+        if isinstance(node, cst.Import):
+            self._handle_import(node)
+        elif isinstance(node, cst.ImportFrom):
+            self._handle_import_from(node)
+        return True
+
+    def _handle_import(self, node: cst.Import) -> None:
+        for alias in node.names:
+            target = _attr_to_str(cast("cst.CSTNode", alias.name))
+            asname_node = alias.asname.name if alias.asname else None
+            asname = (
+                _attr_to_str(cast("cst.CSTNode", asname_node))
+                if asname_node is not None
+                else target.split(".")[-1]
+            )
+            if target:
+                self.aliases[asname] = target
+
+    def _handle_import_from(self, node: cst.ImportFrom) -> None:
+        if node.module is None:
+            return
+        module = _attr_to_str(node.module)
+        if not module:
+            return
+        names = node.names
+        if isinstance(names, cst.ImportStar):
+            return
+        for alias in cast("list[cst.ImportAlias]", names):
+            target = f"{module}.{_attr_to_str(cast('cst.CSTNode', alias.name))}"
+            asname_node = alias.asname.name if alias.asname else None
+            asname = (
+                _attr_to_str(cast("cst.CSTNode", asname_node))
+                if asname_node is not None
+                else _attr_to_str(cast("cst.CSTNode", alias.name))
+            )
+            self.aliases[asname] = target
+
+
+def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> None:
     """
     Populate call graph nodes and edges for a repository snapshot.
 
@@ -192,16 +261,33 @@ def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> No
     cfg : CallGraphConfig
         Repository metadata and filesystem root used to locate source files.
 
-    Notes
-    -----
-    The builder intentionally resolves callees by local function name only,
-    which favors recall over precision. More advanced resolution can be added
-    later using import graphs or symbol tables.
     """
     repo_root = cfg.repo_root.resolve()
 
-    # 1) Build call_graph_nodes from GOIDs (functions/methods/classes)
-    df_nodes = con.execute(
+    node_rows = _build_call_graph_nodes(con, cfg)
+    _persist_call_graph_nodes(con, node_rows)
+
+    func_rows = _load_function_goids(con, cfg)
+    if not func_rows:
+        log.info("No function GOIDs found; skipping call graph edges.")
+        return
+
+    global_callee_by_name = _callee_map(func_rows)
+    edges = _collect_edges(repo_root, func_rows, global_callee_by_name)
+    unique_edges = _dedupe_edges(edges)
+    _persist_call_graph_edges(con, unique_edges)
+
+    log.info(
+        "Call graph build complete for repo=%s commit=%s: %d nodes, %d edges",
+        cfg.repo,
+        cfg.commit,
+        len(node_rows),
+        len(unique_edges),
+    )
+
+
+def _build_call_graph_nodes(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> list[tuple]:
+    rows = con.execute(
         """
         SELECT
             goid_h128,
@@ -214,145 +300,132 @@ def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> No
           AND kind IN ('function', 'method', 'class', 'module')
         """,
         [cfg.repo, cfg.commit],
-    ).fetch_df()
-
-    con.execute("DELETE FROM graph.call_graph_nodes")
+    ).fetchall()
 
     node_rows: list[tuple] = []
+    for goid_h128, language, kind, rel_path, qualname in rows:
+        name = str(qualname).split(".")[-1]
+        is_public = not name.startswith("_")
+        node_rows.append((int(goid_h128), language, kind, -1, is_public, rel_path))
+    return node_rows
 
-    if not df_nodes.empty:
-        for _, row in df_nodes.iterrows():
-            goid = int(row["goid_h128"])
-            language = row["language"]
-            kind = row["kind"]
-            rel_path = row["rel_path"]
-            qualname = row["qualname"]
-            name = str(qualname).split(".")[-1]
-            is_public = not name.startswith("_")
-            # arity is left as -1 (unknown) in this simple builder
-            node_rows.append((goid, language, kind, -1, is_public, rel_path))
 
-        con.executemany(
-            """
-            INSERT INTO graph.call_graph_nodes
-              (goid_h128, language, kind, arity, is_public, rel_path)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            node_rows,
-        )
-
-    # 2) Build call_graph_edges via LibCST per file
-    con.execute("DELETE FROM graph.call_graph_edges")
-
-    df_files = con.execute(
+def _persist_call_graph_nodes(con: duckdb.DuckDBPyConnection, rows: list[tuple]) -> None:
+    con.execute("DELETE FROM graph.call_graph_nodes")
+    if not rows:
+        return
+    con.executemany(
         """
-        SELECT DISTINCT rel_path
+        INSERT INTO graph.call_graph_nodes
+          (goid_h128, language, kind, arity, is_public, rel_path)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+
+def _load_function_goids(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> list[FunctionRow]:
+    rows = con.execute(
+        """
+        SELECT goid_h128, rel_path, qualname, start_line, end_line
         FROM core.goids
         WHERE repo = ? AND commit = ?
           AND kind IN ('function', 'method')
         """,
         [cfg.repo, cfg.commit],
-    ).fetch_df()
-
-    if df_files.empty:
-        log.info("No function GOIDs found; skipping call graph edges.")
-        return
-
-    # Build a global callee map by qualname and short name.
-    all_funcs = con.execute(
-        """
-        SELECT goid_h128, qualname
-        FROM core.goids
-        WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
-        """,
-        [cfg.repo, cfg.commit],
     ).fetchall()
-    global_callee_by_name: dict[str, int] = {}
-    for goid_h128, qualname in all_funcs:
-        if qualname:
-            global_callee_by_name.setdefault(str(qualname), int(goid_h128))
-            global_callee_by_name.setdefault(str(qualname).split(".")[-1], int(goid_h128))
+    functions: list[FunctionRow] = []
+    for goid_h128, rel_path, qualname, start_line, end_line in rows:
+        functions.append(
+            FunctionRow(
+                goid=int(goid_h128),
+                rel_path=str(rel_path).replace("\\", "/"),
+                qualname=str(qualname),
+                start_line=int(start_line),
+                end_line=int(end_line) if end_line is not None else None,
+            )
+        )
+    return functions
 
-    all_edges: list[tuple] = []
 
-    for rel_path in df_files["rel_path"]:
-        rel_path_str = str(rel_path).replace("\\", "/")
-        file_path = repo_root / rel_path_str
+def _callee_map(func_rows: list[FunctionRow]) -> dict[str, int]:
+    mapping: dict[str, int] = {}
+    for row in func_rows:
+        mapping.setdefault(row.qualname, row.goid)
+        mapping.setdefault(row.qualname.rsplit(".", maxsplit=1)[-1], row.goid)
+    return mapping
 
-        # GOIDs for functions in this file
-        df_funcs = con.execute(
-            """
-            SELECT goid_h128, start_line, end_line, qualname
-            FROM core.goids
-            WHERE repo = ? AND commit = ? AND rel_path = ?
-              AND kind IN ('function', 'method')
-            """,
-            [cfg.repo, cfg.commit, rel_path_str],
-        ).fetch_df()
-        if df_funcs.empty:
-            continue
+
+def _collect_edges(
+    repo_root: Path,
+    func_rows: list[FunctionRow],
+    global_callee_by_name: dict[str, int],
+) -> list[tuple]:
+    edges: list[tuple] = []
+    functions_by_path: dict[str, list[FunctionRow]] = {}
+    for row in func_rows:
+        functions_by_path.setdefault(row.rel_path, []).append(row)
+
+    for rel_path in sorted(functions_by_path):
+        file_funcs = functions_by_path[rel_path]
 
         func_goids_by_span: dict[tuple[int, int], int] = {}
         callee_by_name: dict[str, int] = {}
+        for row in file_funcs:
+            end_line = row.end_line if row.end_line is not None else row.start_line
+            func_goids_by_span[row.start_line, end_line] = row.goid
+            local_name = row.qualname.rsplit(".", maxsplit=1)[-1]
+            callee_by_name.setdefault(local_name, row.goid)
+            callee_by_name.setdefault(row.qualname, row.goid)
 
-        for _, row in df_funcs.iterrows():
-            goid = int(row["goid_h128"])
-            start_line = int(row["start_line"])
-            end_line = int(row["end_line"]) if row["end_line"] is not None else start_line
-            func_goids_by_span[start_line, end_line] = goid
-            qualname = str(row["qualname"])
-            local_name = qualname.split(".")[-1]
-            callee_by_name.setdefault(local_name, goid)
-            callee_by_name.setdefault(qualname, goid)
-
+        file_path = repo_root / rel_path
         try:
-            source = file_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            log.warning("File missing for callgraph: %s", file_path)
-            continue
-
-        try:
-            module = cst.parse_module(source)
-        except Exception as exc:  # noqa: BLE001
+            module = cst.parse_module(file_path.read_text(encoding="utf-8"))
+        except cst.ParserSyntaxError as exc:
             log.warning("Failed to parse %s for callgraph: %s", file_path, exc)
             continue
+        except (OSError, UnicodeDecodeError) as exc:
+            log.warning("File missing or unreadable for callgraph %s: %s", file_path, exc)
+            continue
 
-        wrapper = MetadataWrapper(module)
+        alias_collector = _ImportAliasCollector()
+        module.visit(alias_collector)
         visitor = _FileCallGraphVisitor(
-            rel_path=rel_path_str,
+            rel_path=rel_path,
             func_goids_by_span=func_goids_by_span,
             callee_by_name=callee_by_name,
             global_callee_by_name=global_callee_by_name,
+            import_aliases=alias_collector.aliases,
         )
-        wrapper.visit(visitor)
-        all_edges.extend(visitor.edges)
+        MetadataWrapper(module).visit(visitor)
+        edges.extend(visitor.edges)
 
-    # Deduplicate edges per (caller, callee, line, col)
+    return edges
+
+
+def _dedupe_edges(edges: list[tuple]) -> list[tuple]:
     seen = set()
     unique_edges: list[tuple] = []
-    for row in all_edges:
+    for row in edges:
         key = (row[0], row[1], row[2], row[3], row[4])
         if key in seen:
             continue
         seen.add(key)
         unique_edges.append(row)
+    return unique_edges
 
-    if unique_edges:
-        con.executemany(
-            """
-            INSERT INTO graph.call_graph_edges
-              (caller_goid_h128, callee_goid_h128,
-               callsite_path, callsite_line, callsite_col,
-               language, kind, resolved_via, confidence, evidence_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            unique_edges,
-        )
 
-    log.info(
-        "Call graph build complete for repo=%s commit=%s: %d nodes, %d edges",
-        cfg.repo,
-        cfg.commit,
-        len(node_rows),
-        len(unique_edges),
+def _persist_call_graph_edges(con: duckdb.DuckDBPyConnection, edges: list[tuple]) -> None:
+    con.execute("DELETE FROM graph.call_graph_edges")
+    if not edges:
+        return
+    con.executemany(
+        """
+        INSERT INTO graph.call_graph_edges
+          (caller_goid_h128, callee_goid_h128,
+           callsite_path, callsite_line, callsite_col,
+           language, kind, resolved_via, confidence, evidence_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        edges,
     )
