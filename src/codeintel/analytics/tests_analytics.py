@@ -15,6 +15,9 @@ from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
 from codeintel.config.models import TestCoverageConfig
+from codeintel.ingestion.common import run_batch
+from codeintel.models.rows import TestCoverageEdgeRow, test_coverage_edge_to_tuple
+from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +81,7 @@ def _functions_by_path(
         start_line,
         end_line,
     ) in funcs:
-        rel_path_str = str(rel_path).replace("\\", "/")
+        rel_path_str = normalize_rel_path(rel_path)
         funcs_by_path.setdefault(rel_path_str, []).append(
             FunctionRow(
                 goid_h128=int(goid_h128),
@@ -182,7 +185,7 @@ def build_edges_for_file_for_tests(
     contexts_by_lineno: dict[int, set[str]],
     rel_path: str,
     ctx: EdgeContext,
-) -> list[tuple]:
+) -> list[TestCoverageEdgeRow]:
     """
     Exposed wrapper around `_edges_for_file` for unit testing.
 
@@ -201,8 +204,8 @@ def build_edges_for_file_for_tests(
 
     Returns
     -------
-    list[tuple]
-        Edge tuples mirroring analytics.test_coverage_edges schema.
+    list[TestCoverageEdgeRow]
+        Edge records mirroring analytics.test_coverage_edges schema.
     """
     return _edges_for_file(
         file_funcs=file_funcs,
@@ -250,8 +253,8 @@ def _edges_for_file(
     contexts_by_lineno: dict[int, set[str]],
     rel_path: str,
     ctx: EdgeContext,
-) -> list[tuple]:
-    edges: list[tuple] = []
+) -> list[TestCoverageEdgeRow]:
+    edges: list[TestCoverageEdgeRow] = []
     for info in file_funcs:
         start_line = int(info["start_line"])
         end_line = int(info["end_line"]) if info["end_line"] is not None else start_line
@@ -272,20 +275,20 @@ def _edges_for_file(
             coverage_ratio = covered_lines / float(executable_lines) if executable_lines else None
             test_goid, test_urn = ctx.test_meta_by_id.get(test_id, (None, None))
             edges.append(
-                (
-                    test_id,
-                    test_goid,
-                    int(info["goid_h128"]),
-                    test_urn or info["urn"],
-                    ctx.cfg.repo,
-                    ctx.cfg.commit,
-                    rel_path,
-                    info["qualname"],
-                    covered_lines,
-                    executable_lines,
-                    coverage_ratio,
-                    last_status,
-                    ctx.now,
+                TestCoverageEdgeRow(
+                    test_id=test_id,
+                    test_goid_h128=test_goid,
+                    function_goid_h128=int(info["goid_h128"]),
+                    urn=test_urn or info["urn"],
+                    repo=ctx.cfg.repo,
+                    commit=ctx.cfg.commit,
+                    rel_path=rel_path,
+                    qualname=info["qualname"],
+                    covered_lines=covered_lines,
+                    executable_lines=executable_lines,
+                    coverage_ratio=coverage_ratio if coverage_ratio is not None else 0.0,
+                    last_status=last_status,
+                    created_at=ctx.now,
                 )
             )
     return edges
@@ -332,11 +335,6 @@ def compute_test_coverage_edges(
         | set(test_urn_by_id.keys())
     }
 
-    con.execute(
-        "DELETE FROM analytics.test_coverage_edges WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-
     edge_ctx = EdgeContext(
         status_by_test=status_by_test,
         cfg=cfg,
@@ -344,12 +342,12 @@ def compute_test_coverage_edges(
         test_meta_by_id=test_meta_by_id,
     )
     data = cov.get_data()
-    insert_rows: list[tuple] = []
+    insert_rows: list[TestCoverageEdgeRow] = []
 
     for measured in data.measured_files():
         abs_file = Path(measured).resolve()
         try:
-            rel_path = abs_file.relative_to(cfg.repo_root).as_posix()
+            rel_path = normalize_rel_path(abs_file.relative_to(cfg.repo_root))
         except ValueError:
             continue
 
@@ -371,28 +369,13 @@ def compute_test_coverage_edges(
             )
         )
 
-    if insert_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.test_coverage_edges (
-                test_id,
-                test_goid_h128,
-                function_goid_h128,
-                urn,
-                repo,
-                commit,
-                rel_path,
-                qualname,
-                covered_lines,
-                executable_lines,
-                coverage_ratio,
-                last_status,
-                created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            insert_rows,
-        )
+    run_batch(
+        con,
+        "analytics.test_coverage_edges",
+        [test_coverage_edge_to_tuple(row) for row in insert_rows],
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
 
     log.info(
         "test_coverage_edges populated: %d rows for %s@%s",

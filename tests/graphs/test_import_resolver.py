@@ -47,3 +47,44 @@ def test_collect_import_edges_relative_resolution() -> None:
         pytest.fail("Expected relative import edge to pkg.sub")
     if ("pkg.module", "pkg.external") not in edges:
         pytest.fail("Expected absolute import edge to pkg.external")
+
+
+def test_collect_import_edges_deep_relative_and_multi_targets() -> None:
+    """Relative imports with multiple dots and bare from-imports resolve to parent packages."""
+    source = "\n".join(
+        [
+            "from ..utils import helpers",
+            "from . import sibling, other as alias_other",
+            "from ..subpackage.child import leaf",
+        ]
+    )
+    module = cst.parse_module(source)
+    edges = collect_import_edges("pkg.subpkg.module", module)
+    expected = {
+        ("pkg.subpkg.module", "pkg.utils"),
+        ("pkg.subpkg.module", "pkg.subpkg.sibling"),
+        ("pkg.subpkg.module", "pkg.subpkg.other"),
+        ("pkg.subpkg.module", "pkg.subpackage.child"),
+    }
+    missing = expected.difference(edges)
+    if missing:
+        pytest.fail(f"Missing expected import edges: {missing}")
+
+
+def test_collect_aliases_handles_from_import_aliases_and_packages() -> None:
+    """Aliases cover from-import renames and default package names."""
+    source = "\n".join(
+        [
+            "from pkg import sub as alias_sub",
+            "from pkg.mod import thing",
+            "import pkg.another as alt",
+        ]
+    )
+    module = cst.parse_module(source)
+    aliases = collect_aliases(module)
+    if aliases.get("alias_sub") != "pkg.sub":
+        pytest.fail("alias_sub did not map to pkg.sub")
+    if aliases.get("thing") != "pkg.mod.thing":
+        pytest.fail("thing did not map to pkg.mod.thing")
+    if aliases.get("alt") != "pkg.another":
+        pytest.fail("alt did not map to pkg.another")

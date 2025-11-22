@@ -17,6 +17,7 @@ from typing import TypedDict
 import duckdb
 
 from codeintel.config.models import FunctionAnalyticsConfig
+from codeintel.ingestion.common import run_batch
 
 log = logging.getLogger(__name__)
 
@@ -551,14 +552,6 @@ def compute_function_metrics_and_types(
         }
         goids_by_file.setdefault(rel_path, []).append(goid_row)
 
-    con.execute(
-        "DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-    con.execute(
-        "DELETE FROM analytics.function_types WHERE repo = ? AND commit = ?", [cfg.repo, cfg.commit]
-    )
-
     metrics_rows: list[tuple] = []
     types_rows: list[tuple] = []
 
@@ -581,39 +574,21 @@ def compute_function_metrics_and_types(
         metrics_rows.extend(file_metrics)
         types_rows.extend(file_types)
 
-    if metrics_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.function_metrics
-              (function_goid_h128, urn, repo, commit, rel_path,
-               language, kind, qualname, start_line, end_line,
-               loc, logical_loc,
-               param_count, positional_params, keyword_only_params,
-               has_varargs, has_varkw, is_async, is_generator,
-               return_count, yield_count, raise_count,
-               cyclomatic_complexity, max_nesting_depth,
-               stmt_count, decorator_count, has_docstring,
-               complexity_bucket, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            metrics_rows,
-        )
-
-    if types_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.function_types
-              (function_goid_h128, urn, repo, commit, rel_path,
-               language, kind, qualname, start_line, end_line,
-               total_params, annotated_params, unannotated_params,
-               param_typed_ratio, has_return_annotation,
-               return_type, return_type_source, type_comment,
-               param_types, fully_typed, partial_typed, untyped,
-               typedness_bucket, typedness_source, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            types_rows,
-        )
+    scope = f"{cfg.repo}@{cfg.commit}"
+    run_batch(
+        con,
+        "analytics.function_metrics",
+        metrics_rows,
+        delete_params=[cfg.repo, cfg.commit],
+        scope=scope,
+    )
+    run_batch(
+        con,
+        "analytics.function_types",
+        types_rows,
+        delete_params=[cfg.repo, cfg.commit],
+        scope=scope,
+    )
 
     log.info(
         "Function metrics/types build complete for repo=%s commit=%s: %d functions",

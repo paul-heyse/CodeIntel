@@ -16,7 +16,15 @@ from pathlib import Path
 import duckdb
 
 from codeintel.config.models import TypingIngestConfig
+from codeintel.ingestion.common import run_batch
+from codeintel.models.rows import (
+    StaticDiagnosticRow,
+    TypednessRow,
+    static_diagnostic_to_tuple,
+    typedness_row_to_tuple,
+)
 from codeintel.types import PyreflyError
+from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
 MISSING_BINARY_EXIT_CODE = 127
@@ -191,7 +199,7 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
             continue
         file_path = Path(str(file_name)).resolve()
         try:
-            rel_path = file_path.relative_to(repo_root).as_posix()
+            rel_path = normalize_rel_path(file_path.relative_to(repo_root))
         except ValueError:
             continue
         errors_by_file[rel_path] = errors_by_file.get(rel_path, 0) + 1
@@ -219,32 +227,17 @@ def ingest_typing_signals(
     # Compute annotation info for each Python file
     annotation_info: dict[str, AnnotationInfo] = {}
     for path in _iter_python_files(repo_root):
-        rel_path = path.relative_to(repo_root).as_posix()
+        rel_path = normalize_rel_path(path.relative_to(repo_root))
         info = _compute_annotation_info_for_file(path)
         if info is not None:
             annotation_info[rel_path] = info
 
     pyrefly_errors = _run_pyrefly(repo_root)
 
-    insert_typedness = """
-        INSERT INTO analytics.typedness (
-            path, type_error_count, annotation_ratio,
-            untyped_defs, overlay_needed
-        )
-        VALUES (?, ?, ?, ?, ?)
-    """
-
-    insert_diag = """
-        INSERT INTO analytics.static_diagnostics (
-            rel_path, pyrefly_errors, pyright_errors, total_errors, has_errors
-        )
-        VALUES (?, ?, ?, ?, ?)
-    """
-
     all_paths = set(annotation_info.keys()) | set(pyrefly_errors.keys())
 
-    typedness_rows: list[list[object]] = []
-    diag_rows: list[list[object]] = []
+    typedness_rows: list[TypednessRow] = []
+    diag_rows: list[StaticDiagnosticRow] = []
     for rel_path in sorted(all_paths):
         info = annotation_info.get(
             rel_path, AnnotationInfo(params_ratio=0.0, returns_ratio=0.0, untyped_defs=0)
@@ -261,43 +254,39 @@ def ingest_typing_signals(
         overlay_needed = bool(total_errors > 0 or info.untyped_defs > 0)
 
         typedness_rows.append(
-            [
-                rel_path,
-                total_errors,
-                annotation_ratio,  # DuckDB JSON column
-                info.untyped_defs,
-                overlay_needed,
-            ]
+            TypednessRow(
+                path=rel_path,
+                type_error_count=total_errors,
+                annotation_ratio=annotation_ratio,
+                untyped_defs=info.untyped_defs,
+                overlay_needed=overlay_needed,
+            )
         )
 
         diag_rows.append(
-            [
-                rel_path,
-                pf_errors,
-                py_errors,
-                total_errors,
-                has_errors,
-            ]
+            StaticDiagnosticRow(
+                rel_path=rel_path,
+                pyrefly_errors=pf_errors,
+                pyright_errors=py_errors,
+                total_errors=total_errors,
+                has_errors=has_errors,
+            )
         )
 
-    con.execute("BEGIN")
-    try:
-        con.execute(
-            "DELETE FROM analytics.typedness WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)",
-            [cfg.repo, cfg.commit],
-        )
-        con.execute(
-            "DELETE FROM analytics.static_diagnostics WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)",
-            [cfg.repo, cfg.commit],
-        )
-        if typedness_rows:
-            con.executemany(insert_typedness, typedness_rows)
-        if diag_rows:
-            con.executemany(insert_diag, diag_rows)
-        con.execute("COMMIT")
-    except Exception:
-        con.execute("ROLLBACK")
-        raise
+    run_batch(
+        con,
+        "analytics.typedness",
+        [typedness_row_to_tuple(row) for row in typedness_rows],
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
+    run_batch(
+        con,
+        "analytics.static_diagnostics",
+        [static_diagnostic_to_tuple(row) for row in diag_rows],
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
 
     log.info(
         "Typedness & static diagnostics ingested for %d files in %s@%s",

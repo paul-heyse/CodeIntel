@@ -10,13 +10,14 @@ import duckdb
 import libcst as cst
 from libcst import metadata
 
-from codeintel.config.schemas.sql_builder import ensure_schema, prepared_statements
 from codeintel.ingestion.common import (
     PROGRESS_LOG_EVERY,
     PROGRESS_LOG_INTERVAL,
     iter_modules,
     load_module_map,
     read_module_source,
+    run_batch,
+    should_skip_empty,
 )
 
 log = logging.getLogger(__name__)
@@ -156,16 +157,10 @@ def ingest_cst(
     """Parse modules listed in core.modules using LibCST and populate cst_nodes."""
     repo_root = repo_root.resolve()
     module_map = _load_module_map(con, repo, commit)
-    if not module_map:
-        log.warning("No modules found in core.modules for %s@%s", repo, commit)
+    if should_skip_empty(module_map, logger=log):
         return
     total_modules = len(module_map)
     log.info("Parsing CST for %d modules in %s@%s", total_modules, repo, commit)
-
-    ensure_schema(con, "core.cst_nodes")
-    cst_stmt = prepared_statements("core.cst_nodes")
-    if cst_stmt.delete_sql is not None:
-        con.execute(cst_stmt.delete_sql, [repo, commit])
 
     cst_values: list[list[object]] = []
 
@@ -202,7 +197,10 @@ def ingest_cst(
             ]
         )
 
-    if cst_values:
-        con.executemany(cst_stmt.insert_sql, cst_values)
-
+    run_batch(
+    con,
+    "core.cst_nodes",
+    cst_values,
+    delete_params=[repo, commit],
+)
     log.info("CST extraction complete for %s@%s (%d modules)", repo, commit, total_modules)

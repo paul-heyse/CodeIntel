@@ -8,12 +8,21 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol, TypedDict, cast
 
 import duckdb
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.models import DocstringConfig
+from codeintel.ingestion.common import (
+    PROGRESS_LOG_EVERY,
+    PROGRESS_LOG_INTERVAL,
+    iter_modules,
+    load_module_map,
+    run_batch,
+    should_skip_empty,
+)
+from codeintel.models.rows import DocstringRow, docstring_row_to_tuple
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +80,18 @@ class DocstringContext:
     handles: GriffeHandles
 
 
+class ParsedDocstring(TypedDict):
+    """Normalized docstring parts parsed from raw text."""
+
+    style: str | None
+    short_desc: str | None
+    long_desc: str | None
+    params: object
+    returns: object
+    raises: object
+    examples: object
+
+
 def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> None:
     """
     Extract docstrings for all Python modules in core.modules and persist them.
@@ -83,28 +104,25 @@ def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> N
         Repository context for this ingestion run.
     """
     repo_root = cfg.repo_root.resolve()
-    modules = con.execute(
-        """
-        SELECT path, module
-        FROM core.modules
-        WHERE repo = ? AND commit = ? AND language = 'python'
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetchall()
-    if not modules:
-        log.info("No python modules found for %s@%s; skipping docstrings", cfg.repo, cfg.commit)
+    module_map = load_module_map(con, cfg.repo, cfg.commit, language="python", logger=log)
+    if should_skip_empty(module_map, logger=log):
         return
 
     handles = _load_griffe(repo_root)
     if handles is None:
         return
 
-    rows: list[tuple[object, ...]] = []
+    rows: list[DocstringRow] = []
     ctx = DocstringContext(cfg=cfg, created_at=datetime.now(UTC), handles=handles)
 
-    for rel_path, module_name in modules:
-        rel_path_str = str(rel_path).replace("\\", "/")
-        file_path = repo_root / rel_path_str
+    for record in iter_modules(
+        module_map,
+        repo_root,
+        logger=log,
+        log_every=PROGRESS_LOG_EVERY,
+        log_interval=PROGRESS_LOG_INTERVAL,
+    ):
+        file_path = record.file_path
         if not file_path.is_file():
             log.warning("Docstring ingest skipped missing file: %s", file_path)
             continue
@@ -120,34 +138,22 @@ def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> N
             handles.class_cls,
             handles.function_cls,
         ):
-            record = _build_record(
+            doc_row = _build_record(
                 obj=obj,
-                rel_path=rel_path_str,
-                module_name=module_name,
+                rel_path=record.rel_path,
+                module_name=record.module_name,
                 ctx=ctx,
             )
-            if record is not None:
-                rows.append(record)
+            if doc_row is not None:
+                rows.append(doc_row)
 
-    con.execute(
-        """
-        DELETE FROM core.docstrings
-        WHERE repo = ? AND commit = ?
-        """,
-        [cfg.repo, cfg.commit],
+    run_batch(
+        con,
+        "core.docstrings",
+        [docstring_row_to_tuple(row) for row in rows],
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
     )
-
-    if rows:
-        con.executemany(
-            """
-            INSERT INTO core.docstrings (
-                repo, commit, rel_path, module, qualname, kind,
-                lineno, end_lineno, raw_docstring, style, short_desc,
-                long_desc, params, returns, raises, examples, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
     log.info("Docstrings ingested: %d rows for %s@%s", len(rows), cfg.repo, cfg.commit)
 
 
@@ -203,7 +209,7 @@ def _build_record(
     rel_path: str,
     module_name: str,
     ctx: DocstringContext,
-) -> tuple[object, ...] | None:
+) -> DocstringRow | None:
     kind = _object_kind(obj, ctx.handles)
     qualname = _qualname(obj, module_name, ctx.handles.module_cls)
     location = getattr(obj, "location", None)
@@ -213,24 +219,24 @@ def _build_record(
     raw = obj.docstring.value if obj.docstring is not None else None
     parsed = _parse_docstring(raw)
 
-    return (
-        ctx.cfg.repo,
-        ctx.cfg.commit,
-        rel_path,
-        module_name,
-        qualname,
-        kind,
-        lineno,
-        end_lineno,
-        raw,
-        parsed["style"],
-        parsed["short_desc"],
-        parsed["long_desc"],
-        parsed["params"],
-        parsed["returns"],
-        parsed["raises"],
-        parsed["examples"],
-        ctx.created_at,
+    return DocstringRow(
+        repo=ctx.cfg.repo,
+        commit=ctx.cfg.commit,
+        rel_path=rel_path,
+        module=module_name,
+        qualname=qualname,
+        kind=kind,
+        lineno=lineno,
+        end_lineno=end_lineno,
+        raw_docstring=raw,
+        style=parsed["style"],
+        short_desc=parsed["short_desc"],
+        long_desc=parsed["long_desc"],
+        params=parsed["params"],
+        returns=parsed["returns"],
+        raises=parsed["raises"],
+        examples=parsed["examples"],
+        created_at=ctx.created_at,
     )
 
 
@@ -255,7 +261,7 @@ def _qualname(obj: DocObject, module_name: str, module_cls: type[DocObject]) -> 
     return f"{module_name}.{getattr(obj, 'name', '<unknown>')}"
 
 
-def _parse_docstring(raw: str | None) -> dict[str, object]:
+def _parse_docstring(raw: str | None) -> ParsedDocstring:
     if not raw:
         return {
             "style": None,

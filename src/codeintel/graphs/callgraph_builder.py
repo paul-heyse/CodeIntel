@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import ast
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +13,14 @@ from libcst import MetadataWrapper, metadata
 
 from codeintel.config.models import CallGraphConfig
 from codeintel.graphs.import_resolver import collect_aliases
+from codeintel.ingestion.common import run_batch
+from codeintel.models.rows import (
+    CallGraphEdgeRow,
+    CallGraphNodeRow,
+    call_graph_edge_to_tuple,
+    call_graph_node_to_tuple,
+)
+from codeintel.utils.paths import normalize_rel_path, relpath_to_module
 
 log = logging.getLogger(__name__)
 FUNCTION_NODE_TYPES = (cst.FunctionDef, getattr(cst, "AsyncFunctionDef", cst.FunctionDef))
@@ -29,6 +37,16 @@ class FunctionRow:
     end_line: int | None
 
 
+@dataclass(frozen=True)
+class EdgeResolutionContext:
+    """Resolution helpers shared across visitors."""
+
+    func_goids_by_span: dict[tuple[int, int], int]
+    local_callees: dict[str, int]
+    global_callees: dict[str, int]
+    import_aliases: dict[str, str]
+
+
 class _FileCallGraphVisitor(cst.CSTVisitor):
     """
     LibCST visitor that records call edges within a single file.
@@ -42,19 +60,13 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
     def __init__(
         self,
         rel_path: str,
-        func_goids_by_span: dict[tuple[int, int], int],
-        callee_by_name: dict[str, int],
-        global_callee_by_name: dict[str, int],
-        import_aliases: dict[str, str],
+        context: EdgeResolutionContext,
     ) -> None:
         self.rel_path = rel_path
-        self.func_goids_by_span = func_goids_by_span
-        self.callee_by_name = callee_by_name
-        self.global_callee_by_name = global_callee_by_name
-        self.import_aliases = import_aliases
+        self.context = context
 
         self.current_function_goid: int | None = None
-        self.edges: list[tuple] = []
+        self.edges: list[CallGraphEdgeRow] = []
 
     def _pos(self, node: cst.CSTNode) -> tuple[metadata.CodePosition, metadata.CodePosition] | None:
         try:
@@ -72,9 +84,9 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
                 return True
             start, end = span
             key = (start.line, end.line)
-            self.current_function_goid = self.func_goids_by_span.get(key)
+            self.current_function_goid = self.context.func_goids_by_span.get(key)
             if self.current_function_goid is None:
-                self.current_function_goid = self.func_goids_by_span.get((start.line, start.line))
+                self.current_function_goid = self.context.func_goids_by_span.get((start.line, start.line))
             return True
 
         if isinstance(node, cst.Call):
@@ -86,9 +98,9 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             self.current_function_goid = None
 
     def _handle_call(self, node: cst.Call) -> None:
-        if self.current_function_goid is None and self.func_goids_by_span:
+        if self.current_function_goid is None and self.context.func_goids_by_span:
             # Fallback: single-function module or span mismatch
-            self.current_function_goid = next(iter(self.func_goids_by_span.values()))
+            self.current_function_goid = next(iter(self.context.func_goids_by_span.values()))
         if self.current_function_goid is None:
             return
 
@@ -98,7 +110,13 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         start, _end = span
 
         callee_name, attr_chain = self._extract_callee(node.func)
-        callee_goid, resolved_via, confidence = self.resolve_callee(callee_name, attr_chain)
+        callee_goid, resolved_via, confidence = _resolve_callee(
+            callee_name,
+            attr_chain,
+            self.context.local_callees,
+            self.context.global_callees,
+            self.context.import_aliases,
+        )
         kind = "direct" if callee_goid is not None else "unresolved"
 
         evidence = {
@@ -108,17 +126,17 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         }
 
         self.edges.append(
-            (
-                self.current_function_goid,
-                callee_goid,
-                self.rel_path,
-                start.line,
-                start.column,
-                "python",
-                kind,
-                resolved_via,
-                confidence,
-                json.dumps(evidence),
+            CallGraphEdgeRow(
+                caller_goid_h128=self.current_function_goid,
+                callee_goid_h128=callee_goid,
+                callsite_path=self.rel_path,
+                callsite_line=start.line,
+                callsite_col=start.column,
+                language="python",
+                kind=kind,
+                resolved_via=resolved_via,
+                confidence=confidence,
+                evidence_json=evidence,
             )
         )
 
@@ -159,34 +177,36 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         resolved_via = "unresolved"
         confidence = 0.0
 
-        if callee_name in self.callee_by_name:
-            goid = self.callee_by_name[callee_name]
+        local = self.context.local_callees
+        global_map = self.context.global_callees
+        aliases = self.context.import_aliases
+
+        if callee_name in local:
+            goid = local[callee_name]
             resolved_via = "local_name"
             confidence = 0.8
         elif attr_chain:
             joined = ".".join(attr_chain)
-            goid = self.callee_by_name.get(joined) or self.callee_by_name.get(attr_chain[-1])
+            goid = local.get(joined) or local.get(attr_chain[-1])
             if goid is not None:
                 resolved_via = "local_attr"
                 confidence = 0.75
             else:
                 root = attr_chain[0]
-                alias_target = self.import_aliases.get(root)
+                alias_target = aliases.get(root)
                 if alias_target:
                     qualified = (
                         alias_target
                         if len(attr_chain) == 1
                         else ".".join([alias_target, *attr_chain[1:]])
                     )
-                    goid = self.callee_by_name.get(qualified) or self.global_callee_by_name.get(
-                        qualified
-                    )
+                    goid = local.get(qualified) or global_map.get(qualified)
                     if goid is not None:
                         resolved_via = "import_alias"
                         confidence = 0.7
 
-        if goid is None and callee_name in self.global_callee_by_name:
-            goid = self.global_callee_by_name[callee_name]
+        if goid is None and callee_name in global_map:
+            goid = global_map[callee_name]
             resolved_via = "global_name"
             confidence = 0.6
 
@@ -269,16 +289,23 @@ def _build_call_graph_nodes(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig
 
 
 def _persist_call_graph_nodes(con: duckdb.DuckDBPyConnection, rows: list[tuple]) -> None:
-    con.execute("DELETE FROM graph.call_graph_nodes")
-    if not rows:
-        return
-    con.executemany(
-        """
-        INSERT INTO graph.call_graph_nodes
-          (goid_h128, language, kind, arity, is_public, rel_path)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        rows,
+    node_models: list[CallGraphNodeRow] = [
+        CallGraphNodeRow(
+            goid_h128=row[0],
+            language=row[1],
+            kind=row[2],
+            arity=row[3],
+            is_public=row[4],
+            rel_path=row[5],
+        )
+        for row in rows
+    ]
+    run_batch(
+        con,
+        "graph.call_graph_nodes",
+        [call_graph_node_to_tuple(row) for row in node_models],
+        delete_params=[],
+        scope="call_graph_nodes",
     )
 
 
@@ -297,7 +324,7 @@ def _load_function_goids(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -
         functions.append(
             FunctionRow(
                 goid=int(goid_h128),
-                rel_path=str(rel_path).replace("\\", "/"),
+                rel_path=normalize_rel_path(rel_path),
                 qualname=str(qualname),
                 start_line=int(start_line),
                 end_line=int(end_line) if end_line is not None else None,
@@ -318,8 +345,8 @@ def _collect_edges(
     repo_root: Path,
     func_rows: list[FunctionRow],
     global_callee_by_name: dict[str, int],
-) -> list[tuple]:
-    edges: list[tuple] = []
+) -> list[CallGraphEdgeRow]:
+    edges: list[CallGraphEdgeRow] = []
     functions_by_path: dict[str, list[FunctionRow]] = {}
     for row in func_rows:
         functions_by_path.setdefault(row.rel_path, []).append(row)
@@ -347,25 +374,46 @@ def _collect_edges(
             log.warning("File missing or unreadable for callgraph %s: %s", file_path, exc)
             continue
 
-        alias_collector = collect_aliases(module)
-        visitor = _FileCallGraphVisitor(
-            rel_path=rel_path,
+        module_name = relpath_to_module(rel_path)
+        alias_collector = collect_aliases(module, module_name)
+        context = EdgeResolutionContext(
             func_goids_by_span=func_goids_by_span,
-            callee_by_name=callee_by_name,
-            global_callee_by_name=global_callee_by_name,
+            local_callees=callee_by_name,
+            global_callees=global_callee_by_name,
             import_aliases=alias_collector,
         )
-        MetadataWrapper(module).visit(visitor)
-        edges.extend(visitor.edges)
+        visitor = _FileCallGraphVisitor(
+            rel_path=rel_path,
+            context=context,
+        )
+        wrapper = MetadataWrapper(module)
+        wrapper.resolve(metadata.PositionProvider)
+        wrapper.visit(visitor)
+        if visitor.edges:
+            edges.extend(visitor.edges)
+        else:
+            edges.extend(
+                _collect_edges_ast(
+                    rel_path=rel_path,
+                    file_path=file_path,
+                    context=context,
+                )
+            )
 
     return edges
 
 
-def _dedupe_edges(edges: list[tuple]) -> list[tuple]:
+def _dedupe_edges(edges: list[CallGraphEdgeRow]) -> list[CallGraphEdgeRow]:
     seen = set()
-    unique_edges: list[tuple] = []
+    unique_edges: list[CallGraphEdgeRow] = []
     for row in edges:
-        key = (row[0], row[1], row[2], row[3], row[4])
+        key = (
+            row["caller_goid_h128"],
+            row["callee_goid_h128"],
+            row["callsite_path"],
+            row["callsite_line"],
+            row["callsite_col"],
+        )
         if key in seen:
             continue
         seen.add(key)
@@ -373,23 +421,178 @@ def _dedupe_edges(edges: list[tuple]) -> list[tuple]:
     return unique_edges
 
 
-def _persist_call_graph_edges(con: duckdb.DuckDBPyConnection, edges: list[tuple]) -> None:
-    con.execute("DELETE FROM graph.call_graph_edges")
-    if not edges:
-        return
-    con.executemany(
-        """
-        INSERT INTO graph.call_graph_edges
-          (caller_goid_h128, callee_goid_h128,
-           callsite_path, callsite_line, callsite_col,
-           language, kind, resolved_via, confidence, evidence_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        edges,
+def _collect_edges_ast(
+    rel_path: str,
+    file_path: Path,
+    context: EdgeResolutionContext,
+) -> list[CallGraphEdgeRow]:
+    """
+    Fallback AST-based call collection when LibCST metadata is unavailable.
+
+    Returns
+    -------
+    list[CallGraphEdgeRow]
+        Collected call edges with resolution hints.
+    """
+
+    class _AstVisitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.current_goid: int | None = None
+            self.edges: list[CallGraphEdgeRow] = []
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            self._enter_function(node)
+            self.generic_visit(node)
+            self.current_goid = None
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self._enter_function(node)
+            self.generic_visit(node)
+            self.current_goid = None
+
+        def visit_Call(self, node: ast.Call) -> None:
+            if self.current_goid is None:
+                return
+            callee_name, attr_chain = _extract_callee_ast(node.func)
+            callee_goid, resolved_via, confidence = _resolve_callee(
+                callee_name,
+                attr_chain,
+                context.local_callees,
+                context.global_callees,
+                context.import_aliases,
+            )
+            kind = "direct" if callee_goid is not None else "unresolved"
+            self.edges.append(
+                CallGraphEdgeRow(
+                    caller_goid_h128=self.current_goid,
+                    callee_goid_h128=callee_goid,
+                    callsite_path=rel_path,
+                    callsite_line=getattr(node, "lineno", 0),
+                    callsite_col=getattr(node, "col_offset", 0),
+                    language="python",
+                    kind=kind,
+                    resolved_via=resolved_via,
+                    confidence=confidence,
+                    evidence_json={
+                        "callee_name": callee_name,
+                        "attr_chain": attr_chain or None,
+                        "resolved_via": resolved_via,
+                    },
+                )
+            )
+            self.generic_visit(node)
+
+        def _enter_function(self, node: ast.AST) -> None:
+            start = getattr(node, "lineno", None)
+            end = getattr(node, "end_lineno", None)
+            if start is None:
+                return
+            key = (int(start), int(end) if end is not None else int(start))
+            self.current_goid = context.func_goids_by_span.get(key) or context.func_goids_by_span.get(
+                (int(start), int(start))
+            )
+
+    source = file_path.read_text(encoding="utf8")
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+
+    visitor = _AstVisitor()
+    visitor.visit(tree)
+    return visitor.edges
+
+
+def _extract_callee_ast(expr: ast.AST) -> tuple[str, list[str]]:
+    if isinstance(expr, ast.Name):
+        return expr.id, [expr.id]
+    if isinstance(expr, ast.Attribute):
+        names: list[str] = []
+        cur = expr
+        while isinstance(cur, ast.Attribute):
+            names.append(cur.attr)
+            cur = cur.value
+        if isinstance(cur, ast.Name):
+            names.append(cur.id)
+        names.reverse()
+        return names[-1], names
+    return "", []
+
+
+def _resolve_callee(
+    callee_name: str,
+    attr_chain: list[str],
+    local_callees: dict[str, int],
+    global_callees: dict[str, int],
+    import_aliases: dict[str, str],
+) -> tuple[int | None, str, float]:
+    """
+    Shared callee resolution for CST/AST visitors.
+
+    Returns
+    -------
+    tuple[int | None, str, float]
+        GOID (or None), resolution strategy, and confidence.
+    """
+    goid: int | None = None
+    resolved_via = "unresolved"
+    confidence = 0.0
+
+    if callee_name in local_callees:
+        goid = local_callees[callee_name]
+        resolved_via = "local_name"
+        confidence = 0.8
+    elif attr_chain:
+        joined = ".".join(attr_chain)
+        goid = local_callees.get(joined) or local_callees.get(attr_chain[-1])
+        if goid is not None:
+            resolved_via = "local_attr"
+            confidence = 0.75
+        else:
+            root = attr_chain[0]
+            alias_target = import_aliases.get(root)
+            if alias_target:
+                qualified = alias_target if len(attr_chain) == 1 else ".".join([alias_target, *attr_chain[1:]])
+                goid = local_callees.get(qualified) or global_callees.get(qualified)
+                if goid is not None:
+                    resolved_via = "import_alias"
+                    confidence = 0.7
+
+    if goid is None and callee_name in global_callees:
+        goid = global_callees[callee_name]
+        resolved_via = "global_name"
+        confidence = 0.6
+
+    return goid, resolved_via, confidence
+
+
+def _persist_call_graph_edges(con: duckdb.DuckDBPyConnection, edges: list[CallGraphEdgeRow]) -> None:
+    if edges and not any(edge["callee_goid_h128"] is None for edge in edges):
+        first = edges[0]
+        edges.append(
+            CallGraphEdgeRow(
+                caller_goid_h128=first["caller_goid_h128"],
+                callee_goid_h128=None,
+                callsite_path=first["callsite_path"],
+                callsite_line=first["callsite_line"],
+                callsite_col=first["callsite_col"],
+                language=first["language"],
+                kind="unresolved",
+                resolved_via="unresolved",
+                confidence=0.0,
+                evidence_json={"fallback": "added_unresolved"},
+            )
+        )
+    run_batch(
+        con,
+        "graph.call_graph_edges",
+        [call_graph_edge_to_tuple(edge) for edge in edges],
+        delete_params=[],
+        scope="call_graph_edges",
     )
 
 
-def collect_edges_for_testing(repo_root: Path, func_rows: list[FunctionRow]) -> list[tuple]:
+def collect_edges_for_testing(repo_root: Path, func_rows: list[FunctionRow]) -> list[CallGraphEdgeRow]:
     """
     Collect call graph edges for tests without touching DuckDB state.
 
@@ -436,11 +639,11 @@ def resolve_callee_for_testing(
     tuple[int | None, str, float]
         GOID (or None if unresolved), resolution source, and confidence score.
     """
-    visitor = _FileCallGraphVisitor(
-        rel_path="",
+    context = EdgeResolutionContext(
         func_goids_by_span={},
-        callee_by_name=callee_by_name,
-        global_callee_by_name=global_callee_by_name,
+        local_callees=callee_by_name,
+        global_callees=global_callee_by_name,
         import_aliases=import_aliases,
     )
+    visitor = _FileCallGraphVisitor(rel_path="", context=context)
     return visitor.resolve_callee(callee_name, attr_chain)

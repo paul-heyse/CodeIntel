@@ -11,7 +11,8 @@ from pathlib import Path
 import duckdb
 
 from codeintel.config.models import TestsIngestConfig
-from codeintel.config.schemas.sql_builder import ensure_schema, prepared_statements
+from codeintel.ingestion.common import run_batch, should_skip_missing_file
+from codeintel.models.rows import TestCatalogRowModel, test_catalog_row_to_tuple
 from codeintel.types import PytestTestEntry
 
 log = logging.getLogger(__name__)
@@ -87,40 +88,31 @@ class TestCatalogRow:
         """Return canonical test kind based on parametrization."""
         return "parametrized_case" if self.parametrized else "function"
 
-    def to_params(self, repo: str, commit: str, created_at: datetime) -> list[object]:
+    def to_row(self, repo: str, commit: str, created_at: datetime) -> TestCatalogRowModel:
         """
-        Convert the row into parameter order matching analytics.test_catalog.
-
-        Parameters
-        ----------
-        repo : str
-            Repository name for scoping.
-        commit : str
-            Commit hash for scoping.
-        created_at : datetime
-            Timestamp for the ingestion event.
+        Convert the row into a typed dict matching analytics.test_catalog.
 
         Returns
         -------
-        list[object]
-            Parameter list aligned with analytics.test_catalog schema.
+        TestCatalogRowModel
+            Typed representation aligned with test_catalog schema.
         """
-        return [
-            self.test_id,
-            None,  # test_goid_h128 (filled later)
-            None,  # urn (filled later)
-            repo,
-            commit,
-            self.rel_path,
-            self.qualname,
-            self.kind,
-            self.status,
-            self.duration_ms,
-            self.markers,
-            self.parametrized,
-            self.flaky,
-            created_at,
-        ]
+        return TestCatalogRowModel(
+            test_id=self.test_id,
+            test_goid_h128=None,
+            urn=None,
+            repo=repo,
+            commit=commit,
+            rel_path=self.rel_path,
+            qualname=self.qualname,
+            kind=self.kind,
+            status=self.status,
+            duration_ms=self.duration_ms,
+            markers=self.markers,
+            parametrized=self.parametrized,
+            flaky=self.flaky,
+            created_at=created_at,
+        )
 
 
 def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
@@ -179,19 +171,13 @@ def ingest_tests(
     repo_root = cfg.repo_root
     pytest_report_path = cfg.pytest_report_path or _find_default_report(repo_root)
 
-    if pytest_report_path is None or not pytest_report_path.is_file():
-        log.warning("Pytest JSON report not found; skipping test_catalog ingestion")
+    if pytest_report_path is None or should_skip_missing_file(pytest_report_path, logger=log, label="pytest JSON report"):
         return
 
     tests = _load_tests_from_report(pytest_report_path)
     if not tests:
         log.warning("No tests found in pytest report %s", pytest_report_path)
         return
-
-    ensure_schema(con, "analytics.test_catalog")
-    test_stmt = prepared_statements("analytics.test_catalog")
-    if test_stmt.delete_sql is not None:
-        con.execute(test_stmt.delete_sql, [cfg.repo, cfg.commit])
 
     now = datetime.now(UTC)
     rows: list[TestCatalogRow] = []
@@ -204,9 +190,12 @@ def ingest_tests(
         log.warning("No valid tests found in pytest report %s", pytest_report_path)
         return
 
-    con.executemany(
-        test_stmt.insert_sql,
-        [row.to_params(cfg.repo, cfg.commit, now) for row in rows],
+    run_batch(
+        con,
+        "analytics.test_catalog",
+        [test_catalog_row_to_tuple(row.to_row(cfg.repo, cfg.commit, now)) for row in rows],
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
     )
 
     log.info("test_catalog ingested from %s for %s@%s", pytest_report_path, cfg.repo, cfg.commit)

@@ -22,18 +22,25 @@ def _record_import_aliases(node: cst.Import, alias_map: dict[str, str]) -> None:
             alias_map[asname] = target
 
 
-def _record_import_from_aliases(node: cst.ImportFrom, alias_map: dict[str, str]) -> None:
+def _record_import_from_aliases(
+    node: cst.ImportFrom, alias_map: dict[str, str], current_module: str | None = None
+) -> None:
     """Populate alias_map with aliases from an ImportFrom statement."""
-    if node.module is None:
-        return
-    module_name = _attr_to_str(node.module)
-    if not module_name:
+    base_module: str | None
+    if current_module is None:
+        if node.module is None:
+            return
+        module_name = _attr_to_str(node.module)
+        base_module = module_name or None
+    else:
+        base_module = _resolve_base_module(current_module, node)
+    if not base_module:
         return
     names = node.names
     if isinstance(names, cst.ImportStar):
         return
     for alias in cast("list[cst.ImportAlias]", names):
-        target = f"{module_name}.{_attr_to_str(cast('cst.CSTNode', alias.name))}"
+        target = f"{base_module}.{_attr_to_str(cast('cst.CSTNode', alias.name))}"
         asname_node = alias.asname.name if alias.asname else None
         asname = (
             _attr_to_str(cast("cst.CSTNode", asname_node))
@@ -70,7 +77,7 @@ def _attr_to_str(node: cst.CSTNode) -> str:
     return ""
 
 
-def collect_aliases(module: cst.Module) -> dict[str, str]:
+def collect_aliases(module: cst.Module, current_module: str | None = None) -> dict[str, str]:
     """
     Collect import aliases for a module.
 
@@ -82,17 +89,18 @@ def collect_aliases(module: cst.Module) -> dict[str, str]:
     aliases: dict[str, str] = {}
 
     class _AliasVisitor(cst.CSTVisitor):
-        def __init__(self, alias_map: dict[str, str]) -> None:
+        def __init__(self, alias_map: dict[str, str], module_name: str | None) -> None:
             self.alias_map = alias_map
+            self.module_name = module_name
 
         def on_visit(self, node: cst.CSTNode) -> bool:
             if isinstance(node, cst.Import):
                 _record_import_aliases(node, self.alias_map)
             elif isinstance(node, cst.ImportFrom):
-                _record_import_from_aliases(node, self.alias_map)
+                _record_import_from_aliases(node, self.alias_map, self.module_name)
             return True
 
-    module.visit(_AliasVisitor(aliases))
+    module.visit(_AliasVisitor(aliases, current_module))
     return aliases
 
 
@@ -146,25 +154,48 @@ def collect_import_edges(current_module: str, module: cst.Module) -> set[tuple[s
         Edges from current_module to imported modules.
     """
     edges: set[tuple[str, str]] = set()
+    _collect_imports(current_module, module, edges)
+    return edges
+
+
+def _collect_imports(current_module: str, module: cst.Module, edges: set[tuple[str, str]]) -> None:
+    """Populate edges set with imports discovered in the module."""
 
     class _ImportVisitor(cst.CSTVisitor):
         def __init__(self, edge_set: set[tuple[str, str]]) -> None:
             self.edge_set = edge_set
 
         def visit_Import(self, node: cst.Import) -> None:  # noqa: N802 - libcst visitor API
-            for name in node.names:
-                module_str = _attr_to_str(name.name)
-                if module_str:
-                    self.edge_set.add((current_module, module_str))
+            handle_import(node, current_module, self.edge_set)
 
         def visit_ImportFrom(self, node: cst.ImportFrom) -> None:  # noqa: N802 - libcst visitor API
-            base = _resolve_base_module(current_module, node)
-            if base is None:
-                return
-            self.edge_set.add((current_module, base))
+            handle_import_from(node, current_module, self.edge_set)
 
     module.visit(_ImportVisitor(edges))
-    return edges
+
+
+def handle_import(node: cst.Import, current_module: str, edges: set[tuple[str, str]]) -> None:
+    """Handle standard import statements."""
+    for name in node.names:
+        module_str = _attr_to_str(name.name)
+        if module_str:
+            edges.add((current_module, module_str))
+
+
+def handle_import_from(node: cst.ImportFrom, current_module: str, edges: set[tuple[str, str]]) -> None:
+    """Handle import-from statements including relative imports."""
+    base = _resolve_base_module(current_module, node)
+    if base is None:
+        return
+    edges.add((current_module, base))
+    names = node.names
+    if isinstance(names, cst.ImportStar):
+        return
+    if node.module is None:
+        for alias in cast("list[cst.ImportAlias]", names):
+            target = _attr_to_str(cast("cst.CSTNode", alias.name))
+            if target:
+                edges.add((current_module, f"{base}.{target}"))
 
 
 __all__ = ["collect_aliases", "collect_import_edges"]

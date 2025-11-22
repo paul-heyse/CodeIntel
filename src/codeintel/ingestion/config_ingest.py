@@ -14,7 +14,8 @@ import duckdb
 import yaml
 
 from codeintel.config.models import ConfigIngestConfig
-from codeintel.config.schemas.sql_builder import ensure_schema, prepared_statements
+from codeintel.ingestion.common import run_batch
+from codeintel.models.rows import ConfigValueRow, config_value_to_tuple
 
 log = logging.getLogger(__name__)
 
@@ -174,7 +175,7 @@ def ingest_config_values(
     """
     repo_root = cfg.repo_root
 
-    rows: list[list[object]] = []
+    rows: list[ConfigValueRow] = []
     for path in _iter_config_files(repo_root):
         rel_path = path.relative_to(repo_root).as_posix()
         fmt = _detect_format(path)
@@ -184,27 +185,20 @@ def ingest_config_values(
 
         for keypath, _ in _flatten_config(data):
             rows.append(
-                [
-                    rel_path,
-                    fmt,
-                    keypath,
-                    [],  # reference_paths
-                    [],  # reference_modules
-                    0,  # reference_count
-                ]
+                ConfigValueRow(
+                    config_path=rel_path,
+                    format=fmt,
+                    key=keypath,
+                    reference_paths=[],
+                    reference_modules=[],
+                    reference_count=0,
+                )
             )
 
-    ensure_schema(con, "analytics.config_values")
-    stmt = prepared_statements("analytics.config_values")
-
-    con.execute("BEGIN")
-    try:
-        con.execute("DELETE FROM analytics.config_values")
-        if rows:
-            con.executemany(stmt.insert_sql, rows)
-        con.execute("COMMIT")
-    except Exception:
-        con.execute("ROLLBACK")
-        raise
-
+    run_batch(
+        con,
+        "analytics.config_values",
+        [config_value_to_tuple(r) for r in rows],
+        delete_params=None,
+    )
     log.info("config_values ingested: %d keys across config files", len(rows))

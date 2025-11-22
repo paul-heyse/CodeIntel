@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 import duckdb
 
 from codeintel.config.models import PyAstIngestConfig
-from codeintel.config.schemas.sql_builder import ensure_schema, prepared_statements
 from codeintel.ingestion.common import (
     PROGRESS_LOG_EVERY,
     PROGRESS_LOG_INTERVAL,
@@ -19,6 +18,8 @@ from codeintel.ingestion.common import (
     iter_modules,
     load_module_map,
     read_module_source,
+    run_batch,
+    should_skip_empty,
 )
 
 log = logging.getLogger(__name__)
@@ -250,19 +251,10 @@ def ingest_python_ast(
     """
     repo_root = cfg.repo_root
     module_map = load_module_map(con, cfg.repo, cfg.commit, logger=log)
-    if not module_map:
+    if should_skip_empty(module_map, logger=log):
         return
     total_modules = len(module_map)
     log.info("Parsing Python AST for %d modules in %s@%s", total_modules, cfg.repo, cfg.commit)
-
-    ensure_schema(con, "core.ast_nodes")
-    ensure_schema(con, "core.ast_metrics")
-    ast_nodes_stmt = prepared_statements("core.ast_nodes")
-    ast_metrics_stmt = prepared_statements("core.ast_metrics")
-    if ast_nodes_stmt.delete_sql is not None:
-        con.execute(ast_nodes_stmt.delete_sql, [cfg.repo, cfg.commit])
-    if ast_metrics_stmt.delete_sql is not None:
-        con.execute(ast_metrics_stmt.delete_sql, [cfg.repo, cfg.commit])
 
     now = datetime.now(UTC)
     ast_values: list[list[object]] = []
@@ -294,10 +286,18 @@ def ingest_python_ast(
             ]
         )
 
-    if ast_values:
-        con.executemany(ast_nodes_stmt.insert_sql, ast_values)
-    if metric_values:
-        con.executemany(ast_metrics_stmt.insert_sql, metric_values)
+    run_batch(
+        con,
+        "core.ast_nodes",
+        ast_values,
+        delete_params=[cfg.repo, cfg.commit],
+    )
+    run_batch(
+        con,
+        "core.ast_metrics",
+        metric_values,
+        delete_params=[cfg.repo, cfg.commit],
+    )
 
     log.info(
         "AST extraction complete for %s@%s (%d modules)",
