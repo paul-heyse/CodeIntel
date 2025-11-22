@@ -49,11 +49,6 @@ def compute_coverage_functions(
     cfg : CoverageAnalyticsConfig
         Repository and commit identifiers that scope the aggregation.
 
-    Returns
-    -------
-    None
-        Rows are written to `analytics.coverage_functions`.
-
     Notes
     -----
     - Existing rows for the same repo/commit are deleted before insertion,

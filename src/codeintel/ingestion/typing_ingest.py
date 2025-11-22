@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import logging
-import subprocess
+import subprocess  # noqa: S404
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,8 +36,7 @@ class AnnotationInfo:
 
 
 def _iter_python_files(repo_root: Path) -> Iterable[Path]:
-    for path in repo_root.rglob("*.py"):
-        yield path
+    yield from repo_root.rglob("*.py")
 
 
 def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
@@ -69,7 +68,7 @@ def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
             params.extend(node.args.kwonlyargs)
 
             for arg in params:
-                if arg.arg in ("self", "cls"):
+                if arg.arg in {"self", "cls"}:
                     continue
                 total_params += 1
                 if arg.annotation is not None:
@@ -79,10 +78,9 @@ def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
             if has_return:
                 return_annotated += 1
 
-            fully_typed = (
-                all(arg.annotation is not None for arg in params if arg.arg not in ("self", "cls"))
-                and has_return
-            )
+            fully_typed = all(
+                arg.annotation is not None for arg in params if arg.arg not in {"self", "cls"}
+            ) and has_return
             if not fully_typed:
                 untyped_defs += 1
 
@@ -103,13 +101,23 @@ def _run_pyright(
     """
     Run pyright with --outputjson and aggregate error counts per file.
 
-    Returns mapping `rel_path -> error_count`.
+    Parameters
+    ----------
+    repo_root : Path
+        Root directory to scan with pyright.
+    pyright_bin : str, optional
+        Executable name or path for pyright.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping from repository-relative paths to error counts.
     """
     repo_root = repo_root.resolve()
     cmd = [pyright_bin, "--outputjson", str(repo_root)]
 
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S603
             cmd,
             cwd=str(repo_root),
             check=False,  # pyright returns non-zero on errors
@@ -213,7 +221,7 @@ def ingest_typing_signals(
             "params": info.params_ratio,
             "returns": info.returns_ratio,
         }
-        overlay_needed = bool(total_errors > 0)
+        overlay_needed = bool(total_errors > 0 or info.untyped_defs > 0)
 
         con.execute(
             insert_typedness,

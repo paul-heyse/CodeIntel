@@ -68,11 +68,6 @@ def export_jsonl_for_table(
     output_path : Path
         Destination path for the JSONL file.
 
-    Returns
-    -------
-    None
-        The dataset is written to disk; no value is returned.
-
     Notes
     -----
     Uses `COPY (SELECT * FROM <table>) TO <path> (FORMAT JSON, ARRAY FALSE)`
@@ -158,6 +153,12 @@ def export_repo_map_json(
         "overlays": {...},
         "generated_at": "2024-01-01T00:00:00Z"
       } :contentReference[oaicite:6]{index=6}
+
+    Returns
+    -------
+    Path | None
+        Path to the written `repo_map.json`, or None when no repo_map rows
+        are available in the database.
     """
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)

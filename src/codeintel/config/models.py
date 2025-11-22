@@ -53,7 +53,7 @@ class PathsConfig(BaseModel):
     )
 
     @validator("repo_root", "build_dir", "db_path", "document_output_dir", pre=True)
-    def _expand_user(cls, v):
+    def _expand_user(self, v: Path | str | None) -> Path | None:
         """
         Expand user home markers for any path-like CLI inputs.
 
@@ -74,7 +74,7 @@ class PathsConfig(BaseModel):
         return Path(str(v)).expanduser()
 
     @validator("build_dir", always=True)
-    def _normalize_build_dir(cls, v, values):
+    def _normalize_build_dir(self, v: Path, values: dict[str, Path]) -> Path:
         """
         Resolve the build directory relative to the repository root when needed.
 
@@ -96,7 +96,7 @@ class PathsConfig(BaseModel):
         return v
 
     @validator("db_path", always=True)
-    def _normalize_db_path(cls, v, values):
+    def _normalize_db_path(self, v: Path, values: dict[str, Path]) -> Path:
         """
         Resolve the DuckDB path relative to the computed build directory.
 
@@ -118,7 +118,7 @@ class PathsConfig(BaseModel):
         return v
 
     @validator("document_output_dir", always=True)
-    def _default_document_output_dir(cls, v, values):
+    def _default_document_output_dir(self, v: Path | None, values: dict[str, Path]) -> Path | None:
         """
         Fill in the Document Output directory when omitted by the caller.
 
@@ -202,7 +202,7 @@ class ToolsConfig(BaseModel):
     )
 
     @validator("coverage_file", "pytest_report_path", pre=True)
-    def _normalize_optional_path(cls, v):
+    def _normalize_optional_path(self, v: Path | str | None) -> Path | None:
         if v is None:
             return None
         if isinstance(v, Path):

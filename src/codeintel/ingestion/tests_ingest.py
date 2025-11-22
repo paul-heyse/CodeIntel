@@ -47,6 +47,16 @@ def _nodeid_to_path_and_qualname(nodeid: str) -> tuple[str, str | None]:
 
     The input looks like `tests/test_app.py::TestFoo::test_bar[param]` and the
     result is a `(rel_path, qualname)` tuple.
+
+    Parameters
+    ----------
+    nodeid : str
+        Pytest node identifier to split.
+
+    Returns
+    -------
+    tuple[str, str | None]
+        Relative path and qualified name (None when missing).
     """
     parts = nodeid.split("::")
     rel_path = parts[0]

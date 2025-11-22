@@ -46,10 +46,6 @@ def build_cfg_and_dfg(con: duckdb.DuckDBPyConnection, cfg: CFGBuilderConfig) -> 
     cfg : CFGBuilderConfig
         Repository context identifying which snapshot to process.
 
-    Returns
-    -------
-    None
-        Results are written to `graph.cfg_blocks` with empty edge tables.
     """
     df_funcs = con.execute(
         """

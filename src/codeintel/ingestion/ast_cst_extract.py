@@ -109,7 +109,14 @@ class AstCstVisitor(cst.CSTVisitor):
 
     # Generic hooks to track depth and metrics.node_count
     def visit(self, node: cst.CSTNode) -> bool:
-        """Track traversal depth, record CST metadata, and continue recursion."""
+        """
+        Track traversal depth, record CST metadata, and continue recursion.
+
+        Returns
+        -------
+        bool
+            True to continue traversal into children.
+        """
         self.metrics.node_count += 1
         self._depth += 1
         self.metrics.depths.append(self._depth)
@@ -123,35 +130,77 @@ class AstCstVisitor(cst.CSTVisitor):
         self._depth -= 1
 
     # Complexity heuristics: count control-flow-ish nodes
-    def visit_If(self, node: cst.If) -> bool:
-        """Increment heuristic complexity for `if` statements."""
+    def visit_if(self, node: cst.If) -> bool:
+        """
+        Increment heuristic complexity for `if` statements.
+
+        Returns
+        -------
+        bool
+            True to continue traversal.
+        """
         self.metrics.complexity += 1
         return True
 
-    def visit_For(self, node: cst.For) -> bool:
-        """Increment heuristic complexity for `for` loops."""
+    def visit_for(self, node: cst.For) -> bool:
+        """
+        Increment heuristic complexity for `for` loops.
+
+        Returns
+        -------
+        bool
+            True to continue traversal.
+        """
         self.metrics.complexity += 1
         return True
 
-    def visit_While(self, node: cst.While) -> bool:
-        """Increment heuristic complexity for `while` loops."""
+    def visit_while(self, node: cst.While) -> bool:
+        """
+        Increment heuristic complexity for `while` loops.
+
+        Returns
+        -------
+        bool
+            True to continue traversal.
+        """
         self.metrics.complexity += 1
         return True
 
-    def visit_Try(self, node: cst.Try) -> bool:
-        """Increment heuristic complexity for `try` statements."""
+    def visit_try(self, node: cst.Try) -> bool:
+        """
+        Increment heuristic complexity for `try` statements.
+
+        Returns
+        -------
+        bool
+            True to continue traversal.
+        """
         self.metrics.complexity += 1
         return True
 
-    def visit_With(self, node: cst.With) -> bool:
-        """Increment heuristic complexity for context manager blocks."""
+    def visit_with(self, node: cst.With) -> bool:
+        """
+        Increment heuristic complexity for context manager blocks.
+
+        Returns
+        -------
+        bool
+            True to continue traversal.
+        """
         self.metrics.complexity += 1
         return True
 
     # AST rows for modules, classes, functions
 
-    def visit_Module(self, node: cst.Module) -> bool:
-        """Record the module root and reset traversal scope."""
+    def visit_module(self, node: cst.Module) -> bool:
+        """
+        Record the module root and reset traversal scope.
+
+        Returns
+        -------
+        bool
+            True to traverse into module children.
+        """
         qualname = self.module_name
         self._scope_stack = []  # root scope
         self._record_ast_row(
@@ -164,8 +213,15 @@ class AstCstVisitor(cst.CSTVisitor):
         )
         return True
 
-    def visit_ClassDef(self, node: cst.ClassDef) -> bool:
-        """Record class definitions and push them onto the scope stack."""
+    def visit_class_def(self, node: cst.ClassDef) -> bool:
+        """
+        Record class definitions and push them onto the scope stack.
+
+        Returns
+        -------
+        bool
+            True to traverse into class members.
+        """
         name = node.name.value
         parent_qual = self._current_qualname()
         qualname = f"{parent_qual}.{name}" if parent_qual else f"{self.module_name}.{name}"
@@ -181,25 +237,39 @@ class AstCstVisitor(cst.CSTVisitor):
         )
         return True
 
-    def leave_ClassDef(self, node: cst.ClassDef) -> None:
+    def leave_class_def(self, node: cst.ClassDef) -> None:
         """Pop the class scope when leaving a class definition."""
         if self._scope_stack:
             self._scope_stack.pop()
 
-    def visit_FunctionDef(self, node: cst.FunctionDef) -> bool:
-        """Handle synchronous function definitions."""
+    def visit_function_def(self, node: cst.FunctionDef) -> bool:
+        """
+        Handle synchronous function definitions.
+
+        Returns
+        -------
+        bool
+            True to traverse into the function body.
+        """
         return self._visit_function_like(node, async_kind=False)
 
-    def leave_FunctionDef(self, node: cst.FunctionDef) -> None:
+    def leave_function_def(self, node: cst.FunctionDef) -> None:
         """Pop scope when exiting a synchronous function."""
         if self._scope_stack:
             self._scope_stack.pop()
 
-    def visit_AsyncFunctionDef(self, node: cst.AsyncFunctionDef) -> bool:
-        """Handle asynchronous function definitions."""
+    def visit_async_function_def(self, node: cst.AsyncFunctionDef) -> bool:
+        """
+        Handle asynchronous function definitions.
+
+        Returns
+        -------
+        bool
+            True to traverse into the async function body.
+        """
         return self._visit_function_like(node, async_kind=True)
 
-    def leave_AsyncFunctionDef(self, node: cst.AsyncFunctionDef) -> None:
+    def leave_async_function_def(self, node: cst.AsyncFunctionDef) -> None:
         """Pop scope when exiting an async function."""
         if self._scope_stack:
             self._scope_stack.pop()
@@ -207,7 +277,14 @@ class AstCstVisitor(cst.CSTVisitor):
     # Helpers
 
     def _visit_function_like(self, node: cst.BaseStatement, async_kind: bool) -> bool:
-        """Shared logic for recording function or async function AST rows."""
+        """
+        Shared logic for recording function or async function AST rows.
+
+        Returns
+        -------
+        bool
+            True to continue traversing into the function body.
+        """
         # node.name works for FunctionDef/AsyncFunctionDef
         name = getattr(node, "name", None)
         fn_name = name.value if isinstance(name, cst.Name) else None
@@ -228,8 +305,16 @@ class AstCstVisitor(cst.CSTVisitor):
         )
         return True
 
+
     def _current_qualname(self) -> str | None:
-        """Return the current fully qualified name for the traversal scope."""
+        """
+        Return the current fully qualified name for the traversal scope.
+
+        Returns
+        -------
+        str | None
+            Fully qualified name including nested scopes, or None at module root.
+        """
         if not self._scope_stack:
             return self.module_name
         return f"{self.module_name}." + ".".join(self._scope_stack)
@@ -319,7 +404,14 @@ class AstCstVisitor(cst.CSTVisitor):
 
     @staticmethod
     def _decorator_to_str(expr: cst.CSTNode) -> str:
-        """Render a decorator expression into a dotted string representation."""
+        """
+        Render a decorator expression into a dotted string representation.
+
+        Returns
+        -------
+        str
+            Decorator reference rendered as a dotted path.
+        """
         if isinstance(expr, cst.Name):
             return expr.value
         if isinstance(expr, cst.Attribute):
@@ -329,8 +421,29 @@ class AstCstVisitor(cst.CSTVisitor):
         return type(expr).__name__
 
 
+AstCstVisitor.visit_If = AstCstVisitor.visit_if
+AstCstVisitor.visit_For = AstCstVisitor.visit_for
+AstCstVisitor.visit_While = AstCstVisitor.visit_while
+AstCstVisitor.visit_Try = AstCstVisitor.visit_try
+AstCstVisitor.visit_With = AstCstVisitor.visit_with
+AstCstVisitor.visit_Module = AstCstVisitor.visit_module
+AstCstVisitor.visit_ClassDef = AstCstVisitor.visit_class_def
+AstCstVisitor.leave_ClassDef = AstCstVisitor.leave_class_def
+AstCstVisitor.visit_FunctionDef = AstCstVisitor.visit_function_def
+AstCstVisitor.leave_FunctionDef = AstCstVisitor.leave_function_def
+AstCstVisitor.visit_AsyncFunctionDef = AstCstVisitor.visit_async_function_def
+AstCstVisitor.leave_AsyncFunctionDef = AstCstVisitor.leave_async_function_def
+
+
 def _load_module_map(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> dict[str, str]:
-    """Return a mapping of relative file paths to module names from core.modules."""
+    """
+    Return a mapping of relative file paths to module names from core.modules.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of relative paths to module import names for the repo snapshot.
+    """
     rows = con.execute(
         """
         SELECT path, module

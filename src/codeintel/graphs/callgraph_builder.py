@@ -49,15 +49,17 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         rel_path: str,
         func_goids_by_span: dict[tuple[int, int], int],
         callee_by_name: dict[str, int],
+        global_callee_by_name: dict[str, int],
     ) -> None:
         self.rel_path = rel_path
         self.func_goids_by_span = func_goids_by_span
         self.callee_by_name = callee_by_name
+        self.global_callee_by_name = global_callee_by_name
 
         self.current_function_goid: int | None = None
         self.edges: list[tuple] = []
 
-    def _pos(self, node: cst.CSTNode):
+    def _pos(self, node: cst.CSTNode) -> tuple[metadata.CodePosition, metadata.CodePosition] | None:
         pos = self.get_metadata(metadata.PositionProvider, node, None)
         if pos is None:
             return None
@@ -65,7 +67,7 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
 
     # Track current function context ------------------------
 
-    def visit_FunctionDef(self, node: cst.FunctionDef) -> None:
+    def visit_function_def(self, node: cst.CSTNode) -> None:
         span = self._pos(node)
         if span is None:
             return
@@ -73,18 +75,18 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         key = (start.line, end.line)
         self.current_function_goid = self.func_goids_by_span.get(key)
 
-    def leave_FunctionDef(self, node: cst.FunctionDef) -> None:
+    def leave_function_def(self, _node: cst.CSTNode) -> None:
         self.current_function_goid = None
 
-    def visit_AsyncFunctionDef(self, node: cst.AsyncFunctionDef) -> None:
-        self.visit_FunctionDef(node)
+    def visit_async_function_def(self, node: cst.CSTNode) -> None:
+        self.visit_function_def(node)
 
-    def leave_AsyncFunctionDef(self, node: cst.AsyncFunctionDef) -> None:
-        self.leave_FunctionDef(node)
+    def leave_async_function_def(self, _node: cst.CSTNode) -> None:
+        self.current_function_goid = None
 
     # Calls -------------------------------------------------
 
-    def visit_Call(self, node: cst.Call) -> None:
+    def visit_call(self, node: cst.Call) -> None:
         if self.current_function_goid is None:
             return
 
@@ -94,7 +96,7 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
         start, _end = span
 
         callee_name, attr_chain = self._extract_callee(node.func)
-        callee_goid = self.callee_by_name.get(callee_name)
+        callee_goid = self._resolve_callee(callee_name, attr_chain)
 
         if callee_goid is not None:
             kind = "direct"
@@ -143,8 +145,36 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             return names[-1], names
         return "", []
 
+    def _resolve_callee(self, callee_name: str, attr_chain: list[str]) -> int | None:
+        """
+        Resolve callee GOID via simple name and attribute heuristics.
 
-def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> None:
+        Returns
+        -------
+        int | None
+            GOID if resolved, otherwise None.
+        """
+        if callee_name in self.callee_by_name:
+            return self.callee_by_name[callee_name]
+        if attr_chain:
+            joined = ".".join(attr_chain)
+            if joined in self.callee_by_name:
+                return self.callee_by_name[joined]
+            tail = attr_chain[-1]
+            return self.callee_by_name.get(tail)
+        if callee_name in self.global_callee_by_name:
+            return self.global_callee_by_name[callee_name]
+        return None
+
+
+_FileCallGraphVisitor.visit_FunctionDef = _FileCallGraphVisitor.visit_function_def
+_FileCallGraphVisitor.leave_FunctionDef = _FileCallGraphVisitor.leave_function_def
+_FileCallGraphVisitor.visit_AsyncFunctionDef = _FileCallGraphVisitor.visit_async_function_def
+_FileCallGraphVisitor.leave_AsyncFunctionDef = _FileCallGraphVisitor.leave_async_function_def
+_FileCallGraphVisitor.visit_Call = _FileCallGraphVisitor.visit_call
+
+
+def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> None:  # noqa: C901, PLR0915, PLR0914
     """
     Populate call graph nodes and edges for a repository snapshot.
 
@@ -161,11 +191,6 @@ def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> No
         DuckDB connection with GOID tables and graph schemas present.
     cfg : CallGraphConfig
         Repository metadata and filesystem root used to locate source files.
-
-    Returns
-    -------
-    None
-        Results are written directly into DuckDB tables.
 
     Notes
     -----
@@ -233,6 +258,21 @@ def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> No
         log.info("No function GOIDs found; skipping call graph edges.")
         return
 
+    # Build a global callee map by qualname and short name.
+    all_funcs = con.execute(
+        """
+        SELECT goid_h128, qualname
+        FROM core.goids
+        WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
+        """,
+        [cfg.repo, cfg.commit],
+    ).fetchall()
+    global_callee_by_name: dict[str, int] = {}
+    for goid_h128, qualname in all_funcs:
+        if qualname:
+            global_callee_by_name.setdefault(str(qualname), int(goid_h128))
+            global_callee_by_name.setdefault(str(qualname).split(".")[-1], int(goid_h128))
+
     all_edges: list[tuple] = []
 
     for rel_path in df_files["rel_path"]:
@@ -260,8 +300,10 @@ def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> No
             start_line = int(row["start_line"])
             end_line = int(row["end_line"]) if row["end_line"] is not None else start_line
             func_goids_by_span[start_line, end_line] = goid
-            local_name = str(row["qualname"]).split(".")[-1]
+            qualname = str(row["qualname"])
+            local_name = qualname.split(".")[-1]
             callee_by_name.setdefault(local_name, goid)
+            callee_by_name.setdefault(qualname, goid)
 
         try:
             source = file_path.read_text(encoding="utf-8")
@@ -271,8 +313,8 @@ def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> No
 
         try:
             module = cst.parse_module(source)
-        except Exception as exc:
-            log.exception("Failed to parse %s for callgraph: %s", file_path, exc)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Failed to parse %s for callgraph: %s", file_path, exc)
             continue
 
         wrapper = MetadataWrapper(module)
@@ -280,6 +322,7 @@ def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> No
             rel_path=rel_path_str,
             func_goids_by_span=func_goids_by_span,
             callee_by_name=callee_by_name,
+            global_callee_by_name=global_callee_by_name,
         )
         wrapper.visit(visitor)
         all_edges.extend(visitor.edges)

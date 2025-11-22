@@ -45,13 +45,13 @@ class _ImportCollector(cst.CSTVisitor):
         self.module_name = module_name
         self.edges: set[tuple[str, str]] = set()  # (src_module, dst_module)
 
-    def visit_Import(self, node: cst.Import) -> None:
+    def visit_import(self, node: cst.Import) -> None:
         for name in node.names:
             # e.g. import foo.bar as baz -> "foo.bar"
             module_str = name.name.code
             self.edges.add((self.module_name, module_str))
 
-    def visit_ImportFrom(self, node: cst.ImportFrom) -> None:
+    def visit_import_from(self, node: cst.ImportFrom) -> None:
         # Absolute or relative base module
         if node.module is not None:
             base = node.module.code
@@ -67,6 +67,9 @@ class _ImportCollector(cst.CSTVisitor):
             for alias in node.names:
                 # from foo import bar -> edge from src -> foo
                 self.edges.add((self.module_name, base))
+
+_ImportCollector.visit_Import = _ImportCollector.visit_import
+_ImportCollector.visit_ImportFrom = _ImportCollector.visit_import_from
 
 
 def _tarjan_scc(graph: dict[str, set[str]]) -> dict[str, int]:
@@ -133,11 +136,6 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
         Connection to the DuckDB instance seeded with `core.modules`.
     cfg : ImportGraphConfig
         Repository context and filesystem root.
-
-    Returns
-    -------
-    None
-        Results are written into the `graph.import_graph_edges` table.
 
     Notes
     -----
