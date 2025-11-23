@@ -12,6 +12,7 @@ import duckdb
 
 from codeintel.config.models import TestsIngestConfig
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
+from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.models.rows import TestCatalogRowModel, test_catalog_row_to_tuple
 from codeintel.types import PytestTestEntry
 
@@ -161,15 +162,45 @@ def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
 def ingest_tests(
     con: duckdb.DuckDBPyConnection,
     cfg: TestsIngestConfig,
+    runner: ToolRunner | None = None,
+    report_path: Path | None = None,
 ) -> None:
     """
     Ingest a pytest JSON report into analytics.test_catalog.
 
     This step does NOT compute test_coverage_edges; those are derived
     later in an analytics step by combining coverage contexts with GOIDs.
+
+    Parameters
+    ----------
+    con:
+        Active DuckDB connection.
+    cfg:
+        Tests ingestion configuration (paths and identifiers).
+    runner:
+        Optional ToolRunner for generating a pytest JSON report when one is missing.
+    report_path:
+        Optional explicit path to write a pytest JSON report.
     """
     repo_root = cfg.repo_root
-    pytest_report_path = cfg.pytest_report_path or _find_default_report(repo_root)
+    pytest_report_path = report_path or cfg.pytest_report_path or _find_default_report(repo_root)
+
+    if pytest_report_path is None and runner is not None:
+        target_report = report_path or (repo_root / "build" / "pytest-report.json")
+        target_report.parent.mkdir(parents=True, exist_ok=True)
+        result = runner.run(
+            "pytest",
+            [
+                "pytest",
+                "--json-report",
+                f"--json-report-file={target_report}",
+            ],
+            cwd=repo_root,
+            output_path=target_report,
+        )
+        if result.returncode != 0:
+            log.warning("pytest report generation failed (code %s)", result.returncode)
+        pytest_report_path = target_report if target_report.is_file() else None
 
     if pytest_report_path is None or should_skip_missing_file(
         pytest_report_path, logger=log, label="pytest JSON report"

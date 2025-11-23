@@ -305,6 +305,7 @@ class StaticDiagnosticRow(TypedDict):
     rel_path: str
     pyrefly_errors: int
     pyright_errors: int
+    ruff_errors: int
     total_errors: int
     has_errors: bool
 
@@ -322,6 +323,7 @@ def static_diagnostic_to_tuple(row: StaticDiagnosticRow) -> tuple[object, ...]:
         row["rel_path"],
         row["pyrefly_errors"],
         row["pyright_errors"],
+        row["ruff_errors"],
         row["total_errors"],
         row["has_errors"],
     )

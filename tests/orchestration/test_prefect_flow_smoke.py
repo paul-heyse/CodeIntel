@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.orchestration.prefect_flow import export_docs_flow
+from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
 
 
 def test_prefect_flow_imports() -> None:
@@ -37,10 +37,12 @@ def test_prefect_flow_minimal(tmp_path: Path, prefect_quiet_env: None) -> None:
     (scip_dir / "index.scip.json").write_text("[]", encoding="utf8")
 
     export_docs_flow(
-        repo_root=repo_root,
-        repo="demo/repo",
-        commit="deadbeef",
-        db_path=db_path,
-        build_dir=build_dir,
+        args=ExportArgs(
+            repo_root=repo_root,
+            repo="demo/repo",
+            commit="deadbeef",
+            db_path=db_path,
+            build_dir=build_dir,
+        )
     )
     monkeypatch.undo()

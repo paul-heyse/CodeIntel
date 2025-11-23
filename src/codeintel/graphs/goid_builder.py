@@ -12,6 +12,7 @@ import duckdb
 import pandas as pd
 
 from codeintel.config.models import GoidBuilderConfig
+from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import GoidCrosswalkRow, GoidRow, goid_crosswalk_to_tuple, goid_to_tuple
 from codeintel.utils.paths import relpath_to_module
@@ -125,7 +126,7 @@ def _build_urn(descriptor: GoidDescriptor) -> str:
 
 
 def _build_goid_entries(
-    row: pd.Series, cfg: GoidBuilderConfig, now: datetime
+    row: pd.Series, cfg: GoidBuilderConfig, now: datetime, module_by_path: dict[str, str]
 ) -> tuple[GoidRow, GoidCrosswalkRow]:
     rel_path = str(row["path"]).replace("\\", "/")
     node_type = str(row["node_type"])
@@ -173,10 +174,11 @@ def _build_goid_entries(
         created_at=now,
     )
 
+    module_name = module_by_path.get(rel_path, _relpath_to_module(Path(rel_path)))
     xwalk_row = GoidCrosswalkRow(
         goid=urn,
         lang=cfg.language,
-        module_path=_relpath_to_module(Path(rel_path)),
+        module_path=module_name,
         file_path=rel_path,
         start_line=start_line,
         end_line=end_line,
@@ -226,8 +228,10 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
 
     now = datetime.now(UTC)
 
+    module_by_path = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit).module_by_path
+
     for _, row in df.iterrows():
-        goid_row, xwalk_row = _build_goid_entries(row, cfg, now)
+        goid_row, xwalk_row = _build_goid_entries(row, cfg, now, module_by_path)
         goid_rows.append(goid_row)
         xwalk_rows.append(xwalk_row)
 

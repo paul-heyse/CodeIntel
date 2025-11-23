@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import time
 from collections.abc import Iterator, Sequence
@@ -11,6 +12,7 @@ from pathlib import Path
 import duckdb
 
 from codeintel.config.schemas.sql_builder import PREPARED, ensure_schema
+from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
@@ -89,8 +91,7 @@ def iter_modules(
     repo_root: Path,
     *,
     logger: logging.Logger | None = None,
-    log_every: int = PROGRESS_LOG_EVERY,
-    log_interval: float = PROGRESS_LOG_INTERVAL,
+    scan_config: ScanConfig | None = None,
 ) -> Iterator[ModuleRecord]:
     """
     Iterate modules with normalized paths and periodic progress logging.
@@ -104,13 +105,28 @@ def iter_modules(
         return iter(())
 
     active_log = logger or log
-    total = len(module_map)
+    patterns = tuple(scan_config.include_patterns) if scan_config is not None else ("*",)
+    ignore_set = set(scan_config.ignore_dirs) if scan_config is not None else set()
+    log_every = scan_config.log_every if scan_config is not None else PROGRESS_LOG_EVERY
+    log_interval = scan_config.log_interval if scan_config is not None else PROGRESS_LOG_INTERVAL
+    filtered_items: list[tuple[str, str]] = []
+    for rel_path, module_name in module_map.items():
+        parts = Path(rel_path).parts
+        if any(part in ignore_set for part in parts):
+            continue
+        if not any(fnmatch.fnmatch(rel_path, pat) for pat in patterns):
+            continue
+        filtered_items.append((rel_path, module_name))
+
+    total = len(filtered_items)
+    if total == 0:
+        return iter(())
     start_ts = time.perf_counter()
     last_log = start_ts
 
     def _gen() -> Iterator[ModuleRecord]:
         nonlocal last_log
-        for idx, (rel_path, module_name) in enumerate(module_map.items(), start=1):
+        for idx, (rel_path, module_name) in enumerate(filtered_items, start=1):
             file_path = repo_root / rel_path
             now_ts = time.perf_counter()
             if idx % log_every == 0 or (now_ts - last_log) >= log_interval:

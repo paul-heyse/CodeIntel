@@ -13,14 +13,13 @@ from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.models import DocstringConfig
 from codeintel.ingestion.common import (
-    PROGRESS_LOG_EVERY,
-    PROGRESS_LOG_INTERVAL,
     iter_modules,
     load_module_map,
     read_module_source,
     run_batch,
     should_skip_empty,
 )
+from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.models.rows import DocstringRow, docstring_row_to_tuple
 
 log = logging.getLogger(__name__)
@@ -138,7 +137,11 @@ class DocstringVisitor(ast.NodeVisitor):
         )
 
 
-def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> None:
+def ingest_docstrings(
+    con: duckdb.DuckDBPyConnection,
+    cfg: DocstringConfig,
+    scan_config: ScanConfig | None = None,
+) -> None:
     """
     Extract docstrings for all Python modules in core.modules and persist them.
 
@@ -148,6 +151,8 @@ def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> N
         Active DuckDB connection.
     cfg : DocstringConfig
         Repository context for this ingestion run.
+    scan_config : ScanConfig | None
+        Optional scan configuration controlling iteration cadence.
     """
     repo_root = cfg.repo_root.resolve()
     module_map = load_module_map(con, cfg.repo, cfg.commit, language="python", logger=log)
@@ -161,8 +166,7 @@ def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> N
         module_map,
         repo_root,
         logger=log,
-        log_every=PROGRESS_LOG_EVERY,
-        log_interval=PROGRESS_LOG_INTERVAL,
+        scan_config=scan_config,
     ):
         source = read_module_source(record, logger=log)
         if source is None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -12,8 +13,6 @@ import duckdb
 
 from codeintel.config.models import PyAstIngestConfig
 from codeintel.ingestion.common import (
-    PROGRESS_LOG_EVERY,
-    PROGRESS_LOG_INTERVAL,
     ModuleRecord,
     iter_modules,
     load_module_map,
@@ -21,6 +20,7 @@ from codeintel.ingestion.common import (
     run_batch,
     should_skip_empty,
 )
+from codeintel.ingestion.source_scanner import ScanConfig
 
 log = logging.getLogger(__name__)
 
@@ -245,6 +245,7 @@ def _collect_module_ast(record: ModuleRecord) -> tuple[list[list[object]], AstMe
 def ingest_python_ast(
     con: duckdb.DuckDBPyConnection,
     cfg: PyAstIngestConfig,
+    scan_config: ScanConfig | None = None,
 ) -> None:
     """
     Parse modules listed in core.modules using the stdlib ast and populate tables.
@@ -255,13 +256,16 @@ def ingest_python_ast(
         Live DuckDB connection.
     cfg:
         Repository context (root, repo slug, commit).
+    scan_config:
+        Optional scan configuration controlling iteration logging cadence.
     """
     repo_root = cfg.repo_root
-    module_map = load_module_map(con, cfg.repo, cfg.commit, logger=log)
+    module_map = load_module_map(con, cfg.repo, cfg.commit, language="python", logger=log)
     if should_skip_empty(module_map, logger=log):
         return
     total_modules = len(module_map)
     log.info("Parsing Python AST for %d modules in %s@%s", total_modules, cfg.repo, cfg.commit)
+    start_ts = time.perf_counter()
 
     now = datetime.now(UTC)
     ast_values: list[list[object]] = []
@@ -271,8 +275,7 @@ def ingest_python_ast(
         module_map,
         repo_root,
         logger=log,
-        log_every=PROGRESS_LOG_EVERY,
-        log_interval=PROGRESS_LOG_INTERVAL,
+        scan_config=scan_config,
     ):
         module_data = _collect_module_ast(record)
         if module_data is None:
@@ -306,9 +309,12 @@ def ingest_python_ast(
         delete_params=[cfg.repo, cfg.commit],
     )
 
+    duration = time.perf_counter() - start_ts
     log.info(
-        "AST extraction complete for %s@%s (%d modules)",
+        "AST extraction complete for %s@%s (%d modules, %d rows, %.2fs)",
         cfg.repo,
         cfg.commit,
         total_modules,
+        len(ast_values),
+        duration,
     )

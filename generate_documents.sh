@@ -42,7 +42,7 @@ uv run python - <<'PY'
 from pathlib import Path
 import os
 
-from codeintel.orchestration.prefect_flow import export_docs_flow
+from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
 
 repo_root = Path(os.environ["GEN_DOCS_REPO_ROOT"])
 repo = os.environ["GEN_DOCS_REPO"]
@@ -52,11 +52,13 @@ build_dir = Path(os.environ["GEN_DOCS_BUILD_DIR"])
 skip_scip = os.environ["GEN_DOCS_SKIP_SCIP"].lower() == "false"
 
 export_docs_flow(
-    repo_root=repo_root,
-    repo=repo,
-    commit=commit,
-    db_path=db_path,
-    build_dir=build_dir,
+    args=ExportArgs(
+        repo_root=repo_root,
+        repo=repo,
+        commit=commit,
+        db_path=db_path,
+        build_dir=build_dir,
+    )
 )
 PY
 

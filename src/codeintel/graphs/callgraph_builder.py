@@ -12,7 +12,11 @@ import libcst as cst
 from libcst import MetadataWrapper, metadata
 
 from codeintel.config.models import CallGraphConfig
+from codeintel.graphs import symbol_uses
+from codeintel.graphs.function_catalog import FunctionCatalog, FunctionMeta, load_function_catalog
+from codeintel.graphs.function_index import FunctionSpan, FunctionSpanIndex
 from codeintel.graphs.import_resolver import collect_aliases
+from codeintel.graphs.validation import run_graph_validations
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import (
     CallGraphEdgeRow,
@@ -27,24 +31,14 @@ FUNCTION_NODE_TYPES = (cst.FunctionDef, getattr(cst, "AsyncFunctionDef", cst.Fun
 
 
 @dataclass(frozen=True)
-class FunctionRow:
-    """Lightweight representation of a function GOID row."""
-
-    goid: int
-    rel_path: str
-    qualname: str
-    start_line: int
-    end_line: int | None
-
-
-@dataclass(frozen=True)
 class EdgeResolutionContext:
     """Resolution helpers shared across visitors."""
 
-    func_goids_by_span: dict[tuple[int, int], int]
+    function_index: FunctionSpanIndex
     local_callees: dict[str, int]
     global_callees: dict[str, int]
     import_aliases: dict[str, str]
+    scip_candidates_by_use_path: dict[str, tuple[str, ...]]
 
 
 class _FileCallGraphVisitor(cst.CSTVisitor):
@@ -83,12 +77,9 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             if span is None:
                 return True
             start, end = span
-            key = (start.line, end.line)
-            self.current_function_goid = self.context.func_goids_by_span.get(key)
-            if self.current_function_goid is None:
-                self.current_function_goid = self.context.func_goids_by_span.get(
-                    (start.line, start.line)
-                )
+            self.current_function_goid = self.context.function_index.lookup(
+                self.rel_path, start.line, end.line
+            )
             return True
 
         if isinstance(node, cst.Call):
@@ -100,9 +91,11 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             self.current_function_goid = None
 
     def _handle_call(self, node: cst.Call) -> None:
-        if self.current_function_goid is None and self.context.func_goids_by_span:
+        if self.current_function_goid is None:
             # Fallback: single-function module or span mismatch
-            self.current_function_goid = next(iter(self.context.func_goids_by_span.values()))
+            spans = self.context.function_index.spans_for_path(self.rel_path)
+            if spans:
+                self.current_function_goid = spans[0].goid
         if self.current_function_goid is None:
             return
 
@@ -126,6 +119,9 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             "attr_chain": attr_chain or None,
             "resolved_via": resolved_via,
         }
+        scip_paths = self.context.scip_candidates_by_use_path.get(self.rel_path)
+        if callee_goid is None and scip_paths:
+            evidence["scip_candidates"] = list(scip_paths)
 
         self.edges.append(
             CallGraphEdgeRow(
@@ -247,15 +243,18 @@ def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> No
     node_rows = _build_call_graph_nodes(con, cfg)
     _persist_call_graph_nodes(con, node_rows)
 
-    func_rows = _load_function_goids(con, cfg)
+    catalog = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit)
+    func_rows = catalog.function_spans
     if not func_rows:
         log.info("No function GOIDs found; skipping call graph edges.")
         return
 
     global_callee_by_name = _callee_map(func_rows)
-    edges = _collect_edges(repo_root, func_rows, global_callee_by_name)
+    scip_candidates_by_use = _load_scip_candidates(con, repo_root)
+    edges = _collect_edges(catalog, repo_root, global_callee_by_name, scip_candidates_by_use)
     unique_edges = _dedupe_edges(edges)
     _persist_call_graph_edges(con, unique_edges)
+    run_graph_validations(con, repo=cfg.repo, commit=cfg.commit, logger=log)
 
     log.info(
         "Call graph build complete for repo=%s commit=%s: %d nodes, %d edges",
@@ -311,31 +310,7 @@ def _persist_call_graph_nodes(con: duckdb.DuckDBPyConnection, rows: list[tuple])
     )
 
 
-def _load_function_goids(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> list[FunctionRow]:
-    rows = con.execute(
-        """
-        SELECT goid_h128, rel_path, qualname, start_line, end_line
-        FROM core.goids
-        WHERE repo = ? AND commit = ?
-          AND kind IN ('function', 'method')
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetchall()
-    functions: list[FunctionRow] = []
-    for goid_h128, rel_path, qualname, start_line, end_line in rows:
-        functions.append(
-            FunctionRow(
-                goid=int(goid_h128),
-                rel_path=normalize_rel_path(rel_path),
-                qualname=str(qualname),
-                start_line=int(start_line),
-                end_line=int(end_line) if end_line is not None else None,
-            )
-        )
-    return functions
-
-
-def _callee_map(func_rows: list[FunctionRow]) -> dict[str, int]:
+def _callee_map(func_rows: list[FunctionSpan]) -> dict[str, int]:
     mapping: dict[str, int] = {}
     for row in func_rows:
         mapping.setdefault(row.qualname, row.goid)
@@ -344,27 +319,17 @@ def _callee_map(func_rows: list[FunctionRow]) -> dict[str, int]:
 
 
 def _collect_edges(
+    catalog: FunctionCatalog,
     repo_root: Path,
-    func_rows: list[FunctionRow],
     global_callee_by_name: dict[str, int],
+    scip_candidates_by_use: dict[str, tuple[str, ...]],
 ) -> list[CallGraphEdgeRow]:
     edges: list[CallGraphEdgeRow] = []
-    functions_by_path: dict[str, list[FunctionRow]] = {}
-    for row in func_rows:
-        functions_by_path.setdefault(row.rel_path, []).append(row)
+    function_index = catalog.function_index
+    functions_by_path = catalog.functions_by_path
 
     for rel_path in sorted(functions_by_path):
-        file_funcs = functions_by_path[rel_path]
-
-        func_goids_by_span: dict[tuple[int, int], int] = {}
-        callee_by_name: dict[str, int] = {}
-        for row in file_funcs:
-            end_line = row.end_line if row.end_line is not None else row.start_line
-            func_goids_by_span[row.start_line, end_line] = row.goid
-            func_goids_by_span[row.start_line, row.start_line] = row.goid
-            local_name = row.qualname.rsplit(".", maxsplit=1)[-1]
-            callee_by_name.setdefault(local_name, row.goid)
-            callee_by_name.setdefault(row.qualname, row.goid)
+        callee_by_name = function_index.local_name_map(rel_path)
 
         file_path = repo_root / rel_path
         try:
@@ -379,10 +344,11 @@ def _collect_edges(
         module_name = relpath_to_module(rel_path)
         alias_collector = collect_aliases(module, module_name)
         context = EdgeResolutionContext(
-            func_goids_by_span=func_goids_by_span,
+            function_index=function_index,
             local_callees=callee_by_name,
             global_callees=global_callee_by_name,
             import_aliases=alias_collector,
+            scip_candidates_by_use_path=scip_candidates_by_use,
         )
         visitor = _FileCallGraphVisitor(
             rel_path=rel_path,
@@ -464,6 +430,14 @@ def _collect_edges_ast(
                 context.import_aliases,
             )
             kind = "direct" if callee_goid is not None else "unresolved"
+            scip_paths = context.scip_candidates_by_use_path.get(rel_path)
+            evidence = {
+                "callee_name": callee_name,
+                "attr_chain": attr_chain or None,
+                "resolved_via": resolved_via,
+            }
+            if callee_goid is None and scip_paths:
+                evidence["scip_candidates"] = list(scip_paths)
             self.edges.append(
                 CallGraphEdgeRow(
                     caller_goid_h128=self.current_goid,
@@ -475,11 +449,7 @@ def _collect_edges_ast(
                     kind=kind,
                     resolved_via=resolved_via,
                     confidence=confidence,
-                    evidence_json={
-                        "callee_name": callee_name,
-                        "attr_chain": attr_chain or None,
-                        "resolved_via": resolved_via,
-                    },
+                    evidence_json=evidence,
                 )
             )
             self.generic_visit(node)
@@ -489,10 +459,11 @@ def _collect_edges_ast(
             end = getattr(node, "end_lineno", None)
             if start is None:
                 return
-            key = (int(start), int(end) if end is not None else int(start))
-            self.current_goid = context.func_goids_by_span.get(
-                key
-            ) or context.func_goids_by_span.get((int(start), int(start)))
+            self.current_goid = context.function_index.lookup(
+                rel_path,
+                int(start),
+                int(end) if end is not None else int(start),
+            )
 
     source = file_path.read_text(encoding="utf8")
     try:
@@ -585,25 +556,70 @@ def _resolve_callee(
     return goid, resolved_via, confidence
 
 
+def _load_scip_candidates(
+    con: duckdb.DuckDBPyConnection, repo_root: Path
+) -> dict[str, tuple[str, ...]]:
+    """
+    Map `use_path` -> candidate `def_path` values from symbol_use_edges.
+
+    The result is used to enrich unresolved call edges with SCIP-derived
+    evidence so downstream consumers can correlate callsites to symbols even
+    when GOID resolution fails.
+
+    Returns
+    -------
+    dict[str, tuple[str, ...]]
+        Mapping from use_path to possible definition paths.
+    """
+    rows: list[tuple[str | None, str | None]]
+    try:
+        rows = con.execute("SELECT def_path, use_path FROM graph.symbol_use_edges").fetchall()
+    except duckdb.Error:
+        rows = []
+
+    mapping: dict[str, set[str]] = {}
+    for def_path, use_path in rows:
+        if def_path is None or use_path is None:
+            continue
+        use_norm = normalize_rel_path(str(use_path))
+        mapping.setdefault(use_norm, set()).add(normalize_rel_path(str(def_path)))
+
+    if not mapping:
+        scip_path = symbol_uses.default_scip_json_path(repo_root, None)
+        docs = symbol_uses.load_scip_documents(scip_path) if scip_path is not None else None
+        if docs:
+            def_map = symbol_uses.build_def_map(docs)
+            mapping = symbol_uses.build_use_def_mapping(docs, def_map)
+
+    return {path: tuple(sorted(defs)) for path, defs in mapping.items()}
+
+
+def _catalog_from_spans(spans: list[FunctionSpan]) -> FunctionCatalog:
+    """
+    Build a lightweight catalog from spans for test helpers.
+
+    Returns
+    -------
+    FunctionCatalog
+        Catalog containing the provided spans with empty module mapping.
+    """
+    metas = [
+        FunctionMeta(
+            goid=span.goid,
+            urn="",
+            rel_path=span.rel_path,
+            qualname=span.qualname,
+            start_line=span.start_line,
+            end_line=span.end_line if span.end_line is not None else span.start_line,
+        )
+        for span in spans
+    ]
+    return FunctionCatalog(functions=metas, module_by_path={})
+
+
 def _persist_call_graph_edges(
     con: duckdb.DuckDBPyConnection, edges: list[CallGraphEdgeRow]
 ) -> None:
-    if edges and not any(edge["callee_goid_h128"] is None for edge in edges):
-        first = edges[0]
-        edges.append(
-            CallGraphEdgeRow(
-                caller_goid_h128=first["caller_goid_h128"],
-                callee_goid_h128=None,
-                callsite_path=first["callsite_path"],
-                callsite_line=first["callsite_line"],
-                callsite_col=first["callsite_col"],
-                language=first["language"],
-                kind="unresolved",
-                resolved_via="unresolved",
-                confidence=0.0,
-                evidence_json={"fallback": "added_unresolved"},
-            )
-        )
     run_batch(
         con,
         "graph.call_graph_edges",
@@ -611,10 +627,16 @@ def _persist_call_graph_edges(
         delete_params=[],
         scope="call_graph_edges",
     )
+    unresolved = sum(1 for edge in edges if edge["callee_goid_h128"] is None)
+    log.info(
+        "Call graph edges persisted: %d total (%d unresolved)",
+        len(edges),
+        unresolved,
+    )
 
 
 def collect_edges_for_testing(
-    repo_root: Path, func_rows: list[FunctionRow]
+    repo_root: Path, func_rows: list[FunctionSpan]
 ) -> list[CallGraphEdgeRow]:
     """
     Collect call graph edges for tests without touching DuckDB state.
@@ -623,7 +645,7 @@ def collect_edges_for_testing(
     ----------
     repo_root : Path
         Filesystem root for the repository.
-    func_rows : list[FunctionRow]
+    func_rows : list[FunctionSpan]
         Function metadata rows to seed the collector.
 
     Returns
@@ -631,7 +653,8 @@ def collect_edges_for_testing(
     list[tuple]
         Call edge tuples mirroring `_collect_edges` output.
     """
-    return _collect_edges(repo_root, func_rows, _callee_map(func_rows))
+    catalog = _catalog_from_spans(func_rows)
+    return _collect_edges(catalog, repo_root, _callee_map(func_rows), {})
 
 
 def resolve_callee_for_testing(
@@ -663,10 +686,11 @@ def resolve_callee_for_testing(
         GOID (or None if unresolved), resolution source, and confidence score.
     """
     context = EdgeResolutionContext(
-        func_goids_by_span={},
+        function_index=FunctionSpanIndex([]),
         local_callees=callee_by_name,
         global_callees=global_callee_by_name,
         import_aliases=import_aliases,
+        scip_candidates_by_use_path={},
     )
     visitor = _FileCallGraphVisitor(rel_path="", context=context)
     return visitor.resolve_callee(callee_name, attr_chain)
