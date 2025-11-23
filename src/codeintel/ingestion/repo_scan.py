@@ -16,7 +16,7 @@ import yaml
 from codeintel.config.models import RepoScanConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.schemas import apply_all_schemas
-from codeintel.utils.paths import normalize_rel_path, relpath_to_module
+from codeintel.utils.paths import relpath_to_module, repo_relpath
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +59,11 @@ class TagEntry(TypedDict, total=False):
 
 
 def _iter_python_files(repo_root: Path) -> Iterable[Path]:
-    for path in repo_root.rglob("*.py"):
+    search_root = repo_root / "src"
+    if not search_root.is_dir():
+        search_root = repo_root
+
+    for path in search_root.rglob("*.py"):
         rel_parts = path.relative_to(repo_root).parts
         if any(part in IGNORE_DIRS for part in rel_parts):
             continue
@@ -155,7 +159,7 @@ def ingest_repo(
     modules: dict[str, ModuleRow] = {}
 
     for path in _iter_python_files(repo_root):
-        rel_path = normalize_rel_path(path.relative_to(repo_root))
+        rel_path = repo_relpath(repo_root, path)
         module = relpath_to_module(rel_path)
         tags = _tags_for_path(rel_path, tags_entries)
 

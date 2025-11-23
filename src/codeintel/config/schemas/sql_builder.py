@@ -137,6 +137,12 @@ TEST_CATALOG_COLUMNS = [
     "created_at",
 ]
 
+TEST_CATALOG_UPDATE_GOIDS = (
+    "UPDATE analytics.test_catalog "
+    "SET test_goid_h128 = ?, urn = ? "
+    "WHERE test_id = ? AND rel_path = ? AND repo = ? AND commit = ?"
+)
+
 CONFIG_VALUES_COLUMNS = [
     "config_path",
     "format",
@@ -465,21 +471,15 @@ CONFIG_VALUES_INSERT = (
 )
 
 TAGS_INDEX_DELETE = "DELETE FROM analytics.tags_index"
-TAGS_INDEX_INSERT = (
-    "INSERT INTO analytics.tags_index (tag, description, includes, excludes, matches) VALUES (?, ?, ?, ?, ?)"
-)
+TAGS_INDEX_INSERT = "INSERT INTO analytics.tags_index (tag, description, includes, excludes, matches) VALUES (?, ?, ?, ?, ?)"
 
-TYPEDNESS_DELETE = (
-    "DELETE FROM analytics.typedness WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
-)
+TYPEDNESS_DELETE = "DELETE FROM analytics.typedness WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
 TYPEDNESS_INSERT = (
     "INSERT INTO analytics.typedness (path, type_error_count, annotation_ratio, untyped_defs, overlay_needed) "
     "VALUES (?, ?, ?, ?, ?)"
 )
 
-STATIC_DIAGNOSTICS_DELETE = (
-    "DELETE FROM analytics.static_diagnostics WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
-)
+STATIC_DIAGNOSTICS_DELETE = "DELETE FROM analytics.static_diagnostics WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
 STATIC_DIAGNOSTICS_INSERT = (
     "INSERT INTO analytics.static_diagnostics (rel_path, pyrefly_errors, pyright_errors, total_errors, has_errors) "
     "VALUES (?, ?, ?, ?, ?)"
@@ -492,21 +492,17 @@ HOTSPOTS_INSERT = (
 )
 
 MODULES_DELETE = "DELETE FROM core.modules WHERE repo = ? AND commit = ?"
-MODULES_INSERT = (
-    "INSERT INTO core.modules (module, path, repo, commit, language, tags, owners) VALUES (?, ?, ?, ?, ?, ?, ?)"
-)
+MODULES_INSERT = "INSERT INTO core.modules (module, path, repo, commit, language, tags, owners) VALUES (?, ?, ?, ?, ?, ?, ?)"
 
 REPO_MAP_DELETE = "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?"
-REPO_MAP_INSERT = (
-    "INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at) VALUES (?, ?, ?, ?, ?)"
-)
+REPO_MAP_INSERT = "INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at) VALUES (?, ?, ?, ?, ?)"
 
 SYMBOL_USE_DELETE = "DELETE FROM graph.symbol_use_edges"
-SYMBOL_USE_INSERT = (
-    "INSERT INTO graph.symbol_use_edges (symbol, def_path, use_path, same_file, same_module) VALUES (?, ?, ?, ?, ?)"
-)
+SYMBOL_USE_INSERT = "INSERT INTO graph.symbol_use_edges (symbol, def_path, use_path, same_file, same_module) VALUES (?, ?, ?, ?, ?)"
 
-TEST_COVERAGE_EDGE_DELETE = "DELETE FROM analytics.test_coverage_edges WHERE repo = ? AND commit = ?"
+TEST_COVERAGE_EDGE_DELETE = (
+    "DELETE FROM analytics.test_coverage_edges WHERE repo = ? AND commit = ?"
+)
 TEST_COVERAGE_EDGE_INSERT = (
     "INSERT INTO analytics.test_coverage_edges ("
     "test_id, test_goid_h128, function_goid_h128, urn, repo, commit, rel_path, qualname, "
@@ -528,6 +524,7 @@ GOID_CROSSWALK_INSERT = (
     "chunk_id, symbol_id, updated_at"
     ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
+GOID_CROSSWALK_UPDATE_SCIP = "UPDATE core.goid_crosswalk SET scip_symbol = ? WHERE goid = ?"
 
 CALL_GRAPH_NODES_DELETE = "DELETE FROM graph.call_graph_nodes"
 CALL_GRAPH_NODES_INSERT = (
@@ -581,13 +578,19 @@ class PreparedStatements:
 
 PREPARED: dict[str, PreparedStatements] = {
     "core.ast_nodes": PreparedStatements(insert_sql=AST_NODES_INSERT, delete_sql=AST_NODES_DELETE),
-    "core.ast_metrics": PreparedStatements(insert_sql=AST_METRICS_INSERT, delete_sql=AST_METRICS_DELETE),
+    "core.ast_metrics": PreparedStatements(
+        insert_sql=AST_METRICS_INSERT, delete_sql=AST_METRICS_DELETE
+    ),
     "core.cst_nodes": PreparedStatements(insert_sql=CST_NODES_INSERT, delete_sql=CST_NODES_DELETE),
-    "core.docstrings": PreparedStatements(insert_sql=DOCSTRINGS_INSERT, delete_sql=DOCSTRINGS_DELETE),
+    "core.docstrings": PreparedStatements(
+        insert_sql=DOCSTRINGS_INSERT, delete_sql=DOCSTRINGS_DELETE
+    ),
     "core.modules": PreparedStatements(insert_sql=MODULES_INSERT, delete_sql=MODULES_DELETE),
     "core.repo_map": PreparedStatements(insert_sql=REPO_MAP_INSERT, delete_sql=REPO_MAP_DELETE),
     "core.goids": PreparedStatements(insert_sql=GOIDS_INSERT, delete_sql=GOIDS_DELETE),
-    "core.goid_crosswalk": PreparedStatements(insert_sql=GOID_CROSSWALK_INSERT, delete_sql=GOID_CROSSWALK_DELETE),
+    "core.goid_crosswalk": PreparedStatements(
+        insert_sql=GOID_CROSSWALK_INSERT, delete_sql=GOID_CROSSWALK_DELETE
+    ),
     "analytics.coverage_lines": PreparedStatements(
         insert_sql=COVERAGE_LINES_INSERT,
         delete_sql=COVERAGE_LINES_DELETE,
@@ -604,9 +607,15 @@ PREPARED: dict[str, PreparedStatements] = {
         insert_sql=TEST_CATALOG_INSERT,
         delete_sql=TEST_CATALOG_DELETE,
     ),
-    "analytics.config_values": PreparedStatements(insert_sql=CONFIG_VALUES_INSERT, delete_sql="DELETE FROM analytics.config_values"),
-    "analytics.tags_index": PreparedStatements(insert_sql=TAGS_INDEX_INSERT, delete_sql=TAGS_INDEX_DELETE),
-    "analytics.typedness": PreparedStatements(insert_sql=TYPEDNESS_INSERT, delete_sql=TYPEDNESS_DELETE),
+    "analytics.config_values": PreparedStatements(
+        insert_sql=CONFIG_VALUES_INSERT, delete_sql="DELETE FROM analytics.config_values"
+    ),
+    "analytics.tags_index": PreparedStatements(
+        insert_sql=TAGS_INDEX_INSERT, delete_sql=TAGS_INDEX_DELETE
+    ),
+    "analytics.typedness": PreparedStatements(
+        insert_sql=TYPEDNESS_INSERT, delete_sql=TYPEDNESS_DELETE
+    ),
     "analytics.static_diagnostics": PreparedStatements(
         insert_sql=STATIC_DIAGNOSTICS_INSERT,
         delete_sql=STATIC_DIAGNOSTICS_DELETE,
@@ -628,10 +637,14 @@ PREPARED: dict[str, PreparedStatements] = {
         insert_sql=IMPORT_EDGES_INSERT,
         delete_sql=IMPORT_EDGES_DELETE,
     ),
-    "graph.cfg_blocks": PreparedStatements(insert_sql=CFG_BLOCKS_INSERT, delete_sql=CFG_BLOCKS_DELETE),
+    "graph.cfg_blocks": PreparedStatements(
+        insert_sql=CFG_BLOCKS_INSERT, delete_sql=CFG_BLOCKS_DELETE
+    ),
     "graph.cfg_edges": PreparedStatements(insert_sql=CFG_EDGES_INSERT, delete_sql=CFG_EDGES_DELETE),
     "graph.dfg_edges": PreparedStatements(insert_sql=DFG_EDGES_INSERT, delete_sql=DFG_EDGES_DELETE),
-    "graph.symbol_use_edges": PreparedStatements(insert_sql=SYMBOL_USE_INSERT, delete_sql=SYMBOL_USE_DELETE),
+    "graph.symbol_use_edges": PreparedStatements(
+        insert_sql=SYMBOL_USE_INSERT, delete_sql=SYMBOL_USE_DELETE
+    ),
 }
 
 
@@ -676,14 +689,21 @@ def ensure_schema(con: duckdb.DuckDBPyConnection, table_key: str) -> None:
         raise RuntimeError(message)
 
     notnull_flags = {row[1]: bool(row[3]) for row in info}  # column_name -> notnull (1/0)
+    to_harden: list[str] = []
     for col in table.columns:
         db_nullable = not bool(notnull_flags.get(col.name))
         if db_nullable != col.nullable:
+            if not col.nullable and db_nullable:
+                to_harden.append(col.name)
+                continue
             message = (
                 f"Nullability mismatch for {table.fq_name}.{col.name}: "
                 f"db nullable={db_nullable}, expected {col.nullable}"
             )
             raise RuntimeError(message)
+
+    for col_name in to_harden:
+        con.execute(f"ALTER TABLE {table.schema}.{table.name} ALTER COLUMN {col_name} SET NOT NULL")
 
 
 __all__ = [
@@ -698,18 +718,21 @@ __all__ = [
     "COVERAGE_LINES_COLUMNS",
     "COVERAGE_LINES_DELETE",
     "COVERAGE_LINES_INSERT",
-    "FUNCTION_METRICS_COLUMNS",
-    "FUNCTION_METRICS_DELETE",
-    "FUNCTION_METRICS_INSERT",
-    "FUNCTION_TYPES_COLUMNS",
-    "FUNCTION_TYPES_DELETE",
-    "FUNCTION_TYPES_INSERT",
     "CST_NODES_COLUMNS",
     "CST_NODES_DELETE",
     "CST_NODES_INSERT",
     "DOCSTRINGS_COLUMNS",
     "DOCSTRINGS_DELETE",
     "DOCSTRINGS_INSERT",
+    "FUNCTION_METRICS_COLUMNS",
+    "FUNCTION_METRICS_DELETE",
+    "FUNCTION_METRICS_INSERT",
+    "FUNCTION_TYPES_COLUMNS",
+    "FUNCTION_TYPES_DELETE",
+    "FUNCTION_TYPES_INSERT",
+    "GOID_CROSSWALK_UPDATE_SCIP",
+    "HOTSPOTS_COLUMNS",
+    "HOTSPOTS_INSERT",
     "MODULES_COLUMNS",
     "MODULES_DELETE",
     "MODULES_INSERT",
@@ -723,14 +746,13 @@ __all__ = [
     "SYMBOL_USE_COLUMNS",
     "SYMBOL_USE_DELETE",
     "SYMBOL_USE_INSERT",
-    "HOTSPOTS_COLUMNS",
-    "HOTSPOTS_INSERT",
     "TAGS_INDEX_COLUMNS",
     "TAGS_INDEX_DELETE",
     "TAGS_INDEX_INSERT",
     "TEST_CATALOG_COLUMNS",
     "TEST_CATALOG_DELETE",
     "TEST_CATALOG_INSERT",
+    "TEST_CATALOG_UPDATE_GOIDS",
     "TEST_COVERAGE_EDGE_COLUMNS",
     "TEST_COVERAGE_EDGE_DELETE",
     "TEST_COVERAGE_EDGE_INSERT",

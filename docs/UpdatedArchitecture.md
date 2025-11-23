@@ -51,7 +51,9 @@ repo_root/
         __init__.py
         repo_scan.py         # core.modules, core.repo_map, tags_index
         scip_ingest.py       # scip-python → index.scip + index.scip.json
-        ast_cst_extract.py   # core.ast_nodes, core.cst_nodes, core.ast_metrics
+        cst_extract.py       # core.cst_nodes
+        py_ast_extract.py    # core.ast_nodes, core.ast_metrics
+        docstrings_ingest.py # core.docstrings
         coverage_ingest.py   # analytics.coverage_lines
         tests_ingest.py      # analytics.test_catalog (raw)
         typing_ingest.py     # analytics.typedness, analytics.static_diagnostics
@@ -120,15 +122,29 @@ repo_root/
 
 The **column sets** must align with the README metadata for each dataset. 
 
-## 2.2 Schema Implementation
+## 2.3 Common Utilities
+
+`codeintel.utils.paths`:
+
+* `repo_relpath(repo_root, path)`: consistently computes POSIX relative paths.
+* `relpath_to_module(path)`: converts file paths to dotted module names.
+
+`codeintel.ingestion.common`:
+
+* `iter_modules(module_map, ...)`: efficient iteration over module files with progress logging.
+* `load_module_map(...)`: fetches `path -> module` mapping from DuckDB.
+* `run_batch(...)`: handles idempotent inserts with `DELETE` + `INSERT` logic and logging.
+
+## 2.4 Schema Implementation
 
 `storage/schemas.py`:
 
 * Provide `apply_all_schemas(con: duckdb.DuckDBPyConnection) -> None` that:
 
   * Creates schemas if missing (`CREATE SCHEMA IF NOT EXISTS core;`, etc.).
-  * Creates tables with appropriate types, primary keys, and indexes.
-  * Is **idempotent**: safe to call on each process start.
+  * Recreates tables (`DROP TABLE IF EXISTS` + `CREATE TABLE`) to ensure schema consistency during development.
+  * Creates indexes.
+  * Is **idempotent** (safe to run multiple times), though currently destructive to table data.
 
 Rules:
 
@@ -222,7 +238,8 @@ Responsibilities:
 * Walk `repo_root` and:
 
   * Populate `core.modules`:
-
+    * Scopes scanning to `src/` directory if present, falling back to `repo_root`.
+    * Uses `repo_relpath` for consistent path normalization.
     * `module`: dotted path from repo root (e.g., `pkg.mod`)
     * `path`: repo‑relative path (forward slashes)
     * `repo`, `commit`, `language="python"`, `tags`, `owners`
@@ -257,35 +274,37 @@ Responsibilities:
 
   ```sql
   CREATE OR REPLACE VIEW scip_index_view AS
-  SELECT * FROM read_json('<path/to/index.scip.json>');
+  SELECT unnest(documents, recursive:=true) FROM read_json('<path/to/index.scip.json>');
   ```
+
+  * Handles SCIP JSON structure where the root is a dictionary containing a `documents` list.
 
 If scip binaries are missing, module logs a warning and returns without error.
 
-## 5.3 `ast_cst_extract.py`
+## 5.3 `py_ast_extract.py`
 
 Responsibilities:
 
-* For each `core.modules` row (for this repo+commit, language=python):
+* For each `core.modules` row (language=python):
+  * Parse source with standard library `ast`.
+  * Visit tree with `AstVisitor` to populate `core.ast_nodes`:
+    * Entities: `Module`, `ClassDef`, `FunctionDef`, `AsyncFunctionDef`.
+    * Fields: `path`, `node_type`, `name`, `qualname`, `lineno`, `end_lineno`, `col_offset`, `end_col_offset`, `parent_qualname`, `decorators`, `docstring=None`, `hash` (stable hash).
+  * Compute and populate `core.ast_metrics`:
+    * `rel_path`, `node_count`, `function_count`, `class_count`, `avg_depth`, `max_depth`, `complexity`, `generated_at`.
+    * Complexity is a heuristic count of decision points (if/for/while/try/with/…).
 
-  * Read source.
-  * Parse with LibCST (`cst.parse_module` + `MetadataWrapper`).
-  * Visit tree with `AstCstVisitor` that:
+## 5.4 `cst_extract.py`
 
-    * Populates `core.ast_nodes`:
+Responsibilities:
 
-      * Entities: `Module`, `ClassDef`, `FunctionDef`, `AsyncFunctionDef`
-      * Fields: `path`, `node_type`, `name`, `qualname`, `lineno`, `end_lineno`, `col_offset`, `end_col_offset`, `parent_qualname`, `decorators`, `docstring=None`, `hash` (stable hash of identity)
-    * Populates `core.cst_nodes`:
+* For each `core.modules` row (language=python):
+  * Parse source with LibCST.
+  * Visit tree with `CstVisitor` to populate `core.cst_nodes`:
+    * `path`, `node_id`, `kind`, `span`, `text_preview`, `parents`, `qnames`.
+  * Filters nodes to capture only high-value structural elements (Module, Class, Function, Assign, Call, Import, Control Flow, etc.) to optimize performance.
 
-      * `path`, `node_id`, `kind`, `span`, `text_preview`, `parents`, `qnames` 
-    * Populates per‑file metrics into `core.ast_metrics`:
-
-      * `rel_path`, `node_count`, `function_count`, `class_count`, `avg_depth`, `max_depth`, `complexity`, `generated_at`
-
-Complexity is a heuristic count of decision points (if/for/while/try/with/…).
-
-## 5.4 `coverage_ingest.py`
+## 5.5 `coverage_ingest.py`
 
 Responsibilities:
 
@@ -297,11 +316,12 @@ Responsibilities:
     * `is_executable`, `is_covered`, `hits`, `context_count` per line.
 * Insert into `analytics.coverage_lines` with fields from README: repo, commit, rel_path, line, is_executable, is_covered, hits, context_count, created_at. 
 
-## 5.5 `tests_ingest.py`
+## 5.6 `tests_ingest.py`
 
 Responsibilities:
 
 * Locate a pytest JSON report (`pytest-json-report`), defaulting to common filenames.
+  * If missing, log warning and skip (leaving `analytics.test_catalog` empty).
 * Load `tests` list from it.
 * For each test:
 
@@ -311,7 +331,7 @@ Responsibilities:
 
 Does **not** compute `test_coverage_edges`; that’s an analytics step combining coverage contexts with GOIDs.
 
-## 5.6 `typing_ingest.py`
+## 5.7 `typing_ingest.py`
 
 Responsibilities:
 
@@ -327,7 +347,32 @@ Responsibilities:
   * `analytics.typedness` with fields: `path`, `type_error_count`, `annotation_ratio (JSON)`, `untyped_defs`, `overlay_needed`.
   * `analytics.static_diagnostics` with `rel_path`, `pyrefly_errors=0`, `pyright_errors`, `total_errors`, `has_errors`. 
 
-## 5.7 `config_ingest.py`
+## 5.8 `config_ingest.py`
+
+Responsibilities:
+
+* Discover config files by extension: `.yaml`, `.yml`, `.toml`, `.json`, `.ini`, `.cfg`, `.env`.
+* Scopes discovery to `src/` directory if present.
+* Parse each into a dictionary using appropriate library (PyYAML, `tomllib`, `json`, `configparser` or manual `.env` parsing).
+* Flatten nested structure into keypaths:
+  * `service.database.host`, `service.database.ports.0`, etc.
+* Insert into `analytics.config_values`:
+  * `config_path`, `format`, `key`, `reference_paths=[]`, `reference_modules=[]`, `reference_count=0`. 
+
+Later analytics can fill references by scanning AST/symbol uses.
+
+## 5.9 `docstrings_ingest.py`
+
+Responsibilities:
+
+* Iterate over modules in `core.modules`.
+* Parse each file using Python's `ast` module.
+* Use `docstring_parser` to parse raw docstrings into structured fields (params, returns, raises, examples).
+* Populate `core.docstrings`:
+  * `repo`, `commit`, `rel_path`, `module`, `qualname`, `kind`, `lineno`.
+  * Structured fields: `short_desc`, `long_desc`, `params` (JSON), `returns` (JSON), etc.
+
+*Dependencies*: Uses standard library `ast` and `docstring-parser`, removing the need for `griffe`.
 
 Responsibilities:
 
@@ -409,7 +454,7 @@ Minimal implementation (extendable later):
 
     * `block_idx=0`, `block_id="<goid>:block0"`, `label="body:0"`, `kind="body"`, `start_line`, `end_line`, `stmts_json="[]"`, `in_degree=0`, `out_degree=0`.
   * Insert into `graph.cfg_blocks`.
-* `graph.cfg_edges` and `graph.dfg_edges` remain empty for now.
+* `graph.cfg_edges` and `graph.dfg_edges` remain empty for now (placeholders).
 
 This gives a usable table schema; CFG/DFG logic can be enriched later to match the full spec in the README. 
 
@@ -436,11 +481,12 @@ Responsibilities:
 * From `index.scip.json`:
 
   * First pass: map `symbol → def_path` for occurrence roles marked as definitions.
-  * Second pass: for each reference occurrence (role bit 2):
+  * Second pass: for each reference occurrence (role bit 2, 4, or 8 - Import, Write, Read):
 
     * Determine `use_path`.
     * Lookup `def_path` for symbol.
     * Determine `same_file` and `same_module` (by joining to `core.modules`).
+    * Deduplicate edges to prevent primary key violations.
 * Insert into `graph.symbol_use_edges`:
 
   * `symbol`, `def_path`, `use_path`, `same_file`, `same_module`. 

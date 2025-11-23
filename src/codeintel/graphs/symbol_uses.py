@@ -67,8 +67,13 @@ def _load_scip_docs(scip_path: Path) -> list[ScipDocument] | None:
         log.warning("Failed to read %s: %s", scip_path, exc)
         return None
 
+    if isinstance(docs_raw, dict):
+        docs_raw = docs_raw.get("documents", [])
+
     if not isinstance(docs_raw, list):
-        log.warning("SCIP JSON root is not a list; aborting symbol_use_edges build.")
+        log.warning(
+            "SCIP JSON root (or 'documents' key) is not a list; aborting symbol_use_edges build."
+        )
         return None
     return [cast("ScipDocument", doc) for doc in docs_raw if isinstance(doc, dict)]
 
@@ -97,6 +102,8 @@ def _build_symbol_edges(
     def_path_by_symbol: dict[str, str],
     module_by_path: dict[str, str],
 ) -> list[SymbolUseRow]:
+    # Track unique edges to prevent PK violations: (symbol, def_path, use_path)
+    seen_edges: set[tuple[str, str, str]] = set()
     rows: list[SymbolUseRow] = []
 
     for doc in docs:
@@ -110,13 +117,19 @@ def _build_symbol_edges(
             if not symbol:
                 continue
             roles = int(occ.get("symbol_roles", 0))
-            is_ref = bool(roles & 2)  # reference bit
+            # Definition=1, Import=2, WriteAccess=4, ReadAccess=8
+            # We consider Import, Write, and Read as references/uses.
+            is_ref = bool(roles & (2 | 4 | 8))
             if not is_ref:
                 continue
 
             def_path = def_path_by_symbol.get(symbol)
             if not def_path:
                 continue
+
+            if (symbol, def_path, use_path) in seen_edges:
+                continue
+            seen_edges.add((symbol, def_path, use_path))
 
             same_file = def_path == use_path
             m_def = module_by_path.get(def_path)

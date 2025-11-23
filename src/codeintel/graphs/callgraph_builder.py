@@ -86,7 +86,9 @@ class _FileCallGraphVisitor(cst.CSTVisitor):
             key = (start.line, end.line)
             self.current_function_goid = self.context.func_goids_by_span.get(key)
             if self.current_function_goid is None:
-                self.current_function_goid = self.context.func_goids_by_span.get((start.line, start.line))
+                self.current_function_goid = self.context.func_goids_by_span.get(
+                    (start.line, start.line)
+                )
             return True
 
         if isinstance(node, cst.Call):
@@ -488,9 +490,9 @@ def _collect_edges_ast(
             if start is None:
                 return
             key = (int(start), int(end) if end is not None else int(start))
-            self.current_goid = context.func_goids_by_span.get(key) or context.func_goids_by_span.get(
-                (int(start), int(start))
-            )
+            self.current_goid = context.func_goids_by_span.get(
+                key
+            ) or context.func_goids_by_span.get((int(start), int(start)))
 
     source = file_path.read_text(encoding="utf8")
     try:
@@ -507,16 +509,23 @@ def _extract_callee_ast(expr: ast.AST) -> tuple[str, list[str]]:
     if isinstance(expr, ast.Name):
         return expr.id, [expr.id]
     if isinstance(expr, ast.Attribute):
-        names: list[str] = []
-        cur = expr
-        while isinstance(cur, ast.Attribute):
-            names.append(cur.attr)
-            cur = cur.value
-        if isinstance(cur, ast.Name):
-            names.append(cur.id)
-        names.reverse()
-        return names[-1], names
+        names = _flatten_attribute(expr)
+        if names:
+            return names[0], names
     return "", []
+
+
+def _flatten_attribute(expr: ast.Attribute) -> list[str]:
+    names: list[str] = []
+    current: ast.AST = expr
+    while isinstance(current, ast.Attribute):
+        names.append(current.attr)
+        current = current.value
+    if isinstance(current, ast.Name):
+        names.append(current.id)
+        names.reverse()
+        return names
+    return []
 
 
 def _resolve_callee(
@@ -552,7 +561,11 @@ def _resolve_callee(
             root = attr_chain[0]
             alias_target = import_aliases.get(root)
             if alias_target:
-                qualified = alias_target if len(attr_chain) == 1 else ".".join([alias_target, *attr_chain[1:]])
+                qualified = (
+                    alias_target
+                    if len(attr_chain) == 1
+                    else ".".join([alias_target, *attr_chain[1:]])
+                )
                 goid = local_callees.get(qualified) or global_callees.get(qualified)
                 if goid is not None:
                     resolved_via = "import_alias"
@@ -562,11 +575,19 @@ def _resolve_callee(
         goid = global_callees[callee_name]
         resolved_via = "global_name"
         confidence = 0.6
+    elif goid is None and attr_chain:
+        qualified = ".".join(attr_chain)
+        goid = global_callees.get(qualified) or global_callees.get(attr_chain[-1])
+        if goid is not None:
+            resolved_via = "global_name"
+            confidence = 0.6
 
     return goid, resolved_via, confidence
 
 
-def _persist_call_graph_edges(con: duckdb.DuckDBPyConnection, edges: list[CallGraphEdgeRow]) -> None:
+def _persist_call_graph_edges(
+    con: duckdb.DuckDBPyConnection, edges: list[CallGraphEdgeRow]
+) -> None:
     if edges and not any(edge["callee_goid_h128"] is None for edge in edges):
         first = edges[0]
         edges.append(
@@ -592,7 +613,9 @@ def _persist_call_graph_edges(con: duckdb.DuckDBPyConnection, edges: list[CallGr
     )
 
 
-def collect_edges_for_testing(repo_root: Path, func_rows: list[FunctionRow]) -> list[CallGraphEdgeRow]:
+def collect_edges_for_testing(
+    repo_root: Path, func_rows: list[FunctionRow]
+) -> list[CallGraphEdgeRow]:
     """
     Collect call graph edges for tests without touching DuckDB state.
 

@@ -239,14 +239,30 @@ def _seed_db(db_path: Path, *, repo: str, commit: str) -> duckdb.DuckDBPyConnect
         INSERT INTO analytics.function_metrics VALUES
         (?, ?, ?, ?, ?, 'python', 'function', ?, 1, 2, 2, 2, 0, 0, 0, FALSE, FALSE, FALSE, FALSE, 0, 0, 0, 1, 1, 0, 0, FALSE, 'low', ?)
         """,
-        [1, "goid:demo/repo#python:function:pkg.mod.func", repo, commit, "pkg/mod.py", "pkg.mod.func", now],
+        [
+            1,
+            "goid:demo/repo#python:function:pkg.mod.func",
+            repo,
+            commit,
+            "pkg/mod.py",
+            "pkg.mod.func",
+            now,
+        ],
     )
     con.execute(
         """
         INSERT INTO analytics.goid_risk_factors VALUES
         (?, ?, ?, ?, ?, 'python', 'function', ?, 10, 10, 1, 'low', 'full', 'annotations', 0.1, 1.0, 0, FALSE, 2, 2, 1.0, TRUE, 1, 0, 'passed', 0.2, 'low', '[]', '[]', ?)
         """,
-        [1, "goid:demo/repo#python:function:pkg.mod.func", repo, commit, "pkg/mod.py", "pkg.mod.func", now],
+        [
+            1,
+            "goid:demo/repo#python:function:pkg.mod.func",
+            repo,
+            commit,
+            "pkg/mod.py",
+            "pkg.mod.func",
+            now,
+        ],
     )
     con.execute(
         """
@@ -309,7 +325,9 @@ def _build_app(con: duckdb.DuckDBPyConnection, db_path: Path, *, repo: str, comm
     FastAPI
         Configured application using the supplied backend.
     """
-    cfg = ApiAppConfig(server=McpServerConfig(repo_root=db_path.parent, repo=repo, commit=commit), read_only=True)
+    cfg = ApiAppConfig(
+        server=McpServerConfig(repo_root=db_path.parent, repo=repo, commit=commit), read_only=True
+    )
 
     def _loader() -> ApiAppConfig:
         return cfg
@@ -350,7 +368,9 @@ def _assert_function_summary(client: TestClient) -> None:
 
 
 def _assert_callgraph(client: TestClient) -> None:
-    resp = client.get("/function/callgraph", params={"goid_h128": 1, "direction": "both", "limit": 10})
+    resp = client.get(
+        "/function/callgraph", params={"goid_h128": 1, "direction": "both", "limit": 10}
+    )
     cg = _expect_dict(_json_or_fail(resp))
     if not cg["outgoing"]:
         pytest.fail("Expected outgoing callgraph edges")

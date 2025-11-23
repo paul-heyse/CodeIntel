@@ -252,10 +252,10 @@ def t_callgraph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
 
 
 @task(name="cfg_dfg", retries=1, retry_delay_seconds=2)
-def t_cfg(repo: str, commit: str, db_path: Path) -> None:
+def t_cfg(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Emit minimal CFG/DFG scaffolding."""
     con = _connect(db_path)
-    cfg = CFGBuilderConfig.from_paths(repo=repo, commit=commit)
+    cfg = CFGBuilderConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_cfg_and_dfg(con, cfg)
     con.close()
 
@@ -442,7 +442,11 @@ def export_docs_flow(
         scip_result = t_scip_ingest.fn(cfg=scip_cfg, db_path=db_path)
         _log_task_done("scip_ingest", start, run_logger)
         if scip_result.status != "success":
-            run_logger.info("SCIP ingestion result: %s (%s)", scip_result.status, scip_result.reason or "no reason")
+            run_logger.info(
+                "SCIP ingestion result: %s (%s)",
+                scip_result.status,
+                scip_result.reason or "no reason",
+            )
     else:
         run_logger.info("Skipping SCIP ingestion via CODEINTEL_SKIP_SCIP")
     _run_task("cst_extract", t_cst_extract, run_logger, repo_root, repo, commit, db_path)
@@ -450,13 +454,15 @@ def export_docs_flow(
     _run_task("coverage_ingest", t_coverage_ingest, run_logger, repo_root, repo, commit, db_path)
     _run_task("tests_ingest", t_tests_ingest, run_logger, repo_root, repo, commit, db_path)
     _run_task("typing_ingest", t_typing_ingest, run_logger, repo_root, repo, commit, db_path)
-    _run_task("docstrings_ingest", t_docstrings_ingest, run_logger, repo_root, repo, commit, db_path)
+    _run_task(
+        "docstrings_ingest", t_docstrings_ingest, run_logger, repo_root, repo, commit, db_path
+    )
     _run_task("config_ingest", t_config_ingest, run_logger, repo_root, db_path)
 
     # Graphs
     _run_task("goids", t_goids, run_logger, repo, commit, db_path)
     _run_task("callgraph", t_callgraph, run_logger, repo, commit, repo_root, db_path)
-    _run_task("cfg_dfg", t_cfg, run_logger, repo, commit, db_path)
+    _run_task("cfg_dfg", t_cfg, run_logger, repo, commit, repo_root, db_path)
     _run_task("import_graph", t_import_graph, run_logger, repo, commit, repo_root, db_path)
     symbol_cfg = SymbolUsesConfig.from_paths(
         repo_root=repo_root,
@@ -464,7 +470,9 @@ def export_docs_flow(
         repo=repo,
         commit=commit,
     )
-    if (scip_result is None or scip_result.status == "success") and symbol_cfg.scip_json_path.is_file():
+    if (
+        scip_result is None or scip_result.status == "success"
+    ) and symbol_cfg.scip_json_path.is_file():
         _run_task("symbol_uses", t_symbol_uses, run_logger, symbol_cfg, db_path)
     else:
         run_logger.info("Skipping symbol_uses: SCIP output unavailable")
@@ -473,8 +481,12 @@ def export_docs_flow(
     _run_task("hotspots", t_hotspots, run_logger, repo_root, repo, commit, db_path)
     _run_task("function_metrics", t_function_metrics, run_logger, repo_root, repo, commit, db_path)
     _run_task("coverage_functions", t_coverage_functions, run_logger, repo, commit, db_path)
-    _run_task("test_coverage_edges", t_test_coverage_edges, run_logger, repo_root, repo, commit, db_path)
-    _run_task("risk_factors", t_risk_factors, run_logger, repo_root, repo, commit, db_path, build_dir)
+    _run_task(
+        "test_coverage_edges", t_test_coverage_edges, run_logger, repo_root, repo, commit, db_path
+    )
+    _run_task(
+        "risk_factors", t_risk_factors, run_logger, repo_root, repo, commit, db_path, build_dir
+    )
 
     # Export
     _run_task("export_docs", t_export_docs, run_logger, db_path, document_output)

@@ -559,9 +559,10 @@ class CFGBuilderConfig:
 
     repo: str
     commit: str
+    repo_root: Path
 
     @classmethod
-    def from_paths(cls, *, repo: str, commit: str) -> Self:
+    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
         """
         Build CFG/DFG settings from repository context.
 
@@ -570,7 +571,7 @@ class CFGBuilderConfig:
         Self
             Normalized CFG builder configuration.
         """
-        return cls(repo=repo, commit=commit)
+        return cls(repo=repo, commit=commit, repo_root=repo_root)
 
 
 @dataclass(frozen=True)

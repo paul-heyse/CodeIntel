@@ -5,14 +5,14 @@
   "venvPath": ".",
   "venv": ".venv",
   "useLibraryCodeForTypes": true,
-  "stubPath": "src/stubs",
+  "stubPath": "src/codeintel/stubs",
   "include": ["src", "tests", "docs"],
   "exclude": [
     ".git",
     ".venv",
     ".ruff_cache",
     ".pytest_cache",
-    "docs/**",
+    "docs/**"
   ],
   "executionEnvironments": [
     {

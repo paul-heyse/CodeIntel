@@ -60,7 +60,9 @@ def ingest_coverage_lines(
     repo_root = cfg.repo_root
     coverage_file = cfg.coverage_file
 
-    if coverage_file is None or should_skip_missing_file(coverage_file, logger=log, label="coverage file"):
+    if coverage_file is None or should_skip_missing_file(
+        coverage_file, logger=log, label="coverage file"
+    ):
         return
 
     cov = Coverage(data_file=str(coverage_file))
@@ -69,7 +71,9 @@ def ingest_coverage_lines(
 
     now = datetime.now(UTC)
 
-    insert_ctx = CoverageInsertContext(repo=cfg.repo, commit=cfg.commit, now=now, coverage_file=coverage_file)
+    insert_ctx = CoverageInsertContext(
+        repo=cfg.repo, commit=cfg.commit, now=now, coverage_file=coverage_file
+    )
 
     rows: list[CoverageLineRow] = []
     for measured in data.measured_files():

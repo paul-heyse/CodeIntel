@@ -24,10 +24,24 @@ from codeintel.models.rows import (
     typedness_row_to_tuple,
 )
 from codeintel.types import PyreflyError
-from codeintel.utils.paths import normalize_rel_path
+from codeintel.utils.paths import repo_relpath
 
 log = logging.getLogger(__name__)
 MISSING_BINARY_EXIT_CODE = 127
+
+IGNORE_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "venv",
+    ".tox",
+    "__pycache__",
+    "build",
+    "dist",
+    ".mypy_cache",
+    ".pytest_cache",
+}
 
 
 @dataclass
@@ -49,8 +63,17 @@ class AnnotationInfo:
     returns_ratio: float
     untyped_defs: int
 
+
 def _iter_python_files(repo_root: Path) -> Iterable[Path]:
-    yield from repo_root.rglob("*.py")
+    search_root = repo_root / "src"
+    if not search_root.is_dir():
+        search_root = repo_root
+
+    for path in search_root.rglob("*.py"):
+        rel_parts = path.relative_to(repo_root).parts
+        if any(part in IGNORE_DIRS for part in rel_parts):
+            continue
+        yield path
 
 
 def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
@@ -170,18 +193,21 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
         log.warning("pyrefly binary not found; treating all files as 0 errors")
         output_path.unlink(missing_ok=True)
         return {}
-    if code != 0:
-        log.warning(
-            "pyrefly check exited with code %s; stdout=%s stderr=%s",
-            code,
-            stdout.strip(),
-            stderr.strip(),
-        )
-        output_path.unlink(missing_ok=True)
-        return {}
 
+    # Try to parse output regardless of exit code, as code 1 usually just means errors were found.
     try:
-        payload = json.loads(output_path.read_text(encoding="utf8"))
+        if output_path.exists() and output_path.stat().st_size > 0:
+            payload = json.loads(output_path.read_text(encoding="utf8"))
+        else:
+            # If no output file but non-zero exit, log warning
+            if code != 0:
+                log.warning(
+                    "pyrefly check exited with code %s and no output; stdout=%s stderr=%s",
+                    code,
+                    stdout.strip(),
+                    stderr.strip(),
+                )
+            return {}
     except (OSError, json.JSONDecodeError) as exc:
         log.warning("Failed to read pyrefly JSON output: %s", exc)
         output_path.unlink(missing_ok=True)
@@ -199,7 +225,7 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
             continue
         file_path = Path(str(file_name)).resolve()
         try:
-            rel_path = normalize_rel_path(file_path.relative_to(repo_root))
+            rel_path = repo_relpath(repo_root, file_path)
         except ValueError:
             continue
         errors_by_file[rel_path] = errors_by_file.get(rel_path, 0) + 1
@@ -227,7 +253,7 @@ def ingest_typing_signals(
     # Compute annotation info for each Python file
     annotation_info: dict[str, AnnotationInfo] = {}
     for path in _iter_python_files(repo_root):
-        rel_path = normalize_rel_path(path.relative_to(repo_root))
+        rel_path = repo_relpath(repo_root, path)
         info = _compute_annotation_info_for_file(path)
         if info is not None:
             annotation_info[rel_path] = info

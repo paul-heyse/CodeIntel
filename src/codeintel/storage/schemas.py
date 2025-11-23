@@ -48,10 +48,12 @@ def _build_table_ddl(table: TableSchema) -> str:
         col_lines.append(f"    PRIMARY KEY ({pk_cols})")
     cols_sql = ",\n".join(col_lines)
     return (
-        f"CREATE TABLE IF NOT EXISTS {_quote(table.schema)}.{_quote(table.name)} (\n"
+        f"DROP TABLE IF EXISTS {_quote(table.schema)}.{_quote(table.name)};\n"
+        f"CREATE TABLE {_quote(table.schema)}.{_quote(table.name)} (\n"
         f"{cols_sql}\n"
         ");"
     )
+
 
 TABLE_DDL: dict[str, str] = {key: _build_table_ddl(schema) for key, schema in TABLE_SCHEMAS.items()}
 

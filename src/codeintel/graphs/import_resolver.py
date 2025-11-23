@@ -182,7 +182,9 @@ def handle_import(node: cst.Import, current_module: str, edges: set[tuple[str, s
             edges.add((current_module, module_str))
 
 
-def handle_import_from(node: cst.ImportFrom, current_module: str, edges: set[tuple[str, str]]) -> None:
+def handle_import_from(
+    node: cst.ImportFrom, current_module: str, edges: set[tuple[str, str]]
+) -> None:
     """Handle import-from statements including relative imports."""
     base = _resolve_base_module(current_module, node)
     if base is None:

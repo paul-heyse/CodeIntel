@@ -18,40 +18,31 @@ from codeintel.analytics.tests_analytics import (
     build_edges_for_file_for_tests,
     compute_test_coverage_edges,
 )
+from codeintel.storage.schemas import apply_all_schemas
 
 cast("Any", TestCoverageConfig).__test__ = False  # prevent pytest from collecting the dataclass
+
+
+def _insert_goids(con: duckdb.DuckDBPyConnection, cfg: TestCoverageConfig) -> None:
+    now = datetime.now(UTC)
+    con.execute(
+        """
+        INSERT INTO core.goids (
+            goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
+            start_line, end_line, created_at
+        )
+        VALUES
+            (1, 'goid:demo/repo#python:function:test_mod.test_func', ?, ?, 'tests/test_mod.py', 'python', 'function', 'tests.test_mod.test_func', 1, 2, ?),
+            (2, 'goid:demo/repo#python:function:other', ?, ?, 'tests/test_mod.py', 'python', 'function', 'tests.test_mod.other', 1, 2, ?)
+        """,
+        [cfg.repo, cfg.commit, now, cfg.repo, cfg.commit, now],
+    )
 
 
 def test_backfill_test_goids_updates_catalog() -> None:
     """Ensure test_catalog entries receive GOIDs and URNs when matched to GOIDs."""
     con = duckdb.connect(":memory:")
-    con.execute("CREATE SCHEMA core;")
-    con.execute("CREATE SCHEMA analytics;")
-    con.execute(
-        """
-        CREATE TABLE core.goids (
-            goid_h128 DECIMAL(38,0),
-            urn TEXT,
-            repo TEXT,
-            commit TEXT,
-            rel_path TEXT,
-            qualname TEXT
-        );
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.test_catalog (
-            test_id TEXT,
-            rel_path TEXT,
-            qualname TEXT,
-            repo TEXT,
-            commit TEXT,
-            test_goid_h128 DECIMAL(38,0),
-            urn TEXT
-        );
-        """
-    )
+    apply_all_schemas(con)
 
     cfg = TestCoverageConfig(
         repo="demo/repo",
@@ -59,21 +50,13 @@ def test_backfill_test_goids_updates_catalog() -> None:
         repo_root=Path.cwd(),
     )
 
+    _insert_goids(con, cfg)
     con.execute(
         """
-        INSERT INTO core.goids (goid_h128, urn, repo, commit, rel_path, qualname)
-        VALUES
-            (1, 'goid:demo/repo#python:function:test_mod.test_func', ?, ?, 'tests/test_mod.py', 'tests.test_mod.test_func'),
-            (2, 'goid:demo/repo#python:function:other', ?, ?, 'tests/test_mod.py', 'tests.test_mod.other')
+        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
+        VALUES ('tests/test_mod.py::test_func', 'tests/test_mod.py', 'tests.test_mod.test_func', ?, ?, 'passed', ?)
         """,
-        [cfg.repo, cfg.commit, cfg.repo, cfg.commit],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit)
-        VALUES ('tests/test_mod.py::test_func', 'tests/test_mod.py', 'tests.test_mod.test_func', ?, ?)
-        """,
-        [cfg.repo, cfg.commit],
+        [cfg.repo, cfg.commit, datetime.now(UTC)],
     )
 
     goid_map, urn_map = backfill_test_goids_for_catalog(con, cfg)
@@ -157,57 +140,7 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
     target_file.write_text("def func():\n    return 1\n", encoding="utf-8")
 
     con = duckdb.connect(":memory:")
-    con.execute("CREATE SCHEMA core;")
-    con.execute("CREATE SCHEMA analytics;")
-    con.execute(
-        """
-        CREATE TABLE core.goids (
-            goid_h128 DECIMAL(38,0),
-            urn TEXT,
-            repo TEXT,
-            commit TEXT,
-            rel_path TEXT,
-            language TEXT,
-            kind TEXT,
-            qualname TEXT,
-            start_line INTEGER,
-            end_line INTEGER
-        );
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.test_catalog (
-            test_id TEXT,
-            rel_path TEXT,
-            qualname TEXT,
-            repo TEXT,
-            commit TEXT,
-            test_goid_h128 DECIMAL(38,0),
-            urn TEXT,
-            status TEXT
-        );
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.test_coverage_edges (
-            test_id TEXT,
-            test_goid_h128 DECIMAL(38,0),
-            function_goid_h128 DECIMAL(38,0),
-            urn TEXT,
-            repo TEXT,
-            commit TEXT,
-            rel_path TEXT,
-            qualname TEXT,
-            covered_lines INTEGER,
-            executable_lines INTEGER,
-            coverage_ratio DOUBLE,
-            last_status TEXT,
-            created_at TIMESTAMP
-        );
-        """
-    )
+    apply_all_schemas(con)
 
     cfg = TestCoverageConfig(
         repo="demo/repo",
@@ -216,21 +149,22 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
         coverage_file=tmp_path / ".coverage",  # unused with monkeypatch
     )
 
+    now = datetime.now(UTC)
     con.execute(
         """
-        INSERT INTO core.goids (goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line)
+        INSERT INTO core.goids (goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at)
         VALUES
-            (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, 'pkg/mod.py', 'python', 'function', 'pkg.mod.func', 1, 2),
-            (99, 'goid:demo/repo#python:function:pkg.mod.test_func', ?, ?, 'pkg/mod.py', 'python', 'test', 'pkg.mod.test_func', 1, 2)
+            (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, 'pkg/mod.py', 'python', 'function', 'pkg.mod.func', 1, 2, ?),
+            (99, 'goid:demo/repo#python:function:pkg.mod.test_func', ?, ?, 'pkg/mod.py', 'python', 'test', 'pkg.mod.test_func', 1, 2, ?)
         """,
-        [cfg.repo, cfg.commit, cfg.repo, cfg.commit],
+        [cfg.repo, cfg.commit, now, cfg.repo, cfg.commit, now],
     )
     con.execute(
         """
-        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status)
-        VALUES ('pkg/mod.py::test_func', 'pkg/mod.py', 'pkg.mod.test_func', ?, ?, 'passed')
+        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
+        VALUES ('pkg/mod.py::test_func', 'pkg/mod.py', 'pkg.mod.test_func', ?, ?, 'passed', ?)
         """,
-        [cfg.repo, cfg.commit],
+        [cfg.repo, cfg.commit, now],
     )
 
     class _FakeData:
@@ -260,7 +194,6 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
         return _FakeCoverage(cfg_arg.repo_root)  # type: ignore[return-value]
 
     compute_test_coverage_edges(con, cfg, coverage_loader=fake_loader)
-
     _assert_single_edge(con)
 
 

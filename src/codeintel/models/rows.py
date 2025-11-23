@@ -544,6 +544,7 @@ def dfg_edge_to_tuple(row: DFGEdgeRow) -> tuple[object, ...]:
         row["edge_kind"],
     )
 
+
 class TestCatalogRowModel(TypedDict):
     """Row shape for analytics.test_catalog inserts."""
 

@@ -1,14 +1,12 @@
-"""Extract structured docstrings with Griffe and persist to DuckDB."""
+"""Extract structured docstrings with AST and docstring-parser and persist to DuckDB."""
 
 from __future__ import annotations
 
-import importlib
+import ast
 import logging
-from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Protocol, TypedDict, cast
+from typing import TypedDict
 
 import duckdb
 from docstring_parser import DocstringStyle, ParseError, parse
@@ -19,6 +17,7 @@ from codeintel.ingestion.common import (
     PROGRESS_LOG_INTERVAL,
     iter_modules,
     load_module_map,
+    read_module_source,
     run_batch,
     should_skip_empty,
 )
@@ -27,57 +26,12 @@ from codeintel.models.rows import DocstringRow, docstring_row_to_tuple
 log = logging.getLogger(__name__)
 
 
-class DocstringProto(Protocol):
-    """Lightweight view of a griffe docstring."""
-
-    value: str | None
-
-
-class DocLocationProto(Protocol):
-    """Subset of griffe location metadata."""
-
-    lineno: int | None
-    endlineno: int | None
-
-
-class DocObject(Protocol):
-    """Protocol capturing the griffe object interface we rely on."""
-
-    members: dict[str, DocObject]
-    path: str | None
-    docstring: DocstringProto | None
-    location: DocLocationProto | None
-    parent: DocObject | None
-    name: str
-
-
-class LoaderProto(Protocol):
-    """Protocol for the griffe loader we call."""
-
-    def load_file(self, path: str) -> DocObject:
-        """Load a Python file into a griffe object tree."""
-        ...
-
-
-@dataclass(frozen=True)
-class GriffeHandles:
-    """Loaded griffe classes and loader instance."""
-
-    module_cls: type[DocObject]
-    class_cls: type[DocObject]
-    function_cls: type[DocObject]
-    loader: LoaderProto
-    griffe_error: type[Exception]
-    loading_error: type[Exception]
-
-
 @dataclass(frozen=True)
 class DocstringContext:
     """Shared ingestion context for building docstring rows."""
 
     cfg: DocstringConfig
     created_at: datetime
-    handles: GriffeHandles
 
 
 class ParsedDocstring(TypedDict):
@@ -90,6 +44,98 @@ class ParsedDocstring(TypedDict):
     returns: object
     raises: object
     examples: object
+
+
+type DocstringNode = ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+
+
+class DocstringVisitor(ast.NodeVisitor):
+    """Traverse AST to collect docstrings from modules, classes, and functions."""
+
+    def __init__(self, rel_path: str, module_name: str, ctx: DocstringContext) -> None:
+        self.rel_path = rel_path
+        self.module_name = module_name
+        self.rows: list[DocstringRow] = []
+        self.scope_stack: list[str] = []
+        self.ctx = ctx
+
+    def visit_Module(self, node: ast.Module) -> None:
+        """Record a module-level docstring before traversing children."""
+        self._record_docstring(node, "module")
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Record a class docstring while tracking nested scope."""
+        self._record_docstring(node, "class")
+        self.scope_stack.append(node.name)
+        self.generic_visit(node)
+        self.scope_stack.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Record a function docstring and traverse its body."""
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        """Record an async function docstring and traverse its body."""
+        self._visit_function(node)
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        kind = "method" if self.scope_stack else "function"
+        self._record_docstring(node, kind)
+        self.scope_stack.append(node.name)
+        self.generic_visit(node)
+        self.scope_stack.pop()
+
+    def _record_docstring(self, node: DocstringNode, kind: str) -> None:
+        raw_doc = ast.get_docstring(node, clean=False)
+        if not raw_doc:
+            return
+
+        # Build qualname
+        if kind == "module":
+            qualname = self.module_name
+        else:
+            # node has .name attribute for class/func
+            name = getattr(node, "name", "<unknown>")
+            if self.scope_stack:
+                # For items inside scope_stack (which includes current node name for recursive visits,
+                # but we are visiting *this* node now, so its name is NOT in stack yet for `visit_ClassDef` logic above...
+                # Wait, visit methods append BEFORE generic_visit.
+                # But we record docstring BEFORE append.
+                # So stack contains parents.
+                qualname = f"{self.module_name}." + ".".join([*self.scope_stack, name])
+            else:
+                qualname = f"{self.module_name}.{name}"
+
+        # Line numbers
+        # getattr used because Module might not have lineno in some py versions or edge cases,
+        # though standard AST usually does for these types.
+        lineno = getattr(node, "lineno", None)
+        end_lineno = getattr(node, "end_lineno", None)
+
+        parsed = _parse_docstring(raw_doc)
+
+        self.rows.append(
+            DocstringRow(
+                repo=self.ctx.cfg.repo,
+                commit=self.ctx.cfg.commit,
+                rel_path=self.rel_path,
+                module=self.module_name,
+                qualname=qualname,
+                kind=kind,
+                lineno=lineno,
+                end_lineno=end_lineno,
+                raw_docstring=raw_doc,
+                style=parsed["style"],
+                short_desc=parsed["short_desc"],
+                long_desc=parsed["long_desc"],
+                params=parsed["params"],
+                returns=parsed["returns"],
+                raises=parsed["raises"],
+                examples=parsed["examples"],
+                created_at=self.ctx.created_at,
+            )
+        )
 
 
 def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> None:
@@ -108,12 +154,8 @@ def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> N
     if should_skip_empty(module_map, logger=log):
         return
 
-    handles = _load_griffe(repo_root)
-    if handles is None:
-        return
-
     rows: list[DocstringRow] = []
-    ctx = DocstringContext(cfg=cfg, created_at=datetime.now(UTC), handles=handles)
+    ctx = DocstringContext(cfg=cfg, created_at=datetime.now(UTC))
 
     for record in iter_modules(
         module_map,
@@ -122,30 +164,20 @@ def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> N
         log_every=PROGRESS_LOG_EVERY,
         log_interval=PROGRESS_LOG_INTERVAL,
     ):
-        file_path = record.file_path
-        if not file_path.is_file():
-            log.warning("Docstring ingest skipped missing file: %s", file_path)
+        source = read_module_source(record, logger=log)
+        if source is None:
             continue
 
         try:
-            module_obj = handles.loader.load_file(str(file_path))
-        except (FileNotFoundError, OSError, handles.loading_error, handles.griffe_error) as exc:
-            log.warning("Failed to load %s with griffe: %s", file_path, exc)
+            tree = ast.parse(source, filename=str(record.file_path))
+        except SyntaxError:
+            log.warning("Failed to parse AST for docstrings: %s", record.file_path)
             continue
-        for obj in _iter_doc_objects(
-            module_obj,
-            handles.module_cls,
-            handles.class_cls,
-            handles.function_cls,
-        ):
-            doc_row = _build_record(
-                obj=obj,
-                rel_path=record.rel_path,
-                module_name=record.module_name,
-                ctx=ctx,
-            )
-            if doc_row is not None:
-                rows.append(doc_row)
+        visitor = DocstringVisitor(
+            rel_path=record.rel_path, module_name=record.module_name, ctx=ctx
+        )
+        visitor.visit(tree)
+        rows.extend(visitor.rows)
 
     run_batch(
         con,
@@ -155,110 +187,6 @@ def ingest_docstrings(con: duckdb.DuckDBPyConnection, cfg: DocstringConfig) -> N
         scope=f"{cfg.repo}@{cfg.commit}",
     )
     log.info("Docstrings ingested: %d rows for %s@%s", len(rows), cfg.repo, cfg.commit)
-
-
-def _load_griffe(repo_root: Path) -> GriffeHandles | None:
-    """
-    Attempt to import griffe and return callable handles.
-
-    Returns
-    -------
-    GriffeHandles | None
-        Loaded classes and loader instance, or None if griffe is missing.
-    """
-    try:
-        griffe_module = importlib.import_module("griffe")
-        griffe_dataclasses = importlib.import_module("griffe.dataclasses")
-        griffe_loader = importlib.import_module("griffe.loader")
-    except ImportError:
-        log.warning("griffe dependency is missing; skipping docstring ingestion.")
-        return None
-
-    module_cls = cast("type[DocObject]", griffe_dataclasses.Module)
-    class_cls = cast("type[DocObject]", griffe_dataclasses.Class)
-    function_cls = cast("type[DocObject]", griffe_dataclasses.Function)
-    loader = cast("LoaderProto", griffe_loader.GriffeLoader(search_paths=[str(repo_root)]))
-    griffe_error = cast("type[Exception]", griffe_module.GriffeError)
-    loading_error = cast("type[Exception]", griffe_module.LoadingError)
-    return GriffeHandles(
-        module_cls=module_cls,
-        class_cls=class_cls,
-        function_cls=function_cls,
-        loader=loader,
-        griffe_error=griffe_error,
-        loading_error=loading_error,
-    )
-
-
-def _iter_doc_objects(
-    obj: DocObject,
-    module_cls: type[DocObject],
-    class_cls: type[DocObject],
-    function_cls: type[DocObject],
-) -> Iterator[DocObject]:
-    yield obj
-    members = getattr(obj, "members", {})
-    for member in members.values():
-        if isinstance(member, (module_cls, class_cls, function_cls)):
-            yield from _iter_doc_objects(member, module_cls, class_cls, function_cls)
-
-
-def _build_record(
-    obj: DocObject,
-    *,
-    rel_path: str,
-    module_name: str,
-    ctx: DocstringContext,
-) -> DocstringRow | None:
-    kind = _object_kind(obj, ctx.handles)
-    qualname = _qualname(obj, module_name, ctx.handles.module_cls)
-    location = getattr(obj, "location", None)
-    lineno = getattr(location, "lineno", None) if location else None
-    end_lineno = getattr(location, "endlineno", None) if location else None
-
-    raw = obj.docstring.value if obj.docstring is not None else None
-    parsed = _parse_docstring(raw)
-
-    return DocstringRow(
-        repo=ctx.cfg.repo,
-        commit=ctx.cfg.commit,
-        rel_path=rel_path,
-        module=module_name,
-        qualname=qualname,
-        kind=kind,
-        lineno=lineno,
-        end_lineno=end_lineno,
-        raw_docstring=raw,
-        style=parsed["style"],
-        short_desc=parsed["short_desc"],
-        long_desc=parsed["long_desc"],
-        params=parsed["params"],
-        returns=parsed["returns"],
-        raises=parsed["raises"],
-        examples=parsed["examples"],
-        created_at=ctx.created_at,
-    )
-
-
-def _object_kind(obj: DocObject, handles: GriffeHandles) -> str:
-    if isinstance(obj, handles.module_cls):
-        return "module"
-    if isinstance(obj, handles.class_cls):
-        return "class"
-    if isinstance(obj, handles.function_cls):
-        return (
-            "method" if isinstance(getattr(obj, "parent", None), handles.class_cls) else "function"
-        )
-    return "unknown"
-
-
-def _qualname(obj: DocObject, module_name: str, module_cls: type[DocObject]) -> str:
-    path = getattr(obj, "path", None)
-    if path:
-        return str(path)
-    if isinstance(obj, module_cls):
-        return module_name
-    return f"{module_name}.{getattr(obj, 'name', '<unknown>')}"
 
 
 def _parse_docstring(raw: str | None) -> ParsedDocstring:

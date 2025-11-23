@@ -321,7 +321,7 @@ class CFGStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Create minimal CFG/DFG scaffolding."""
         _log_step(self.name)
-        cfg = CFGBuilderConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
+        cfg = CFGBuilderConfig.from_paths(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
         build_cfg_and_dfg(con, cfg)
 
 

@@ -12,6 +12,7 @@ import logging
 import duckdb
 
 from codeintel.config.models import CoverageAnalyticsConfig
+from codeintel.config.schemas.sql_builder import ensure_schema
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +99,9 @@ def compute_coverage_functions(
         cfg.repo,
         cfg.commit,
     )
+
+    ensure_schema(con, "analytics.coverage_lines")
+    ensure_schema(con, "analytics.coverage_functions")
 
     # Clear any previous rows for this repo/commit.
     con.execute(

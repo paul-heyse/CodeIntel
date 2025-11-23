@@ -10,7 +10,8 @@ repo_slug=${2:-"paul-heyse/CodeIntel"}
 commit_sha=${3:-""}
 db_path=${4:-"$repo_root/build/db/codeintel_prefect.duckdb"}
 build_dir=${5:-"$repo_root/build"}
-skip_scip=${6:-true}
+skip_scip=${6:-false}
+document_output_dir=${7:-"$repo_root/document_output"}
 
 if [[ -z "$commit_sha" ]]; then
   if git -C "$repo_root" rev-parse --verify HEAD >/dev/null 2>&1; then
@@ -23,8 +24,9 @@ fi
 db_path=$(realpath -m "$db_path")
 build_dir=$(realpath -m "$build_dir")
 repo_root=$(realpath -m "$repo_root")
+document_output_dir=$(realpath -m "$document_output_dir")
 
-mkdir -p "$build_dir" "$(dirname "$db_path")" "$repo_root/document_output"
+mkdir -p "$build_dir" "$(dirname "$db_path")" "$document_output_dir"
 
 export GEN_DOCS_REPO_ROOT="$repo_root"
 export GEN_DOCS_REPO="$repo_slug"
@@ -32,6 +34,7 @@ export GEN_DOCS_COMMIT="$commit_sha"
 export GEN_DOCS_DB_PATH="$db_path"
 export GEN_DOCS_BUILD_DIR="$build_dir"
 export GEN_DOCS_SKIP_SCIP="$skip_scip"
+export CODEINTEL_OUTPUT_DIR="$document_output_dir"
 export CODEINTEL_SKIP_SCIP="$skip_scip"
 
 echo "Running export_docs_flow directly (no external Prefect services needed)..."
@@ -46,7 +49,7 @@ repo = os.environ["GEN_DOCS_REPO"]
 commit = os.environ["GEN_DOCS_COMMIT"]
 db_path = Path(os.environ["GEN_DOCS_DB_PATH"])
 build_dir = Path(os.environ["GEN_DOCS_BUILD_DIR"])
-skip_scip = os.environ["GEN_DOCS_SKIP_SCIP"].lower() == "true"
+skip_scip = os.environ["GEN_DOCS_SKIP_SCIP"].lower() == "false"
 
 export_docs_flow(
     repo_root=repo_root,
