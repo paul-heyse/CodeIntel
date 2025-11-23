@@ -15,6 +15,7 @@ from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
 from codeintel.config.models import TestCoverageConfig
+from codeintel.config.schemas.sql_builder import TEST_CATALOG_UPDATE_GOIDS, ensure_schema
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import TestCoverageEdgeRow, test_coverage_edge_to_tuple
 from codeintel.utils.paths import normalize_rel_path
@@ -152,13 +153,9 @@ def _backfill_test_goids(
             updates.append((goid, urn, test_id, rel_path))
 
     if updates:
+        ensure_schema(con, "analytics.test_catalog")
         con.executemany(
-            """
-            UPDATE analytics.test_catalog
-            SET test_goid_h128 = ?, urn = ?
-            WHERE test_id = ? AND rel_path = ?
-              AND repo = ? AND commit = ?
-            """,
+            TEST_CATALOG_UPDATE_GOIDS,
             [(g, u, tid, rel, cfg.repo, cfg.commit) for g, u, tid, rel in updates],
         )
 

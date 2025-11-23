@@ -37,7 +37,7 @@ class TableSchema:
     name: str
     columns: list[Column]
     primary_key: tuple[str, ...] = ()
-    indexes: tuple["Index", ...] = ()
+    indexes: tuple[Index, ...] = ()
     description: str | None = None
 
     @property
@@ -232,6 +232,10 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("context_count", "INTEGER", nullable=False),
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
+        indexes=(
+            Index("idx_analytics_cov_lines_repo_path", ("repo", "commit", "rel_path")),
+            Index("idx_analytics_cov_lines_line", ("line",)),
+        ),
         description="Line-level coverage facts",
     ),
     "analytics.test_catalog": TableSchema(
@@ -254,6 +258,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("created_at", "TIMESTAMP"),
         ],
         primary_key=("test_id",),
+        indexes=(Index("idx_analytics_test_catalog_id", ("test_id",), unique=True),),
         description="Pytest test catalog",
     ),
     "analytics.config_values": TableSchema(

@@ -76,7 +76,9 @@ class AstVisitor(ast.NodeVisitor):
         self._depth += 1
         self.metrics.depths.append(self._depth)
 
-        if isinstance(node, (ast.If, ast.For, ast.While, ast.Try, ast.With, ast.AsyncWith, ast.AsyncFor)):
+        if isinstance(
+            node, (ast.If, ast.For, ast.While, ast.Try, ast.With, ast.AsyncWith, ast.AsyncFor)
+        ):
             self.metrics.complexity += 1
         if isinstance(node, ast.FunctionDef):
             self._record_function(node, is_async=False)
@@ -89,7 +91,10 @@ class AstVisitor(ast.NodeVisitor):
 
         super().generic_visit(node)
         self._depth -= 1
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and self._scope_stack:
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and self._scope_stack
+        ):
             self._scope_stack.pop()
 
     def _current_qualname(self) -> str:
@@ -140,7 +145,9 @@ class AstVisitor(ast.NodeVisitor):
             ),
         )
 
-    def _record_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef, *, is_async: bool) -> None:
+    def _record_function(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, *, is_async: bool
+    ) -> None:
         """Record function or async function definitions and push scope."""
         name = node.name
         parent_qual = self._current_qualname()

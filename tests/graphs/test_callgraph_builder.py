@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import duckdb
 
@@ -18,22 +20,7 @@ def _write_file(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf8")
 
 
-def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
-    """
-    Calls through import aliases and methods on imported classes are resolved.
-
-    The fixture includes:
-    - alias import: from .a import foo as f
-    - module alias: import pkg.a as pa
-    - method call via imported class C.helper
-    - an unresolved call to ensure unresolved edges are emitted
-
-    Raises
-    ------
-    AssertionError
-        If expected call graph edges are missing or mis-resolved.
-    """
-    repo_root = tmp_path / "repo"
+def _build_repo_fixture(repo_root: Path) -> None:
     pkg_dir = repo_root / "pkg"
     _write_file(pkg_dir / "__init__.py", "")
     _write_file(
@@ -66,14 +53,9 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
         ),
     )
 
-    repo = "demo/repo"
-    commit = "deadbeef"
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
 
-    # Seed GOIDs for functions referenced in the fixture.
+def _seed_goids(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> None:
     goids = [
-        # goid, urn, repo, commit, rel_path, language, kind, qualname, start, end, created_at
         (
             100,
             "urn:pkg.a.foo",
@@ -123,6 +105,76 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
         goids,
     )
 
+
+def _normalize_callee(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    return cast("int", value)
+
+
+def _edge_to(edge_records: list[dict], callee: int | None) -> list[dict]:
+    results: list[dict] = []
+    for edge in edge_records:
+        callee_val = _normalize_callee(edge["callee_goid_h128"])
+        if callee_val == callee:
+            results.append(edge)
+    return results
+
+
+def _assert_resolved_edge(
+    edge_records: list[dict],
+    callee: int,
+    allowed_resolutions: set[str],
+    missing_message: str,
+    resolution_message: str,
+) -> None:
+    edges = _edge_to(edge_records, callee)
+    if not edges:
+        message = missing_message
+        raise AssertionError(message)
+    if not any(edge["resolved_via"] in allowed_resolutions for edge in edges):
+        message = resolution_message
+        raise AssertionError(message)
+
+
+def _assert_unresolved_edge(edge_records: list[dict]) -> None:
+    edges = _edge_to(edge_records, None)
+    if not edges:
+        message = "expected unresolved edge for unknown call"
+        raise AssertionError(message)
+    if not all(edge["kind"] == "unresolved" for edge in edges):
+        message = "expected unresolved edges to have kind 'unresolved'"
+        raise AssertionError(message)
+
+
+def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
+    """
+    Calls through import aliases and methods on imported classes are resolved.
+
+    The fixture includes:
+    - alias import: from .a import foo as f
+    - module alias: import pkg.a as pa
+    - method call via imported class C.helper
+    - an unresolved call to ensure unresolved edges are emitted
+
+    Raises
+    ------
+    AssertionError
+        If expected call graph edges are missing or mis-resolved.
+    """
+    repo_root = tmp_path / "repo"
+    _build_repo_fixture(repo_root)
+
+    repo = "demo/repo"
+    commit = "deadbeef"
+    con = duckdb.connect(":memory:")
+    apply_all_schemas(con)
+
+    # Seed GOIDs for functions referenced in the fixture.
+    _seed_goids(con, repo, commit)
+
     cfg = CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_call_graph(con, cfg)
 
@@ -136,36 +188,20 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
 
     edge_records = df_edges.to_dict("records")
 
-    def _edge_to(callee: int | None) -> list[dict]:
-        results: list[dict] = []
-        for edge in edge_records:
-            callee_val = edge["callee_goid_h128"]
-            if callee_val != callee_val:  # NaN check
-                callee_val = None
-            if callee_val == callee:
-                results.append(edge)
-        return results
+    _assert_resolved_edge(
+        edge_records=edge_records,
+        callee=100,
+        allowed_resolutions={"local_name", "local_attr", "global_name", "global_attr"},
+        missing_message="expected edge to foo via alias",
+        resolution_message="expected foo edge to be resolved via name or attr",
+    )
 
-    alias_edges = _edge_to(100)
-    if not alias_edges:
-        message = "expected edge to foo via alias"
-        raise AssertionError(message)
-    if not any(e["resolved_via"] in {"local_name", "local_attr", "global_name", "global_attr"} for e in alias_edges):
-        message = "expected foo edge to be resolved via name or attr"
-        raise AssertionError(message)
+    _assert_resolved_edge(
+        edge_records=edge_records,
+        callee=200,
+        allowed_resolutions={"global_name", "local_attr", "import_alias"},
+        missing_message="expected edge to C.helper via attribute call",
+        resolution_message="expected helper edge to use global or alias resolution",
+    )
 
-    helper_edges = _edge_to(200)
-    if not helper_edges:
-        message = "expected edge to C.helper via attribute call"
-        raise AssertionError(message)
-    if not any(e["resolved_via"] in {"global_name", "local_attr", "import_alias"} for e in helper_edges):
-        message = "expected helper edge to use global or alias resolution"
-        raise AssertionError(message)
-
-    unresolved = _edge_to(None)
-    if not unresolved:
-        message = "expected unresolved edge for unknown call"
-        raise AssertionError(message)
-    if not all(e["kind"] == "unresolved" for e in unresolved):
-        message = "expected unresolved edges to have kind 'unresolved'"
-        raise AssertionError(message)
+    _assert_unresolved_edge(edge_records)

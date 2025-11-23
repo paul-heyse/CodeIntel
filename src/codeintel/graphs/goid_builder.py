@@ -124,7 +124,9 @@ def _build_urn(descriptor: GoidDescriptor) -> str:
     return f"{base}?s={descriptor.start_line}&e={descriptor.end_line}"
 
 
-def _build_goid_entries(row: pd.Series, cfg: GoidBuilderConfig, now: datetime) -> tuple[GoidRow, GoidCrosswalkRow]:
+def _build_goid_entries(
+    row: pd.Series, cfg: GoidBuilderConfig, now: datetime
+) -> tuple[GoidRow, GoidCrosswalkRow]:
     rel_path = str(row["path"]).replace("\\", "/")
     node_type = str(row["node_type"])
     qualname = str(row["qualname"])

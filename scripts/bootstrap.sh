@@ -14,6 +14,26 @@
 # Exit on first error, unset var, or failed pipe; propagate failures out of subshells.
 set -Eeuo pipefail
 
+# ---------------------------------------------------------------------------
+# Make uv sandbox-friendly: keep everything under the project directory
+# ---------------------------------------------------------------------------
+UV_ROOT="${UV_ROOT:-"$PWD/.uv"}"
+
+export UV_CACHE_DIR="${UV_CACHE_DIR:-"$UV_ROOT/cache"}"
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-"$UV_ROOT/python"}"
+export UV_PYTHON_BIN_DIR="${UV_PYTHON_BIN_DIR:-"$UV_ROOT/python/bin"}"
+export UV_TOOL_DIR="${UV_TOOL_DIR:-"$UV_ROOT/tools"}"
+export UV_TOOL_BIN_DIR="${UV_TOOL_BIN_DIR:-"$UV_ROOT/tools/bin"}"
+export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-"$PWD/.venv"}"
+
+mkdir -p \
+  "$UV_CACHE_DIR" \
+  "$UV_PYTHON_INSTALL_DIR" \
+  "$UV_PYTHON_BIN_DIR" \
+  "$UV_TOOL_DIR" \
+  "$UV_TOOL_BIN_DIR"
+
+
 # ------------- Config (change defaults here if needed) -------------
 PY_VER_DEFAULT="${PY_VER_DEFAULT:-3.13.9}"
 PIN_PYTHON="${PIN_PYTHON:-1}"             # 1=uv python pin <ver>

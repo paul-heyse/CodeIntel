@@ -235,7 +235,9 @@ def should_skip_empty(module_map: dict[str, str], *, logger: logging.Logger | No
     return True
 
 
-def should_skip_missing_file(path: Path, *, logger: logging.Logger | None = None, label: str) -> bool:
+def should_skip_missing_file(
+    path: Path, *, logger: logging.Logger | None = None, label: str
+) -> bool:
     """
     Return True (and log) when a required file is missing.
 

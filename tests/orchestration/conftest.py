@@ -55,11 +55,15 @@ def prefect_quiet_env() -> Iterator[None]:
     The harness starts a temporary API/database and ensures clean shutdown,
     preventing teardown errors or CRASHED states when the process exits.
     """
-    with _quiet_prefect_logging(), temporary_settings(
-        {
-            PREFECT_LOGGING_LEVEL: "CRITICAL",
-            PREFECT_LOGGING_INTERNAL_LEVEL: "CRITICAL",
-            PREFECT_SERVER_LOGGING_LEVEL: "CRITICAL",
-        }
-    ), prefect_test_harness():
+    with (
+        _quiet_prefect_logging(),
+        temporary_settings(
+            {
+                PREFECT_LOGGING_LEVEL: "CRITICAL",
+                PREFECT_LOGGING_INTERNAL_LEVEL: "CRITICAL",
+                PREFECT_SERVER_LOGGING_LEVEL: "CRITICAL",
+            }
+        ),
+        prefect_test_harness(),
+    ):
         yield

@@ -422,7 +422,12 @@ class DuckDBBackend(QueryBackend):
                     code="not_found",
                     severity="info",
                     detail="Function not found",
-                    context={"urn": urn, "goid_h128": goid_h128, "rel_path": rel_path, "qualname": qualname},
+                    context={
+                        "urn": urn,
+                        "goid_h128": goid_h128,
+                        "rel_path": rel_path,
+                        "qualname": qualname,
+                    },
                 )
             )
             return FunctionSummaryResponse(found=False, summary=None, meta=meta)
@@ -591,9 +596,7 @@ class DuckDBBackend(QueryBackend):
             for col in self.con.execute("PRAGMA table_info('docs.v_test_to_function')").fetchall()
         }
         repo_field = (
-            "test_repo"
-            if "test_repo" in columns
-            else ("repo" if "repo" in columns else None)
+            "test_repo" if "test_repo" in columns else ("repo" if "repo" in columns else None)
         )
         commit_field = (
             "test_commit"

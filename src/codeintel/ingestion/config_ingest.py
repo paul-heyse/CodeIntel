@@ -16,6 +16,7 @@ import yaml
 from codeintel.config.models import ConfigIngestConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import ConfigValueRow, config_value_to_tuple
+from codeintel.utils.paths import repo_relpath
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +24,11 @@ CONFIG_EXTENSIONS = {".yaml", ".yml", ".toml", ".json", ".ini", ".cfg", ".env"}
 
 
 def _iter_config_files(repo_root: Path) -> Iterable[Path]:
-    for path in repo_root.rglob("*"):
+    search_root = repo_root / "src"
+    if not search_root.is_dir():
+        search_root = repo_root
+
+    for path in search_root.rglob("*"):
         if not path.is_file():
             continue
         if path.suffix.lower() in CONFIG_EXTENSIONS:
@@ -177,7 +182,7 @@ def ingest_config_values(
 
     rows: list[ConfigValueRow] = []
     for path in _iter_config_files(repo_root):
-        rel_path = path.relative_to(repo_root).as_posix()
+        rel_path = repo_relpath(repo_root, path)
         fmt = _detect_format(path)
         data = _load_config(path, fmt)
         if not data:

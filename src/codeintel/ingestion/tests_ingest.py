@@ -171,7 +171,9 @@ def ingest_tests(
     repo_root = cfg.repo_root
     pytest_report_path = cfg.pytest_report_path or _find_default_report(repo_root)
 
-    if pytest_report_path is None or should_skip_missing_file(pytest_report_path, logger=log, label="pytest JSON report"):
+    if pytest_report_path is None or should_skip_missing_file(
+        pytest_report_path, logger=log, label="pytest JSON report"
+    ):
         return
 
     tests = _load_tests_from_report(pytest_report_path)
