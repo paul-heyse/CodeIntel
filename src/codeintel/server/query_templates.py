@@ -124,4 +124,28 @@ QUERY_TEMPLATES = {
         ORDER BY high_risk_functions DESC, max_risk_score DESC
         LIMIT :limit;
     """,
+    # 11) Fetch a full function profile by GOID.
+    "function_profile_by_goid": """
+        SELECT *
+        FROM docs.v_function_profile
+        WHERE repo = :repo
+          AND commit = :commit
+          AND function_goid_h128 = :function_goid_h128;
+    """,
+    # 12) Fetch a file profile by relative path.
+    "file_profile_by_path": """
+        SELECT *
+        FROM docs.v_file_profile
+        WHERE repo = :repo
+          AND commit = :commit
+          AND rel_path = :rel_path;
+    """,
+    # 13) Fetch a module profile by module name.
+    "module_profile_by_name": """
+        SELECT *
+        FROM docs.v_module_profile
+        WHERE repo = :repo
+          AND commit = :commit
+          AND module = :module;
+    """,
 }

@@ -99,6 +99,30 @@ class FileSummaryResponse(BaseModel):
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
 
+class FunctionProfileResponse(BaseModel):
+    """Profile payload for a single function GOID."""
+
+    found: bool
+    profile: ViewRow | None = None
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class FileProfileResponse(BaseModel):
+    """Profile payload for a file path."""
+
+    found: bool
+    profile: ViewRow | None = None
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class ModuleProfileResponse(BaseModel):
+    """Profile payload for a module."""
+
+    found: bool
+    profile: ViewRow | None = None
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
 class DatasetDescriptor(BaseModel):
     """Metadata describing a browseable dataset."""
 

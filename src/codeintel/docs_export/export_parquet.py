@@ -48,6 +48,13 @@ PARQUET_DATASETS: dict[str, str] = {
     "analytics.graph_validation": "graph_validation.parquet",
     # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.parquet",
+    "analytics.function_profile": "function_profile.parquet",
+    "analytics.file_profile": "file_profile.parquet",
+    "analytics.module_profile": "module_profile.parquet",
+    "analytics.graph_metrics_functions": "graph_metrics_functions.parquet",
+    "analytics.graph_metrics_modules": "graph_metrics_modules.parquet",
+    "analytics.subsystems": "subsystems.parquet",
+    "analytics.subsystem_modules": "subsystem_modules.parquet",
 }
 
 

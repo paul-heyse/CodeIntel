@@ -203,6 +203,7 @@
 {"path":"src\/codeintel\/analytics\/ast_metrics.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/analytics\/coverage_analytics.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/analytics\/functions.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
+{"path":"src\/codeintel\/analytics\/profiles.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/analytics\/tests_analytics.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/cli\/__init__.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/cli\/main.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
@@ -247,6 +248,7 @@
 {"path":"src\/codeintel\/mcp\/config.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/mcp\/errors.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/mcp\/models.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
+{"path":"src\/codeintel\/mcp\/query_service.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/mcp\/registry.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/mcp\/server.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/mcp\/tools.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
@@ -256,6 +258,7 @@
 {"path":"src\/codeintel\/orchestration\/prefect_flow.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/orchestration\/steps.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/server\/__init__.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
+{"path":"src\/codeintel\/server\/datasets.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/server\/fastapi.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/server\/query_templates.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
 {"path":"src\/codeintel\/storage\/__init__.py","type_error_count":0,"annotation_ratio":"{\"params\":1.0,\"returns\":1.0}","untyped_defs":0,"overlay_needed":false}
@@ -270,3 +273,4 @@
 {"path":"tests\/graphs\/test_span_consistency_integration.py","type_error_count":1,"annotation_ratio":"{\"params\":0.0,\"returns\":0.0}","untyped_defs":0,"overlay_needed":true}
 {"path":"tests\/orchestration\/conftest.py","type_error_count":3,"annotation_ratio":"{\"params\":0.0,\"returns\":0.0}","untyped_defs":0,"overlay_needed":true}
 {"path":"tests\/orchestration\/test_pipeline_catalog_entrypoint.py","type_error_count":1,"annotation_ratio":"{\"params\":0.0,\"returns\":0.0}","untyped_defs":0,"overlay_needed":true}
+{"path":"tests\/server\/test_fastapi_endpoints.py","type_error_count":1,"annotation_ratio":"{\"params\":0.0,\"returns\":0.0}","untyped_defs":0,"overlay_needed":true}

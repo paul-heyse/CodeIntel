@@ -624,3 +624,98 @@ These rows complement `typedness.jsonl` and hotspots to prioritize files with st
 | `tags`               | list    | Tags from module metadata. |
 | `owners`             | list    | Owners when available. |
 | `created_at`         | string  | ISO-8601 timestamp of aggregation. |
+
+
+## 25. Function Profile (`function_profile.*`)
+
+**Purpose**: Denormalized per-function record combining metrics, coverage/tests, docstrings, call graph degrees, and risk components.
+
+**Origin**: `ProfilesStep` in `orchestration/steps.py` via `analytics/profiles.build_function_profile`, building on `analytics.goid_risk_factors` and graph/test tables.
+
+**Columns (selected)**
+
+| Column                     | Type    | Description |
+|----------------------------|---------|-------------|
+| `function_goid_h128`       | string  | GOID hash for the function. |
+| `urn`                      | string  | GOID URN. |
+| `rel_path`                 | string  | Repo-relative file path. |
+| `module`                   | string? | Module name from `core.modules`. |
+| `loc` / `logical_loc`      | int?    | Physical/logical LOC. |
+| `cyclomatic_complexity`    | int?    | Cyclomatic complexity. |
+| `param_count`              | int?    | Total parameter count. |
+| `keyword_params`           | int?    | Keyword-only parameter count. |
+| `vararg` / `kwarg`         | bool?   | Presence of \*args / \*\*kwargs. |
+| `total_params`             | int?    | Parameters counted in typedness. |
+| `return_type`              | string? | Parsed return type when available. |
+| `typedness_bucket`         | string? | `typed` / `partial` / `untyped`. |
+| `file_typed_ratio`         | float?  | File-level annotation ratio. |
+| `static_error_count`       | int?    | Static diagnostic count. |
+| `coverage_ratio`           | float?  | Coverage ratio for the function. |
+| `tested`                   | bool?   | True when covered lines > 0. |
+| `tests_touching`           | int     | Distinct tests executing the function. |
+| `failing_tests`            | int     | Distinct failing/erroring tests. |
+| `slow_tests`               | int     | Tests slower than the configured threshold. |
+| `call_fan_in` / `fan_out`  | int     | Distinct callers / callees. |
+| `call_is_leaf`             | bool    | True when fan-out is zero. |
+| `risk_score` / `risk_level`| float/string | Risk score and bucket. |
+| `risk_component_*`         | float   | Coverage/complexity/static/hotspot weights. |
+| `doc_short` / `doc_long`   | string? | Docstring summary and body. |
+| `tags` / `owners`          | list    | Module tags/owners. |
+| `created_at`               | string  | ISO-8601 timestamp of aggregation. |
+
+
+## 26. File Profile (`file_profile.*`)
+
+**Purpose**: Per-file aggregation blending AST metrics, typedness, hotspots, function risk, coverage, and ownership.
+
+**Origin**: `ProfilesStep` via `analytics/profiles.build_file_profile`, aggregating over `analytics.function_profile` and AST/typedness tables.
+
+**Columns (selected)**
+
+| Column                      | Type    | Description |
+|-----------------------------|---------|-------------|
+| `rel_path`                  | string  | Repo-relative path. |
+| `module`                    | string? | Module name. |
+| `node_count` / `function_count` / `class_count` | int? | AST counts. |
+| `ast_complexity`            | float?  | File-level complexity metric. |
+| `hotspot_score`             | float?  | Hotspot score from git churn. |
+| `annotation_ratio`          | float?  | Typedness ratio (`params`). |
+| `type_error_count`          | int?    | Type errors from typedness. |
+| `static_error_count`        | int?    | Static diagnostic count. |
+| `has_static_errors`         | bool?   | True when static errors are present. |
+| `total_functions`           | int     | Functions counted in the file. |
+| `public_functions`          | int     | Functions marked public in call graph nodes. |
+| `avg_loc` / `max_loc`       | float/int | LOC aggregates from functions. |
+| `avg_cyclomatic_complexity` | float?  | Average complexity of functions. |
+| `high_risk_function_count`  | int     | High-risk functions in the file. |
+| `file_coverage_ratio`       | float?  | Covered / executable lines across functions. |
+| `tested_function_count`     | int     | Functions with any coverage. |
+| `tests_touching`            | int     | Sum of tests covering functions. |
+| `tags` / `owners`           | list    | Module tags/owners. |
+| `created_at`                | string  | ISO-8601 timestamp of aggregation. |
+
+
+## 27. Module Profile (`module_profile.*`)
+
+**Purpose**: Module/package-level summary of size, risk, coverage, import graph topology, and ownership.
+
+**Origin**: `ProfilesStep` via `analytics/profiles.build_module_profile`, aggregating `function_profile`, `file_profile`, and `graph.import_graph_edges`.
+
+**Columns (selected)**
+
+| Column                       | Type    | Description |
+|------------------------------|---------|-------------|
+| `module`                     | string  | Module/package name. |
+| `path`                       | string? | Representative path from `core.modules`. |
+| `file_count`                 | int     | Files mapped to the module. |
+| `total_loc` / `total_logical_loc` | int? | Aggregated LOC across functions. |
+| `function_count`             | int     | Total functions in the module. |
+| `class_count`                | int?    | Aggregated classes from file profiles. |
+| `avg_file_complexity`        | float?  | Average file complexity. |
+| `max_file_complexity`        | float?  | Max file complexity. |
+| `high_risk_function_count`   | int     | High-risk functions in the module. |
+| `module_coverage_ratio`      | float?  | Tested / total functions ratio. |
+| `import_fan_in` / `fan_out`  | int     | Import graph fan-in/out. |
+| `cycle_group` / `in_cycle`   | int/bool| Import cycle metadata. |
+| `tags` / `owners`            | list    | Module tags/owners. |
+| `created_at`                 | string  | ISO-8601 timestamp of aggregation. |

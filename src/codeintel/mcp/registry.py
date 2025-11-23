@@ -38,8 +38,8 @@ def _wrap(tool: Callable[..., object]) -> Callable[..., object]:
     return _inner
 
 
-def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
-    """Register all MCP tools on the given FastMCP instance."""
+def _register_function_tools(mcp: FastMCP, backend: QueryBackend) -> None:
+    """Register function-centric MCP tools."""
 
     @mcp.tool()
     @_wrap
@@ -91,10 +91,12 @@ def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
     def get_tests_for_function(
         goid_h128: int | None = None,
         urn: str | None = None,
+        limit: int | None = None,
     ) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: TestsForFunctionResponse = backend.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
+            limit=limit,
         )
         return resp.model_dump()
 
@@ -103,6 +105,32 @@ def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
     def get_file_summary(rel_path: str) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: FileSummaryResponse = backend.get_file_summary(rel_path=rel_path)
         return resp.model_dump()
+
+
+def _register_profile_tools(mcp: FastMCP, backend: QueryBackend) -> None:
+    """Register profile-oriented MCP tools."""
+
+    @mcp.tool()
+    @_wrap
+    def get_function_profile(goid_h128: int) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp = backend.get_function_profile(goid_h128=goid_h128)
+        return resp.model_dump()
+
+    @mcp.tool()
+    @_wrap
+    def get_file_profile(rel_path: str) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp = backend.get_file_profile(rel_path=rel_path)
+        return resp.model_dump()
+
+    @mcp.tool()
+    @_wrap
+    def get_module_profile(module: str) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp = backend.get_module_profile(module=module)
+        return resp.model_dump()
+
+
+def _register_dataset_tools(mcp: FastMCP, backend: QueryBackend) -> None:
+    """Register dataset browsing MCP tools."""
 
     @mcp.tool()
     @_wrap
@@ -122,3 +150,10 @@ def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
             offset=offset,
         )
         return resp.model_dump()
+
+
+def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
+    """Register all MCP tools on the given FastMCP instance."""
+    _register_function_tools(mcp, backend)
+    _register_profile_tools(mcp, backend)
+    _register_dataset_tools(mcp, backend)

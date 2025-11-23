@@ -25,6 +25,8 @@ from codeintel.orchestration.steps import AstStep, GoidsStep, PipelineContext, R
 from codeintel.storage.schemas import apply_all_schemas
 
 TARGET_GOID = 200
+REPO: Final = "demo/repo"
+COMMIT: Final = "deadbeef"
 
 
 class _FakeCoverageData:
@@ -71,9 +73,6 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     caller_start, caller_end = _write_repo(repo_root)
 
-    repo: Final = "demo/repo"
-    commit: Final = "deadbeef"
-
     con = duckdb.connect(str(tmp_path / "db.duckdb"))
     apply_all_schemas(con)
 
@@ -81,8 +80,8 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         con,
         "core.modules",
         [
-            ("pkg.a", "pkg/a.py", repo, commit, "python", "[]", "[]"),
-            ("pkg.b", "pkg/b.py", repo, commit, "python", "[]", "[]"),
+            ("pkg.a", "pkg/a.py", REPO, COMMIT, "python", "[]", "[]"),
+            ("pkg.b", "pkg/b.py", REPO, COMMIT, "python", "[]", "[]"),
         ],
         delete_params=None,
     )
@@ -93,24 +92,24 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
         VALUES ('tests/test_sample.py::test_caller', 'pkg/b.py', 'pkg.b.caller', ?, ?, 'passed', ?)
         """,
-        [repo, commit, now],
+        [REPO, COMMIT, now],
     )
 
     ctx = PipelineContext(
         repo_root=repo_root,
         db_path=tmp_path / "db.duckdb",
         build_dir=tmp_path / "build",
-        repo=repo,
-        commit=commit,
+        repo=REPO,
+        commit=COMMIT,
     )
 
     RepoScanStep().run(ctx, con)
     AstStep().run(ctx, con)
     GoidsStep().run(ctx, con)
 
-    build_call_graph(con, CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root))
+    build_call_graph(con, CallGraphConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root))
     build_cfg_and_dfg(
-        con, CFGBuilderConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+        con, CFGBuilderConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root)
     )
 
     scip_json = ctx.build_dir / "scip" / "index.scip.json"
@@ -138,8 +137,8 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         con,
         SymbolUsesConfig.from_paths(
             repo_root=repo_root,
-            repo=repo,
-            commit=commit,
+            repo=REPO,
+            commit=COMMIT,
             scip_json_path=scip_json,
         ),
     )
@@ -153,8 +152,8 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     compute_test_coverage_edges(
         con,
         TestCoverageConfig.from_paths(
-            repo=repo,
-            commit=commit,
+            repo=REPO,
+            commit=COMMIT,
             repo_root=repo_root,
             coverage_file=None,
         ),
@@ -166,7 +165,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
             return
         raise AssertionError(detail)
 
-    catalog = load_function_catalog(con, repo=repo, commit=commit)
+    catalog = load_function_catalog(con, repo=REPO, commit=COMMIT)
     callee_goid = catalog.lookup_goid("pkg/a.py", 1, 2, "pkg.a.callee")
     caller_goid = catalog.lookup_goid("pkg/b.py", caller_start, caller_end, "pkg.b.caller")
     _assert(callee_goid is not None, detail="Catalog missing callee GOID")

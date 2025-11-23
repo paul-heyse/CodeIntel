@@ -52,6 +52,13 @@ JSONL_DATASETS: dict[str, str] = {
     "analytics.graph_validation": "graph_validation.jsonl",
     # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.jsonl",
+    "analytics.function_profile": "function_profile.jsonl",
+    "analytics.file_profile": "file_profile.jsonl",
+    "analytics.module_profile": "module_profile.jsonl",
+    "analytics.graph_metrics_functions": "graph_metrics_functions.jsonl",
+    "analytics.graph_metrics_modules": "graph_metrics_modules.jsonl",
+    "analytics.subsystems": "subsystems.jsonl",
+    "analytics.subsystem_modules": "subsystem_modules.jsonl",
 }
 
 
