@@ -6,13 +6,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+import anyio
 import duckdb
 import httpx
 import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
-from codeintel.mcp.backend import DuckDBBackend
+from codeintel.mcp.backend import BackendLimits, DuckDBBackend, HttpBackend
 from codeintel.mcp.config import McpServerConfig
 from codeintel.server.fastapi import ApiAppConfig, BackendResource, create_app
 from codeintel.storage.views import create_all_views
@@ -226,6 +227,157 @@ def _seed_db(db_path: Path, *, repo: str, commit: str) -> duckdb.DuckDBPyConnect
         );
         """
     )
+    con.execute(
+        """
+        CREATE TABLE analytics.function_profile(
+            function_goid_h128 DECIMAL(38,0),
+            urn TEXT,
+            repo TEXT,
+            commit TEXT,
+            rel_path TEXT,
+            module TEXT,
+            language TEXT,
+            kind TEXT,
+            qualname TEXT,
+            start_line INTEGER,
+            end_line INTEGER,
+            loc INTEGER,
+            logical_loc INTEGER,
+            cyclomatic_complexity INTEGER,
+            complexity_bucket TEXT,
+            param_count INTEGER,
+            positional_params INTEGER,
+            keyword_params INTEGER,
+            vararg BOOLEAN,
+            kwarg BOOLEAN,
+            max_nesting_depth INTEGER,
+            stmt_count INTEGER,
+            decorator_count INTEGER,
+            has_docstring BOOLEAN,
+            total_params INTEGER,
+            annotated_params INTEGER,
+            return_type TEXT,
+            param_types JSON,
+            fully_typed BOOLEAN,
+            partial_typed BOOLEAN,
+            untyped BOOLEAN,
+            typedness_bucket TEXT,
+            typedness_source TEXT,
+            file_typed_ratio DOUBLE,
+            static_error_count INTEGER,
+            has_static_errors BOOLEAN,
+            executable_lines INTEGER,
+            covered_lines INTEGER,
+            coverage_ratio DOUBLE,
+            tested BOOLEAN,
+            untested_reason TEXT,
+            tests_touching INTEGER,
+            failing_tests INTEGER,
+            slow_tests INTEGER,
+            flaky_tests INTEGER,
+            last_test_status TEXT,
+            dominant_test_status TEXT,
+            slow_test_threshold_ms DOUBLE,
+            call_fan_in INTEGER,
+            call_fan_out INTEGER,
+            call_edge_in_count INTEGER,
+            call_edge_out_count INTEGER,
+            call_is_leaf BOOLEAN,
+            call_is_entrypoint BOOLEAN,
+            call_is_public BOOLEAN,
+            risk_score DOUBLE,
+            risk_level TEXT,
+            risk_component_coverage DOUBLE,
+            risk_component_complexity DOUBLE,
+            risk_component_static DOUBLE,
+            risk_component_hotspot DOUBLE,
+            tags JSON,
+            owners JSON,
+            doc_short TEXT,
+            doc_long TEXT,
+            doc_params JSON,
+            doc_returns JSON,
+            created_at TIMESTAMP
+        );
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE analytics.file_profile(
+            repo TEXT,
+            commit TEXT,
+            rel_path TEXT,
+            module TEXT,
+            language TEXT,
+            node_count INTEGER,
+            function_count INTEGER,
+            class_count INTEGER,
+            avg_depth DOUBLE,
+            max_depth INTEGER,
+            ast_complexity DOUBLE,
+            hotspot_score DOUBLE,
+            commit_count INTEGER,
+            author_count INTEGER,
+            lines_added INTEGER,
+            lines_deleted INTEGER,
+            annotation_ratio DOUBLE,
+            untyped_defs INTEGER,
+            overlay_needed BOOLEAN,
+            type_error_count INTEGER,
+            static_error_count INTEGER,
+            has_static_errors BOOLEAN,
+            total_functions INTEGER,
+            public_functions INTEGER,
+            avg_loc DOUBLE,
+            max_loc INTEGER,
+            avg_cyclomatic_complexity DOUBLE,
+            max_cyclomatic_complexity INTEGER,
+            high_risk_function_count INTEGER,
+            medium_risk_function_count INTEGER,
+            max_risk_score DOUBLE,
+            file_coverage_ratio DOUBLE,
+            tested_function_count INTEGER,
+            untested_function_count INTEGER,
+            tests_touching INTEGER,
+            tags JSON,
+            owners JSON,
+            created_at TIMESTAMP
+        );
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE analytics.module_profile(
+            repo TEXT,
+            commit TEXT,
+            module TEXT,
+            path TEXT,
+            language TEXT,
+            file_count INTEGER,
+            total_loc INTEGER,
+            total_logical_loc INTEGER,
+            function_count INTEGER,
+            class_count INTEGER,
+            avg_file_complexity DOUBLE,
+            max_file_complexity DOUBLE,
+            high_risk_function_count INTEGER,
+            medium_risk_function_count INTEGER,
+            low_risk_function_count INTEGER,
+            max_risk_score DOUBLE,
+            avg_risk_score DOUBLE,
+            module_coverage_ratio DOUBLE,
+            tested_function_count INTEGER,
+            untested_function_count INTEGER,
+            import_fan_in INTEGER,
+            import_fan_out INTEGER,
+            cycle_group INTEGER,
+            in_cycle BOOLEAN,
+            tags JSON,
+            owners JSON,
+            created_at TIMESTAMP
+        );
+        """
+    )
 
     now = datetime.now(UTC)
     con.execute(
@@ -311,6 +463,51 @@ def _seed_db(db_path: Path, *, repo: str, commit: str) -> duckdb.DuckDBPyConnect
         INSERT INTO analytics.static_diagnostics VALUES ('pkg/mod.py', 0, FALSE)
         """
     )
+    con.execute(
+        """
+        INSERT INTO analytics.function_profile VALUES
+        (
+            ?, ?, ?, ?, ?, ?, 'python', 'function', ?, 1, 2, 2, 2, 1,
+            'low', 2, 2, 0, FALSE, FALSE, 1, 2, 0, FALSE, 2, 2, 'int',
+            '[]', TRUE, FALSE, FALSE, 'full', 'annotations', 1.0, 0, FALSE,
+            2, 2, 1.0, TRUE, NULL, 1, 0, 0, 0, 'passed', 'passed',
+            1000.0, 0, 0, 0, 0, TRUE, TRUE, TRUE, 0.2, 'low', 0.0, 0.0,
+            0.0, 0.0, '[]', '[]', 'Short doc', 'Long doc', '[]', '[]', ?
+        )
+        """,
+        [
+            1,
+            "goid:demo/repo#python:function:pkg.mod.func",
+            repo,
+            commit,
+            "pkg/mod.py",
+            "pkg.mod",
+            "pkg.mod.func",
+            now,
+        ],
+    )
+    con.execute(
+        """
+        INSERT INTO analytics.file_profile VALUES
+        (
+            ?, ?, 'pkg/mod.py', 'pkg.mod', 'python', 1, 1, 0, 1.0, 1,
+            0.1, 0.1, 1, 1, 1, 1, 1.0, 0, FALSE, 0, 0, FALSE, 1, 1, 2.0,
+            2, 1.0, 1, 0, 1, 1.0, 1, 0, 1, 1, '[]', '[]', ?
+        )
+        """,
+        [repo, commit, now],
+    )
+    con.execute(
+        """
+        INSERT INTO analytics.module_profile VALUES
+        (
+            ?, ?, 'pkg.mod', 'pkg/mod.py', 'python', 1, 2, 2, 1, 0,
+            0.1, 0.1, 0, 1, 0, 0.2, 0.2, 1.0, 1, 0, 0, 0, 0, FALSE, '[]',
+            '[]', ?
+        )
+        """,
+        [repo, commit, now],
+    )
 
     create_all_views(con)
     return con
@@ -333,7 +530,7 @@ def _build_app(con: duckdb.DuckDBPyConnection, db_path: Path, *, repo: str, comm
         return cfg
 
     def _backend_factory(_: ApiAppConfig) -> BackendResource:
-        backend = DuckDBBackend(con=con, repo=repo, commit=commit, dataset_tables={})
+        backend = DuckDBBackend(con=con, repo=repo, commit=commit)
         return BackendResource(backend=backend, close=lambda: None)
 
     return create_app(config_loader=_loader, backend_factory=_backend_factory)
@@ -411,6 +608,53 @@ def _assert_dataset_endpoints(client: TestClient) -> None:
         pytest.fail("Expected dataset rows for function_metrics")
     if rows[0]["qualname"] != "pkg.mod.func":
         pytest.fail("Unexpected qualname in dataset rows")
+
+
+def test_http_backend_against_fastapi(tmp_path: Path) -> None:
+    """HttpBackend exercises FastAPI app via ASGI transport."""
+    repo = "demo/repo"
+    commit = "deadbeef"
+    db_path = tmp_path / "codeintel.duckdb"
+    con = _seed_db(db_path, repo=repo, commit=commit)
+    app = _build_app(con, db_path, repo=repo, commit=commit)
+    with TestClient(app):
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        )
+        backend = HttpBackend(
+            base_url="http://testserver",
+            repo=repo,
+            commit=commit,
+            timeout=1.0,
+            limits=BackendLimits(default_limit=5, max_rows_per_call=10),
+            client=client,
+        )
+
+        summary = backend.get_function_summary(
+            urn="goid:demo/repo#python:function:pkg.mod.func",
+        )
+        if not summary.found or summary.summary is None:
+            pytest.fail("Expected function summary via HttpBackend")
+        if summary.summary["qualname"] != "pkg.mod.func":
+            pytest.fail("Unexpected qualname from HttpBackend summary")
+
+        neighbors = backend.get_callgraph_neighbors(goid_h128=1, direction="both", limit=5)
+        if not neighbors.outgoing:
+            pytest.fail("Expected outgoing neighbors via HttpBackend")
+
+        tests_payload = backend.get_tests_for_function(goid_h128=1, limit=5)
+        if not tests_payload.tests:
+            pytest.fail("Expected tests via HttpBackend")
+
+        datasets = backend.list_datasets()
+        if not any(ds.name == "function_metrics" for ds in datasets):
+            pytest.fail("Expected function_metrics dataset in HttpBackend list")
+
+        rows = backend.read_dataset_rows(dataset_name="function_metrics", limit=5)
+        if not rows.rows:
+            pytest.fail("Expected dataset rows via HttpBackend")
+        anyio.run(client.aclose)
 
 
 def _json_or_fail(resp: httpx.Response) -> dict[str, object] | list[object]:

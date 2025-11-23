@@ -17,6 +17,8 @@ from prefect import flow, get_run_logger, task
 from codeintel.analytics.ast_metrics import build_hotspots
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
 from codeintel.analytics.functions import compute_function_metrics_and_types
+from codeintel.analytics.graph_metrics import compute_graph_metrics
+from codeintel.analytics.subsystems import build_subsystems
 from codeintel.analytics.tests_analytics import compute_test_coverage_edges
 from codeintel.config.models import (
     CallGraphConfig,
@@ -24,8 +26,10 @@ from codeintel.config.models import (
     CoverageAnalyticsConfig,
     FunctionAnalyticsConfig,
     GoidBuilderConfig,
+    GraphMetricsConfig,
     HotspotsConfig,
     ImportGraphConfig,
+    SubsystemsConfig,
     SymbolUsesConfig,
     TestCoverageConfig,
     ToolsConfig,
@@ -53,7 +57,12 @@ from codeintel.ingestion.runner import (
 )
 from codeintel.ingestion.source_scanner import IGNORES, ScanConfig
 from codeintel.ingestion.tool_runner import ToolRunner
-from codeintel.orchestration.steps import PIPELINE_STEPS, PipelineContext, RiskFactorsStep
+from codeintel.orchestration.steps import (
+    PIPELINE_STEPS,
+    PipelineContext,
+    ProfilesStep,
+    RiskFactorsStep,
+)
 from codeintel.storage.views import create_all_views
 
 
@@ -381,11 +390,45 @@ def t_test_coverage_edges(repo_root: Path, repo: str, commit: str, db_path: Path
     con.close()
 
 
+@task(name="graph_metrics", retries=1, retry_delay_seconds=2)
+def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
+    """Compute graph metrics for functions and modules."""
+    con = _connect(db_path)
+    cfg = GraphMetricsConfig.from_paths(repo=repo, commit=commit)
+    compute_graph_metrics(con, cfg)
+    con.close()
+
+
 @task(name="risk_factors", retries=1, retry_delay_seconds=2)
 def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir: Path) -> None:
     """Populate analytics.goid_risk_factors from analytics tables."""
     con = _connect(db_path)
     step = RiskFactorsStep()
+    ctx = PipelineContext(
+        repo_root=repo_root,
+        db_path=db_path,
+        build_dir=build_dir,
+        repo=repo,
+        commit=commit,
+    )
+    step.run(ctx, con)
+    con.close()
+
+
+@task(name="subsystems", retries=1, retry_delay_seconds=2)
+def t_subsystems(repo: str, commit: str, db_path: Path) -> None:
+    """Infer subsystem clusters and membership."""
+    con = _connect(db_path)
+    cfg = SubsystemsConfig.from_paths(repo=repo, commit=commit)
+    build_subsystems(con, cfg)
+    con.close()
+
+
+@task(name="profiles", retries=1, retry_delay_seconds=2)
+def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir: Path) -> None:
+    """Build function, file, and module profiles."""
+    con = _connect(db_path)
+    step = ProfilesStep()
     ctx = PipelineContext(
         repo_root=repo_root,
         db_path=db_path,
@@ -628,10 +671,45 @@ def export_docs_flow(
             ),
         ),
         (
+            "graph_metrics",
+            lambda: _run_task(
+                "graph_metrics",
+                t_graph_metrics,
+                run_logger,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+            ),
+        ),
+        (
             "risk_factors",
             lambda: _run_task(
                 "risk_factors",
                 t_risk_factors,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                ctx.build_dir,
+            ),
+        ),
+        (
+            "subsystems",
+            lambda: _run_task(
+                "subsystems",
+                t_subsystems,
+                run_logger,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+            ),
+        ),
+        (
+            "profiles",
+            lambda: _run_task(
+                "profiles",
+                t_profiles,
                 run_logger,
                 ctx.repo_root,
                 ctx.repo,

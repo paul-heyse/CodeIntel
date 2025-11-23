@@ -49,7 +49,7 @@ class McpServerConfig(BaseModel):
         description="Default row limit for tools when the caller does not specify one",
     )
     max_rows_per_call: int = Field(
-        default=200,
+        default=500,
         description="Hard cap on rows returned by a single MCP tool call",
     )
     timeout_seconds: float = Field(

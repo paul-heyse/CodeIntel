@@ -18,18 +18,22 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from codeintel.mcp import errors
-from codeintel.mcp.backend import DuckDBBackend
+from codeintel.mcp.backend import DuckDBBackend, QueryBackend, create_backend
 from codeintel.mcp.config import McpServerConfig
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
+    FileProfileResponse,
     FileSummaryResponse,
+    FunctionProfileResponse,
     FunctionSummaryResponse,
     HighRiskFunctionsResponse,
+    ModuleProfileResponse,
     ProblemDetail,
     TestsForFunctionResponse,
 )
+from codeintel.server.datasets import build_dataset_registry
 from codeintel.storage.duckdb_client import DuckDBClient, DuckDBConfig
 from codeintel.storage.views import create_all_views
 
@@ -46,9 +50,9 @@ class ApiAppConfig:
 
 @dataclass
 class BackendResource:
-    """DuckDB backend instance plus cleanup hook."""
+    """Backend instance plus cleanup hook."""
 
-    backend: DuckDBBackend
+    backend: QueryBackend
     close: Callable[[], None]
 
 
@@ -127,14 +131,19 @@ def load_api_config() -> ApiAppConfig:
     if not server_cfg.commit:
         message = "CODEINTEL_COMMIT must be set for the FastAPI server"
         raise ValueError(message)
-    if server_cfg.mode != "local_db":
-        message = "FastAPI server requires CODEINTEL_MCP_MODE='local_db'"
+    if server_cfg.mode == "local_db":
+        db_path = server_cfg.db_path
+        if db_path is None:
+            message = "CODEINTEL_DB_PATH is required when CODEINTEL_MCP_MODE='local_db'"
+            raise ValueError(message)
+        _ensure_readable_db(db_path)
+    elif server_cfg.mode == "remote_api":
+        if not server_cfg.api_base_url:
+            message = "CODEINTEL_API_BASE_URL is required when CODEINTEL_MCP_MODE='remote_api'"
+            raise ValueError(message)
+    else:
+        message = f"Unsupported CODEINTEL_MCP_MODE: {server_cfg.mode}"
         raise ValueError(message)
-    db_path = server_cfg.db_path
-    if db_path is None:
-        message = "CODEINTEL_DB_PATH is required when CODEINTEL_MCP_MODE='local_db'"
-        raise ValueError(message)
-    _ensure_readable_db(db_path)
 
     read_only = _env_flag("CODEINTEL_API_READ_ONLY", default=True)
     return ApiAppConfig(server=server_cfg, read_only=read_only)
@@ -159,22 +168,28 @@ def create_backend_resource(cfg: ApiAppConfig) -> BackendResource:
     ValueError
         If the database path is missing after configuration validation.
     """
-    db_path = cfg.server.db_path
-    if db_path is None:
-        message = "db_path cannot be None after validation"
-        raise ValueError(message)
+    dataset_registry = build_dataset_registry()
+    if cfg.server.mode == "local_db":
+        db_path = cfg.server.db_path
+        if db_path is None:
+            message = "db_path cannot be None after validation"
+            raise ValueError(message)
 
-    client = DuckDBClient(DuckDBConfig(db_path=db_path, read_only=cfg.read_only))
-    connection = client.con
-    if not cfg.read_only:
-        create_all_views(connection)
+        client = DuckDBClient(DuckDBConfig(db_path=db_path, read_only=cfg.read_only))
+        connection = client.con
+        if not cfg.read_only:
+            create_all_views(connection)
 
-    backend = DuckDBBackend(
-        con=connection,
-        repo=cfg.server.repo,
-        commit=cfg.server.commit,
-    )
-    return BackendResource(backend=backend, close=client.close)
+        backend = create_backend(
+            cfg.server,
+            con=connection,
+            dataset_tables=dataset_registry,
+        )
+        return BackendResource(backend=backend, close=client.close)
+
+    backend = create_backend(cfg.server, dataset_tables=dataset_registry)
+    close = getattr(backend, "close", lambda: None)
+    return BackendResource(backend=backend, close=close)
 
 
 def problem_response(detail: ProblemDetail) -> JSONResponse:
@@ -290,9 +305,9 @@ def get_app_config(request: Request) -> ApiAppConfig:
     return config
 
 
-def get_backend(request: Request) -> DuckDBBackend:
+def get_backend(request: Request) -> QueryBackend:
     """
-    Retrieve the shared DuckDB backend from state.
+    Retrieve the shared backend from state.
 
     Parameters
     ----------
@@ -309,15 +324,15 @@ def get_backend(request: Request) -> DuckDBBackend:
     errors.backend_failure
         If the backend is missing.
     """
-    backend = getattr(request.app.state, "backend", None)
-    if not isinstance(backend, DuckDBBackend):
+    backend: QueryBackend | None = getattr(request.app.state, "backend", None)
+    if backend is None:
         message = "Backend is not initialized"
         raise errors.backend_failure(message)
     return backend
 
 
 ConfigDep = Annotated[ApiAppConfig, Depends(get_app_config)]
-BackendDep = Annotated[DuckDBBackend, Depends(get_backend)]
+BackendDep = Annotated[QueryBackend, Depends(get_backend)]
 
 
 def build_functions_router() -> APIRouter:
@@ -482,6 +497,107 @@ def build_functions_router() -> APIRouter:
     return router
 
 
+def build_profiles_router() -> APIRouter:
+    """
+    Construct the router for profile endpoints.
+
+    Returns
+    -------
+    APIRouter
+        Router exposing function, file, and module profiles.
+    """
+    router = APIRouter()
+
+    @router.get(
+        "/profiles/function",
+        response_model=FunctionProfileResponse,
+        summary="Get a function profile",
+    )
+    def function_profile(
+        *,
+        backend: BackendDep,
+        goid_h128: int,
+    ) -> FunctionProfileResponse:
+        """
+        Return a denormalized function profile for the given GOID.
+
+        Returns
+        -------
+        FunctionProfileResponse
+            Profile payload for the requested GOID.
+
+        Raises
+        ------
+        errors.not_found
+            If the profile cannot be located.
+        """
+        profile = backend.get_function_profile(goid_h128=goid_h128)
+        if not profile.found or profile.profile is None:
+            message = "Function profile not found"
+            raise errors.not_found(message)
+        return profile
+
+    @router.get(
+        "/profiles/file",
+        response_model=FileProfileResponse,
+        summary="Get a file profile",
+    )
+    def file_profile(
+        *,
+        backend: BackendDep,
+        rel_path: str,
+    ) -> FileProfileResponse:
+        """
+        Return a denormalized profile for a file path.
+
+        Returns
+        -------
+        FileProfileResponse
+            Profile payload for the requested file.
+
+        Raises
+        ------
+        errors.not_found
+            If the profile cannot be located.
+        """
+        profile = backend.get_file_profile(rel_path=rel_path)
+        if not profile.found or profile.profile is None:
+            message = "File profile not found"
+            raise errors.not_found(message)
+        return profile
+
+    @router.get(
+        "/profiles/module",
+        response_model=ModuleProfileResponse,
+        summary="Get a module profile",
+    )
+    def module_profile(
+        *,
+        backend: BackendDep,
+        module: str,
+    ) -> ModuleProfileResponse:
+        """
+        Return a module-level profile including coverage and import metrics.
+
+        Returns
+        -------
+        ModuleProfileResponse
+            Profile payload for the requested module.
+
+        Raises
+        ------
+        errors.not_found
+            If the profile cannot be located.
+        """
+        profile = backend.get_module_profile(module=module)
+        if not profile.found or profile.profile is None:
+            message = "Module profile not found"
+            raise errors.not_found(message)
+        return profile
+
+    return router
+
+
 def build_datasets_router() -> APIRouter:
     """
     Construct the router for dataset browsing endpoints.
@@ -563,7 +679,8 @@ def build_health_router() -> APIRouter:
         dict[str, object]
             Health payload including repo/commit and read-only state.
         """
-        backend.con.execute("SELECT 1;")
+        if isinstance(backend, DuckDBBackend):
+            backend.con.execute("SELECT 1;")
         return {
             "status": "ok",
             "repo": config.server.repo,
@@ -577,6 +694,7 @@ def build_health_router() -> APIRouter:
 def register_routes(app: FastAPI) -> None:
     """Wire all API routes onto the provided FastAPI application."""
     app.include_router(build_functions_router())
+    app.include_router(build_profiles_router())
     app.include_router(build_datasets_router())
     app.include_router(build_health_router())
 

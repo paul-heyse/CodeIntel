@@ -57,7 +57,9 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
             rf.created_at
         FROM analytics.goid_risk_factors rf
         LEFT JOIN analytics.function_metrics fm
-          ON fm.function_goid_h128 = rf.function_goid_h128;
+          ON fm.function_goid_h128 = rf.function_goid_h128
+         AND fm.repo = rf.repo
+         AND fm.commit = rf.commit;
         """
     )
 
@@ -66,12 +68,16 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
         CREATE OR REPLACE VIEW docs.v_call_graph_enriched AS
         SELECT
             e.caller_goid_h128,
+            gc.repo         AS caller_repo,
+            gc.commit       AS caller_commit,
             gc.urn           AS caller_urn,
             gc.rel_path      AS caller_rel_path,
             gc.qualname      AS caller_qualname,
             rc.risk_level    AS caller_risk_level,
             rc.risk_score    AS caller_risk_score,
             e.callee_goid_h128,
+            gcallee.repo     AS callee_repo,
+            gcallee.commit   AS callee_commit,
             gcallee.urn      AS callee_urn,
             gcallee.rel_path AS callee_rel_path,
             gcallee.qualname AS callee_qualname,
@@ -92,8 +98,143 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
           ON gcallee.goid_h128 = e.callee_goid_h128
         LEFT JOIN analytics.goid_risk_factors rc
           ON rc.function_goid_h128 = e.caller_goid_h128
+         AND rc.repo = gc.repo
+         AND rc.commit = gc.commit
         LEFT JOIN analytics.goid_risk_factors rcallee
-          ON rcallee.function_goid_h128 = e.callee_goid_h128;
+          ON rcallee.function_goid_h128 = e.callee_goid_h128
+         AND rcallee.repo = gcallee.repo
+         AND rcallee.commit = gcallee.commit;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_function_architecture AS
+        SELECT
+            gm.function_goid_h128,
+            gm.repo,
+            gm.commit,
+            rf.urn,
+            rf.rel_path,
+            rf.qualname,
+            rf.language,
+            rf.kind,
+            rf.risk_score,
+            rf.risk_level,
+            rf.tags,
+            rf.owners,
+            gm.call_fan_in,
+            gm.call_fan_out,
+            gm.call_in_degree,
+            gm.call_out_degree,
+            gm.call_pagerank,
+            gm.call_betweenness,
+            gm.call_closeness,
+            gm.call_cycle_member,
+            gm.call_cycle_id,
+            gm.call_layer,
+            gm.created_at
+        FROM analytics.graph_metrics_functions gm
+        LEFT JOIN analytics.goid_risk_factors rf
+          ON rf.function_goid_h128 = gm.function_goid_h128
+         AND rf.repo = gm.repo
+         AND rf.commit = gm.commit;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_module_architecture AS
+        SELECT
+            gm.repo,
+            gm.commit,
+            gm.module,
+            m.path          AS rel_path,
+            m.tags,
+            m.owners,
+            gm.import_fan_in,
+            gm.import_fan_out,
+            gm.import_in_degree,
+            gm.import_out_degree,
+            gm.import_pagerank,
+            gm.import_betweenness,
+            gm.import_closeness,
+            gm.import_cycle_member,
+            gm.import_cycle_id,
+            gm.import_layer,
+            gm.symbol_fan_in,
+            gm.symbol_fan_out,
+            mp.avg_risk_score,
+            mp.max_risk_score,
+            mp.module_coverage_ratio,
+            mp.tested_function_count,
+            mp.untested_function_count,
+            gm.created_at
+        FROM analytics.graph_metrics_modules gm
+        LEFT JOIN core.modules m
+          ON m.module = gm.module
+        LEFT JOIN analytics.module_profile mp
+          ON mp.module = gm.module
+         AND mp.repo = gm.repo
+         AND mp.commit = gm.commit;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_subsystem_summary AS
+        SELECT
+            s.repo,
+            s.commit,
+            s.subsystem_id,
+            s.name,
+            s.description,
+            s.module_count,
+            s.modules_json,
+            s.entrypoints_json,
+            s.internal_edge_count,
+            s.external_edge_count,
+            s.fan_in,
+            s.fan_out,
+            s.function_count,
+            s.avg_risk_score,
+            s.max_risk_score,
+            s.high_risk_function_count,
+            s.risk_level,
+            s.created_at
+        FROM analytics.subsystems s;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_module_with_subsystem AS
+        SELECT
+            sm.repo,
+            sm.commit,
+            sm.subsystem_id,
+            subs.name              AS subsystem_name,
+            sm.module,
+            sm.role,
+            ma.rel_path,
+            ma.tags,
+            ma.owners,
+            ma.import_fan_in,
+            ma.import_fan_out,
+            ma.symbol_fan_in,
+            ma.symbol_fan_out,
+            subs.risk_level,
+            subs.avg_risk_score,
+            subs.max_risk_score
+        FROM analytics.subsystem_modules sm
+        LEFT JOIN docs.v_module_architecture ma
+          ON ma.repo = sm.repo
+         AND ma.commit = sm.commit
+         AND ma.module = sm.module
+        LEFT JOIN analytics.subsystems subs
+          ON subs.repo = sm.repo
+         AND subs.commit = sm.commit
+         AND subs.subsystem_id = sm.subsystem_id;
         """
     )
 
@@ -130,8 +271,12 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
         FROM analytics.test_coverage_edges e
         LEFT JOIN analytics.test_catalog tc
           ON e.test_id = tc.test_id
+         AND e.repo = tc.repo
+         AND e.commit = tc.commit
         LEFT JOIN analytics.goid_risk_factors rf
-          ON rf.function_goid_h128 = e.function_goid_h128;
+          ON rf.function_goid_h128 = e.function_goid_h128
+         AND rf.repo = e.repo
+         AND rf.commit = e.commit;
         """
     )
 
@@ -140,6 +285,8 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
         CREATE OR REPLACE VIEW docs.v_file_summary AS
         WITH per_file_risk AS (
             SELECT
+                repo,
+                commit,
                 rel_path,
                 COUNT(*) AS function_count,
                 SUM(CASE WHEN risk_level = 'high' THEN 1 ELSE 0 END) AS high_risk_functions,
@@ -147,7 +294,7 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
                 SUM(CASE WHEN risk_level = 'low' THEN 1 ELSE 0 END) AS low_risk_functions,
                 MAX(risk_score) AS max_risk_score
             FROM analytics.goid_risk_factors
-            GROUP BY rel_path
+            GROUP BY repo, commit, rel_path
         )
         SELECT
             m.repo,
@@ -185,6 +332,32 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
         LEFT JOIN analytics.static_diagnostics sd
           ON sd.rel_path = m.path
         LEFT JOIN per_file_risk r
-          ON r.rel_path = m.path;
+          ON r.rel_path = m.path
+         AND r.repo = m.repo
+         AND r.commit = m.commit;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_function_profile AS
+        SELECT *
+        FROM analytics.function_profile;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_file_profile AS
+        SELECT *
+        FROM analytics.file_profile;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_module_profile AS
+        SELECT *
+        FROM analytics.module_profile;
         """
     )

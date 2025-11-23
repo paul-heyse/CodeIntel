@@ -722,6 +722,97 @@ class FunctionAnalyticsConfig:
 
 
 @dataclass(frozen=True)
+class GraphMetricsConfig:
+    """Configuration for graph metrics analytics."""
+
+    repo: str
+    commit: str
+    max_betweenness_sample: int | None = 200
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        max_betweenness_sample: int | None = 200,
+    ) -> Self:
+        """
+        Build graph metrics configuration from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized graph metrics configuration.
+        """
+        return cls(
+            repo=repo,
+            commit=commit,
+            max_betweenness_sample=max_betweenness_sample,
+        )
+
+
+@dataclass(frozen=True)
+class ProfilesAnalyticsConfig:
+    """Configuration for building function, file, and module profiles."""
+
+    repo: str
+    commit: str
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str) -> Self:
+        """
+        Build profile analytics settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized profiles analytics configuration.
+        """
+        return cls(repo=repo, commit=commit)
+
+
+@dataclass(frozen=True)
+class SubsystemsConfig:
+    """Configuration for subsystem inference."""
+
+    repo: str
+    commit: str
+    min_modules: int = 3
+    max_subsystems: int | None = None
+    import_weight: float = 1.0
+    symbol_weight: float = 0.5
+    config_weight: float = 0.3
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        overrides: dict[str, float | int | None] | None = None,
+    ) -> Self:
+        """
+        Build subsystem inference configuration from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized subsystem configuration.
+        """
+        merged = overrides or {}
+        return cls(
+            repo=repo,
+            commit=commit,
+            min_modules=int(merged.get("min_modules", cls.min_modules)),
+            max_subsystems=merged.get("max_subsystems", cls.max_subsystems),
+            import_weight=float(merged.get("import_weight", cls.import_weight)),
+            symbol_weight=float(merged.get("symbol_weight", cls.symbol_weight)),
+            config_weight=float(merged.get("config_weight", cls.config_weight)),
+        )
+
+
+@dataclass(frozen=True)
 class TestCoverageConfig:
     """Configuration for deriving test coverage edges."""
 

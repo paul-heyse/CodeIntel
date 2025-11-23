@@ -203,6 +203,7 @@
 {"rel_path":"src\/codeintel\/analytics\/ast_metrics.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/analytics\/coverage_analytics.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/analytics\/functions.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
+{"rel_path":"src\/codeintel\/analytics\/profiles.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/analytics\/tests_analytics.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/cli\/__init__.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/cli\/main.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
@@ -243,10 +244,11 @@
 {"rel_path":"src\/codeintel\/ingestion\/typing_ingest.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/mcp\/__init__.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/mcp\/__main__.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
-{"rel_path":"src\/codeintel\/mcp\/backend.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
+{"rel_path":"src\/codeintel\/mcp\/backend.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":1,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/mcp\/config.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/mcp\/errors.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/mcp\/models.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
+{"rel_path":"src\/codeintel\/mcp\/query_service.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/mcp\/registry.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/mcp\/server.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/mcp\/tools.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
@@ -256,6 +258,7 @@
 {"rel_path":"src\/codeintel\/orchestration\/prefect_flow.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/orchestration\/steps.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/server\/__init__.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
+{"rel_path":"src\/codeintel\/server\/datasets.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/server\/fastapi.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/server\/query_templates.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
 {"rel_path":"src\/codeintel\/storage\/__init__.py","pyrefly_errors":0,"pyright_errors":0,"ruff_errors":0,"total_errors":0,"has_errors":false}
@@ -269,4 +272,5 @@
 {"rel_path":"tests\/graphs\/test_callgraph_builder.py","pyrefly_errors":10,"pyright_errors":0,"ruff_errors":0,"total_errors":10,"has_errors":true}
 {"rel_path":"tests\/graphs\/test_span_consistency_integration.py","pyrefly_errors":1,"pyright_errors":0,"ruff_errors":0,"total_errors":1,"has_errors":true}
 {"rel_path":"tests\/orchestration\/conftest.py","pyrefly_errors":3,"pyright_errors":0,"ruff_errors":0,"total_errors":3,"has_errors":true}
-{"rel_path":"tests\/orchestration\/test_pipeline_catalog_entrypoint.py","pyrefly_errors":1,"pyright_errors":0,"ruff_errors":1,"total_errors":1,"has_errors":true}
+{"rel_path":"tests\/orchestration\/test_pipeline_catalog_entrypoint.py","pyrefly_errors":1,"pyright_errors":0,"ruff_errors":0,"total_errors":1,"has_errors":true}
+{"rel_path":"tests\/server\/test_fastapi_endpoints.py","pyrefly_errors":1,"pyright_errors":0,"ruff_errors":0,"total_errors":1,"has_errors":true}

@@ -13,6 +13,13 @@ import duckdb
 from codeintel.analytics.ast_metrics import build_hotspots
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
 from codeintel.analytics.functions import compute_function_metrics_and_types
+from codeintel.analytics.graph_metrics import compute_graph_metrics
+from codeintel.analytics.profiles import (
+    build_file_profile,
+    build_function_profile,
+    build_module_profile,
+)
+from codeintel.analytics.subsystems import build_subsystems
 from codeintel.analytics.tests_analytics import compute_test_coverage_edges
 from codeintel.config.models import (
     CallGraphConfig,
@@ -20,8 +27,11 @@ from codeintel.config.models import (
     CoverageAnalyticsConfig,
     FunctionAnalyticsConfig,
     GoidBuilderConfig,
+    GraphMetricsConfig,
     HotspotsConfig,
     ImportGraphConfig,
+    ProfilesAnalyticsConfig,
+    SubsystemsConfig,
     SymbolUsesConfig,
     TestCoverageConfig,
     ToolsConfig,
@@ -554,6 +564,50 @@ class RiskFactorsStep:
         log.info("risk_factors populated: %d rows for %s@%s", n, ctx.repo, ctx.commit)
 
 
+@dataclass
+class GraphMetricsStep:
+    """Compute graph metrics for functions and modules."""
+
+    name: str = "graph_metrics"
+    deps: Sequence[str] = ("callgraph", "import_graph", "symbol_uses")
+
+    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+        """Populate analytics.graph_metrics_* tables."""
+        _log_step(self.name)
+        cfg = GraphMetricsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
+        compute_graph_metrics(con, cfg)
+
+
+@dataclass
+class SubsystemsStep:
+    """Infer subsystems from module coupling and risk signals."""
+
+    name: str = "subsystems"
+    deps: Sequence[str] = ("import_graph", "symbol_uses", "risk_factors")
+
+    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+        """Populate subsystem membership and summaries."""
+        _log_step(self.name)
+        cfg = SubsystemsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
+        build_subsystems(con, cfg)
+
+
+@dataclass
+class ProfilesStep:
+    """Build function, file, and module profiles."""
+
+    name: str = "profiles"
+    deps: Sequence[str] = ("risk_factors", "callgraph", "import_graph")
+
+    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+        """Aggregate profile tables for functions, files, and modules."""
+        _log_step(self.name)
+        cfg = ProfilesAnalyticsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
+        build_function_profile(con, cfg)
+        build_file_profile(con, cfg)
+        build_module_profile(con, cfg)
+
+
 # ---------------------------------------------------------------------------
 # Export step
 # ---------------------------------------------------------------------------
@@ -579,6 +633,9 @@ class ExportDocsStep:
         "test_coverage_edges",
         "hotspots",
         "risk_factors",
+        "graph_metrics",
+        "subsystems",
+        "profiles",
         "callgraph",
         "cfg",
         "import_graph",
@@ -623,6 +680,9 @@ PIPELINE_STEPS: dict[str, PipelineStep] = {
     "coverage_functions": CoverageAnalyticsStep(),
     "test_coverage_edges": TestCoverageEdgesStep(),
     "risk_factors": RiskFactorsStep(),
+    "graph_metrics": GraphMetricsStep(),
+    "subsystems": SubsystemsStep(),
+    "profiles": ProfilesStep(),
     # export
     "export_docs": ExportDocsStep(),
 }
