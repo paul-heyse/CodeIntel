@@ -45,6 +45,7 @@ PARQUET_DATASETS: dict[str, str] = {
     "analytics.coverage_functions": "coverage_functions.parquet",
     "analytics.test_catalog": "test_catalog.parquet",
     "analytics.test_coverage_edges": "test_coverage_edges.parquet",
+    "analytics.graph_validation": "graph_validation.parquet",
     # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.parquet",
 }

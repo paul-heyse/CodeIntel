@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -13,8 +14,8 @@ import duckdb
 from codeintel.config.models import CodeIntelConfig, PathsConfig, RepoConfig
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.orchestration.pipeline import run_pipeline
-from codeintel.orchestration.steps import PipelineContext
+from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
 from codeintel.storage.duckdb_client import DuckDBClient, DuckDBConfig
 from codeintel.storage.views import create_all_views
 
@@ -106,7 +107,7 @@ def _make_parser() -> argparse.ArgumentParser:
 
     p_run = pipeline_sub.add_parser(
         "run",
-        help="Run pipeline steps up to one or more target steps (e.g. risk_factors, export_docs)",
+        help="Run the full pipeline via Prefect (targets are ignored; runs export_docs_flow).",
     )
     _add_common_repo_args(p_run)
     p_run.add_argument(
@@ -117,6 +118,11 @@ def _make_parser() -> argparse.ArgumentParser:
             "Name of a pipeline step to run (can be specified multiple times). "
             "Defaults to 'export_docs' if omitted."
         ),
+    )
+    p_run.add_argument(
+        "--skip-scip",
+        action="store_true",
+        help="Skip SCIP ingestion (sets CODEINTEL_SKIP_SCIP=true).",
     )
     p_run.set_defaults(func=_cmd_pipeline_run)
 
@@ -181,37 +187,38 @@ def _open_connection(cfg: CodeIntelConfig, *, read_only: bool) -> duckdb.DuckDBP
     return con
 
 
-def _build_pipeline_context(cfg: CodeIntelConfig) -> PipelineContext:
-    return PipelineContext(
-        repo_root=cfg.paths.repo_root,
-        db_path=cfg.paths.db_path,
-        build_dir=cfg.paths.build_dir,
-        repo=cfg.repo.repo,
-        commit=cfg.repo.commit,
-        extra={},
-    )
-
-
 def _cmd_pipeline_run(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
-    con = _open_connection(cfg, read_only=False)
+    repo_root = cfg.paths.repo_root
+    db_path = cfg.paths.db_path
+    build_dir = cfg.paths.build_dir
+    output_dir = cfg.paths.document_output_dir
+    if output_dir is not None:
+        os.environ.setdefault("CODEINTEL_OUTPUT_DIR", str(output_dir))
 
-    ctx = _build_pipeline_context(cfg)
+    if args.skip_scip:
+        os.environ["CODEINTEL_SKIP_SCIP"] = "true"
 
-    targets: list[str]
-    if args.target is None or len(args.target) == 0:
-        targets = cfg.default_targets
-    else:
-        targets = list(args.target)
-
+    targets = list(args.target) if args.target else None
     LOG.info(
-        "Running pipeline for repo=%s commit=%s targets=%s",
+        "Running Prefect export_docs_flow for repo=%s commit=%s targets=%s",
         cfg.repo.repo,
         cfg.repo.commit,
         targets,
     )
 
-    run_pipeline(ctx, con, targets=targets)
+    export_docs_flow(
+        args=ExportArgs(
+            repo_root=repo_root,
+            repo=cfg.repo.repo,
+            commit=cfg.repo.commit,
+            db_path=db_path,
+            build_dir=build_dir,
+            tools=cfg.tools,
+            scan_config=ScanConfig(repo_root=repo_root),
+        ),
+        targets=targets,
+    )
     return 0
 
 

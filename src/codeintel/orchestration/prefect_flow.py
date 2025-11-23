@@ -6,7 +6,8 @@ import logging
 import os
 import shutil
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from logging import Logger, LoggerAdapter
 from pathlib import Path
 
@@ -20,22 +21,14 @@ from codeintel.analytics.tests_analytics import compute_test_coverage_edges
 from codeintel.config.models import (
     CallGraphConfig,
     CFGBuilderConfig,
-    ConfigIngestConfig,
     CoverageAnalyticsConfig,
-    CoverageIngestConfig,
-    DocstringConfig,
     FunctionAnalyticsConfig,
     GoidBuilderConfig,
     HotspotsConfig,
     ImportGraphConfig,
-    PathsConfig,
-    PyAstIngestConfig,
-    RepoScanConfig,
-    ScipIngestConfig,
     SymbolUsesConfig,
     TestCoverageConfig,
-    TestsIngestConfig,
-    TypingIngestConfig,
+    ToolsConfig,
 )
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
@@ -44,19 +37,37 @@ from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.graphs.import_graph import build_import_graph
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
-from codeintel.ingestion import (
-    config_ingest,
-    coverage_ingest,
-    cst_extract,
-    docstrings_ingest,
-    py_ast_extract,
-    repo_scan,
-    scip_ingest,
-    tests_ingest,
-    typing_ingest,
+from codeintel.graphs.validation import run_graph_validations
+from codeintel.ingestion import scip_ingest
+from codeintel.ingestion.runner import (
+    IngestionContext,
+    run_ast_extract,
+    run_config_ingest,
+    run_coverage_ingest,
+    run_cst_extract,
+    run_docstrings_ingest,
+    run_repo_scan,
+    run_scip_ingest,
+    run_tests_ingest,
+    run_typing_ingest,
 )
-from codeintel.orchestration.steps import PipelineContext, RiskFactorsStep
+from codeintel.ingestion.source_scanner import IGNORES, ScanConfig
+from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.orchestration.steps import PIPELINE_STEPS, PipelineContext, RiskFactorsStep
 from codeintel.storage.views import create_all_views
+
+
+@dataclass(frozen=True)
+class ExportArgs:
+    """Inputs for the export_docs Prefect flow."""
+
+    repo_root: Path
+    repo: str
+    commit: str
+    db_path: Path
+    build_dir: Path
+    tools: ToolsConfig | None = None
+    scan_config: ScanConfig | None = None
 
 
 def _connect(db_path: Path, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
@@ -124,16 +135,74 @@ def _resolve_output_dir(repo_root: Path) -> Path:
     return repo_root / folder
 
 
+def _tools_from_env(base: ToolsConfig | None = None) -> ToolsConfig:
+    """
+    Build a ToolsConfig applying environment overrides when present.
+
+    Returns
+    -------
+    ToolsConfig
+        Merged tool configuration honoring environment variables.
+    """
+    data = base.model_dump() if base is not None else {}
+    env_map = {
+        "CODEINTEL_SCIP_PYTHON_BIN": "scip_python_bin",
+        "CODEINTEL_SCIP_BIN": "scip_bin",
+        "CODEINTEL_PYRIGHT_BIN": "pyright_bin",
+        "CODEINTEL_COVERAGE_FILE": "coverage_file",
+        "CODEINTEL_PYTEST_REPORT": "pytest_report_path",
+    }
+    for env_var, field in env_map.items():
+        value = os.getenv(env_var)
+        if value:
+            data[field] = value
+    return ToolsConfig.model_validate(data)
+
+
+def _scan_from_env(repo_root: Path, base: ScanConfig | None = None) -> ScanConfig:
+    """
+    Build a ScanConfig with optional environment overrides for ignore/include patterns.
+
+    Returns
+    -------
+    ScanConfig
+        Normalized scan configuration for source discovery.
+    """
+    include_patterns = base.include_patterns if base is not None else ("*.py",)
+    ignore_dirs = tuple(base.ignore_dirs) if base is not None else tuple(sorted(IGNORES))
+    log_every = base.log_every if base is not None else 50
+    log_interval = base.log_interval if base is not None else 5.0
+
+    env_includes = os.getenv("CODEINTEL_INCLUDE_PATTERNS")
+    if env_includes:
+        include_patterns = tuple(
+            pattern.strip() for pattern in env_includes.split(",") if pattern.strip()
+        )
+    env_ignores = os.getenv("CODEINTEL_IGNORE_DIRS")
+    if env_ignores:
+        merged = set(ignore_dirs) | {
+            part.strip() for part in env_ignores.split(",") if part.strip()
+        }
+        ignore_dirs = tuple(sorted(merged))
+
+    return ScanConfig(
+        repo_root=repo_root,
+        include_patterns=include_patterns,
+        ignore_dirs=ignore_dirs,
+        log_every=log_every,
+        log_interval=log_interval,
+    )
+
+
 @task(
     name="repo_scan",
     retries=2,
     retry_delay_seconds=2,
 )
-def t_repo_scan(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+def t_repo_scan(ctx: IngestionContext) -> None:
     """Ingest repository modules and repo_map rows."""
-    con = _connect(db_path)
-    cfg = RepoScanConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
-    repo_scan.ingest_repo(con=con, cfg=cfg)
+    con = _connect(ctx.db_path)
+    run_repo_scan(con, ctx)
     con.close()
 
 
@@ -142,7 +211,7 @@ def t_repo_scan(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     retries=2,
     retry_delay_seconds=5,
 )
-def t_scip_ingest(cfg: ScipIngestConfig, db_path: Path) -> scip_ingest.ScipIngestResult:
+def t_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
     """
     Run scip-python ingestion and register SCIP artifacts.
 
@@ -151,8 +220,8 @@ def t_scip_ingest(cfg: ScipIngestConfig, db_path: Path) -> scip_ingest.ScipInges
     scip_ingest.ScipIngestResult
         Status and artifact paths for SCIP ingestion.
     """
-    con = _connect(db_path)
-    result = scip_ingest.ingest_scip(con=con, cfg=cfg)
+    con = _connect(ctx.db_path)
+    result = run_scip_ingest(con, ctx)
     if result.status != "success":
         log.info("SCIP ingestion skipped or failed: %s", result.reason or result.status)
     con.close()
@@ -164,10 +233,10 @@ def t_scip_ingest(cfg: ScipIngestConfig, db_path: Path) -> scip_ingest.ScipInges
     retries=2,
     retry_delay_seconds=2,
 )
-def t_cst_extract(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+def t_cst_extract(ctx: IngestionContext) -> None:
     """Parse CST and persist into cst_nodes."""
-    con = _connect(db_path)
-    cst_extract.ingest_cst(con=con, repo_root=repo_root, repo=repo, commit=commit)
+    con = _connect(ctx.db_path)
+    run_cst_extract(con, ctx)
     con.close()
 
 
@@ -176,38 +245,34 @@ def t_cst_extract(repo_root: Path, repo: str, commit: str, db_path: Path) -> Non
     retries=2,
     retry_delay_seconds=2,
 )
-def t_ast_extract(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+def t_ast_extract(ctx: IngestionContext) -> None:
     """Parse Python stdlib AST and persist into ast tables."""
-    con = _connect(db_path)
-    cfg = PyAstIngestConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
-    py_ast_extract.ingest_python_ast(con=con, cfg=cfg)
+    con = _connect(ctx.db_path)
+    run_ast_extract(con, ctx)
     con.close()
 
 
 @task(name="coverage_ingest", retries=1, retry_delay_seconds=2)
-def t_coverage_ingest(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+def t_coverage_ingest(ctx: IngestionContext) -> None:
     """Load coverage lines into analytics.coverage_lines."""
-    con = _connect(db_path)
-    cfg = CoverageIngestConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
-    coverage_ingest.ingest_coverage_lines(con=con, cfg=cfg)
+    con = _connect(ctx.db_path)
+    run_coverage_ingest(con, ctx)
     con.close()
 
 
 @task(name="tests_ingest", retries=1, retry_delay_seconds=2)
-def t_tests_ingest(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+def t_tests_ingest(ctx: IngestionContext) -> None:
     """Load pytest test catalog into analytics.test_catalog."""
-    con = _connect(db_path)
-    cfg = TestsIngestConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
-    tests_ingest.ingest_tests(con=con, cfg=cfg)
+    con = _connect(ctx.db_path)
+    run_tests_ingest(con, ctx)
     con.close()
 
 
 @task(name="typing_ingest", retries=1, retry_delay_seconds=2)
-def t_typing_ingest(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+def t_typing_ingest(ctx: IngestionContext) -> None:
     """Collect typedness/static diagnostics."""
-    con = _connect(db_path)
-    cfg = TypingIngestConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
-    typing_ingest.ingest_typing_signals(con=con, cfg=cfg)
+    con = _connect(ctx.db_path)
+    run_typing_ingest(con, ctx)
     con.close()
 
 
@@ -216,20 +281,18 @@ def t_typing_ingest(repo_root: Path, repo: str, commit: str, db_path: Path) -> N
     retries=1,
     retry_delay_seconds=2,
 )
-def t_docstrings_ingest(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+def t_docstrings_ingest(ctx: IngestionContext) -> None:
     """Extract structured docstrings into core.docstrings."""
-    con = _connect(db_path)
-    cfg = DocstringConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
-    docstrings_ingest.ingest_docstrings(con, cfg)
+    con = _connect(ctx.db_path)
+    run_docstrings_ingest(con, ctx)
     con.close()
 
 
 @task(name="config_ingest", retries=1, retry_delay_seconds=2)
-def t_config_ingest(repo_root: Path, db_path: Path) -> None:
+def t_config_ingest(ctx: IngestionContext) -> None:
     """Flatten config values into analytics.config_values."""
-    con = _connect(db_path)
-    cfg = ConfigIngestConfig.from_paths(repo_root=repo_root)
-    config_ingest.ingest_config_values(con=con, cfg=cfg)
+    con = _connect(ctx.db_path)
+    run_config_ingest(con, ctx)
     con.close()
 
 
@@ -281,11 +344,13 @@ def t_symbol_uses(
 
 
 @task(name="hotspots", retries=1, retry_delay_seconds=2)
-def t_hotspots(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+def t_hotspots(
+    repo_root: Path, repo: str, commit: str, db_path: Path, runner: ToolRunner | None = None
+) -> None:
     """Compute file-level hotspot scores."""
     con = _connect(db_path)
     cfg = HotspotsConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
-    build_hotspots(con, cfg)
+    build_hotspots(con, cfg, runner=runner)
     con.close()
 
 
@@ -342,10 +407,16 @@ def t_export_docs(db_path: Path, document_output_dir: Path) -> None:
     con.close()
 
 
+@task(name="graph_validation", retries=1, retry_delay_seconds=2)
+def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
+    """Run graph validation warnings."""
+    con = _connect(db_path, read_only=False)
+    run_graph_validations(con, repo=repo, commit=commit, logger=log)
+    con.close()
+
+
 def _preflight_checks(
-    repo_root: Path,
-    build_dir: Path,
-    db_path: Path,
+    ctx: IngestionContext,
     *,
     skip_scip: bool = False,
     logger: Logger | LoggerAdapter | None = None,
@@ -359,13 +430,21 @@ def _preflight_checks(
         If required directories or binaries are missing.
     """
     errors: list[str] = []
+    repo_root = ctx.repo_root
+    build_dir = ctx.build_dir
+    db_path = ctx.db_path
+    tools = ctx.tools or ToolsConfig(
+        scip_python_bin="scip-python",
+        scip_bin="scip",
+        pyright_bin="pyright",
+    )
 
     if not repo_root.is_dir():
         errors.append(f"repo_root not found: {repo_root}")
     git_dir = repo_root / ".git"
     if not skip_scip:
-        scip_python_bin = "scip-python"
-        scip_bin = "scip"
+        scip_python_bin = tools.scip_python_bin
+        scip_bin = tools.scip_bin
         if not git_dir.is_dir():
             errors.append("SCIP ingest requires a git repository (.git missing)")
         if shutil.which(scip_python_bin) is None:
@@ -387,106 +466,266 @@ def _preflight_checks(
 
 @flow(name="export_docs_flow")
 def export_docs_flow(
-    repo_root: Path,
-    repo: str,
-    commit: str,
-    db_path: Path,
-    build_dir: Path,
+    args: ExportArgs,
+    targets: Iterable[str] | None = None,
 ) -> None:
     """
     Run the CodeIntel pipeline using Prefect orchestration.
 
     Parameters
     ----------
-    repo_root:
-        Path to the repository root.
-    repo:
-        Repository slug (org/repo).
-    commit:
-        Commit SHA.
-    db_path:
-        Path to DuckDB database file.
-    build_dir:
-        Build directory containing intermediates (scip/, etc.).
+    args:
+        Repository identity and path configuration.
+    targets:
+        Optional subset of steps to run (in declared order).
     """
     run_logger = get_run_logger()
-    repo_root = repo_root.resolve()
-    db_path = db_path.resolve()
-    build_dir = build_dir.resolve()
-    document_output = _resolve_output_dir(repo_root)
+    repo_root = args.repo_root.resolve()
+    db_path = args.db_path.resolve()
+    build_dir = args.build_dir.resolve()
+    tools_cfg = _tools_from_env(args.tools)
+    scan_cfg = _scan_from_env(repo_root, args.scan_config)
+    tool_runner = ToolRunner(cache_dir=build_dir / ".tool_cache")
     skip_scip = os.getenv("CODEINTEL_SKIP_SCIP", "false").lower() == "true"
 
-    # Ingestion
-    paths_cfg = PathsConfig(
+    ctx = IngestionContext(
         repo_root=repo_root,
-        build_dir=build_dir,
+        repo=args.repo,
+        commit=args.commit,
         db_path=db_path,
-        document_output_dir=document_output,
-    )
-    scip_cfg = ScipIngestConfig.from_paths(
-        repo=repo,
-        commit=commit,
-        paths=paths_cfg,
-    )
-    _preflight_checks(
-        repo_root=repo_root,
         build_dir=build_dir,
-        db_path=db_path,
-        skip_scip=skip_scip,
-        logger=run_logger,
+        document_output_dir=_resolve_output_dir(repo_root),
+        tools=tools_cfg,
+        scan_config=scan_cfg,
+        tool_runner=tool_runner,
     )
-    _run_task("repo_scan", t_repo_scan, run_logger, repo_root, repo, commit, db_path)
-    scip_result: scip_ingest.ScipIngestResult | None = None
-    if not skip_scip:
-        start = _log_task("scip_ingest", run_logger)
-        scip_result = t_scip_ingest.fn(cfg=scip_cfg, db_path=db_path)
-        _log_task_done("scip_ingest", start, run_logger)
-        if scip_result.status != "success":
-            run_logger.info(
-                "SCIP ingestion result: %s (%s)",
-                scip_result.status,
-                scip_result.reason or "no reason",
-            )
-    else:
-        run_logger.info("Skipping SCIP ingestion via CODEINTEL_SKIP_SCIP")
-    _run_task("cst_extract", t_cst_extract, run_logger, repo_root, repo, commit, db_path)
-    _run_task("ast_extract", t_ast_extract, run_logger, repo_root, repo, commit, db_path)
-    _run_task("coverage_ingest", t_coverage_ingest, run_logger, repo_root, repo, commit, db_path)
-    _run_task("tests_ingest", t_tests_ingest, run_logger, repo_root, repo, commit, db_path)
-    _run_task("typing_ingest", t_typing_ingest, run_logger, repo_root, repo, commit, db_path)
-    _run_task(
-        "docstrings_ingest", t_docstrings_ingest, run_logger, repo_root, repo, commit, db_path
-    )
-    _run_task("config_ingest", t_config_ingest, run_logger, repo_root, db_path)
+    _preflight_checks(ctx, skip_scip=skip_scip, logger=run_logger)
+    scip_state: dict[str, scip_ingest.ScipIngestResult | None] = {"result": None}
 
-    # Graphs
-    _run_task("goids", t_goids, run_logger, repo, commit, db_path)
-    _run_task("callgraph", t_callgraph, run_logger, repo, commit, repo_root, db_path)
-    _run_task("cfg_dfg", t_cfg, run_logger, repo, commit, repo_root, db_path)
-    _run_task("import_graph", t_import_graph, run_logger, repo, commit, repo_root, db_path)
-    symbol_cfg = SymbolUsesConfig.from_paths(
-        repo_root=repo_root,
-        scip_json_path=build_dir / "scip" / "index.scip.json",
-        repo=repo,
-        commit=commit,
-    )
-    if (
-        scip_result is None or scip_result.status == "success"
-    ) and symbol_cfg.scip_json_path.is_file():
-        _run_task("symbol_uses", t_symbol_uses, run_logger, symbol_cfg, db_path)
-    else:
-        run_logger.info("Skipping symbol_uses: SCIP output unavailable")
+    step_handlers = [
+        ("repo_scan", lambda: _run_task("repo_scan", t_repo_scan, run_logger, ctx)),
+        (
+            "scip_ingest",
+            lambda: _run_scip_ingest(
+                logger=run_logger,
+                skip_scip=skip_scip,
+                scip_state=scip_state,
+                ctx=ctx,
+            ),
+        ),
+        ("cst_extract", lambda: _run_task("cst_extract", t_cst_extract, run_logger, ctx)),
+        ("ast_extract", lambda: _run_task("ast_extract", t_ast_extract, run_logger, ctx)),
+        (
+            "coverage_ingest",
+            lambda: _run_task("coverage_ingest", t_coverage_ingest, run_logger, ctx),
+        ),
+        ("tests_ingest", lambda: _run_task("tests_ingest", t_tests_ingest, run_logger, ctx)),
+        ("typing_ingest", lambda: _run_task("typing_ingest", t_typing_ingest, run_logger, ctx)),
+        (
+            "docstrings_ingest",
+            lambda: _run_task("docstrings_ingest", t_docstrings_ingest, run_logger, ctx),
+        ),
+        ("config_ingest", lambda: _run_task("config_ingest", t_config_ingest, run_logger, ctx)),
+        (
+            "goids",
+            lambda: _run_task("goids", t_goids, run_logger, ctx.repo, ctx.commit, ctx.db_path),
+        ),
+        (
+            "callgraph",
+            lambda: _run_task(
+                "callgraph",
+                t_callgraph,
+                run_logger,
+                ctx.repo,
+                ctx.commit,
+                ctx.repo_root,
+                ctx.db_path,
+            ),
+        ),
+        (
+            "cfg",
+            lambda: _run_task(
+                "cfg_dfg", t_cfg, run_logger, ctx.repo, ctx.commit, ctx.repo_root, ctx.db_path
+            ),
+        ),
+        (
+            "import_graph",
+            lambda: _run_task(
+                "import_graph",
+                t_import_graph,
+                run_logger,
+                ctx.repo,
+                ctx.commit,
+                ctx.repo_root,
+                ctx.db_path,
+            ),
+        ),
+        (
+            "symbol_uses",
+            lambda: _run_symbol_uses(
+                logger=run_logger,
+                scip_state=scip_state,
+                ctx=ctx,
+            ),
+        ),
+        (
+            "graph_validation",
+            lambda: _run_task(
+                "graph_validation",
+                t_graph_validation,
+                run_logger,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+            ),
+        ),
+        (
+            "hotspots",
+            lambda: _run_task(
+                "hotspots",
+                t_hotspots,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                ctx.tool_runner,
+            ),
+        ),
+        (
+            "function_metrics",
+            lambda: _run_task(
+                "function_metrics",
+                t_function_metrics,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+            ),
+        ),
+        (
+            "coverage_functions",
+            lambda: _run_task(
+                "coverage_functions",
+                t_coverage_functions,
+                run_logger,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+            ),
+        ),
+        (
+            "test_coverage_edges",
+            lambda: _run_task(
+                "test_coverage_edges",
+                t_test_coverage_edges,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+            ),
+        ),
+        (
+            "risk_factors",
+            lambda: _run_task(
+                "risk_factors",
+                t_risk_factors,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                ctx.build_dir,
+            ),
+        ),
+        (
+            "export_docs",
+            lambda: _run_task(
+                "export_docs", t_export_docs, run_logger, ctx.db_path, ctx.document_output_dir
+            ),
+        ),
+    ]
 
-    # Analytics
-    _run_task("hotspots", t_hotspots, run_logger, repo_root, repo, commit, db_path)
-    _run_task("function_metrics", t_function_metrics, run_logger, repo_root, repo, commit, db_path)
-    _run_task("coverage_functions", t_coverage_functions, run_logger, repo, commit, db_path)
-    _run_task(
-        "test_coverage_edges", t_test_coverage_edges, run_logger, repo_root, repo, commit, db_path
-    )
-    _run_task(
-        "risk_factors", t_risk_factors, run_logger, repo_root, repo, commit, db_path, build_dir
-    )
+    handlers = dict(step_handlers)
+    for name in _toposort_targets(targets):
+        handler = handlers.get(name)
+        if handler is None:
+            run_logger.warning("No handler registered for step %s; skipping.", name)
+            continue
+        handler()
 
-    # Export
-    _run_task("export_docs", t_export_docs, run_logger, db_path, document_output)
+
+def _toposort_targets(targets: Iterable[str] | None) -> list[str]:
+    desired = list(targets) if targets is not None else ["export_docs"]
+    order: list[str] = []
+    visited: set[str] = set()
+    visiting: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in visited:
+            return
+        if name in visiting:
+            message = f"Cycle detected in pipeline dependencies at {name}"
+            raise RuntimeError(message)
+        if name not in PIPELINE_STEPS:
+            message = f"Unknown pipeline step: {name}"
+            raise KeyError(message)
+        visiting.add(name)
+        step = PIPELINE_STEPS[name]
+        for dep in step.deps:
+            visit(dep)
+        visiting.remove(name)
+        visited.add(name)
+        order.append(name)
+
+    for target in desired:
+        visit(target)
+    return order
+
+
+def _run_scip_ingest(
+    *,
+    logger: Logger | LoggerAdapter,
+    skip_scip: bool,
+    scip_state: dict[str, scip_ingest.ScipIngestResult | None],
+    ctx: IngestionContext,
+) -> None:
+    if skip_scip:
+        logger.info("Skipping SCIP ingestion via CODEINTEL_SKIP_SCIP")
+        scip_state["result"] = None
+        return
+    start = _log_task("scip_ingest", logger)
+    result = t_scip_ingest.fn(ctx=ctx)
+    scip_state["result"] = result
+    _log_task_done("scip_ingest", start, logger)
+    if result.status != "success":
+        logger.info(
+            "SCIP ingestion result: %s (%s)",
+            result.status,
+            result.reason or "no reason",
+        )
+
+
+def _run_symbol_uses(
+    *,
+    logger: Logger | LoggerAdapter,
+    scip_state: dict[str, scip_ingest.ScipIngestResult | None],
+    ctx: IngestionContext,
+) -> None:
+    scip_result = scip_state.get("result")
+    if scip_result is not None and scip_result.status != "success":
+        logger.info("Skipping symbol_uses: SCIP ingest did not succeed (%s)", scip_result.status)
+        return
+    scip_json = ctx.build_dir / "scip" / "index.scip.json"
+    if not scip_json.is_file():
+        logger.info("Skipping symbol_uses: SCIP output unavailable")
+        return
+    cfg = SymbolUsesConfig.from_paths(
+        repo_root=ctx.repo_root,
+        scip_json_path=scip_json,
+        repo=ctx.repo,
+        commit=ctx.commit,
+    )
+    _run_task("symbol_uses", t_symbol_uses, logger, cfg, ctx.db_path)

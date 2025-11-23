@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import duckdb
@@ -29,6 +30,7 @@ def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
     db_path = repo_root / "build" / "db" / "codeintel.duckdb"
     build_dir = repo_root / "build"
 
+    os.environ["CODEINTEL_SKIP_SCIP"] = "true"
     exit_code = main(
         [
             "pipeline",

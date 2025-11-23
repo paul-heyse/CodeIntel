@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from fnmatch import fnmatch
@@ -15,24 +14,11 @@ import yaml
 
 from codeintel.config.models import RepoScanConfig
 from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.source_scanner import ScanConfig, SourceScanner
 from codeintel.storage.schemas import apply_all_schemas
 from codeintel.utils.paths import relpath_to_module, repo_relpath
 
 log = logging.getLogger(__name__)
-
-IGNORE_DIRS = {
-    ".git",
-    ".hg",
-    ".svn",
-    ".venv",
-    "venv",
-    ".tox",
-    "__pycache__",
-    "build",
-    "dist",
-    ".mypy_cache",
-    ".pytest_cache",
-}
 
 
 @dataclass
@@ -56,18 +42,6 @@ class TagEntry(TypedDict, total=False):
     includes: list[str]
     excludes: list[str]
     matches: list[str]
-
-
-def _iter_python_files(repo_root: Path) -> Iterable[Path]:
-    search_root = repo_root / "src"
-    if not search_root.is_dir():
-        search_root = repo_root
-
-    for path in search_root.rglob("*.py"):
-        rel_parts = path.relative_to(repo_root).parts
-        if any(part in IGNORE_DIRS for part in rel_parts):
-            continue
-        yield path
 
 
 def _load_tags_index(tags_index_path: Path) -> list[TagEntry]:
@@ -129,6 +103,7 @@ def _tags_for_path(rel_path: str, tags_entries: list[TagEntry]) -> list[str]:
 def ingest_repo(
     con: duckdb.DuckDBPyConnection,
     cfg: RepoScanConfig,
+    scan_config: ScanConfig | None = None,
 ) -> None:
     """
     Scan the repository and populate module metadata tables.
@@ -145,8 +120,11 @@ def ingest_repo(
         DuckDB connection.
     cfg:
         Repository context and optional tags_index override.
+    scan_config:
+        Optional shared scan configuration; defaults to Python-only scanning.
     """
     repo_root = cfg.repo_root
+    scan_cfg = scan_config or ScanConfig(repo_root=repo_root)
     tags_index_path = cfg.tags_index_path or (repo_root / "tags_index.yaml")
 
     log.info("Scanning repo %s at %s", cfg.repo, repo_root)
@@ -158,7 +136,10 @@ def ingest_repo(
 
     modules: dict[str, ModuleRow] = {}
 
-    for path in _iter_python_files(repo_root):
+    scanner = SourceScanner(scan_cfg)
+
+    for record in scanner.iter_files(log):
+        path = record.path
         rel_path = repo_relpath(repo_root, path)
         module = relpath_to_module(rel_path)
         tags = _tags_for_path(rel_path, tags_entries)

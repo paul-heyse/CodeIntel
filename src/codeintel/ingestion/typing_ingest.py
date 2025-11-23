@@ -15,8 +15,10 @@ from pathlib import Path
 
 import duckdb
 
-from codeintel.config.models import TypingIngestConfig
+from codeintel.config.models import ToolsConfig, TypingIngestConfig
 from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.source_scanner import ScanConfig, SourceScanner
+from codeintel.ingestion.tool_runner import ToolResult, ToolRunner
 from codeintel.models.rows import (
     StaticDiagnosticRow,
     TypednessRow,
@@ -28,6 +30,8 @@ from codeintel.utils.paths import repo_relpath
 
 log = logging.getLogger(__name__)
 MISSING_BINARY_EXIT_CODE = 127
+PYRIGHT_BIN = "pyright"
+RUFF_BIN = "ruff"
 
 IGNORE_DIRS = {
     ".git",
@@ -64,16 +68,12 @@ class AnnotationInfo:
     untyped_defs: int
 
 
-def _iter_python_files(repo_root: Path) -> Iterable[Path]:
-    search_root = repo_root / "src"
-    if not search_root.is_dir():
-        search_root = repo_root
-
-    for path in search_root.rglob("*.py"):
-        rel_parts = path.relative_to(repo_root).parts
-        if any(part in IGNORE_DIRS for part in rel_parts):
-            continue
-        yield path
+def _iter_python_files(repo_root: Path, scan_cfg: ScanConfig | None) -> Iterable[Path]:
+    scanner = SourceScanner(
+        scan_cfg or ScanConfig(repo_root=repo_root, ignore_dirs=tuple(sorted(IGNORE_DIRS)))
+    )
+    for record in scanner.iter_files(log):
+        yield record.path
 
 
 def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
@@ -157,7 +157,7 @@ def _resolve_pyrefly_bin() -> str:
     return shutil.which("pyrefly") or "pyrefly"
 
 
-def _run_pyrefly(repo_root: Path) -> dict[str, int]:
+def _run_pyrefly(repo_root: Path, runner: ToolRunner) -> dict[str, int]:
     """
     Run pyrefly and aggregate error counts per file.
 
@@ -165,6 +165,10 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
     ----------
     repo_root : Path
         Root directory to scan with pyrefly.
+    runner : ToolRunner
+        Shared tool runner for invoking pyrefly.
+    runner : ToolRunner
+        Shared tool runner for invoking pyrefly.
 
     Returns
     -------
@@ -175,6 +179,7 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
         output_path = Path(tmp.name)
 
+    output_path = runner.cache_dir / "pyrefly.json"
     args = [
         _resolve_pyrefly_bin(),
         "check",
@@ -188,34 +193,25 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
         "--count-errors=0",
     ]
 
-    code, stdout, stderr = _run_command(args, cwd=repo_root)
-    if code == MISSING_BINARY_EXIT_CODE:
+    result: ToolResult = runner.run("pyrefly", args, cwd=repo_root, output_path=output_path)
+    if result.returncode == MISSING_BINARY_EXIT_CODE:
         log.warning("pyrefly binary not found; treating all files as 0 errors")
         output_path.unlink(missing_ok=True)
         return {}
 
-    # Try to parse output regardless of exit code, as code 1 usually just means errors were found.
-    try:
-        if output_path.exists() and output_path.stat().st_size > 0:
-            payload = json.loads(output_path.read_text(encoding="utf8"))
-        else:
-            # If no output file but non-zero exit, log warning
-            if code != 0:
-                log.warning(
-                    "pyrefly check exited with code %s and no output; stdout=%s stderr=%s",
-                    code,
-                    stdout.strip(),
-                    stderr.strip(),
-                )
-            return {}
-    except (OSError, json.JSONDecodeError) as exc:
-        log.warning("Failed to read pyrefly JSON output: %s", exc)
+    payload = runner.load_json(output_path) or {}
+    if not payload and result.returncode != 0:
+        log.warning(
+            "pyrefly check exited with code %s and no output; stdout=%s stderr=%s",
+            result.returncode,
+            result.stdout.strip(),
+            result.stderr.strip(),
+        )
         output_path.unlink(missing_ok=True)
         return {}
-    finally:
-        output_path.unlink(missing_ok=True)
 
-    errors: list[PyreflyError] = payload.get("errors") or []
+    errors_field = payload.get("errors") if isinstance(payload, dict) else None
+    errors: list[PyreflyError] = errors_field if isinstance(errors_field, list) else []
     errors_by_file: dict[str, int] = {}
     for diag in errors:
         if diag.get("severity") != "error":
@@ -233,9 +229,96 @@ def _run_pyrefly(repo_root: Path) -> dict[str, int]:
     return errors_by_file
 
 
+def _run_pyright(
+    repo_root: Path, runner: ToolRunner, *, pyright_bin: str = PYRIGHT_BIN
+) -> dict[str, int]:
+    """
+    Run pyright and aggregate error counts per file.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping from repository-relative paths to error counts.
+    """
+    args = [
+        pyright_bin,
+        "--outputjson",
+        str(repo_root),
+    ]
+    result = runner.run("pyright", args, cwd=repo_root)
+    if result.returncode == MISSING_BINARY_EXIT_CODE:
+        log.warning("pyright binary not found; treating all files as 0 errors")
+        return {}
+    payload = {}
+    try:
+        payload = json.loads(result.stdout) if result.stdout else {}
+    except json.JSONDecodeError as exc:
+        log.warning("Failed to parse pyright JSON output: %s", exc)
+        return {}
+
+    diagnostics = payload.get("generalDiagnostics") if isinstance(payload, dict) else None
+    if not isinstance(diagnostics, list):
+        return {}
+    errors_by_file: dict[str, int] = {}
+    for diag in diagnostics:
+        if not isinstance(diag, dict):
+            continue
+        if diag.get("severity") != "error":
+            continue
+        file_name = diag.get("file")
+        if not file_name:
+            continue
+        rel_path = repo_relpath(repo_root, Path(str(file_name)))
+        errors_by_file[rel_path] = errors_by_file.get(rel_path, 0) + 1
+    return errors_by_file
+
+
+def _run_ruff(repo_root: Path, runner: ToolRunner) -> dict[str, int]:
+    """
+    Run ruff and aggregate error counts per file.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping from repository-relative paths to error counts.
+    """
+    args = [
+        RUFF_BIN,
+        "check",
+        str(repo_root),
+        "--output-format",
+        "json",
+    ]
+    result = runner.run("ruff", args, cwd=repo_root)
+    if result.returncode == MISSING_BINARY_EXIT_CODE:
+        log.warning("ruff binary not found; treating all files as 0 errors")
+        return {}
+    try:
+        payload = json.loads(result.stdout) if result.stdout else []
+    except json.JSONDecodeError as exc:
+        log.warning("Failed to parse ruff JSON output: %s", exc)
+        return {}
+    if not isinstance(payload, list):
+        return {}
+    errors_by_file: dict[str, int] = {}
+    for diag in payload:
+        if not isinstance(diag, dict):
+            continue
+        file_name = diag.get("filename")
+        if not file_name:
+            continue
+        rel_path = repo_relpath(repo_root, Path(str(file_name)))
+        errors_by_file[rel_path] = errors_by_file.get(rel_path, 0) + 1
+    return errors_by_file
+
+
 def ingest_typing_signals(
     con: duckdb.DuckDBPyConnection,
     cfg: TypingIngestConfig,
+    *,
+    scan_config: ScanConfig | None = None,
+    runner: ToolRunner | None = None,
+    tools: ToolsConfig | None = None,
 ) -> None:
     """
     Populate per-file typedness and static diagnostics.
@@ -249,43 +332,51 @@ def ingest_typing_signals(
         (params & returns).
     """
     repo_root = cfg.repo_root
+    scan_cfg = scan_config or ScanConfig(
+        repo_root=repo_root, ignore_dirs=tuple(sorted(IGNORE_DIRS))
+    )
+    shared_runner = runner or ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
+    pyright_bin = tools.pyright_bin if tools is not None else PYRIGHT_BIN
 
     # Compute annotation info for each Python file
     annotation_info: dict[str, AnnotationInfo] = {}
-    for path in _iter_python_files(repo_root):
+    for path in _iter_python_files(repo_root, scan_cfg):
         rel_path = repo_relpath(repo_root, path)
         info = _compute_annotation_info_for_file(path)
         if info is not None:
             annotation_info[rel_path] = info
 
-    pyrefly_errors = _run_pyrefly(repo_root)
-
-    all_paths = set(annotation_info.keys()) | set(pyrefly_errors.keys())
+    error_maps = {
+        "pyrefly": _run_pyrefly(repo_root, shared_runner),
+        "pyright": _run_pyright(repo_root, shared_runner, pyright_bin=pyright_bin),
+        "ruff": _run_ruff(repo_root, shared_runner),
+    }
+    path_set = (
+        set(annotation_info)
+        | set(error_maps["pyrefly"])
+        | set(error_maps["pyright"])
+        | set(error_maps["ruff"])
+    )
 
     typedness_rows: list[TypednessRow] = []
     diag_rows: list[StaticDiagnosticRow] = []
-    for rel_path in sorted(all_paths):
-        info = annotation_info.get(
-            rel_path, AnnotationInfo(params_ratio=0.0, returns_ratio=0.0, untyped_defs=0)
-        )
-        py_errors = 0
-        pf_errors = pyrefly_errors.get(rel_path, 0)
-        total_errors = pf_errors
-        has_errors = total_errors > 0
-
-        annotation_ratio = {
-            "params": info.params_ratio,
-            "returns": info.returns_ratio,
-        }
-        overlay_needed = bool(total_errors > 0 or info.untyped_defs > 0)
+    default_info = AnnotationInfo(params_ratio=0.0, returns_ratio=0.0, untyped_defs=0)
+    for rel_path in sorted(path_set):
+        info = annotation_info.get(rel_path, default_info)
+        pf_errors = error_maps["pyrefly"].get(rel_path, 0)
+        py_errors = error_maps["pyright"].get(rel_path, 0)
+        total_errors = pf_errors + py_errors
 
         typedness_rows.append(
             TypednessRow(
                 path=rel_path,
                 type_error_count=total_errors,
-                annotation_ratio=annotation_ratio,
+                annotation_ratio={
+                    "params": info.params_ratio,
+                    "returns": info.returns_ratio,
+                },
                 untyped_defs=info.untyped_defs,
-                overlay_needed=overlay_needed,
+                overlay_needed=bool(total_errors > 0 or info.untyped_defs > 0),
             )
         )
 
@@ -294,8 +385,9 @@ def ingest_typing_signals(
                 rel_path=rel_path,
                 pyrefly_errors=pf_errors,
                 pyright_errors=py_errors,
+                ruff_errors=error_maps["ruff"].get(rel_path, 0),
                 total_errors=total_errors,
-                has_errors=has_errors,
+                has_errors=total_errors > 0,
             )
         )
 
@@ -316,7 +408,7 @@ def ingest_typing_signals(
 
     log.info(
         "Typedness & static diagnostics ingested for %d files in %s@%s",
-        len(all_paths),
+        len(path_set),
         cfg.repo,
         cfg.commit,
     )

@@ -10,7 +10,8 @@ from typing import cast
 import duckdb
 
 from codeintel.config.models import SymbolUsesConfig
-from codeintel.ingestion.common import load_module_map, run_batch
+from codeintel.graphs.function_catalog import load_function_catalog
+from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import SymbolUseRow, symbol_use_to_tuple
 from codeintel.types import ScipDocument
 
@@ -32,12 +33,12 @@ def build_symbol_use_edges(
     """
     scip_path = cfg.scip_json_path
 
-    docs = _load_scip_docs(scip_path)
+    docs = load_scip_documents(scip_path)
     if docs is None:
         return
 
-    module_by_path = load_module_map(con, cfg.repo, cfg.commit)
-    def_path_by_symbol = _build_def_map(docs)
+    module_by_path = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit).module_by_path
+    def_path_by_symbol = build_def_map(docs)
     rows = _build_symbol_edges(docs, def_path_by_symbol, module_by_path)
 
     run_batch(
@@ -55,7 +56,29 @@ def build_symbol_use_edges(
     )
 
 
-def _load_scip_docs(scip_path: Path) -> list[ScipDocument] | None:
+def default_scip_json_path(repo_root: Path, build_dir: Path | None) -> Path | None:
+    """
+    Return default `index.scip.json` location if present.
+
+    Returns
+    -------
+    Path | None
+        Path when present, otherwise None.
+    """
+    base = build_dir if build_dir is not None else repo_root / "build"
+    scip_path = (base / "scip" / "index.scip.json").resolve()
+    return scip_path if scip_path.exists() else None
+
+
+def load_scip_documents(scip_path: Path) -> list[ScipDocument] | None:
+    """
+    Load SCIP documents from a JSON file path.
+
+    Returns
+    -------
+    list[ScipDocument] | None
+        Parsed documents, or None when unreadable.
+    """
     if not scip_path.exists():
         log.warning("SCIP JSON not found at %s; skipping symbol_use_edges", scip_path)
         return None
@@ -78,7 +101,15 @@ def _load_scip_docs(scip_path: Path) -> list[ScipDocument] | None:
     return [cast("ScipDocument", doc) for doc in docs_raw if isinstance(doc, dict)]
 
 
-def _build_def_map(docs: list[ScipDocument]) -> dict[str, str]:
+def build_def_map(docs: list[ScipDocument]) -> dict[str, str]:
+    """
+    Map symbol -> defining path from SCIP documents.
+
+    Returns
+    -------
+    dict[str, str]
+        Symbol identifier to definition path mapping.
+    """
     def_path_by_symbol: dict[str, str] = {}
     for doc in docs:
         rel_path = doc.get("relative_path")
@@ -146,3 +177,35 @@ def _build_symbol_edges(
                 )
             )
     return rows
+
+
+def build_use_def_mapping(
+    docs: list[ScipDocument], def_path_by_symbol: dict[str, str]
+) -> dict[str, set[str]]:
+    """
+    Derive mapping of use_path -> definition path(s) from SCIP documents.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Mapping keyed by use_path to definition paths.
+    """
+    mapping: dict[str, set[str]] = {}
+    for doc in docs:
+        use_path_raw = doc.get("relative_path")
+        if not use_path_raw:
+            continue
+        use_path = str(use_path_raw).replace("\\", "/")
+        for occ in doc.get("occurrences", []):
+            symbol = occ.get("symbol")
+            if not symbol:
+                continue
+            roles = int(occ.get("symbol_roles", 0))
+            is_ref = bool(roles & (2 | 4 | 8))
+            if not is_ref:
+                continue
+            def_path = def_path_by_symbol.get(symbol)
+            if not def_path:
+                continue
+            mapping.setdefault(use_path, set()).add(def_path)
+    return mapping

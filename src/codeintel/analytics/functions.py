@@ -17,7 +17,9 @@ from typing import TypedDict
 import duckdb
 
 from codeintel.config.models import FunctionAnalyticsConfig
+from codeintel.ingestion.ast_utils import AstSpanIndex, timed_parse
 from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.source_scanner import ScanConfig, SourceScanner
 
 log = logging.getLogger(__name__)
 
@@ -201,62 +203,17 @@ def _annotation_to_str(node: ast.AST | None) -> str | None:
         return getattr(node, "id", None) or type(node).__name__
 
 
-def _collect_function_nodes(tree: ast.AST) -> list[ast.AST]:
-    funcs: list[ast.AST] = []
-
-    class Collector(ast.NodeVisitor):
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-            funcs.append(node)
-            # do not traverse nested functions further for mapping by line span
-            self.generic_visit(node)
-
-        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-            funcs.append(node)
-            self.generic_visit(node)
-
-    Collector().visit(tree)
-    return funcs
+def _node_for_span(index: AstSpanIndex, start_line: int, end_line: int) -> ast.AST | None:
+    return index.lookup(start_line, end_line)
 
 
-def _build_node_map_by_span(functions: list[ast.AST]) -> dict[tuple[int, int], ast.AST]:
-    result: dict[tuple[int, int], ast.AST] = {}
-    for fn in functions:
-        lineno = getattr(fn, "lineno", None)
-        end_lineno = getattr(fn, "end_lineno", None)
-        if lineno is None or end_lineno is None:
-            continue
-        result[int(lineno), int(end_lineno)] = fn
-    return result
-
-
-def _node_for_span(
-    node_map: dict[tuple[int, int], ast.AST], start_line: int, end_line: int
-) -> ast.AST | None:
-    node = node_map.get((start_line, end_line))
-    if node is not None:
-        return node
-    for (s, e), candidate in node_map.items():
-        if s <= start_line <= e:
-            return candidate
-    return None
-
-
-def _parse_python_file(file_path: Path) -> tuple[list[str], dict[tuple[int, int], ast.AST]] | None:
-    try:
-        source = file_path.read_text(encoding="utf-8")
-    except (FileNotFoundError, UnicodeDecodeError):
+def _parse_python_file(file_path: Path) -> tuple[list[str], AstSpanIndex] | None:
+    parsed = timed_parse(file_path)
+    if parsed is None:
         return None
-
-    try:
-        tree = ast.parse(source, filename=str(file_path))
-    except SyntaxError as exc:
-        log.warning("Syntax error in %s: %s; skipping", file_path, exc)
-        return None
-
-    lines = source.splitlines()
-    fn_nodes = _collect_function_nodes(tree)
-    node_map = _build_node_map_by_span(fn_nodes)
-    return lines, node_map
+    lines, tree, _duration = parsed
+    index = AstSpanIndex.from_tree(tree, (ast.FunctionDef, ast.AsyncFunctionDef))
+    return lines, index
 
 
 def _compute_loc(lines: list[str], start_line: int, end_line: int) -> tuple[int, int]:
@@ -508,66 +465,30 @@ def compute_function_metrics_and_types(
     - It skips functions whose source files are missing or invalid, logging
       context so pipeline failures can be triaged quickly.
     """
-    repo_root = cfg.repo_root.resolve()
-
-    df = con.execute(
-        """
-        SELECT
-            goid_h128,
-            urn,
-            repo,
-            commit,
-            rel_path,
-            language,
-            kind,
-            qualname,
-            start_line,
-            end_line
-        FROM core.goids
-        WHERE repo = ? AND commit = ?
-          AND kind IN ('function', 'method')
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetch_df()
-
-    if df.empty:
-        log.info("No function GOIDs found for repo=%s commit=%s", cfg.repo, cfg.commit)
+    scanner = SourceScanner(ScanConfig(repo_root=cfg.repo_root))
+    goids_by_file = _load_goids(con, cfg)
+    if not goids_by_file:
         return
-
-    # Group GOIDs by file to parse each file once.
-    goids_by_file: dict[str, list[GoidRow]] = {}
-    for _, row in df.iterrows():
-        rel_path = str(row["rel_path"]).replace("\\", "/")
-        goid_row: GoidRow = {
-            "goid_h128": int(row["goid_h128"]),
-            "urn": str(row["urn"]),
-            "repo": str(row["repo"]),
-            "commit": str(row["commit"]),
-            "rel_path": rel_path,
-            "language": str(row["language"]),
-            "kind": str(row["kind"]),
-            "qualname": str(row["qualname"]),
-            "start_line": int(row["start_line"]),
-            "end_line": int(row["end_line"]) if row["end_line"] is not None else None,
-        }
-        goids_by_file.setdefault(rel_path, []).append(goid_row)
 
     metrics_rows: list[tuple] = []
     types_rows: list[tuple] = []
 
     now = datetime.now(UTC)
 
-    for rel_path, fun_rows in goids_by_file.items():
-        file_path = repo_root / rel_path
-        parsed = _parse_python_file(file_path)
+    for record in scanner.iter_files(log):
+        rel_path = record.rel_path
+        fun_rows = goids_by_file.get(rel_path)
+        if not fun_rows:
+            continue
+        parsed = _parse_python_file(record.path)
         if parsed is None:
-            log.warning("Skipping file for function analytics: %s", file_path)
+            log.warning("Skipping file for function analytics: %s", record.path)
             continue
         lines, node_map = parsed
         file_metrics, file_types = _process_functions_in_file(
             rel_path=rel_path,
             fun_rows=fun_rows,
-            node_map=node_map,
+            index=node_map,
             lines=lines,
             ctx=ProcessContext(cfg=cfg, now=now),
         )
@@ -598,10 +519,56 @@ def compute_function_metrics_and_types(
     )
 
 
+def _load_goids(
+    con: duckdb.DuckDBPyConnection, cfg: FunctionAnalyticsConfig
+) -> dict[str, list[GoidRow]]:
+    df = con.execute(
+        """
+        SELECT
+            goid_h128,
+            urn,
+            repo,
+            commit,
+            rel_path,
+            language,
+            kind,
+            qualname,
+            start_line,
+            end_line
+        FROM core.goids
+        WHERE repo = ? AND commit = ?
+          AND kind IN ('function', 'method')
+        """,
+        [cfg.repo, cfg.commit],
+    ).fetch_df()
+
+    if df.empty:
+        log.info("No function GOIDs found for repo=%s commit=%s", cfg.repo, cfg.commit)
+        return {}
+
+    goids_by_file: dict[str, list[GoidRow]] = {}
+    for _, row in df.iterrows():
+        rel_path = str(row["rel_path"]).replace("\\", "/")
+        goid_row: GoidRow = {
+            "goid_h128": int(row["goid_h128"]),
+            "urn": str(row["urn"]),
+            "repo": str(row["repo"]),
+            "commit": str(row["commit"]),
+            "rel_path": rel_path,
+            "language": str(row["language"]),
+            "kind": str(row["kind"]),
+            "qualname": str(row["qualname"]),
+            "start_line": int(row["start_line"]),
+            "end_line": int(row["end_line"]) if row["end_line"] is not None else None,
+        }
+        goids_by_file.setdefault(rel_path, []).append(goid_row)
+    return goids_by_file
+
+
 def _process_functions_in_file(
     rel_path: str,
     fun_rows: list[GoidRow],
-    node_map: dict[tuple[int, int], ast.AST],
+    index: AstSpanIndex,
     lines: list[str],
     ctx: ProcessContext,
 ) -> tuple[list[tuple], list[tuple]]:
@@ -611,7 +578,7 @@ def _process_functions_in_file(
     for info in fun_rows:
         start_line = int(info["start_line"])
         end_line = int(info["end_line"]) if info["end_line"] is not None else start_line
-        node = _node_for_span(node_map, start_line, end_line)
+        node = _node_for_span(index, start_line, end_line)
         if node is None:
             log.debug(
                 "No AST node match for function %s in %s (%s-%s)",

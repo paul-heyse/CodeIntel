@@ -8,12 +8,11 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
 
 import duckdb
-import pandas as pd
 
 from codeintel.config.models import CFGBuilderConfig
+from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import (
     CFGBlockRow,
@@ -62,7 +61,9 @@ class Edge:
 class CFGBuilder:
     """Builds CFG for a single function AST."""
 
-    def __init__(self, goid: int, func_node: ast.FunctionDef | ast.AsyncFunctionDef, file_path: str) -> None:
+    def __init__(
+        self, goid: int, func_node: ast.FunctionDef | ast.AsyncFunctionDef, file_path: str
+    ) -> None:
         self.goid = goid
         self.func_node = func_node
         self.file_path = file_path
@@ -332,9 +333,7 @@ class DFGBuilder:
                     changed = True
         return reach_in
 
-    def _emit_edges_for_block(
-        self, block: Block, reaching_defs: dict[str, set[int]]
-    ) -> None:
+    def _emit_edges_for_block(self, block: Block, reaching_defs: dict[str, set[int]]) -> None:
         current_defs = reaching_defs.copy()
         local_defs: set[str] = set()
         for stmt in block.stmts:
@@ -403,9 +402,7 @@ class FunctionBuildSpec:
 def _load_source(spec: FunctionBuildSpec, file_cache: dict[str, str]) -> str:
     if spec.rel_path not in file_cache:
         try:
-            file_cache[spec.rel_path] = (spec.repo_root / spec.rel_path).read_text(
-                encoding="utf8"
-            )
+            file_cache[spec.rel_path] = (spec.repo_root / spec.rel_path).read_text(encoding="utf8")
         except Exception:  # noqa: BLE001
             file_cache[spec.rel_path] = ""
     return file_cache[spec.rel_path]
@@ -547,26 +544,12 @@ def build_cfg_and_dfg(con: duckdb.DuckDBPyConnection, cfg: CFGBuilderConfig) -> 
         [cfg.repo, cfg.commit],
     )
 
-    df_funcs = con.execute(
-        """
-        SELECT function_goid_h128, rel_path, qualname, start_line, end_line
-        FROM analytics.function_metrics
-        WHERE repo = ? AND commit = ?
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetch_df()
+    function_spans = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit).function_spans
+    if not function_spans:
+        log.warning("No function GOIDs found; skipping CFG/DFG build.")
+        return
 
-    if df_funcs.empty:
-        df_funcs = con.execute(
-            """
-            SELECT goid_h128 AS function_goid_h128, rel_path, qualname, start_line, end_line
-            FROM core.goids
-            WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
-            """,
-            [cfg.repo, cfg.commit],
-        ).fetch_df()
-
-    log.info("Building CFG/DFG for %d functions...", len(df_funcs))
+    log.info("Building CFG/DFG for %d functions...", len(function_spans))
 
     all_blocks: list[CFGBlockRow] = []
     all_cfg_edges: list[CFGEdgeRow] = []
@@ -574,20 +557,16 @@ def build_cfg_and_dfg(con: duckdb.DuckDBPyConnection, cfg: CFGBuilderConfig) -> 
 
     file_cache: dict[str, str] = {}
 
-    for _, row in df_funcs.iterrows():
-        goid = int(row["function_goid_h128"])
-        rel_path = str(row["rel_path"])
-        start = int(row["start_line"])
-        end_val = cast("Any", row["end_line"])  # Ignore type check for pandas row access
-        end = int(end_val) if pd.notna(end_val) else start
-        qualname = str(row["qualname"])
+    for span in function_spans:
+        start = span.start_line
+        end = span.end_line
 
         spec = FunctionBuildSpec(
-            goid=goid,
+            goid=span.goid,
             repo_root=cfg.repo_root,
-            rel_path=rel_path,
+            rel_path=span.rel_path,
             lines=(start, end),
-            qualname=qualname,
+            qualname=span.qualname,
         )
         blocks, edges, dfg = _build_cfg_for_function(spec, file_cache)
 

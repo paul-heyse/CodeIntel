@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from datetime import UTC, datetime
 from pathlib import Path
@@ -104,6 +105,12 @@ def _seed_goids(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> None:
         """,
         goids,
     )
+    con.execute(
+        """
+        INSERT INTO graph.symbol_use_edges (symbol, def_path, use_path, same_file, same_module)
+        VALUES ('sym', 'pkg/a.py', 'pkg/b.py', FALSE, FALSE)
+        """
+    )
 
 
 def _normalize_callee(value: object) -> int | None:
@@ -147,6 +154,17 @@ def _assert_unresolved_edge(edge_records: list[dict]) -> None:
     if not all(edge["kind"] == "unresolved" for edge in edges):
         message = "expected unresolved edges to have kind 'unresolved'"
         raise AssertionError(message)
+    for edge in edges:
+        evidence = edge.get("evidence_json")
+        if isinstance(evidence, str):
+            evidence = json.loads(evidence)
+        if evidence is None:
+            message = "expected evidence_json on unresolved edge"
+            raise AssertionError(message)
+        scip_candidates = evidence.get("scip_candidates")
+        if scip_candidates != ["pkg/a.py"]:
+            message = f"expected SCIP candidates ['pkg/a.py'], got {scip_candidates}"
+            raise AssertionError(message)
 
 
 def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:

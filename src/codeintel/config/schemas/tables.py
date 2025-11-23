@@ -307,6 +307,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("rel_path", "VARCHAR", nullable=False),
             Column("pyrefly_errors", "INTEGER", nullable=False),
             Column("pyright_errors", "INTEGER", nullable=False),
+            Column("ruff_errors", "INTEGER", nullable=False),
             Column("total_errors", "INTEGER", nullable=False),
             Column("has_errors", "BOOLEAN", nullable=False),
         ],

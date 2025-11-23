@@ -9,10 +9,10 @@ import duckdb
 import libcst as cst
 
 from codeintel.config.models import ImportGraphConfig
+from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.graphs.import_resolver import collect_import_edges
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import ImportEdgeRow, import_edge_to_tuple
-from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
 
@@ -89,24 +89,15 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
     """
     repo_root = cfg.repo_root.resolve()
 
-    df_modules = con.execute(
-        """
-        SELECT module, path
-        FROM core.modules
-        WHERE repo = ? AND commit = ? AND language = 'python'
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetch_df()
-
-    if df_modules.empty:
-        log.info("No modules found in core.modules; skipping import graph.")
+    catalog = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit)
+    module_map = catalog.module_by_path
+    if not module_map:
+        log.info("No modules found in catalog; skipping import graph.")
         return
 
     # Collect raw edges
     raw_edges: set[tuple[str, str]] = set()
-    for _, row in df_modules.iterrows():
-        module_name = str(row["module"])
-        rel_path = normalize_rel_path(str(row["path"]))
+    for rel_path, module_name in module_map.items():
         file_path = repo_root / rel_path
 
         try:

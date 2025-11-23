@@ -16,6 +16,7 @@ from coverage.exceptions import CoverageException
 
 from codeintel.config.models import TestCoverageConfig
 from codeintel.config.schemas.sql_builder import TEST_CATALOG_UPDATE_GOIDS, ensure_schema
+from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import TestCoverageEdgeRow, test_coverage_edge_to_tuple
 from codeintel.utils.paths import normalize_rel_path
@@ -58,39 +59,20 @@ def _load_coverage_data(cfg: TestCoverageConfig) -> Coverage | None:
 def _functions_by_path(
     con: duckdb.DuckDBPyConnection, cfg: TestCoverageConfig
 ) -> dict[str, list[FunctionRow]]:
-    funcs = con.execute(
-        """
-        SELECT
-            goid_h128,
-            urn,
-            rel_path,
-            qualname,
-            start_line,
-            end_line
-        FROM core.goids
-        WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetchall()
+    catalog = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit)
+    if not catalog.function_spans:
+        return {}
 
     funcs_by_path: dict[str, list[FunctionRow]] = {}
-    for (
-        goid_h128,
-        urn,
-        rel_path,
-        qualname,
-        start_line,
-        end_line,
-    ) in funcs:
-        rel_path_str = normalize_rel_path(rel_path)
-        funcs_by_path.setdefault(rel_path_str, []).append(
+    for span in catalog.function_spans:
+        funcs_by_path.setdefault(span.rel_path, []).append(
             FunctionRow(
-                goid_h128=int(goid_h128),
-                urn=str(urn),
-                rel_path=rel_path_str,
-                qualname=str(qualname),
-                start_line=int(start_line),
-                end_line=int(end_line) if end_line is not None else None,
+                goid_h128=span.goid,
+                urn=catalog.urn_for_goid(span.goid) or "",
+                rel_path=span.rel_path,
+                qualname=span.qualname,
+                start_line=span.start_line,
+                end_line=span.end_line,
             )
         )
     return funcs_by_path

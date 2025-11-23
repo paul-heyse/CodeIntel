@@ -182,6 +182,7 @@ STATIC_DIAGNOSTICS_COLUMNS = [
     "rel_path",
     "pyrefly_errors",
     "pyright_errors",
+    "ruff_errors",
     "total_errors",
     "has_errors",
 ]
@@ -481,8 +482,8 @@ TYPEDNESS_INSERT = (
 
 STATIC_DIAGNOSTICS_DELETE = "DELETE FROM analytics.static_diagnostics WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
 STATIC_DIAGNOSTICS_INSERT = (
-    "INSERT INTO analytics.static_diagnostics (rel_path, pyrefly_errors, pyright_errors, total_errors, has_errors) "
-    "VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO analytics.static_diagnostics (rel_path, pyrefly_errors, pyright_errors, ruff_errors, total_errors, has_errors) "
+    "VALUES (?, ?, ?, ?, ?, ?)"
 )
 
 HOTSPOTS_INSERT = (

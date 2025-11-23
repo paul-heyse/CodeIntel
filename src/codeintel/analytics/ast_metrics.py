@@ -8,24 +8,20 @@ prioritize files that change frequently and carry structural complexity.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
-import shutil
-from asyncio.subprocess import PIPE, create_subprocess_exec
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import duckdb
 
 from codeintel.config.models import HotspotsConfig
 from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.models.rows import HotspotRow, hotspot_row_to_tuple
 
 log = logging.getLogger(__name__)
 MAX_STDERR_CHARS = 500
-GIT_OK_CODES = {0, 1}
 NUMSTAT_FIELDS = 3
 ChurnSummary = dict[str, int]
 
@@ -56,7 +52,10 @@ class FileChurn:
         }
 
 
-def _collect_git_file_stats(cfg: HotspotsConfig) -> dict[str, ChurnSummary]:
+def _collect_git_file_stats(
+    cfg: HotspotsConfig,
+    runner: ToolRunner | None = None,
+) -> dict[str, ChurnSummary]:
     """
     Collect per-file churn statistics from `git log --numstat`.
 
@@ -69,6 +68,8 @@ def _collect_git_file_stats(cfg: HotspotsConfig) -> dict[str, ChurnSummary]:
     ----------
     cfg : HotspotsConfig
         Repository context including the root directory and log depth limit.
+    runner : ToolRunner | None
+        Optional shared ToolRunner for git invocations.
 
     Returns
     -------
@@ -85,19 +86,16 @@ def _collect_git_file_stats(cfg: HotspotsConfig) -> dict[str, ChurnSummary]:
     if cfg.max_commits <= 0:
         return {}
 
-    git_lines = _run_git_log(cfg)
+    git_lines = _run_git_log(cfg, runner=runner)
     if git_lines is None:
         return {}
     return _parse_git_log_lines(git_lines)
 
 
-def _run_git_log(cfg: HotspotsConfig) -> list[str] | None:
+def _run_git_log(cfg: HotspotsConfig, runner: ToolRunner | None = None) -> list[str] | None:
     repo_root = cfg.repo_root.resolve()
-    if shutil.which("git") is None:
-        log.warning("git not found; hotspot analytics will have zero churn data.")
-        return None
-
-    cmd = [
+    active_runner = runner or ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
+    args = [
         "git",
         "log",
         f"--max-count={cfg.max_commits}",
@@ -106,40 +104,17 @@ def _run_git_log(cfg: HotspotsConfig) -> list[str] | None:
         "--pretty=format:COMMIT\t%H\t%an",
         "--no-renames",
     ]
-    try:
-        return asyncio.run(_run_git_log_async(cmd, repo_root))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(_run_git_log_async(cmd, repo_root))
-        finally:
-            loop.close()
-
-
-async def _run_git_log_async(cmd: list[str], repo_root: Path) -> list[str] | None:
-    try:
-        proc = await create_subprocess_exec(
-            *cmd,
-            cwd=str(repo_root),
-            stdout=PIPE,
-            stderr=PIPE,
-        )
-    except FileNotFoundError:
-        log.warning("git not found; hotspot analytics will have zero churn data.")
-        return None
-
-    stdout_bytes, stderr_bytes = await proc.communicate()
-    stdout = stdout_bytes.decode() if stdout_bytes else ""
-    stderr = stderr_bytes.decode() if stderr_bytes else ""
-
-    if proc.returncode not in GIT_OK_CODES:
+    result = active_runner.run("git", args, cwd=repo_root)
+    if result.returncode not in {0, 1}:
         log.warning(
             "git log exited with code %s; stdout=%s stderr=%s",
-            proc.returncode,
-            stdout[:MAX_STDERR_CHARS],
-            stderr[:MAX_STDERR_CHARS],
+            result.returncode,
+            result.stdout[:MAX_STDERR_CHARS],
+            result.stderr[:MAX_STDERR_CHARS],
         )
-    return stdout.splitlines()
+    if result.returncode not in {0, 1}:
+        return None
+    return result.stdout.splitlines()
 
 
 def _parse_git_log_lines(lines: Iterable[str]) -> dict[str, ChurnSummary]:
@@ -172,7 +147,12 @@ def _parse_git_log_lines(lines: Iterable[str]) -> dict[str, ChurnSummary]:
     return {path: churn.to_summary() for path, churn in stats.items()}
 
 
-def build_hotspots(con: duckdb.DuckDBPyConnection, cfg: HotspotsConfig) -> None:
+def build_hotspots(
+    con: duckdb.DuckDBPyConnection,
+    cfg: HotspotsConfig,
+    *,
+    runner: ToolRunner | None = None,
+) -> None:
     """
     Populate `analytics.hotspots` by merging AST complexity with git churn.
 
@@ -190,6 +170,8 @@ def build_hotspots(con: duckdb.DuckDBPyConnection, cfg: HotspotsConfig) -> None:
         tables already created.
     cfg : HotspotsConfig
         Repository metadata and git scan configuration used to scope the build.
+    runner : ToolRunner | None
+        Optional shared ToolRunner for git invocations (defaults to a local cache).
 
     Notes
     -----
@@ -233,7 +215,7 @@ def build_hotspots(con: duckdb.DuckDBPyConnection, cfg: HotspotsConfig) -> None:
         log.info("No rows in core.ast_metrics; skipping hotspots.")
         return
 
-    git_stats = _collect_git_file_stats(cfg)
+    git_stats = _collect_git_file_stats(cfg, runner=runner)
 
     con.execute("DELETE FROM analytics.hotspots")
 
