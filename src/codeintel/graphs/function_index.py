@@ -6,8 +6,7 @@ from collections.abc import Callable as TypingCallable
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-import duckdb
-
+from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 
@@ -137,9 +136,7 @@ def _qualname_matches(full: str, candidate: str) -> bool:
     return full.endswith(f".{suffix}")
 
 
-def load_function_spans(
-    con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
-) -> list[FunctionSpan]:
+def load_function_spans(gateway: StorageGateway, *, repo: str, commit: str) -> list[FunctionSpan]:
     """
     Load function spans from `core.goids` for a repo snapshot.
 
@@ -148,6 +145,7 @@ def load_function_spans(
     list[FunctionSpan]
         Normalized function spans keyed by GOID.
     """
+    con = gateway.con
     rows = con.execute(
         """
         SELECT goid_h128, rel_path, qualname, start_line, end_line
@@ -174,9 +172,7 @@ def load_function_spans(
     return spans
 
 
-def load_function_index(
-    con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
-) -> FunctionSpanIndex:
+def load_function_index(gateway: StorageGateway, *, repo: str, commit: str) -> FunctionSpanIndex:
     """
     Create a `FunctionSpanIndex` from DuckDB state.
 
@@ -185,4 +181,4 @@ def load_function_index(
     FunctionSpanIndex
         Index seeded from `core.goids` for the repo/commit snapshot.
     """
-    return FunctionSpanIndex(load_function_spans(con, repo=repo, commit=commit))
+    return FunctionSpanIndex(load_function_spans(gateway, repo=repo, commit=commit))

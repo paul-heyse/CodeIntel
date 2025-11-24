@@ -13,8 +13,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-import duckdb
-
 from codeintel.config.models import ToolsConfig, TypingIngestConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.source_scanner import ScanConfig, SourceScanner
@@ -25,6 +23,7 @@ from codeintel.models.rows import (
     static_diagnostic_to_tuple,
     typedness_row_to_tuple,
 )
+from codeintel.storage.gateway import StorageGateway
 from codeintel.types import PyreflyError
 from codeintel.utils.paths import repo_relpath
 
@@ -313,7 +312,7 @@ def _run_ruff(repo_root: Path, runner: ToolRunner) -> dict[str, int]:
 
 
 def ingest_typing_signals(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: TypingIngestConfig,
     *,
     scan_config: ScanConfig | None = None,
@@ -331,6 +330,7 @@ def ingest_typing_signals(
       * Pyrefly drives static error counts; annotation_ratio is computed from Python AST
         (params & returns).
     """
+    con = gateway.con
     repo_root = cfg.repo_root
     scan_cfg = scan_config or ScanConfig(
         repo_root=repo_root, ignore_dirs=tuple(sorted(IGNORE_DIRS))
@@ -396,14 +396,14 @@ def ingest_typing_signals(
         )
 
     run_batch(
-        con,
+        gateway,
         "analytics.typedness",
         [typedness_row_to_tuple(row) for row in typedness_rows],
         delete_params=[cfg.repo, cfg.commit],
         scope=f"{cfg.repo}@{cfg.commit}",
     )
     run_batch(
-        con,
+        gateway,
         "analytics.static_diagnostics",
         [static_diagnostic_to_tuple(row) for row in diag_rows],
         delete_params=[cfg.repo, cfg.commit],

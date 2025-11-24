@@ -5,14 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-import duckdb
-
 from codeintel.graphs.function_catalog import (
     FunctionCatalog,
     FunctionMeta,
     FunctionSpan,
     load_function_catalog,
 )
+from codeintel.storage.gateway import StorageGateway
 
 
 class FunctionCatalogProvider(Protocol):
@@ -37,18 +36,16 @@ class FunctionCatalogService(FunctionCatalogProvider):
     _catalog: FunctionCatalog
 
     @classmethod
-    def from_db(
-        cls, con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
-    ) -> FunctionCatalogService:
+    def from_db(cls, gateway: StorageGateway, *, repo: str, commit: str) -> FunctionCatalogService:
         """
-        Load catalog state for a repo snapshot from DuckDB.
+        Load catalog state for a repo snapshot from a storage gateway.
 
         Returns
         -------
         FunctionCatalogService
             Service wrapping the loaded catalog.
         """
-        return cls(load_function_catalog(con, repo=repo, commit=commit))
+        return cls(load_function_catalog(gateway, repo=repo, commit=commit))
 
     def catalog(self) -> FunctionCatalog:
         """

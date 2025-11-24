@@ -23,10 +23,11 @@ class _CatalogProvider:
 
 def test_graph_validation_orphan_uses_catalog_map() -> None:
     """Graph validation should fall back to catalog module map when modules are absent."""
-    con = open_memory_gateway(apply_schema=True).con
+    gateway = open_memory_gateway(apply_schema=True)
+    con = gateway.con
     provider = _CatalogProvider({"pkg/a.py": "pkg.a"})
     run_graph_validations(
-        con,
+        gateway,
         repo="r",
         commit="c",
         catalog_provider=provider,

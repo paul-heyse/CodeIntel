@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -11,9 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 
+import duckdb
 from fastapi import APIRouter, Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import Field
 from starlette.responses import Response
 
 from codeintel.config.serving_models import ServingConfig
@@ -29,7 +32,9 @@ from codeintel.mcp.models import (
     FunctionArchitectureResponse,
     FunctionProfileResponse,
     FunctionSummaryResponse,
+    GraphNeighborhoodResponse,
     HighRiskFunctionsResponse,
+    ImportBoundaryResponse,
     ModuleArchitectureResponse,
     ModuleProfileResponse,
     ModuleSubsystemResponse,
@@ -40,7 +45,7 @@ from codeintel.mcp.models import (
 )
 from codeintel.services.factory import BackendResource, build_backend_resource
 from codeintel.services.query_service import HttpQueryService, LocalQueryService
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 LOG = logging.getLogger("codeintel.server.fastapi")
 
@@ -141,7 +146,7 @@ def create_backend_resource(
     cfg:
         Application configuration containing repo metadata and paths.
     gateway:
-        Optional StorageGateway supplying the connection and dataset registry.
+        StorageGateway supplying the connection and dataset registry (required for local_db).
 
     Returns
     -------
@@ -154,9 +159,8 @@ def create_backend_resource(
         If the query service cannot be constructed for the selected mode.
     """
     serving_cfg = cfg.server if isinstance(cfg, ApiAppConfig) else cfg
-    read_only = cfg.read_only if isinstance(cfg, ApiAppConfig) else serving_cfg.read_only
     try:
-        return build_backend_resource(serving_cfg, gateway=gateway, read_only=read_only)
+        return build_backend_resource(serving_cfg, gateway=gateway)
     except Exception as exc:
         raise errors.backend_failure(str(exc)) from exc
 
@@ -468,6 +472,91 @@ def build_functions_router() -> APIRouter:
             urn=urn,
             limit=limit,
         )
+
+    @router.get(
+        "/graph/call/neighborhood",
+        response_model=GraphNeighborhoodResponse,
+        summary="Call graph ego neighborhood",
+    )
+    def callgraph_neighborhood(
+        *,
+        service: ServiceDep,
+        goid_h128: int,
+        radius: Annotated[int, Field(ge=1)] = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        """
+        Return a bounded ego neighborhood in the call graph.
+
+        Parameters
+        ----------
+        service : ServiceDep
+            Query service providing backend access.
+        goid_h128 : int
+            GOID of the function to center the neighborhood on.
+        radius : int
+            Hop radius (>=1).
+        max_nodes : int, optional
+            Optional node cap; defaults to service max_rows_per_call when omitted.
+
+        Returns
+        -------
+        GraphNeighborhoodResponse
+            Ego subgraph with truncation metadata.
+        """
+        response = service.get_callgraph_neighborhood(
+            goid_h128=goid_h128, radius=radius, max_nodes=max_nodes
+        )
+        LOG.info(
+            "callgraph_neighborhood repo=%s commit=%s goid=%s radius=%s applied_limit=%s "
+            "truncated=%s",
+            getattr(service, "repo", "unknown"),
+            getattr(service, "commit", "unknown"),
+            goid_h128,
+            radius,
+            response.meta.applied_limit,
+            response.meta.truncated,
+        )
+        return response
+
+    @router.get(
+        "/graph/import/boundary",
+        response_model=ImportBoundaryResponse,
+        summary="Import graph edges crossing a subsystem",
+    )
+    def import_boundary(
+        *,
+        service: ServiceDep,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """
+        Return import edges crossing the given subsystem boundary.
+
+        Parameters
+        ----------
+        service : ServiceDep
+            Query service providing backend access.
+        subsystem_id : str
+            Subsystem identifier to inspect.
+        max_edges : int, optional
+            Optional edge cap; defaults to service max_rows_per_call.
+
+        Returns
+        -------
+        ImportBoundaryResponse
+            Boundary edges plus metadata describing truncation.
+        """
+        response = service.get_import_boundary(subsystem_id=subsystem_id, max_edges=max_edges)
+        LOG.info(
+            "import_boundary repo=%s commit=%s subsystem=%s applied_limit=%s truncated=%s",
+            getattr(service, "repo", "unknown"),
+            getattr(service, "commit", "unknown"),
+            subsystem_id,
+            response.meta.applied_limit,
+            response.meta.truncated,
+        )
+        return response
 
     @router.get(
         "/file/summary",
@@ -893,11 +982,12 @@ def build_health_router() -> APIRouter:
             If the backend connection is unavailable.
         """
         if isinstance(backend, DuckDBBackend):
-            con = backend.con
-            if con is None:
-                message = "Backend connection is not initialized"
-                raise errors.backend_failure(message)
-            con.execute("SELECT 1;")
+            con = backend.gateway.con
+            try:
+                con.execute("SELECT 1;")
+            except duckdb.Error as exc:
+                message = "Backend connection failed health probe."
+                raise errors.backend_failure(message) from exc
         return {
             "status": "ok",
             "repo": config.repo,
@@ -945,10 +1035,34 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config = config_loader()
-        if gateway is not None and backend_factory is create_backend_resource:
-            backend_resource = backend_factory(config, gateway=gateway)
-        else:
-            backend_resource = backend_factory(config)
+        gw = gateway
+        if gw is None:
+            server_cfg = config.server
+            if server_cfg.mode == "local_db":
+                db_path = server_cfg.db_path or Path(":memory:")
+                apply_schema = not server_cfg.read_only
+                ensure_views = not server_cfg.read_only
+                validate_schema = True
+                gw_cfg = StorageConfig(
+                    db_path=db_path,
+                    read_only=server_cfg.read_only,
+                    apply_schema=apply_schema,
+                    ensure_views=ensure_views,
+                    validate_schema=validate_schema,
+                    repo=server_cfg.repo,
+                    commit=server_cfg.commit,
+                )
+                gw = open_gateway(gw_cfg)
+        if gw is None and config.server.mode == "local_db":
+            message = "StorageGateway is required for local_db FastAPI app"
+            raise errors.backend_failure(message)
+        backend_kwargs: dict[str, object] = {}
+        params = inspect.signature(backend_factory).parameters
+        if "gateway" in params:
+            backend_kwargs["gateway"] = gw
+        elif "_gateway" in params:
+            backend_kwargs["_gateway"] = gw
+        backend_resource = backend_factory(config, **backend_kwargs)
         app.state.config = config
         app.state.backend = backend_resource.backend
         app.state.service = backend_resource.service

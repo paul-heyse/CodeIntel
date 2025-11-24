@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypedDict
 
-import duckdb
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.models import DocstringConfig
@@ -21,6 +20,7 @@ from codeintel.ingestion.common import (
 )
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.models.rows import DocstringRow, docstring_row_to_tuple
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ class DocstringVisitor(ast.NodeVisitor):
 
 
 def ingest_docstrings(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: DocstringConfig,
     scan_config: ScanConfig | None = None,
 ) -> None:
@@ -147,15 +147,16 @@ def ingest_docstrings(
 
     Parameters
     ----------
-    con : duckdb.DuckDBPyConnection
-        Active DuckDB connection.
+    gateway :
+        StorageGateway providing access to the DuckDB database.
     cfg : DocstringConfig
         Repository context for this ingestion run.
     scan_config : ScanConfig | None
         Optional scan configuration controlling iteration cadence.
     """
+    con = gateway.con
     repo_root = cfg.repo_root.resolve()
-    module_map = load_module_map(con, cfg.repo, cfg.commit, language="python", logger=log)
+    module_map = load_module_map(gateway, cfg.repo, cfg.commit, language="python", logger=log)
     if should_skip_empty(module_map, logger=log):
         return
 
@@ -184,7 +185,7 @@ def ingest_docstrings(
         rows.extend(visitor.rows)
 
     run_batch(
-        con,
+        gateway,
         "core.docstrings",
         [docstring_row_to_tuple(row) for row in rows],
         delete_params=[cfg.repo, cfg.commit],

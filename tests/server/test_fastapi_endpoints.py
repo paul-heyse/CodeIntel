@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,239 +15,12 @@ from fastapi.testclient import TestClient
 from codeintel.mcp.backend import BackendLimits, DuckDBBackend, HttpBackend
 from codeintel.mcp.config import McpServerConfig
 from codeintel.server.fastapi import ApiAppConfig, BackendResource, create_app
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.architecture import open_seeded_architecture_gateway
 
 
 def _seed_db(db_path: Path, *, repo: str, commit: str) -> StorageGateway:
-    config = StorageConfig(
-        db_path=db_path,
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
-    gateway = open_gateway(config)
-    now = datetime.now(UTC)
-    now_iso = now.isoformat()
-
-    gateway.core.insert_modules([("pkg.mod", "pkg/mod.py", repo, commit)])
-    gateway.core.insert_goids(
-        [
-            (
-                1,
-                "goid:demo/repo#python:function:pkg.mod.func",
-                repo,
-                commit,
-                "pkg/mod.py",
-                "python",
-                "function",
-                "pkg.mod.func",
-                1,
-                2,
-                now_iso,
-            )
-        ]
-    )
-    gateway.analytics.insert_function_metrics(
-        [
-            (
-                1,
-                "goid:demo/repo#python:function:pkg.mod.func",
-                repo,
-                commit,
-                "pkg/mod.py",
-                "python",
-                "function",
-                "pkg.mod.func",
-                1,
-                2,
-                2,
-                2,
-                0,
-                0,
-                0,
-                False,
-                False,
-                False,
-                False,
-                0,
-                0,
-                0,
-                1,
-                1,
-                0,
-                0,
-                False,
-                "low",
-                now_iso,
-            )
-        ]
-    )
-    gateway.analytics.insert_goid_risk_factors(
-        [
-            (
-                1,
-                "goid:demo/repo#python:function:pkg.mod.func",
-                repo,
-                commit,
-                "pkg/mod.py",
-                "python",
-                "function",
-                "pkg.mod.func",
-                10,
-                10,
-                1,
-                "low",
-                "full",
-                "annotations",
-                0.1,
-                1.0,
-                0,
-                False,
-                2,
-                2,
-                1.0,
-                True,
-                1,
-                0,
-                "passed",
-                0.2,
-                "low",
-                "[]",
-                "[]",
-                now_iso,
-            )
-        ]
-    )
-    gateway.graph.insert_call_graph_edges(
-        [
-            (
-                repo,
-                commit,
-                1,
-                1,
-                "pkg/mod.py",
-                1,
-                1,
-                "python",
-                "direct",
-                "local",
-                0.9,
-                "{}",
-            )
-        ]
-    )
-    gateway.analytics.insert_graph_metrics_functions(
-        [(repo, commit, 1, 2, 3, 2, 3, 0.5, 0.1, 0.2, False, 0, 1, now_iso)]
-    )
-    gateway.analytics.insert_graph_metrics_modules(
-        [
-            (
-                repo,
-                commit,
-                "pkg.mod",
-                3,
-                2,
-                3,
-                2,
-                0.4,
-                0.2,
-                0.3,
-                False,
-                0,
-                1,
-                5,
-                4,
-                now_iso,
-            )
-        ]
-    )
-    gateway.analytics.insert_subsystems(
-        [
-            (
-                repo,
-                commit,
-                "subsysdemo",
-                "api_pkg",
-                "Subsystem api_pkg covering 1 modules",
-                1,
-                '["pkg.mod"]',
-                "[]",
-                1,
-                0,
-                0,
-                0,
-                1,
-                0.1,
-                0.1,
-                0,
-                "low",
-                now_iso,
-            )
-        ]
-    )
-    gateway.analytics.insert_subsystem_modules([(repo, commit, "subsysdemo", "pkg.mod", "api")])
-    gateway.analytics.insert_test_catalog(
-        [
-            (
-                "pkg/mod.py::test_func",
-                10,
-                "goid:demo/repo#python:function:pkg.mod.test_func",
-                repo,
-                commit,
-                "pkg/mod.py",
-                "pkg.mod.test_func",
-                "test",
-                "passed",
-                1,
-                "[]",
-                False,
-                False,
-                now_iso,
-            )
-        ]
-    )
-    gateway.analytics.insert_test_coverage_edges(
-        [
-            (
-                "pkg/mod.py::test_func",
-                10,
-                1,
-                "goid:demo/repo#python:function:pkg.mod.func",
-                repo,
-                commit,
-                "pkg/mod.py",
-                "pkg.mod.func",
-                2,
-                2,
-                1.0,
-                "passed",
-                now_iso,
-            )
-        ]
-    )
-    gateway.analytics.insert_typedness(
-        [(repo, commit, "pkg/mod.py", 0, '{"params":1.0}', 0, False)]
-    )
-    gateway.analytics.insert_static_diagnostics([(repo, commit, "pkg/mod.py", 0, 0, 0, 0, False)])
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.hotspots VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        ("pkg/mod.py", 1, 1, 1, 1, 1.0, 0.1),
-    )
-    gateway.con.execute(
-        """
-        INSERT INTO core.ast_metrics VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        ("pkg/mod.py", 1, 1, 0, 1.0, 1, 0.1, now),
-    )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.function_validation VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (repo, commit, "pkg/mod.py", "pkg.mod.func", "span_not_found", "Span 1-2", now),
-    )
-    return gateway
+    return open_seeded_architecture_gateway(repo=repo, commit=commit, db_path=db_path)
 
 
 def _build_app(gateway: StorageGateway, db_path: Path, *, repo: str, commit: str) -> FastAPI:
@@ -260,17 +33,18 @@ def _build_app(gateway: StorageGateway, db_path: Path, *, repo: str, commit: str
         Configured application using the supplied backend.
     """
     cfg = ApiAppConfig(
-        server=McpServerConfig(repo_root=db_path.parent, repo=repo, commit=commit), read_only=True
+        server=McpServerConfig(repo_root=db_path.parent, repo=repo, commit=commit, read_only=False),
+        read_only=False,
     )
 
     def _loader() -> ApiAppConfig:
         return cfg
 
-    def _backend_factory(_: ApiAppConfig) -> BackendResource:
+    def _backend_factory(_: ApiAppConfig, *, gateway: StorageGateway) -> BackendResource:
         backend = DuckDBBackend(gateway=gateway, repo=repo, commit=commit)
         return BackendResource(backend=backend, service=backend.service, close=lambda: None)
 
-    return create_app(config_loader=_loader, backend_factory=_backend_factory)
+    return create_app(config_loader=_loader, backend_factory=_backend_factory, gateway=gateway)
 
 
 def test_backend_registry_matches_gateway(tmp_path: Path) -> None:
@@ -279,7 +53,7 @@ def test_backend_registry_matches_gateway(tmp_path: Path) -> None:
     commit = "deadbeef"
     gateway = _seed_db(tmp_path / "codeintel.duckdb", repo=repo, commit=commit)
     backend = DuckDBBackend(gateway=gateway, repo=repo, commit=commit)
-    if backend.dataset_tables != dict(gateway.datasets.mapping):
+    if backend.gateway.datasets.mapping != gateway.datasets.mapping:
         pytest.fail("Backend registry should match gateway mapping")
     gateway.close()
 
@@ -556,14 +330,73 @@ def _assert_http_backend_datasets(backend: HttpBackend) -> None:
         pytest.fail("Expected dataset rows via HttpBackend")
 
 
-def _json_or_fail(resp: httpx.Response) -> dict[str, object] | list[object]:
+def test_callgraph_neighborhood_limits(tmp_path: Path) -> None:
+    """Call graph neighborhood enforces limit validation and truncation metadata."""
+    repo = "demo/repo"
+    commit = "deadbeef"
+    db_path = tmp_path / "codeintel.duckdb"
+    gateway = _seed_db(db_path, repo=repo, commit=commit)
+    app = _build_app(gateway, db_path, repo=repo, commit=commit)
+    with TestClient(app) as client:
+        bad = client.get(
+            "/graph/call/neighborhood", params={"goid_h128": 1, "radius": 1, "max_nodes": -1}
+        )
+        if bad.status_code != HTTPStatus.BAD_REQUEST:
+            pytest.fail(f"Expected 400 for invalid max_nodes, got {bad.status_code}")
+        resp = client.get(
+            "/graph/call/neighborhood", params={"goid_h128": 1, "radius": 1, "max_nodes": 0}
+        )
+        if resp.status_code != HTTPStatus.OK:
+            pytest.fail(f"Expected 200 response, got {resp.status_code}")
+        body = _expect_dict(_json_or_fail(resp))
+        meta = body.get("meta")
+        if not isinstance(meta, dict):
+            pytest.fail("Expected meta object in response")
+        applied_limit = meta.get("applied_limit")
+        truncated = meta.get("truncated")
+        if applied_limit != 0:
+            pytest.fail(f"Expected applied_limit 0, got {applied_limit}")
+        if truncated is not True:
+            pytest.fail(f"Expected truncated True, got {truncated}")
+
+
+def test_import_boundary_limits(tmp_path: Path) -> None:
+    """Import boundary endpoint enforces limit validation and truncation metadata."""
+    repo = "demo/repo"
+    commit = "deadbeef"
+    db_path = tmp_path / "codeintel.duckdb"
+    gateway = _seed_db(db_path, repo=repo, commit=commit)
+    app = _build_app(gateway, db_path, repo=repo, commit=commit)
+    with TestClient(app) as client:
+        bad = client.get("/graph/import/boundary", params={"subsystem_id": "sub1", "max_edges": -5})
+        if bad.status_code != HTTPStatus.BAD_REQUEST:
+            pytest.fail(f"Expected 400 for invalid max_edges, got {bad.status_code}")
+        resp = client.get("/graph/import/boundary", params={"subsystem_id": "sub1", "max_edges": 0})
+        if resp.status_code != HTTPStatus.OK:
+            pytest.fail(f"Expected 200 response, got {resp.status_code}")
+        body = _expect_dict(_json_or_fail(resp))
+        meta = body.get("meta")
+        if not isinstance(meta, dict):
+            pytest.fail("Expected meta object in response")
+        applied_limit = meta.get("applied_limit")
+        truncated = meta.get("truncated")
+        if applied_limit != 0:
+            pytest.fail(f"Expected applied_limit 0, got {applied_limit}")
+        if truncated is not True:
+            pytest.fail(f"Expected truncated True, got {truncated}")
+
+
+JsonPayload = dict[str, object] | list[object]
+
+
+def _json_or_fail(resp: httpx.Response) -> JsonPayload:
     """
     Parse JSON payload or fail with a helpful message.
 
     Returns
     -------
-    dict[str, object] | list[object]
-        Parsed JSON payload when status is 200.
+    dict[str, object]
+        Parsed JSON object payload when status is 200.
     """
     if resp.status_code != status.HTTP_200_OK:
         pytest.fail(f"Unexpected status {resp.status_code}: {resp.text}")
@@ -573,14 +406,14 @@ def _json_or_fail(resp: httpx.Response) -> dict[str, object] | list[object]:
     return data
 
 
-def _expect_dict(payload: dict[str, object] | list[object]) -> dict[str, object]:
+def _expect_dict(payload: JsonPayload) -> dict[str, object]:
     """
-    Ensure payload is a dict or fail.
+    Validate that a JSON payload is a dict.
 
     Returns
     -------
     dict[str, object]
-        Validated JSON object payload.
+        Parsed JSON object payload.
     """
     if not isinstance(payload, dict):
         pytest.fail("Expected JSON object payload")

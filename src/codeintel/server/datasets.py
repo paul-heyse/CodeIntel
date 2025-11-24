@@ -5,26 +5,14 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Literal
 
-import duckdb
-
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.storage.gateway import DOCS_VIEWS as GATEWAY_DOCS_VIEWS
+from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.mcp.query_service import BackendLimits
 
-DOCS_VIEWS = {
-    "v_function_summary": "docs.v_function_summary",
-    "v_call_graph_enriched": "docs.v_call_graph_enriched",
-    "v_test_to_function": "docs.v_test_to_function",
-    "v_file_summary": "docs.v_file_summary",
-    "v_function_profile": "docs.v_function_profile",
-    "v_file_profile": "docs.v_file_profile",
-    "v_module_profile": "docs.v_module_profile",
-    "v_function_architecture": "docs.v_function_architecture",
-    "v_module_architecture": "docs.v_module_architecture",
-    "v_subsystem_summary": "docs.v_subsystem_summary",
-    "v_module_with_subsystem": "docs.v_module_with_subsystem",
-}
+DOCS_VIEWS = {view.split(".", maxsplit=1)[1]: view for view in GATEWAY_DOCS_VIEWS}
 
 
 def _dataset_name(table_key: str) -> str:
@@ -84,7 +72,7 @@ def build_registry_and_limits(
     tuple[dict[str, str], BackendLimits]
         Registry mapping and backend limits built from the configuration.
     """
-    from codeintel.mcp.query_service import BackendLimits  # Local import to avoid circular deps.
+    from codeintel.mcp.query_service import BackendLimits  # noqa: PLC0415
 
     registry = build_dataset_registry(include_docs_views=include_docs_views)
     limits = BackendLimits.from_config(cfg)
@@ -108,21 +96,26 @@ def describe_dataset(name: str, table: str) -> str:
     return f"{name}: {table} ({column_names}{extra})"
 
 
-def validate_dataset_registry(
-    con: duckdb.DuckDBPyConnection, dataset_tables: dict[str, str]
-) -> None:
+def validate_dataset_registry(gateway: StorageGateway) -> None:
     """
     Validate that registered datasets exist and match expected schemas.
+
+    Parameters
+    ----------
+    gateway
+        StorageGateway providing the connection and dataset registry.
 
     Raises
     ------
     ValueError
         When required tables/views are missing or mismatched.
     """
+    con = gateway.con
+    dataset_mapping = dict(gateway.datasets.mapping)
     missing: list[str] = []
     mismatched: list[str] = []
 
-    for dataset_name, table in sorted(dataset_tables.items()):
+    for dataset_name, table in sorted(dataset_mapping.items()):
         if "." not in table:
             missing.append(f"{dataset_name} ({table})")
             continue

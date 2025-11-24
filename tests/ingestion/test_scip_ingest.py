@@ -46,8 +46,7 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
         StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
     )
     con = gateway.con
-
-    result = scip_ingest.ingest_scip(con=con, cfg=cfg)
+    result = scip_ingest.ingest_scip(gateway, cfg=cfg)
     if result.status != "success":
         pytest.skip(f"SCIP ingestion not successful in test environment: {result.reason}")
 
@@ -62,6 +61,7 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
     if not (doc_scip / "index.scip.json").is_file():
         pytest.fail("index.scip.json was not copied to document_output")
 
+    con = gateway.con
     row = con.execute("SELECT COUNT(*) FROM scip_index_view").fetchone()
     if row is None:
         pytest.fail("scip_index_view did not return a row")
@@ -69,7 +69,7 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
     if row_count == 0:
         pytest.fail("scip_index_view is empty; expected rows after ingest")
 
-    con.close()
+    gateway.close()
 
 
 def test_ingest_scip_uses_injected_runner(tmp_path: Path) -> None:
@@ -89,7 +89,7 @@ def test_ingest_scip_uses_injected_runner(tmp_path: Path) -> None:
         commit="deadbeef",
         build_dir=build_dir,
         document_output_dir=document_output_dir,
-        scip_runner=lambda _con, _cfg: scip_ingest.ScipIngestResult(  # type: ignore[arg-type]
+        scip_runner=lambda _gateway, _cfg: scip_ingest.ScipIngestResult(
             status="success",
             index_scip=build_dir / "scip" / "index.scip",
             index_json=build_dir / "scip" / "index.scip.json",
@@ -100,8 +100,6 @@ def test_ingest_scip_uses_injected_runner(tmp_path: Path) -> None:
     gateway = open_gateway(
         StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
     )
-    con = gateway.con
-
-    result = scip_ingest.ingest_scip(con=con, cfg=cfg)
+    result = scip_ingest.ingest_scip(gateway, cfg=cfg)
     if result.status != "success":
         pytest.fail(f"Injected runner should succeed, got {result.status}")

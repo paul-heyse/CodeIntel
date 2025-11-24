@@ -8,19 +8,30 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-import duckdb
 from coverage import Coverage
 
 from codeintel.analytics.ast_metrics import build_hotspots
+from codeintel.analytics.cfg_dfg_metrics import compute_cfg_metrics, compute_dfg_metrics
+from codeintel.analytics.config_graph_metrics import compute_config_graph_metrics
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
 from codeintel.analytics.functions import compute_function_metrics_and_types
 from codeintel.analytics.graph_metrics import compute_graph_metrics
+from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
+from codeintel.analytics.graph_stats import compute_graph_stats
+from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
 from codeintel.analytics.profiles import (
     build_file_profile,
     build_function_profile,
     build_module_profile,
 )
+from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
+from codeintel.analytics.subsystem_graph_metrics import compute_subsystem_graph_metrics
 from codeintel.analytics.subsystems import build_subsystems
+from codeintel.analytics.symbol_graph_metrics import (
+    compute_symbol_graph_metrics_functions,
+    compute_symbol_graph_metrics_modules,
+)
+from codeintel.analytics.test_graph_metrics import compute_test_graph_metrics
 from codeintel.analytics.tests_analytics import compute_test_coverage_edges
 from codeintel.config.models import (
     CallGraphConfig,
@@ -63,6 +74,7 @@ from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
 
 log = logging.getLogger(__name__)
@@ -90,6 +102,7 @@ class PipelineContext:
     build_dir: Path
     repo: str
     commit: str
+    gateway: StorageGateway
     tools: ToolsConfig | None = None
     scan_config: ScanConfig | None = None
     tool_runner: ToolRunner | None = None
@@ -127,6 +140,7 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
         db_path=ctx.db_path,
         build_dir=ctx.build_dir,
         document_output_dir=ctx.document_output_dir,
+        gateway=ctx.gateway,
         tools=ctx.tools,
         scan_config=ctx.scan_config,
         tool_runner=ctx.tool_runner,
@@ -134,9 +148,7 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
     )
 
 
-def _function_catalog(
-    ctx: PipelineContext, con: duckdb.DuckDBPyConnection
-) -> FunctionCatalogService:
+def _function_catalog(ctx: PipelineContext) -> FunctionCatalogService:
     """
     Return a cached FunctionCatalogService, constructing it on first access.
 
@@ -144,8 +156,6 @@ def _function_catalog(
     ----------
     ctx
         Pipeline context carrying previously constructed catalog if available.
-    con
-        DuckDB connection used for catalog construction when needed.
 
     Returns
     -------
@@ -153,12 +163,14 @@ def _function_catalog(
         Catalog service for the current repo and commit.
     """
     if ctx.function_catalog is None:
-        ctx.function_catalog = FunctionCatalogService.from_db(con, repo=ctx.repo, commit=ctx.commit)
+        ctx.function_catalog = FunctionCatalogService.from_db(
+            ctx.gateway, repo=ctx.repo, commit=ctx.commit
+        )
     return ctx.function_catalog
 
 
 def _seed_catalog_modules(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     catalog: FunctionCatalogService | None,
     *,
     repo: str,
@@ -177,6 +189,7 @@ def _seed_catalog_modules(
     module_by_path = catalog.catalog().module_by_path
     if not module_by_path:
         return False
+    con = gateway.con
     con.execute(
         """
         CREATE OR REPLACE TEMP TABLE temp.catalog_modules (
@@ -202,8 +215,8 @@ class PipelineStep(Protocol):
     name: str
     deps: Sequence[str]
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
-        """Execute the step using shared context and DuckDB connection."""
+    def run(self, ctx: PipelineContext) -> None:
+        """Execute the step using shared context."""
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +231,7 @@ class SchemaBootstrapStep:
     name: str = "schema_bootstrap"
     deps: Sequence[str] = ()
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:  # noqa: ARG002
+    def run(self, ctx: PipelineContext) -> None:  # noqa: ARG002
         """No-op here; actual bootstrap is handled in the Prefect task."""
         _log_step(self.name)
 
@@ -230,10 +243,10 @@ class RepoScanStep:
     name: str = "repo_scan"
     deps: Sequence[str] = ("schema_bootstrap",)
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Execute repository scan ingestion."""
         _log_step(self.name)
-        run_repo_scan(con, _ingestion_ctx(ctx))
+        run_repo_scan(_ingestion_ctx(ctx))
 
 
 @dataclass
@@ -243,11 +256,11 @@ class SCIPIngestStep:
     name: str = "scip_ingest"
     deps: Sequence[str] = ("repo_scan",)
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Register SCIP artifacts and populate SCIP symbols in crosswalk."""
         _log_step(self.name)
         ingest_ctx = _ingestion_ctx(ctx)
-        result = run_scip_ingest(con, ingest_ctx)
+        result = run_scip_ingest(ingest_ctx)
         ctx.extra["scip_ingest"] = result
         if result.status != "success":
             log.info("SCIP ingestion %s: %s", result.status, result.reason or "no reason provided")
@@ -260,10 +273,10 @@ class CSTStep:
     name: str = "cst_extract"
     deps: Sequence[str] = ("repo_scan",)
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Extract CST rows into core.cst_nodes."""
         _log_step(self.name)
-        run_cst_extract(con, _ingestion_ctx(ctx))
+        run_cst_extract(_ingestion_ctx(ctx))
 
 
 @dataclass
@@ -273,10 +286,10 @@ class AstStep:
     name: str = "ast_extract"
     deps: Sequence[str] = ("repo_scan",)
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Extract AST rows and metrics into core tables."""
         _log_step(self.name)
-        run_ast_extract(con, _ingestion_ctx(ctx))
+        run_ast_extract(_ingestion_ctx(ctx))
 
 
 @dataclass
@@ -286,10 +299,10 @@ class CoverageIngestStep:
     name: str = "coverage_ingest"
     deps: Sequence[str] = ()
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Ingest line-level coverage signals."""
         _log_step(self.name)
-        run_coverage_ingest(con, _ingestion_ctx(ctx))
+        run_coverage_ingest(_ingestion_ctx(ctx))
 
 
 @dataclass
@@ -299,10 +312,10 @@ class TestsIngestStep:
     name: str = "tests_ingest"
     deps: Sequence[str] = ()
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Ingest pytest test catalog."""
         _log_step(self.name)
-        run_tests_ingest(con, _ingestion_ctx(ctx))
+        run_tests_ingest(_ingestion_ctx(ctx))
 
 
 @dataclass
@@ -312,10 +325,10 @@ class TypingIngestStep:
     name: str = "typing_ingest"
     deps: Sequence[str] = ()
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Ingest typing signals from ast + pyright."""
         _log_step(self.name)
-        run_typing_ingest(con, _ingestion_ctx(ctx))
+        run_typing_ingest(_ingestion_ctx(ctx))
 
 
 @dataclass
@@ -325,10 +338,10 @@ class DocstringsIngestStep:
     name: str = "docstrings_ingest"
     deps: Sequence[str] = ("repo_scan",)
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Ingest docstrings for all Python modules."""
         _log_step(self.name)
-        run_docstrings_ingest(con, _ingestion_ctx(ctx))
+        run_docstrings_ingest(_ingestion_ctx(ctx))
 
 
 @dataclass
@@ -338,10 +351,10 @@ class ConfigIngestStep:
     name: str = "config_ingest"
     deps: Sequence[str] = ()
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Ingest configuration files from repo root."""
         _log_step(self.name)
-        run_config_ingest(con, _ingestion_ctx(ctx))
+        run_config_ingest(_ingestion_ctx(ctx))
 
 
 # ---------------------------------------------------------------------------
@@ -356,11 +369,12 @@ class GoidsStep:
     name: str = "goids"
     deps: Sequence[str] = ("ast_extract",)
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Build GOID registry and crosswalk tables."""
         _log_step(self.name)
+        gateway = ctx.gateway
         cfg = GoidBuilderConfig.from_paths(repo=ctx.repo, commit=ctx.commit, language="python")
-        build_goids(con, cfg)
+        build_goids(gateway, cfg)
 
 
 @dataclass
@@ -370,10 +384,11 @@ class CallGraphStep:
     name: str = "callgraph"
     deps: Sequence[str] = ("goids", "repo_scan")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Construct static call graph nodes and edges."""
         _log_step(self.name)
-        catalog = _function_catalog(ctx, con)
+        gateway = ctx.gateway
+        catalog = _function_catalog(ctx)
         cfg = CallGraphConfig(
             repo=ctx.repo,
             commit=ctx.commit,
@@ -381,7 +396,7 @@ class CallGraphStep:
             cst_collector=ctx.cst_collector,
             ast_collector=ctx.ast_collector,
         )
-        build_call_graph(con, cfg, catalog_provider=catalog)
+        build_call_graph(gateway, cfg, catalog_provider=catalog)
 
 
 @dataclass
@@ -391,17 +406,18 @@ class CFGStep:
     name: str = "cfg"
     deps: Sequence[str] = ("function_metrics",)  # falls back to GOIDs if needed
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Create minimal CFG/DFG scaffolding."""
         _log_step(self.name)
-        catalog = _function_catalog(ctx, con)
+        gateway = ctx.gateway
+        catalog = _function_catalog(ctx)
         cfg = CFGBuilderConfig(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
             cfg_builder=ctx.cfg_builder,
         )
-        build_cfg_and_dfg(con, cfg, catalog_provider=catalog)
+        build_cfg_and_dfg(gateway, cfg, catalog_provider=catalog)
 
 
 @dataclass
@@ -411,15 +427,16 @@ class ImportGraphStep:
     name: str = "import_graph"
     deps: Sequence[str] = ("repo_scan",)
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Construct module import graph edges."""
         _log_step(self.name)
+        gateway = ctx.gateway
         cfg = ImportGraphConfig.from_paths(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
         )
-        build_import_graph(con, cfg)
+        build_import_graph(gateway, cfg)
 
 
 @dataclass
@@ -429,10 +446,11 @@ class SymbolUsesStep:
     name: str = "symbol_uses"
     deps: Sequence[str] = ("repo_scan", "scip_ingest")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Derive symbol definition→use edges from SCIP JSON."""
         _log_step(self.name)
-        catalog = _function_catalog(ctx, con)
+        gateway = ctx.gateway
+        catalog = _function_catalog(ctx)
         scip_json = ctx.build_dir / "scip" / "index.scip.json"
         if not scip_json.is_file():
             log.info("Skipping symbol_uses: SCIP JSON missing at %s", scip_json)
@@ -443,7 +461,7 @@ class SymbolUsesStep:
             repo=ctx.repo,
             commit=ctx.commit,
         )
-        build_symbol_use_edges(con, cfg, catalog_provider=catalog)
+        build_symbol_use_edges(gateway, cfg, catalog_provider=catalog)
 
 
 @dataclass
@@ -453,12 +471,13 @@ class GraphValidationStep:
     name: str = "graph_validation"
     deps: Sequence[str] = ("callgraph", "cfg")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Emit warnings for missing GOIDs, span mismatches, and orphans."""
         _log_step(self.name)
-        catalog = _function_catalog(ctx, con)
+        gateway = ctx.gateway
+        catalog = _function_catalog(ctx)
         run_graph_validations(
-            con,
+            gateway,
             repo=ctx.repo,
             commit=ctx.commit,
             catalog_provider=catalog,
@@ -478,15 +497,16 @@ class HotspotsStep:
     name: str = "hotspots"
     deps: Sequence[str] = ("ast_extract",)
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Compute file-level hotspot scores."""
         _log_step(self.name)
+        gateway = ctx.gateway
         cfg = HotspotsConfig.from_paths(
             repo_root=ctx.repo_root,
             repo=ctx.repo,
             commit=ctx.commit,
         )
-        build_hotspots(con, cfg, runner=ctx.tool_runner)
+        build_hotspots(gateway, cfg, runner=ctx.tool_runner)
 
 
 @dataclass
@@ -496,16 +516,17 @@ class FunctionAnalyticsStep:
     name: str = "function_metrics"
     deps: Sequence[str] = ("goids",)
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Compute per-function metrics and typedness."""
         _log_step(self.name)
+        gateway = ctx.gateway
         cfg = FunctionAnalyticsConfig.from_paths(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
             overrides=ctx.function_overrides,
         )
-        summary = compute_function_metrics_and_types(con, cfg)
+        summary = compute_function_metrics_and_types(gateway, cfg)
         log.info(
             "function_metrics summary rows=%d types=%d validation=%d parse_failed=%d span_not_found=%d",
             summary["metrics_rows"],
@@ -523,11 +544,12 @@ class CoverageAnalyticsStep:
     name: str = "coverage_functions"
     deps: Sequence[str] = ("goids", "coverage_ingest")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Aggregate line coverage to function spans."""
         _log_step(self.name)
+        gateway = ctx.gateway
         cfg = CoverageAnalyticsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        compute_coverage_functions(con, cfg)
+        compute_coverage_functions(gateway, cfg)
 
 
 @dataclass
@@ -537,17 +559,18 @@ class TestCoverageEdgesStep:
     name: str = "test_coverage_edges"
     deps: Sequence[str] = ("coverage_ingest", "tests_ingest", "goids")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Derive test-to-function edges using coverage contexts."""
         _log_step(self.name)
-        catalog = _function_catalog(ctx, con)
+        gateway = ctx.gateway
+        catalog = _function_catalog(ctx)
         cfg = TestCoverageConfig(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
             coverage_loader=ctx.coverage_loader,
         )
-        compute_test_coverage_edges(con, cfg, catalog_provider=catalog)
+        compute_test_coverage_edges(gateway, cfg, catalog_provider=catalog)
 
 
 @dataclass
@@ -565,10 +588,12 @@ class RiskFactorsStep:
         "config_ingest",  # indirectly for tags/owners via modules
     )
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Compute risk factors by joining analytics tables."""
         _log_step(self.name)
         log.info("Computing risk_factors for %s@%s", ctx.repo, ctx.commit)
+        gateway = ctx.gateway
+        con = gateway.con
         catalog = ctx.function_catalog
 
         # Clear previous rows for this repo/commit
@@ -577,7 +602,9 @@ class RiskFactorsStep:
             [ctx.repo, ctx.commit],
         )
 
-        use_catalog_modules = _seed_catalog_modules(con, catalog, repo=ctx.repo, commit=ctx.commit)
+        use_catalog_modules = _seed_catalog_modules(
+            gateway, catalog, repo=ctx.repo, commit=ctx.commit
+        )
 
         risk_sql = """
         INSERT INTO analytics.goid_risk_factors
@@ -696,14 +723,26 @@ class GraphMetricsStep:
     """Compute graph metrics for functions and modules."""
 
     name: str = "graph_metrics"
-    deps: Sequence[str] = ("callgraph", "import_graph", "symbol_uses")
+    deps: Sequence[str] = ("callgraph", "import_graph", "symbol_uses", "cfg", "test_coverage_edges")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.graph_metrics_* tables."""
         _log_step(self.name)
+        gateway = ctx.gateway
         cfg = GraphMetricsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        catalog = _function_catalog(ctx, con)
-        compute_graph_metrics(con, cfg, catalog_provider=catalog)
+        catalog = _function_catalog(ctx)
+        compute_graph_metrics(gateway, cfg, catalog_provider=catalog)
+        compute_graph_metrics_functions_ext(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_test_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_cfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_dfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_graph_metrics_modules_ext(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_symbol_graph_metrics_modules(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_symbol_graph_metrics_functions(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_config_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_subsystem_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_graph_stats(gateway, repo=ctx.repo, commit=ctx.commit)
 
 
 @dataclass
@@ -713,11 +752,12 @@ class SubsystemsStep:
     name: str = "subsystems"
     deps: Sequence[str] = ("import_graph", "symbol_uses", "risk_factors")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Populate subsystem membership and summaries."""
         _log_step(self.name)
+        gateway = ctx.gateway
         cfg = SubsystemsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        build_subsystems(con, cfg)
+        build_subsystems(gateway, cfg)
 
 
 @dataclass
@@ -727,14 +767,15 @@ class ProfilesStep:
     name: str = "profiles"
     deps: Sequence[str] = ("risk_factors", "callgraph", "import_graph")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Aggregate profile tables for functions, files, and modules."""
         _log_step(self.name)
-        catalog = _function_catalog(ctx, con)
+        gateway = ctx.gateway
+        catalog = _function_catalog(ctx)
         cfg = ProfilesAnalyticsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        build_function_profile(con, cfg, catalog_provider=catalog)
-        build_file_profile(con, cfg, catalog_provider=catalog)
-        build_module_profile(con, cfg, catalog_provider=catalog)
+        build_function_profile(gateway, cfg, catalog_provider=catalog)
+        build_file_profile(gateway, cfg, catalog_provider=catalog)
+        build_module_profile(gateway, cfg, catalog_provider=catalog)
 
 
 # ---------------------------------------------------------------------------
@@ -772,12 +813,13 @@ class ExportDocsStep:
         "graph_validation",
     )
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext) -> None:
         """Create views and export Parquet/JSONL artifacts."""
         _log_step(self.name)
+        con = ctx.gateway.con
         create_all_views(con)
-        export_all_parquet(con, ctx.document_output_dir)
-        export_all_jsonl(con, ctx.document_output_dir)
+        export_all_parquet(ctx.gateway, ctx.document_output_dir)
+        export_all_jsonl(ctx.gateway, ctx.document_output_dir)
         log.info("Document Output refreshed at %s", ctx.document_output_dir)
 
 

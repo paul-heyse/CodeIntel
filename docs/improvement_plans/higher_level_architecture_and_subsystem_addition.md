@@ -351,7 +351,7 @@ class GraphMetricsStep:
     # Needs call graph and import graph; symbol_uses is optional but preferred.
     deps: Sequence[str] = ("callgraph", "import_graph", "symbol_uses")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext, con: StorageGateway) -> None:
         _log_step(self.name)
         cfg = GraphMetricsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
         compute_graph_metrics(con, cfg)
@@ -702,7 +702,7 @@ log = logging.getLogger(__name__)
 Core function:
 
 ```python
-def build_subsystems(con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig) -> None:
+def build_subsystems(con: StorageGateway, cfg: SubsystemsConfig) -> None:
     """
     Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit.
     """
@@ -753,7 +753,7 @@ class SubsystemsStep:
     # Needs import graph + symbol uses + modules + risk factors
     deps: Sequence[str] = ("import_graph", "symbol_uses", "risk_factors")
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext, con: StorageGateway) -> None:
         _log_step(self.name)
         cfg = SubsystemsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
         build_subsystems(con, cfg)

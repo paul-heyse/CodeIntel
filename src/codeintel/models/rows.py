@@ -19,6 +19,7 @@ __all__ = [
     "GoidRow",
     "HotspotRow",
     "ImportEdgeRow",
+    "ImportModuleRow",
     "StaticDiagnosticRow",
     "SymbolUseRow",
     "TestCatalogRowModel",
@@ -37,6 +38,7 @@ __all__ = [
     "goid_to_tuple",
     "hotspot_row_to_tuple",
     "import_edge_to_tuple",
+    "import_module_to_tuple",
     "static_diagnostic_to_tuple",
     "symbol_use_to_tuple",
     "test_catalog_row_to_tuple",
@@ -487,6 +489,7 @@ class ImportEdgeRow(TypedDict):
     src_fan_out: int
     dst_fan_in: int
     cycle_group: int
+    module_layer: int | None
 
 
 def import_edge_to_tuple(row: ImportEdgeRow) -> tuple[object, ...]:
@@ -504,6 +507,39 @@ def import_edge_to_tuple(row: ImportEdgeRow) -> tuple[object, ...]:
         row["dst_module"],
         row["src_fan_out"],
         row["dst_fan_in"],
+        row["cycle_group"],
+        row.get("module_layer"),
+    )
+
+
+class ImportModuleRow(TypedDict):
+    """Row shape for graph.import_modules inserts."""
+
+    repo: str
+    commit: str
+    module: str
+    scc_id: int
+    component_size: int
+    layer: int | None
+    cycle_group: int
+
+
+def import_module_to_tuple(row: ImportModuleRow) -> tuple[object, ...]:
+    """
+    Serialize an ImportModuleRow into the INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with import_modules INSERT order.
+    """
+    return (
+        row["repo"],
+        row["commit"],
+        row["module"],
+        row["scc_id"],
+        row["component_size"],
+        row.get("layer"),
         row["cycle_group"],
     )
 
@@ -581,6 +617,8 @@ class DFGEdgeRow(TypedDict):
     src_var: str | None
     dst_var: str | None
     edge_kind: str | None
+    via_phi: bool
+    use_kind: str | None
 
 
 def dfg_edge_to_tuple(row: DFGEdgeRow) -> tuple[object, ...]:
@@ -598,6 +636,8 @@ def dfg_edge_to_tuple(row: DFGEdgeRow) -> tuple[object, ...]:
         row["src_var"],
         row["dst_var"],
         row["edge_kind"],
+        row["via_phi"],
+        row["use_kind"],
     )
 
 

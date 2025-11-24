@@ -3,23 +3,31 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
+from typing import Any
 
 import duckdb
 import libcst as cst
+import networkx as nx
 
 from codeintel.config.models import ImportGraphConfig
 from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.graphs.import_resolver import collect_import_edges
 from codeintel.ingestion.common import run_batch
-from codeintel.models.rows import ImportEdgeRow, import_edge_to_tuple
+from codeintel.models.rows import (
+    ImportEdgeRow,
+    ImportModuleRow,
+    import_edge_to_tuple,
+    import_module_to_tuple,
+)
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
 
 def _tarjan_scc(graph: dict[str, set[str]]) -> dict[str, int]:
     """
-    Compute strongly connected components using Tarjan's algorithm.
+    Compute strongly connected components using NetworkX.
 
     Parameters
     ----------
@@ -31,54 +39,161 @@ def _tarjan_scc(graph: dict[str, set[str]]) -> dict[str, int]:
     dict[str, int]
         Mapping of module name to component identifier.
     """
-    index = 0
-    stack: list[str] = []
-    on_stack: set[str] = set()
-    indices: dict[str, int] = {}
-    lowlinks: dict[str, int] = {}
-    comp_id_by_node: dict[str, int] = {}
-    comp_counter = 0
+    nx_graph = nx.DiGraph()
+    for src, targets in graph.items():
+        for dst in targets:
+            nx_graph.add_edge(src, dst)
 
-    def strongconnect(v: str) -> None:
-        nonlocal index, comp_counter
-        indices[v] = index
-        lowlinks[v] = index
-        index += 1
-        stack.append(v)
-        on_stack.add(v)
-
-        for w in graph.get(v, ()):
-            if w not in indices:
-                strongconnect(w)
-                lowlinks[v] = min(lowlinks[v], lowlinks[w])
-            elif w in on_stack:
-                lowlinks[v] = min(lowlinks[v], indices[w])
-
-        if lowlinks[v] == indices[v]:
-            # Root of an SCC
-            while True:
-                w = stack.pop()
-                on_stack.remove(w)
-                comp_id_by_node[w] = comp_counter
-                if w == v:
-                    break
-            comp_counter += 1
-
-    for v in graph:
-        if v not in indices:
-            strongconnect(v)
-
-    return comp_id_by_node
+    components = list(nx.strongly_connected_components(nx_graph))
+    return {node: idx for idx, comp in enumerate(components) for node in comp}
 
 
-def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -> None:
+def _dag_layers(graph: nx.DiGraph) -> dict[str | int, int]:
+    """
+    Compute topological layers for a DAG.
+
+    Returns
+    -------
+    dict[str | int, int]
+        Mapping of node -> layer depth.
+    """
+    layers: dict[str | int, int] = {node: 0 for node in graph.nodes if graph.in_degree(node) == 0}
+    for node in nx.topological_sort(graph):
+        base = layers.get(node, 0)
+        for succ in graph.successors(node):
+            layers[succ] = max(layers.get(succ, 0), base + 1)
+    return layers
+
+
+def components_and_layers(
+    raw_edges: set[tuple[str, str]],
+    modules: set[str],
+) -> tuple[dict[str, int], dict[str, int]]:
+    """
+    Compute SCC membership and condensation layers from raw edges.
+
+    Returns
+    -------
+    tuple[dict[str, int], dict[str, int]]
+        Mapping of module -> scc id, and module -> layer index.
+    """
+    graph = nx.DiGraph()
+    graph.add_nodes_from(modules)
+    for src, dst in raw_edges:
+        graph.add_edge(src, dst)
+    sccs = list(nx.strongly_connected_components(graph))
+    scc_map = {node: idx for idx, comp in enumerate(sccs) for node in comp}
+    condensation = nx.condensation(graph, scc=sccs) if graph.number_of_nodes() > 0 else nx.DiGraph()
+    comp_layers = _dag_layers(condensation) if condensation.number_of_nodes() > 0 else {}
+    layer_by_module = {node: comp_layers.get(scc_map.get(node, -1), 0) for node in graph.nodes}
+    return scc_map, layer_by_module
+
+
+def build_import_module_rows(
+    repo: str,
+    commit: str,
+    modules: set[str],
+    scc_map: dict[str, int],
+    layers: dict[str, int],
+) -> list[ImportModuleRow]:
+    """
+    Build rows for graph.import_modules from SCC and layering metadata.
+
+    Returns
+    -------
+    list[ImportModuleRow]
+        Sorted rows ready for insertion into graph.import_modules.
+    """
+    rows: list[ImportModuleRow] = []
+    comp_sizes = Counter(scc_map.values())
+    for module in sorted(modules):
+        component_id = scc_map.get(module, -1)
+        rows.append(
+            ImportModuleRow(
+                repo=repo,
+                commit=commit,
+                module=module,
+                scc_id=component_id,
+                component_size=comp_sizes.get(component_id, 1),
+                layer=layers.get(module),
+                cycle_group=component_id,
+            )
+        )
+    return rows
+
+
+def _persist_import_modules(
+    gateway: StorageGateway,
+    context: tuple[str, str],
+    modules: set[str],
+    scc: dict[str, int],
+    layer_by_module: dict[str, int],
+) -> int:
+    repo, commit = context
+    module_rows: list[ImportModuleRow] = build_import_module_rows(
+        repo,
+        commit,
+        modules,
+        scc,
+        layer_by_module,
+    )
+    run_batch(
+        gateway,
+        "graph.import_modules",
+        [import_module_to_tuple(row) for row in module_rows],
+        delete_params=[repo, commit],
+        scope="import_modules",
+    )
+    return len(module_rows)
+
+
+def _persist_import_edges(
+    gateway: StorageGateway,
+    context: tuple[str, str],
+    raw_edges: set[tuple[str, str]],
+    scc: dict[str, int],
+    layer_by_module: dict[str, int],
+) -> int:
+    repo, commit = context
+    fan_out: dict[str, int] = defaultdict(int)
+    fan_in: dict[str, int] = defaultdict(int)
+    for src, dst in raw_edges:
+        fan_out[src] += 1
+        fan_in[dst] += 1
+
+    rows: list[ImportEdgeRow] = []
+    for src, dst in sorted(raw_edges):
+        rows.append(
+            ImportEdgeRow(
+                repo=repo,
+                commit=commit,
+                src_module=src,
+                dst_module=dst,
+                src_fan_out=fan_out.get(src, 0),
+                dst_fan_in=fan_in.get(dst, 0),
+                cycle_group=scc.get(src, -1),
+                module_layer=layer_by_module.get(src),
+            )
+        )
+
+    run_batch(
+        gateway,
+        "graph.import_graph_edges",
+        [import_edge_to_tuple(row) for row in rows],
+        delete_params=[repo, commit],
+        scope="import_graph_edges",
+    )
+    return len(rows)
+
+
+def build_import_graph(gateway: StorageGateway, cfg: ImportGraphConfig) -> None:
     """
     Populate `graph.import_graph_edges` from LibCST import analysis.
 
     Parameters
     ----------
-    con : duckdb.DuckDBPyConnection
-        Connection to the DuckDB instance seeded with `core.modules`.
+    gateway : StorageGateway
+        Gateway providing the DuckDB connection seeded with `core.modules`.
     cfg : ImportGraphConfig
         Repository context and filesystem root.
 
@@ -87,9 +202,10 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
     The collector resolves relative imports conservatively to the current
     package. Strongly connected components are computed to identify cycles.
     """
+    con = gateway.con
     repo_root = cfg.repo_root.resolve()
 
-    catalog = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit)
+    catalog = load_function_catalog(gateway, repo=cfg.repo, commit=cfg.commit)
     module_map = catalog.module_by_path
     if not module_map:
         log.info("No modules found in catalog; skipping import graph.")
@@ -115,44 +231,21 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
         raw_edges.update(collect_import_edges(module_name, module))
 
     # Build fan-out / fan-in / SCCs
-    graph: dict[str, set[str]] = defaultdict(set)
+    modules = set(module_map.values())
     for src, dst in raw_edges:
-        graph[src].add(dst)
+        modules.add(src)
+        modules.add(dst)
 
-    scc = _tarjan_scc(graph)
+    scc, layer_by_module = components_and_layers(raw_edges, modules)
 
-    fan_out: dict[str, int] = defaultdict(int)
-    fan_in: dict[str, int] = defaultdict(int)
-    for src, dst in raw_edges:
-        fan_out[src] += 1
-        fan_in[dst] += 1
-
-    rows: list[ImportEdgeRow] = []
-    for src, dst in sorted(raw_edges):
-        rows.append(
-            ImportEdgeRow(
-                repo=cfg.repo,
-                commit=cfg.commit,
-                src_module=src,
-                dst_module=dst,
-                src_fan_out=fan_out.get(src, 0),
-                dst_fan_in=fan_in.get(dst, 0),
-                cycle_group=scc.get(src, -1),
-            )
-        )
-
-    run_batch(
-        con,
-        "graph.import_graph_edges",
-        [import_edge_to_tuple(row) for row in rows],
-        delete_params=[cfg.repo, cfg.commit],
-        scope="import_graph_edges",
-    )
+    context = (cfg.repo, cfg.commit)
+    module_count = _persist_import_modules(gateway, context, modules, scc, layer_by_module)
+    edge_count = _persist_import_edges(gateway, context, raw_edges, scc, layer_by_module)
 
     log.info(
         "Import graph build complete for repo=%s commit=%s: %d edges, %d modules",
         cfg.repo,
         cfg.commit,
-        len(rows),
-        len(graph),
+        edge_count,
+        module_count,
     )

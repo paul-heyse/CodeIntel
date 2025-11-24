@@ -29,7 +29,8 @@ def test_call_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
     AssertionError
         If repo/commit columns are missing or keys drift.
     """
-    con = open_memory_gateway().con
+    gateway = open_memory_gateway()
+    con = gateway.con
     table = "graph.call_graph_edges"
     _setup_edge_table(con, table)
     con.execute(
@@ -40,7 +41,7 @@ def test_call_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
     )
 
     out = tmp_path / "call_graph_edges.jsonl"
-    export_jsonl_for_table(con, table, out)
+    export_jsonl_for_table(gateway, table, out)
 
     content = out.read_text(encoding="utf-8").splitlines()
     if not content:
@@ -66,18 +67,19 @@ def test_import_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
     AssertionError
         If repo/commit columns are missing or keys drift.
     """
-    con = open_memory_gateway().con
+    gateway = open_memory_gateway()
+    con = gateway.con
     table = "graph.import_graph_edges"
     _setup_edge_table(con, table)
     con.execute(
         """
         INSERT INTO graph.import_graph_edges VALUES
-        ('r1','c1','pkg.a','pkg.b',1,2,0)
+        ('r1','c1','pkg.a','pkg.b',1,2,0,NULL)
         """
     )
 
     out = tmp_path / "import_graph_edges.jsonl"
-    export_jsonl_for_table(con, table, out)
+    export_jsonl_for_table(gateway, table, out)
 
     content = out.read_text(encoding="utf-8").splitlines()
     if not content:

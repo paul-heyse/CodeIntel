@@ -56,8 +56,8 @@ def test_graph_validation_export(tmp_path: Path) -> None:
     )
 
     doc_out = tmp_path / "Document Output"
-    export_all_jsonl(con, doc_out)
-    export_all_parquet(con, doc_out)
+    export_all_jsonl(gateway, doc_out)
+    export_all_parquet(gateway, doc_out)
 
     jsonl_path = doc_out / "graph_validation.jsonl"
     parquet_path = doc_out / "graph_validation.parquet"

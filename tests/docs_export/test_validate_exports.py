@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from codeintel.docs_export.export_jsonl import export_all_jsonl
@@ -65,7 +64,8 @@ def test_validate_jsonl_failure(tmp_path: Path) -> None:
 def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
     """Export functions should raise ExportError when schema validation fails."""
     db_path = tmp_path / "db.duckdb"
-    con = duckdb.connect(str(db_path))
+    gateway = open_fresh_duckdb(db_path)
+    con = gateway.con
     con.execute("CREATE SCHEMA IF NOT EXISTS core;")
     con.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
     con.execute(
@@ -100,16 +100,18 @@ def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
         INSERT INTO core.repo_map VALUES ('r','c','{}','{}', CURRENT_TIMESTAMP);
         """
     )
-    con.close()
+    gateway.close()
 
     output_dir = tmp_path / "out"
+    gw_parquet = open_fresh_duckdb(db_path)
     with pytest.raises(ExportError):
         export_all_parquet(
-            duckdb.connect(str(db_path)),
+            gw_parquet,
             output_dir,
             validate_exports=True,
             schemas=["function_profile"],
         )
+    gw_parquet.close()
 
 
 def test_export_logs_problem_detail_on_validation_failure(
@@ -117,9 +119,9 @@ def test_export_logs_problem_detail_on_validation_failure(
 ) -> None:
     """Validation failures should log ProblemDetails and raise ExportError."""
     db_path = tmp_path / "db.duckdb"
-    con = open_fresh_duckdb(db_path)
+    gateway = open_fresh_duckdb(db_path)
     seed_tables(
-        con,
+        gateway,
         [
             "CREATE SCHEMA IF NOT EXISTS core;",
             "CREATE SCHEMA IF NOT EXISTS analytics;",
@@ -145,27 +147,29 @@ def test_export_logs_problem_detail_on_validation_failure(
             """,
         ],
     )
-    con.execute(
+    gateway.con.execute(
         """
         INSERT INTO analytics.function_profile VALUES (1, 'urn:foo', NULL, 'c', 'foo.py');
         """
     )
-    con.execute(
+    gateway.con.execute(
         """
         INSERT INTO core.repo_map VALUES ('r','c','{}','{}', CURRENT_TIMESTAMP);
         """
     )
-    con.close()
+    gateway.close()
 
     output_dir = tmp_path / "out_jsonl"
     caplog.set_level("ERROR")
+    gw_jsonl = open_fresh_duckdb(db_path)
     with pytest.raises(ExportError):
         export_all_jsonl(
-            duckdb.connect(str(db_path)),
+            gw_jsonl,
             output_dir,
             validate_exports=True,
             schemas=["function_profile"],
         )
+    gw_jsonl.close()
     error_logs = [rec for rec in caplog.records if "export.validation_failed" in rec.getMessage()]
     if not error_logs:
         pytest.fail("Expected ProblemDetail log entry for validation failure")

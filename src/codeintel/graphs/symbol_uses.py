@@ -7,8 +7,6 @@ import logging
 from pathlib import Path
 from typing import cast
 
-import duckdb
-
 from codeintel.config.models import SymbolUsesConfig
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.function_catalog_service import (
@@ -17,13 +15,14 @@ from codeintel.graphs.function_catalog_service import (
 )
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import SymbolUseRow, symbol_use_to_tuple
+from codeintel.storage.gateway import StorageGateway
 from codeintel.types import ScipDocument
 
 log = logging.getLogger(__name__)
 
 
 def build_symbol_use_edges(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: SymbolUsesConfig,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
@@ -43,14 +42,14 @@ def build_symbol_use_edges(
         return
 
     provider = catalog_provider or FunctionCatalogService.from_db(
-        con, repo=cfg.repo, commit=cfg.commit
+        gateway, repo=cfg.repo, commit=cfg.commit
     )
-    module_by_path = _merge_module_map(con, docs, cfg.repo, cfg.commit, provider.catalog())
+    module_by_path = _merge_module_map(gateway, docs, cfg.repo, cfg.commit, provider.catalog())
     def_path_by_symbol = build_def_map(docs)
     rows = _build_symbol_edges(docs, def_path_by_symbol, module_by_path)
 
     run_batch(
-        con,
+        gateway,
         "graph.symbol_use_edges",
         [symbol_use_to_tuple(row) for row in rows],
         delete_params=[],
@@ -240,9 +239,9 @@ def _collect_missing_paths(docs: list[ScipDocument], module_by_path: dict[str, s
 
 
 def _load_modules_map(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str, paths: set[str] | None = None
+    gateway: StorageGateway, repo: str, commit: str, paths: set[str] | None = None
 ) -> dict[str, str]:
-    rows = con.execute(
+    rows = gateway.con.execute(
         """
         SELECT path, module
         FROM core.modules
@@ -258,7 +257,7 @@ def _load_modules_map(
 
 
 def _merge_module_map(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     docs: list[ScipDocument],
     repo: str,
     commit: str,
@@ -274,11 +273,11 @@ def _merge_module_map(
     """
     base_map = {path.replace("\\", "/"): module for path, module in catalog.module_by_path.items()}
     if not base_map:
-        return _load_modules_map(con, repo, commit)
+        return _load_modules_map(gateway, repo, commit)
 
     missing_paths = _collect_missing_paths(docs, base_map)
     if missing_paths:
-        db_map = _load_modules_map(con, repo, commit, paths=missing_paths)
+        db_map = _load_modules_map(gateway, repo, commit, paths=missing_paths)
         for path, module in db_map.items():
             base_map.setdefault(path, module)
     return base_map

@@ -9,16 +9,15 @@ from __future__ import annotations
 
 import logging
 
-import duckdb
-
 from codeintel.config.models import CoverageAnalyticsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
 
 def compute_coverage_functions(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: CoverageAnalyticsConfig,
 ) -> None:
     """
@@ -33,8 +32,8 @@ def compute_coverage_functions(
 
     Parameters
     ----------
-    con : duckdb.DuckDBPyConnection
-        Connection with `core.goids` and `analytics.coverage_lines` populated.
+    gateway : StorageGateway
+        Gateway providing access to the DuckDB connection.
     cfg : CoverageAnalyticsConfig
         Repository and commit identifiers that scope the aggregation.
 
@@ -47,24 +46,21 @@ def compute_coverage_functions(
 
     Examples
     --------
-    >>> import duckdb
-    >>> con = duckdb.connect(":memory:")
-    >>> con.execute("CREATE SCHEMA core")
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute("CREATE SCHEMA analytics")
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute(
+    >>> from codeintel.storage.gateway import open_memory_gateway
+    >>> gateway = open_memory_gateway()
+    >>> con = gateway.con
+    >>> _ = con.execute("CREATE SCHEMA core")
+    >>> _ = con.execute("CREATE SCHEMA analytics")
+    >>> _ = con.execute(
     ...     "CREATE TABLE core.goids(urn VARCHAR, repo VARCHAR, commit VARCHAR,"
     ...     " rel_path VARCHAR, language VARCHAR, kind VARCHAR, qualname VARCHAR,"
     ...     " goid_h128 VARCHAR, start_line INTEGER, end_line INTEGER)"
     ... )
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute(
+    >>> _ = con.execute(
     ...     "CREATE TABLE analytics.coverage_lines(repo VARCHAR, commit VARCHAR,"
     ...     " rel_path VARCHAR, line INTEGER, is_executable BOOLEAN, is_covered BOOLEAN)"
     ... )
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute(
+    >>> _ = con.execute(
     ...     "CREATE TABLE analytics.coverage_functions("
     ...     "function_goid_h128 VARCHAR, urn VARCHAR, repo VARCHAR, commit VARCHAR,"
     ...     " rel_path VARCHAR, language VARCHAR, kind VARCHAR, qualname VARCHAR,"
@@ -72,22 +68,19 @@ def compute_coverage_functions(
     ...     " covered_lines INTEGER, coverage_ratio DOUBLE, tested BOOLEAN,"
     ...     " untested_reason VARCHAR, created_at TIMESTAMP)"
     ... )
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute(
+    >>> _ = con.execute(
     ...     "INSERT INTO core.goids VALUES ("
     ...     " 'urn:func', 'demo', 'abc', 'foo.py', 'python', 'function',"
     ...     " 'foo', 'h128', 1, 3)"
     ... )
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute(
+    >>> _ = con.execute(
     ...     "INSERT INTO analytics.coverage_lines VALUES "
     ...     " ('demo', 'abc', 'foo.py', 1, TRUE, TRUE),"
     ...     " ('demo', 'abc', 'foo.py', 2, TRUE, FALSE),"
     ...     " ('demo', 'abc', 'foo.py', 3, FALSE, FALSE)"
     ... )
-    <duckdb.DuckDBPyConnection object ...>
     >>> cfg = CoverageAnalyticsConfig(repo="demo", commit="abc")
-    >>> compute_coverage_functions(con, cfg)
+    >>> compute_coverage_functions(gateway, cfg)
     >>> con.execute(
     ...     "SELECT executable_lines, covered_lines, coverage_ratio, tested"
     ...     " FROM analytics.coverage_functions"
@@ -100,6 +93,7 @@ def compute_coverage_functions(
         cfg.commit,
     )
 
+    con = gateway.con
     ensure_schema(con, "analytics.coverage_lines")
     ensure_schema(con, "analytics.coverage_functions")
 

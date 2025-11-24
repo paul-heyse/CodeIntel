@@ -18,6 +18,14 @@ DOCS_VIEWS: tuple[str, ...] = (
     "docs.v_call_graph_enriched",
     "docs.v_function_architecture",
     "docs.v_module_architecture",
+    "docs.v_symbol_module_graph",
+    "docs.v_config_graph_metrics_keys",
+    "docs.v_config_graph_metrics_modules",
+    "docs.v_config_projection_key_edges",
+    "docs.v_config_projection_module_edges",
+    "docs.v_subsystem_agreement",
+    "docs.v_cfg_block_architecture",
+    "docs.v_dfg_block_architecture",
     "docs.v_subsystem_summary",
     "docs.v_module_with_subsystem",
     "docs.v_ide_hints",
@@ -130,7 +138,7 @@ def build_dataset_registry(*, include_views: bool = True) -> DatasetRegistry:
     """
 
     def _dataset_name(key: str) -> str:
-        schema, name = key.split(".", maxsplit=1) if "." in key else ("", key)
+        _, name = key.split(".", maxsplit=1) if "." in key else ("", key)
         return name
 
     table_keys = tuple(sorted(TABLE_SCHEMAS.keys()))

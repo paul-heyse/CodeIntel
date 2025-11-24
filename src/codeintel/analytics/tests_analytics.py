@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict
 
-import duckdb
 from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
@@ -22,6 +21,7 @@ from codeintel.graphs.function_catalog_service import (
 )
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import TestCoverageEdgeRow, test_coverage_edge_to_tuple
+from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
@@ -60,12 +60,12 @@ def _load_coverage_data(cfg: TestCoverageConfig) -> Coverage | None:
 
 
 def _functions_by_path(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: TestCoverageConfig,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> dict[str, list[FunctionRow]]:
     provider = catalog_provider or FunctionCatalogService.from_db(
-        con, repo=cfg.repo, commit=cfg.commit
+        gateway, repo=cfg.repo, commit=cfg.commit
     )
     catalog = provider.catalog()
     if not catalog.function_spans:
@@ -87,7 +87,7 @@ def _functions_by_path(
 
 
 def _backfill_test_goids(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: TestCoverageConfig,
 ) -> tuple[dict[str, int], dict[str, str]]:
     """
@@ -98,6 +98,7 @@ def _backfill_test_goids(
     tuple[dict[str, int], dict[str, str]]
         Mappings from test_id to GOID h128 and URN.
     """
+    con = gateway.con
     tests_rows = con.execute(
         """
         SELECT test_id, rel_path, qualname
@@ -109,7 +110,7 @@ def _backfill_test_goids(
     if not tests_rows:
         return {}, {}
 
-    goid_rows = con.execute(
+    goid_rows = gateway.con.execute(
         """
         SELECT goid_h128, urn, rel_path, qualname
         FROM core.goids
@@ -153,7 +154,7 @@ def _backfill_test_goids(
 
 
 def backfill_test_goids_for_catalog(
-    con: duckdb.DuckDBPyConnection, cfg: TestCoverageConfig
+    gateway: StorageGateway, cfg: TestCoverageConfig
 ) -> tuple[dict[str, int], dict[str, str]]:
     """
     Public wrapper to backfill GOIDs and URNs for tests in test_catalog.
@@ -163,7 +164,7 @@ def backfill_test_goids_for_catalog(
     tuple[dict[str, int], dict[str, str]]
         Mappings from test_id to GOID h128 and URN.
     """
-    return _backfill_test_goids(con, cfg)
+    return _backfill_test_goids(gateway, cfg)
 
 
 def build_edges_for_file_for_tests(
@@ -281,8 +282,32 @@ def _edges_for_file(
     return edges
 
 
+def _test_status_and_meta(
+    gateway: StorageGateway, cfg: TestCoverageConfig
+) -> tuple[dict[str, str], dict[str, tuple[int | None, str | None]]]:
+    status_by_test = {
+        row[0]: row[1]
+        for row in gateway.con.execute(
+            """
+            SELECT test_id, status
+            FROM analytics.test_catalog
+            WHERE repo = ? AND commit = ?
+            """,
+            [cfg.repo, cfg.commit],
+        ).fetchall()
+    }
+    test_goid_by_id, test_urn_by_id = _backfill_test_goids(gateway, cfg)
+    test_meta_by_id = {
+        test_id: (test_goid_by_id.get(test_id), test_urn_by_id.get(test_id))
+        for test_id in set(status_by_test.keys())
+        | set(test_goid_by_id.keys())
+        | set(test_urn_by_id.keys())
+    }
+    return status_by_test, test_meta_by_id
+
+
 def compute_test_coverage_edges(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: TestCoverageConfig,
     *,
     coverage_loader: Callable[[TestCoverageConfig], Coverage | None] | None = None,
@@ -302,29 +327,13 @@ def compute_test_coverage_edges(
     if cov is None:
         return
 
-    funcs_by_path = _functions_by_path(con, cfg, catalog_provider=catalog_provider)
+    con = gateway.con
+    funcs_by_path = _functions_by_path(gateway, cfg, catalog_provider=catalog_provider)
     if not funcs_by_path:
         log.info("No functions found; skipping test coverage edges")
         return
 
-    status_by_test = {
-        row[0]: row[1]
-        for row in con.execute(
-            """
-            SELECT test_id, status
-            FROM analytics.test_catalog
-            WHERE repo = ? AND commit = ?
-            """,
-            [cfg.repo, cfg.commit],
-        ).fetchall()
-    }
-    test_goid_by_id, test_urn_by_id = _backfill_test_goids(con, cfg)
-    test_meta_by_id = {
-        test_id: (test_goid_by_id.get(test_id), test_urn_by_id.get(test_id))
-        for test_id in set(status_by_test.keys())
-        | set(test_goid_by_id.keys())
-        | set(test_urn_by_id.keys())
-    }
+    status_by_test, test_meta_by_id = _test_status_and_meta(gateway, cfg)
 
     edge_ctx = EdgeContext(
         status_by_test=status_by_test,
@@ -361,7 +370,7 @@ def compute_test_coverage_edges(
         )
 
     run_batch(
-        con,
+        gateway,
         "analytics.test_coverage_edges",
         [test_coverage_edge_to_tuple(row) for row in insert_rows],
         delete_params=[cfg.repo, cfg.commit],

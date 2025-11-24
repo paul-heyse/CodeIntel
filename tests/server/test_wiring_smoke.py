@@ -40,7 +40,7 @@ def test_fastapi_wiring_smoke() -> None:
         )
         return ApiAppConfig(server=cfg, read_only=True)
 
-    def _fake_factory(_cfg: ApiAppConfig) -> BackendResource:
+    def _fake_factory(_cfg: ApiAppConfig, *, _gateway: object | None = None) -> BackendResource:
         nonlocal closed
 
         def _close() -> None:

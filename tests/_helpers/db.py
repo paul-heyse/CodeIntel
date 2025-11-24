@@ -42,42 +42,6 @@ def make_memory_gateway(
     )
 
 
-def make_memory_con(
-    *,
-    apply_schema: bool = True,
-    ensure_views: bool = False,
-    validate_schema: bool = True,
-) -> duckdb.DuckDBPyConnection:
-    """
-    Create an in-memory DuckDB connection with optional schema/view setup.
-
-    Notes
-    -----
-    Prefer ``make_memory_gateway`` in new tests; this helper remains for legacy
-    callers that expect a raw connection.
-
-    Parameters
-    ----------
-    apply_schema
-        When True, applies all project schemas.
-    ensure_views
-        When True, creates docs views after schema application.
-    validate_schema
-        When True, validates schema alignment after setup.
-
-    Returns
-    -------
-    duckdb.DuckDBPyConnection
-        In-memory DuckDB connection with optional schema/views.
-    """
-    gateway = make_memory_gateway(
-        apply_schema=apply_schema,
-        ensure_views=ensure_views,
-        validate_schema=validate_schema,
-    )
-    return gateway.con
-
-
 def seed_repo_identity(
     con: duckdb.DuckDBPyConnection,
     *,

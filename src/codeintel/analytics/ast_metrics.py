@@ -13,12 +13,11 @@ import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-import duckdb
-
 from codeintel.config.models import HotspotsConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.models.rows import HotspotRow, hotspot_row_to_tuple
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 MAX_STDERR_CHARS = 500
@@ -148,7 +147,7 @@ def _parse_git_log_lines(lines: Iterable[str]) -> dict[str, ChurnSummary]:
 
 
 def build_hotspots(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: HotspotsConfig,
     *,
     runner: ToolRunner | None = None,
@@ -165,9 +164,9 @@ def build_hotspots(
 
     Parameters
     ----------
-    con : duckdb.DuckDBPyConnection
-        DuckDB connection with `core.ast_metrics` and `analytics.hotspots`
-        tables already created.
+    gateway :
+        StorageGateway providing access to `core.ast_metrics` and `analytics.hotspots`
+        tables.
     cfg : HotspotsConfig
         Repository metadata and git scan configuration used to scope the build.
     runner : ToolRunner | None
@@ -183,33 +182,30 @@ def build_hotspots(
 
     Examples
     --------
-    >>> import duckdb
     >>> from pathlib import Path
-    >>> con = duckdb.connect(":memory:")
-    >>> con.execute("CREATE SCHEMA core")
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute("CREATE SCHEMA analytics")
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute("CREATE TABLE core.ast_metrics(rel_path VARCHAR, complexity DOUBLE)")
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute(
+    >>> from codeintel.storage.gateway import open_memory_gateway
+    >>> gateway = open_memory_gateway()
+    >>> con = gateway.con
+    >>> _ = con.execute("CREATE SCHEMA core")
+    >>> _ = con.execute("CREATE SCHEMA analytics")
+    >>> _ = con.execute("CREATE TABLE core.ast_metrics(rel_path VARCHAR, complexity DOUBLE)")
+    >>> _ = con.execute(
     ...     "CREATE TABLE analytics.hotspots(rel_path VARCHAR, commit_count INTEGER,"
     ...     " author_count INTEGER, lines_added INTEGER, lines_deleted INTEGER,"
     ...     " complexity DOUBLE, score DOUBLE)"
     ... )
-    <duckdb.DuckDBPyConnection object ...>
-    >>> con.execute("INSERT INTO core.ast_metrics VALUES ('sample.py', 3.0)")
-    <duckdb.DuckDBPyConnection object ...>
+    >>> _ = con.execute("INSERT INTO core.ast_metrics VALUES ('sample.py', 3.0)")
     >>> cfg = HotspotsConfig(
     ...     repo="demo",
     ...     commit="abc123",
     ...     repo_root=Path("."),
     ...     max_commits=0,
     ... )
-    >>> build_hotspots(con, cfg)  # consumes empty git stats when max_commits=0
+    >>> build_hotspots(gateway, cfg)  # consumes empty git stats when max_commits=0
     >>> con.execute("SELECT rel_path, score FROM analytics.hotspots").fetchall()
     [('sample.py', 0.17328679513998632)]
     """
+    con = gateway.con
     df_ast = con.execute("SELECT rel_path, complexity FROM core.ast_metrics").fetch_df()
     if df_ast.empty:
         log.info("No rows in core.ast_metrics; skipping hotspots.")
@@ -258,7 +254,7 @@ def build_hotspots(
         )
 
     run_batch(
-        con,
+        gateway,
         "analytics.hotspots",
         [hotspot_row_to_tuple(row) for row in rows],
         scope=f"{cfg.repo}@{cfg.commit}",

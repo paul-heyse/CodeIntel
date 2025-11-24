@@ -10,6 +10,11 @@ In addition to these physical datasets, the pipeline defines several **DuckDB vi
 The enrichment pipeline computes several architecture-level tables on top of the core graphs and analytics:
 
 - **Graph metrics** (`graph_metrics_functions.*`, `graph_metrics_modules.*`): graph-theoretic signals over call and import graphs (fan-in/out, degree counts, PageRank/centralities, cycle membership, layers, symbol coupling). Stored under `analytics.*` and surfaced via `docs.v_function_architecture` / `docs.v_module_architecture`. See sections **28–29** for schemas.
+- **Extended graph analytics** (symbol/config/import communities):
+  - `analytics.symbol_graph_metrics_modules` / `functions`: symbol-coupling graph metrics (betweenness/closeness/eigenvector/harmonic, k-core, constraint/effective_size, community/component ids); surfaced via `docs.v_symbol_module_graph` and joined into module architecture. Betweenness sampling caps k<=1000; communities skipped if nodes > 5000.
+  - `analytics.config_graph_metrics_keys` / `modules`: degree/weighted degree, betweenness, closeness, community_id for config key ↔ module bipartite projections; views `docs.v_config_graph_metrics_keys` and `docs.v_config_graph_metrics_modules`. Betweenness sampling caps k<=1000; communities skipped if nodes > 5000.
+  - `analytics.config_projection_key_edges` / `config_projection_module_edges`: projected edges (weight = shared usage) for config keys/modules; views `docs.v_config_projection_key_edges` / `docs.v_config_projection_module_edges`.
+  - `analytics.subsystem_agreement`: per-module agreement between subsystem labels and import communities; joined into `docs.v_module_architecture` and exposed in `docs.v_subsystem_agreement`; aggregates appear in `docs.v_subsystem_summary` (disagree count, agreement ratio).
 - **Subsystems** (`subsystems.*`, `subsystem_modules.*`): inferred architectural clusters of modules plus risk rollups, membership, and entrypoint hints. Exposed via `docs.v_subsystem_summary` and `docs.v_module_with_subsystem`. See sections **30–31** for schemas.
 - **Graph validation** (`graph_validation.*`): quality checks over GOIDs and graph tables (missing GOIDs, callsite span mismatches, orphan modules). These findings help diagnose issues with the enrichment pipeline and are useful to surface in tooling. See section **32**.
 
@@ -875,5 +880,3 @@ In addition to the raw Parquet/JSONL datasets described above, the DuckDB catalo
 These views are not exported as separate Parquet/JSONL files by `generate_documents.sh` but are created when the CodeIntel database is opened by the server or CLI. They are the recommended entrypoints for read-only consumers.
 
 ```
-
-

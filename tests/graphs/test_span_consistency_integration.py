@@ -50,7 +50,8 @@ def test_span_alignment_across_components(tmp_path: Path) -> None:
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
 
-    con = open_memory_gateway().con
+    gateway = open_memory_gateway()
+    con = gateway.con
 
     # Seed modules for module mapping.
     con.executemany(
@@ -112,9 +113,12 @@ def test_span_alignment_across_components(tmp_path: Path) -> None:
     )
 
     # Build call graph and CFG using shared spans.
-    build_call_graph(con, CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root))
+    build_call_graph(
+        gateway, CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    )
     build_cfg_and_dfg(
-        con, CFGBuilderConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+        gateway,
+        CFGBuilderConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root),
     )
     # Symbol uses from SCIP JSON.
     scip_json = repo_root / "build" / "scip" / "index.scip.json"
@@ -141,7 +145,7 @@ def test_span_alignment_across_components(tmp_path: Path) -> None:
         encoding="utf8",
     )
     build_symbol_use_edges(
-        con,
+        gateway,
         SymbolUsesConfig.from_paths(
             repo_root=repo_root,
             repo=repo,
@@ -157,7 +161,7 @@ def test_span_alignment_across_components(tmp_path: Path) -> None:
         return FakeCoverage(statements, contexts)
 
     compute_test_coverage_edges(
-        con,
+        gateway,
         TestCoverageConfig.from_paths(
             repo=repo,
             commit=commit,

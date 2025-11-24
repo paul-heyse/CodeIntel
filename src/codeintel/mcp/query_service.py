@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import duckdb
+import networkx as nx
 
+from codeintel.graphs.nx_views import load_call_graph, load_import_graph
 from codeintel.mcp import errors
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
@@ -16,7 +18,9 @@ from codeintel.mcp.models import (
     FunctionArchitectureResponse,
     FunctionProfileResponse,
     FunctionSummaryResponse,
+    GraphNeighborhoodResponse,
     HighRiskFunctionsResponse,
+    ImportBoundaryResponse,
     Message,
     ModuleArchitectureResponse,
     ModuleProfileResponse,
@@ -28,7 +32,7 @@ from codeintel.mcp.models import (
     TestsForFunctionResponse,
     ViewRow,
 )
-from codeintel.server.datasets import build_dataset_registry
+from codeintel.storage.gateway import StorageGateway
 
 RowDict = dict[str, object]
 DOCS_VIEW_QUERIES: dict[str, str] = {
@@ -36,6 +40,12 @@ DOCS_VIEW_QUERIES: dict[str, str] = {
     "docs.v_call_graph_enriched": "SELECT * FROM docs.v_call_graph_enriched",
     "docs.v_function_architecture": "SELECT * FROM docs.v_function_architecture",
     "docs.v_module_architecture": "SELECT * FROM docs.v_module_architecture",
+    "docs.v_symbol_module_graph": "SELECT * FROM docs.v_symbol_module_graph",
+    "docs.v_config_graph_metrics_keys": "SELECT * FROM docs.v_config_graph_metrics_keys",
+    "docs.v_config_graph_metrics_modules": "SELECT * FROM docs.v_config_graph_metrics_modules",
+    "docs.v_config_projection_key_edges": "SELECT * FROM docs.v_config_projection_key_edges",
+    "docs.v_config_projection_module_edges": "SELECT * FROM docs.v_config_projection_module_edges",
+    "docs.v_subsystem_agreement": "SELECT * FROM docs.v_subsystem_agreement",
     "docs.v_subsystem_summary": "SELECT * FROM docs.v_subsystem_summary",
     "docs.v_module_with_subsystem": "SELECT * FROM docs.v_module_with_subsystem",
     "docs.v_ide_hints": "SELECT * FROM docs.v_ide_hints",
@@ -198,11 +208,15 @@ def _normalize_entrypoints_dict(row: RowDict | None) -> None:
 class DuckDBQueryService:
     """Shared query runner for DuckDB-backed MCP and FastAPI surfaces."""
 
-    con: duckdb.DuckDBPyConnection
+    gateway: StorageGateway
     repo: str
     commit: str
     limits: BackendLimits
-    dataset_tables: dict[str, str] = field(default_factory=build_dataset_registry)
+
+    @property
+    def con(self) -> duckdb.DuckDBPyConnection:
+        """Underlying DuckDB connection."""
+        return self.gateway.con
 
     def _resolve_function_goid(
         self,
@@ -588,6 +602,179 @@ class DuckDBQueryService:
                 )
             )
         return TestsForFunctionResponse(tests=[ViewRow.model_validate(r) for r in rows], meta=meta)
+
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        """
+        Return a bounded ego neighborhood in the call graph.
+
+        Parameters
+        ----------
+        goid_h128 : int
+            Node identifier to center the neighborhood on.
+        radius : int, optional
+            Hop distance to traverse when building the ego graph.
+        max_nodes : int, optional
+            Maximum nodes to return; defaults to backend limits when omitted.
+
+        Returns
+        -------
+        GraphNeighborhoodResponse
+            Nodes, edges, and metadata describing truncation and limits.
+
+        Raises
+        ------
+        errors.invalid_argument
+            If the requested max_nodes is negative.
+        """
+        clamp = clamp_limit_value(
+            max_nodes,
+            default=self.limits.default_limit,
+            max_limit=self.limits.max_rows_per_call,
+        )
+        if clamp.has_error:
+            message = "max_nodes must be non-negative"
+            raise errors.invalid_argument(message)
+        limit = clamp.applied
+        meta_messages = list(clamp.messages)
+        graph = load_call_graph(self.gateway, self.repo, self.commit)
+        if goid_h128 not in graph:
+            return GraphNeighborhoodResponse(
+                nodes=[],
+                edges=[],
+                meta=ResponseMeta(
+                    requested_limit=max_nodes,
+                    applied_limit=limit,
+                    messages=meta_messages,
+                ),
+            )
+        ego = nx.ego_graph(graph, goid_h128, radius=radius)
+        truncated = ego.number_of_nodes() > limit
+        nodes = list(ego.nodes)[:limit]
+        ego = ego.subgraph(nodes).copy()
+        node_rows = [
+            ViewRow.model_validate(
+                {"id": n, "in_degree": ego.in_degree(n), "out_degree": ego.out_degree(n)}
+            )
+            for n in nodes
+        ]
+        edge_rows = [
+            ViewRow.model_validate({"src": u, "dst": v, "weight": data.get("weight", 1)})
+            for u, v, data in ego.edges(data=True)
+        ]
+        if truncated:
+            meta_messages.append(
+                Message(
+                    code="truncated",
+                    severity="warning",
+                    detail="Neighborhood truncated to max_nodes",
+                    context={"max_nodes": limit},
+                )
+            )
+        meta = ResponseMeta(
+            requested_limit=max_nodes,
+            applied_limit=limit,
+            truncated=truncated,
+            messages=meta_messages,
+        )
+        return GraphNeighborhoodResponse(nodes=node_rows, edges=edge_rows, meta=meta)
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """
+        Return import edges that cross a subsystem boundary.
+
+        Parameters
+        ----------
+        subsystem_id : str
+            Subsystem identifier whose external edges are requested.
+        max_edges : int, optional
+            Maximum number of edges to return; defaults to backend limits.
+
+        Returns
+        -------
+        ImportBoundaryResponse
+            Subgraph capturing boundary-crossing nodes and edges.
+
+        Raises
+        ------
+        errors.invalid_argument
+            If the requested max_edges is negative.
+        """
+        clamp = clamp_limit_value(
+            max_edges,
+            default=self.limits.default_limit,
+            max_limit=self.limits.max_rows_per_call,
+        )
+        if clamp.has_error:
+            message = "max_edges must be non-negative"
+            raise errors.invalid_argument(message)
+        limit = clamp.applied
+        meta_messages = list(clamp.messages)
+        import_graph = load_import_graph(self.gateway, self.repo, self.commit)
+        memberships = dict(
+            self.con.execute(
+                """
+                SELECT module, subsystem_id
+                FROM analytics.subsystem_modules
+                WHERE repo = ? AND commit = ?
+                """,
+                [self.repo, self.commit],
+            ).fetchall()
+        )
+        edges: list[tuple[str, str, dict[str, object]]] = []
+        for src, dst, data in import_graph.edges(data=True):
+            left = memberships.get(src)
+            right = memberships.get(dst)
+            if left is None or right is None:
+                continue
+            if (left == subsystem_id and right != subsystem_id) or (
+                right == subsystem_id and left != subsystem_id
+            ):
+                edges.append((src, dst, data))
+        truncated = len(edges) > limit
+        edges = edges[:limit]
+        nodes = {src for src, _, _ in edges} | {dst for _, dst, _ in edges}
+        node_rows = [
+            ViewRow.model_validate({"module": n, "subsystem_id": memberships.get(n)}) for n in nodes
+        ]
+        edge_rows = [
+            ViewRow.model_validate(
+                {
+                    "src": src,
+                    "dst": dst,
+                    "weight": data.get("weight", 1),
+                    "src_sub": memberships.get(src),
+                    "dst_sub": memberships.get(dst),
+                }
+            )
+            for src, dst, data in edges
+        ]
+        if truncated:
+            meta_messages.append(
+                Message(
+                    code="truncated",
+                    severity="warning",
+                    detail="Boundary edges truncated to max_edges",
+                    context={"max_edges": limit},
+                )
+            )
+        meta = ResponseMeta(
+            requested_limit=max_edges,
+            applied_limit=limit,
+            truncated=truncated,
+            messages=meta_messages,
+        )
+        return ImportBoundaryResponse(nodes=node_rows, edges=edge_rows, meta=meta)
 
     def get_file_summary(
         self,
@@ -1130,7 +1317,7 @@ class DuckDBQueryService:
         errors.invalid_argument
             When the dataset name is unknown.
         """
-        table = self.dataset_tables.get(dataset_name)
+        table = self.gateway.datasets.mapping.get(dataset_name)
         if not table:
             message = f"Unknown dataset: {dataset_name}"
             raise errors.invalid_argument(message)

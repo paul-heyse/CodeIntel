@@ -38,8 +38,8 @@ def test_function_validation_export(tmp_path: Path) -> None:
 
     jsonl_dir = tmp_path / "jsonl"
     parquet_dir = tmp_path / "parquet"
-    export_all_jsonl(con, jsonl_dir)
-    export_all_parquet(con, parquet_dir)
+    export_all_jsonl(gateway, jsonl_dir)
+    export_all_parquet(gateway, parquet_dir)
 
     jsonl_file = jsonl_dir / "function_validation.jsonl"
     parquet_file = parquet_dir / "function_validation.parquet"

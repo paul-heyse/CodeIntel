@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
 from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
@@ -15,6 +14,7 @@ from codeintel.config.models import CoverageIngestConfig
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.models.rows import CoverageLineRow, coverage_line_to_tuple
+from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 
@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 
 
 def ingest_coverage_lines(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: CoverageIngestConfig,
     runner: ToolRunner | None = None,
     json_output_path: Path | None = None,
@@ -55,8 +55,8 @@ def ingest_coverage_lines(
 
     Parameters
     ----------
-    con:
-        Connection to the DuckDB database.
+    gateway:
+        StorageGateway providing access to the target DuckDB database.
     cfg:
         Coverage ingestion configuration (paths and identifiers).
     runner:
@@ -89,7 +89,7 @@ def ingest_coverage_lines(
         return
 
     run_batch(
-        con,
+        gateway,
         "analytics.coverage_lines",
         [coverage_line_to_tuple(r) for r in rows],
         delete_params=[cfg.repo, cfg.commit],

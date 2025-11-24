@@ -217,6 +217,8 @@ SYMBOL_USE_COLUMNS = [
     "use_path",
     "same_file",
     "same_module",
+    "def_goid_h128",
+    "use_goid_h128",
 ]
 
 TEST_COVERAGE_EDGE_COLUMNS = [
@@ -298,6 +300,17 @@ IMPORT_EDGE_COLUMNS = [
     "src_fan_out",
     "dst_fan_in",
     "cycle_group",
+    "module_layer",
+]
+
+IMPORT_MODULE_COLUMNS = [
+    "repo",
+    "commit",
+    "module",
+    "scc_id",
+    "component_size",
+    "layer",
+    "cycle_group",
 ]
 
 CFG_BLOCK_COLUMNS = [
@@ -328,6 +341,41 @@ DFG_EDGE_COLUMNS = [
     "src_var",
     "dst_var",
     "edge_kind",
+    "via_phi",
+    "use_kind",
+]
+
+CFG_FUNCTION_METRICS_EXT_COLUMNS = [
+    "function_goid_h128",
+    "repo",
+    "commit",
+    "unreachable_block_count",
+    "loop_header_count",
+    "true_edge_count",
+    "false_edge_count",
+    "back_edge_count",
+    "exception_edge_count",
+    "fallthrough_edge_count",
+    "loop_edge_count",
+    "entry_exit_simple_paths",
+    "created_at",
+    "metrics_version",
+]
+
+DFG_FUNCTION_METRICS_EXT_COLUMNS = [
+    "function_goid_h128",
+    "repo",
+    "commit",
+    "data_flow_edge_count",
+    "intra_block_edge_count",
+    "use_kind_phi_count",
+    "use_kind_data_flow_count",
+    "use_kind_intra_block_count",
+    "use_kind_other_count",
+    "phi_edge_ratio",
+    "entry_exit_simple_paths",
+    "created_at",
+    "metrics_version",
 ]
 
 DOCSTRINGS_COLUMNS = [
@@ -397,9 +445,12 @@ _assert_columns("graph.symbol_use_edges", SYMBOL_USE_COLUMNS)
 _assert_columns("graph.call_graph_nodes", CALL_GRAPH_NODE_COLUMNS)
 _assert_columns("graph.call_graph_edges", CALL_GRAPH_EDGE_COLUMNS)
 _assert_columns("graph.import_graph_edges", IMPORT_EDGE_COLUMNS)
+_assert_columns("graph.import_modules", IMPORT_MODULE_COLUMNS)
 _assert_columns("graph.cfg_blocks", CFG_BLOCK_COLUMNS)
 _assert_columns("graph.cfg_edges", CFG_EDGE_COLUMNS)
 _assert_columns("graph.dfg_edges", DFG_EDGE_COLUMNS)
+_assert_columns("analytics.cfg_function_metrics_ext", CFG_FUNCTION_METRICS_EXT_COLUMNS)
+_assert_columns("analytics.dfg_function_metrics_ext", DFG_FUNCTION_METRICS_EXT_COLUMNS)
 
 # ---------------------------------------------------------------------------
 # Prepared SQL literals (static, coupled to column lists)
@@ -560,7 +611,14 @@ CALL_GRAPH_EDGES_INSERT = (
 IMPORT_EDGES_DELETE = "DELETE FROM graph.import_graph_edges WHERE repo = ? AND commit = ?"
 IMPORT_EDGES_INSERT = (
     "INSERT INTO graph.import_graph_edges ("
-    "repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group"
+    "repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group, module_layer"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+IMPORT_MODULES_DELETE = "DELETE FROM graph.import_modules WHERE repo = ? AND commit = ?"
+IMPORT_MODULES_INSERT = (
+    "INSERT INTO graph.import_modules ("
+    "repo, commit, module, scc_id, component_size, layer, cycle_group"
     ") VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 
@@ -581,8 +639,30 @@ CFG_EDGES_INSERT = (
 DFG_EDGES_DELETE = "DELETE FROM graph.dfg_edges"
 DFG_EDGES_INSERT = (
     "INSERT INTO graph.dfg_edges ("
-    "function_goid_h128, src_block_id, dst_block_id, src_var, dst_var, edge_kind"
-    ") VALUES (?, ?, ?, ?, ?, ?)"
+    "function_goid_h128, src_block_id, dst_block_id, src_var, dst_var, edge_kind, via_phi, use_kind"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+CFG_FUNCTION_METRICS_EXT_DELETE = (
+    "DELETE FROM analytics.cfg_function_metrics_ext WHERE repo = ? AND commit = ?"
+)
+CFG_FUNCTION_METRICS_EXT_INSERT = (
+    "INSERT INTO analytics.cfg_function_metrics_ext ("
+    "function_goid_h128, repo, commit, unreachable_block_count, loop_header_count, "
+    "true_edge_count, false_edge_count, back_edge_count, exception_edge_count, "
+    "fallthrough_edge_count, loop_edge_count, entry_exit_simple_paths, created_at, metrics_version"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+DFG_FUNCTION_METRICS_EXT_DELETE = (
+    "DELETE FROM analytics.dfg_function_metrics_ext WHERE repo = ? AND commit = ?"
+)
+DFG_FUNCTION_METRICS_EXT_INSERT = (
+    "INSERT INTO analytics.dfg_function_metrics_ext ("
+    "function_goid_h128, repo, commit, data_flow_edge_count, intra_block_edge_count, "
+    "use_kind_phi_count, use_kind_data_flow_count, use_kind_intra_block_count, "
+    "use_kind_other_count, phi_edge_ratio, entry_exit_simple_paths, created_at, metrics_version"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 FUNCTION_VALIDATION_DELETE = (
@@ -668,11 +748,23 @@ PREPARED: dict[str, PreparedStatements] = {
         insert_sql=IMPORT_EDGES_INSERT,
         delete_sql=IMPORT_EDGES_DELETE,
     ),
+    "graph.import_modules": PreparedStatements(
+        insert_sql=IMPORT_MODULES_INSERT,
+        delete_sql=IMPORT_MODULES_DELETE,
+    ),
     "graph.cfg_blocks": PreparedStatements(
         insert_sql=CFG_BLOCKS_INSERT, delete_sql=CFG_BLOCKS_DELETE
     ),
     "graph.cfg_edges": PreparedStatements(insert_sql=CFG_EDGES_INSERT, delete_sql=CFG_EDGES_DELETE),
     "graph.dfg_edges": PreparedStatements(insert_sql=DFG_EDGES_INSERT, delete_sql=DFG_EDGES_DELETE),
+    "analytics.cfg_function_metrics_ext": PreparedStatements(
+        insert_sql=CFG_FUNCTION_METRICS_EXT_INSERT,
+        delete_sql=CFG_FUNCTION_METRICS_EXT_DELETE,
+    ),
+    "analytics.dfg_function_metrics_ext": PreparedStatements(
+        insert_sql=DFG_FUNCTION_METRICS_EXT_INSERT,
+        delete_sql=DFG_FUNCTION_METRICS_EXT_DELETE,
+    ),
     "graph.symbol_use_edges": PreparedStatements(
         insert_sql=SYMBOL_USE_INSERT, delete_sql=SYMBOL_USE_DELETE
     ),

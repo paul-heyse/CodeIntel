@@ -15,8 +15,6 @@ from datetime import UTC, datetime
 from logging import Logger, LoggerAdapter
 from typing import TypedDict
 
-import duckdb
-
 from codeintel.analytics.function_parsing import (
     FunctionParserRegistry,
     ParsedFile,
@@ -28,6 +26,7 @@ from codeintel.config.models import FunctionAnalyticsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import FunctionValidationRow, function_validation_row_to_tuple
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -627,7 +626,7 @@ def build_function_analytics(
 
 
 def persist_function_analytics(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: FunctionAnalyticsConfig,
     result: FunctionAnalyticsResult,
     *,
@@ -638,8 +637,8 @@ def persist_function_analytics(
 
     Parameters
     ----------
-    con : duckdb.DuckDBPyConnection
-        Open DuckDB connection.
+    gateway : StorageGateway
+        Storage gateway exposing the DuckDB connection.
     cfg : FunctionAnalyticsConfig
         Repository/commit context.
     result : FunctionAnalyticsResult
@@ -652,23 +651,24 @@ def persist_function_analytics(
     dict[str, int]
         Summary counts of persisted rows and validation.
     """
+    con = gateway.con
     ensure_schema(con, "analytics.function_validation")
     scope = f"{cfg.repo}@{cfg.commit}"
     run_batch(
-        con,
+        gateway,
         "analytics.function_metrics",
         result.metrics_rows,
         delete_params=[cfg.repo, cfg.commit],
         scope=scope,
     )
     run_batch(
-        con,
+        gateway,
         "analytics.function_types",
         result.types_rows,
         delete_params=[cfg.repo, cfg.commit],
         scope=scope,
     )
-    _persist_validation(con, cfg, result.validation, created_at=created_at)
+    _persist_validation(gateway, cfg, result.validation, created_at=created_at)
 
     log.info(
         ("Function metrics/types build complete for repo=%s commit=%s: %d functions (missing=%d)"),
@@ -688,7 +688,7 @@ def persist_function_analytics(
 
 
 def compute_function_metrics_and_types(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: FunctionAnalyticsConfig,
     *,
     parser: ParsedFileLoader | None = None,
@@ -709,9 +709,9 @@ def compute_function_metrics_and_types(
 
     Parameters
     ----------
-    con : duckdb.DuckDBPyConnection
-        Connection with `core.goids`, `analytics.function_metrics`, and
-        `analytics.function_types` tables available.
+    gateway :
+        StorageGateway providing the DuckDB connection with `core.goids`,
+        `analytics.function_metrics`, and `analytics.function_types` tables available.
     cfg : FunctionAnalyticsConfig
         Repository metadata and file-system root used to locate source files.
     parser : ParsedFileLoader | None
@@ -740,7 +740,12 @@ def compute_function_metrics_and_types(
     dict[str, int]
         Summary counts of emitted metrics/types and validation issues.
     """
-    goids_by_file = _load_goids(con, cfg)
+    con = gateway.con
+    ensure_schema(con, "analytics.function_metrics")
+    ensure_schema(con, "analytics.function_types")
+    ensure_schema(con, "analytics.function_validation")
+
+    goids_by_file = _load_goids(gateway, cfg)
     if not goids_by_file:
         return {
             "metrics_rows": 0,
@@ -762,7 +767,7 @@ def compute_function_metrics_and_types(
     state = ProcessState(cfg=cfg, cache=parsed_cache, parser=selected_parser, ctx=ctx)
 
     result = build_function_analytics(goids_by_file=goids_by_file, state=state)
-    summary = persist_function_analytics(con, cfg, result, created_at=now)
+    summary = persist_function_analytics(gateway, cfg, result, created_at=now)
     reporter = validation_reporter or ValidationReporter(logger=log)
     reporter.report(result, scope=f"{cfg.repo}@{cfg.commit}")
     if cfg.fail_on_missing_spans and result.validation:
@@ -781,10 +786,8 @@ def compute_function_metrics_and_types(
     return summary
 
 
-def _load_goids(
-    con: duckdb.DuckDBPyConnection, cfg: FunctionAnalyticsConfig
-) -> dict[str, list[GoidRow]]:
-    df = con.execute(
+def _load_goids(gateway: StorageGateway, cfg: FunctionAnalyticsConfig) -> dict[str, list[GoidRow]]:
+    df = gateway.con.execute(
         """
         SELECT
             goid_h128,
@@ -843,12 +846,13 @@ def _meta_from_goid_row(info: GoidRow) -> FunctionMeta:
 
 
 def _persist_validation(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: FunctionAnalyticsConfig,
     issues: list[ValidationIssue],
     *,
     created_at: datetime,
 ) -> None:
+    con = gateway.con
     rows = [
         function_validation_row_to_tuple(
             FunctionValidationRow(
@@ -864,7 +868,7 @@ def _persist_validation(
         for issue in issues
     ]
     run_batch(
-        con,
+        gateway,
         "analytics.function_validation",
         rows,
         delete_params=[cfg.repo, cfg.commit],

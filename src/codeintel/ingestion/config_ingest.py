@@ -10,13 +10,13 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import cast
 
-import duckdb
 import yaml
 
 from codeintel.config.models import ConfigIngestConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.source_scanner import IGNORES, ScanConfig
 from codeintel.models.rows import ConfigValueRow, config_value_to_tuple
+from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import repo_relpath
 
 log = logging.getLogger(__name__)
@@ -167,7 +167,7 @@ def _flatten_config(
 
 
 def ingest_config_values(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: ConfigIngestConfig,
     scan_config: ScanConfig | None = None,
 ) -> None:
@@ -185,13 +185,14 @@ def ingest_config_values(
 
     Parameters
     ----------
-    con:
-        Active DuckDB connection.
+    gateway:
+        StorageGateway providing access to the DuckDB database.
     cfg:
         Repository context for config ingestion.
     scan_config:
         Optional scan configuration to honor ignore/include rules while walking files.
     """
+    con = gateway.con
     repo_root = cfg.repo_root
 
     rows: list[ConfigValueRow] = []
@@ -215,7 +216,7 @@ def ingest_config_values(
             )
 
     run_batch(
-        con,
+        gateway,
         "analytics.config_values",
         [config_value_to_tuple(r) for r in rows],
         delete_params=None,

@@ -60,7 +60,7 @@ def test_symbol_uses_respects_catalog_module_map(tmp_path: Path) -> None:
         commit="c",
         scip_json_path=scip_path,
     )
-    build_symbol_use_edges(con, cfg, catalog_provider=provider)
+    build_symbol_use_edges(gateway, cfg, catalog_provider=provider)
 
     row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
     _expect(condition=row is not None, detail="symbol_use_edges row missing")
@@ -108,7 +108,7 @@ def test_symbol_uses_falls_back_to_modules_when_catalog_partial(tmp_path: Path) 
         commit="c",
         scip_json_path=scip_path,
     )
-    build_symbol_use_edges(con, cfg, catalog_provider=provider)
+    build_symbol_use_edges(gateway, cfg, catalog_provider=provider)
 
     row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
     _expect(condition=row is not None, detail="symbol_use_edges row missing")
@@ -132,7 +132,7 @@ def test_graph_metrics_uses_catalog_for_symbol_modules() -> None:
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
     cfg = GraphMetricsConfig.from_paths(repo="r", commit="c")
-    compute_graph_metrics(con, cfg, catalog_provider=provider)
+    compute_graph_metrics(gateway, cfg, catalog_provider=provider)
 
     modules = {
         row[0]
@@ -171,8 +171,8 @@ def test_profiles_use_catalog_module_map_when_modules_table_empty() -> None:
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod"})
     cfg = ProfilesAnalyticsConfig.from_paths(repo="r", commit="c")
-    build_function_profile(con, cfg, catalog_provider=provider)
-    build_module_profile(con, cfg, catalog_provider=provider)
+    build_function_profile(gateway, cfg, catalog_provider=provider)
+    build_module_profile(gateway, cfg, catalog_provider=provider)
 
     module_row = con.execute(
         """

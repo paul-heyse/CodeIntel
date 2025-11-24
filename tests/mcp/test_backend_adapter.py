@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from codeintel.mcp import errors
@@ -14,7 +16,7 @@ class StubService(LocalQueryService):
     """Stub LocalQueryService that records method calls."""
 
     def __init__(self) -> None:
-        super().__init__(query=None)  # type: ignore[arg-type]
+        super().__init__(query=None, dataset_tables={})  # type: ignore[arg-type]
         self.calls: list[str] = []
 
     def get_function_summary(
@@ -56,10 +58,27 @@ class StubService(LocalQueryService):
         return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=ResponseMeta())
 
 
+def _fake_gateway() -> object:
+    """
+    Minimal gateway stub to satisfy DuckDBBackend signature.
+
+    Returns
+    -------
+    object
+        Stub object with gateway attributes.
+    """
+    return SimpleNamespace(
+        con=None,
+        config=SimpleNamespace(repo="r", commit="c", read_only=True),
+        datasets=SimpleNamespace(mapping={}),
+        close=lambda: None,
+    )
+
+
 def test_require_identifier_validation() -> None:
     """Backend raises invalid_argument when identifiers are missing."""
     backend = DuckDBBackend(
-        con=None,  # type: ignore[arg-type]
+        gateway=_fake_gateway(),  # type: ignore[arg-type]
         repo="r",
         commit="c",
         service_override=StubService(),
@@ -75,7 +94,7 @@ def test_require_identifier_validation() -> None:
 def test_validate_direction_accepts_expected() -> None:
     """Backend validates direction before delegation."""
     backend = DuckDBBackend(
-        con=None,  # type: ignore[arg-type]
+        gateway=_fake_gateway(),  # type: ignore[arg-type]
         repo="r",
         commit="c",
         service_override=StubService(),
@@ -88,7 +107,7 @@ def test_validate_direction_accepts_expected() -> None:
 def test_backend_delegates_after_validation() -> None:
     """Backend methods delegate to the service after validation."""
     backend = DuckDBBackend(
-        con=None,  # type: ignore[arg-type]
+        gateway=_fake_gateway(),  # type: ignore[arg-type]
         repo="r",
         commit="c",
         service_override=StubService(),

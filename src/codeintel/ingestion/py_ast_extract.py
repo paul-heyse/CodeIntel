@@ -10,8 +10,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-import duckdb
-
 from codeintel.config.models import PyAstIngestConfig
 from codeintel.ingestion.common import (
     ModuleRecord,
@@ -22,6 +20,7 @@ from codeintel.ingestion.common import (
     should_skip_empty,
 )
 from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -281,7 +280,7 @@ def _collect_module_ast(record: ModuleRecord) -> tuple[list[list[object]], AstMe
 
 
 def ingest_python_ast(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: PyAstIngestConfig,
     scan_config: ScanConfig | None = None,
 ) -> None:
@@ -290,15 +289,16 @@ def ingest_python_ast(
 
     Parameters
     ----------
-    con:
-        Live DuckDB connection.
+    gateway:
+        StorageGateway providing access to the DuckDB database.
     cfg:
         Repository context (root, repo slug, commit).
     scan_config:
         Optional scan configuration controlling iteration logging cadence.
     """
+    con = gateway.con
     repo_root = cfg.repo_root
-    module_map = load_module_map(con, cfg.repo, cfg.commit, language="python", logger=log)
+    module_map = load_module_map(gateway, cfg.repo, cfg.commit, language="python", logger=log)
     if should_skip_empty(module_map, logger=log):
         return
     total_modules = len(module_map)
@@ -335,13 +335,13 @@ def ingest_python_ast(
         )
 
     run_batch(
-        con,
+        gateway,
         "core.ast_nodes",
         ast_values,
         delete_params=[cfg.repo, cfg.commit],
     )
     run_batch(
-        con,
+        gateway,
         "core.ast_metrics",
         metric_values,
         delete_params=[cfg.repo, cfg.commit],

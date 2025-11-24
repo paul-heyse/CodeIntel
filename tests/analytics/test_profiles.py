@@ -258,9 +258,9 @@ def test_profile_builders_aggregate_expected_fields() -> None:
     con = gateway.con
     _seed_profile_fixtures(con)
     cfg = ProfilesAnalyticsConfig(repo=REPO, commit=COMMIT)
-    build_function_profile(con, cfg)
-    build_file_profile(con, cfg)
-    build_module_profile(con, cfg)
+    build_function_profile(gateway, cfg)
+    build_file_profile(gateway, cfg)
+    build_module_profile(gateway, cfg)
     _assert_function_profile(con)
     _assert_file_profile(con)
     _assert_module_profile(con)

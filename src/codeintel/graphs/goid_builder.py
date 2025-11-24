@@ -8,13 +8,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
 import pandas as pd
 
 from codeintel.config.models import GoidBuilderConfig
 from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import GoidCrosswalkRow, GoidRow, goid_crosswalk_to_tuple, goid_to_tuple
+from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import relpath_to_module
 
 log = logging.getLogger(__name__)
@@ -198,17 +198,18 @@ def _build_goid_entries(
     return goid_row, xwalk_row
 
 
-def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
+def build_goids(gateway: StorageGateway, cfg: GoidBuilderConfig) -> None:
     """
     Populate core.goids and core.goid_crosswalk from core.ast_nodes.
 
     Parameters
     ----------
-    con:
-        DuckDB connection to populate.
+    gateway:
+        Storage gateway providing the DuckDB connection to populate.
     cfg:
         Configuration identifying the repo and commit to hash.
     """
+    con = gateway.con
     df = con.execute(
         """
         SELECT
@@ -239,7 +240,7 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
 
     now = datetime.now(UTC)
 
-    module_by_path = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit).module_by_path
+    module_by_path = load_function_catalog(gateway, repo=cfg.repo, commit=cfg.commit).module_by_path
 
     for _, row in df.iterrows():
         goid_row, xwalk_row = _build_goid_entries(row, cfg, now, module_by_path)
@@ -247,14 +248,14 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
         xwalk_rows.append(xwalk_row)
 
     run_batch(
-        con,
+        gateway,
         "core.goids",
         [goid_to_tuple(row) for row in goid_rows],
         delete_params=[cfg.repo, cfg.commit],
         scope=f"{cfg.repo}@{cfg.commit}",
     )
     run_batch(
-        con,
+        gateway,
         "core.goid_crosswalk",
         [goid_crosswalk_to_tuple(row) for row in xwalk_rows],
         delete_params=[cfg.repo, cfg.commit],

@@ -5,10 +5,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-import duckdb
-
 from codeintel.graphs.function_index import FunctionSpan, FunctionSpanIndex
 from codeintel.ingestion.common import load_module_map
+from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 
@@ -124,19 +123,20 @@ class FunctionCatalog:
 
 
 def load_function_catalog(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
 ) -> FunctionCatalog:
     """
-    Load function metadata and module map for a repo snapshot.
+    Load function metadata and module map for a repo snapshot via a gateway.
 
     Returns
     -------
     FunctionCatalog
         Catalog containing spans, URNs, and module mapping.
     """
+    con = gateway.con
     rows = con.execute(
         """
         SELECT goid_h128, urn, rel_path, qualname, start_line, end_line
@@ -162,5 +162,5 @@ def load_function_catalog(
             )
         )
 
-    module_by_path = load_module_map(con, repo, commit)
+    module_by_path = load_module_map(gateway, repo, commit)
     return FunctionCatalog(functions=functions, module_by_path=module_by_path)

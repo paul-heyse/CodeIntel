@@ -115,18 +115,33 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
         """
         CREATE OR REPLACE VIEW docs.v_function_architecture AS
         SELECT
-            gm.function_goid_h128,
-            gm.repo,
-            gm.commit,
-            rf.urn,
-            rf.rel_path,
-            rf.qualname,
-            rf.language,
-            rf.kind,
-            rf.risk_score,
-            rf.risk_level,
-            rf.tags,
-            rf.owners,
+            fp.function_goid_h128,
+            fp.repo,
+            fp.commit,
+            fp.urn,
+            fp.rel_path,
+            fp.module,
+            fp.language,
+            fp.kind,
+            fp.qualname,
+            fp.loc,
+            fp.logical_loc,
+            fp.cyclomatic_complexity,
+            fp.param_count,
+            fp.total_params,
+            fp.annotated_params,
+            fp.return_type,
+            fp.typedness_bucket,
+            fp.file_typed_ratio,
+            fp.coverage_ratio,
+            fp.tested,
+            fp.tests_touching,
+            fp.failing_tests,
+            fp.slow_tests,
+            fp.risk_score,
+            fp.risk_level,
+            fp.tags,
+            fp.owners,
             gm.call_fan_in,
             gm.call_fan_out,
             gm.call_in_degree,
@@ -137,12 +152,103 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
             gm.call_cycle_member,
             gm.call_cycle_id,
             gm.call_layer,
-            gm.created_at
-        FROM analytics.graph_metrics_functions gm
-        LEFT JOIN analytics.goid_risk_factors rf
-          ON rf.function_goid_h128 = gm.function_goid_h128
-         AND rf.repo = gm.repo
-         AND rf.commit = gm.commit;
+            gmx.call_betweenness AS call_betweenness_ext,
+            gmx.call_closeness AS call_closeness_ext,
+            gmx.call_eigenvector,
+            gmx.call_harmonic,
+            gmx.call_core_number,
+            gmx.call_clustering_coeff,
+            gmx.call_triangle_count,
+            gmx.call_is_articulation,
+            gmx.call_is_bridge_endpoint,
+            gmx.call_component_id,
+            gmx.call_component_size,
+            gmx.call_scc_id,
+            gmx.call_scc_size,
+            tgf.tests_degree,
+            tgf.tests_weighted_degree,
+            tgf.tests_degree_centrality,
+            tgf.proj_degree AS tests_co_tested_degree,
+            tgf.proj_weight AS tests_co_tested_weight,
+            tgf.proj_clustering AS tests_co_tested_clustering,
+            tgf.proj_betweenness AS tests_co_tested_betweenness,
+            cfg_fn.cfg_block_count,
+            cfg_fn.cfg_edge_count,
+            cfg_fn.cfg_has_cycles,
+            cfg_fn.cfg_scc_count,
+            cfg_fn.cfg_longest_path_len,
+            cfg_fn.cfg_avg_shortest_path_len,
+            cfg_fn.cfg_branching_factor_mean,
+            cfg_fn.cfg_branching_factor_max,
+            cfg_fn.cfg_linear_block_fraction,
+            cfg_fn.cfg_dom_tree_height,
+            cfg_fn.cfg_dominance_frontier_size_mean,
+            cfg_fn.cfg_dominance_frontier_size_max,
+            cfg_fn.cfg_loop_count,
+            cfg_fn.cfg_loop_nesting_depth_max,
+            cfg_fn.cfg_bc_betweenness_max,
+            cfg_fn.cfg_bc_betweenness_mean,
+            cfg_fn.cfg_bc_closeness_mean,
+            cfg_fn.cfg_bc_eigenvector_max,
+            dfg_fn.dfg_block_count,
+            dfg_fn.dfg_edge_count,
+            dfg_fn.dfg_phi_edge_count,
+            dfg_fn.dfg_symbol_count,
+            dfg_fn.dfg_component_count,
+            dfg_fn.dfg_scc_count,
+            dfg_fn.dfg_has_cycles,
+            dfg_fn.dfg_longest_chain_len,
+            dfg_fn.dfg_avg_shortest_path_len,
+            dfg_fn.dfg_avg_in_degree,
+            dfg_fn.dfg_avg_out_degree,
+            dfg_fn.dfg_max_in_degree,
+            dfg_fn.dfg_max_out_degree,
+            dfg_fn.dfg_branchy_block_fraction,
+            dfg_fn.dfg_bc_betweenness_max,
+            dfg_fn.dfg_bc_betweenness_mean,
+            dfg_fn.dfg_bc_eigenvector_max,
+            mp.module_coverage_ratio,
+            mp.import_fan_in AS module_import_fan_in,
+            mp.import_fan_out AS module_import_fan_out,
+            mp.in_cycle AS module_in_import_cycle,
+            mp.cycle_group AS module_import_cycle_group,
+            sm.subsystem_id,
+            ss.name AS subsystem_name,
+            ss.risk_level AS subsystem_risk_level,
+            ss.module_count AS subsystem_module_count
+        FROM analytics.function_profile fp
+        LEFT JOIN analytics.graph_metrics_functions gm
+          ON gm.function_goid_h128 = fp.function_goid_h128
+         AND gm.repo = fp.repo
+         AND gm.commit = fp.commit
+        LEFT JOIN analytics.graph_metrics_functions_ext gmx
+          ON gmx.function_goid_h128 = fp.function_goid_h128
+         AND gmx.repo = fp.repo
+         AND gmx.commit = fp.commit
+        LEFT JOIN analytics.test_graph_metrics_functions tgf
+          ON tgf.function_goid_h128 = fp.function_goid_h128
+         AND tgf.repo = fp.repo
+         AND tgf.commit = fp.commit
+        LEFT JOIN analytics.cfg_function_metrics cfg_fn
+          ON cfg_fn.function_goid_h128 = fp.function_goid_h128
+         AND cfg_fn.repo = fp.repo
+         AND cfg_fn.commit = fp.commit
+        LEFT JOIN analytics.dfg_function_metrics dfg_fn
+          ON dfg_fn.function_goid_h128 = fp.function_goid_h128
+         AND dfg_fn.repo = fp.repo
+         AND dfg_fn.commit = fp.commit
+        LEFT JOIN analytics.module_profile mp
+          ON mp.module = fp.module
+         AND mp.repo = fp.repo
+         AND mp.commit = fp.commit
+        LEFT JOIN analytics.subsystem_modules sm
+          ON sm.module = mp.module
+         AND sm.repo = mp.repo
+         AND sm.commit = mp.commit
+        LEFT JOIN analytics.subsystems ss
+          ON ss.subsystem_id = sm.subsystem_id
+         AND ss.repo = sm.repo
+         AND ss.commit = sm.commit;
         """
     )
 
@@ -173,6 +279,39 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
             mp.module_coverage_ratio,
             mp.tested_function_count,
             mp.untested_function_count,
+            gmx.import_betweenness AS import_betweenness_ext,
+            gmx.import_closeness AS import_closeness_ext,
+            gmx.import_eigenvector,
+            gmx.import_harmonic,
+            gmx.import_k_core,
+            gmx.import_constraint,
+            gmx.import_effective_size,
+            gmx.import_community_id,
+            gmx.import_component_id,
+            gmx.import_component_size,
+            gmx.import_scc_id,
+            gmx.import_scc_size,
+            sym.symbol_betweenness,
+            sym.symbol_closeness,
+            sym.symbol_eigenvector,
+            sym.symbol_harmonic,
+            sym.symbol_k_core,
+            sym.symbol_constraint,
+            sym.symbol_effective_size,
+            sym.symbol_community_id,
+            cfgm.community_id AS config_community_id,
+            cfgm.degree AS config_degree,
+            cfgm.weighted_degree AS config_weighted_degree,
+            cfgm.betweenness AS config_betweenness,
+            cfgm.closeness AS config_closeness,
+            sg.import_in_degree AS subsystem_import_in_degree,
+            sg.import_out_degree AS subsystem_import_out_degree,
+            sg.import_pagerank AS subsystem_import_pagerank,
+            sg.import_betweenness AS subsystem_import_betweenness,
+            sg.import_closeness AS subsystem_import_closeness,
+            sg.import_layer AS subsystem_import_layer,
+            sa.import_community_id AS subsystem_agreed_import_community_id,
+            sa.agrees AS subsystem_import_agreement,
             gm.created_at
         FROM analytics.graph_metrics_modules gm
         LEFT JOIN core.modules m
@@ -180,7 +319,176 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
         LEFT JOIN analytics.module_profile mp
           ON mp.module = gm.module
          AND mp.repo = gm.repo
-         AND mp.commit = gm.commit;
+         AND mp.commit = gm.commit
+        LEFT JOIN analytics.graph_metrics_modules_ext gmx
+          ON gmx.module = gm.module
+         AND gmx.repo = gm.repo
+         AND gmx.commit = gm.commit
+        LEFT JOIN analytics.symbol_graph_metrics_modules sym
+          ON sym.module = gm.module
+         AND sym.repo = gm.repo
+         AND sym.commit = gm.commit
+        LEFT JOIN analytics.config_graph_metrics_modules cfgm
+          ON cfgm.module = gm.module
+         AND cfgm.repo = gm.repo
+         AND cfgm.commit = gm.commit
+        LEFT JOIN analytics.subsystem_modules sm
+          ON sm.module = gm.module
+         AND sm.repo = gm.repo
+         AND sm.commit = gm.commit
+        LEFT JOIN analytics.subsystem_graph_metrics sg
+          ON sg.subsystem_id = sm.subsystem_id
+         AND sg.repo = sm.repo
+         AND sg.commit = sm.commit
+        LEFT JOIN analytics.subsystem_agreement sa
+          ON sa.module = gm.module
+         AND sa.repo = gm.repo
+         AND sa.commit = gm.commit;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_symbol_module_graph AS
+        SELECT
+            repo,
+            commit,
+            module,
+            symbol_betweenness,
+            symbol_closeness,
+            symbol_eigenvector,
+            symbol_harmonic,
+            symbol_k_core,
+            symbol_constraint,
+            symbol_effective_size,
+            symbol_community_id,
+            symbol_component_id,
+            symbol_component_size,
+            created_at
+        FROM analytics.symbol_graph_metrics_modules;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_config_graph_metrics_keys AS
+        SELECT * FROM analytics.config_graph_metrics_keys;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_config_graph_metrics_modules AS
+        SELECT * FROM analytics.config_graph_metrics_modules;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_config_projection_key_edges AS
+        SELECT * FROM analytics.config_projection_key_edges;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_config_projection_module_edges AS
+        SELECT * FROM analytics.config_projection_module_edges;
+        """
+    )
+
+    con.execute(
+        """
+CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
+        SELECT
+            fp.function_goid_h128,
+            fp.urn AS function_urn,
+            fp.repo,
+            fp.commit,
+            fp.rel_path,
+            fp.module,
+            fp.kind AS function_kind,
+            fp.qualname AS function_qualname,
+            fp.risk_level AS function_risk_level,
+            fp.risk_score AS function_risk_score,
+            cb.block_idx,
+            cb.block_id,
+            cb.label AS block_label,
+            cb.kind AS block_kind,
+            cb.file_path AS block_file_path,
+            cb.start_line AS block_start_line,
+            cb.end_line AS block_end_line,
+            cb.in_degree AS cfg_in_degree,
+            cb.out_degree AS cfg_out_degree,
+            bm.is_entry,
+            bm.is_exit,
+            bm.is_branch,
+            bm.is_join,
+            bm.dom_depth,
+            bm.dominates_exit,
+            bm.bc_betweenness,
+            bm.bc_closeness,
+            bm.bc_eigenvector,
+            bm.in_loop_scc,
+            bm.loop_header,
+            bm.loop_nesting_depth
+        FROM graph.cfg_blocks cb
+        JOIN core.goids g
+          ON g.goid_h128 = cb.function_goid_h128
+        LEFT JOIN analytics.function_profile fp
+          ON fp.function_goid_h128 = cb.function_goid_h128
+         AND fp.repo = g.repo
+         AND fp.commit = g.commit
+        LEFT JOIN analytics.cfg_block_metrics bm
+          ON bm.function_goid_h128 = cb.function_goid_h128
+         AND bm.repo = g.repo
+         AND bm.commit = g.commit
+         AND bm.block_idx = cb.block_idx;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_dfg_block_architecture AS
+        SELECT
+            fp.function_goid_h128,
+            fp.urn AS function_urn,
+            fp.repo,
+            fp.commit,
+            fp.rel_path,
+            fp.module,
+            fp.kind AS function_kind,
+            fp.qualname AS function_qualname,
+            fp.risk_level AS function_risk_level,
+            fp.risk_score AS function_risk_score,
+            cb.block_idx,
+            cb.block_id,
+            cb.label AS block_label,
+            cb.kind AS block_kind,
+            cb.file_path AS block_file_path,
+            cb.start_line AS block_start_line,
+            cb.end_line AS block_end_line,
+            dbm.dfg_in_degree,
+            dbm.dfg_out_degree,
+            dbm.dfg_phi_in_degree,
+            dbm.dfg_phi_out_degree,
+            dbm.dfg_bc_betweenness,
+            dbm.dfg_bc_closeness,
+            dbm.dfg_bc_eigenvector,
+            dbm.dfg_in_chain,
+            dbm.dfg_in_scc
+        FROM graph.cfg_blocks cb
+        JOIN core.goids g
+          ON g.goid_h128 = cb.function_goid_h128
+        LEFT JOIN analytics.function_profile fp
+          ON fp.function_goid_h128 = cb.function_goid_h128
+         AND fp.repo = g.repo
+         AND fp.commit = g.commit
+        LEFT JOIN analytics.dfg_block_metrics dbm
+          ON dbm.function_goid_h128 = cb.function_goid_h128
+         AND dbm.repo = g.repo
+         AND dbm.commit = g.commit
+         AND dbm.block_idx = cb.block_idx;
         """
     )
 
@@ -205,8 +513,31 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
             s.max_risk_score,
             s.high_risk_function_count,
             s.risk_level,
+            coalesce(agree.disagree_count, 0) AS subsystem_disagree_count,
+            coalesce(agree.total_members, 0) AS subsystem_member_count,
+            CASE
+                WHEN coalesce(agree.total_members, 0) = 0 THEN NULL
+                ELSE 1.0 - (coalesce(agree.disagree_count, 0) * 1.0 / agree.total_members)
+            END AS subsystem_agreement_ratio,
             s.created_at
-        FROM analytics.subsystems s;
+        FROM analytics.subsystems s
+        LEFT JOIN (
+            SELECT
+                sm.repo,
+                sm.commit,
+                sm.subsystem_id,
+                COUNT(*) AS total_members,
+                SUM(CASE WHEN sa.agrees = false THEN 1 ELSE 0 END) AS disagree_count
+            FROM analytics.subsystem_modules sm
+            LEFT JOIN analytics.subsystem_agreement sa
+              ON sa.module = sm.module
+             AND sa.repo = sm.repo
+             AND sa.commit = sm.commit
+            GROUP BY sm.repo, sm.commit, sm.subsystem_id
+        ) AS agree
+          ON agree.repo = s.repo
+         AND agree.commit = s.commit
+         AND agree.subsystem_id = s.subsystem_id;
         """
     )
 
@@ -239,6 +570,21 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
           ON subs.repo = sm.repo
          AND subs.commit = sm.commit
          AND subs.subsystem_id = sm.subsystem_id;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_subsystem_agreement AS
+        SELECT
+            repo,
+            commit,
+            module,
+            subsystem_id,
+            import_community_id,
+            agrees,
+            created_at
+        FROM analytics.subsystem_agreement;
         """
     )
 

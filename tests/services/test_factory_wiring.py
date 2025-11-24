@@ -50,8 +50,18 @@ def test_build_backend_resource_local(tmp_path: Path) -> None:
     registry_opts = DatasetRegistryOptions(tables={}, validate=False)
     resource: BackendResource = build_backend_resource(
         cfg,
+        gateway=open_gateway(
+            StorageConfig(
+                db_path=db_path,
+                read_only=True,
+                apply_schema=False,
+                ensure_views=False,
+                validate_schema=True,
+                repo="r",
+                commit="c",
+            )
+        ),
         registry=registry_opts,
-        read_only=True,
     )
     if not isinstance(resource.service, LocalQueryService):
         pytest.fail("Expected LocalQueryService for local_db wiring")
@@ -101,12 +111,10 @@ def test_build_backend_resource_gateway_path() -> None:
         commit="c",
     )
 
-    resource = build_backend_resource(cfg, gateway=gateway, read_only=True)
+    resource = build_backend_resource(cfg, gateway=gateway)
     if not isinstance(resource.service, LocalQueryService):
         pytest.fail("Expected LocalQueryService when using gateway wiring")
     backend = resource.backend
-    if getattr(backend, "con", None) is not gateway.con:
-        pytest.fail("Gateway connection should be reused by backend")
-    if getattr(backend, "dataset_tables", None) != dict(gateway.datasets.mapping):
-        pytest.fail("Dataset registry should come from gateway")
+    if getattr(backend, "gateway", None) is not gateway:
+        pytest.fail("Backend should retain the provided gateway")
     resource.close()

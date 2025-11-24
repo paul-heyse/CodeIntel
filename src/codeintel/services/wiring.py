@@ -10,12 +10,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import anyio
-import duckdb
 import httpx
 
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.mcp.query_service import BackendLimits
-from codeintel.server.datasets import build_dataset_registry, build_registry_and_limits
+from codeintel.server.datasets import build_registry_and_limits
 from codeintel.services.query_service import (
     LocalQueryService,
     QueryService,
@@ -40,39 +39,31 @@ class BackendResource:
     close: Callable[[], None]
 
 
-def build_backend_resource(  # noqa: PLR0913
+def build_backend_resource(
     cfg: ServingConfig,
     *,
     gateway: StorageGateway | None = None,
-    con: duckdb.DuckDBPyConnection | None = None,
     http_client: httpx.Client | httpx.AsyncClient | None = None,
     registry: DatasetRegistryOptions | None = None,
     observability: ServiceObservability | None = None,
-    read_only: bool | None = None,
 ) -> BackendResource:
     """
     Construct a backend and shared service with unified wiring.
 
-    Prefer supplying a ``StorageGateway`` for local_db mode; ``con`` and manual
-    registry overrides remain for backward compatibility only.
+    Requires a ``StorageGateway`` for local_db mode; legacy connection paths are removed.
 
     Parameters
     ----------
     cfg:
         Validated serving configuration.
     gateway:
-        Optional StorageGateway supplying connection and dataset registry for local_db mode.
-        Preferred over raw ``con``/``registry`` for consistency.
-    con:
-        Optional DuckDB connection for local_db mode.
+        StorageGateway supplying connection and dataset registry for local_db mode.
     http_client:
         Optional pre-built HTTPX client for remote_api mode.
     registry:
         Optional dataset registry options.
     observability:
         Optional observability configuration.
-    read_only:
-        Optional override for DuckDB read-only flag; defaults to cfg.read_only.
 
     Returns
     -------
@@ -91,21 +82,14 @@ def build_backend_resource(  # noqa: PLR0913
 
     resolved_observability = observability or get_observability_from_config(cfg)
     registry_opts = registry or DatasetRegistryOptions()
-    if registry_opts.tables is None and gateway is not None:
-        registry_opts.tables = dict(gateway.datasets.mapping)
-    resolved_read_only = cfg.read_only if read_only is None else read_only
-    registry_default, limits = build_registry_and_limits(cfg)
-    if registry_opts.tables is None:
-        registry_opts.tables = registry_default
+    _, limits = build_registry_and_limits(cfg)
 
     if cfg.mode == "local_db":
         return _build_local_resource(
             cfg,
             gateway=gateway,
-            con=con,
             registry_opts=registry_opts,
             observability=resolved_observability,
-            read_only=resolved_read_only,
             limits=limits,
         )
 
@@ -121,14 +105,12 @@ def build_backend_resource(  # noqa: PLR0913
     raise ValueError(message)
 
 
-def _build_local_resource(  # noqa: PLR0913
+def _build_local_resource(
     cfg: ServingConfig,
     *,
     gateway: StorageGateway | None,
-    con: duckdb.DuckDBPyConnection | None,
     registry_opts: DatasetRegistryOptions,
     observability: ServiceObservability | None,
-    read_only: bool,
     limits: BackendLimits,
 ) -> BackendResource:
     """
@@ -142,46 +124,42 @@ def _build_local_resource(  # noqa: PLR0913
     Raises
     ------
     ValueError
-        When the DuckDB path is missing for local_db mode.
+        When the gateway is missing for local_db mode.
     """
-    owns_con = False
-    connection = con or (gateway.con if gateway is not None else None)
-    effective_read_only = gateway.config.read_only if gateway is not None else read_only
-    if connection is None:
-        if cfg.db_path is None:
-            message = "db_path is required for local_db mode"
-            raise ValueError(message)
-        connection = duckdb.connect(str(cfg.db_path), read_only=effective_read_only)
-        owns_con = True
+    if gateway is None:
+        message = "StorageGateway is required for local_db mode"
+        raise ValueError(message)
+    if cfg.db_path is None:
+        message = "db_path is required for local_db mode"
+        raise ValueError(message)
+    connection = gateway.con
+    effective_read_only = gateway.config.read_only
 
-    verify_db_identity(connection, cfg)
+    verify_db_identity(gateway, cfg)
     if not effective_read_only:
         create_all_views(connection)
 
-    tables = registry_opts.tables if registry_opts.tables is not None else build_dataset_registry()
     from codeintel.mcp.backend import DuckDBBackend  # noqa: PLC0415
     from codeintel.services.factory import build_service_from_config  # noqa: PLC0415
 
     service = build_service_from_config(
         cfg,
-        con=connection,
+        gateway=gateway,
         registry=registry_opts,
         observability=observability,
     )
     backend = DuckDBBackend(
         gateway=gateway,
-        con=connection,
         repo=cfg.repo,
         commit=cfg.commit,
         limits=limits,
-        dataset_tables=tables,
         observability=observability,
         service_override=service if isinstance(service, LocalQueryService) else None,
     )
 
     def _close() -> None:
-        if owns_con and connection is not None:
-            connection.close()
+        if gateway is not None:
+            gateway.close()
 
     return BackendResource(backend=backend, service=backend.service, close=_close)
 

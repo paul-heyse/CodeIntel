@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import duckdb
-
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import CallGraphEdgeRow, call_graph_edge_to_tuple
+from codeintel.storage.gateway import StorageGateway
 
 
 def default_edge_key(row: CallGraphEdgeRow) -> tuple[object, ...]:
@@ -55,11 +54,11 @@ def dedupe_edges(
 
 
 def persist_call_graph_edges(
-    con: duckdb.DuckDBPyConnection, edges: list[CallGraphEdgeRow], repo: str, commit: str
+    gateway: StorageGateway, edges: list[CallGraphEdgeRow], repo: str, commit: str
 ) -> None:
     """Persist call graph edges after deduplication."""
     run_batch(
-        con,
+        gateway,
         "graph.call_graph_edges",
         [call_graph_edge_to_tuple(edge) for edge in edges],
         delete_params=[repo, commit],

@@ -3,17 +3,49 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, cast
 
 import duckdb
+import networkx as nx
 
 from codeintel.graphs.function_catalog import FunctionCatalog, load_function_catalog
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.graphs.nx_views import (
+    load_call_graph,
+    load_config_module_bipartite,
+    load_import_graph,
+    load_symbol_module_graph,
+)
+from codeintel.storage.gateway import StorageGateway
 
 FINDINGS_TABLE = "analytics.graph_validation"
+SAMPLE_LIMIT = 5
+SYMBOL_COMMUNITY_MIN = 2
+CONFIG_KEY_MIN_THRESHOLD = 2
+HUB_MIN_DEGREE_FLOOR = 10
+HUB_DEGREE_RATIO = 0.1
+CALL_SCC_MIN = 5
+
+
+def _hub_threshold(node_count: int) -> int:
+    """
+    Compute a hub threshold that scales with graph size.
+
+    Parameters
+    ----------
+    node_count : int
+        Number of nodes in the graph.
+
+    Returns
+    -------
+    int
+        Degree threshold used to flag hubs.
+    """
+    return max(HUB_MIN_DEGREE_FLOOR, int(node_count * HUB_DEGREE_RATIO))
 
 
 def run_graph_validations(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
@@ -32,13 +64,14 @@ def run_graph_validations(
     catalog = (
         catalog_provider.catalog()
         if catalog_provider is not None
-        else load_function_catalog(con, repo=repo, commit=commit)
+        else load_function_catalog(gateway, repo=repo, commit=commit)
     )
     findings = []
-    findings.extend(_warn_missing_function_goids(con, repo, commit, active_log))
-    findings.extend(_warn_callsite_span_mismatches(con, catalog, repo, commit, active_log))
-    findings.extend(_warn_orphan_modules(con, repo, commit, active_log, catalog))
-    _persist_findings(con, findings)
+    findings.extend(_warn_missing_function_goids(gateway, repo, commit, active_log))
+    findings.extend(_warn_callsite_span_mismatches(gateway, catalog, repo, commit, active_log))
+    findings.extend(_warn_orphan_modules(gateway, repo, commit, active_log, catalog))
+    findings.extend(warn_graph_structure(gateway, repo, commit, active_log))
+    _persist_findings(gateway, findings)
     active_log.info(
         "Graph validation completed for %s@%s: %d finding(s)",
         repo,
@@ -48,10 +81,10 @@ def run_graph_validations(
 
 
 def _warn_missing_function_goids(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str, log: logging.Logger
+    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
     try:
-        rows = con.execute(
+        rows = gateway.con.execute(
             """
             WITH funcs AS (
                 SELECT path AS rel_path, COUNT(*) AS function_count
@@ -99,7 +132,7 @@ def _warn_missing_function_goids(
 
 
 def _warn_callsite_span_mismatches(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     catalog: FunctionCatalog,
     repo: str,
     commit: str,
@@ -107,7 +140,7 @@ def _warn_callsite_span_mismatches(
 ) -> list[dict[str, object]]:
     spans_by_goid = {span.goid: span for span in catalog.function_spans}
     try:
-        rows = con.execute(
+        rows = gateway.con.execute(
             """
             SELECT
                 e.caller_goid_h128,
@@ -152,15 +185,399 @@ def _warn_callsite_span_mismatches(
     ]
 
 
+def _call_graph_findings(
+    call_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
+    call_graph_any: Any = call_graph
+    isolated = [node for node in call_graph.nodes if int(call_graph_any.degree(node)) == 0]
+    if isolated:
+        isolated_sample = ", ".join(str(node) for node in isolated[:SAMPLE_LIMIT])
+        log.warning(
+            "Validation: %d isolated call graph node(s) (sample: %s)",
+            len(isolated),
+            isolated_sample,
+        )
+        findings.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "check_name": "call_graph_isolated_nodes",
+                "severity": "warning",
+                "path": None,
+                "detail": f"{len(isolated)} isolated functions (sample: {isolated_sample})",
+                "context": {"isolated_nodes": isolated[: SAMPLE_LIMIT * 4]},
+            }
+        )
+
+    sccs = [
+        comp for comp in nx.strongly_connected_components(call_graph) if len(comp) >= CALL_SCC_MIN
+    ]
+    if sccs:
+        largest = max(sccs, key=len)
+        log.warning(
+            "Validation: %d recursive call cluster(s) detected (largest size %d)",
+            len(sccs),
+            len(largest),
+        )
+        findings.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "check_name": "call_graph_large_scc",
+                "severity": "warning",
+                "path": None,
+                "detail": f"{len(sccs)} recursion cluster(s), largest size {len(largest)}",
+                "context": {"largest_cluster": sorted(largest)[: SAMPLE_LIMIT * 4]},
+            }
+        )
+
+    degree_threshold = max(
+        HUB_MIN_DEGREE_FLOOR, int(call_graph.number_of_nodes() * HUB_DEGREE_RATIO)
+    )
+    degree_map = {node: int(call_graph_any.degree(node)) for node in call_graph.nodes}
+    hubs = [node for node, deg in degree_map.items() if deg > degree_threshold]
+    if hubs:
+        sample = ", ".join(str(node) for node in hubs[:SAMPLE_LIMIT])
+        log.warning("Validation: %d high-degree call graph hub(s) (sample: %s)", len(hubs), sample)
+        findings.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "check_name": "call_graph_degree_hubs",
+                "severity": "info",
+                "path": None,
+                "detail": f"{len(hubs)} hubs above degree {degree_threshold} (sample: {sample})",
+                "context": {"hubs": hubs[: SAMPLE_LIMIT * 4]},
+            }
+        )
+
+    return findings
+
+
+def _import_graph_findings(
+    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
+    sccs = list(nx.strongly_connected_components(import_graph))
+    findings.extend(_import_cycle_findings(sccs, repo, commit, log))
+    findings.extend(_import_hub_findings(import_graph, repo, commit, log))
+    findings.extend(_import_upward_findings(import_graph, repo, commit, log))
+    findings.extend(_import_bridge_findings(import_graph, repo, commit, log))
+    return findings
+
+
+def _import_cycle_findings(
+    sccs: list[set[str]], repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
+    large_sccs = [comp for comp in sccs if len(comp) > HUB_MIN_DEGREE_FLOOR // 2]
+    if large_sccs:
+        largest = max(large_sccs, key=len)
+        log.warning(
+            "Validation: %d import cycles detected (largest size %d)",
+            len(large_sccs),
+            len(largest),
+        )
+        findings.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "check_name": "import_graph_large_scc",
+                "severity": "warning",
+                "path": None,
+                "detail": f"{len(large_sccs)} import cycles, largest size {len(largest)}",
+                "context": {"largest_cycle": sorted(largest)[: SAMPLE_LIMIT * 4]},
+            }
+        )
+
+    cross_package_cycles = [
+        comp
+        for comp in sccs
+        if len(comp) > 1 and len({str(module).split(".")[0] for module in comp}) > 1
+    ]
+    if cross_package_cycles:
+        sample_cycle = sorted(cross_package_cycles[0])[: SAMPLE_LIMIT * 4]
+        log.warning(
+            "Validation: %d import cycle(s) cross package boundaries", len(cross_package_cycles)
+        )
+        findings.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "check_name": "import_graph_cross_package_cycles",
+                "severity": "warning",
+                "path": None,
+                "detail": f"{len(cross_package_cycles)} cycles cross package boundaries",
+                "context": {"sample_cycle": sample_cycle},
+            }
+        )
+    return findings
+
+
+def _import_hub_findings(
+    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
+    degree_threshold = _hub_threshold(import_graph.number_of_nodes())
+    degree_map = {}
+    for node in import_graph.nodes:
+        out_deg_raw = import_graph.out_degree(node)
+        in_deg_raw = import_graph.in_degree(node)
+        out_deg = int(cast("int", out_deg_raw))
+        in_deg = int(cast("int", in_deg_raw))
+        degree_map[node] = out_deg + in_deg
+    hubs = [node for node, deg in degree_map.items() if deg > degree_threshold]
+    if hubs:
+        sample = ", ".join(sorted(hubs)[:SAMPLE_LIMIT])
+        log.warning("Validation: %d import graph hub(s) (sample: %s)", len(hubs), sample)
+        findings.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "check_name": "import_graph_degree_hubs",
+                "severity": "info",
+                "path": None,
+                "detail": f"{len(hubs)} hubs above degree {degree_threshold} (sample: {sample})",
+                "context": {"hubs": sorted(hubs)[: SAMPLE_LIMIT * 4]},
+            }
+        )
+    return findings
+
+
+def _import_upward_findings(
+    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    upward_edges = [
+        (src, dst)
+        for src, dst in import_graph.edges
+        if import_graph.nodes.get(src, {}).get("layer") is not None
+        and import_graph.nodes.get(dst, {}).get("layer") is not None
+        and import_graph.nodes[src]["layer"] > import_graph.nodes[dst]["layer"]
+    ]
+    if not upward_edges:
+        return []
+    sample_edges = [f"{s}->{d}" for s, d in upward_edges[:SAMPLE_LIMIT]]
+    log.warning(
+        "Validation: %d upward import edge(s) against layering (sample: %s)",
+        len(upward_edges),
+        ", ".join(sample_edges),
+    )
+    return [
+        {
+            "repo": repo,
+            "commit": commit,
+            "check_name": "import_graph_upward_edges",
+            "severity": "info",
+            "path": None,
+            "detail": f"{len(upward_edges)} edges go from deeper to shallower layer",
+            "context": {"sample_edges": sample_edges},
+        }
+    ]
+
+
+def _import_bridge_findings(
+    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    betweenness: dict[str, float] = {}
+    if import_graph.number_of_nodes() > 0:
+        sample_size = min(200, import_graph.number_of_nodes())
+        betweenness = nx.betweenness_centrality(
+            import_graph,
+            k=sample_size if sample_size < import_graph.number_of_nodes() else None,
+        )
+    if not betweenness:
+        return []
+    max_score = max(betweenness.values())
+    threshold = max_score * 0.25 if max_score > 0 else 0.0
+    bridges = [node for node, score in betweenness.items() if score >= threshold and score > 0]
+    if not bridges:
+        return []
+    sample = ", ".join(sorted(bridges)[:SAMPLE_LIMIT])
+    log.warning(
+        "Validation: %d bridge-like import modules (sample: %s)",
+        len(bridges),
+        sample,
+    )
+    return [
+        {
+            "repo": repo,
+            "commit": commit,
+            "check_name": "import_graph_bridges",
+            "severity": "info",
+            "path": None,
+            "detail": f"{len(bridges)} modules with high betweenness (sample: {sample})",
+            "context": {"bridges": sorted(bridges)[: SAMPLE_LIMIT * 4]},
+        }
+    ]
+
+
+def _symbol_graph_findings(
+    symbol_graph: nx.Graph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    if symbol_graph.number_of_nodes() == 0:
+        return []
+    symbol_graph_any: Any = symbol_graph
+    degree_map = {node: int(symbol_graph_any.degree(node)) for node in symbol_graph.nodes}
+    threshold = max(HUB_MIN_DEGREE_FLOOR, int(symbol_graph.number_of_nodes() * HUB_DEGREE_RATIO))
+    high_degree = [node for node, deg in degree_map.items() if deg > threshold]
+    if not high_degree:
+        return []
+    sample = ", ".join(str(node) for node in high_degree[:SAMPLE_LIMIT])
+    log.warning(
+        "Validation: %d symbol graph hubs detected (sample: %s)",
+        len(high_degree),
+        sample,
+    )
+    return [
+        {
+            "repo": repo,
+            "commit": commit,
+            "check_name": "symbol_graph_hubs",
+            "severity": "warning",
+            "path": None,
+            "detail": f"{len(high_degree)} high-degree symbol hubs (sample: {sample})",
+            "context": {"hubs": high_degree[: SAMPLE_LIMIT * 4]},
+        }
+    ]
+
+
+def _symbol_community_findings(
+    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    comm_counts = gateway.con.execute(
+        """
+        SELECT symbol_community_id, COUNT(*) AS count
+        FROM analytics.symbol_graph_metrics_modules
+        WHERE repo = ? AND commit = ? AND symbol_community_id IS NOT NULL
+        GROUP BY symbol_community_id
+        HAVING count > ?
+        """,
+        [repo, commit, SYMBOL_COMMUNITY_MIN],
+    ).fetchall()
+    if not comm_counts:
+        return []
+    largest = max(comm_counts, key=lambda row: row[1])
+    log.warning("Validation: large symbol communities detected (largest size %d)", largest[1])
+    return [
+        {
+            "repo": repo,
+            "commit": commit,
+            "check_name": "symbol_graph_large_community",
+            "severity": "info",
+            "path": None,
+            "detail": f"{len(comm_counts)} communities exceed threshold; largest {largest[1]}",
+            "context": {"communities": comm_counts[: SAMPLE_LIMIT * 4]},
+        }
+    ]
+
+
+def _config_key_findings(
+    cfg_bipartite: nx.Graph, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    if cfg_bipartite.number_of_nodes() == 0:
+        return []
+    keys = [n for n, d in cfg_bipartite.nodes(data=True) if d.get("bipartite") == 0]
+    cfg_bipartite_any: Any = cfg_bipartite
+    degs = {node: int(cfg_bipartite_any.degree(node)) for node in keys}
+    key_threshold = max(CONFIG_KEY_MIN_THRESHOLD, int(len(keys) * 0.05))
+    high_keys = [str(k[1]) for k, deg in degs.items() if deg > key_threshold]
+    if not high_keys:
+        return []
+    sample = ", ".join(high_keys[:SAMPLE_LIMIT])
+    log.warning(
+        "Validation: %d config keys referenced broadly (sample: %s)",
+        len(high_keys),
+        sample,
+    )
+    return [
+        {
+            "repo": repo,
+            "commit": commit,
+            "check_name": "config_keys_broad_usage",
+            "severity": "info",
+            "path": None,
+            "detail": f"{len(high_keys)} keys used widely (sample: {sample})",
+            "context": {"keys": high_keys[: SAMPLE_LIMIT * 4]},
+        }
+    ]
+
+
+def _subsystem_disagreement_findings(
+    gateway: StorageGateway, repo: str, commit: str, log: logging.Logger
+) -> list[dict[str, object]]:
+    disagreements = gateway.con.execute(
+        """
+        SELECT module, subsystem_id, import_community_id
+        FROM analytics.subsystem_agreement
+        WHERE repo = ? AND commit = ? AND agrees = false
+        """,
+        [repo, commit],
+    ).fetchall()
+    if not disagreements:
+        return []
+    sample = ", ".join(str(row[0]) for row in disagreements[:SAMPLE_LIMIT])
+    log.warning(
+        "Validation: %d module(s) disagree on subsystem vs import community (sample: %s)",
+        len(disagreements),
+        sample,
+    )
+    return [
+        {
+            "repo": repo,
+            "commit": commit,
+            "check_name": "subsystem_community_disagreement",
+            "severity": "warning",
+            "path": None,
+            "detail": f"{len(disagreements)} modules disagree (sample: {sample})",
+            "context": {"modules": disagreements[: SAMPLE_LIMIT * 4]},
+        }
+    ]
+
+
+def warn_graph_structure(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+    log: logging.Logger | None = None,
+) -> list[dict[str, object]]:
+    """
+    Emit warnings for common graph structure anomalies.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Findings describing graph hotspots and anomalies.
+    """
+    findings: list[dict[str, object]] = []
+    active_log = log or logging.getLogger(__name__)
+
+    call_graph = load_call_graph(gateway, repo, commit)
+    findings.extend(_call_graph_findings(call_graph, repo, commit, active_log))
+
+    import_graph = load_import_graph(gateway, repo, commit)
+    findings.extend(_import_graph_findings(import_graph, repo, commit, active_log))
+
+    symbol_graph = load_symbol_module_graph(gateway, repo, commit)
+    findings.extend(_symbol_graph_findings(symbol_graph, repo, commit, active_log))
+    findings.extend(_symbol_community_findings(gateway, repo, commit, active_log))
+
+    cfg_bipartite = load_config_module_bipartite(gateway, repo, commit)
+    findings.extend(_config_key_findings(cfg_bipartite, repo, commit, active_log))
+
+    findings.extend(_subsystem_disagreement_findings(gateway, repo, commit, active_log))
+    return findings
+
+
 def _warn_orphan_modules(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     repo: str,
     commit: str,
     log: logging.Logger,
     catalog: FunctionCatalog,
 ) -> list[dict[str, object]]:
     try:
-        rows = con.execute(
+        rows = gateway.con.execute(
             """
             SELECT m.path
             FROM core.modules m
@@ -194,9 +611,10 @@ def _warn_orphan_modules(
     ]
 
 
-def _persist_findings(con: duckdb.DuckDBPyConnection, findings: list[dict[str, object]]) -> None:
+def _persist_findings(gateway: StorageGateway, findings: list[dict[str, object]]) -> None:
     if not findings:
         return
+    con = gateway.con
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS analytics.graph_validation (
@@ -230,3 +648,7 @@ def _persist_findings(con: duckdb.DuckDBPyConnection, findings: list[dict[str, o
             for finding in findings
         ],
     )
+
+
+# Backwards-compatible alias for legacy imports.
+_warn_graph_structure = warn_graph_structure

@@ -19,6 +19,7 @@ from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def _seed_catalog_modules(
 
 
 def build_function_profile(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: ProfilesAnalyticsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
@@ -89,11 +90,12 @@ def build_function_profile(
     The profile denormalizes risk factors, coverage, tests, docstrings, and call
     graph degrees into a single row per function GOID.
     """
+    con = gateway.con
     ensure_schema(con, "analytics.function_profile")
     ensure_schema(con, "analytics.goid_risk_factors")
     use_catalog_modules = _seed_catalog_modules(con, catalog_provider, cfg.repo, cfg.commit)
     _ = catalog_provider or FunctionCatalogService.from_db(
-        con,
+        gateway,
         repo=cfg.repo,
         commit=cfg.commit,
     )
@@ -383,7 +385,7 @@ def build_function_profile(
 
 
 def build_file_profile(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: ProfilesAnalyticsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
@@ -394,6 +396,7 @@ def build_file_profile(
     File-level rows blend AST metrics, typedness, hotspots, risk buckets, and
     coverage summaries to give a holistic view of each path.
     """
+    con = gateway.con
     ensure_schema(con, "analytics.file_profile")
     use_catalog_modules = _seed_catalog_modules(con, catalog_provider, cfg.repo, cfg.commit)
 
@@ -558,12 +561,13 @@ def build_file_profile(
 
 
 def build_module_profile(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: ProfilesAnalyticsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """Populate `analytics.module_profile` by aggregating file and function profiles."""
+    con = gateway.con
     ensure_schema(con, "analytics.module_profile")
     use_catalog_modules = _seed_catalog_modules(con, catalog_provider, cfg.repo, cfg.commit)
 

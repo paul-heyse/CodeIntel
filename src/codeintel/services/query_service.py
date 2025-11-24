@@ -6,7 +6,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
@@ -18,7 +18,9 @@ from codeintel.mcp.models import (
     FunctionArchitectureResponse,
     FunctionProfileResponse,
     FunctionSummaryResponse,
+    GraphNeighborhoodResponse,
     HighRiskFunctionsResponse,
+    ImportBoundaryResponse,
     ModuleArchitectureResponse,
     ModuleProfileResponse,
     ModuleSubsystemResponse,
@@ -179,8 +181,8 @@ def _observe_call[T](
     return result
 
 
-class QueryService(Protocol):
-    """Shared query service surface consumed by HTTP and MCP transports."""
+class FunctionQueryApi(Protocol):
+    """Function-centric query surface."""
 
     def get_function_summary(
         self,
@@ -190,7 +192,7 @@ class QueryService(Protocol):
         rel_path: str | None = None,
         qualname: str | None = None,
     ) -> FunctionSummaryResponse:
-        """Return a function summary."""
+        """Return a function summary for an identifier."""
         ...
 
     def list_high_risk_functions(
@@ -223,9 +225,32 @@ class QueryService(Protocol):
         """List tests that exercise a function."""
         ...
 
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        """Return an ego neighborhood in the call graph."""
+        ...
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """Return import edges crossing a subsystem boundary."""
+        ...
+
     def get_file_summary(self, *, rel_path: str) -> FileSummaryResponse:
         """Return a file summary."""
         ...
+
+
+class ProfileQueryApi(Protocol):
+    """Profile and architecture surfaces."""
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """Return a function profile."""
@@ -247,6 +272,10 @@ class QueryService(Protocol):
         """Return architecture metrics for a module."""
         ...
 
+
+class SubsystemQueryApi(Protocol):
+    """Subsystem and hints surfaces."""
+
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSummaryResponse:
@@ -262,23 +291,27 @@ class QueryService(Protocol):
         ...
 
     def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
-        """Return subsystem detail and member modules."""
+        """Return a subsystem with member modules."""
         ...
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSearchResponse:
-        """Search subsystems with optional filters."""
+        """Search subsystems."""
         ...
 
     def summarize_subsystem(
         self, *, subsystem_id: str, module_limit: int | None = None
     ) -> SubsystemModulesResponse:
-        """Summarize a subsystem with optional module truncation."""
+        """Summarize a subsystem with optional module limit."""
         ...
 
+
+class DatasetQueryApi(Protocol):
+    """Dataset listing and retrieval surface."""
+
     def list_datasets(self) -> list[DatasetDescriptor]:
-        """List datasets available to the service."""
+        """List available datasets."""
         ...
 
     def read_dataset_rows(
@@ -288,29 +321,203 @@ class QueryService(Protocol):
         limit: int | None = None,
         offset: int = 0,
     ) -> DatasetRowsResponse:
-        """Read rows from a registered dataset."""
+        """Read rows from a dataset."""
         ...
 
 
+class QueryService(
+    FunctionQueryApi,
+    ProfileQueryApi,
+    SubsystemQueryApi,
+    DatasetQueryApi,
+    Protocol,
+):
+    """Composite query service consumed by HTTP and MCP transports."""
+
+
+class _FunctionQueryDelegates:
+    query: DuckDBQueryService
+    _call: Callable[..., Any]
+
+    def get_function_summary(
+        self,
+        *,
+        urn: str | None = None,
+        goid_h128: int | None = None,
+        rel_path: str | None = None,
+        qualname: str | None = None,
+    ) -> FunctionSummaryResponse:
+        return self._call(
+            "get_function_summary",
+            lambda: self.query.get_function_summary(
+                urn=urn, goid_h128=goid_h128, rel_path=rel_path, qualname=qualname
+            ),
+        )
+
+    def list_high_risk_functions(
+        self,
+        *,
+        min_risk: float = 0.7,
+        limit: int | None = None,
+        tested_only: bool = False,
+    ) -> HighRiskFunctionsResponse:
+        return self._call(
+            "list_high_risk_functions",
+            lambda: self.query.list_high_risk_functions(
+                min_risk=min_risk, limit=limit, tested_only=tested_only
+            ),
+        )
+
+    def get_callgraph_neighbors(
+        self,
+        *,
+        goid_h128: int,
+        direction: str = "both",
+        limit: int | None = None,
+    ) -> CallGraphNeighborsResponse:
+        return self._call(
+            "get_callgraph_neighbors",
+            lambda: self.query.get_callgraph_neighbors(
+                goid_h128=goid_h128, direction=direction, limit=limit
+            ),
+        )
+
+    def get_tests_for_function(
+        self,
+        *,
+        goid_h128: int | None = None,
+        urn: str | None = None,
+        limit: int | None = None,
+    ) -> TestsForFunctionResponse:
+        return self._call(
+            "get_tests_for_function",
+            lambda: self.query.get_tests_for_function(goid_h128=goid_h128, urn=urn, limit=limit),
+        )
+
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        return self._call(
+            "get_callgraph_neighborhood",
+            lambda: self.query.get_callgraph_neighborhood(
+                goid_h128=goid_h128, radius=radius, max_nodes=max_nodes
+            ),
+            dataset="call_graph_nodes",
+        )
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        return self._call(
+            "get_import_boundary",
+            lambda: self.query.get_import_boundary(subsystem_id=subsystem_id, max_edges=max_edges),
+            dataset="import_graph_edges",
+        )
+
+    def get_file_summary(self, *, rel_path: str) -> FileSummaryResponse:
+        return self._call(
+            "get_file_summary", lambda: self.query.get_file_summary(rel_path=rel_path)
+        )
+
+
+class _ProfileQueryDelegates:
+    query: DuckDBQueryService
+    _call: Callable[..., Any]
+
+    def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
+        return self._call(
+            "get_function_profile",
+            lambda: self.query.get_function_profile(goid_h128=goid_h128),
+        )
+
+    def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
+        return self._call(
+            "get_file_profile", lambda: self.query.get_file_profile(rel_path=rel_path)
+        )
+
+    def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
+        return self._call(
+            "get_module_profile", lambda: self.query.get_module_profile(module=module)
+        )
+
+    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
+        return self._call(
+            "get_function_architecture",
+            lambda: self.query.get_function_architecture(goid_h128=goid_h128),
+        )
+
+    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
+        return self._call(
+            "get_module_architecture",
+            lambda: self.query.get_module_architecture(module=module),
+        )
+
+
+class _SubsystemQueryDelegates:
+    query: DuckDBQueryService
+    _call: Callable[..., Any]
+
+    def list_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSummaryResponse:
+        return self._call(
+            "list_subsystems", lambda: self.query.list_subsystems(limit=limit, role=role, q=q)
+        )
+
+    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
+        return self._call(
+            "get_module_subsystems", lambda: self.query.get_module_subsystems(module=module)
+        )
+
+    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+        return self._call("get_file_hints", lambda: self.query.get_file_hints(rel_path=rel_path))
+
+    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+        return self._call(
+            "get_subsystem_modules",
+            lambda: self.query.get_subsystem_modules(subsystem_id=subsystem_id),
+        )
+
+    def search_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSearchResponse:
+        return self._call(
+            "search_subsystems", lambda: self.query.search_subsystems(limit=limit, role=role, q=q)
+        )
+
+    def summarize_subsystem(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
+        return self._call(
+            "summarize_subsystem",
+            lambda: self.query.summarize_subsystem(
+                subsystem_id=subsystem_id, module_limit=module_limit
+            ),
+        )
+
+
 @dataclass
-class LocalQueryService:
+class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _SubsystemQueryDelegates):
     """Application service backed by a local DuckDB query layer."""
 
     query: DuckDBQueryService
     dataset_tables: dict[str, str] | None = None
     describe_dataset_fn: Callable[[str, str], str] = describe_dataset
     observability: ServiceObservability | None = None
+    calls: list[str] = field(default_factory=list)
 
-    def __getattr__(self, name: str) -> object:
-        """
-        Delegate attribute access to the underlying DuckDB query service.
-
-        Returns
-        -------
-        object
-            Attribute resolved from the wrapped query service.
-        """
-        return getattr(self.query, name)
+    def __post_init__(self) -> None:
+        """Derive dataset registry from the query gateway when not provided."""
+        if self.dataset_tables is None:
+            gateway = getattr(self.query, "gateway", None)
+            self.dataset_tables = dict(gateway.datasets.mapping) if gateway is not None else {}
 
     def _call[T](
         self,
@@ -327,6 +534,7 @@ class LocalQueryService:
         T
             Result returned by the wrapped callable.
         """
+        self.calls.append(name)
         return _observe_call(
             self.observability,
             transport="local",
@@ -342,19 +550,21 @@ class LocalQueryService:
         Returns
         -------
         list[DatasetDescriptor]
-            Dataset descriptors with descriptions.
+            Dataset descriptors with names, tables, and descriptions.
         """
 
         def _list() -> list[DatasetDescriptor]:
-            if not self.dataset_tables:
-                return []
+            mapping: dict[str, str] = self.dataset_tables or {}
+            if not mapping:
+                query_gateway = getattr(self.query, "gateway", None)
+                mapping = query_gateway.datasets.mapping if query_gateway is not None else {}
             return [
                 DatasetDescriptor(
                     name=name,
                     table=table,
                     description=self.describe_dataset_fn(name, table),
                 )
-                for name, table in sorted(self.dataset_tables.items())
+                for name, table in sorted(mapping.items())
             ]
 
         return self._call("list_datasets", _list)
@@ -369,19 +579,10 @@ class LocalQueryService:
         """
         Read dataset rows with clamping and messaging.
 
-        Parameters
-        ----------
-        dataset_name:
-            Registry name for the dataset.
-        limit:
-            Optional requested row limit; defaults to service limit when None.
-        offset:
-            Requested offset; must be non-negative.
-
         Returns
         -------
         DatasetRowsResponse
-            Dataset slice with metadata.
+            Dataset slice and metadata for truncation/messaging.
         """
         applied_limit = self.query.limits.default_limit if limit is None else limit
         return self._call(
@@ -392,391 +593,6 @@ class LocalQueryService:
                 offset=offset,
             ),
             dataset=dataset_name,
-        )
-
-    def get_function_summary(
-        self,
-        *,
-        urn: str | None = None,
-        goid_h128: int | None = None,
-        rel_path: str | None = None,
-        qualname: str | None = None,
-    ) -> FunctionSummaryResponse:
-        """
-        Return a function summary identified by GOID, URN, or path/qualname.
-
-        Parameters
-        ----------
-        urn : str, optional
-            Stable URN that uniquely identifies the function.
-        goid_h128 : int, optional
-            Stable 128-bit GOID for the function.
-        rel_path : str, optional
-            Repository-relative path to the file containing the function.
-        qualname : str, optional
-            Dotted qualified name within the file.
-
-        Returns
-        -------
-        FunctionSummaryResponse
-            Summary payload with coverage and metadata fields.
-        """
-        return self._call(
-            "get_function_summary",
-            lambda: self.query.get_function_summary(
-                urn=urn,
-                goid_h128=goid_h128,
-                rel_path=rel_path,
-                qualname=qualname,
-            ),
-        )
-
-    def list_high_risk_functions(
-        self,
-        *,
-        min_risk: float = 0.7,
-        limit: int | None = None,
-        tested_only: bool = False,
-    ) -> HighRiskFunctionsResponse:
-        """
-        Delegate high-risk function listing to the DuckDB query service.
-
-        Parameters
-        ----------
-        min_risk : float
-            Minimum risk score threshold inclusive.
-        limit : int, optional
-            Optional maximum rows to return; uses service default when None.
-        tested_only : bool
-            When True, restrict results to functions with test coverage.
-
-        Returns
-        -------
-        HighRiskFunctionsResponse
-            Functions ordered by risk with metadata and truncation flags.
-        """
-        return self._call(
-            "list_high_risk_functions",
-            lambda: self.query.list_high_risk_functions(
-                min_risk=min_risk,
-                limit=limit,
-                tested_only=tested_only,
-            ),
-        )
-
-    def get_callgraph_neighbors(
-        self,
-        *,
-        goid_h128: int,
-        direction: str = "both",
-        limit: int | None = None,
-    ) -> CallGraphNeighborsResponse:
-        """
-        Return incoming/outgoing call graph neighbors for a function.
-
-        Parameters
-        ----------
-        goid_h128 : int
-            Stable 128-bit GOID for the function.
-        direction : str
-            Neighbor direction: "incoming", "outgoing", or "both".
-        limit : int, optional
-            Optional maximum edges to return; uses service default when None.
-
-        Returns
-        -------
-        CallGraphNeighborsResponse
-            Incoming and outgoing edges with metadata.
-        """
-        return self._call(
-            "get_callgraph_neighbors",
-            lambda: self.query.get_callgraph_neighbors(
-                goid_h128=goid_h128,
-                direction=direction,
-                limit=limit,
-            ),
-        )
-
-    def get_tests_for_function(
-        self,
-        *,
-        goid_h128: int | None = None,
-        urn: str | None = None,
-        limit: int | None = None,
-    ) -> TestsForFunctionResponse:
-        """
-        List tests that exercise a function.
-
-        Parameters
-        ----------
-        goid_h128 : int, optional
-            Stable 128-bit GOID for the function.
-        urn : str, optional
-            Stable URN that uniquely identifies the function.
-        limit : int, optional
-            Optional maximum rows to return; uses service default when None.
-
-        Returns
-        -------
-        TestsForFunctionResponse
-            Tests covering the function along with metadata.
-        """
-        return self._call(
-            "get_tests_for_function",
-            lambda: self.query.get_tests_for_function(
-                goid_h128=goid_h128,
-                urn=urn,
-                limit=limit,
-            ),
-        )
-
-    def get_file_summary(self, *, rel_path: str) -> FileSummaryResponse:
-        """
-        Return file summary from the local DuckDB-backed dataset.
-
-        Parameters
-        ----------
-        rel_path : str
-            Repository-relative path of the file to summarize.
-
-        Returns
-        -------
-        FileSummaryResponse
-            Summary payload including functions contained within the file.
-        """
-        return self._call(
-            "get_file_summary",
-            lambda: self.query.get_file_summary(rel_path=rel_path),
-        )
-
-    def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
-        """
-        Return a denormalized function profile.
-
-        Parameters
-        ----------
-        goid_h128 : int
-            Stable 128-bit GOID for the function.
-
-        Returns
-        -------
-        FunctionProfileResponse
-            Profile payload with churn and coverage metrics.
-        """
-        return self._call(
-            "get_function_profile",
-            lambda: self.query.get_function_profile(goid_h128=goid_h128),
-        )
-
-    def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
-        """
-        Return a profile for a repo-relative file path.
-
-        Parameters
-        ----------
-        rel_path : str
-            Repository-relative path for the file.
-
-        Returns
-        -------
-        FileProfileResponse
-            Profile payload with churn and coverage data.
-        """
-        return self._call(
-            "get_file_profile",
-            lambda: self.query.get_file_profile(rel_path=rel_path),
-        )
-
-    def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
-        """
-        Return a module profile including coverage and import metrics.
-
-        Parameters
-        ----------
-        module : str
-            Dotted module path within the repository.
-
-        Returns
-        -------
-        ModuleProfileResponse
-            Profile payload with churn and coverage data.
-        """
-        return self._call(
-            "get_module_profile",
-            lambda: self.query.get_module_profile(module=module),
-        )
-
-    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
-        """
-        Return call-graph architecture metrics for a function.
-
-        Parameters
-        ----------
-        goid_h128 : int
-            Stable 128-bit GOID for the function.
-
-        Returns
-        -------
-        FunctionArchitectureResponse
-            Fan-in/fan-out counts and dependency metadata.
-        """
-        return self._call(
-            "get_function_architecture",
-            lambda: self.query.get_function_architecture(goid_h128=goid_h128),
-        )
-
-    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
-        """
-        Return import-graph architecture metrics for a module.
-
-        Parameters
-        ----------
-        module : str
-            Dotted module path within the repository.
-
-        Returns
-        -------
-        ModuleArchitectureResponse
-            Fan-in/fan-out counts and subsystem metadata.
-        """
-        return self._call(
-            "get_module_architecture",
-            lambda: self.query.get_module_architecture(module=module),
-        )
-
-    def list_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSummaryResponse:
-        """
-        List inferred subsystems with optional filters.
-
-        Parameters
-        ----------
-        limit : int, optional
-            Optional maximum rows to return; uses service default when None.
-        role : str, optional
-            Optional subsystem role filter.
-        q : str, optional
-            Optional search query for subsystem name or description.
-
-        Returns
-        -------
-        SubsystemSummaryResponse
-            Subsystems with summary metadata and truncation flags.
-        """
-        return self._call(
-            "list_subsystems",
-            lambda: self.query.list_subsystems(limit=limit, role=role, q=q),
-        )
-
-    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
-        """
-        Return subsystem memberships for a module.
-
-        Parameters
-        ----------
-        module : str
-            Dotted module path within the repository.
-
-        Returns
-        -------
-        ModuleSubsystemResponse
-            Subsystem membership rows with metadata.
-        """
-        return self._call(
-            "get_module_subsystems",
-            lambda: self.query.get_module_subsystems(module=module),
-        )
-
-    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
-        """
-        Return IDE hints (subsystem/module context) for a file.
-
-        Parameters
-        ----------
-        rel_path : str
-            Repository-relative path for the file.
-
-        Returns
-        -------
-        FileHintsResponse
-            Hint rows and metadata for IDE integrations.
-        """
-        return self._call("get_file_hints", lambda: self.query.get_file_hints(rel_path=rel_path))
-
-    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
-        """
-        Return subsystem detail and member modules.
-
-        Parameters
-        ----------
-        subsystem_id : str
-            Stable identifier for the subsystem.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem metadata plus member modules.
-        """
-        return self.query.get_subsystem_modules(subsystem_id=subsystem_id)
-
-    def search_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSearchResponse:
-        """
-        Search subsystems with optional filters.
-
-        Parameters
-        ----------
-        limit : int, optional
-            Optional maximum rows to return; uses service default when None.
-        role : str, optional
-            Optional subsystem role filter.
-        q : str, optional
-            Optional search query for subsystem name or description.
-
-        Returns
-        -------
-        SubsystemSearchResponse
-            Subsystem matches and metadata.
-        """
-        return self._call(
-            "search_subsystems",
-            lambda: self.query.search_subsystems(limit=limit, role=role, q=q),
-        )
-
-    def summarize_subsystem(
-        self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
-        """
-        Summarize a subsystem, optionally truncating modules.
-
-        Parameters
-        ----------
-        subsystem_id : str
-            Stable identifier for the subsystem.
-        module_limit : int, optional
-            Optional cap on the number of modules returned.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem detail payload, possibly truncated.
-        """
-        detail = self._call(
-            "get_subsystem_modules",
-            lambda: self.query.get_subsystem_modules(subsystem_id=subsystem_id),
-        )
-        if not detail.found or detail.subsystem is None:
-            return detail
-        if module_limit is None:
-            return detail
-        limited_modules = detail.modules[:module_limit]
-        return SubsystemModulesResponse(
-            found=detail.found,
-            subsystem=detail.subsystem,
-            modules=limited_modules,
-            meta=detail.meta,
         )
 
 
@@ -908,6 +724,87 @@ class HttpQueryService:
                 self.request_json(
                     "/function/callgraph",
                     {"goid_h128": goid_h128, "direction": direction, "limit": clamp.applied},
+                )
+            ),
+        )
+
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        """
+        Fetch a call graph ego neighborhood via HTTP.
+
+        Parameters
+        ----------
+        goid_h128 : int
+            Center node for the ego neighborhood.
+        radius : int, optional
+            Hop distance to traverse when collecting neighbors.
+        max_nodes : int, optional
+            Optional cap on returned nodes; defaults to backend limits.
+
+        Returns
+        -------
+        GraphNeighborhoodResponse
+            Ego nodes, edges, and metadata reflecting applied limits.
+        """
+        applied_limit = self.limits.default_limit if max_nodes is None else max_nodes
+        clamp = clamp_limit_value(
+            applied_limit,
+            default=applied_limit,
+            max_limit=self.limits.max_rows_per_call,
+        )
+        if clamp.has_error:
+            return GraphNeighborhoodResponse(nodes=[], edges=[], meta=ResponseMeta())
+        return self._call(
+            "get_callgraph_neighborhood",
+            lambda: GraphNeighborhoodResponse.model_validate(
+                self.request_json(
+                    "/graph/call/neighborhood",
+                    {"goid_h128": goid_h128, "radius": radius, "max_nodes": clamp.applied},
+                )
+            ),
+        )
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """
+        Fetch import edges that cross a subsystem boundary via HTTP.
+
+        Parameters
+        ----------
+        subsystem_id : str
+            Subsystem identifier to inspect.
+        max_edges : int, optional
+            Optional cap on returned edges; defaults to backend limits.
+
+        Returns
+        -------
+        ImportBoundaryResponse
+            Boundary nodes and edges plus truncation metadata.
+        """
+        applied_limit = self.limits.default_limit if max_edges is None else max_edges
+        clamp = clamp_limit_value(
+            applied_limit,
+            default=applied_limit,
+            max_limit=self.limits.max_rows_per_call,
+        )
+        if clamp.has_error:
+            return ImportBoundaryResponse(nodes=[], edges=[], meta=ResponseMeta())
+        return self._call(
+            "get_import_boundary",
+            lambda: ImportBoundaryResponse.model_validate(
+                self.request_json(
+                    "/graph/import/boundary",
+                    {"subsystem_id": subsystem_id, "max_edges": clamp.applied},
                 )
             ),
         )

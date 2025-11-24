@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from codeintel.mcp.backend import DuckDBBackend
@@ -13,7 +15,7 @@ class DatasetStubService(LocalQueryService):
     """Stub service that returns deterministic dataset rows."""
 
     def __init__(self) -> None:
-        super().__init__(query=None)  # type: ignore[arg-type]
+        super().__init__(query=None, dataset_tables={})  # type: ignore[arg-type]
 
     def read_dataset_rows(  # noqa: PLR6301
         self,
@@ -40,10 +42,27 @@ class DatasetStubService(LocalQueryService):
         )
 
 
+def _fake_gateway() -> object:
+    """
+    Minimal gateway stub to satisfy DuckDBBackend signature.
+
+    Returns
+    -------
+    object
+        Stub object with gateway attributes.
+    """
+    return SimpleNamespace(
+        con=None,
+        config=SimpleNamespace(repo="r", commit="c", read_only=True),
+        datasets=SimpleNamespace(mapping={}),
+        close=lambda: None,
+    )
+
+
 def test_read_dataset_rows_delegates() -> None:
     """Adapters should delegate dataset reads directly to the service."""
     backend = DuckDBBackend(
-        con=None,  # type: ignore[arg-type]
+        gateway=_fake_gateway(),  # type: ignore[arg-type]
         repo="r",
         commit="c",
         service_override=DatasetStubService(),

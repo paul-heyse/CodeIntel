@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from codeintel.cli import main as cli_main
+from tests._helpers.gateway import open_fresh_duckdb
 
 
 def _seed_invalid_function_profile(db_path: Path) -> None:
-    con = duckdb.connect(str(db_path))
+    gateway = open_fresh_duckdb(db_path)
+    con = gateway.con
     con.execute("CREATE SCHEMA IF NOT EXISTS core;")
     con.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
     con.execute(
@@ -54,7 +55,7 @@ def _seed_invalid_function_profile(db_path: Path) -> None:
             (1, 'urn:demo', 'demo/repo', NULL, 'src/file.py');
         """
     )
-    con.close()
+    gateway.close()
 
 
 def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> None:
