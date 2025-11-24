@@ -16,9 +16,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
-from codeintel.config.serving_models import ServingConfig, verify_db_identity
+from codeintel.config.serving_models import ServingConfig
 from codeintel.mcp import errors
-from codeintel.mcp.backend import DuckDBBackend, HttpBackend, QueryBackend, create_backend
+from codeintel.mcp.backend import DuckDBBackend, QueryBackend
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
@@ -38,15 +38,8 @@ from codeintel.mcp.models import (
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
-from codeintel.server.datasets import build_dataset_registry
-from codeintel.services.factory import (
-    DatasetRegistryOptions,
-    build_http_query_service,
-    build_local_query_service,
-)
+from codeintel.services.factory import BackendResource, build_backend_resource
 from codeintel.services.query_service import HttpQueryService, LocalQueryService
-from codeintel.storage.duckdb_client import DuckDBClient, DuckDBConfig
-from codeintel.storage.views import create_all_views
 
 LOG = logging.getLogger("codeintel.server.fastapi")
 
@@ -72,20 +65,6 @@ class ApiAppConfig:
     def commit(self) -> str:
         """Commit SHA backing the current database."""
         return self.server.commit
-
-
-@dataclass
-class BackendResource:
-    """Backend instance plus cleanup hook."""
-
-    backend: QueryBackend
-    close: Callable[[], None]
-    service: LocalQueryService | HttpQueryService | None = None
-
-    def __post_init__(self) -> None:
-        """Populate service from backend when not provided."""
-        if self.service is None:
-            self.service = getattr(self.backend, "service", None)
 
 
 def _ensure_readable_db(path: Path) -> None:
@@ -166,58 +145,15 @@ def create_backend_resource(cfg: ApiAppConfig | ServingConfig) -> BackendResourc
 
     Raises
     ------
-    ValueError
-        If the database path is missing after configuration validation.
     errors.backend_failure
         If the query service cannot be constructed for the selected mode.
     """
-    dataset_registry = build_dataset_registry()
     serving_cfg = cfg.server if isinstance(cfg, ApiAppConfig) else cfg
     read_only = cfg.read_only if isinstance(cfg, ApiAppConfig) else serving_cfg.read_only
-
-    if serving_cfg.mode == "local_db":
-        db_path = serving_cfg.db_path
-        if db_path is None:
-            message = "db_path cannot be None after validation"
-            raise ValueError(message)
-
-        client = DuckDBClient(DuckDBConfig(db_path=db_path, read_only=read_only))
-        connection = client.con
-        verify_db_identity(connection, serving_cfg)
-        if not read_only:
-            create_all_views(connection)
-
-        backend = create_backend(serving_cfg, con=connection, dataset_tables=dataset_registry)
-        service = getattr(backend, "service", None)
-        if service is None and isinstance(backend, DuckDBBackend):
-            service = build_local_query_service(
-                backend.con,
-                serving_cfg,
-                query=backend.query,
-                registry=DatasetRegistryOptions(tables=dataset_registry),
-            )
-        if service is None:
-            message = "Query service could not be constructed for local_db mode"
-            raise errors.backend_failure(message)
-        return BackendResource(
-            backend=backend,
-            service=service,
-            close=client.close,
-        )
-
-    backend = create_backend(serving_cfg, dataset_tables=dataset_registry)
-    service = getattr(backend, "service", None)
-    if service is None and isinstance(backend, HttpBackend):
-        service = build_http_query_service(backend.request_json, limits=backend.limits)
-    if service is None:
-        message = "Query service could not be constructed for remote_api mode"
-        raise errors.backend_failure(message)
-    close = getattr(backend, "close", lambda: None)
-    return BackendResource(
-        backend=backend,
-        service=service,
-        close=close,
-    )
+    try:
+        return build_backend_resource(serving_cfg, read_only=read_only)
+    except Exception as exc:
+        raise errors.backend_failure(str(exc)) from exc
 
 
 def problem_response(detail: ProblemDetail) -> JSONResponse:

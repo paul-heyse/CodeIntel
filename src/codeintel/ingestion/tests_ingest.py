@@ -24,6 +24,7 @@ def _find_default_report(repo_root: Path) -> Path | None:
         repo_root / "pytest-report.json",
         repo_root / "tests" / "pytest-report.json",
         repo_root / "build" / "pytest-report.json",
+        repo_root / "build" / "test-results" / "pytest-report.json",
         repo_root / ".pytest-report.json",
     ]
     for path in candidates:
@@ -46,6 +47,51 @@ def _load_tests_from_report(report_path: Path) -> list[PytestTestEntry]:
         return []
 
     return tests
+
+
+def _resolve_report_path(
+    cfg: TestsIngestConfig, runner: ToolRunner | None, report_path: Path | None
+) -> Path | None:
+    """
+    Determine the pytest report path, generating one if a runner is provided.
+
+    Returns
+    -------
+    Path | None
+        Path to an existing report or None when unavailable.
+    """
+    repo_root = cfg.repo_root
+    default_report = cfg.pytest_report_path or _find_default_report(repo_root)
+    pytest_report_path = report_path or default_report
+
+    if runner is None:
+        return pytest_report_path
+
+    def _generate_report(target: Path, tool_runner: ToolRunner) -> Path | None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        result = tool_runner.run(
+            "pytest",
+            [
+                "pytest",
+                "--json-report",
+                f"--json-report-file={target}",
+            ],
+            cwd=repo_root,
+            output_path=target,
+        )
+        if result.returncode != 0:
+            log.warning("pytest report generation failed (code %s)", result.returncode)
+        return target if target.is_file() else None
+
+    if pytest_report_path is None:
+        target = default_report or repo_root / "build" / "test-results" / "pytest-report.json"
+        return _generate_report(target, runner)
+
+    if not pytest_report_path.is_file():
+        log.info("pytest report missing at %s; attempting generation", pytest_report_path)
+        return _generate_report(pytest_report_path, runner)
+
+    return pytest_report_path
 
 
 def _nodeid_to_path_and_qualname(nodeid: str) -> tuple[str, str | None]:
@@ -142,7 +188,14 @@ def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
     duration_ms = float(duration_s) * 1000.0
 
     keywords = test.get("keywords") or {}
-    markers = sorted([k for k, v in keywords.items() if v])
+    markers: list[str]
+    if isinstance(keywords, dict):
+        markers = sorted([k for k, v in keywords.items() if v])
+    elif isinstance(keywords, list):
+        markers = sorted([str(k) for k in keywords])
+    else:
+        log.debug("Unexpected keywords payload type %s for nodeid %s", type(keywords), nodeid)
+        markers = []
 
     parametrized = "[" in nodeid and "]" in nodeid
     flaky = "flaky" in markers
@@ -182,25 +235,7 @@ def ingest_tests(
     report_path:
         Optional explicit path to write a pytest JSON report.
     """
-    repo_root = cfg.repo_root
-    pytest_report_path = report_path or cfg.pytest_report_path or _find_default_report(repo_root)
-
-    if pytest_report_path is None and runner is not None:
-        target_report = report_path or (repo_root / "build" / "pytest-report.json")
-        target_report.parent.mkdir(parents=True, exist_ok=True)
-        result = runner.run(
-            "pytest",
-            [
-                "pytest",
-                "--json-report",
-                f"--json-report-file={target_report}",
-            ],
-            cwd=repo_root,
-            output_path=target_report,
-        )
-        if result.returncode != 0:
-            log.warning("pytest report generation failed (code %s)", result.returncode)
-        pytest_report_path = target_report if target_report.is_file() else None
+    pytest_report_path = _resolve_report_path(cfg, runner, report_path)
 
     if pytest_report_path is None or should_skip_missing_file(
         pytest_report_path, logger=log, label="pytest JSON report"

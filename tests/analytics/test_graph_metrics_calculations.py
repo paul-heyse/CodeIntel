@@ -39,22 +39,22 @@ def test_compute_function_graph_metrics_counts_and_cycles() -> None:
     con.execute(
         """
         INSERT INTO graph.call_graph_edges (
-            caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
+            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
             callsite_col, language, kind, resolved_via, confidence, evidence_json
         ) VALUES
-            (?, ?, ?, 1, 1, 'python', 'direct', 'local_name', 1.0, '{}'),
-            (?, ?, ?, 2, 2, 'python', 'direct', 'local_name', 1.0, '{}')
+            (?, ?, ?, ?, ?, 1, 1, 'python', 'direct', 'local_name', 1.0, '{}'),
+            (?, ?, ?, ?, ?, 2, 2, 'python', 'direct', 'local_name', 1.0, '{}')
         """,
-        [1, 2, REL_PATH, 1, 2, REL_PATH],
+        [REPO, COMMIT, 1, 2, REL_PATH, REPO, COMMIT, 1, 2, REL_PATH],
     )
     con.execute(
         """
         INSERT INTO graph.call_graph_edges (
-            caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
+            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
             callsite_col, language, kind, resolved_via, confidence, evidence_json
-        ) VALUES (?, ?, ?, 3, 1, 'python', 'direct', 'local_name', 1.0, '{}')
+        ) VALUES (?, ?, ?, ?, ?, 3, 1, 'python', 'direct', 'local_name', 1.0, '{}')
         """,
-        [Decimal("2"), Decimal("1"), REL_PATH],
+        [REPO, COMMIT, Decimal("2"), Decimal("1"), REL_PATH],
     )
     con.execute(
         """
@@ -106,11 +106,11 @@ def test_compute_module_graph_metrics_with_symbol_coupling() -> None:
     con.execute(
         """
         INSERT INTO graph.import_graph_edges (
-            src_module, dst_module, src_fan_out, dst_fan_in, cycle_group
+            repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group
         )
-        VALUES (?, ?, 1, 1, 0)
+        VALUES (?, ?, ?, ?, 1, 1, 0)
         """,
-        [MODULE_A, MODULE_B],
+        [REPO, COMMIT, MODULE_A, MODULE_B],
     )
     con.execute(
         """

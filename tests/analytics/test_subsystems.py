@@ -48,12 +48,13 @@ def _seed_modules(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         """
         INSERT INTO graph.import_graph_edges (
-            src_module, dst_module, src_fan_out, dst_fan_in, cycle_group
+            repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group
         )
         VALUES
-            ('pkg.api', 'pkg.core', 1, 1, 0),
-            ('pkg.core', 'pkg.api', 1, 1, 0)
-        """
+            (?, ?, 'pkg.api', 'pkg.core', 1, 1, 0),
+            (?, ?, 'pkg.core', 'pkg.api', 1, 1, 0)
+        """,
+        [REPO, COMMIT, REPO, COMMIT],
     )
     con.execute(
         """

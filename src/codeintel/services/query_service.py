@@ -38,6 +38,7 @@ from codeintel.server.datasets import describe_dataset
 
 LOG = logging.getLogger("codeintel.services.query")
 
+
 @dataclass
 class ServiceCallMetrics:
     """Structured metrics describing a service invocation."""
@@ -343,6 +344,7 @@ class LocalQueryService:
         list[DatasetDescriptor]
             Dataset descriptors with descriptions.
         """
+
         def _list() -> list[DatasetDescriptor]:
             if not self.dataset_tables:
                 return []
@@ -1220,12 +1222,13 @@ class HttpQueryService:
             {"limit": clamp.applied, "offset": offset_clamp.applied},
         )
         response = DatasetRowsResponse.model_validate(data)
-        if response.meta is None:
-            response.meta = meta
-        else:
-            response.meta.requested_limit = meta.requested_limit
-            response.meta.applied_limit = meta.applied_limit
-            response.meta.requested_offset = meta.requested_offset
-            response.meta.applied_offset = meta.applied_offset
-            response.meta.messages = [*meta.messages, *response.meta.messages]
-        return response
+        existing_meta = response.meta if response.meta is not None else ResponseMeta()
+        merged_meta = ResponseMeta(
+            requested_limit=meta.requested_limit,
+            applied_limit=meta.applied_limit,
+            requested_offset=meta.requested_offset,
+            applied_offset=meta.applied_offset,
+            truncated=existing_meta.truncated,
+            messages=[*meta.messages, *existing_meta.messages],
+        )
+        return response.model_copy(update={"meta": merged_meta})

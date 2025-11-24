@@ -9,7 +9,8 @@ from types import TracebackType
 
 import duckdb
 
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schemas import apply_all_schemas, assert_schema_alignment
+from codeintel.storage.views import create_all_views
 
 log = logging.getLogger(__name__)
 
@@ -116,3 +117,46 @@ def get_connection(cfg: DuckDBConfig) -> duckdb.DuckDBPyConnection:
     """
     client = DuckDBClient(cfg)
     return client.con
+
+
+def connect_with_schema(
+    db_path: Path,
+    *,
+    read_only: bool = False,
+    apply_schema: bool = False,
+    ensure_views: bool = False,
+    validate_schema: bool = True,
+) -> duckdb.DuckDBPyConnection:
+    """
+    Open a DuckDB connection and apply/validate schemas in one step.
+
+    Parameters
+    ----------
+    db_path:
+        Path to the DuckDB database.
+    read_only:
+        Whether to open in read-only mode (skips DDL when True).
+    ensure_views:
+        Whether to (re)create docs views after schema application.
+    apply_schema:
+        When True, apply DDL (drop/create) using TABLE_SCHEMAS; for read-only connections
+        this is ignored.
+    validate_schema:
+        When True, assert that the live schema matches TABLE_SCHEMAS.
+
+    Returns
+    -------
+    duckdb.DuckDBPyConnection
+        Live connection configured per the provided options.
+    """
+    if not read_only:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    con = duckdb.connect(str(db_path), read_only=read_only)
+    if apply_schema and not read_only:
+        apply_all_schemas(con)
+    if validate_schema:
+        assert_schema_alignment(con, strict=True)
+    if ensure_views and not read_only:
+        create_all_views(con)
+    return con

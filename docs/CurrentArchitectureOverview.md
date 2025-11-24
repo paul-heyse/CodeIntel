@@ -912,7 +912,7 @@ Key behavior:
 
 ## 4. Resolution heuristics (`_resolve_callee` / `resolve_callee`)
 
-The “brain” for mapping calls to GOIDs is `_resolve_callee` (and the method variant on the CST visitor; they share logic).
+The “brain” for mapping calls to GOIDs is `resolve_callee` (shared between CST/AST collectors via `call_resolution.py`).
 
 Inputs:
 
@@ -1070,22 +1070,9 @@ def _dedupe_edges(edges: list[CallGraphEdgeRow]) -> list[CallGraphEdgeRow]:
     return unique_edges
 ```
 
-So duplicate edges (same caller, callee, and callsite coordinates) are collapsed.
+Duplicate edges (same caller, callee, and callsite coordinates) are collapsed; in the refactor this logic lives in `call_persist.dedupe_edges`.
 
-Persistence:
-
-```python
-def _persist_call_graph_edges(con, edges):
-    run_batch(
-        con,
-        "graph.call_graph_edges",
-        [call_graph_edge_to_tuple(edge) for edge in edges],
-        delete_params=[],
-        scope="call_graph_edges",
-    )
-```
-
-`CallGraphEdgeRow` → tuple is via `models/rows.py`, in the column order that matches the `graph.call_graph_edges` table.
+Persistence uses `run_batch` to insert into `graph.call_graph_edges` with repo/commit scoping. `CallGraphEdgeRow` → tuple is via `models/rows.py`, in the column order that matches the `graph.call_graph_edges` table.
 
 ---
 
@@ -1872,6 +1859,4 @@ Putting it all together:
      * Potentially present “best guess” navigation or debugging hints.
 
 ---
-
-
 

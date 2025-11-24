@@ -10,7 +10,6 @@ import anyio
 import duckdb
 import httpx
 
-from codeintel.config.serving_models import verify_db_identity
 from codeintel.mcp import errors
 from codeintel.mcp.config import McpServerConfig
 from codeintel.mcp.models import (
@@ -35,7 +34,17 @@ from codeintel.mcp.models import (
 )
 from codeintel.mcp.query_service import BackendLimits, DuckDBQueryService
 from codeintel.server.datasets import build_dataset_registry
-from codeintel.services.query_service import HttpQueryService, LocalQueryService
+from codeintel.services.factory import (
+    DatasetRegistryOptions,
+    build_service_from_config,
+    get_observability_from_config,
+)
+from codeintel.services.query_service import (
+    HttpQueryService,
+    LocalQueryService,
+    QueryService,
+    ServiceObservability,
+)
 
 MAX_ROWS_LIMIT = BackendLimits().max_rows_per_call
 HTTP_ERROR_STATUS = 400
@@ -63,6 +72,8 @@ async def _get_async(
 
 class QueryBackend(Protocol):
     """Abstract interface consumed by MCP tools."""
+
+    service: QueryService
 
     def get_function_summary(
         self,
@@ -178,6 +189,42 @@ class QueryBackend(Protocol):
         ...
 
 
+def _require_identifier(
+    *, urn: str | None = None, goid_h128: int | None = None, rel_path: str | None = None
+) -> None:
+    """
+    Ensure at least one identifier is provided.
+
+    Raises
+    ------
+    errors.invalid_argument
+        When all identifiers are missing.
+    """
+    if urn is None and goid_h128 is None and rel_path is None:
+        message = "At least one identifier (urn, goid_h128, rel_path) must be provided"
+        raise errors.invalid_argument(message)
+
+
+def _validate_direction(direction: str) -> str:
+    """
+    Validate direction argument for callgraph endpoints.
+
+    Returns
+    -------
+    str
+        Normalized direction value.
+
+    Raises
+    ------
+    errors.invalid_argument
+        When the direction is not supported.
+    """
+    if direction in {"incoming", "outgoing", "both"}:
+        return direction
+    message = "direction must be one of incoming, outgoing, both"
+    raise errors.invalid_argument(message)
+
+
 @dataclass
 class DuckDBBackend(QueryBackend):
     """
@@ -192,11 +239,19 @@ class DuckDBBackend(QueryBackend):
     commit: str
     limits: BackendLimits = field(default_factory=BackendLimits)
     dataset_tables: dict[str, str] = field(default_factory=build_dataset_registry)
-    query: DuckDBQueryService = field(init=False)
-    service: LocalQueryService = field(init=False)
+    observability: ServiceObservability | None = None
+    service_override: LocalQueryService | None = None
+    service: QueryService = field(init=False)
+    query: DuckDBQueryService | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         """Initialize the query service and dataset registry."""
+        if self.service_override is not None:
+            self.service = self.service_override
+            if isinstance(self.service, LocalQueryService):
+                self.query = self.service.query
+            return
+
         self.query = DuckDBQueryService(
             con=self.con,
             repo=self.repo,
@@ -207,16 +262,20 @@ class DuckDBBackend(QueryBackend):
         self.service = LocalQueryService(
             query=self.query,
             dataset_tables=self.dataset_tables,
+            observability=self.observability,
         )
 
     def __setattr__(self, name: str, value: object) -> None:
         """Propagate dataset registry changes to the underlying query service."""
         super().__setattr__(name, value)
-        if name == "dataset_tables" and hasattr(self, "query"):
+        if name == "dataset_tables":
             tables = value if isinstance(value, dict) else {}
-            self.query.dataset_tables = tables
-            if hasattr(self, "service"):
-                self.service.dataset_tables = tables
+            query = getattr(self, "query", None)
+            service = getattr(self, "service", None)
+            if query is not None:
+                query.dataset_tables = tables
+            if isinstance(service, LocalQueryService):
+                service.dataset_tables = tables
 
     def get_function_summary(
         self,
@@ -234,6 +293,7 @@ class DuckDBBackend(QueryBackend):
         FunctionSummaryResponse
             Summary payload with found flag and metadata.
         """
+        _require_identifier(urn=urn, goid_h128=goid_h128, rel_path=rel_path)
         return self.service.get_function_summary(
             urn=urn,
             goid_h128=goid_h128,
@@ -277,6 +337,7 @@ class DuckDBBackend(QueryBackend):
         CallGraphNeighborsResponse
             Incoming and outgoing edges with metadata.
         """
+        direction = _validate_direction(direction)
         return self.service.get_callgraph_neighbors(
             goid_h128=goid_h128,
             direction=direction,
@@ -298,6 +359,7 @@ class DuckDBBackend(QueryBackend):
         TestsForFunctionResponse
             Tests exercising the function plus messages.
         """
+        _require_identifier(urn=urn, goid_h128=goid_h128)
         return self.service.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
@@ -458,9 +520,7 @@ class DuckDBBackend(QueryBackend):
         list[DatasetDescriptor]
             Dataset metadata entries.
         """
-        datasets = self.service.list_datasets()
-        LOG.info("Listed %d datasets", len(datasets))
-        return datasets
+        return self.service.list_datasets()
 
     def read_dataset_rows(
         self,
@@ -477,19 +537,11 @@ class DuckDBBackend(QueryBackend):
         DatasetRowsResponse
             Dataset slice payload with metadata.
         """
-        resp = self.service.read_dataset_rows(
+        return self.service.read_dataset_rows(
             dataset_name=dataset_name,
             limit=limit,
             offset=offset,
         )
-        LOG.info(
-            "Read dataset=%s limit=%s offset=%s returned_rows=%d",
-            dataset_name,
-            limit,
-            offset,
-            len(resp.rows),
-        )
-        return resp
 
 
 @dataclass  # noqa: PLR0904
@@ -504,7 +556,9 @@ class HttpBackend(QueryBackend):
     client: httpx.Client | httpx.AsyncClient | None = None
     _owns_client: bool = field(init=False, default=False)
     _async_client: bool = field(init=False, default=False)
-    service: HttpQueryService = field(init=False)
+    observability: ServiceObservability | None = None
+    service_override: HttpQueryService | None = None
+    service: QueryService = field(init=False)
 
     def __post_init__(self) -> None:
         """Initialize the HTTP client and verify server health."""
@@ -517,7 +571,15 @@ class HttpBackend(QueryBackend):
             self._async_client = isinstance(self.client, httpx.AsyncClient)
 
         self._verify_health()
-        self.service = HttpQueryService(self._request_json, self.limits)
+        if self.service_override is not None:
+            self.service = self.service_override
+            return
+
+        self.service = HttpQueryService(
+            self._request_json,
+            self.limits,
+            observability=self.observability,
+        )
 
     def close(self) -> None:
         """Close the underlying HTTP client."""
@@ -819,9 +881,7 @@ class HttpBackend(QueryBackend):
         list[DatasetDescriptor]
             Dataset descriptors provided by the API.
         """
-        datasets = self.service.list_datasets()
-        LOG.info("Listed %d datasets (remote)", len(datasets))
-        return datasets
+        return self.service.list_datasets()
 
     def read_dataset_rows(
         self,
@@ -838,19 +898,11 @@ class HttpBackend(QueryBackend):
         DatasetRowsResponse
             Dataset slice payload with metadata.
         """
-        resp = self.service.read_dataset_rows(
+        return self.service.read_dataset_rows(
             dataset_name=dataset_name,
             limit=limit,
             offset=offset,
         )
-        LOG.info(
-            "Read dataset=%s limit=%s offset=%s returned_rows=%d (remote)",
-            dataset_name,
-            limit,
-            offset,
-            len(resp.rows),
-        )
-        return resp
 
 
 def create_backend(
@@ -858,6 +910,8 @@ def create_backend(
     *,
     con: duckdb.DuckDBPyConnection | None = None,
     dataset_tables: dict[str, str] | None = None,
+    registry_options: DatasetRegistryOptions | None = None,
+    observability: ServiceObservability | None = None,
 ) -> QueryBackend:
     """
     Create a QueryBackend using local DuckDB or remote HTTP.
@@ -870,6 +924,10 @@ def create_backend(
         Optional DuckDB connection to reuse in local_db mode.
     dataset_tables:
         Optional dataset registry override.
+    registry_options:
+        Optional dataset registry options including validation toggles.
+    observability:
+        Optional observability configuration for structured logging.
 
     Returns
     -------
@@ -883,18 +941,27 @@ def create_backend(
     """
     limits = BackendLimits.from_config(cfg)
     registry = dataset_tables if dataset_tables is not None else build_dataset_registry()
+    registry_opts = registry_options or DatasetRegistryOptions(tables=registry)
+    resolved_observability = observability or get_observability_from_config(cfg)
     if cfg.mode == "local_db":
         if cfg.db_path is None and con is None:
             message = "db_path is required for local_db backend"
             raise ValueError(message)
         connection = con or duckdb.connect(str(cfg.db_path), read_only=True)
-        verify_db_identity(connection, cfg)
+        service = build_service_from_config(
+            cfg,
+            con=connection,
+            registry=registry_opts,
+            observability=resolved_observability,
+        )
         return DuckDBBackend(
             con=connection,
             repo=cfg.repo,
             commit=cfg.commit,
             limits=limits,
             dataset_tables=registry,
+            observability=resolved_observability,
+            service_override=service if isinstance(service, LocalQueryService) else None,
         )
     if cfg.mode == "remote_api":
         if not cfg.api_base_url:
@@ -906,6 +973,7 @@ def create_backend(
             commit=cfg.commit,
             timeout=cfg.timeout_seconds,
             limits=limits,
+            observability=resolved_observability,
         )
     message = f"Unsupported MCP mode: {cfg.mode}"
     raise ValueError(message)

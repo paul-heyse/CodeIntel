@@ -8,6 +8,7 @@ risk factors, etc.).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 
 from duckdb import DuckDBPyConnection
@@ -15,6 +16,7 @@ from duckdb import DuckDBPyConnection
 from codeintel.config.schemas.tables import TABLE_SCHEMAS, TableSchema
 
 SCHEMAS = ("core", "graph", "analytics", "docs")
+log = logging.getLogger(__name__)
 
 
 def _quote(identifier: str) -> str:
@@ -102,3 +104,48 @@ def apply_all_schemas(
     if extra_ddl:
         for stmt in extra_ddl:
             con.execute(stmt)
+
+
+def assert_schema_alignment(
+    con: DuckDBPyConnection,
+    *,
+    strict: bool = True,
+    logger: logging.Logger | None = None,
+) -> list[str]:
+    """
+    Validate that the live DuckDB schema matches the codified TABLE_SCHEMAS.
+
+    Returns
+    -------
+    list[str]
+        Human-readable drift messages; empty when aligned.
+
+    Raises
+    ------
+    RuntimeError
+        If strict is True and schema drift is detected.
+    """
+    issues: list[str] = []
+    for table in TABLE_SCHEMAS.values():
+        rows = con.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            ORDER BY ordinal_position
+            """,
+            [table.schema, table.name],
+        ).fetchall()
+        actual = [row[0] for row in rows]
+        expected = table.column_names()
+        if actual != expected:
+            issues.append(f"{table.fq_name}: expected {expected} got {actual}")
+
+    if issues:
+        message = "; ".join(issues)
+        logref = logger or log
+        logref.error("Schema drift detected: %s", message)
+        if strict:
+            error_message = f"Schema drift detected: {message}"
+            raise RuntimeError(error_message)
+    return issues

@@ -16,7 +16,10 @@ from prefect import flow, get_run_logger, task
 
 from codeintel.analytics.ast_metrics import build_hotspots
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
-from codeintel.analytics.functions import compute_function_metrics_and_types
+from codeintel.analytics.functions import (
+    ValidationReporter,
+    compute_function_metrics_and_types,
+)
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.subsystems import build_subsystems
 from codeintel.analytics.tests_analytics import compute_test_coverage_edges
@@ -64,6 +67,7 @@ from codeintel.orchestration.steps import (
     ProfilesStep,
     RiskFactorsStep,
 )
+from codeintel.storage.duckdb_client import connect_with_schema
 from codeintel.storage.views import create_all_views
 
 
@@ -81,16 +85,29 @@ class ExportArgs:
     function_overrides: FunctionAnalyticsOverrides | None = None
 
 
-def _connect(db_path: Path, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
+def _connect(
+    db_path: Path,
+    *,
+    read_only: bool = False,
+    apply_schema: bool = False,
+    ensure_views: bool = False,
+    validate_schema: bool = True,
+) -> duckdb.DuckDBPyConnection:
     """
-    Open a DuckDB connection with an explicit read-only toggle.
+    Open a DuckDB connection, applying schemas and optionally views.
 
     Returns
     -------
     duckdb.DuckDBPyConnection
         Live connection for the requested db_path.
     """
-    return duckdb.connect(str(db_path), read_only=read_only)
+    return connect_with_schema(
+        db_path,
+        read_only=read_only,
+        apply_schema=apply_schema,
+        ensure_views=ensure_views,
+        validate_schema=validate_schema,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +134,18 @@ def _log_task_done(name: str, start_ts: float, logger: Logger | LoggerAdapter) -
     """Emit completion with duration for a task."""
     duration = time.perf_counter() - start_ts
     logger.info("finished task: %s (%.2fs)", name, duration)
+
+
+def _ensure_db_schema(db_path: Path) -> None:
+    """Apply schemas and validate alignment for the target database."""
+    con = _connect(
+        db_path,
+        read_only=False,
+        apply_schema=True,
+        ensure_views=True,
+        validate_schema=True,
+    )
+    con.close()
 
 
 def _run_task(
@@ -382,7 +411,12 @@ def t_function_metrics(
         repo_root=repo_root,
         overrides=overrides,
     )
-    summary = compute_function_metrics_and_types(con, cfg)
+    reporter = ValidationReporter(logger=run_logger)
+    summary = compute_function_metrics_and_types(
+        con,
+        cfg,
+        validation_reporter=reporter,
+    )
     run_logger.info(
         "function_metrics summary rows=%d types=%d validation=%d parse_failed=%d span_not_found=%d",
         summary["metrics_rows"],
@@ -465,7 +499,7 @@ def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir
 @task(name="export_docs", retries=1, retry_delay_seconds=2)
 def t_export_docs(db_path: Path, document_output_dir: Path) -> None:
     """Create views and export Parquet/JSONL artifacts."""
-    con = _connect(db_path)
+    con = _connect(db_path, ensure_views=True)
     create_all_views(con)
     export_all_parquet(con, document_output_dir)
     export_all_jsonl(con, document_output_dir)
@@ -568,6 +602,7 @@ def export_docs_flow(
     scip_state: dict[str, scip_ingest.ScipIngestResult | None] = {"result": None}
 
     step_handlers = [
+        ("schema_bootstrap", lambda: _run_task("schema_bootstrap", t_schema_bootstrap, run_logger, db_path)),
         ("repo_scan", lambda: _run_task("repo_scan", t_repo_scan, run_logger, ctx)),
         (
             "scip_ingest",
@@ -830,3 +865,12 @@ def _run_symbol_uses(
         commit=ctx.commit,
     )
     _run_task("symbol_uses", t_symbol_uses, logger, cfg, ctx.db_path)
+@task(name="schema_bootstrap", retries=1, retry_delay_seconds=1)
+def t_schema_bootstrap(db_path: Path) -> None:
+    """
+    Apply schemas, validate alignment, and create views.
+
+    This is intentionally a distinct task for visibility and future adjustments.
+    """
+    con = _connect(db_path, read_only=False, apply_schema=True, ensure_views=True, validate_schema=True)
+    con.close()

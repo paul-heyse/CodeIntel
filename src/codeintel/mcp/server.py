@@ -4,47 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import duckdb
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.mcp.backend import QueryBackend, create_backend
 from codeintel.mcp.registry import register_tools
-
-
-def _build_backend(cfg: ServingConfig) -> tuple[QueryBackend, Callable[[], None]]:
-    """
-    Build a QueryBackend from config, opening a DuckDB connection when local.
-
-    Parameters
-    ----------
-    cfg:
-        Server configuration derived from environment variables.
-
-    Returns
-    -------
-    tuple[QueryBackend, Callable[[], None]]
-        Backend instance and a shutdown hook that closes resources.
-
-    Raises
-    ------
-    ValueError
-        If required configuration such as db_path is missing.
-    """
-    if cfg.mode == "local_db":
-        if cfg.db_path is None:
-            message = "db_path is required for local_db mode"
-            raise ValueError(message)
-        connection = duckdb.connect(str(cfg.db_path), read_only=True)
-        backend = create_backend(cfg, con=connection)
-
-        def _close() -> None:
-            connection.close()
-
-        return backend, _close
-    backend = create_backend(cfg)
-    close = getattr(backend, "close", lambda: None)
-    return backend, close
+from codeintel.services.factory import BackendResource, build_backend_resource
 
 
 def create_mcp_server(cfg: ServingConfig | None = None) -> tuple[FastMCP, Callable[[], None]]:
@@ -62,7 +26,9 @@ def create_mcp_server(cfg: ServingConfig | None = None) -> tuple[FastMCP, Callab
         Configured MCP server and shutdown callback.
     """
     config = cfg or ServingConfig.from_env()
-    backend, close = _build_backend(config)
+    resource: BackendResource = build_backend_resource(config)
+    backend = resource.backend
+    close = resource.close
     server = FastMCP("CodeIntel", json_response=True)
     service = getattr(backend, "service", None)
     register_tools(server, service or backend)

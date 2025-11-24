@@ -18,6 +18,7 @@ from codeintel.config.models import (
     PathsConfig,
     RepoConfig,
 )
+from codeintel.config.parser_types import FunctionParserKind
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.ingestion.source_scanner import ScanConfig
@@ -172,7 +173,8 @@ def _make_parser() -> argparse.ArgumentParser:
     )
     p_run.add_argument(
         "--function-parser",
-        help="Optional parser selector/hint for function analytics (e.g., 'python').",
+        choices=[kind.value for kind in FunctionParserKind],
+        help="Optional parser selector for function analytics (e.g., 'python').",
     )
     p_run.set_defaults(func=_cmd_pipeline_run)
 
@@ -210,6 +212,18 @@ def _make_parser() -> argparse.ArgumentParser:
     _add_subsystem_subparser(subparsers)
 
     return parser
+
+
+def make_parser() -> argparse.ArgumentParser:
+    """
+    Public helper to construct the CLI parser (for tests/tools).
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        Configured parser with all subcommands registered.
+    """
+    return _make_parser()
 
 
 # ---------------------------------------------------------------------------
@@ -269,9 +283,10 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
     if args.skip_scip:
         os.environ["CODEINTEL_SKIP_SCIP"] = "true"
 
+    parser_kind = FunctionParserKind(args.function_parser) if args.function_parser else None
     overrides = FunctionAnalyticsOverrides(
         fail_on_missing_spans=args.function_fail_on_missing_spans,
-        parser=args.function_parser,
+        parser=parser_kind,
     )
 
     targets = list(args.target) if args.target else None

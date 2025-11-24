@@ -15,7 +15,7 @@ class PytestTestEntry(TypedDict, total=False):
     """Shape of a pytest-json-report test object."""
 
     nodeid: str
-    keywords: dict[str, bool]
+    keywords: dict[str, bool] | list[str]
     outcome: str
     status: str
     call: PytestCallEntry

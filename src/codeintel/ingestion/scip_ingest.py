@@ -237,12 +237,12 @@ def _build_definition_map(docs: list[dict[str, object]]) -> dict[tuple[str, int]
     return def_map
 
 
-def _fetch_goids(con: duckdb.DuckDBPyConnection) -> list[tuple[str, str, int]]:
+def _fetch_goids(con: duckdb.DuckDBPyConnection) -> list[tuple[str, str, int, str, str]]:
     return cast(
-        "list[tuple[str, str, int]]",
+        "list[tuple[str, str, int, str, str]]",
         con.execute(
             """
-            SELECT urn, rel_path, start_line
+            SELECT urn, rel_path, start_line, repo, commit
             FROM core.goids
             """
         ).fetchall(),
@@ -250,11 +250,11 @@ def _fetch_goids(con: duckdb.DuckDBPyConnection) -> list[tuple[str, str, int]]:
 
 
 def _build_symbol_updates(
-    def_map: dict[tuple[str, int], str], goids: list[tuple[str, str, int]]
-) -> list[tuple[str, str]]:
-    updates: list[tuple[str, str]] = []
-    for urn, rel_path, start_line in goids:
+    def_map: dict[tuple[str, int], str], goids: list[tuple[str, str, int, str, str]]
+) -> list[tuple[str, str, str, str]]:
+    updates: list[tuple[str, str, str, str]] = []
+    for urn, rel_path, start_line, repo, commit in goids:
         symbol = def_map.get((rel_path, int(start_line)))
         if symbol:
-            updates.append((symbol, urn))
+            updates.append((symbol, urn, repo, commit))
     return updates

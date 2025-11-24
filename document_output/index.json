@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-11-24T04:30:14.918710+00:00",
+  "generated_at": "2025-11-24T07:55:10.084526+00:00",
   "files": [
     "goids.jsonl",
     "goid_crosswalk.jsonl",
@@ -26,6 +26,7 @@
     "test_catalog.jsonl",
     "test_coverage_edges.jsonl",
     "graph_validation.jsonl",
+    "function_validation.jsonl",
     "goid_risk_factors.jsonl",
     "function_profile.jsonl",
     "file_profile.jsonl",

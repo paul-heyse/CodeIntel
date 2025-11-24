@@ -19,6 +19,8 @@ AST_NODES_COLUMNS = [
     "qualname",
     "lineno",
     "end_lineno",
+    "decorator_start_line",
+    "decorator_end_line",
     "col_offset",
     "end_col_offset",
     "parent_qualname",
@@ -244,6 +246,8 @@ GOIDS_COLUMNS = [
 ]
 
 GOID_CROSSWALK_COLUMNS = [
+    "repo",
+    "commit",
     "goid",
     "lang",
     "module_path",
@@ -401,9 +405,9 @@ AST_NODES_DELETE = (
 )
 AST_NODES_INSERT = (
     "INSERT INTO core.ast_nodes ("
-    "path, node_type, name, qualname, lineno, end_lineno, col_offset, end_col_offset, "
-    "parent_qualname, decorators, docstring, hash"
-    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "path, node_type, name, qualname, lineno, end_lineno, decorator_start_line, decorator_end_line, "
+    "col_offset, end_col_offset, parent_qualname, decorators, docstring, hash"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 AST_METRICS_DELETE = (
@@ -522,14 +526,16 @@ GOIDS_INSERT = (
     ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
-GOID_CROSSWALK_DELETE = "DELETE FROM core.goid_crosswalk"
+GOID_CROSSWALK_DELETE = "DELETE FROM core.goid_crosswalk WHERE repo = ? AND commit = ?"
 GOID_CROSSWALK_INSERT = (
     "INSERT INTO core.goid_crosswalk ("
-    "goid, lang, module_path, file_path, start_line, end_line, scip_symbol, ast_qualname, cst_node_id, "
-    "chunk_id, symbol_id, updated_at"
-    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "repo, commit, goid, lang, module_path, file_path, start_line, end_line, scip_symbol, ast_qualname, "
+    "cst_node_id, chunk_id, symbol_id, updated_at"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
-GOID_CROSSWALK_UPDATE_SCIP = "UPDATE core.goid_crosswalk SET scip_symbol = ? WHERE goid = ?"
+GOID_CROSSWALK_UPDATE_SCIP = (
+    "UPDATE core.goid_crosswalk SET scip_symbol = ? WHERE goid = ? AND repo = ? AND commit = ?"
+)
 
 CALL_GRAPH_NODES_DELETE = "DELETE FROM graph.call_graph_nodes"
 CALL_GRAPH_NODES_INSERT = (

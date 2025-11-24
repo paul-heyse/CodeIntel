@@ -57,7 +57,7 @@ class BuildPaths:
     @property
     def pytest_report(self) -> Path:
         """Default path for pytest JSON report."""
-        return (self.build_dir / "pytest-report.json").resolve()
+        return (self.build_dir / "test-results" / "pytest-report.json").resolve()
 
 
 @dataclass(frozen=True)

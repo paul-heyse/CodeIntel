@@ -396,7 +396,15 @@ class FunctionAnalyticsStep:
             repo_root=ctx.repo_root,
             overrides=ctx.function_overrides,
         )
-        compute_function_metrics_and_types(con, cfg)
+        summary = compute_function_metrics_and_types(con, cfg)
+        log.info(
+            "function_metrics summary rows=%d types=%d validation=%d parse_failed=%d span_not_found=%d",
+            summary["metrics_rows"],
+            summary["types_rows"],
+            summary["validation_total"],
+            summary["validation_parse_failed"],
+            summary["validation_span_not_found"],
+        )
 
 
 @dataclass
