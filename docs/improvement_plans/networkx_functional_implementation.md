@@ -2451,6 +2451,306 @@ You’d hook `enrich_cfg_dfg_metrics` into the same orchestration stage that cur
 
 ---
 
+# updated docs.v_function_architecture #
+
+Awesome, let’s give your MCP agent a *single, monster row per function* with call, test, CFG, and DFG metrics all in one place.
+
+Below I’ll:
+
+1. Sketch the **column layout** for `docs.v_function_architecture`.
+2. Give a concrete **`CREATE OR REPLACE VIEW`** you can drop into your docs‑view setup.
+3. Call out a couple of **implementation notes** so it slots cleanly into your existing pipeline.
+
+Everything plugs into the existing tables described in your metadata overview: `function_profile.*`, `graph_metrics_functions.*`, `module_profile.*`, `subsystem_modules.*`, `subsystems.*`, plus the new analytics tables we’ve designed (`graph_metrics_functions_ext`, `test_graph_metrics_functions`, `cfg_function_metrics`, `dfg_function_metrics`).
+
+---
+
+## 1. What the new view exposes (one row per function)
+
+For each function GOID, the updated `docs.v_function_architecture` row will include:
+
+### Identity / location / risk (from `analytics.function_profile`)
+
+Already present today:
+
+* `function_goid_h128`, `urn`, `repo`, `commit`
+* `rel_path`, `module`, `kind`, `qualname`
+* `loc`, `logical_loc`, `cyclomatic_complexity`, param counts, typedness, coverage, risk, tags, owners, etc.
+
+### Call‑graph metrics (call graph topology)
+
+From existing `analytics.graph_metrics_functions`:
+
+* `call_pagerank`
+* `call_layer`
+* `call_is_leaf` (if you don’t already copy this into `function_profile`)
+
+From our `analytics.graph_metrics_functions_ext`:
+
+* `call_betweenness`
+* `call_closeness`
+* `call_eigenvector`
+* `call_harmonic`
+* `call_core_number`
+* `call_clustering_coeff`
+* `call_triangle_count`
+* `call_is_articulation`
+* `call_is_bridge_endpoint`
+* `call_component_id`, `call_component_size`
+* `call_scc_id`, `call_scc_size`
+
+### Test‑graph metrics (test coverage structure)
+
+From `analytics.test_graph_metrics_functions`:
+
+* `tests_degree` – number of tests hitting this function
+* `tests_weighted_degree` – coverage‑weighted “test load”
+* `tests_degree_centrality` – centrality in the test↔function bipartite graph
+* `proj_degree` / `proj_weight` – neighbors & strength in the function↔function “co‑tested” projection
+* `proj_clustering` / `proj_betweenness` – clustering and centrality in that co‑test graph
+
+(We’ll alias the projection metrics with a clearer prefix.)
+
+### CFG metrics (control‑flow shape)
+
+From `analytics.cfg_function_metrics` (built over `graph.cfg_blocks.*` / `graph.cfg_edges.*`):
+
+* `cfg_block_count`, `cfg_edge_count`
+* `cfg_has_cycles`, `cfg_scc_count`
+* `cfg_longest_path_len` (approx simple path entry→exit)
+* `cfg_avg_shortest_path_len`
+* `cfg_branching_factor_mean`, `cfg_branching_factor_max`
+* `cfg_linear_block_fraction`
+* `cfg_dom_tree_height`
+* `cfg_dominance_frontier_size_mean`, `cfg_dominance_frontier_size_max`
+* `cfg_loop_count`, `cfg_loop_nesting_depth_max`
+* `cfg_bc_betweenness_max`, `cfg_bc_betweenness_mean`
+* `cfg_bc_closeness_mean`, `cfg_bc_eigenvector_max`
+
+### DFG metrics (data‑flow shape)
+
+From `analytics.dfg_function_metrics` (built over `graph.dfg_edges.*`):
+
+* `dfg_block_count`, `dfg_edge_count`, `dfg_phi_edge_count`, `dfg_symbol_count`
+* `dfg_component_count`, `dfg_scc_count`, `dfg_has_cycles`
+* `dfg_longest_chain_len`, `dfg_avg_shortest_path_len`
+* `dfg_avg_in_degree`, `dfg_avg_out_degree`
+* `dfg_max_in_degree`, `dfg_max_out_degree`
+* `dfg_branchy_block_fraction`
+* `dfg_bc_betweenness_max`, `dfg_bc_betweenness_mean`, `dfg_bc_eigenvector_max`
+
+### Module / subsystem context (for architecture positioning)
+
+From `analytics.module_profile`, `analytics.subsystem_modules`, `analytics.subsystems`:
+
+* `module_coverage_ratio`
+* `import_fan_in`, `import_fan_out`, `in_cycle`, `cycle_group`
+* `subsystem_id`, `subsystem_name`, `subsystem_risk_level`, `subsystem_module_count`, etc.
+
+---
+
+## 2. Concrete `docs.v_function_architecture` view
+
+Here’s a concrete DuckDB view definition that pulls all of that together.
+
+```sql
+CREATE OR REPLACE VIEW docs.v_function_architecture AS
+SELECT
+    -- Identity / location
+    fp.function_goid_h128,
+    fp.urn,
+    fp.repo,
+    fp.commit,
+    fp.rel_path,
+    fp.module,
+    fp.kind,
+    fp.qualname,
+
+    -- Basic structural + risk profile
+    fp.loc,
+    fp.logical_loc,
+    fp.cyclomatic_complexity,
+    fp.param_count,
+    fp.keyword_params,
+    fp.vararg,
+    fp.kwarg,
+    fp.total_params,
+    fp.return_type,
+    fp.typedness_bucket,
+    fp.file_typed_ratio,
+    fp.static_error_count,
+    fp.coverage_ratio,
+    fp.tested,
+    fp.tests_touching,
+    fp.failing_tests,
+    fp.slow_tests,
+    fp.risk_score,
+    fp.risk_level,
+    fp.doc_short,
+    fp.doc_long,
+    fp.tags,
+    fp.owners,
+
+    --------------------------------------------------------------------
+    -- Call graph metrics (call topology)
+    --------------------------------------------------------------------
+    gmf.call_fan_in,
+    gmf.call_fan_out,
+    gmf.call_pagerank,
+    gmf.call_layer,
+    gmf.call_is_leaf,
+
+    gmf_ext.call_betweenness,
+    gmf_ext.call_closeness,
+    gmf_ext.call_eigenvector,
+    gmf_ext.call_harmonic,
+    gmf_ext.call_core_number,
+    gmf_ext.call_clustering_coeff,
+    gmf_ext.call_triangle_count,
+    gmf_ext.call_is_articulation,
+    gmf_ext.call_is_bridge_endpoint,
+    gmf_ext.call_component_id,
+    gmf_ext.call_component_size,
+    gmf_ext.call_scc_id,
+    gmf_ext.call_scc_size,
+
+    --------------------------------------------------------------------
+    -- Test graph metrics (tests ↔ functions bipartite + co-test graph)
+    --------------------------------------------------------------------
+    tgf.tests_degree,
+    tgf.tests_weighted_degree,
+    tgf.tests_degree_centrality,
+    tgf.proj_degree        AS tests_co_tested_degree,
+    tgf.proj_weight        AS tests_co_tested_weight,
+    tgf.proj_clustering    AS tests_co_tested_clustering,
+    tgf.proj_betweenness   AS tests_co_tested_betweenness,
+
+    --------------------------------------------------------------------
+    -- CFG metrics (control-flow topology per function)
+    --------------------------------------------------------------------
+    cfg_fn.cfg_block_count,
+    cfg_fn.cfg_edge_count,
+    cfg_fn.cfg_has_cycles,
+    cfg_fn.cfg_scc_count,
+    cfg_fn.cfg_longest_path_len       AS cfg_longest_path_len_approx,
+    cfg_fn.cfg_avg_shortest_path_len,
+    cfg_fn.cfg_branching_factor_mean,
+    cfg_fn.cfg_branching_factor_max,
+    cfg_fn.cfg_linear_block_fraction,
+    cfg_fn.cfg_dom_tree_height,
+    cfg_fn.cfg_dominance_frontier_size_mean,
+    cfg_fn.cfg_dominance_frontier_size_max,
+    cfg_fn.cfg_loop_count,
+    cfg_fn.cfg_loop_nesting_depth_max,
+    cfg_fn.cfg_bc_betweenness_max,
+    cfg_fn.cfg_bc_betweenness_mean,
+    cfg_fn.cfg_bc_closeness_mean,
+    cfg_fn.cfg_bc_eigenvector_max,
+
+    --------------------------------------------------------------------
+    -- DFG metrics (data-flow topology per function)
+    --------------------------------------------------------------------
+    dfg_fn.dfg_block_count,
+    dfg_fn.dfg_edge_count,
+    dfg_fn.dfg_phi_edge_count,
+    dfg_fn.dfg_symbol_count,
+    dfg_fn.dfg_component_count,
+    dfg_fn.dfg_scc_count,
+    dfg_fn.dfg_has_cycles             AS dfg_has_data_cycles,
+    dfg_fn.dfg_longest_chain_len,
+    dfg_fn.dfg_avg_shortest_path_len,
+    dfg_fn.dfg_avg_in_degree,
+    dfg_fn.dfg_avg_out_degree,
+    dfg_fn.dfg_max_in_degree,
+    dfg_fn.dfg_max_out_degree,
+    dfg_fn.dfg_branchy_block_fraction,
+    dfg_fn.dfg_bc_betweenness_max,
+    dfg_fn.dfg_bc_betweenness_mean,
+    dfg_fn.dfg_bc_eigenvector_max,
+
+    --------------------------------------------------------------------
+    -- Module / subsystem context
+    --------------------------------------------------------------------
+    mp.module_coverage_ratio,
+    mp.import_fan_in        AS module_import_fan_in,
+    mp.import_fan_out       AS module_import_fan_out,
+    mp.in_cycle             AS module_in_import_cycle,
+    mp.cycle_group          AS module_import_cycle_group,
+
+    sm.subsystem_id,
+    ss.name                 AS subsystem_name,
+    ss.risk_level           AS subsystem_risk_level,
+    ss.module_count         AS subsystem_module_count,
+    ss.high_risk_function_count AS subsystem_high_risk_function_count,
+    ss.avg_module_coverage_ratio AS subsystem_avg_module_coverage_ratio
+
+FROM analytics.function_profile AS fp
+
+-- Core call-graph metrics
+LEFT JOIN analytics.graph_metrics_functions AS gmf
+  ON gmf.function_goid_h128 = fp.function_goid_h128
+ AND gmf.repo               = fp.repo
+ AND gmf.commit             = fp.commit
+
+-- Extended call-graph metrics (NetworkX-derived)
+LEFT JOIN analytics.graph_metrics_functions_ext AS gmf_ext
+  ON gmf_ext.function_goid_h128 = fp.function_goid_h128
+ AND gmf_ext.repo               = fp.repo
+ AND gmf_ext.commit             = fp.commit
+
+-- Test-function bipartite + projection metrics
+LEFT JOIN analytics.test_graph_metrics_functions AS tgf
+  ON tgf.function_goid_h128 = fp.function_goid_h128
+ AND tgf.repo               = fp.repo
+ AND tgf.commit             = fp.commit
+
+-- CFG per-function metrics
+LEFT JOIN analytics.cfg_function_metrics AS cfg_fn
+  ON cfg_fn.function_goid_h128 = fp.function_goid_h128
+ AND cfg_fn.repo               = fp.repo
+ AND cfg_fn.commit             = fp.commit
+
+-- DFG per-function metrics
+LEFT JOIN analytics.dfg_function_metrics AS dfg_fn
+  ON dfg_fn.function_goid_h128 = fp.function_goid_h128
+ AND dfg_fn.repo               = fp.repo
+ AND dfg_fn.commit             = fp.commit
+
+-- Module & subsystem context
+LEFT JOIN analytics.module_profile AS mp
+  ON mp.module = fp.module
+ AND mp.repo   = fp.repo
+ AND mp.commit = fp.commit
+
+LEFT JOIN analytics.subsystem_modules AS sm
+  ON sm.module = mp.module
+ AND sm.repo   = mp.repo
+ AND sm.commit = mp.commit
+
+LEFT JOIN analytics.subsystems AS ss
+  ON ss.subsystem_id = sm.subsystem_id
+ AND ss.repo         = sm.repo
+ AND ss.commit       = sm.commit;
+```
+
+This keeps a **single row per function** and uses consistent prefixes (`call_*`, `tests_*`, `cfg_*`, `dfg_*`) so an LLM agent can quickly understand which family a metric belongs to.
+
+---
+
+## 3. Implementation notes
+
+A few small details to watch when you wire this up:
+
+1. **Repo/commit keys**
+   Your analytics tables all use `(function_goid_h128, repo, commit)` or `(module, repo, commit)` as primary keys. Joining on all three avoids cross‑commit collisions if you ever load multiple commits into the same DuckDB instance.
+
+2. **Where to define the view**
+   Put this `CREATE OR REPLACE VIEW` into whatever module currently defines `docs.v_function_architecture` in your docs‑view bootstrap (likely under `docs_export/` or a `schema_docs.sql` that runs at DB init).
+
+3. **Forward‑compatibility**
+   If you later add **per‑block** CFG/DFG metrics views (e.g. `docs.v_cfg_block_metrics`, `docs.v_dfg_block_metrics`), you can keep `docs.v_function_architecture` as your “one row per function” summary and let the agent hop into block‑level detail only when needed.
+
+If you’d like, I can also sketch those block‑level `docs.v_cfg_block_*` / `docs.v_dfg_block_*` views so you have a clean, parallel surface for “zooming in” on a single function’s internal structure.
 
  
 

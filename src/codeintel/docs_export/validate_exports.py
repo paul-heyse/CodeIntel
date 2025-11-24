@@ -22,7 +22,7 @@ from codeintel.services.errors import log_problem, problem
 DEFAULT_SCHEMA_ROOT = Path(__file__).resolve().parent.parent / "config" / "schemas" / "export"
 
 
-def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], jsonschema.RefResolver]:
+def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], Any]:
     path = root / f"{schema_name}.json"
     if not path.is_file():
         message = f"Schema not found: {path}"
@@ -30,7 +30,7 @@ def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], jsonsche
         log_problem(logger=_stderr_logger(), detail=pd)
         raise FileNotFoundError(message)
 
-    store: dict[str, dict[str, Any]] = {}
+    store: dict[str, Any] = {}
     for schema_path in root.glob("*.json"):
         with schema_path.open("r", encoding="utf-8") as f:
             doc = json.load(f)
@@ -40,8 +40,8 @@ def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], jsonsche
 
     with path.open("r", encoding="utf-8") as f:
         schema = json.load(f)
-
-    resolver = jsonschema.RefResolver(
+    resolver_factory: Any = jsonschema.RefResolver
+    resolver = resolver_factory(
         base_uri=root.as_uri().rstrip("/") + "/",
         referrer=schema,
         store=store,

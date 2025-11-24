@@ -53,12 +53,16 @@ def build_backend_resource(  # noqa: PLR0913
     """
     Construct a backend and shared service with unified wiring.
 
+    Prefer supplying a ``StorageGateway`` for local_db mode; ``con`` and manual
+    registry overrides remain for backward compatibility only.
+
     Parameters
     ----------
     cfg:
         Validated serving configuration.
     gateway:
         Optional StorageGateway supplying connection and dataset registry for local_db mode.
+        Preferred over raw ``con``/``registry`` for consistency.
     con:
         Optional DuckDB connection for local_db mode.
     http_client:

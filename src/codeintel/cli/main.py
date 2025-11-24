@@ -10,8 +10,6 @@ import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-import duckdb
-
 from codeintel.config.models import (
     CodeIntelConfig,
     FunctionAnalyticsOverrides,
@@ -24,9 +22,8 @@ from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.mcp.backend import DuckDBBackend
 from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
-from codeintel.services.errors import log_problem, problem
-from codeintel.storage.duckdb_client import DuckDBClient, DuckDBConfig
-from codeintel.storage.views import create_all_views
+from codeintel.services.errors import ExportError, log_problem, problem
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 LOG = logging.getLogger("codeintel.cli")
 CommandHandler = Callable[[argparse.Namespace], int]
@@ -190,6 +187,18 @@ def _make_parser() -> argparse.ArgumentParser:
         help="Export Parquet + JSONL datasets from DuckDB into Document Output/",
     )
     _add_common_repo_args(p_export)
+    p_export.add_argument(
+        "--validate",
+        dest="validate_exports",
+        action="store_true",
+        help="Validate exported datasets against JSON Schema definitions.",
+    )
+    p_export.add_argument(
+        "--schema",
+        dest="schemas",
+        action="append",
+        help="Schema name to validate (can be repeated). Defaults to the standard export set.",
+    )
     p_export.set_defaults(func=_cmd_docs_export)
 
     # -----------------------------------------------------------------------
@@ -243,9 +252,9 @@ def _build_config_from_args(args: argparse.Namespace) -> CodeIntelConfig:
     return CodeIntelConfig.from_cli_args(repo_cfg=repo_cfg, paths_cfg=paths_cfg)
 
 
-def _open_connection(cfg: CodeIntelConfig, *, read_only: bool) -> duckdb.DuckDBPyConnection:
+def _open_gateway(cfg: CodeIntelConfig, *, read_only: bool) -> StorageGateway:
     """
-    Open a DuckDB connection and ensure schemas/views exist for write mode.
+    Open a StorageGateway and ensure schemas/views exist for write mode.
 
     Parameters
     ----------
@@ -256,20 +265,20 @@ def _open_connection(cfg: CodeIntelConfig, *, read_only: bool) -> duckdb.DuckDBP
 
     Returns
     -------
-    duckdb.DuckDBPyConnection
-        Live DuckDB connection.
+    StorageGateway
+        Gateway bound to the configured DuckDB database.
     """
-    client = DuckDBClient(
-        DuckDBConfig(
-            db_path=cfg.paths.db_path,
-            read_only=read_only,
-        )
-    )
     cfg.paths.db_dir.mkdir(parents=True, exist_ok=True)
-    con = client.con
-    if not read_only:
-        create_all_views(con)
-    return con
+    gateway_cfg = StorageConfig(
+        db_path=cfg.paths.db_path,
+        read_only=read_only,
+        apply_schema=not read_only,
+        ensure_views=not read_only,
+        validate_schema=not read_only,
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+    )
+    return open_gateway(gateway_cfg)
 
 
 def _cmd_pipeline_run(args: argparse.Namespace) -> int:
@@ -316,8 +325,8 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
 
 def _cmd_ide_hints(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
-    con = _open_connection(cfg, read_only=True)
-    backend = DuckDBBackend(con=con, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    gateway = _open_gateway(cfg, read_only=True)
+    backend = DuckDBBackend(gateway=gateway, repo=cfg.repo.repo, commit=cfg.repo.commit)
     response = backend.get_file_hints(rel_path=args.rel_path)
     if not response.found or not response.hints:
         LOG.error("No IDE hints found for %s", args.rel_path)
@@ -335,8 +344,8 @@ def _cmd_ide_hints(args: argparse.Namespace) -> int:
 
 def _cmd_subsystem_list(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
-    con = _open_connection(cfg, read_only=True)
-    backend = DuckDBBackend(con=con, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    gateway = _open_gateway(cfg, read_only=True)
+    backend = DuckDBBackend(gateway=gateway, repo=cfg.repo.repo, commit=cfg.repo.commit)
     response = backend.list_subsystems(
         limit=args.limit,
         role=args.role,
@@ -353,8 +362,8 @@ def _cmd_subsystem_list(args: argparse.Namespace) -> int:
 
 def _cmd_subsystem_show(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
-    con = _open_connection(cfg, read_only=True)
-    backend = DuckDBBackend(con=con, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    gateway = _open_gateway(cfg, read_only=True)
+    backend = DuckDBBackend(gateway=gateway, repo=cfg.repo.repo, commit=cfg.repo.commit)
     response = backend.get_subsystem_modules(subsystem_id=args.subsystem_id)
     if not response.found or response.subsystem is None:
         LOG.error("Subsystem not found: %s", args.subsystem_id)
@@ -371,8 +380,8 @@ def _cmd_subsystem_show(args: argparse.Namespace) -> int:
 
 def _cmd_subsystem_modules(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
-    con = _open_connection(cfg, read_only=True)
-    backend = DuckDBBackend(con=con, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    gateway = _open_gateway(cfg, read_only=True)
+    backend = DuckDBBackend(gateway=gateway, repo=cfg.repo.repo, commit=cfg.repo.commit)
     response = backend.get_module_subsystems(module=args.module)
     payload = {
         "found": response.found,
@@ -403,7 +412,8 @@ def _cmd_docs_export(args: argparse.Namespace) -> int:
         If document_output_dir could not be resolved.
     """
     cfg = _build_config_from_args(args)
-    con = _open_connection(cfg, read_only=True)
+    gateway = _open_gateway(cfg, read_only=True)
+    con = gateway.con
 
     out_dir = cfg.paths.document_output_dir
     if out_dir is None:
@@ -412,8 +422,23 @@ def _cmd_docs_export(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     LOG.info("Exporting Parquet + JSONL datasets into %s", out_dir)
-    export_all_parquet(con, out_dir)
-    export_all_jsonl(con, out_dir)
+    schemas = list(args.schemas) if getattr(args, "schemas", None) else None
+    try:
+        export_all_parquet(
+            con,
+            out_dir,
+            validate_exports=bool(getattr(args, "validate_exports", False)),
+            schemas=schemas,
+        )
+        export_all_jsonl(
+            con,
+            out_dir,
+            validate_exports=bool(getattr(args, "validate_exports", False)),
+            schemas=schemas,
+        )
+    except ExportError as exc:
+        log_problem(LOG, exc.problem_detail)
+        return 1
 
     LOG.info("Export complete.")
     return 0

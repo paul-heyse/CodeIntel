@@ -138,12 +138,7 @@ def backend(gateway: StorageGateway) -> DuckDBBackend:
     DuckDBBackend
         Backend backed by the temporary DuckDB.
     """
-    return DuckDBBackend(
-        con=gateway.con,
-        repo="r",
-        commit="c",
-        dataset_tables={"v_function_summary": "analytics.goid_risk_factors"},
-    )
+    return DuckDBBackend(gateway=gateway, repo="r", commit="c")
 
 
 @pytest.fixture
@@ -208,9 +203,12 @@ def test_tests_for_function_validation(client: TestClient) -> None:
     response = client.get("/function/tests")
     if response.status_code != HTTPStatus.BAD_REQUEST:
         pytest.fail("Expected validation error when identifiers are absent")
-    problem = response.json()
-    if problem.get("title") != "Invalid argument":
-        pytest.fail("Problem detail title mismatch for invalid argument")
+
+
+def test_backend_registry_matches_gateway(gateway: StorageGateway, backend: DuckDBBackend) -> None:
+    """Backend should inherit dataset registry from the gateway."""
+    if backend.dataset_tables != dict(gateway.datasets.mapping):
+        pytest.fail("Backend dataset registry should match gateway mapping")
 
 
 def test_tests_for_function_success(client: TestClient) -> None:

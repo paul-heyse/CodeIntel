@@ -31,6 +31,20 @@ from codeintel.mcp.models import (
 from codeintel.server.datasets import build_dataset_registry
 
 RowDict = dict[str, object]
+DOCS_VIEW_QUERIES: dict[str, str] = {
+    "docs.v_function_summary": "SELECT * FROM docs.v_function_summary",
+    "docs.v_call_graph_enriched": "SELECT * FROM docs.v_call_graph_enriched",
+    "docs.v_function_architecture": "SELECT * FROM docs.v_function_architecture",
+    "docs.v_module_architecture": "SELECT * FROM docs.v_module_architecture",
+    "docs.v_subsystem_summary": "SELECT * FROM docs.v_subsystem_summary",
+    "docs.v_module_with_subsystem": "SELECT * FROM docs.v_module_with_subsystem",
+    "docs.v_ide_hints": "SELECT * FROM docs.v_ide_hints",
+    "docs.v_test_to_function": "SELECT * FROM docs.v_test_to_function",
+    "docs.v_file_summary": "SELECT * FROM docs.v_file_summary",
+    "docs.v_function_profile": "SELECT * FROM docs.v_function_profile",
+    "docs.v_file_profile": "SELECT * FROM docs.v_file_profile",
+    "docs.v_module_profile": "SELECT * FROM docs.v_module_profile",
+}
 
 
 @dataclass(frozen=True)
@@ -1144,7 +1158,12 @@ class DuckDBQueryService:
                 meta=meta,
             )
 
-        relation = self.con.table(table).limit(limit_clamp.applied, offset_clamp.applied)
+        relation: duckdb.DuckDBPyRelation
+        if table in DOCS_VIEW_QUERIES:
+            relation = self.con.sql(DOCS_VIEW_QUERIES[table])
+        else:
+            relation = self.con.table(table)
+        relation = relation.limit(limit_clamp.applied, offset_clamp.applied)
         rows = relation.fetchall()
         cols = [desc[0] for desc in relation.description]
         mapped = [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]

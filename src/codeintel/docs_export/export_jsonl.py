@@ -11,6 +11,9 @@ from typing import cast
 
 import duckdb
 
+from codeintel.docs_export.validate_exports import validate_files
+from codeintel.services.errors import ExportError, problem
+
 log = logging.getLogger(__name__)
 
 
@@ -136,11 +139,20 @@ def export_all_jsonl(
         DuckDB connection seeded with CodeIntel schemas.
     document_output_dir : Path
         Target directory where JSONL artifacts are written.
+    validate_exports : bool
+        Whether to validate selected datasets against JSON Schemas after export.
+    schemas : list[str] | None
+        Optional subset of schema names to validate; defaults to the standard export set.
 
     Returns
     -------
     list[Path]
         Paths to every JSON/JSONL file written, including the manifest.
+
+    Raises
+    ------
+    ExportError
+        If validation fails for any selected schema.
     """
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
@@ -176,9 +188,6 @@ def export_all_jsonl(
     written.append(index_path)
 
     if validate_exports:
-        from codeintel.docs_export.validate_exports import validate_files
-        from codeintel.services.errors import ExportError, problem
-
         schema_list = schemas or [
             "function_profile",
             "file_profile",
