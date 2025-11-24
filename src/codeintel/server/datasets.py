@@ -1,11 +1,16 @@
-"""Dataset registry helpers shared by FastAPI and MCP backends."""
+"""Dataset registry helpers shared by server and MCP backends."""
 
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+import duckdb
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
+
+if TYPE_CHECKING:
+    from codeintel.mcp.query_service import BackendLimits
 
 DOCS_VIEWS = {
     "v_function_summary": "docs.v_function_summary",
@@ -24,12 +29,7 @@ DOCS_VIEWS = {
 
 def _dataset_name(table_key: str) -> str:
     """
-    Derive a stable dataset name from a fully qualified table key.
-
-    Examples
-    --------
-    "core.ast_nodes" -> "ast_nodes"
-    "analytics.function_metrics" -> "function_metrics"
+    Derive dataset name from a fully qualified table key.
 
     Returns
     -------
@@ -47,17 +47,12 @@ def build_dataset_registry(
     *, include_docs_views: Literal["include", "exclude"] = "include"
 ) -> dict[str, str]:
     """
-    Build a deterministic dataset registry from the DuckDB schema registry.
-
-    Parameters
-    ----------
-    include_docs_views:
-        When set to ``"include"``, include docs.* views in addition to base tables.
+    Build deterministic dataset registry.
 
     Returns
     -------
     dict[str, str]
-        Mapping from dataset name to fully qualified table/view name.
+        Mapping of dataset name to fully qualified table/view name.
     """
     registry: OrderedDict[str, str] = OrderedDict()
     for table_key in sorted(TABLE_SCHEMAS):
@@ -71,16 +66,34 @@ def build_dataset_registry(
     return dict(registry)
 
 
-def describe_dataset(name: str, table: str) -> str:
+def build_registry_and_limits(
+    cfg: object, *, include_docs_views: Literal["include", "exclude"] = "include"
+) -> tuple[dict[str, str], BackendLimits]:
     """
-    Produce a human-friendly description for a dataset/table.
+    Return a dataset registry and backend limits derived from configuration.
 
     Parameters
     ----------
-    name:
-        Registry name for the dataset (ignored when schema metadata exists).
-    table:
-        Fully qualified table or view name.
+    cfg:
+        Configuration object exposing default_limit and max_rows_per_call.
+    include_docs_views:
+        Whether to include docs views in the registry.
+
+    Returns
+    -------
+    tuple[dict[str, str], BackendLimits]
+        Registry mapping and backend limits built from the configuration.
+    """
+    from codeintel.mcp.query_service import BackendLimits  # Local import to avoid circular deps.
+
+    registry = build_dataset_registry(include_docs_views=include_docs_views)
+    limits = BackendLimits.from_config(cfg)
+    return registry, limits
+
+
+def describe_dataset(name: str, table: str) -> str:
+    """
+    Produce a human-friendly description for a dataset/table.
 
     Returns
     -------
@@ -93,3 +106,68 @@ def describe_dataset(name: str, table: str) -> str:
     column_names = ", ".join(col.name for col in schema.columns[:PREVIEW_COLUMN_COUNT])
     extra = "" if len(schema.columns) <= PREVIEW_COLUMN_COUNT else "..."
     return f"{name}: {table} ({column_names}{extra})"
+
+
+def validate_dataset_registry(
+    con: duckdb.DuckDBPyConnection, dataset_tables: dict[str, str]
+) -> None:
+    """
+    Validate that registered datasets exist and match expected schemas.
+
+    Raises
+    ------
+    ValueError
+        When required tables/views are missing or mismatched.
+    """
+    missing: list[str] = []
+    mismatched: list[str] = []
+
+    for dataset_name, table in sorted(dataset_tables.items()):
+        if "." not in table:
+            missing.append(f"{dataset_name} ({table})")
+            continue
+        schema_name, table_name = table.split(".", maxsplit=1)
+        exists = con.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = ? AND table_name = ?
+            LIMIT 1
+            """,
+            [schema_name, table_name],
+        ).fetchone()
+        if exists is None:
+            missing.append(f"{dataset_name} ({table})")
+            continue
+
+        expected_schema = TABLE_SCHEMAS.get(table)
+        if expected_schema is None:
+            continue
+
+        rows = con.execute(
+            """
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            ORDER BY ordinal_position
+            """,
+            [schema_name, table_name],
+        ).fetchall()
+        actual = [
+            (str(col_name).lower(), str(col_type).upper(), str(nullable).upper() == "YES")
+            for col_name, col_type, nullable in rows
+        ]
+        expected = [
+            (col.name.lower(), col.type.upper(), col.nullable) for col in expected_schema.columns
+        ]
+        if actual != expected:
+            mismatched.append(table)
+
+    if missing or mismatched:
+        parts: list[str] = []
+        if missing:
+            parts.append(f"missing tables/views: {', '.join(missing)}")
+        if mismatched:
+            parts.append(f"schema mismatches: {', '.join(mismatched)}")
+        message = "Dataset registry validation failed; " + " | ".join(parts)
+        raise ValueError(message)

@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: CodeIntel Problem Details
+  version: "0.1.0"
+components:
+  schemas:
+    ProblemDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        detail:
+          type: string
+        status:
+          type: integer
+        instance:
+          type: string
+        code:
+          type: string
+        extras:
+          type: object
+      required:
+        - type
+        - title
+        - detail
+        - instance

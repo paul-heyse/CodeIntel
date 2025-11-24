@@ -20,6 +20,7 @@ import networkx as nx
 
 from codeintel.config.models import GraphMetricsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
+from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 
@@ -52,12 +53,20 @@ class ComponentMetadata:
     layer: dict[Any, int]
 
 
-def compute_graph_metrics(con: duckdb.DuckDBPyConnection, cfg: GraphMetricsConfig) -> None:
+def compute_graph_metrics(
+    con: duckdb.DuckDBPyConnection,
+    cfg: GraphMetricsConfig,
+    *,
+    catalog_provider: FunctionCatalogProvider | None = None,
+) -> None:
     """Populate analytics graph metrics tables for the provided repo/commit."""
     ensure_schema(con, "analytics.graph_metrics_functions")
     ensure_schema(con, "analytics.graph_metrics_modules")
     _compute_function_graph_metrics(con, cfg)
-    _compute_module_graph_metrics(con, cfg)
+    module_by_path = None
+    if catalog_provider is not None:
+        module_by_path = catalog_provider.catalog().module_by_path
+    _compute_module_graph_metrics(con, cfg, module_by_path=module_by_path)
 
 
 def _normalize_goid(raw: object) -> int:
@@ -262,27 +271,40 @@ def _load_import_edges(
 
 def _load_symbol_module_edges(
     con: duckdb.DuckDBPyConnection,
+    module_by_path: dict[str, str] | None,
 ) -> tuple[set[str], dict[str, set[str]], dict[str, set[str]]]:
     modules: set[str] = set()
     inbound: dict[str, set[str]] = defaultdict(set)
     outbound: dict[str, set[str]] = defaultdict(set)
 
-    rows = con.execute(
-        """
-        SELECT m_use.module, m_def.module
-        FROM graph.symbol_use_edges su
-        LEFT JOIN core.modules m_def ON m_def.path = su.def_path
-        LEFT JOIN core.modules m_use ON m_use.path = su.use_path
-        WHERE m_def.module IS NOT NULL AND m_use.module IS NOT NULL
-        """
-    ).fetchall()
+    if module_by_path is None:
+        rows = con.execute(
+            """
+            SELECT m_use.module, m_def.module
+            FROM graph.symbol_use_edges su
+            LEFT JOIN core.modules m_def ON m_def.path = su.def_path
+            LEFT JOIN core.modules m_use ON m_use.path = su.use_path
+            WHERE m_def.module IS NOT NULL AND m_use.module IS NOT NULL
+            """
+        ).fetchall()
 
-    for use_module, def_module in rows:
-        src = str(use_module)
-        dst = str(def_module)
-        modules.update((src, dst))
-        outbound[src].add(dst)
-        inbound[dst].add(src)
+        for use_module, def_module in rows:
+            src = str(use_module)
+            dst = str(def_module)
+            modules.update((src, dst))
+            outbound[src].add(dst)
+            inbound[dst].add(src)
+        return modules, inbound, outbound
+
+    path_rows = con.execute("SELECT def_path, use_path FROM graph.symbol_use_edges").fetchall()
+    for def_path, use_path in path_rows:
+        def_module = module_by_path.get(str(def_path))
+        use_module = module_by_path.get(str(use_path))
+        if def_module is None or use_module is None:
+            continue
+        modules.update((use_module, def_module))
+        outbound[use_module].add(def_module)
+        inbound[def_module].add(use_module)
 
     return modules, inbound, outbound
 
@@ -305,9 +327,13 @@ def _summarize_import_edges(edge_counts: dict[tuple[str, str], int]) -> ImportNe
     )
 
 
-def _compute_module_graph_metrics(con: duckdb.DuckDBPyConnection, cfg: GraphMetricsConfig) -> None:
+def _compute_module_graph_metrics(
+    con: duckdb.DuckDBPyConnection,
+    cfg: GraphMetricsConfig,
+    module_by_path: dict[str, str] | None,
+) -> None:
     import_modules, import_edges = _load_import_edges(con, cfg.repo, cfg.commit)
-    symbol_modules, symbol_inbound, symbol_outbound = _load_symbol_module_edges(con)
+    symbol_modules, symbol_inbound, symbol_outbound = _load_symbol_module_edges(con, module_by_path)
     modules = import_modules | symbol_modules
 
     graph = nx.DiGraph()

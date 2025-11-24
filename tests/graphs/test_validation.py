@@ -5,11 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Final
 
-import duckdb
 from _pytest.logging import LogCaptureFixture
 
 from codeintel.graphs.validation import run_graph_validations
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import open_memory_gateway
 
 
 def test_run_graph_validations_emits_warnings(caplog: LogCaptureFixture) -> None:
@@ -21,8 +20,7 @@ def test_run_graph_validations_emits_warnings(caplog: LogCaptureFixture) -> None
     AssertionError
         If expected warning text is absent.
     """
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    con = open_memory_gateway().con
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
 

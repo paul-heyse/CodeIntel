@@ -5,11 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
-
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import StorageConfig, open_gateway
 
 
 def test_graph_validation_export(tmp_path: Path) -> None:
@@ -22,21 +20,22 @@ def test_graph_validation_export(tmp_path: Path) -> None:
         If expected export artifacts or content are missing.
     """
     db_path = tmp_path / "db.duckdb"
-    con = duckdb.connect(str(db_path))
-    apply_all_schemas(con)
-
+    gateway = open_gateway(
+        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=False, validate_schema=True)
+    )
+    con = gateway.con
     con.execute(
         """
-        CREATE TABLE analytics.graph_validation (
-            repo VARCHAR,
-            commit VARCHAR,
-            check_name VARCHAR,
-            severity VARCHAR,
-            path VARCHAR,
-            detail VARCHAR,
-            context JSON,
+        CREATE TABLE IF NOT EXISTS analytics.graph_validation (
+            repo TEXT,
+            commit TEXT,
+            issue TEXT,
+            severity TEXT,
+            rel_path TEXT,
+            detail TEXT,
+            metadata JSON,
             created_at TIMESTAMP
-        )
+        );
         """
     )
     con.execute(

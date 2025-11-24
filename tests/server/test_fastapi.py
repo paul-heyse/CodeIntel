@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
 
-import duckdb
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -14,83 +14,110 @@ from fastapi.testclient import TestClient
 from codeintel.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
 from codeintel.mcp.config import McpServerConfig
 from codeintel.server.fastapi import ApiAppConfig, BackendResource, create_app
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.views import create_all_views
+
+
+def _seed_api_data(gateway: StorageGateway) -> None:
+    """
+    Populate minimal rows required for API tests.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing the DuckDB connection.
+    """
+    now = datetime.now(tz=UTC)
+    con = gateway.con
+    con.execute(
+        """
+        INSERT INTO analytics.goid_risk_factors (
+            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
+            coverage_ratio, risk_score, risk_level, tags, owners, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1.0, 0.1, 'low', '[]', '[]', ?)
+        """,
+        [1, "urn:foo", "r", "c", "foo.py", "python", "function", "foo", now],
+    )
+    con.execute(
+        """
+        INSERT INTO analytics.function_metrics (
+            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [1, "urn:foo", "r", "c", "foo.py", "python", "function", "foo", now],
+    )
+    con.execute(
+        """
+        INSERT INTO analytics.test_catalog (
+            test_id, test_goid_h128, urn, repo, commit, rel_path, qualname, kind, status,
+            duration_ms, markers, parametrized, flaky, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'passed', 10, '[]', FALSE, FALSE, ?)
+        """,
+        [
+            "t1",
+            2,
+            "urn:test",
+            "r",
+            "c",
+            "tests/test_sample.py",
+            "tests.test_sample.test_case",
+            "function",
+            now,
+        ],
+    )
+    con.execute(
+        """
+        INSERT INTO analytics.test_coverage_edges (
+            test_id, test_goid_h128, function_goid_h128, urn, repo, commit, rel_path,
+            qualname, covered_lines, executable_lines, coverage_ratio, last_status,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1.0, 'passed', ?)
+        """,
+        ["t1", 2, 1, "urn:foo", "r", "c", "foo.py", "foo", now],
+    )
+    create_all_views(con)
 
 
 @pytest.fixture
-def db_path(tmp_path: Path) -> Path:
+def gateway(tmp_path: Path) -> Iterator[StorageGateway]:
     """
-    Provide a temporary DuckDB file path.
-
-    Returns
-    -------
-    Path
-        Filesystem path for the temporary database.
-    """
-    return tmp_path / "codeintel.duckdb"
-
-
-@pytest.fixture
-def con(db_path: Path) -> Iterator[duckdb.DuckDBPyConnection]:
-    """
-    Create an in-memory DuckDB with minimal tables for API tests.
+    Create a temporary DuckDB gateway with schemas and views applied.
 
     Yields
     ------
-    duckdb.DuckDBPyConnection
-        Seeded connection that is cleaned up after each test.
+    StorageGateway
+        Gateway bound to a temporary DuckDB database.
     """
-    connection = duckdb.connect(str(db_path))
-    connection.execute("CREATE SCHEMA IF NOT EXISTS docs;")
-    connection.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
-    connection.execute(
-        """
-        CREATE TABLE docs.v_function_summary (
-            repo TEXT,
-            commit TEXT,
-            rel_path TEXT,
-            qualname TEXT,
-            urn TEXT,
-            function_goid_h128 DECIMAL(38,0)
-        );
-        """
+    db_path = tmp_path / "codeintel.duckdb"
+    config = StorageConfig(
+        db_path=db_path,
+        read_only=False,
+        apply_schema=True,
+        ensure_views=True,
+        validate_schema=True,
     )
-    connection.execute(
-        """
-        INSERT INTO docs.v_function_summary VALUES
-        ('r', 'c', 'foo.py', 'foo', 'urn:foo', 1);
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE docs.v_test_to_function (
-            repo TEXT,
-            commit TEXT,
-            test_id TEXT,
-            function_goid_h128 DECIMAL(38,0)
-        );
-        """
-    )
-    connection.execute(
-        """
-        INSERT INTO docs.v_test_to_function VALUES
-        ('r', 'c', 't1', 1);
-        """
-    )
-
-    yield connection
-    connection.close()
+    gw = open_gateway(config)
+    _seed_api_data(gw)
+    yield gw
+    gw.close()
 
 
 @pytest.fixture
-def api_config(db_path: Path) -> ApiAppConfig:
+def api_config(gateway: StorageGateway) -> ApiAppConfig:
     """
-    Build an ApiAppConfig pinned to the temporary DuckDB.
+    Build an ApiAppConfig pinned to the gateway database.
 
     Returns
     -------
     ApiAppConfig
         Application configuration for the test app.
     """
+    db_path = gateway.config.db_path
     server_cfg = McpServerConfig(
         mode="local_db",
         repo_root=db_path.parent,
@@ -102,9 +129,9 @@ def api_config(db_path: Path) -> ApiAppConfig:
 
 
 @pytest.fixture
-def backend(con: duckdb.DuckDBPyConnection) -> DuckDBBackend:
+def backend(gateway: StorageGateway) -> DuckDBBackend:
     """
-    Provide a DuckDBBackend bound to the seeded connection.
+    Provide a DuckDBBackend bound to the seeded gateway.
 
     Returns
     -------
@@ -112,10 +139,10 @@ def backend(con: duckdb.DuckDBPyConnection) -> DuckDBBackend:
         Backend backed by the temporary DuckDB.
     """
     return DuckDBBackend(
-        con=con,
+        con=gateway.con,
         repo="r",
         commit="c",
-        dataset_tables={"v_function_summary": "docs.v_function_summary"},
+        dataset_tables={"v_function_summary": "analytics.goid_risk_factors"},
     )
 
 

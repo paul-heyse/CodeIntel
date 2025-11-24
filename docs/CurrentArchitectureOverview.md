@@ -1,1862 +1,1983 @@
-At a high level, everything under `src/codeintel` is one big pipeline that:
+Here’s a narrative of the **`src/codeintel` architecture** as it looks now, tying it back to the `.jsonl` / `.parquet` artifacts in your Document Output.
 
-1. Scans a repo snapshot.
-2. Ingests code / tests / config / coverage into DuckDB tables.
-3. Builds graphs (GOIDs, call graph, import graph, CFG/DFG, symbol uses).
-4. Derives analytics (complexity, hotspots, typedness, coverage, risk factors).
-5. Exports those tables as JSONL/Parquet (the files you’ve attached).
-6. Exposes them via CLI, a FastAPI server, and MCP tools.
+I’ll walk it as:
 
-I’ll walk through the architecture package‑by‑package, and then map that to the concrete `*.jsonl` / `*.json` you see in the project.
-
----
-
-## 1. Top‑level layout
-
-Under `src/codeintel/codeintel` you have:
-
-* `cli/` – command‑line entrypoint & arg parsing.
-* `config/` – Pydantic config models + DuckDB schema registry.
-* `storage/` – DuckDB connection, schema creation, and docs.* views.
-* `models/` – typed “row” models that mirror the DuckDB tables & JSONL shapes.
-* `utils/` – path normalization helpers.
-* `ingestion/` – all the raw data ingestion (AST/CST, coverage, typing, config, tests, etc.).
-* `graphs/` – GOIDs + call graph, import graph, CFG/DFG, symbol uses, validations.
-* `analytics/` – complexity/hotspots, per‑function metrics, coverage analytics, risk factors.
-* `docs_export/` – export tables to JSONL / Parquet into “Document Output”.
-* `orchestration/` – pipeline orchestration (plain Python + Prefect 3 flow + step graph).
-* `server/` – FastAPI server serving docs.* views via SQL templates.
-* `mcp/` – Model Context Protocol server/tools for querying CodeIntel datasets.
-* `stubs/` – type-checking stubs.
-* `types.py` – shared TypedDicts/protocols for tool outputs (pytest, pyrefly, SCIP, etc.).
-* `__init__.py` – just a package docstring.
-
-Everything is glued together by DuckDB: ingestion and graph builders insert into DuckDB tables; analytics read from those; docs_export and server query from them.
+1. Big‑picture dataflow
+2. Core storage + IDs
+3. Ingestion & indexing layer
+4. Graph construction layer
+5. Analytics & “architecture understanding”
+6. Export & serving
+7. How each `src/codeintel` subpackage fits
 
 ---
 
-## 2. Configuration & schemas (`config/`)
+## 1. Big‑picture mental model
 
-### `config/models.py`
+At a high level, `codeintel` is a **pipeline that turns a repo at `<repo, commit>` into a knowledge graph of the codebase** stored in DuckDB, then exported as Parquet/JSONL for LLMs and tools. 
 
-Defines Pydantic models used everywhere:
+The main phases are:
 
-* **RepoConfig**
-  Canonical identity of a run: repo name, commit, etc. These fields are embedded into GOIDs and most exported rows (`repo`, `commit` in JSONL like `goids.jsonl`, `coverage_lines.jsonl`, etc.).
+1. **Scan & index** the repo (AST, CST, config, SCIP, coverage, tests).
+2. **Assign canonical IDs (GOIDs)** to all entities and crosswalk them to every evidence source. 
+3. **Build graphs**: call graph, control‑flow graph (CFG), data‑flow graph (DFG), import graph, SCIP symbol‑use graph.
+4. **Run analytics**: metrics, typedness, coverage, test impact, config usage, risk scores, architecture metrics, subsystems, and the function/file/module profiles that aggregate all of this.
+5. **Export** everything to `Document Output/` as Parquet + JSONL via the `docs_export` layer and `generate_documents.sh`.
 
-* **PathsConfig**
-  “Filesystem contract” for a single run. Docstring explicitly assumes a layout like:
+The CLI + orchestration code wires these phases together into single commands like `enrich_pipeline all` or focused analytics commands such as `coverage-detailed`, `risk-factors`, `test-analytics`, etc.
+
+---
+
+## 2. Core storage & identifiers
+
+Everything revolves around **DuckDB** and **GOIDs**.
+
+### 2.1 GOID registry (`core.goids`)
+
+* Built by `CodeIntel.enrich.goid_builder.GOIDBuilder`, which walks the AST index and assigns each entity (module, function, method, class, CFG block) a **128‑bit hash ID** (`goid_h128`). 
+* GOID encodes: repo, commit, language, relative path, entity kind, normalized qualname, and span.
+* This ID is the foreign key used across call graphs, CFG/DFG, coverage, tests, analytics, etc.
+
+### 2.2 GOID crosswalk (`core.goid_crosswalk`)
+
+* A “join hub” mapping a GOID URN back to all the **evidence sources** that mentioned that thing: AST path + line range, module path, SCIP symbol, CST node ID, chunk ID used for embeddings, etc. 
+
+* This is what lets you go:
+
+  > “Given a SCIP symbol / CST node / coverage line / chunk ID, which function GOID is this?”
+
+* In particular, `scip_symbol` is filled when SCIP ingestion correlates SCIP definitions to GOID spans; that’s what links symbol‑use edges back to concrete functions.
+
+### 2.3 Storage schema
+
+Although the schema definitions live in the `storage/` package, the README reflects how they’re organized:
+
+* **`core.*`** – entity registries and crosswalks (`goids`, `goid_crosswalk`, `modules`, `repo_map`, etc.).
+* **`graph.*`** – structural graphs (call graph, CFG/DFG, import graph, SCIP symbol uses).
+* **`analytics.*`** – metrics, coverage, risk, tests, hotspots, graph metrics, subsystems, config, static diagnostics.
+* **`docs.*`** – higher‑level views and denormalized profiles used directly by LLMs and UIs (e.g., `docs.v_function_architecture`, `docs.v_module_architecture`, subsystem summaries, function/file/module profiles).
+
+---
+
+## 3. Ingestion & indexing layer
+
+This layer lives mostly in **`ingestion/`, `services/`, and `enrich`** modules and produces the low‑level artifacts.
+
+### 3.1 Repo scan & module registry
+
+* `CodeIntel.services.enrich.scan` walks the repo and produces:
+
+  * `repo_map.json` – repo ID, commit, module→path map, overlay configuration.
+  * `modules.jsonl` – one row per module with tags/owners metadata.
+
+* These feed import graph construction, module‑level analytics, and architecture views.
+
+### 3.2 AST extraction & AST metrics
+
+* `CodeIntel.enrich.ast_indexer.AstIndexer` parses every Python file into LibCST/AST and writes `ast_nodes.*` (one row per node with type, qualname, span, parent, docstring). 
+* `CodeIntel.enrich.analytics.ast_metrics` aggregates that into `ast_metrics.*` (node counts, function/class counts, depth, complexity). 
+
+These AST datasets are prerequisites for GOIDs, call graph, CFG/DFG, hotspots, function metrics, and more.
+
+### 3.3 CST extraction
+
+* `CodeIntel.cst_build.cst_cli` emits `cst_nodes.jsonl`, capturing exact syntax spans, tokens, parent stacks, and text previews. 
+* Future fields (`cst_node_id` in `goid_crosswalk`) are reserved to join GOIDs back to CST with full fidelity.
+
+### 3.4 GOID registry & crosswalk
+
+* `GOIDBuilder` uses `ast_nodes.*` to emit `goids.*` and `goid_crosswalk.*`.
+* Each AST entity becomes:
+
+  * A `goid_h128` row in `core.goids`.
+  * One or more crosswalk rows, giving its file path, module path, AST qualname, span, and placeholders for SCIP/CST/chunk IDs.
+
+This is what lets all later stages be “GOID‑first.”
+
+### 3.5 SCIP index ingestion
+
+* `scip-python` is run against the repo to produce a binary `.scip` index and `index.scip.json`; CodeIntel treats that JSON as the **language‑agnostic symbol graph**. 
+* During ingestion (implemented under `ingestion/scip_*`), CodeIntel:
+
+  * Writes `index.scip.json` to the build directory and Document Output.
+  * Registers it in DuckDB (e.g., a `scip_index_view`).
+  * Walks SCIP documents to align definition locations (file + line) with GOID spans and **updates `core.goid_crosswalk.scip_symbol`**.
+
+That SCIP ↔ GOID bridge is what allows `symbol_use_edges` to be joined back to concrete functions.
+
+### 3.6 Config, static config, and config usage
+
+* A config indexer (under `config/` + `services/enrich`) parses YAML/TOML/JSON/INI/ENV files and normalizes keys, producing `config_values.*`. 
+* Each row says: *this config key* (e.g., `service.database.host`) appears in *this config file* and is referenced by *these code files/modules*.
+
+This gives you a “config dependency graph” that can be joined to modules, call graph, and risk metrics.
+
+### 3.7 Coverage & test ingestion
+
+The CLI entrypoints `coverage-detailed` and `test-analytics` orchestrate coverage + test ingestion.
+
+* **Line coverage** (`coverage_lines.*`): reads Coverage.py DB with dynamic contexts enabled. 
+* **Function coverage** (`coverage_functions.*`): groups coverage lines by GOID spans, giving per‑function coverage ratios.
+* **Test catalog** (`test_catalog.*`): parses pytest JSON report and joins tests to GOIDs when possible.
+* **Test coverage edges** (`test_coverage_edges.*`): bipartite edges linking tests to the functions they executed (with per‑edge coverage ratios).
+
+### 3.8 Static diagnostics & typedness
+
+* **File‑level typedness** (`typedness.jsonl`) comes from `CodeIntel.services.enrich.exports.write_typedness_output`, combining error counts from Pyrefly/Pyright and annotation ratios. 
+* **Static diagnostics** (`static_diagnostics.*`) aggregate type‑checker error counts per file based on `FileTypeSignals`.
+
+These feed into risk scoring and typedness analytics.
+
+---
+
+## 4. Graph construction layer
+
+Once AST, GOIDs, and SCIP are in place, the **graph builders** in the `graphs/` (and related) package construct various graph tables.
+
+### 4.1 Call graph (`graph.call_graph_nodes`, `graph.call_graph_edges`)
+
+* Builder: `CodeIntel.enrich.callgraph.CallGraphBuilder`. 
+
+* Inputs:
+
+  * AST & scope info per file (`collect_python_files`).
+  * Import resolution via `_ImportResolver`.
+  * Optional SCIP signal to improve matches across modules.
+
+* Outputs:
+
+  * **Nodes** keyed by `goid_h128` with callable kind, arity, `is_public`, and file path. 
+  * **Edges** keyed by `(caller, callee, line, column)` with resolution provenance (`resolved_via` = `scip`/`scope`/`heuristic`), confidence score, and `evidence_json` for extra context. 
+
+This is the structural backbone for architecture metrics and impact analysis.
+
+### 4.2 Control‑flow graph (CFG) (`graph.cfg_blocks`, `graph.cfg_edges`)
+
+* Builder: `CodeIntel.enrich.cfg.CFGBuilder`. 
+
+* For each function GOID, it:
+
+  * Splits the function into **basic blocks** on control constructs.
+  * Synthesizes entry/exit blocks.
+  * Assigns each block a `block_idx` and canonical `block_id`.
+
+* Outputs:
+
+  * `cfg_blocks`: per‑block span, label, kind, and degree counts, plus serialized AST of statements.
+  * `cfg_edges`: edges between blocks with `edge_type` (`fallthrough`, `true`, `false`, `loop`, `exception`) and optional guard AST.
+
+### 4.3 Data‑flow graph (DFG) (`graph.dfg_edges`)
+
+* Same builder (`CFGBuilder`) does a def‑use walk over each function, creating intra‑procedural data‑flow edges: **definitions to uses**, optionally via phi‑like merges. 
+* Each edge: `(function_goid_h128, src_block_idx, dst_block_idx, src_symbol, dst_symbol, via_phi, use_kind)`. 
+
+### 4.4 Import graph (`graph.import_graph_edges`)
+
+* Built from LibCST import metadata via `CodeIntel.enrich.graph.io.write_import_edges`.
+* Edges:
+
+  * `src_module` → `dst_module` with `src_fan_out`, `dst_fan_in`, and SCC `cycle_group`. 
+
+This becomes the **module‑level architecture** graph.
+
+### 4.5 SCIP symbol‑use graph (`graph.symbol_use_edges`)
+
+* Builder: `CodeIntel.uses_builder.build_use_graph`, using `index.scip.json` as the source of definitions and references.
+* Each edge row says: symbol S defined in `def_path` is used in `use_path`, with flags `same_file` and `same_module`. 
+* Combined with `goid_crosswalk.scip_symbol`, this gives you **def→use relationships tied back to concrete functions and modules**.
+
+---
+
+## 5. Analytics & architecture understanding
+
+This layer lives mainly in **`analytics/` and `services/analytics`**, and it’s where the “raw graphs” are turned into something architecture‑aware and risk‑aware.
+
+### 5.1 AST‑derived analytics
+
+* `ast_metrics.*` – per‑file node counts, class/function counts, depth, complexity. 
+* `hotspots.jsonl` – git‑churn + AST‑complexity based “hot” files. 
+
+These feed into risk and file/module profiles.
+
+### 5.2 Typedness & type analytics
+
+* File‑level `typedness.*` and per‑function `function_types.*` capture parameter and return annotation coverage, typedness buckets, and return types.
+
+Used by risk factors and profiles to flag untyped areas.
+
+### 5.3 Function metrics
+
+* `function_metrics.*` computes per‑function LOC, complexity, nesting depth, counts of returns/raises/yields, docstring presence, etc. 
+
+This is both a direct signal (“which functions are structurally complex?”) and an input to risk scoring and architecture clustering.
+
+### 5.4 Coverage + tests analytics
+
+* `coverage_functions.*` is the canonical per‑function coverage view.
+* `test_catalog.*` + `test_coverage_edges.*` let you traverse from tests to functions, including how much of a function each test covers.
+
+These are the dynamic‑behavior side of the architecture picture.
+
+### 5.5 Config & static diagnostics
+
+* `config_values.*` expose per‑key config usage and reference counts across modules. 
+* `static_diagnostics.*` holds aggregated type‑checker error counts per file.
+
+These are used as risk inputs and for “blast radius” queries.
+
+### 5.6 Graph metrics & subsystems (new architecture datasets)
+
+From the README “New architecture datasets”: 
+
+* **Graph metrics** (`graph_metrics_functions.*`, `graph_metrics_modules.*`):
+
+  * Compute graph‑theoretic features over **call and import graphs**: fan‑in/fan‑out, degree counts, PageRank/centralities, cycle membership, layering, symbol coupling, etc.
+  * Stored under `analytics.*` and exposed via `docs.v_function_architecture` and `docs.v_module_architecture`.
+
+* **Subsystems** (`subsystems.*`, `subsystem_modules.*`):
+
+  * Cluster modules into **subsystems** based on imports/usage and overlay them with risk and coverage rollups.
+  * Exposed via `docs.v_subsystem_summary` and `docs.v_module_with_subsystem`.
+
+These are the main “architecture‑aware” features of the new code: they turn raw graphs into **higher‑level components and dependency structure**, summarized for LLM consumption.
+
+### 5.7 Risk factors
+
+* `goid_risk_factors.*` aggregates per‑function risk signals from:
+
+  * function metrics & types
+  * coverage & tests
+  * hotspots & typedness
+  * static diagnostics
+
+  via the `risk-factors` analytics CLI.
+
+* Output includes `risk_score` (0–1), `risk_level` (low/medium/high), and tagged components.
+
+### 5.8 Profiles (function / file / module)
+
+These are built by `analytics/profiles.*` and orchestrated by `ProfilesStep` in `orchestration/steps.py`.
+
+* **`function_profile.*`**:
+
+  * Denormalized per‑function record: metrics, typedness, coverage, tests, call graph fan‑in/out, risk scores, docstrings, tags/owners. 
+
+* **`file_profile.*`**:
+
+  * Per‑file aggregate over function profiles plus AST metrics, hotspots, typedness, static diagnostics, coverage, and ownership. 
+
+* **`module_profile.*`**:
+
+  * Module‑level view aggregating function/file profiles plus import graph fan‑in/out and cycle info.
+
+Together with graph metrics & subsystems, these profiles are the **primary “ready‑to-feed‑to‑LLM” architecture surfaces**.
+
+---
+
+## 6. Export & serving
+
+### 6.1 Docs export & Document Output
+
+* A dedicated `docs_export/` package plus `generate_documents.sh` handle:
+
+  1. Copying Parquet tables out of the DuckDB catalog into `enriched/...`.
+  2. Creating **JSONL mirrors** with `duckdb COPY` for each graph/analytics table.
+
+* The README you attached is effectively the **contract** for those exported datasets: column schema, purpose, and origin module for each.
+
+### 6.2 Server & MCP integration
+
+From the directory layout:
+
+* `server/` exposes the DuckDB database and docs views over an HTTP or RPC API, so UIs and tools can query function profiles, call graphs, architecture metrics, etc.
+* `mcp/` wraps those queries in **Model Context Protocol** endpoints so ChatGPT (or other LLM tools) can fetch code intel on demand.
+* `stubs/` provides type stubs for internal APIs so that static checkers and LSPs can reason about CodeIntel itself.
+
+(These roles are inferred from naming and the dataset contracts, rather than spelled out verbatim in the README.)
+
+---
+
+## 7. How each `src/codeintel` subpackage fits
+
+Based on the dataset origins and naming, this is how the subdirectories you zipped line up with the architecture:
+
+* **`analytics/`**
+  Houses cross‑cutting analytics and aggregations:
+
+  * Graph metrics & subsystem discovery for architecture views. 
+  * Profiles builders (`profiles.build_function_profile`, `build_file_profile`, `build_module_profile`).
+  * Possibly helpers used by risk‑factors and other CLI analytics.
+
+* **`graphs/`**
+  Implementation of graph builders:
+
+  * Call graph (`CallGraphBuilder`) and its IO. 
+  * CFG/DFG logic (`CFGBuilder`).
+  * Import graph writer (`graph.io.write_import_edges`). 
+  * SCIP symbol‑use builder (`uses_builder.build_use_graph`).
+
+* **`ingestion/`**
+  Low‑level ingestion of raw evidence:
+
+  * AST/CST pipelines (wrapping `AstIndexer`, `cst_cli`).
+  * SCIP ingestion and crosswalk updates.
+  * Coverage ingestion (`coverage-detailed`) and config indexing (`index_config_files`, `prepare_config_state`).
+
+* **`services/`**
+  “Domain services” that combine ingestion + storage:
+
+  * `services.enrich.scan`, `services.enrich.analytics.hotspots`, `services.enrich.exports.write_typedness_output`, `services.enrich.function_metrics`, `services.enrich.function_types`, etc.
+  * These typically read core/graph tables and write analytics tables.
+
+* **`cli/`**
+  CLI entrypoints and command groups:
+
+  * `enrich_pipeline all` – full pipeline (AST, GOIDs, graphs, analytics). 
+  * `enrich goids|callgraph|cfg|dfg` – focused structural passes. 
+  * `enrich_analytics coverage-detailed|test-analytics|risk-factors` – analytics passes.
+
+* **`orchestration/`**
+  Pipeline wiring and “steps”:
+
+  * Defines `ProfilesStep` and likely siblings that encapsulate each major stage (scan, goids, graphs, analytics, docs export).
+  * Coordinates shared context (repo, commit, paths, tools) across steps.
+
+* **`docs_export/`**
+
+  * Responsible for exporting DuckDB tables to Parquet/JSONL and defining `docs.*` views like `v_function_architecture`, `v_module_architecture`, `v_subsystem_summary`, and `v_module_with_subsystem`.
+
+* **`config/`**
+
+  * Holds config models for the pipeline (paths, repo identifiers, coverage & test sources, tool locations) and helpers used by CLI/orchestration.
+  * Works together with the config indexer that feeds `config_values.*`. 
+
+* **`storage/`**
+
+  * DuckDB connection management, table schemas (columns, types, PKs, indexes), and generic I/O helpers used across ingestion, graphs, and analytics.
+  * Encapsulates where the metadata DB lives on disk and how it’s opened/closed.
+
+* **`models/`**
+
+  * Typed models / dataclasses for config objects, table rows, and in‑memory representations of AST/graph elements (e.g., GOID descriptors, function profile DTOs).
+
+* **`server/`**
+
+  * HTTP/RPC server exposing docs/analytics views and graph traversals to external tools.
+
+* **`mcp/`**
+
+  * MCP tool shims that call into `server/` or directly into `storage/` + `analytics/` to respond to LLM tool calls.
+
+* **`stubs/`**
+
+  * Type stubs for CodeIntel’s own public API surface or dependencies used in the pipeline.
+
+* **`utils/`**
+
+  * Shared utilities: logging, path handling, subprocess helpers (e.g., running `scip-python`), concurrency helpers, small abstraction glue.
+
+---
+
+## 8. End‑to‑end: what happens on a full run
+
+Putting it all together, a typical **“full architecture export”** looks like:
+
+1. **CLI** (`cli/`) parses flags and builds a configuration object (repo root, commit, build dir, output dir, tool paths).
+
+2. **Orchestration** (`orchestration/`) runs a series of steps:
+
+   * Scan repo (`services.enrich.scan`) → `repo_map`, `modules`.
+   * AST + CST extraction (`AstIndexer`, `cst_cli`) → `ast_nodes`, `ast_metrics`, `cst_nodes`.
+   * GOID registry + crosswalk (`GOIDBuilder`) → `goids`, `goid_crosswalk`.
+   * SCIP ingestion → `index.scip.json` + `goid_crosswalk.scip_symbol`.
+   * Graph builders → call graph, CFG/DFG, import graph, symbol_use_edges.
+   * Analytics & risk steps → typedness, function metrics/types, hotspots, coverage, tests, config, static diagnostics, risk_factors.
+   * Architecture metrics & subsystems → `graph_metrics_*`, `subsystems_*` and docs architecture views. 
+   * Profiles step → `function_profile`, `file_profile`, `module_profile`.
+
+3. **Docs export** (`docs_export/`) copies all relevant tables to Parquet and JSONL in `Document Output/` with exactly the schemas described in `README_METADATA.md`.
+
+4. **Server/MCP** optionally loads that DB and exposes queries into these views to your tools and agents.
+
+---
+
+If you’d like, I can next zoom in on any specific layer (for example, “how subsystems are inferred from graph metrics” or “how the architecture views `docs.v_*` are constructed from the underlying tables”) and spell out that evidence path the way we did for SCIP and call‑graph edges.
+
+
+# subsystem inference from graph metrics #
+
+Subsystems are inferred by taking the **module‑level import graph**, enriching it with **graph metrics and risk data**, and then clustering modules into “architectural neighborhoods”. I’ll walk through what we can see concretely from your metadata, and then how the clustering is likely implemented mechanically.
+
+> One important caveat: I don’t have the actual `subsystems` Python code in front of me, only the exported tables + README. So I’ll describe:
+>
+> * what we know for sure from the exported schemas, and
+> * what the inference pipeline *must* be doing conceptually, based on those schemas and the other graph metrics.
+
+---
+
+## 1. What “subsystems” are in CodeIntel’s data model
+
+From the README:
+
+* **Graph metrics** (`graph_metrics_functions.*`, `graph_metrics_modules.*`) are *graph‑theoretic signals over call and import graphs*—fan‑in/out, degree counts, PageRank/centralities, cycle membership, layers, symbol coupling—stored in `analytics.*` and surfaced via `docs.v_function_architecture` / `docs.v_module_architecture`. 
+* **Subsystems** (`subsystems.*`, `subsystem_modules.*`) are *inferred architectural clusters of modules plus risk rollups, membership, and entrypoint hints*, exposed via `docs.v_subsystem_summary` and `docs.v_module_with_subsystem`. 
+
+So from the outside you have:
+
+* A **module graph** from `import_graph_edges.*` (directed edges, SCC `cycle_group`, fan‑in/out). 
+* **Per‑module analytics** from `module_profile.*` (coverage/risk/import fan‑in/out, cycle membership, tags/owners).
+* **Per‑module graph metrics** from `graph_metrics_modules.*` (centralities, coupling, layers, etc.). 
+* **Subsystem assignments** in `subsystem_modules.*` and subsystem‑level rollups in `subsystems.*`. 
+
+Mechanically, subsystem inference is “just” the pass that uses the first three to produce the last two.
+
+---
+
+## 2. Inputs to the subsystem builder
+
+### 2.1 Import graph edges
+
+`import_graph_edges.*` is the normalized directed module import graph: 
+
+* `src_module`, `dst_module`
+* `src_fan_out`, `dst_fan_in`
+* `cycle_group` (SCC ID)
+
+This gives you the **raw topology** of module dependencies and strongly‑connected components (SCCs), which are a natural starting point for subsystems: in practice, modules in the same import cycle almost always belong to the same architectural “lump”.
+
+### 2.2 Module profiles
+
+`module_profile.*` aggregates function/file metrics and import graph data per module:
+
+* Size / complexity: `file_count`, `total_loc`, `function_count`, `avg_file_complexity`, `max_file_complexity`
+* Risk & coverage: `high_risk_function_count`, `module_coverage_ratio`
+* Import structure: `import_fan_in`, `fan_out`, `cycle_group`, `in_cycle`
+* Ownership: `tags`, `owners`
+
+These give you **attributes** for each node in the module graph.
+
+### 2.3 Module graph metrics
+
+`graph_metrics_modules.*` isn’t fully expanded in the README, but the description is explicit: **fan‑in/out, degree counts, PageRank/centralities, cycle membership, layers, symbol coupling** over the import and call graphs. 
+
+So per module you likely have:
+
+* Degrees: in/out/total degree
+* Centralities: PageRank, maybe betweenness/closeness
+* Structural flags: “leaf module”, “hub”, “bridge”
+* Coupling scores: how tightly it’s connected to neighboring modules, possibly weighted by call frequency or symbol sharing
+
+All of that gives you a **feature vector** per module that describes where it sits in the dependency topology.
+
+### 2.4 Optional extra signals
+
+Based on the other tables, the subsystem builder can also join in:
+
+* **Hotspots** (`hotspots.jsonl` – churn + complexity) per file, rolled up into module_profile.
+* **Risk factors** (`goid_risk_factors.*`), which roll up per‑function risk from coverage/complexity/tests/typedness and are then aggregated per module in `module_profile`.
+* **Tags/owners** (tags_index and modules registry) for boundaries like “api”, “infra”, “ml”, etc.
+
+Those don’t define subsystems, but they’re used when summarizing and ranking them.
+
+---
+
+## 3. Conceptual algorithm: from graph metrics to subsystems
+
+From the metadata, the subsystem pass is doing three conceptual things:
+
+1. **Condense & weight the module graph** using graph metrics.
+2. **Cluster** that graph into cohesive groups (subsystems).
+3. **Summarize** each group with risk/topology/entrypoint info.
+
+I’ll break those down in the order they’d typically be implemented.
+
+### 3.1 Build a weighted module graph
+
+Starting from `import_graph_edges.*`, the builder constructs an in‑memory graph:
+
+* Nodes = modules from `core.modules` / `module_profile.*`
+* Edges = `src_module -> dst_module` from `import_graph_edges.*` with attributes:
+
+  * `weight` (could be 1, or derived from number of imports or call density)
+  * `cycle_group` and maybe “same cycle” flags
+
+Then it augments nodes with graph metrics:
+
+* Join `graph_metrics_modules.*` onto module nodes (centralities, coupling).
+* Join `module_profile.*` (risk, coverage, size, file count, fan‑in/out, tags, owners).
+
+This lets the builder answer questions like:
+
+* “Which modules form tight, highly coupled components?”
+* “Which modules act as shared infrastructure or gateways (high centrality)?”
+* “What’s the risk profile of each module?”
+
+Even without seeing the exact code, we know this enrichment must happen, because the final `subsystems.*` table includes **risk rollups and entrypoint hints**, which can only be computed if the subsystems pass already has those signals.
+
+### 3.2 Pre‑group obvious clusters via cycles and connectivity
+
+Before you run any fancier clustering, the pipeline can exploit structural facts already materialized:
+
+* `cycle_group` on `import_graph_edges.*` and `module_profile.*` gives SCC membership.
+
+A typical pattern here is:
+
+1. Treat each **strongly connected component** (cycle group) as a “proto‑subsystem”.
+2. Optionally **contract** each SCC into a super‑node in a condensed DAG, with edges between SCC super‑nodes representing inter‑subsystem imports.
+3. Work with that condensed graph for higher‑level clustering.
+
+That avoids having a single call to an SCC splitting apart deeply entangled modules, which would not be architecturally honest.
+
+### 3.3 Compute similarity / affinity between modules or SCCs
+
+Given a (possibly condensed) module graph with metrics, the builder needs a notion of “these belong together”. It can derive various **affinity signals** (the exact formula isn’t documented, but the sources are):
+
+* **Import proximity:** “distance” along the import graph, or number of shared neighbors.
+* **Coupling strength:** symbol‑level usage from `symbol_use_edges.*` (shared symbols, same modules), plus call graph fan‑in/fan‑out.
+* **Topological similarity:** similar degrees and centrality values from `graph_metrics_modules.*` (e.g., group together a chain of leaf modules in the same area). 
+* **Shared tags/owners:** two modules both tagged `api` or owned by the same team are more likely to be in the same subsystem.
+
+Mechanically, this usually looks like:
+
+* For each pair of directly linked modules (or SCCs), compute one or more affinity scores:
+
+  * `affinity_import = 1` if the edge is inside a cycle, smaller otherwise.
+  * `affinity_calls = normalized call graph edge count` between them.
+  * `affinity_tags = 1` if they share tags/owners, 0 otherwise.
+* Combine into a single **edge weight** (e.g., weighted sum or product).
+
+The result is a weighted undirected graph (even though imports are directed), where heavier edges mean “these modules probably belong in the same subsystem”.
+
+### 3.4 Cluster the weighted graph into subsystems
+
+The builder then runs some clustering/community detection algorithm over that weighted graph to produce **cluster IDs** (`subsystem_id`) that define:
+
+* A set of modules that are:
+
+  * tightly connected,
+  * mostly reusing each other, and
+  * relatively loosely connected to the rest of the graph.
+
+The README doesn’t say *which* algorithm is used (could be Louvain, Leiden, hierarchical clustering, spectral methods, etc.), so I can’t claim a specific one. But the contract (`subsystems.*` + `subsystem_modules.*`) implies:
+
+* Each module is assigned to **at most one** subsystem, otherwise `subsystem_modules.*` would need multi‑membership semantics.
+* The clustering is **module‑centric**, not function‑centric (the tables and docs views are explicitly module‑level).
+
+When the clustering is done, the pipeline writes:
+
+* `subsystem_modules.*`: rows like
 
   ```text
-  repo_root/
-    src/
-    Document Output/
-    build/
-      db/codeintel.duckdb
+  subsystem_id, module, path, is_entrypoint?, in_cycle?, ...
   ```
 
-* **ToolsConfig**
-  Paths/binaries for external tools: `scip-python`, `pyrefly`, `pyright`, `ruff`, `coverage`, etc. Ingestion modules read this to know what to run.
-
-* **CodeIntelConfig**
-  Top‑level config consumed by the CLI. Bundles `RepoConfig`, `PathsConfig`, `ToolsConfig`, and per‑step configs.
-
-* **Per‑step configs** – one model per pipeline stage, for example:
-
-  * `RepoScanConfig`
-  * `CoverageIngestConfig`
-  * `TypingIngestConfig`
-  * `DocstringsIngestConfig`
-  * `ConfigIngestConfig`
-  * `GoidBuilderConfig`, `CallGraphConfig`, `CFGBuilderConfig`, `ImportGraphConfig`, `SymbolUsesConfig`
-  * `HotspotsConfig`, `CoverageAnalyticsConfig`, `FunctionAnalyticsConfig`, `TestCoverageConfig`, etc.
-
-These config types are what you see being passed into ingestion functions and steps, and they encode time‑invariant assumptions about repo layout and tools.
-
-### `config/schemas/tables.py`
-
-This is the central **DuckDB schema registry**. It uses three helper classes:
-
-* `Column` – name, type, `nullable` flag.
-* `TableSchema` – table name, schema, columns, indexes.
-* `Index` – secondary index definitions.
-
-Then it defines a mapping from **fully qualified table names** to `TableSchema`, e.g.:
-
-* `core.ast_nodes`
-
-* `core.cst_nodes`
-
-* `core.docstrings`
-
-* `core.goids`
-
-* `core.goid_crosswalk`
-
-* `core.modules`
-
-* `core.repo_map`
-
-* `core.ast_metrics`
-
-* `analytics.config_values`
-
-* `analytics.coverage_functions`
-
-* `analytics.coverage_lines`
-
-* `analytics.function_metrics`
-
-* `analytics.function_types`
-
-* `analytics.goid_risk_factors`
-
-* `analytics.hotspots`
-
-* `analytics.static_diagnostics`
-
-* `analytics.tags_index`
-
-* `analytics.test_catalog`
-
-* `analytics.test_coverage_edges`
-
-* `analytics.typedness`
-
-* `graph.call_graph_edges`
-
-* `graph.call_graph_nodes`
-
-* `graph.cfg_blocks`
-
-* `graph.cfg_edges`
-
-* `graph.dfg_edges`
-
-* `graph.import_graph_edges`
-
-* `graph.symbol_use_edges`
-
-These match your JSONL/JSON artifacts almost one‑to‑one (I’ll map them explicitly in §7).
-
-### `config/schemas/ingestion_sql.py`
-
-Holds **column orders** used during ingestion, e.g.:
-
-* `AST_NODES_COLUMNS = ["path", "node_type", "name", ...]`
-* `COVERAGE_LINES_COLUMNS = ["repo", "commit", "rel_path", "line", ...]`
-* `TEST_CATALOG_COLUMNS`, etc.
-
-These arrays are used with the row helpers in `models/rows.py` so that `INSERT` column order stays consistent with the DuckDB schema and JSONL exports.
-
-### `config/schemas/sql_builder.py`
-
-Utility functions for DDL and prepared statements:
-
-* `prepared_statements(table_key)` – given `"analytics.coverage_lines"`, returns pre‑built `INSERT` and optional `DELETE` SQL.
-* `ensure_schema(con, table_key)` – compares a live DuckDB table with the registered `TableSchema` and raises if there’s drift.
+* which are then joined into `docs.v_module_with_subsystem`.
 
 ---
 
-## 3. Storage & row models
+## 4. Subsystem summarization: building `subsystems.*`
 
-### `models/rows.py`
+Once each module has a `subsystem_id`, the builder aggregates per‑module data into **subsystem‑level summaries**, which is where “risk rollups, membership, and entrypoint hints” come from.
 
-This file defines **TypedDict row types** and helper functions to turn them into ordered tuples for DuckDB inserts. Key row types include:
+### 4.1 Membership & basic size metrics
 
-* `CoverageLineRow` → `analytics.coverage_lines` → `coverage_lines.jsonl`
-  Keys: `repo`, `commit`, `rel_path`, `line`, `is_executable`, `is_covered`, `hits`, `context_count`, `created_at`.
+Group `subsystem_modules.*` by `subsystem_id` and aggregate:
 
-* `DocstringRow` → `core.docstrings` → `docstrings.jsonl`
-  Keys: `repo`, `commit`, `rel_path`, `module`, `qualname`, `kind`, `lineno`, `raw_docstring`, `short_desc`, `long_desc`, `params`, `returns`, etc.
+* `module_count`
+* `file_count` (sum of `module_profile.file_count`)
+* `total_loc` / `total_logical_loc`
+* `function_count`, `class_count`
 
-* `SymbolUseRow` → `graph.symbol_use_edges` → `symbol_use_edges.jsonl`
-  Keys: `symbol`, `def_path`, `use_path`, `same_file`, `same_module`.
+These let `docs.v_subsystem_summary` answer “how big is this subsystem?” directly.
 
-* `ConfigValueRow` → `analytics.config_values` → `config_values.jsonl`
-  Keys: `config_path`, `format`, `key`, `reference_paths`, `reference_modules`, `reference_count`.
+### 4.2 Risk & coverage rollups
 
-* `GoidRow` → `core.goids` → `goids.jsonl`
-  Keys: `goid_h128`, `urn`, `repo`, `commit`, `rel_path`, `language`, `kind`, `qualname`, `start_line`, `end_line`, `created_at`.
+Join `subsystem_modules.*` → `module_profile.*` and `function_profile.*` / `goid_risk_factors.*` to compute:
 
-* `GoidCrosswalkRow` → `core.goid_crosswalk` → `goid_crosswalk.jsonl`
-  Keys: `goid`, `lang`, `module_path`, `file_path`, `start_line`, `end_line`, `scip_symbol`, `ast_qualname`, `cst_node_id`, `chunk_id`, `symbol_id`, `updated_at`.
+* `high_risk_function_count` (sum over modules)
+* Subsystem‑level `risk_score` or buckets (max or weighted average of module risk metrics)
+* Coverage view: `avg_module_coverage_ratio`, `tested_function_ratio`, etc.
 
-* `TypednessRow` → `analytics.typedness` → `typedness.jsonl`
-  Keys: `path`, `type_error_count`, `annotation_ratio`, `untyped_defs`, `overlay_needed`.
+This is how subsystems end up with “risk rollups” in `subsystems.*`.
 
-* `StaticDiagnosticRow` → `analytics.static_diagnostics` → `static_diagnostics.jsonl`.
+### 4.3 Entry‑point detection
 
-* `HotspotRow` → `analytics.hotspots` → `hotspots.jsonl`
-  Keys: `rel_path`, `commit_count`, `author_count`, `lines_added`, `lines_deleted`, `complexity`, `score`.
+The README calls out “entrypoint hints” on subsystems. 
 
-* **Graph tables:**
+Given the available data, the logic for “entrypoint module(s)” almost certainly looks something like:
 
-  * `CallGraphNodeRow` → `graph.call_graph_nodes` → `call_graph_nodes.jsonl`.
-  * `CallGraphEdgeRow` → `graph.call_graph_edges` → `call_graph_edges.jsonl`.
-  * `ImportEdgeRow` → `graph.import_graph_edges` → `import_graph_edges.jsonl`.
-  * `CFGBlockRow` → `graph.cfg_blocks` → `cfg_blocks.jsonl`.
-  * `CFGEdgeRow` → `graph.cfg_edges` → `cfg_edges.jsonl`.
-  * `DFGEdgeRow` → `graph.dfg_edges` → `dfg_edges.jsonl`.
+* For each subsystem:
 
-* **Test/coverage tables:**
+  * Consider its modules’ **import fan‑in/out** and **centralities**.
+  * Classify:
 
-  * `TestCatalogRowModel` → `analytics.test_catalog` (not exported as JSONL in your snapshot but used in analytics).
-  * `TestCoverageEdgeRow` → `analytics.test_coverage_edges` → `test_coverage_edges.jsonl`.
+    * Modules with **high external fan‑in** (imported by many modules outside the subsystem) as *“public surface / imports entrypoints”*.
+    * Modules with **high centrality within the subsystem** but low external fan‑out as internal “core”.
+    * Modules tagged `api`, `cli`, `routes`, etc. as HTTP/CLI entrypoints.
 
-Each has a `*_to_tuple(row)` helper that enforces column order. These same shapes are what you see line‑by‑line in the JSONL outputs.
+Concretely, this can be implemented as:
 
-### `storage/schemas.py` & `storage/duckdb_client.py`
+1. For each module:
 
-* `create_schemas(con)` – ensures logical schemas (`core`, `graph`, `analytics`, `docs`) exist.
-* `apply_all_schemas(con)` – creates all known tables using the registry in `config/schemas/tables.py`.
-* `DuckDBConfig` / `DuckDBClient` – small wrapper for connecting to the DuckDB file (db path, read‑only flags) with `get_connection(config)`.
+   * `internal_fan_in` / `internal_fan_out` vs `external_fan_in` / `external_fan_out`, computed by splitting `import_graph_edges.*` edges into “inside subsystem” vs “to other subsystems”.
+   * Combine with PageRank or similar centrality from `graph_metrics_modules.*`.
+2. Mark modules that satisfy some heuristic (e.g., high external fan‑in + API tag) as `is_entrypoint = true` in `subsystem_modules.*`.
 
-### `storage/views.py`
+Those flags then get lifted into `subsystems.*` as:
 
-Defines AI‑/docs‑oriented **views in the `docs` schema**, notably:
+* `entrypoint_modules` (list)
+* `entrypoint_examples` or similar “hint” fields.
 
-* `docs.v_function_summary`
-  Joins `analytics.goid_risk_factors` with per‑function metrics, docstrings, and tags/owners to produce a single “function summary” row per GOID. This is the table that backs a lot of downstream consumption.
-
-* `docs.v_call_graph_enriched`
-  Joins call graph edges with caller/callee GOIDs and risk scores, so you can ask questions like “show me high‑risk callers of a given function”.
-
-These views are what the FastAPI server and MCP backend query by default.
+Even though the exact thresholds aren’t documented, the presence of fan‑in/out, centralities, tags, and the “entrypoint hints” wording strongly suggest this pattern.
 
 ---
 
-## 4. Utilities & types
+## 5. How this shows up in the docs views
 
-### `utils/paths.py`
+Finally, the **docs views** stitch subsystems into the rest of the architecture story:
 
-Path normalization helpers:
+* `docs.v_module_architecture`:
 
-* `ensure_repo_root(path)` – makes sure a repo root is an absolute `Path`.
-* `normalize_rel_path(path)` – canonical POSIX relative path.
-* `repo_relpath(root, path)` – repo‑relative path with forward slashes.
-* `relpath_to_module(path)` – turns `src/codeintel/utils/paths.py` → `src.codeintel.utils.paths`.
+  * module‑level row including import/topology metrics, risk, and *which subsystem* the module belongs to (join `module_profile.*` + `graph_metrics_modules.*` + `subsystem_modules.*`).
+* `docs.v_subsystem_summary`:
 
-These functions are used throughout ingestion, graphs, and analytics so that everything agrees on `rel_path` and module naming (which feeds into GOIDs and module maps).
+  * one row per subsystem with:
 
-### `types.py`
+    * membership size,
+    * aggregate risk/coverage,
+    * tags/owners rollups,
+    * entrypoint hints (names of likely public modules).
+* `docs.v_module_with_subsystem`:
 
-Shared TypedDicts / Protocols for external tool outputs:
+  * convenience view for UIs: each module row is annotated with its subsystem metadata and key metrics.
 
-* `PytestCallEntry`, `PytestTestEntry` – shapes of `pytest-json-report`.
-* `PyreflyError` – static error entries from pyrefly.
-* `ScipOccurrence`, `ScipDocument` – shapes of SCIP’s JSON output (`index.scip.json`).
+These are what your MCP tools and UI will actually query when asking questions like:
 
-…and `HasModelDump` protocol for Pydantic models used in MCP responses.
-
----
-
-## 5. Ingestion pipeline (`ingestion/`)
-
-`ingestion/__init__.py` sums it up nicely: “Ingestion stages that parse repositories into normalized DuckDB tables for analytics.”
-
-### 5.1. Shared plumbing
-
-* `ingestion/common.py`
-
-  * `ModuleRecord`, `BatchResult`.
-  * Functions like `log_progress`, `load_module_map`, `iter_modules`, helpers for batched inserts and schema guards.
-
-* `ingestion/source_scanner.py`
-
-  * `ScanConfig`, `ScanRecord`, `SourceScanner` – generic scanner for walking Python sources given `repo_root` and inclusion/exclusion rules.
-
-* `ingestion/ast_utils.py`
-
-  * `parse_python_module`, `timed_parse` – parse Python to `ast` with timing.
-  * `AstSpanIndex` – index AST nodes by `(start_line, end_line)`.
-
-* `ingestion/tool_runner.py`
-
-  * `ToolRunner` – structured execution of CLIs like `scip-python`, `pyrefly`, `pyright`, `ruff`, `coverage`, with caching and typed results (using the TypedDicts in `types.py`).
-
-* `ingestion/runner.py`
-
-  * `BuildPaths`, `IngestionContext` – capture repo root, build dir, tool paths.
-  * `run_repo_scan`, `run_cst_extract`, `run_ast_extract`, `run_coverage_ingest`, `run_tests_ingest`, `run_typing_ingest`, `run_docstrings_ingest`, `run_config_ingest`.
-    These are the “one‑function per ingestion phase” building blocks the orchestration layer uses.
-
-### 5.2. Repo structure & modules
-
-* `ingestion/repo_scan.py`
-
-  * Scans the repo and populates:
-
-    * `core.modules` → `modules.jsonl`
-      Example row: `{ "module": "src.codeintel.__init__", "path": "src/codeintel/__init__.py", ... }`
-    * `core.repo_map` → `repo_map.json`
-      Includes the `modules` dict mapping module names to paths and timestamps.
-    * `analytics.tags_index` – optional tagging of paths (e.g., test, docs, generated, etc.).
-
-### 5.3. AST / CST and docstrings
-
-* `ingestion/cst_utils.py`
-
-  * `CstCaptureConfig`, `LineIndexedSource`, `CstCaptureVisitor` – generic LibCST capture logic (node IDs, spans, qnames).
-
-* `ingestion/cst_extract.py`
-
-  * Parses modules listed in `core.modules` with LibCST.
-  * Writes `core.cst_nodes` → `cst_nodes.jsonl`.
-    Example row: `{ "path": "src/codeintel/__init__.py", "node_id": "...:Module:1:0:2:0", "kind": "Module", "span": "{...}" }`.
-
-* `ingestion/py_ast_extract.py`
-
-  * Uses `ast` (stdlib) to extract declarations and perhaps other AST‑based info.
-
-* `ingestion/docstrings_ingest.py`
-
-  * Docstring describes: “Extract structured docstrings with AST and docstring‑parser …”.
-  * Walks ASTs, uses `docstring_parser` to structure text, and persists to `core.docstrings` → `docstrings.jsonl`.
-    Example row includes `short_desc`, `long_desc`, `params`, `returns`, `raises`, etc.
-
-* `core.ast_nodes` / `ast_nodes.jsonl`
-  Populated by AST extractors:
-  Example row:
-
-  ```json
-  {
-    "path": "src/codeintel/__init__.py",
-    "node_type": "Module",
-    "name": "__init__",
-    "qualname": "src.codeintel.__init__",
-    "lineno": null,
-    "end_lineno": null,
-    "decorators": "[]",
-    "docstring": "CodeIntel package exposing ingestion..."
-  }
-  ```
-
-### 5.4. Coverage, tests, typing, config
-
-* `ingestion/coverage_ingest.py`
-
-  * Reads `.coverage` or JSON output via `coverage.py` API/CLI.
-  * Populates `analytics.coverage_lines` → `coverage_lines.jsonl`.
-
-* `ingestion/tests_ingest.py`
-
-  * Ingests `pytest-json-report` output into `analytics.test_catalog` (ID, nodeid, status, duration, etc.).
-  * These catalog entries are later joined to GOIDs and coverage edges.
-
-* `ingestion/typing_ingest.py`
-
-  * Runs `pyrefly`, `pyright`, and `ruff`.
-  * Computes annotation ratios from AST.
-  * Populates:
-
-    * `analytics.typedness` → `typedness.jsonl` (file‑level typedness & overlay flags).
-    * `analytics.static_diagnostics` → `static_diagnostics.jsonl` (per file: pyrefly/pyright/ruff error counts).
-
-* `ingestion/config_ingest.py`
-
-  * Walks configuration files (e.g., JSON, YAML, TOML, INI, env).
-  * Flattens them into keypaths and reference metadata.
-  * Populates `analytics.config_values` → `config_values.jsonl`.
-
-* `ingestion/scip_ingest.py`
-
-  * Runs `scip-python` to produce `index.scip.json`.
-  * Registers that SCIP index within DuckDB so `graphs/symbol_uses.py` can build symbol edges.
+> “Which subsystems have high risk and low coverage?”
+> “Where does this module sit in the architecture, and what subsystem is it part of?”
+> “What’s the likely ingress point into subsystem X?”
 
 ---
 
-## 6. Graphs (`graphs/`)
+## 6. Summary
 
-This package builds the higher‑level code graphs on top of AST/CST and SCIP.
+Mechanistically, subsystem inference in this architecture is:
 
-* `graphs/goid_builder.py`
+1. Use `import_graph_edges.*` to build the **module import graph** and SCCs. 
+2. Enrich each module node with **graph metrics** (`graph_metrics_modules.*`), import fan‑in/out, size, coverage, risk, tags, and ownership (`module_profile.*`, `goid_risk_factors.*`).
+3. Build a **weighted undirected “affinity” graph** where heavier edges indicate stronger architectural coupling.
+4. Run a **clustering/community detection algorithm** over that graph to assign each module to a `subsystem_id`, yielding `subsystem_modules.*`. 
+5. Aggregate per‑module data into **subsystem‑level summaries** with:
 
-  * Uses AST nodes (`core.ast_nodes`) and module map to build:
+   * size/complexity,
+   * risk and coverage rollups,
+   * entrypoint candidates based on external fan‑in and tags.
+6. Expose everything through `docs.v_function_architecture`, `docs.v_module_architecture`, `docs.v_subsystem_summary`, and `docs.v_module_with_subsystem` for LLMs and tools. 
 
-    * `core.goids` → `goids.jsonl`
-    * `core.goid_crosswalk` → `goid_crosswalk.jsonl`
-  * GOID = hashed ID (128‑bit decimal) + URN string like:
-    `goid:repo/path#language:kind:qualname?s=start_line&e=end_line`
+# docs.v_* overview and data and analytics reshaping #
 
-* `graphs/callgraph_builder.py`
+The `docs.v_*` views are basically the **presentation layer** of CodeIntel: they sit on top of the “raw” analytics tables and reshape them into things that are easy for UIs and LLM tools to consume.
 
-  * Uses LibCST (`cst_nodes`), GOIDs, and import resolution to build:
+I’ll walk through:
 
-    * `graph.call_graph_nodes` → `call_graph_nodes.jsonl`
+1. The general pattern for `docs.*` views
+2. `docs.v_function_summary`
+3. `docs.v_call_graph_enriched`
+4. The *architecture* views:
 
-      * Keys: `goid_h128`, `language`, `kind` (module/class/function), `arity`, `is_public`, `rel_path`.
-    * `graph.call_graph_edges` → `call_graph_edges.jsonl`
+   * `docs.v_function_architecture`
+   * `docs.v_module_architecture`
+   * `docs.v_subsystem_summary`
+   * `docs.v_module_with_subsystem` 
 
-      * Keys: `caller_goid_h128`, `callee_goid_h128` (nullable), `callsite_path`, `callsite_line`, `callsite_col`, `kind`, `resolved_via`, `confidence`, `evidence_json`.
-
-* `graphs/import_graph.py`
-
-  * Builds the module import graph (`graph.import_graph_edges` → `import_graph_edges.jsonl`), with:
-
-    * `src_module`, `dst_module`, `src_fan_out`, `dst_fan_in`, `cycle_group`.
-
-* `graphs/cfg_builder.py`
-
-  * Builds:
-
-    * `graph.cfg_blocks` → `cfg_blocks.jsonl`
-      Basic block metadata: `function_goid_h128`, `block_idx`, `block_id`, `label`, `file_path`, `start_line`, `end_line`, `kind`, `stmts_json`, `in_degree`, `out_degree`.
-    * `graph.cfg_edges` → `cfg_edges.jsonl`
-      `function_goid_h128`, `src_block_id`, `dst_block_id`, `edge_kind`.
-    * `graph.dfg_edges` → `dfg_edges.jsonl`
-      Data flow edges across CFG blocks, with `src_var`, `dst_var`, `edge_kind`.
-
-* `graphs/symbol_uses.py`
-
-  * Consumes SCIP JSON (`index.scip.json`) and crosswalk to produce `graph.symbol_use_edges` → `symbol_use_edges.jsonl`.
-
-* `graphs/function_index.py` / `graphs/function_catalog.py`
-
-  * Helpers for mapping spans → GOIDs and building a “function catalog” backing docs views.
-
-* `graphs/import_resolver.py`
-
-  * Canonical import resolution utilities used by the call graph builder.
-
-* `graphs/validation.py`
-
-  * Runs quality checks over graph outputs and writes `analytics.graph_validation` → `graph_validation.jsonl`:
-
-    * Missing GOIDs for functions found in AST.
-    * Callsite positions outside caller spans.
-    * Modules with no GOIDs (orphans).
-  * Example row: `{ "check_name": "callsite_span_mismatch", "severity": "warning", "path": "...", "detail": "...", "context": "{...}" }`.
+Where I don’t have the exact SQL, I’ll spell out the mechanics (which tables join where, and what the view is conceptually doing) rather than claiming precise column lists.
 
 ---
 
-## 7. Analytics (`analytics/`)
+## 1. General pattern: how `docs.*` views are built
 
-### 7.1. AST metrics & hotspots
+All of the `docs.*` views follow the same strategy:
 
-* `analytics/ast_metrics.py`
+* **Base tables** live in `core.*`, `graph.*`, and `analytics.*`.
+* **Profiles** (`function_profile.*`, `file_profile.*`, `module_profile.*`) already denormalize a lot of signals per entity. 
+* **Graph metrics** (`graph_metrics_functions.*`, `graph_metrics_modules.*`) and **subsystems** (`subsystems.*`, `subsystem_modules.*`) add architecture / topology context. 
+* The code in `storage/views.py` then defines **SQL views** under the `docs` schema, each of which:
 
-  * Computes per‑file structural metrics from AST + simple git churn.
-  * Populates `core.ast_metrics` → `ast_metrics.jsonl`:
+  * Picks one primary table (e.g. `analytics.function_profile`) as the “row spine”.
+  * LEFT JOINs in any related tables on stable keys:
 
-    * `rel_path`, `node_count`, `function_count`, `class_count`, `avg_depth`, `max_depth`, `complexity`, `generated_at`.
-  * Also drives `analytics.hotspots` → `hotspots.jsonl`:
+    * `function_goid_h128` for function‑level joins
+    * `module` for module‑level joins
+    * `subsystem_id` for subsystem joins
+  * Drops backend‑only fields, renames columns to friendlier names, and sometimes computes small derived flags.
 
-    * `rel_path`, `commit_count`, `author_count`, `lines_added`, `lines_deleted`, `complexity`, `score` (a combined hotness score).
-
-### 7.2. Per‑function metrics & typing
-
-* `analytics/functions.py`
-
-  * Reads GOIDs and AST to compute per‑function metrics.
-  * Populates:
-
-    * `analytics.function_metrics` → `function_metrics.jsonl`
-      Includes `function_goid_h128`, `urn`, `repo`, `commit`, `rel_path`, `language`, `kind`, `qualname`, `start_line`, `end_line`, `loc`, `logical_loc`, `param_count`, varargs flags, `cyclomatic_complexity`, nesting depth, `stmt_count`, `decorator_count`, `has_docstring`, `complexity_bucket`, `created_at`.
-    * `analytics.function_types` → `function_types.jsonl`
-      Adds typedness by function: `total_params`, `annotated_params`, `return_type`, `param_types`, `fully_typed`/`partial_typed`/`untyped`, `typedness_bucket`, `typedness_source`, `created_at`.
-
-### 7.3. Coverage analytics
-
-* `analytics/coverage_analytics.py`
-
-  * Aggregates `analytics.coverage_lines` and GOIDs to compute:
-
-    * `analytics.coverage_functions` → `coverage_functions.jsonl`
-      Keys: `function_goid_h128`, `urn`, `repo`, `commit`, `rel_path`, `language`, `kind`, `qualname`, `start_line`, `end_line`, `executable_lines`, `covered_lines`, `coverage_ratio`, `tested`, `untested_reason`, `created_at`.
-    * `analytics.test_coverage_edges` → `test_coverage_edges.jsonl`
-      Connects tests to functions: `test_id`, `test_goid_h128`, `function_goid_h128`, `urn`, `repo`, `rel_path`, `qualname`, `covered_lines`, `executable_lines`, `coverage_ratio`, `last_status`, `created_at`.
-
-  * Also has helpers to backfill `test_goid_h128` in `test_catalog` using GOIDs.
-
-### 7.4. Tests analytics
-
-* `analytics/tests_analytics.py`
-
-  * Summarizes test catalog information (pass/fail/flaky, durations, etc.) used for risk scoring and docs views.
-  * Works on `analytics.test_catalog` and `analytics.test_coverage_edges`.
-
-### 7.5. Risk factors
-
-There isn’t a dedicated `analytics/risk_factors.py`; instead, `orchestration/steps.RiskFactorsStep` runs a **SQL join** over analytics tables to create:
-
-* `analytics.goid_risk_factors` → `goid_risk_factors.jsonl`
-  This is the per‑function “risk summary” row:
-
-  * from function metrics: `loc`, `logical_loc`, `cyclomatic_complexity`, `complexity_bucket`
-  * from function types: `typedness_bucket`, `typedness_source`
-  * from hotspots: `hotspot_score`, `file_typed_ratio`
-  * from static diagnostics: `static_error_count`, `has_static_errors`
-  * from coverage: `executable_lines`, `covered_lines`, `coverage_ratio`, `tested`, `test_count`, `failing_test_count`, `last_test_status`
-  * plus a computed `risk_score`, `risk_level`, `tags`, `owners`, `created_at`.
-
-`docs.v_function_summary` then pivots on this table to add docstrings and other metadata.
+From the outside, you never see the underlying `analytics.*` tables directly—you query the `docs.*` view, which is designed as the stable contract for tools and LLMs. 
 
 ---
 
-## 8. Orchestration (`orchestration/`) & CLI (`cli/`)
+## 2. `docs.v_function_summary`
 
-### Orchestration
+**Purpose:** one row per function GOID, combining “everything you’d want to know” about that function into a single record.
 
-* `orchestration/steps.py`
+**Underlying tables:**
 
-  * Defines the **logical dependency graph** of pipeline steps via classes like:
+* `analytics.goid_risk_factors` – the core per‑function risk record (coverage, tests, typedness, hotspots, static diagnostics, risk_score/level). 
+* `analytics.function_metrics` – structural metrics: LOC, complexity, parameter counts, etc. 
+* `analytics.function_types` – typedness and return‑type details. 
+* `core.docstrings` / `ast_nodes` – docstring summaries and long text. 
+* `analytics.tags_index` / `modules` – tags and owners. 
 
-    * `RepoScanStep`
-    * `SCIPIngestStep`
-    * `CSTStep`
-    * `AstStep`
-    * `DocstringsStep`
-    * `GOIDStep`
-    * `ImportGraphStep`
-    * `CallGraphStep`
-    * `CFGStep`
-    * `SymbolUsesStep`
-    * `CoverageStep`
-    * `TestsStep`
-    * `TypingStep`
-    * `AstMetricsStep`
-    * `HotspotsStep`
-    * `CoverageAnalyticsStep`
-    * `FunctionAnalyticsStep`
-    * `TestCoverageEdgesStep`
-    * `RiskFactorsStep`
-    * `ExportDocsStep`
-  * Each step has a `name`, `deps` and a `run(ctx, con)` method that calls into the corresponding `ingestion.*`, `graphs.*`, or `analytics.*` functions.
-
-* `orchestration/prefect_flow.py`
-
-  * Wraps the pipeline into a Prefect 3 flow, with `ExportArgs` as input.
-  * Handles connecting to DuckDB, running steps in dependency order, and then exporting docs.
-
-### CLI (`cli/main.py`)
-
-* `main(argv=None)` is the actual entrypoint.
-* Builds an `argparse` parser with subcommands like:
-
-  * `pipeline run` – runs the full ingestion → graphs → analytics → risk → export pipeline for a given repo/commit.
-  * `docs export` – exports JSONL/Parquet only, assuming tables already populated.
-* `_open_connection` calls into `storage` to ensure schemas and views exist before running steps.
-* `_build_config_from_args` converts CLI flags → `CodeIntelConfig`.
-
-So your typical flow from the outside world is: **CLI → Orchestration Steps → Ingestion/Graphs/Analytics → DuckDB → Docs Export/Server/MCP**.
-
----
-
-## 9. Docs export, server & MCP
-
-### `docs_export/export_jsonl.py` & `export_parquet.py`
-
-* These modules contain mappings from logical dataset names (like `"core.ast_nodes"`, `"analytics.function_metrics"`, `"graph.call_graph_edges"`) to filenames like `ast_nodes.jsonl`, `function_metrics.jsonl`, `call_graph_edges.jsonl`.
-* `export_jsonl_for_table(con, table_name, output_path)` – generic JSONL export.
-* `export_all_jsonl(con, document_output_dir)` – exports all configured datasets beneath `Document Output/`.
-* Same for Parquet via DuckDB’s `COPY ... TO ... (FORMAT PARQUET)`.
-
-The JSONL you uploaded (e.g. `ast_nodes.jsonl`, `goids.jsonl`, `coverage_functions.jsonl`, `goid_risk_factors.jsonl`, etc.) are exactly the outputs of these exporters.
-
-### `server/` (FastAPI)
-
-* `server/fastapi.py`
-
-  * `create_app(config_loader, backend_factory)` – wires up a FastAPI app using:
-
-    * `storage.views` for `docs.*` views.
-    * `server/query_templates.py` – parameterized SQL templates for:
-
-      * Function summaries
-      * Coverage gaps
-      * Graph neighborhoods (callers/callees)
-* `openapi_codeintel.json` – a frozen OpenAPI schema used both as config and as a doc source (note it appears in `config_values.jsonl`).
-
-### `mcp/`
-
-* `mcp/backend.py`
-
-  * Backend that abstracts “read from DuckDB” or “read from HTTP” for MCP tools.
-* `mcp/models.py`
-
-  * Typed models for MCP request/response payloads and errors.
-* `mcp/server.py`
-
-  * MCP server exposing CodeIntel tools (e.g. query function risk, find callers, etc.).
-* `mcp/tools.py`
-
-  * Declares the MCP tools (parameters, what SQL they execute under the hood).
-
-Together, these let an LLM or other client query your code intelligence datasets live, rather than just offline JSONL.
-
----
-
-## 10. How the JSONL/JSON objects line up with the architecture
-
-Here’s a quick map of key files you see to their source modules and tables:
-
-**Core / structure**
-
-* `modules.jsonl` → table `core.modules` → produced by `ingestion/repo_scan.py`.
-* `repo_map.json` → table `core.repo_map` → produced by `ingestion/repo_scan.py`.
-* `ast_nodes.jsonl` → table `core.ast_nodes` → produced by AST extractors (`ingestion/py_ast_extract.py`, `ingestion/ast_utils.py`).
-* `cst_nodes.jsonl` → table `core.cst_nodes` → produced by `ingestion/cst_extract.py`.
-* `docstrings.jsonl` → table `core.docstrings` → produced by `ingestion/docstrings_ingest.py`.
-* `goids.jsonl` → table `core.goids` → produced by `graphs/goid_builder.py`.
-* `goid_crosswalk.jsonl` → table `core.goid_crosswalk` → produced by `graphs/goid_builder.py`.
-* `ast_metrics.jsonl` → table `core.ast_metrics` → produced by `analytics/ast_metrics.py`.
-* `index.scip.json` → raw SCIP index produced by `ingestion/scip_ingest.py`.
-
-**Graph**
-
-* `call_graph_nodes.jsonl` → `graph.call_graph_nodes` → `graphs/callgraph_builder.py`.
-* `call_graph_edges.jsonl` → `graph.call_graph_edges` → `graphs/callgraph_builder.py`.
-* `import_graph_edges.jsonl` → `graph.import_graph_edges` → `graphs/import_graph.py`.
-* `cfg_blocks.jsonl` → `graph.cfg_blocks` → `graphs/cfg_builder.py`.
-* `cfg_edges.jsonl` → `graph.cfg_edges` → `graphs/cfg_builder.py`.
-* `dfg_edges.jsonl` → `graph.dfg_edges` → `graphs/cfg_builder.py`.
-* `symbol_use_edges.jsonl` → `graph.symbol_use_edges` → `graphs/symbol_uses.py`.
-* `graph_validation.jsonl` → `analytics.graph_validation` → `graphs/validation.py`.
-
-**Analytics**
-
-* `coverage_lines.jsonl` → `analytics.coverage_lines` → `ingestion/coverage_ingest.py`.
-* `coverage_functions.jsonl` → `analytics.coverage_functions` → `analytics/coverage_analytics.py`.
-* `function_metrics.jsonl` → `analytics.function_metrics` → `analytics/functions.py`.
-* `function_types.jsonl` → `analytics.function_types` → `analytics/functions.py`.
-* `hotspots.jsonl` → `analytics.hotspots` → `analytics/ast_metrics.py`.
-* `typedness.jsonl` → `analytics.typedness` → `ingestion/typing_ingest.py`.
-* `static_diagnostics.jsonl` → `analytics.static_diagnostics` → `ingestion/typing_ingest.py`.
-* `test_coverage_edges.jsonl` → `analytics.test_coverage_edges` → `analytics/coverage_analytics.py`.
-* `config_values.jsonl` → `analytics.config_values` → `ingestion/config_ingest.py`.
-* `goid_risk_factors.jsonl` → `analytics.goid_risk_factors` → SQL join in `orchestration/steps.RiskFactorsStep`.
-
-(There are also `analytics.tags_index` and `analytics.test_catalog` tables that exist in DuckDB but don’t appear as JSONL in your snapshot.)
-
----
-
-## 11. Mental model / summary
-
-If you want a compact mental picture:
-
-* **Config** defines what repo/commit you’re looking at, how the filesystem is laid out, and where external tools live.
-* **Ingestion** turns raw files, configs, test reports, coverage, and static analysis into canonical DuckDB tables (`core.*`, `analytics.coverage_lines`, `analytics.typedness`, `analytics.static_diagnostics`, `analytics.config_values`, etc.).
-* **Graphs** build code‑level relationships: GOIDs, call graph, import graph, CFG/DFG, and symbol uses (`graph.*` tables).
-* **Analytics** sit on top of that to compute structure & risk metrics per file and per function (`ast_metrics`, `function_metrics`, `function_types`, `coverage_functions`, `goid_risk_factors`, etc.).
-* **Storage** standardizes how those tables are created, connected, and exposed via views (`docs.v_function_summary`, `docs.v_call_graph_enriched`).
-* **Docs export** takes those tables and turns them into the JSONL/Parquet artifacts you’ve shared.
-* **CLI / Orchestration** provide the “do everything for this repo snapshot” control plane.
-* **Server / MCP** are your live query surfaces against the same underlying DuckDB & views.
-
-# Call graph edge resolution and validation deep dive #
-
-Here’s how call graph edges are *resolved* and then *validated* in your `src/codeintel` stack.
-
-I’ll walk through the pipeline in the same order the code does it.
-
----
-
-## 1. Where call graph edges fit in the pipeline
-
-The main entrypoint is:
-
-```python
-# graphs/callgraph_builder.py
-def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> None:
-```
-
-High‑level steps:
-
-1. Build **call graph nodes** from GOIDs (`_build_call_graph_nodes`).
-2. Load a **FunctionCatalog** (spans + metadata for each function) via `load_function_catalog`.
-3. Build a **global callee map**: `qualname` and short name → GOID (`_callee_map`).
-4. Load **SCIP-based symbol candidates** for unresolved calls (`_load_scip_candidates`).
-5. **Collect edges** via LibCST / AST visitors (`_collect_edges`).
-6. **Deduplicate** edges (`_dedupe_edges`).
-7. **Persist edges** to `graph.call_graph_edges` (`_persist_call_graph_edges`).
-8. Run **graph validations** (`run_graph_validations` in `graphs/validation.py`).
-
-So “how edges are resolved” lives mostly in the LibCST/AST visitors and their resolution heuristics; “how they’re validated” lives in `graphs/validation.py`.
-
----
-
-## 2. Inputs: function spans and name maps
-
-### Function spans (callers + callees)
-
-`FunctionCatalog` (`graphs/function_catalog.py`) wraps:
-
-* A list of `FunctionMeta` (GOID, rel_path, qualname, URN, start/end lines, etc.)
-* A `FunctionSpanIndex`, which is the core lookup structure (`graphs/function_index.py`).
-
-`FunctionSpan` holds:
-
-* `goid`
-* `rel_path` (normalized)
-* `qualname` (e.g. `pkg.module.Class.method`)
-* `start_line`, `end_line`
-
-`FunctionSpanIndex` exposes:
-
-* `spans_for_path(path)` → all `FunctionSpan` for that file.
-
-* `local_name_map(path)` → for that file:
-
-  ```python
-  mapping[local_name] = goid        # short name, e.g. "foo"
-  mapping[qualname]  = goid        # full qualname, e.g. "pkg.module.foo"
-  ```
-
-* `lookup(rel_path, start_line, end_line)` → resolve a GOID for a given span, using a multi‑step strategy:
-
-  * Exact span match (start & end lines).
-  * Qualname match overlapping the span.
-  * Any span enclosing the line.
-  * Fallback to functions starting on the same line.
-
-This index is used for:
-
-* Determining **who the caller is** (which function a callsite belongs to).
-* Providing **local callee maps** for resolution.
-
-### Local & global callee maps
-
-From the catalog’s function spans, the builder constructs:
-
-* **Global map** `_callee_map(func_rows)`:
-
-  * For each function span:
-
-    * `mapping[qualname] = goid`
-    * `mapping[suffix_of_qualname] = goid` (e.g. `foo` from `pkg.mod.foo`)
-
-* **Local map** per file via `function_index.local_name_map(rel_path)`:
-
-  * For each span in that file:
-
-    * `mapping[local_name] = goid`
-    * `mapping[qualname] = goid`
-
-These two maps are the core primitives for callee resolution.
-
-### Import aliases
-
-From `graphs/import_resolver.py`:
-
-```python
-def collect_aliases(module: cst.Module, current_module: str | None = None) -> dict[str, str]:
-```
-
-This walks `import` / `from ... import ...` statements and produces:
-
-* `alias` → fully‑qualified module or symbol string
-
-Examples:
-
-* `import numpy as np` → `{"np": "numpy"}`
-* `from pkg.sub import mod as m` → `{"m": "pkg.sub.mod"}`
-
-These aliases are used to interpret `np.foo()` or `m.bar()` as references to underlying fully‑qualified names.
-
-### SCIP-based symbol evidence (for unresolved calls)
-
-`_load_scip_candidates` in `callgraph_builder.py`:
-
-* First tries DuckDB: `SELECT def_path, use_path FROM graph.symbol_use_edges`.
-* If that’s empty or missing:
-
-  * Falls back to reading the SCIP index JSON via `symbol_uses.default_scip_json_path` and `symbol_uses.load_scip_documents`.
-  * Uses `build_def_map` and `build_use_def_mapping` to derive:
-
-    ```python
-    use_path (normalized) -> {def_path1, def_path2, ...}
-    ```
-
-So for each file path, you end up with a tuple of candidate definition paths, used only as *evidence* when GOID resolution fails.
-
----
-
-## 3. Collecting edges: the LibCST path
-
-### Per-file context
-
-For each file in `catalog.functions_by_path`:
-
-```python
-context = EdgeResolutionContext(
-    function_index=function_index,
-    local_callees=callee_by_name,            # function_index.local_name_map(rel_path)
-    global_callees=global_callee_by_name,    # _callee_map across repo
-    import_aliases=alias_collector,          # collect_aliases(...)
-    scip_candidates_by_use_path=scip_candidates_by_use,
-)
-```
-
-This compact `EdgeResolutionContext` object is passed into the visitor and also reused by the AST fallback.
-
-### Visitor: `_FileCallGraphVisitor`
-
-`_FileCallGraphVisitor` is a `libcst.CSTVisitor` tailored to call edge extraction.
-
-Key behavior:
-
-1. **Track current caller GOID**
-
-   * `METADATA_DEPENDENCIES = (metadata.PositionProvider,)` – uses LibCST’s `PositionProvider` to get accurate start/end line/col for nodes.
-
-   * In `visit`:
-
-     ```python
-     if isinstance(node, FUNCTION_NODE_TYPES):
-         span = self._pos(node)
-         start, end = span
-         self.current_function_goid = self.context.function_index.lookup(
-             self.rel_path, start.line, end.line
-         )
-     ```
-
-   * `FUNCTION_NODE_TYPES = (cst.FunctionDef, cst.AsyncFunctionDef)`.
-
-   * In `leave`, it resets `current_function_goid` when leaving a function definition.
-
-2. **Handle calls**
-
-   ```python
-   def _handle_call(self, node: cst.Call) -> None:
-       if self.current_function_goid is None:
-           # Fallback: single-function module or span mismatch
-           spans = self.context.function_index.spans_for_path(self.rel_path)
-           if spans:
-               self.current_function_goid = spans[0].goid
-       if self.current_function_goid is None:
-           return
-   ```
-
-   * If we don’t know the current function, we attempt a fallback:
-
-     * If the file has any function spans, assume the first one (covers single‑function modules or minor span mismatches).
-   * If still no caller GOID, we bail: no edge recorded.
-
-   Then:
-
-   * Get the callsite position via `PositionProvider`.
-
-   * Extract callee expression details:
-
-     ```python
-     callee_name, attr_chain = self._extract_callee(node.func)
-     ```
-
-     `_extract_callee` handles:
-
-     * `Name`: returns (`"foo"`, `["foo"]`).
-     * `Attribute` chains like `obj.foo.bar(...)`: returns
-
-       * `callee_name = "bar"`
-       * `attr_chain = ["obj", "foo", "bar"]`
-     * Other cases: `("", [])`.
-
-   * Resolve callee GOID:
-
-     ```python
-     callee_goid, resolved_via, confidence = _resolve_callee(
-         callee_name,
-         attr_chain,
-         self.context.local_callees,
-         self.context.global_callees,
-         self.context.import_aliases,
-     )
-     ```
-
-   * Determine the edge *kind*:
-
-     * `"direct"` if `callee_goid` is not `None`.
-     * `"unresolved"` otherwise.
-
-   * Add SCIP‑based evidence if unresolved:
-
-     ```python
-     scip_paths = context.scip_candidates_by_use_path.get(rel_path)
-     evidence = {
-         "callee_name": callee_name,
-         "attr_chain": attr_chain or None,
-         "resolved_via": resolved_via,
-     }
-     if callee_goid is None and scip_paths:
-         evidence["scip_candidates"] = list(scip_paths)
-     ```
-
-   * Finally, append a `CallGraphEdgeRow`:
-
-     ```python
-     self.edges.append(
-         CallGraphEdgeRow(
-             caller_goid_h128=self.current_function_goid,
-             callee_goid_h128=callee_goid,
-             callsite_path=self.rel_path,
-             callsite_line=start.line,
-             callsite_col=start.column,
-             language="python",
-             kind=kind,
-             resolved_via=resolved_via,
-             confidence=confidence,
-             evidence_json=evidence,
-         )
-     )
-     ```
-
-   So each edge carries:
-
-   * **IDs**: caller GOID (always), callee GOID (if resolved).
-   * **Location**: path, line, col.
-   * **Resolution metadata**: `kind`, `resolved_via`, `confidence`.
-   * **Evidence**: raw callee name + attr chain + optional SCIP candidates.
-
----
-
-## 4. Resolution heuristics (`_resolve_callee` / `resolve_callee`)
-
-The “brain” for mapping calls to GOIDs is `resolve_callee` (shared between CST/AST collectors via `call_resolution.py`).
-
-Inputs:
-
-* `callee_name` (string, often final attribute name).
-* `attr_chain` (list of names representing `obj.attr1.attr2`).
-* `local_callees`: per‑file map from names/qualnames to GOIDs.
-* `global_callees`: repo‑wide map from qualnames & short names to GOIDs.
-* `import_aliases`: alias → fully qualified module/name.
-
-Resolution steps (with associated `resolved_via` and `confidence`):
-
-1. **Local name in same file**
-
-   ```python
-   if callee_name in local_callees:
-       goid = local_callees[callee_name]
-       resolved_via = "local_name"
-       confidence = 0.8
-   ```
-
-   This handles calls like `foo()` defined in the same file.
-
-2. **Local attribute chain**
-
-   If there is an attribute chain, try more specific names:
-
-   ```python
-   joined = ".".join(attr_chain)
-   goid = local_callees.get(joined) or local_callees.get(attr_chain[-1])
-   if goid is not None:
-       resolved_via = "local_attr"
-       confidence = 0.75
-   ```
-
-   This catches cases like:
-
-   * `self.method()` where the GOID qualname is something like `pkg.mod.Class.method`.
-   * Or module-level attributes that ended up in `local_callees` as qualified names.
-
-3. **Import alias expansion**
-
-   If not resolved yet and there’s an attribute chain:
-
-   * Take the root (`attr_chain[0]`) and see if it’s an alias:
-
-     ```python
-     root = attr_chain[0]
-     alias_target = import_aliases.get(root)
-     if alias_target:
-         qualified = (
-             alias_target
-             if len(attr_chain) == 1
-             else ".".join([alias_target, *attr_chain[1:]])
-         )
-         goid = local_callees.get(qualified) or global_map.get(qualified)
-         if goid is not None:
-             resolved_via = "import_alias"
-             confidence = 0.7
-     ```
-
-   This supports things like:
-
-   ```python
-   import package.module as m
-   m.func()   # attr_chain = ["m", "func"] ⇒ "package.module.func"
-   ```
-
-4. **Global fallback by name**
-
-   If still unresolved:
-
-   ```python
-   if goid is None and callee_name in global_map:
-       goid = global_map[callee_name]
-       resolved_via = "global_name"
-       confidence = 0.6
-   ```
-
-   And in the standalone function variant, for attr chains:
-
-   ```python
-   qualified = ".".join(attr_chain)
-   goid = global_callees.get(qualified) or global_callees.get(attr_chain[-1])
-   if goid is not None:
-       resolved_via = "global_name"
-       confidence = 0.6
-   ```
-
-   This is the “best effort” cross‑module resolution: if a function name is unique (or at least present) globally, we link the edge using that.
-
-5. **Unresolved**
-
-   If all of the above fail:
-
-   * `goid = None`
-   * `resolved_via = "unresolved"`
-   * `confidence = 0.0`
-   * Edge `kind = "unresolved"`.
-
-   SCIP `use_path -> def_path` candidates are attached in `evidence_json` so downstream consumers can still correlate symbol usage, even if GOID resolution fails.
-
----
-
-## 5. AST fallback path
-
-If LibCST parsing or metadata fails, `_collect_edges_ast` kicks in:
-
-```python
-def _collect_edges_ast(rel_path: str, file_path: Path, context: EdgeResolutionContext) -> list[CallGraphEdgeRow]:
-```
-
-It:
-
-1. Reads the source and parses with Python’s built‑in `ast.parse`.
-2. Uses a nested `_AstVisitor(ast.NodeVisitor)` with:
-
-   * `visit_FunctionDef` / `visit_AsyncFunctionDef`:
-
-     * Determine `current_goid` via `context.function_index.lookup(rel_path, start, end)`, same as the CST visitor.
-   * `visit_Call`:
-
-     * If `current_goid` is set:
-
-       * `_extract_callee_ast`:
-
-         * `Name` → (`id`, `[id]`).
-         * `Attribute` → flatten to `["obj", "foo", "bar"]` via `_flatten_attribute`.
-       * Call `_resolve_callee` with the same local/global/alias maps.
-       * Build `CallGraphEdgeRow` exactly as in the CST version, using `node.lineno`, `node.col_offset`, and SCIP evidence.
-
-The AST path is only a fallback; the primary behavior is always LibCST with metadata.
-
----
-
-## 6. Edge deduplication & persistence
-
-Before writing to DuckDB:
-
-```python
-def _dedupe_edges(edges: list[CallGraphEdgeRow]) -> list[CallGraphEdgeRow]:
-    seen = set()
-    unique_edges = []
-    for row in edges:
-        key = (
-            row["caller_goid_h128"],
-            row["callee_goid_h128"],
-            row["callsite_path"],
-            row["callsite_line"],
-            row["callsite_col"],
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        unique_edges.append(row)
-    return unique_edges
-```
-
-Duplicate edges (same caller, callee, and callsite coordinates) are collapsed; in the refactor this logic lives in `call_persist.dedupe_edges`.
-
-Persistence uses `run_batch` to insert into `graph.call_graph_edges` with repo/commit scoping. `CallGraphEdgeRow` → tuple is via `models/rows.py`, in the column order that matches the `graph.call_graph_edges` table.
-
----
-
-## 7. Validation: how edges are checked
-
-Once nodes and edges are persisted, `build_call_graph` calls:
-
-```python
-run_graph_validations(con, repo=cfg.repo, commit=cfg.commit, logger=log)
-```
-
-In `graphs/validation.py`, this function runs several checks and records findings into `analytics.graph_validation`.
-
-### 7.1. Missing function GOIDs
-
-`_warn_missing_function_goids`:
-
-* Computes per‑file:
-
-  * `function_count` = number of AST functions (from `core.ast_nodes` where `node_type` in `('FunctionDef','AsyncFunctionDef')`).
-  * `goid_count` = number of GOID records in `core.goids` with `kind` in `('function','method')` for that file.
-
-* For any file where `function_count > goid_count`:
-
-  * Logs a warning: `"%d file(s) have functions without GOIDs"`.
-  * Adds a finding:
-
-    ```json
-    {
-      "check_name": "missing_function_goids",
-      "severity": "warning",
-      "path": "<file>",
-      "detail": "<function_count> functions, <goid_count> GOIDs",
-      "context": { "function_count": ..., "goid_count": ... }
-    }
-    ```
-
-This indirectly validates call graph edges by ensuring the underlying GOID set is complete enough; otherwise there will be missing nodes for potential callees or callers.
-
-### 7.2. Callsite span mismatches (directly about call graph edges)
-
-`_warn_callsite_span_mismatches` is the key “edge validation” pass.
-
-Steps:
-
-1. Build a `spans_by_goid` dict from the `FunctionCatalog`:
-
-   ```python
-   spans_by_goid = {span.goid: span for span in catalog.function_spans}
-   ```
-
-2. Pull all edges that have a callsite line:
-
-   ```python
-   rows = con.execute("""
-       SELECT
-           e.caller_goid_h128,
-           e.callsite_path,
-           e.callsite_line
-       FROM graph.call_graph_edges e
-       WHERE e.callsite_line IS NOT NULL
-   """).fetchall()
-   ```
-
-3. For each `(goid, path, line)`:
-
-   * Look up the caller span: `span = spans_by_goid.get(int(goid))`.
-   * If no span, skip (this might be covered by other validations).
-   * If the callsite line lies *outside* (`line < span.start_line` or `line > span.end_line`), record mismatch:
-
-     ```python
-     mismatches.append((path, line, span.start_line, span.end_line))
-     ```
-
-4. If any mismatches exist:
-
-   * Log a warning:
-
-     > `Validation: N call graph edges fall outside caller spans (sample: path:line, ...)`
-
-   * Emit findings:
-
-     ```json
-     {
-       "check_name": "callsite_span_mismatch",
-       "severity": "warning",
-       "path": "<path>",
-       "detail": "callsite <line> outside span <start>-<end>",
-       "context": {
-         "callsite_line": <line>,
-         "start_line": <start>,
-         "end_line": <end>
-       }
-     }
-     ```
-
-These are exactly the `graph_validation.jsonl` rows you’re seeing with context like `{"callsite_line": ..., "start_line": ..., "end_line": ...}`.
-
-**Semantically:** this check enforces that *every call graph edge’s callsite* is consistent with its *caller function span*. If the visitor mis‑assigned `current_function_goid`, or spans are mis‑computed, you get a mismatch.
-
-### 7.3. Orphan modules (no GOIDs)
-
-`_warn_orphan_modules`:
-
-* Looks at `core.modules` for `(repo, commit)`.
-* LEFT JOINs against `core.goids` on `rel_path`, `repo`, `commit`.
-* Finds modules where there are **no GOIDs at all** (i.e., no functions, classes, etc.).
-
-For each orphan module:
-
-```json
-{
-  "check_name": "orphan_module",
-  "severity": "warning",
-  "path": "<module path>",
-  "detail": "module has no GOIDs",
-  "context": {}
-}
-```
-
-While this isn’t strictly about edges, it’s part of the set of “graph integrity” signals stored in `analytics.graph_validation` alongside the callsite mismatch check.
-
-### 7.4. Findings persistence
-
-Everything funnels into `_persist_findings`, which:
-
-* Ensures `analytics.graph_validation` table exists.
-* `INSERT`s each finding with:
-
-  * `repo`
-  * `commit`
-  * `check_name`
-  * `severity`
-  * `path`
-  * `detail`
-  * `context` (JSON)
-  * `created_at` (timestamp)
-
-That’s what you see in `graph_validation.jsonl`.
-
----
-
-## 8. How this shows up in your exported data
-
-* **`call_graph_edges.jsonl`** rows are basically serialized `CallGraphEdgeRow`s:
-
-  * `caller_goid_h128`
-  * `callee_goid_h128` (nullable)
-  * `callsite_path`, `callsite_line`, `callsite_col`
-  * `language`
-  * `kind` (`"direct"` or `"unresolved"`)
-  * `resolved_via` (`"local_name"`, `"local_attr"`, `"import_alias"`, `"global_name"`, `"unresolved"`)
-  * `confidence`
-  * `evidence_json` (JSON string: callee name / attr chain / optional SCIP candidates)
-
-* **`graph_validation.jsonl`** rows with `check_name = "callsite_span_mismatch"` are your concrete “edge validity” issues: callsites outside caller spans.
-
----
-
-# SCIP evidence path deep dive #
-
-
-Here’s a zoomed‑in walkthrough of the **SCIP evidence path** in your `src/codeintel` stack—i.e., how `scip-python` output gets turned into structured evidence that flows into GOIDs, symbol uses, and call graph edges.
-
-I’ll go stage by stage so you can see exactly where SCIP comes in and what artifacts it produces.
-
----
-
-## 0. What “SCIP evidence” means in this codebase
-
-In your system, SCIP is used in **three distinct ways**:
-
-1. **Definition evidence**
-   Mapping `(file, start_line)` → **SCIP symbol** and attaching that symbol to GOIDs (`core.goid_crosswalk.scip_symbol`).
-
-2. **Use/definition evidence**
-   Mapping **SCIP symbols** → `(def_path, use_path)` pairs, stored in `graph.symbol_use_edges` and exported as `symbol_use_edges.jsonl`.
-
-3. **Fallback call‑graph evidence**
-   For unresolved call graph edges, you attach a list of **candidate definition files** derived from SCIP, stored in `graph.call_graph_edges.evidence_json` → exported as `call_graph_edges.jsonl` (with `scip_candidates`).
-
-All of this flows from a single SCIP JSON index file: `build/scip/index.scip.json` (also copied into “Document Output” and exported as `/mnt/data/index.scip.json`).
-
----
-
-## 1. Generating and loading the SCIP index
-
-### 1.1 Config + entrypoint
-
-**Module:** `codeintel.ingestion.scip_ingest`
-**Config type:** `ScipIngestConfig` (from `codeintel.config.models`)
-
-Key config fields used in `ingest_scip`:
-
-* `repo_root`: filesystem root of the repo
-* `repo`: `org/repo` string
-* `commit`: git SHA
-* `build_dir`: build output dir (e.g., `repo_root/build`)
-* `document_output_dir`: where human/MCP‑visible artifacts go
-* `scip_python_bin`: usually `"scip-python"`
-* `scip_bin`: usually `"scip"`
-
-### 1.2 `ingest_scip`: running scip‑python + scip print
-
-```python
-def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> ScipIngestResult:
-    """
-    Run scip-python + scip print, register view, and backfill SCIP symbols.
-    """
-```
-
-High‑level flow:
-
-1. **Preflight: require git + binaries**
-
-   * Requires `repo_root/.git` to exist; if missing, returns status `"unavailable"` with a reason.
-   * `_probe_binaries(cfg)`:
-
-     * Uses `shutil.which` to ensure `cfg.scip_python_bin` and `cfg.scip_bin` exist.
-     * Runs `<binary> --version` for each; on failure, returns an `"unavailable"` result.
-
-2. **Choose indexing target**
-
-   * `_run_scip_python(binary: str, repo_root: Path, output_path: Path)`:
-
-     * Prefers `repo_root / "src"` if it exists, else `repo_root`.
-
-     * Executes:
-
-       ```bash
-       scip-python index <target_dir> --output <build/scip/index.scip>
-       ```
-
-     * On success, it logs debug `stderr` (if any) and returns `True`.
-
-     * On `MISSING_BINARY_EXIT_CODE`, logs a warning and returns `False`.
-
-     * Any other non‑zero exit: logs failure and returns `False`.
-
-3. **Convert `.scip` → JSON**
-
-   * `_run_scip_print(binary: str, index_scip: Path, output_json: Path)`:
-
-     ```bash
-     scip print --json <build/scip/index.scip> > <build/scip/index.scip.json>
-     ```
-
-     * On success, writes `stdout` to `index.scip.json` and logs debug `stderr` if present.
-     * Missing binary or non‑zero exit → logs + returns `False`.
-
-4. **Persist artifacts for docs/UI**
-
-   On success:
-
-   * Copies both files into `document_output_dir`:
-
-     ```python
-     shutil.copy2(index_scip, doc_dir / "index.scip")
-     shutil.copy2(index_json, doc_dir / "index.scip.json")
-     ```
-
-   These copies are what you’ve exported as `/mnt/data/index.scip.json`.
-
-5. **Register `scip_index_view` in DuckDB**
-
-   ```python
-   docs_table = con.execute(
-       "SELECT unnest(documents, recursive:=true) AS document FROM read_json(?)",
-       [str(index_json)],
-   ).fetch_arrow_table()
-
-   con.execute("DROP VIEW IF EXISTS scip_index_view")
-   con.register("scip_index_view_temp", docs_table)
-   con.execute("CREATE VIEW scip_index_view AS SELECT * FROM scip_index_view_temp")
-   ```
-
-   This gives you a convenient DuckDB view where each row is a single SCIP **document**:
-
-   * Each document roughly matches the `ScipDocument` TypedDict in `codeintel.types`:
-
-     ```python
-     class ScipDocument(TypedDict, total=False):
-         """SCIP JSON document emitted by scip-python."""
-         relative_path: str
-         occurrences: list[ScipOccurrence]
-     ```
-
-### 1.3 Backfilling GOIDs with SCIP symbols
-
-**Goal:** attach a SCIP symbol to each GOID that has a matching `(rel_path, start_line)` in the SCIP index.
-
-Function: `_update_scip_symbols(con, index_json: Path) -> None`
-
-Steps:
-
-1. **Ensure table exists**
-
-   ```python
-   ensure_schema(con, "core.goid_crosswalk")
-   ```
-
-2. **Load raw docs**
-
-   ```python
-   docs = _load_scip_documents(index_json)
-   ```
-
-   `_load_scip_documents`:
-
-   * `json.loads` the file.
-   * Accepts both:
-
-     * `{ "documents": [...] }`, or
-     * `[...]` (list root).
-   * Returns `list[dict]`.
-
-3. **Build definition map: `(rel_path, start_line) -> symbol`**
-
-   `_build_definition_map(docs)`:
-
-   * For each doc:
-
-     * Reads `relative_path` (string) as `rel_path_obj`.
-   * For each `occurrence` in `doc["occurrences"]`:
-
-     * Only consider dict occurrences.
-
-     * `roles = occurrence["symbol_roles"]`. The code uses:
-
-       ```python
-       if roles & 1 == 0:
-           continue  # only keep definitions (bit 1)
-       ```
-
-     * `rng = occurrence["range"]` (SCIP “range” is a list, `[startLine, startCol, endCol?]`).
-
-       * The code takes `start_line = int(rng[0]) + 1`, converting 0‑based to 1‑based.
-
-     * `symbol = occurrence["symbol"]` (string).
-   * Fills:
-
-     ```python
-     def_map[(rel_path_obj, start_line)] = symbol
-     ```
-
-4. **Fetch GOIDs**
-
-   `_fetch_goids(con)`:
-
-   ```python
-   SELECT urn, rel_path, start_line FROM core.goids
-   ```
-
-   This corresponds to entries you see in `/mnt/data/goids.jsonl`, e.g.:
-
-   ```json
-   {
-     "urn": "goid:paul-heyse/CodeIntel/src/codeintel/analytics/ast_metrics.py#python:method:src.codeintel.analytics.ast_metrics.FileChurn.to_summary?s=38&e=52",
-     "rel_path": "src/codeintel/analytics/ast_metrics.py",
-     "start_line": 38,
-     ...
-   }
-   ```
-
-5. **Construct `(symbol, goid)` updates**
-
-   `_build_symbol_updates(def_map, goids)`:
-
-   * For each `(urn, rel_path, start_line)` row from GOIDs:
-
-     * Looks up `symbol = def_map.get((rel_path, int(start_line)))`.
-     * If found, appends `(symbol, urn)` to `updates`.
-
-6. **Write into `core.goid_crosswalk.scip_symbol`**
-
-   Uses the SQL literal from `codeintel.config.schemas.sql_builder`:
-
-   ```python
-   GOID_CROSSWALK_UPDATE_SCIP = (
-       "UPDATE core.goid_crosswalk SET scip_symbol = ? WHERE goid = ?"
-   )
-   ```
-
-   So `scip_symbol` becomes the SCIP symbol string (e.g.
-   `"scip-python python CodeIntel 0.1.0 `codeintel.config.models`/CallGraphConfig#"`).
-
-This gives you **definition‑level SCIP evidence attached to your canonical GOIDs**.
-
----
-
-## 2. Building symbol‑use edges from SCIP
-
-Now we use the same SCIP JSON to derive **“who uses whom” at the symbol level.**
-
-**Module:** `codeintel.graphs.symbol_uses`
-**Config:** `SymbolUsesConfig` (in `codeintel.config.models`)
-**Output table:** `graph.symbol_use_edges` → `/mnt/data/symbol_use_edges.jsonl`
-
-### 2.1 Locating & loading SCIP JSON
-
-Two helper functions:
-
-```python
-def default_scip_json_path(repo_root: Path, build_dir: Path | None) -> Path | None:
-    base = build_dir if build_dir is not None else repo_root / "build"
-    scip_path = (base / "scip" / "index.scip.json").resolve()
-    return scip_path if scip_path.exists() else None
-```
-
-```python
-def load_scip_documents(scip_path: Path) -> list[ScipDocument] | None:
-    if not scip_path.exists():
-        log.warning("SCIP JSON not found at %s; skipping symbol_use_edges", scip_path)
-        return None
-
-    with scip_path.open("r", encoding="utf-8") as f:
-        docs_raw = json.load(f)
-
-    # Handle dict root with 'documents' or direct list
-    if isinstance(docs_raw, dict):
-        docs_raw = docs_raw.get("documents", [])
-
-    if not isinstance(docs_raw, list):
-        log.warning("SCIP JSON root (or 'documents' key) is not a list; aborting symbol_use_edges build.")
-        return None
-
-    return [cast("ScipDocument", doc) for doc in docs_raw if isinstance(doc, dict)]
-```
-
-So symbol_uses can work in two modes:
-
-* From a pre‑configured `SymbolUsesConfig.scip_json_path`, or
-* By discovering `build/scip/index.scip.json` automatically.
-
-### 2.2 Mapping symbols → definition paths
-
-`build_def_map(docs: list[ScipDocument]) -> dict[str, str]`:
-
-* Iterates over all docs.
-* For each doc:
-
-  * `rel_path = str(doc["relative_path"]).replace("\\", "/")`.
-* For each occurrence:
-
-  * `symbol = occ["symbol"]`.
-  * `roles = int(occ.get("symbol_roles", 0))`.
-  * `is_def = bool(roles & 1)` (definition bit).
-  * First time we see a definition, we capture:
-
-    ```python
-    def_path_by_symbol[symbol] = rel_path
-    ```
-
-This produces a map:
-
-```text
-SCIP symbol → defining file path (def_path)
-```
-
-### 2.3 Mapping use paths → definition paths
-
-`build_use_def_mapping(docs, def_path_by_symbol) -> dict[str, set[str]]`:
-
-* For each doc:
-
-  * Treats its `relative_path` as the **use_path** (where the symbol is used):
-
-    ```python
-    use_path = str(doc["relative_path"]).replace("\\", "/")
-    ```
-
-* For each occurrence in that doc:
-
-  * `symbol = occ["symbol"]`.
-
-  * `roles = occ["symbol_roles"]`.
-
-  * Considers as a “use” if:
-
-    ```python
-    is_ref = bool(roles & (2 | 4 | 8))
-    # 2 = Import, 4 = WriteAccess, 8 = ReadAccess
-    ```
-
-  * Looks up `def_path = def_path_by_symbol.get(symbol)`.
-
-  * If both exist, adds:
-
-    ```python
-    mapping.setdefault(use_path, set()).add(def_path)
-    ```
-
-Result: a mapping
-
-```text
-use_path → {def_path₁, def_path₂, ...}
-```
-
-### 2.4 Persisting `graph.symbol_use_edges`
-
-The main builder (not fully shown in your snippet) uses these mappings and the function catalog to create rows of `SymbolUseRow`, stored in `graph.symbol_use_edges` and exported in `/mnt/data/symbol_use_edges.jsonl`.
-
-Example rows from your export:
-
-```json
-{
-  "symbol": "scip-python python CodeIntel 0.1.0 `codeintel.types`/PytestCallEntry#",
-  "def_path": "src/codeintel/types.py",
-  "use_path": "src/codeintel/types.py",
-  "same_file": true,
-  "same_module": true
-},
-{
-  "symbol": "scip-python python CodeIntel 0.1.0 `codeintel.config.models`/HotspotsConfig#",
-  "def_path": "src/codeintel/config/models.py",
-  "use_path": "src/codeintel/analytics/ast_metrics.py",
-  "same_file": false,
-  "same_module": false
-}
-```
-
-So this is **SCIP evidence path #2**: raw SCIP index → `graph.symbol_use_edges`.
-
----
-
-## 3. Feeding SCIP into the call graph (fallback evidence)
-
-Now we use those symbol‑use edges to enrich **call graph edges**.
-
-**Module:** `codeintel.graphs.callgraph_builder`
-**Config:** `CallGraphConfig`
-**Output table:** `graph.call_graph_edges` → `/mnt/data/call_graph_edges.jsonl`
-
-### 3.1 Precomputing SCIP candidates per use_path
-
-```python
-def _load_scip_candidates(
-    con: duckdb.DuckDBPyConnection, repo_root: Path
-) -> dict[str, tuple[str, ...]]:
-    """
-    Map `use_path` -> candidate `def_path` values from symbol_use_edges.
-
-    The result is used to enrich unresolved call edges with SCIP-derived
-    evidence so downstream consumers can correlate callsites to symbols even
-    when GOID resolution fails.
-    """
-```
-
-Steps:
-
-1. **Try to read from `graph.symbol_use_edges`**
-
-   ```python
-   rows = con.execute(
-       "SELECT def_path, use_path FROM graph.symbol_use_edges"
-   ).fetchall()
-   ```
-
-   If the table/view is missing or any DuckDB error occurs, it catches `duckdb.Error` and uses `rows = []`.
-
-2. **Build `mapping: use_path -> set(def_path)`**
-
-   ```python
-   mapping: dict[str, set[str]] = {}
-   for def_path, use_path in rows:
-       if def_path is None or use_path is None:
-           continue
-       use_norm = normalize_rel_path(str(use_path))
-       mapping.setdefault(use_norm, set()).add(
-           normalize_rel_path(str(def_path))
-       )
-   ```
-
-3. **Fallback: directly read `index.scip.json` if no rows**
-
-   If `mapping` is empty:
-
-   ```python
-   scip_path = symbol_uses.default_scip_json_path(repo_root, None)
-   docs = symbol_uses.load_scip_documents(scip_path) if scip_path is not None else None
-   if docs:
-       def_map = symbol_uses.build_def_map(docs)
-       mapping = symbol_uses.build_use_def_mapping(docs, def_map)
-   ```
-
-4. **Return normalized mapping**
-
-   ```python
-   return {path: tuple(sorted(defs)) for path, defs in mapping.items()}
-   ```
-
-So by the time we start edge collection, we have:
-
-```python
-scip_candidates_by_use: dict[str, tuple[str, ...]]
-# use_path (rel_path of callsite file) → candidate definition paths
-```
-
-### 3.2 Passing SCIP candidates into the resolution context
-
-In `_collect_edges(...)`:
-
-```python
-scip_candidates_by_use = _load_scip_candidates(con, repo_root)
-
-context = EdgeResolutionContext(
-    function_index=function_index,
-    local_callees=callee_by_name,
-    global_callees=global_callee_by_name,
-    import_aliases=alias_collector,
-    scip_candidates_by_use_path=scip_candidates_by_use,
-)
-visitor = _FileCallGraphVisitor(rel_path=rel_path, context=context)
-```
-
-`EdgeResolutionContext` gives the visitor:
-
-* `function_index`: mapping `(path, lines) -> GOID`
-* `local_callees`: names→GOID for functions in the current file
-* `global_callees`: names→GOID across the repo
-* `import_aliases`: alias mapping collected via LibCST
-* `scip_candidates_by_use_path`: the mapping we just discussed
-
-### 3.3 Using SCIP candidates when resolution fails
-
-Inside `_FileCallGraphVisitor._handle_call` (LibCST path) and the AST fallback `_collect_edges_ast`, the code roughly does:
-
-1. Extracts `callee_name` and an `attr_chain` from the call expression (`ast.Name`, `ast.Attribute`, etc.).
-
-2. Attempts to resolve:
-
-   * local function
-   * attribute on a local/alias
-   * global function via fully qualified name
-   * etc.
-
-3. When `callee_goid_h128` stays `None`, it marks the edge as unresolved:
-
-   * `kind="unresolved"`
-   * `resolved_via="unresolved"`
-   * `confidence=0.0`
-
-4. Then it attaches **SCIP candidates** for the current file:
-
-   ```python
-   scip_paths = context.scip_candidates_by_use_path.get(rel_path)
-   if callee_goid is None and scip_paths:
-       evidence["scip_candidates"] = list(scip_paths)
-   ```
-
-This evidence is serialized into `evidence_json` on each `CallGraphEdgeRow`.
-
-From your exported `/mnt/data/call_graph_edges.jsonl`, an unresolved edge looks like:
-
-```json
-{
-  "caller_goid_h128": 3.302982762e+37,
-  "callee_goid_h128": null,
-  "callsite_path": "src/codeintel/analytics/ast_metrics.py",
-  "callsite_line": 48,
-  "callsite_col": 28,
-  "language": "python",
-  "kind": "unresolved",
-  "resolved_via": "unresolved",
-  "confidence": 0.0,
-  "evidence_json": {
-    "callee_name": "len",
-    "attr_chain": ["len"],
-    "resolved_via": "unresolved",
-    "scip_candidates": [
-      "src/codeintel/analytics/ast_metrics.py",
-      "src/codeintel/analytics/coverage_analytics.py",
-      "src/codeintel/analytics/functions.py",
-      "src/codeintel/config/models.py",
-      "src/codeintel/ingestion/common.py",
-      "src/codeintel/ingestion/tool_runner.py",
-      "src/codeintel/models/rows.py"
-    ]
-  }
-}
-```
-
-So even when the call graph can’t map `len(...)` to a specific GOID, downstream tools know **where SCIP says `len` is used/defined** and can use these paths as hints.
-
-That’s **SCIP evidence path #3**.
-
----
-
-## 4. Surfacing SCIP evidence to consumers
-
-**Module:** `codeintel.storage.views`
-**View:** `docs.v_call_graph_enriched`
-
-This view joins call graph edges with GOID metadata and risk scores, but crucially it keeps the `e.evidence_json` column intact:
+**Mechanics (conceptually):**
 
 ```sql
-CREATE OR REPLACE VIEW docs.v_call_graph_enriched AS
-    SELECT
-        e.caller_goid_h128,
-        gc.urn           AS caller_urn,
-        gc.rel_path      AS caller_rel_path,
-        gc.qualname      AS caller_qualname,
-        rc.risk_level    AS caller_risk_level,
-        rc.risk_score    AS caller_risk_score,
-        e.callee_goid_h128,
-        gcallee.urn      AS callee_urn,
-        gcallee.rel_path AS callee_rel_path,
-        gcallee.qualname AS callee_qualname,
-        rcallee.risk_level AS callee_risk_level,
-        rcallee.risk_score AS callee_risk_score,
-        e.callsite_path,
-        e.callsite_line,
-        e.callsite_col,
-        e.language,
-        e.kind,
-        e.resolved_via,
-        e.confidence,
-        e.evidence_json
-    FROM graph.call_graph_edges e
-    ...
+CREATE VIEW docs.v_function_summary AS
+SELECT
+  r.function_goid_h128,
+  r.urn,
+  r.repo,
+  r.commit,
+  r.rel_path,
+  r.language,
+  r.kind,
+  r.qualname,
+  -- structural metrics
+  m.loc,
+  m.logical_loc,
+  m.cyclomatic_complexity,
+  m.complexity_bucket,
+  -- typedness
+  t.typedness_bucket,
+  t.return_type,
+  t.param_typed_ratio,
+  -- coverage / tests / risk
+  r.coverage_ratio,
+  r.tested,
+  r.test_count,
+  r.failing_test_count,
+  r.hotspot_score,
+  r.static_error_count,
+  r.risk_score,
+  r.risk_level,
+  -- docs + ownership
+  d.short_desc      AS doc_short,
+  d.long_desc       AS doc_long,
+  mod.tags,
+  mod.owners
+FROM analytics.goid_risk_factors r
+LEFT JOIN analytics.function_metrics m
+  ON m.function_goid_h128 = r.function_goid_h128
+LEFT JOIN analytics.function_types t
+  ON t.function_goid_h128 = r.function_goid_h128
+LEFT JOIN core.docstrings d
+  ON d.rel_path = r.rel_path AND d.qualname = r.qualname
+LEFT JOIN analytics.module_profile mod
+  ON mod.module = d.module;
 ```
 
-So any MCP tool / API client querying `docs.v_call_graph_enriched` gets:
+*(Column names and exact joins vary in the real code, but mechanically this is what’s happening.)*
 
-* Structured caller/callee GOID info.
-* Risk scores (from `analytics.goid_risk_factors`).
-* The full `evidence_json` blob, which for unresolved edges includes `scip_candidates` built from SCIP.
-
-That’s how SCIP evidence becomes **user‑facing context** in your call‑graph view.
+This view is the **core “function lens”** many tools use before you get into architecture‑specific information.
 
 ---
 
-## 5. End‑to‑end SCIP evidence story (at a glance)
+## 3. `docs.v_call_graph_enriched`
 
-Putting it all together:
+**Purpose:** enrich raw call graph edges with human‑readable caller/callee info and risk context.
 
-1. **SCIP indexing**
+**Underlying tables:**
 
-   * `ScipIngestConfig` + `ingest_scip` run `scip-python index` and `scip print --json`, producing:
+* `graph.call_graph_edges` – raw edges (`caller_goid_h128`, `callee_goid_h128`, callsite path/line/col, resolution metadata, evidence_json). 
+* `core.goids` – for both caller and callee: URN, rel_path, qualname. 
+* `analytics.goid_risk_factors` – per‑function risk for caller and callee. 
 
-     * `build/scip/index.scip`
-     * `build/scip/index.scip.json` (also copied to “Document Output”)
+**Mechanics:**
 
-2. **SCIP documents → DuckDB**
+```sql
+CREATE VIEW docs.v_call_graph_enriched AS
+SELECT
+  e.caller_goid_h128,
+  gc.urn           AS caller_urn,
+  gc.rel_path      AS caller_rel_path,
+  gc.qualname      AS caller_qualname,
+  rc.risk_level    AS caller_risk_level,
+  rc.risk_score    AS caller_risk_score,
 
-   * `ingest_scip` loads `index.scip.json` into DuckDB via `read_json(...)` and exposes:
+  e.callee_goid_h128,
+  gcallee.urn      AS callee_urn,
+  gcallee.rel_path AS callee_rel_path,
+  gcallee.qualname AS callee_qualname,
+  rcallee.risk_level AS callee_risk_level,
+  rcallee.risk_score AS callee_risk_score,
 
-     * View `scip_index_view` (each row is a SCIP document).
+  e.callsite_path,
+  e.callsite_line,
+  e.callsite_col,
+  e.language,
+  e.kind,
+  e.resolved_via,
+  e.confidence,
+  e.evidence_json
+FROM graph.call_graph_edges e
+LEFT JOIN core.goids gc
+  ON gc.goid_h128 = e.caller_goid_h128
+LEFT JOIN analytics.goid_risk_factors rc
+  ON rc.function_goid_h128 = e.caller_goid_h128
+LEFT JOIN core.goids gcallee
+  ON gcallee.goid_h128 = e.callee_goid_h128
+LEFT JOIN analytics.goid_risk_factors rcallee
+  ON rcallee.function_goid_h128 = e.callee_goid_h128;
+```
 
-3. **Definitions backfilled into GOIDs**
-
-   * `_update_scip_symbols`:
-
-     * Builds `(rel_path, start_line) → symbol` from SCIP definitions.
-     * Joins with `core.goids` to set `core.goid_crosswalk.scip_symbol` via `GOID_CROSSWALK_UPDATE_SCIP`.
-
-4. **Symbol definition/use edges**
-
-   * `codeintel.graphs.symbol_uses`:
-
-     * `build_def_map(docs)` → `symbol → def_path`
-     * `build_use_def_mapping(docs, def_map)` → `use_path → {def_path}`
-     * Persists into `graph.symbol_use_edges` → exported as `symbol_use_edges.jsonl`.
-
-5. **Call graph with SCIP fallback evidence**
-
-   * `codeintel.graphs.callgraph_builder`:
-
-     * `_load_scip_candidates`:
-
-       * First from `graph.symbol_use_edges`, otherwise directly from `index.scip.json`.
-       * Produces `use_path → tuple(def_paths)`.
-     * `EdgeResolutionContext` passes this to visitors.
-     * When an edge can’t be resolved to a GOID:
-
-       * It remains `kind="unresolved"`, but `evidence_json.scip_candidates` is filled.
-
-6. **Exposed to clients**
-
-   * `docs.v_call_graph_enriched` emits `e.evidence_json`, so your MCP tools / UI can:
-
-     * See unresolved edges,
-     * Inspect SCIP‑derived candidate locations, and
-     * Potentially present “best guess” navigation or debugging hints.
+This is the view you’d use to ask things like “show me all high‑risk callees of this function” or “what does this unresolved call look like, with SCIP evidence attached?”.
 
 ---
+
+## 4. `docs.v_function_architecture`
+
+**Purpose:** give a **function‑level view of architecture**, combining function profile, graph metrics, subsystem context, and module profile in one row. 
+
+> From the README: graph metrics are “stored under `analytics.*` and surfaced via `docs.v_function_architecture`”, and subsystems are “exposed via `docs.v_subsystem_summary` and `docs.v_module_with_subsystem`.” 
+
+**Underlying tables:**
+
+* `analytics.function_profile` – spine row: function metrics, coverage, tests, typedness, risk, docs, tags/owners. 
+* `analytics.graph_metrics_functions` – per‑function call‑graph metrics (fan‑in/out, centralities, maybe depth/layer). 
+* `analytics.module_profile` – module‑level risk/coverage/import metrics, for context. 
+* `analytics.subsystem_modules` + `analytics.subsystems` – mapping modules → subsystems and subsystem summaries (used to attach subsystem_id and high‑level subsystem risk). 
+
+**Join keys:**
+
+* `function_profile.function_goid_h128` ↔ `graph_metrics_functions.function_goid_h128`
+* `function_profile.module` ↔ `module_profile.module`
+* `module_profile.module` ↔ `subsystem_modules.module`
+* `subsystem_modules.subsystem_id` ↔ `subsystems.subsystem_id`
+
+**Mechanics (conceptually):**
+
+```sql
+CREATE VIEW docs.v_function_architecture AS
+SELECT
+  f.function_goid_h128,
+  f.urn,
+  f.rel_path,
+  f.module,
+  f.qualname,
+
+  -- basic structural + risk info from function_profile
+  f.loc,
+  f.logical_loc,
+  f.cyclomatic_complexity,
+  f.risk_score,
+  f.risk_level,
+  f.coverage_ratio,
+  f.tested,
+  f.tests_touching,
+  f.failing_tests,
+
+  -- call-graph topology from graph_metrics_functions
+  gf.call_fan_in,
+  gf.call_fan_out,
+  gf.call_pagerank,
+  gf.call_is_leaf,
+  gf.layer_index,
+
+  -- module context (size / risk / imports)
+  mp.module_coverage_ratio,
+  mp.import_fan_in,
+  mp.import_fan_out,
+  mp.in_cycle,
+  mp.cycle_group,
+
+  -- subsystem context
+  sm.subsystem_id,
+  s.name             AS subsystem_name,
+  s.risk_level       AS subsystem_risk_level,
+  s.module_count     AS subsystem_module_count,
+
+  -- ownership
+  f.tags,
+  f.owners,
+
+  f.created_at       AS snapshot_at
+FROM analytics.function_profile f
+LEFT JOIN analytics.graph_metrics_functions gf
+  ON gf.function_goid_h128 = f.function_goid_h128
+LEFT JOIN analytics.module_profile mp
+  ON mp.module = f.module
+LEFT JOIN analytics.subsystem_modules sm
+  ON sm.module = f.module
+LEFT JOIN analytics.subsystems s
+  ON s.subsystem_id = sm.subsystem_id;
+```
+
+Practically: this is the view you query when you want to understand **“where does this function sit in the architecture, how important is it, and how risky is it?”**, without manually joining 4–5 tables.
+
+---
+
+## 5. `docs.v_module_architecture`
+
+**Purpose:** the **module‑centric analogue** of `v_function_architecture`—summarizing topology, risk, coverage, and subsystem membership for each module. 
+
+**Underlying tables:**
+
+* `analytics.module_profile` – spine row: size, complexity, coverage, risk, import fan‑in/out, cycle_group, tags/owners. 
+* `analytics.graph_metrics_modules` – per‑module graph metrics from call/import graphs (in/out degree, centrality, layer index, coupling). 
+* `analytics.subsystem_modules` + `analytics.subsystems` – subsystem membership and rollups. 
+
+**Join keys:**
+
+* `module_profile.module` ↔ `graph_metrics_modules.module`
+* `module_profile.module` ↔ `subsystem_modules.module`
+* `subsystem_modules.subsystem_id` ↔ `subsystems.subsystem_id`
+
+**Mechanics:**
+
+```sql
+CREATE VIEW docs.v_module_architecture AS
+SELECT
+  mp.module,
+  mp.path,
+  mp.file_count,
+  mp.total_loc,
+  mp.function_count,
+  mp.class_count,
+
+  -- risk & coverage
+  mp.high_risk_function_count,
+  mp.module_coverage_ratio,
+
+  -- import graph topology
+  mp.import_fan_in,
+  mp.import_fan_out,
+  mp.cycle_group,
+  mp.in_cycle,
+
+  -- graph metrics (call + import centralities, coupling)
+  gm.import_pagerank,
+  gm.call_pagerank,
+  gm.symbol_coupling,
+  gm.layer_index,
+
+  -- subsystem
+  sm.subsystem_id,
+  s.name           AS subsystem_name,
+  s.risk_level     AS subsystem_risk_level,
+  s.module_count   AS subsystem_size,
+
+  -- ownership
+  mp.tags,
+  mp.owners,
+  mp.created_at    AS snapshot_at
+FROM analytics.module_profile mp
+LEFT JOIN analytics.graph_metrics_modules gm
+  ON gm.module = mp.module
+LEFT JOIN analytics.subsystem_modules sm
+  ON sm.module = mp.module
+LEFT JOIN analytics.subsystems s
+  ON s.subsystem_id = sm.subsystem_id;
+```
+
+This view is what you’d hit for questions like:
+
+* “Which modules are central hubs with lots of dependents?”
+* “Which subsystem does this module belong to, and how risky is it overall?”
+* “Show me modules in cycles with high risk and low coverage.”
+
+---
+
+## 6. `docs.v_subsystem_summary`
+
+**Purpose:** one row per subsystem, aggregating all the module‑ and function‑level signals into a **component‑level summary**. 
+
+**Underlying tables:**
+
+* `analytics.subsystems` – spine row: ID, name/label (if any), risk rollups, maybe pre‑computed coverage and size metrics. 
+* `analytics.subsystem_modules` – membership list (which modules are in each subsystem, plus entrypoint flags). 
+* `analytics.module_profile` – per‑module size, coverage, risk, fan‑in/out. 
+* (Optionally) `analytics.function_profile` / `goid_risk_factors` for function‑level rollups.
+
+**Join keys:**
+
+* `subsystems.subsystem_id` ↔ `subsystem_modules.subsystem_id`
+* `subsystem_modules.module` ↔ `module_profile.module`
+
+**Mechanics:**
+
+```sql
+CREATE VIEW docs.v_subsystem_summary AS
+WITH membership AS (
+  SELECT
+    sm.subsystem_id,
+    COUNT(*)                    AS module_count,
+    SUM(mp.file_count)          AS file_count,
+    SUM(mp.total_loc)           AS total_loc,
+    SUM(mp.high_risk_function_count) AS high_risk_function_count,
+    AVG(mp.module_coverage_ratio)     AS avg_coverage,
+    SUM(CASE WHEN sm.is_entrypoint THEN 1 ELSE 0 END) AS entrypoint_module_count,
+    ARRAY_AGG(CASE WHEN sm.is_entrypoint THEN sm.module END IGNORE NULLS)
+      AS entrypoint_modules
+  FROM analytics.subsystem_modules sm
+  LEFT JOIN analytics.module_profile mp
+    ON mp.module = sm.module
+  GROUP BY sm.subsystem_id
+)
+SELECT
+  s.subsystem_id,
+  s.name,
+  s.risk_level,
+  s.risk_score,
+  m.module_count,
+  m.file_count,
+  m.total_loc,
+  m.high_risk_function_count,
+  m.avg_coverage,
+  m.entrypoint_module_count,
+  m.entrypoint_modules,
+  s.created_at AS snapshot_at
+FROM analytics.subsystems s
+LEFT JOIN membership m
+  ON m.subsystem_id = s.subsystem_id;
+```
+
+This is the view your tools would use to show the **macro‑architecture**: a list of subsystems, their risk and coverage status, size, and suggested entrypoints.
+
+---
+
+## 7. `docs.v_module_with_subsystem`
+
+**Purpose:** convenience view: **module profile + subsystem annotations** in one place, for UIs that are primarily module‑centric. 
+
+**Underlying tables:**
+
+* `analytics.module_profile` – module‑level metrics.
+* `analytics.subsystem_modules` – subsystem membership.
+* `analytics.subsystems` – subsystem summary (for name/risk).
+
+**Join keys:**
+
+* `module_profile.module` ↔ `subsystem_modules.module`
+* `subsystem_modules.subsystem_id` ↔ `subsystems.subsystem_id`
+
+**Mechanics:**
+
+```sql
+CREATE VIEW docs.v_module_with_subsystem AS
+SELECT
+  mp.*,
+  sm.subsystem_id,
+  s.name       AS subsystem_name,
+  s.risk_level AS subsystem_risk_level
+FROM analytics.module_profile mp
+LEFT JOIN analytics.subsystem_modules sm
+  ON sm.module = mp.module
+LEFT JOIN analytics.subsystems s
+  ON s.subsystem_id = sm.subsystem_id;
+```
+
+Functionally, this is:
+
+* “Give me module_profile, but also tell me what subsystem this is in and how risky that subsystem is.”
+
+---
+
+## 8. How these views fit together
+
+If you zoom out, the architecture views form a tidy hierarchy:
+
+* **Function level:** `docs.v_function_architecture`
+
+  * “What’s the role and risk of this individual function, and how is it placed in the call/import architecture?”
+
+* **File level:** `file_profile.*` (no explicit docs view name, but used under the hood) 
+
+* **Module level:** `docs.v_module_architecture` and `docs.v_module_with_subsystem`
+
+  * “What does this module own (files/functions), what’s its import/call topology, and what subsystem is it in?”
+
+* **Subsystem level:** `docs.v_subsystem_summary`
+
+  * “What are the major components of the codebase, and which ones are big, risky, or under‑tested?”
+
+And orthogonally you have **edges**:
+
+* `docs.v_call_graph_enriched` – function‑to‑function edges with risk and evidence.
+* Underlying `import_graph_edges.*` – module‑to‑module edges that feed the module/subsystem views. 
+
+All of this is designed so that a client can:
+
+* Start from a subsystem (`v_subsystem_summary`) → drill into modules (`v_module_architecture`) → drill into functions (`v_function_architecture`) → inspect specific caller/callee links (`v_call_graph_enriched`), without ever manually touching the raw `analytics.*` tables.
+
+---
+# Detailed mechanistic overview of graph metrics and other analytics #
+
+Got you — let’s zoom all the way in on **how the graph metrics and the remaining analytics are actually produced**, step by step.
+
+I’ll group things so it’s easier to orient:
+
+1. Graph metrics (functions + modules)
+2. AST‑driven analytics (ast_metrics, function_metrics, hotspots)
+3. Typedness + static diagnostics (typedness, function_types, static_diagnostics)
+4. Coverage + tests (coverage_lines, coverage_functions, test_catalog, test_coverage_edges)
+5. Risk aggregation (goid_risk_factors)
+6. Profiles (function_profile, file_profile, module_profile)
+7. Config + tags (config_values, tags_index)
+8. Symbol‑use analytics (symbol_use_edges)
+
+I’ll keep the focus on *mechanics*: inputs → transforms → outputs, and I’ll call out where I’m inferring behavior from the dataset contracts vs. what’s explicitly stated in `README_METADATA.md`.
+
+---
+
+## 1. Graph metrics
+
+### 1.1 Function graph metrics (`graph_metrics_functions.*`)
+
+**Purpose**: add call‑graph‑level topology signals for each function: fan‑in/out, degrees, PageRank/centrality, layers, maybe cycle membership. These are later surfaced via `docs.v_function_architecture`.
+
+**Inputs**
+
+* `graph.call_graph_edges.*` – static call edges with caller/callee GOIDs.
+* `graph.call_graph_nodes.*` – callable nodes; at minimum provides `goid_h128`, kind, and `rel_path`.
+
+**Mechanics (algorithm)**
+
+1. **Construct adjacency lists**
+
+   From `call_graph_edges`:
+
+   * For each edge row with non‑null callee:
+
+     * `caller = caller_goid_h128`
+     * `callee = callee_goid_h128`
+
+   * Build:
+
+     ```text
+     out_neighbors[caller] += {callee}
+     in_neighbors[callee]  += {caller}
+     ```
+
+     Using sets to dedupe multiple calls between same pair.
+
+2. **Compute fan‑in / fan‑out**
+
+   For each function `f`:
+
+   * `call_fan_out = |out_neighbors[f]|`
+   * `call_fan_in  = |in_neighbors[f]|`
+
+   These are exported directly in `function_profile` and/or `graph_metrics_functions`.
+
+3. **Compute degree counts**
+
+   A function’s degree is:
+
+   * `in_degree = call_fan_in`
+   * `out_degree = call_fan_out`
+   * `total_degree = in_degree + out_degree`
+
+   These may be stored explicitly as `call_in_degree`, `call_out_degree`, etc., in the graph metrics table.
+
+4. **Run centrality (PageRank)**
+
+   The README explicitly says graph metrics include “PageRank/centralities”.
+
+   Mechanically that looks like:
+
+   * Treat each function GOID as a node in a directed graph.
+
+   * Use the adjacency lists to run a PageRank‑style power iteration:
+
+     * Initialize `rank[v] = 1 / N` for all nodes.
+
+     * Iterate:
+
+       ```text
+       rank_new[v] = (1 - d)/N
+                     + d * sum(rank[u] / out_degree[u] for u in in_neighbors[v])
+       ```
+
+       where `d` is a damping factor (usually ~0.85).
+
+     * Stop when max change < ε or after K iterations.
+
+   * Persist `rank[v]` as `call_pagerank` or similar.
+
+   The exact library (networkx vs. custom) isn’t stated, but the resulting values and the wording in the README imply a standard PageRank‑style centrality.
+
+5. **Derive call graph layers**
+
+   The README mentions “layers” as part of graph metrics.
+
+   A typical implementation:
+
+   * Collapse **strongly connected components** (SCCs) of the call graph into supernodes (SCC ID per function).
+   * Topologically sort this SCC graph.
+   * Assign `layer_index` = topological order index for each SCC.
+   * Propagate that back to each function as `call_layer`.
+
+   This gives you:
+
+   * Low layer index: “entry-ish” functions with few or no upstream callers.
+   * Higher layer index: deeper internals called by many others.
+
+6. **Persist to `analytics.graph_metrics_functions`**
+
+   Build one row per function GOID with columns such as:
+
+   * `function_goid_h128`
+   * `call_fan_in`, `call_fan_out`
+   * `call_in_degree`, `call_out_degree`, `total_degree`
+   * `call_pagerank`
+   * `call_layer`
+   * (maybe) `call_is_leaf` (`call_fan_out == 0`)
+
+   These values are then joined into `docs.v_function_architecture`.
+
+---
+
+### 1.2 Module graph metrics (`graph_metrics_modules.*`)
+
+**Purpose**: the same idea, but at **module** level over the `import_graph_edges` graph; used by `docs.v_module_architecture`.
+
+**Inputs**
+
+* `graph.import_graph_edges.*` – module import edges with `src_module`, `dst_module`, and `cycle_group`, plus precomputed `src_fan_out` / `dst_fan_in`.
+* Optionally: aggregated function call graph data per module (to mix call‑graph centrality into module metrics).
+
+**Mechanics**
+
+1. **Build import adjacency**
+
+   For each row:
+
+   * `src = src_module`
+   * `dst = dst_module`
+
+   Build:
+
+   ```text
+   imports_out[src] += {dst}
+   imports_in[dst]  += {src}
+   ```
+
+2. **Import fan‑in / fan‑out**
+
+   * `import_fan_out = |imports_out[module]|`
+   * `import_fan_in  = |imports_in[module]|`
+
+   These values are also computed directly in `import_graph_edges` as `src_fan_out` / `dst_fan_in`, but `graph_metrics_modules` can store them in a per‑module table alongside additional metrics.
+
+3. **Centrality on import graph**
+
+   Run PageRank or a similar centrality algorithm over this directed graph:
+
+   * Output `import_pagerank`, and potentially other centralities like in‑/out‑degree centrality.
+
+4. **Compute hierarchical layers**
+
+   Similar process to functions:
+
+   * Collapse SCCs into supernodes (`cycle_group` from `import_graph_edges` is the SCC ID).
+   * Topologically sort; assign `import_layer` per SCC.
+   * Propagate `import_layer` to each module in the SCC.
+
+5. **Compute coupling**
+
+   The README mentions “symbol coupling” as part of graph metrics.
+
+   Likely mechanics:
+
+   * Use `symbol_use_edges.*` (SCIP def→use edges) to compute module‑to‑module coupling:
+
+     * Map `def_path` / `use_path` to modules.
+     * For each `(def_module, use_module)` pair, add to a `coupling_score[def_module]` and/or `coupling_score[use_module]`.
+
+   * Normalize scores (e.g., by number of functions or total symbols) and persist as `symbol_coupling` in `graph_metrics_modules`.
+
+6. **Persist**
+
+   One row per module:
+
+   * `module`
+   * `import_pagerank`, `import_in_degree`, `import_out_degree`, `import_layer`
+   * `symbol_coupling`
+   * Possibly: aggregated call‑graph centrality across its functions
+
+   Joined into `docs.v_module_architecture` and used for subsystem inference.
+
+---
+
+## 2. AST‑driven analytics
+
+### 2.1 `ast_metrics.*`
+
+**Purpose**: per‑file AST summary: node counts, class/function counts, depth, complexity.
+
+**Inputs**
+
+* `ast_nodes.*` – one row per AST node, with node type, parents, line spans.
+
+**Mechanics**
+
+During AST extraction (`AstIndexer`):
+
+1. For each file:
+
+   * Increment `node_count` for every node.
+   * When `node_type` is `FunctionDef`/`AsyncFunctionDef`, increment `function_count`.
+   * When `node_type` is `ClassDef`, increment `class_count`.
+
+2. Track depth:
+
+   * Maintain current depth during traversal; track `max_depth` per file.
+   * Compute `avg_depth` as the average depth over all nodes.
+
+3. Compute complexity:
+
+   * For each control‑flow construct (if/elif/for/while/try/except, boolean operators, comprehensions), increment a `decision_points` counter.
+   * Set `complexity = decision_points` or `1 + decision_points`.
+
+4. Emit `ast_metrics` row:
+
+   * `rel_path`, `node_count`, `function_count`, `class_count`, `avg_depth`, `max_depth`, `complexity`, `generated_at`.
+
+---
+
+### 2.2 `function_metrics.*`
+
+**Purpose**: per‑function structural metrics keyed by GOID; this is your “static complexity” view.
+
+**Inputs**
+
+* AST for each function (via `ast_nodes`).
+* GOID spans in `goids.*` (to know the function’s file & line range).
+
+**Mechanics**
+
+For each GOID whose `kind` is `function` or `method`:
+
+1. **Locate AST subtree**
+
+   * Use `rel_path`, `start_line`, `end_line` from `goids` to find the matching `FunctionDef` / `AsyncFunctionDef` node in `ast_nodes`.
+
+2. **Compute lines of code**
+
+   * `loc = end_line - start_line + 1`
+   * `logical_loc` = count of non‑blank, non‑comment lines within that span (requires scanning source text).
+
+3. **Parameter metrics**
+
+   * Inspect `function.args`:
+
+     * Count positional‑only, positional, keyword‑only parameters.
+     * Detect `*args` (`has_varargs`) and `**kwargs` (`has_varkw`).
+
+4. **Control‑flow & complexity**
+
+   * Walk the body, counting:
+
+     * `return` statements → `return_count`
+     * `yield` / `yield from` → `yield_count` & `is_generator`
+     * `raise` → `raise_count`
+
+   * Complexity:
+
+     * Start with 1, add 1 for each decision point (if, for, while, Boolean op with multiple operands, except, comprehensions, etc.) → `cyclomatic_complexity`.
+
+   * Max nesting depth:
+
+     * Track a depth counter while walking nested control structures → `max_nesting_depth`.
+
+5. **Other flags**
+
+   * `is_async` – from node type.
+   * `decorator_count` – length of decorator list.
+   * `has_docstring` – check first body statement for `ast.Expr` string.
+
+6. **Bucket complexity**
+
+   * `complexity_bucket` based on thresholds (like low/medium/high).
+
+7. **Persist row**
+
+   Everything above is written with keys describing GOID, repo, commit, path, qualname, etc.
+
+---
+
+### 2.3 `hotspots.jsonl`
+
+**Purpose**: identify “hot” files based on **git churn + complexity**.
+
+**Inputs**
+
+* Git history data (via `git log` / diff parsing).
+* `ast_metrics.*` (per‑file complexity).
+
+**Mechanics**
+
+For each file:
+
+1. Run `git log` within a configured time window (or N commits):
+
+   * Count commits touching the file → `commit_count`.
+   * Count distinct authors → `author_count`.
+   * Summarize diffs:
+
+     * Sum insertions → `lines_added`.
+     * Sum deletions → `lines_deleted`.
+
+2. Look up `complexity` from `ast_metrics` for that file.
+
+3. Compute hotspot `score`:
+
+   * Some function of churn + complexity; e.g.,
+
+     ```text
+     score = w1 * normalized_complexity
+           + w2 * log1p(commit_count)
+           + w3 * log1p(author_count)
+     ```
+
+   * Exact formula isn’t documented, but README clearly labels the output as a “composite hotspot score used for ranking.”
+
+4. Emit one row per `rel_path` with all metrics.
+
+Hotspot scores are reused later in `goid_risk_factors` and `file_profile` / `module_profile`.
+
+---
+
+## 3. Typedness + static diagnostics
+
+### 3.1 `function_types.*`
+
+**Purpose**: per‑function typedness + signature details: parameter annotations, return type, typedness buckets.
+
+**Inputs**
+
+* AST / LibCST for function signature and type annotations.
+* GOID spans to locate functions.
+* (Optionally) stub overlays or type comments.
+
+**Mechanics**
+
+For each function GOID:
+
+1. Locate the AST node (as in `function_metrics`).
+
+2. Count “typed” parameters:
+
+   * Skip `self` / `cls` for methods.
+
+   * For each remaining parameter:
+
+     * If `annotation` expression is present → count as annotated; record `param_types[name] = annotation_text`.
+     * Otherwise, unannotated.
+
+   * Set:
+
+     * `total_params`
+     * `annotated_params`
+     * `unannotated_params = total - annotated`
+
+3. Return typing:
+
+   * If function has `returns` annotation, set:
+
+     * `return_type` = rendered annotation
+     * `has_return_annotation = True`
+     * `return_type_source = "annotation"`
+
+   * Else:
+
+     * `return_type = null`
+     * `return_type_source = "unknown"`
+
+4. Ratios & buckets:
+
+   * `param_typed_ratio = annotated_params / total_params` (or 1.0 if no params).
+
+   * Flags:
+
+     * `fully_typed`: all params + return annotated.
+     * `partial_typed`: some but not all.
+     * `untyped`: no annotations.
+
+   * `typedness_bucket` = `typed` / `partial` / `untyped`.
+
+5. Persist as `function_types` row with GOID + path/qualname metadata.
+
+---
+
+### 3.2 File‑level `typedness.jsonl`
+
+**Purpose**: file‑level view of typedness + static error counts, used for risk and overlays.
+
+**Inputs**
+
+* `function_types.*` / AST‑based annotation counts.
+* Static type checker diagnostics: Pyrefly and Pyright.
+
+**Mechanics**
+
+For each file:
+
+1. Combine type checker errors:
+
+   * `pyrefly_errors` and `pyright_errors` from the underlying run (through some `FileTypeSignals` structure).
+   * `type_error_count = max(pyrefly_errors, pyright_errors)` or similar.
+
+2. Compute `annotation_ratio`:
+
+   * Aggregate `total_params` / `annotated_params` across all functions in the file.
+   * Build `{ "params": ratio, "returns": ratio_or_flag }`.
+
+3. Count untyped functions:
+
+   * Number of `function_types` rows in the file marked `untyped` → `untyped_defs`.
+
+4. Overlay recommendation:
+
+   * `overlay_needed = True` when `untyped_defs` is high or `type_error_count` > 0 (heuristic).
+
+5. Emit `typedness` row with `path`, `type_error_count`, `annotation_ratio`, `untyped_defs`, `overlay_needed`.
+
+---
+
+### 3.3 `static_diagnostics.*`
+
+**Purpose**: simple per‑file totals for static type errors.
+
+**Inputs**
+
+* Raw outputs from Pyrefly and Pyright, aggregated per file into `FileTypeSignals`.
+
+**Mechanics**
+
+For each file:
+
+* Read `pyrefly_errors`, `pyright_errors`.
+* Compute `total_errors = pyrefly_errors + pyright_errors`.
+* `has_errors = total_errors > 0`.
+
+Persist row with `rel_path` and these counts. These fields are later joined into `goid_risk_factors` and profiles.
+
+---
+
+## 4. Coverage + test analytics
+
+### 4.1 Line coverage (`coverage_lines.*`)
+
+**Purpose**: raw line‑level execution data from `coverage.py` runs; this is the primitive dynamic signal.
+
+**Inputs**
+
+* `.coverage` database with `dynamic_context = test_function` to capture per‑test context.
+
+**Mechanics**
+
+For each measured file:
+
+1. Iterate all executable lines recorded by coverage:
+
+   * `is_executable` from coverage (line present in analysis).
+   * `is_covered` from visited lines.
+   * `hits` = count (>=1 when covered).
+
+2. For dynamic contexts:
+
+   * `context_count` = number of distinct coverage contexts that touched the line (e.g., test functions).
+
+3. Persist one row per `(rel_path, line)` with repo + commit from `repo_map`.
+
+---
+
+### 4.2 Function coverage (`coverage_functions.*`)
+
+**Purpose**: per‑function coverage computed by grouping `coverage_lines` over GOID spans.
+
+**Inputs**
+
+* `goids.*` – gives `(rel_path, start_line, end_line)` for each function GOID.
+* `coverage_lines.*` – line coverage for those paths.
+
+**Mechanics**
+
+For each function GOID:
+
+1. Filter `coverage_lines` where:
+
+   * `rel_path` matches.
+   * `line` in `[start_line, end_line]`.
+
+2. Aggregate:
+
+   * `executable_lines = count(is_executable = TRUE)`.
+   * `covered_lines    = count(is_covered = TRUE)`.
+
+3. Derived fields:
+
+   * If `executable_lines > 0`:
+
+     * `coverage_ratio = covered_lines / executable_lines`.
+     * `tested = covered_lines > 0`.
+     * `untested_reason = ""` or `no_tests`.
+
+   * Else:
+
+     * `coverage_ratio = NULL`.
+     * `tested = FALSE`.
+     * `untested_reason = "no_executable_code"`.
+
+4. Emit `coverage_functions` row with GOID and these metrics.
+
+---
+
+### 4.3 Test catalog (`test_catalog.*`)
+
+**Purpose**: canonical set of pytest tests with metadata; this is the test‑side of test–function relationships.
+
+**Inputs**
+
+* `pytest-json-report` output (full run).
+* GOID lookups for test functions.
+
+**Mechanics**
+
+For each test node in the pytest JSON:
+
+1. Base fields:
+
+   * `test_id` = pytest nodeid (`path::TestClass::test_func[param]`).
+   * `status`, `duration_ms`, `markers`, `parametrized` (from JSON).
+   * `flaky` = presence of `flaky` marker.
+
+2. Match to GOID:
+
+   * Use the path and qualname to map the test function to a GOID in `goids.*`.
+   * If found, set `test_goid_h128` and `urn`. Otherwise leave null.
+
+3. Persist row per test.
+
+---
+
+### 4.4 Test coverage edges (`test_coverage_edges.*`)
+
+**Purpose**: bipartite edges linking tests to functions they executed.
+
+**Inputs**
+
+* `coverage_lines.*` with dynamic context per test.
+* `test_catalog.*` – resolved test IDs.
+* `goids.*` – function spans.
+
+**Mechanics**
+
+1. For each coverage context (test function):
+
+   * For each covered line, look up which function GOID spans that `(rel_path, line)` — using GOID spans.
+
+2. For each distinct `(test_id, function_goid_h128)` pair:
+
+   * Aggregate:
+
+     * `covered_lines` = count of lines covered in that function by that test.
+     * `executable_lines` from `coverage_functions` for that GOID.
+
+   * Compute `coverage_ratio = covered_lines / executable_lines` if `executable_lines > 0`.
+
+3. Attach test metadata:
+
+   * `last_status` from `test_catalog` (pass/fail/error).
+
+4. Persist `test_coverage_edges` row with GOID and test identifiers.
+
+These edges are where “which tests touch this function?” and “which functions does this test cover?” come from.
+
+---
+
+## 5. Risk aggregation (`goid_risk_factors.*`)
+
+**Purpose**: one record per function GOID combining *everything* we’ve talked about so far into a single risk vector.
+
+**Inputs**
+
+* `function_metrics.*` – structure/complexity.
+* `function_types.*` and `typedness.*` – typedness of function/file.
+* `hotspots.*` – file‑level churn metrics.
+* `static_diagnostics.*` – errors per file.
+* `coverage_functions.*` – per‑function coverage.
+* `test_coverage_edges.*` + `test_catalog.*` – test counts, failing tests, last status.
+* Module tags/owners from `modules.*` / `tags_index`.
+
+**Mechanics**
+
+For each function GOID:
+
+1. Join all relevant tables by GOID or path/qualname, pulling:
+
+   * `loc`, `logical_loc`, `cyclomatic_complexity`, `complexity_bucket`.
+   * `typedness_bucket`, `typedness_source`, plus file `annotation_ratio`.
+   * `hotspot_score` from the file containing the function.
+   * `static_error_count` and `has_static_errors` from `static_diagnostics`.
+   * `executable_lines`, `covered_lines`, `coverage_ratio`, `tested` from `coverage_functions`.
+   * From `test_coverage_edges` + `test_catalog`:
+
+     * `test_count`, `failing_test_count`, `last_test_status`.
+
+2. Compute a numeric `risk_score`:
+
+   * Weighted combination of components, e.g.:
+
+     * Up‑weights high complexity, low coverage, high hotspot_score, static errors, untypedness.
+     * Down‑weights well‑covered, typed, low‑churn functions.
+
+   * Exact formula isn’t in the README but the schema clearly labels `risk_component_*` weights in `function_profile` and a final `risk_score` / `risk_level` here.
+
+3. Bucket into `risk_level`: `low`, `medium`, `high` based on numeric thresholds.
+
+4. Attach tags and owners, and persist.
+
+This table is the core feed for `function_profile` and `v_function_architecture`.
+
+---
+
+## 6. Profiles
+
+Profiles are *denormalized* views built in a `ProfilesStep` that sit between raw analytics and the docs views.
+
+### 6.1 `function_profile.*`
+
+**Purpose**: “ready to use” record per function — metrics + coverage + tests + risk + docs + call graph degrees.
+
+**Inputs**
+
+* `goid_risk_factors.*` – main risk vector.
+* `function_metrics.*`, `function_types.*`.
+* `coverage_functions.*`, `test_coverage_edges.*`, `test_catalog.*`.
+* `call_graph_edges.*` / `call_graph_nodes.*` – for call fan‑in/out and leaf flag.
+* `core.docstrings` – doc_short/doc_long.
+* `modules.*` / `tags_index` – tags/owners.
+
+**Mechanics**
+
+For each GOID:
+
+1. Start with `goid_risk_factors` row.
+
+2. Add:
+
+   * Detailed param counts, varargs flags from `function_metrics`.
+   * Return type and param typed ratio from `function_types`.
+   * Coverage / tests numbers: `tested`, `tests_touching`, `failing_tests`, `slow_tests` etc.
+   * Call fan‑in/out and `call_is_leaf` via counts over `call_graph_edges`.
+   * `doc_short` / `doc_long` from docstrings.
+   * Tags/owners from module metadata.
+
+3. Bring through `risk_score`, `risk_level` and individual risk component weights.
+
+4. Persist one row per function GOID.
+
+This is what `docs.v_function_architecture` starts from, then adds graph metrics + subsystem context.
+
+---
+
+### 6.2 `file_profile.*`
+
+**Purpose**: per‑file aggregate across AST metrics, typedness, hotspots, function risk, coverage, and ownership.
+
+**Inputs**
+
+* `ast_metrics.*` – AST size/complexity.
+* `typedness.*` – file typedness.
+* `static_diagnostics.*`.
+* `hotspots.*`.
+* `function_profile.*` – underlying function risks and coverage.
+* Tags/owners from module metadata.
+
+**Mechanics**
+
+For each `rel_path`:
+
+1. Join `ast_metrics`, `typedness`, `static_diagnostics`, `hotspots`.
+
+2. Aggregate over functions in that file (group by `rel_path` on `function_profile`):
+
+   * `total_functions`, `public_functions` (based on naming or call graph nodes).
+   * LOC + complexity aggregates: `avg_loc`, `max_loc`, `avg_cyclomatic_complexity`.
+   * `high_risk_function_count`.
+   * File coverage: e.g., sum covered/executable lines across functions → `file_coverage_ratio`.
+   * `tested_function_count` and `tests_touching` (sum of tests executing functions in the file).
+
+3. Add tags/owners (from module).
+
+4. Persist row with all these metrics.
+
+---
+
+### 6.3 `module_profile.*`
+
+**Purpose**: the module/package‑level aggregation; this is the main basis for module architecture and subsystems.
+
+**Inputs**
+
+* `function_profile.*` and `file_profile.*`.
+* `graph.import_graph_edges.*` – for `import_fan_in`/`fan_out`, `cycle_group`, `in_cycle`.
+* Module metadata (`modules.*`, tags/owners).
+
+**Mechanics**
+
+For each `module`:
+
+1. Aggregate across files mapped to that module:
+
+   * `file_count`, `node_count`, `function_count`, `class_count`.
+   * `total_loc`, `total_logical_loc`.
+   * `avg_file_complexity`, `max_file_complexity`.
+
+2. Aggregate function risk and coverage:
+
+   * `high_risk_function_count`.
+   * `module_coverage_ratio` (e.g. tested functions / total functions).
+
+3. Join import graph:
+
+   * `import_fan_in`, `import_fan_out`, `cycle_group`, `in_cycle`.
+
+4. Attach tags/owners and a representative path from `core.modules`.
+
+5. Persist one row per module.
+
+These rows are then further decorated with graph metrics and subsystem info in `docs.v_module_architecture` and `docs.v_module_with_subsystem`.
+
+---
+
+## 7. Config + tags
+
+### 7.1 `config_values.*`
+
+**Purpose**: flatten structured config files and map each key to the codepaths/modules that reference it.
+
+**Inputs**
+
+* Config indexer output from `index_config_files` (parsing YAML/TOML/JSON/INI/ENV).
+* Reference discovery from `prepare_config_state` (searching code for these keys).
+
+**Mechanics**
+
+1. Scan for config files:
+
+   * Walk repo, matching config patterns (`*.yaml`, `*.toml`, `*.json`, `.env`, etc.).
+   * For each file, parse into a nested map.
+
+2. Flatten keys:
+
+   * Turn nested keys into dot paths: `service.database.host`.
+   * For each `(config_path, key)` pair, record `format` and normalized key string.
+
+3. Find references:
+
+   * Look through code (maybe via simple string search or more structured scanning) for occurrences of the key or a normalized variant.
+   * For each reference, record the file path and associated module name.
+
+4. Aggregate:
+
+   * `reference_paths` = sorted list of files referencing the key.
+   * `reference_modules` = module names for those files.
+   * `reference_count` = length of the set.
+
+5. Persist one row per key per config file.
+
+---
+
+### 7.2 `tags_index.yaml` / tags signals in profiles
+
+**Purpose**: apply semantic tags (e.g., `api`, `infra`, `ml`) and infer ownership; these are then propagated into `modules`, `function_profile`, `file_profile`, `module_profile`.
+
+**Inputs**
+
+* Tag rules (YAML): patterns of includes/excludes per tag.
+* `modules.*` registry mapping modules to paths.
+
+**Mechanics**
+
+1. For each tag rule:
+
+   * Evaluate `includes` glob patterns against file paths.
+   * Apply `excludes` to filter out matches.
+
+2. For each matched path:
+
+   * Map to module(s) via `repo_map.modules`.
+   * Add tag to the module/file.
+
+3. Optionally infer owners:
+
+   * Rules can attach owners (teams/emails) to tags; these propagate to modules/files/functions.
+
+4. Persist `tags_index.yaml` listing rules and resolved `matches`, and propagate tags/owners columns into:
+
+   * `modules.jsonl`
+   * `function_profile`, `file_profile`, `module_profile`
+
+These tags feed risk and architecture views (and allow subsystems to be described in human terms).
+
+---
+
+## 8. Symbol‑use analytics (`symbol_use_edges.*`)
+
+**Purpose**: SCIP‑based def→use relationships; used for coupling metrics and for SCPI evidence in call graph edges (we deep‑dived earlier, but here’s the short pipeline).
+
+**Inputs**
+
+* `index.scip.json` – SCIP index with documents, occurrences, and symbols.
+
+**Mechanics**
+
+1. Parse SCIP documents:
+
+   * For each doc: `relative_path` and `occurrences`.
+
+2. Build map `symbol → def_path`:
+
+   * For occurrences where role bit includes “definition”, record the path as `def_path`. First definition wins.
+
+3. Build def→use edges:
+
+   * For each doc + occurrence where role bits include “use” (import, read, write):
+
+     * `use_path = relative_path`
+     * Look up `def_path` for the `symbol`. If found:
+
+       * Emit `(symbol, def_path, use_path)`.
+
+4. Decorate with flags:
+
+   * `same_file = def_path == use_path`.
+   * `same_module` = modules derived from both paths match.
+
+5. Persist as `symbol_use_edges.*`.
+
+These edges are then:
+
+* Used directly by tools (“where is symbol S used?”).
+* Aggregated into module‑level coupling in `graph_metrics_modules`.
+* Used to derive SCIP candidates for unresolved call graph edges (the path we walked in detail earlier).
+
+---
+
+## Wrap‑up
+
+So, in terms of *mechanistic* flow:
+
+* **Graphs** (call, CFG, DFG, import, symbol uses) are built first.
+* **Graph metrics** run over those graphs to provide centrality, degree, and layering at function + module level.
+* **AST analytics** (ast_metrics, function_metrics, hotspots) and **typedness / diagnostics** flesh out the static perspective.
+* **Coverage & test analytics** introduce dynamic behavior.
+* **Risk aggregation** (`goid_risk_factors`) merges all those signals per function.
+* **Profiles** (function/file/module) denormalize everything into three clean “shapes”.
+* **Subsystems + graph metrics** then lift this up to **architecture level**, and **docs views** (`docs.v_*`) present it all in a consumable form for LLMs and tools.
+
+
+
+
 

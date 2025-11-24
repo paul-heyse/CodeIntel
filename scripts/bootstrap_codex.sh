@@ -57,27 +57,6 @@ case ":${PATH}:" in
 esac
 hash -r 2>/dev/null || true
 
-# Make sure src is importable in this process
-export PYTHONPATH="${project_root}/src:${PYTHONPATH:-}"
-
-db_path="${project_root}/build/db/codeintel.duckdb"
-if [ -f "${db_path}" ]; then
-  echo "Applying schemas to existing DB at ${db_path} ..."
-  CODEINTEL_DB_PATH="${db_path}" uv run python - <<'PY'
-import os
-import duckdb
-from codeintel.storage.schemas import apply_all_schemas
-
-db_path = os.environ["CODEINTEL_DB_PATH"]
-con = duckdb.connect(db_path)
-apply_all_schemas(con)
-con.close()
-print(f"Schemas applied to {db_path}")
-PY
-else
-  echo "No DB at ${db_path}; skipping schema apply."
-fi
-
 echo "Environment looks good:"
 echo "  python: $(${python_bin} -V 2>&1)"
 echo "  where : ${python_bin}"

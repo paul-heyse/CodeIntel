@@ -14,7 +14,7 @@ from codeintel.analytics.profiles import (
     build_module_profile,
 )
 from codeintel.config.models import ProfilesAnalyticsConfig
-from codeintel.storage.schemas import apply_all_schemas
+from tests._helpers.db import make_memory_gateway
 
 EPSILON = 1e-6
 REPO = "demo/repo"
@@ -51,18 +51,18 @@ def _seed_profile_fixtures(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         """
         INSERT INTO analytics.typedness (path, type_error_count, annotation_ratio,
-                                         untyped_defs, overlay_needed)
-        VALUES (?, 1, '{"params": 0.5}', 0, FALSE)
+                                         untyped_defs, overlay_needed, repo, commit)
+        VALUES (?, 1, '{"params": 0.5}', 0, FALSE, ?, ?)
         """,
-        [REL_PATH],
+        [REL_PATH, REPO, COMMIT],
     )
     con.execute(
         """
         INSERT INTO analytics.static_diagnostics (rel_path, pyrefly_errors, pyright_errors,
-                                                  ruff_errors, total_errors, has_errors)
-        VALUES (?, 1, 0, 0, 1, TRUE)
+                                                  ruff_errors, total_errors, has_errors, repo, commit)
+        VALUES (?, 1, 0, 0, 1, TRUE, ?, ?)
         """,
-        [REL_PATH],
+        [REL_PATH, REPO, COMMIT],
     )
     con.execute(
         """
@@ -254,8 +254,8 @@ def _assert_module_profile(con: duckdb.DuckDBPyConnection) -> None:
 
 def test_profile_builders_aggregate_expected_fields() -> None:
     """Ensure profile builders compose metrics, tests, coverage, and graph data."""
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    gateway = make_memory_gateway()
+    con = gateway.con
     _seed_profile_fixtures(con)
     cfg = ProfilesAnalyticsConfig(repo=REPO, commit=COMMIT)
     build_function_profile(con, cfg)

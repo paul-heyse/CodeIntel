@@ -9,12 +9,14 @@ import duckdb
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.docs_export.export_jsonl import export_jsonl_for_table
+from codeintel.storage.gateway import open_memory_gateway
 
 
 def _setup_edge_table(con: duckdb.DuckDBPyConnection, table: str) -> None:
     con.execute("CREATE SCHEMA IF NOT EXISTS graph;")
     schema = TABLE_SCHEMAS[table]
     cols = ", ".join(f"{col.name} {col.type}" for col in schema.columns)
+    con.execute(f"DROP TABLE IF EXISTS {table};")
     con.execute(f"CREATE TABLE {table} ({cols});")
 
 
@@ -27,7 +29,7 @@ def test_call_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
     AssertionError
         If repo/commit columns are missing or keys drift.
     """
-    con = duckdb.connect(":memory:")
+    con = open_memory_gateway().con
     table = "graph.call_graph_edges"
     _setup_edge_table(con, table)
     con.execute(
@@ -64,7 +66,7 @@ def test_import_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
     AssertionError
         If repo/commit columns are missing or keys drift.
     """
-    con = duckdb.connect(":memory:")
+    con = open_memory_gateway().con
     table = "graph.import_graph_edges"
     _setup_edge_table(con, table)
     con.execute(

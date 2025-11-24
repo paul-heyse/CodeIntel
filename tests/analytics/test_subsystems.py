@@ -9,7 +9,7 @@ import pytest
 
 from codeintel.analytics.subsystems import build_subsystems
 from codeintel.config.models import SubsystemsConfig, SubsystemsOverrides
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import open_memory_gateway
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -28,9 +28,8 @@ def _setup_db() -> duckdb.DuckDBPyConnection:
     duckdb.DuckDBPyConnection
         Connected in-memory database ready for writes.
     """
-    con = duckdb.connect(database=":memory:")
-    apply_all_schemas(con)
-    return con
+    gateway = open_memory_gateway(apply_schema=True)
+    return gateway.con
 
 
 def _seed_modules(con: duckdb.DuckDBPyConnection) -> None:

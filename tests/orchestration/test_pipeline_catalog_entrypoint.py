@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
-import duckdb
 from coverage import Coverage
 
 from codeintel.analytics.tests_analytics import compute_test_coverage_edges
@@ -22,38 +21,11 @@ from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.ingestion.common import run_batch
 from codeintel.orchestration.steps import AstStep, GoidsStep, PipelineContext, RepoScanStep
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import StorageConfig, open_gateway
+from tests._helpers.fakes import FakeCoverage
 
-TARGET_GOID = 200
 REPO: Final = "demo/repo"
 COMMIT: Final = "deadbeef"
-
-
-class _FakeCoverageData:
-    def __init__(self, contexts_by_file: dict[str, dict[int, set[str]]]) -> None:
-        self._contexts_by_file = contexts_by_file
-
-    def measured_files(self) -> list[str]:
-        return list(self._contexts_by_file.keys())
-
-    def contexts_by_lineno(self, filename: str) -> dict[int, set[str]]:
-        return self._contexts_by_file.get(filename, {})
-
-
-class _FakeCoverage(Coverage):
-    def __init__(
-        self, statements: dict[str, list[int]], contexts: dict[str, dict[int, set[str]]]
-    ) -> None:
-        super().__init__()
-        self._statements = statements
-        self._contexts = contexts
-
-    def analysis2(self, filename: str) -> tuple[str, list[int], list[int], list[int], list[int]]:
-        stmts = self._statements.get(filename, [])
-        return filename, stmts, [], [], stmts
-
-    def get_data(self) -> _FakeCoverageData:
-        return _FakeCoverageData(self._contexts)
 
 
 def _write_repo(repo_root: Path) -> tuple[int, int]:
@@ -73,8 +45,10 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     caller_start, caller_end = _write_repo(repo_root)
 
-    con = duckdb.connect(str(tmp_path / "db.duckdb"))
-    apply_all_schemas(con)
+    db_path = tmp_path / "db.duckdb"
+    con = open_gateway(
+        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=False, validate_schema=True)
+    ).con
 
     run_batch(
         con,
@@ -97,7 +71,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
 
     ctx = PipelineContext(
         repo_root=repo_root,
-        db_path=tmp_path / "db.duckdb",
+        db_path=db_path,
         build_dir=tmp_path / "build",
         repo=REPO,
         commit=COMMIT,
@@ -147,7 +121,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         abs_b = str((repo_root / "pkg" / "b.py").resolve())
         statements = {abs_b: [caller_start, caller_end]}
         contexts = {abs_b: {caller_start: {"tests/test_sample.py::test_caller"}}}
-        return _FakeCoverage(statements, contexts)
+        return FakeCoverage(statements, contexts)
 
     compute_test_coverage_edges(
         con,

@@ -12,7 +12,7 @@ import duckdb
 
 from codeintel.config.models import CallGraphConfig
 from codeintel.graphs.callgraph_builder import build_call_graph
-from codeintel.storage.schemas import apply_all_schemas
+from tests._helpers.db import make_memory_gateway
 
 
 def _write_file(path: Path, content: str) -> None:
@@ -121,8 +121,11 @@ def _normalize_callee(value: object) -> int | None:
     return cast("int", value)
 
 
-def _edge_to(edge_records: list[dict], callee: int | None) -> list[dict]:
-    results: list[dict] = []
+def _edge_to(
+    edge_records: list[dict[str, object]],
+    callee: int | None,
+) -> list[dict[str, object]]:
+    results: list[dict[str, object]] = []
     for edge in edge_records:
         callee_val = _normalize_callee(edge["callee_goid_h128"])
         if callee_val == callee:
@@ -131,7 +134,7 @@ def _edge_to(edge_records: list[dict], callee: int | None) -> list[dict]:
 
 
 def _assert_resolved_edge(
-    edge_records: list[dict],
+    edge_records: list[dict[str, object]],
     callee: int,
     allowed_resolutions: set[str],
     missing_message: str,
@@ -146,7 +149,7 @@ def _assert_resolved_edge(
         raise AssertionError(message)
 
 
-def _assert_unresolved_edge(edge_records: list[dict]) -> None:
+def _assert_unresolved_edge(edge_records: list[dict[str, object]]) -> None:
     edges = _edge_to(edge_records, None)
     if not edges:
         message = "expected unresolved edge for unknown call"
@@ -156,12 +159,17 @@ def _assert_unresolved_edge(edge_records: list[dict]) -> None:
         raise AssertionError(message)
     for edge in edges:
         evidence = edge.get("evidence_json")
+        evidence_obj: dict[str, object] | None
         if isinstance(evidence, str):
-            evidence = json.loads(evidence)
-        if evidence is None:
+            evidence_obj = cast("dict[str, object]", json.loads(evidence))
+        elif isinstance(evidence, dict):
+            evidence_obj = cast("dict[str, object]", evidence)
+        else:
+            evidence_obj = None
+        if evidence_obj is None:
             message = "expected evidence_json on unresolved edge"
             raise AssertionError(message)
-        scip_candidates = evidence.get("scip_candidates")
+        scip_candidates = evidence_obj.get("scip_candidates")
         if scip_candidates != ["pkg/a.py"]:
             message = f"expected SCIP candidates ['pkg/a.py'], got {scip_candidates}"
             raise AssertionError(message)
@@ -187,8 +195,8 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
 
     repo = "demo/repo"
     commit = "deadbeef"
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    gateway = make_memory_gateway()
+    con = gateway.con
 
     # Seed GOIDs for functions referenced in the fixture.
     _seed_goids(con, repo, commit)

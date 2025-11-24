@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
 import httpx
 import pytest
 
@@ -16,22 +16,28 @@ from codeintel.services.factory import (
     build_backend_resource,
 )
 from codeintel.services.query_service import HttpQueryService, LocalQueryService
+from codeintel.storage.gateway import StorageConfig, open_gateway, open_memory_gateway
 
 
-def _seed_repo_identity(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> None:
+def _seed_repo_identity(db_path: Path, repo: str, commit: str) -> None:
     """Create the core.repo_map table with a single identity row."""
-    con.execute("CREATE SCHEMA IF NOT EXISTS core;")
-    con.execute("CREATE TABLE IF NOT EXISTS core.repo_map (repo TEXT, commit TEXT);")
-    con.execute("DELETE FROM core.repo_map;")
-    con.execute("INSERT INTO core.repo_map VALUES (?, ?);", [repo, commit])
+    cfg = StorageConfig(
+        db_path=db_path,
+        read_only=False,
+        apply_schema=True,
+        ensure_views=False,
+        validate_schema=True,
+    )
+    gateway = open_gateway(cfg)
+    now = datetime.now(tz=UTC).isoformat()
+    gateway.core.insert_repo_map([(repo, commit, "{}", "{}", now)])
+    gateway.close()
 
 
 def test_build_backend_resource_local(tmp_path: Path) -> None:
     """Local wiring produces a DuckDB backend and service with identity verification."""
     db_path = tmp_path / "codeintel.duckdb"
-    con = duckdb.connect(str(db_path))
-    _seed_repo_identity(con, "r", "c")
-    con.close()
+    _seed_repo_identity(db_path, "r", "c")
 
     cfg = ServingConfig(
         mode="local_db",
@@ -79,4 +85,28 @@ def test_build_backend_resource_remote() -> None:
         pytest.fail("Expected HttpBackend for remote wiring")
     if not isinstance(resource.service, HttpQueryService):
         pytest.fail("Expected HttpQueryService for remote wiring")
+    resource.close()
+
+
+def test_build_backend_resource_gateway_path() -> None:
+    """Gateway-provided connection and registry are honored."""
+    gateway = open_memory_gateway(apply_schema=True, ensure_views=True)
+    now_iso = datetime.now(tz=UTC).isoformat()
+    gateway.core.insert_repo_map([("r", "c", "{}", "{}", now_iso)])
+
+    cfg = ServingConfig(
+        mode="local_db",
+        repo_root=Path.cwd(),
+        repo="r",
+        commit="c",
+    )
+
+    resource = build_backend_resource(cfg, gateway=gateway, read_only=True)
+    if not isinstance(resource.service, LocalQueryService):
+        pytest.fail("Expected LocalQueryService when using gateway wiring")
+    backend = resource.backend
+    if getattr(backend, "con", None) is not gateway.con:
+        pytest.fail("Gateway connection should be reused by backend")
+    if getattr(backend, "dataset_tables", None) != dict(gateway.datasets.mapping):
+        pytest.fail("Dataset registry should come from gateway")
     resource.close()

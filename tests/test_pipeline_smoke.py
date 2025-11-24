@@ -5,9 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import duckdb
-
 from codeintel.cli.main import main
+from codeintel.storage.gateway import StorageConfig, open_gateway
 
 
 def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
@@ -71,7 +70,15 @@ def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
             raise RuntimeError(message)
 
     # Verify docs views contain data
-    con = duckdb.connect(str(db_path), read_only=True)
+    con = open_gateway(
+        StorageConfig(
+            db_path=db_path,
+            read_only=True,
+            apply_schema=False,
+            ensure_views=False,
+            validate_schema=False,
+        )
+    ).con
     goid_row = con.execute("SELECT COUNT(*) FROM core.goids").fetchone()
     goid_count = int(goid_row[0]) if goid_row is not None else 0
     if goid_count <= 0:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from codeintel.ingestion import (
     tests_ingest,
     typing_ingest,
 )
+from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.ingestion.tool_runner import ToolRunner
 
@@ -73,6 +75,8 @@ class IngestionContext:
     tools: ToolsConfig | None = None
     scan_config: ScanConfig | None = None
     tool_runner: ToolRunner | None = None
+    scip_runner: Callable[..., ScipIngestResult] | None = None
+    artifact_writer: Callable[[Path, Path, Path], None] | None = None
 
     @property
     def paths(self) -> PathsConfig:
@@ -116,6 +120,7 @@ def run_repo_scan(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
+        tool_runner=ctx.tool_runner,
     )
     repo_scan.ingest_repo(con=con, cfg=cfg, scan_config=ctx.scan_config)
     _log_step_done("repo_scan", start, ctx)
@@ -133,11 +138,17 @@ def run_scip_ingest(
         Status and artifact paths for the SCIP run.
     """
     start = _log_step_start("scip_ingest", ctx)
-    cfg = ScipIngestConfig.from_paths(
+    doc_dir = ctx.paths.document_output_dir or (ctx.repo_root / "Document Output")
+    cfg = ScipIngestConfig(
+        repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
-        paths=ctx.paths,
-        tools=ctx.tools,
+        build_dir=ctx.build_paths.build_dir,
+        document_output_dir=doc_dir,
+        scip_python_bin=ctx.tools.scip_python_bin if ctx.tools else "scip-python",
+        scip_bin=ctx.tools.scip_bin if ctx.tools else "scip",
+        scip_runner=ctx.scip_runner,
+        artifact_writer=ctx.artifact_writer,
     )
     result = scip_ingest.ingest_scip(con=con, cfg=cfg)
     _log_step_done("scip_ingest", start, ctx)
@@ -172,11 +183,12 @@ def run_ast_extract(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> No
 def run_coverage_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None:
     """Load coverage lines from coverage.json or coverage.py data."""
     start = _log_step_start("coverage_ingest", ctx)
-    cfg = CoverageIngestConfig.from_paths(
+    cfg = CoverageIngestConfig(
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
-        tools=ctx.tools,
+        coverage_file=(ctx.tools.coverage_file if ctx.tools else None),  # type: ignore[arg-type]
+        tool_runner=ctx.tool_runner,
     )
     runner = ctx.tool_runner or ToolRunner(cache_dir=ctx.build_paths.tool_cache)
     coverage_ingest.ingest_coverage_lines(
@@ -214,6 +226,7 @@ def run_typing_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> 
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
+        tool_runner=ctx.tool_runner,
     )
     runner = ctx.tool_runner or ToolRunner(cache_dir=ctx.build_paths.tool_cache)
     typing_ingest.ingest_typing_signals(

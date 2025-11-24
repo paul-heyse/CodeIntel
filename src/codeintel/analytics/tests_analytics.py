@@ -16,7 +16,10 @@ from coverage.exceptions import CoverageException
 
 from codeintel.config.models import TestCoverageConfig
 from codeintel.config.schemas.sql_builder import TEST_CATALOG_UPDATE_GOIDS, ensure_schema
-from codeintel.graphs.function_catalog import load_function_catalog
+from codeintel.graphs.function_catalog_service import (
+    FunctionCatalogProvider,
+    FunctionCatalogService,
+)
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import TestCoverageEdgeRow, test_coverage_edge_to_tuple
 from codeintel.utils.paths import normalize_rel_path
@@ -57,9 +60,14 @@ def _load_coverage_data(cfg: TestCoverageConfig) -> Coverage | None:
 
 
 def _functions_by_path(
-    con: duckdb.DuckDBPyConnection, cfg: TestCoverageConfig
+    con: duckdb.DuckDBPyConnection,
+    cfg: TestCoverageConfig,
+    catalog_provider: FunctionCatalogProvider | None = None,
 ) -> dict[str, list[FunctionRow]]:
-    catalog = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit)
+    provider = catalog_provider or FunctionCatalogService.from_db(
+        con, repo=cfg.repo, commit=cfg.commit
+    )
+    catalog = provider.catalog()
     if not catalog.function_spans:
         return {}
 
@@ -277,7 +285,8 @@ def compute_test_coverage_edges(
     con: duckdb.DuckDBPyConnection,
     cfg: TestCoverageConfig,
     *,
-    coverage_loader: Callable[[TestCoverageConfig], Coverage | None] = _load_coverage_data,
+    coverage_loader: Callable[[TestCoverageConfig], Coverage | None] | None = None,
+    catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """
     Populate analytics.test_coverage_edges by combining coverage contexts with GOIDs.
@@ -288,24 +297,27 @@ def compute_test_coverage_edges(
     """
     log.info("Computing test_coverage_edges for repo=%s commit=%s", cfg.repo, cfg.commit)
 
-    cov = coverage_loader(cfg)
+    loader = coverage_loader or cfg.coverage_loader or _load_coverage_data
+    cov = loader(cfg)
     if cov is None:
         return
 
-    funcs_by_path = _functions_by_path(con, cfg)
+    funcs_by_path = _functions_by_path(con, cfg, catalog_provider=catalog_provider)
     if not funcs_by_path:
         log.info("No functions found; skipping test coverage edges")
         return
 
-    status_rows = con.execute(
-        """
-        SELECT test_id, status
-        FROM analytics.test_catalog
-        WHERE repo = ? AND commit = ?
-        """,
-        [cfg.repo, cfg.commit],
-    ).fetchall()
-    status_by_test = {row[0]: row[1] for row in status_rows}
+    status_by_test = {
+        row[0]: row[1]
+        for row in con.execute(
+            """
+            SELECT test_id, status
+            FROM analytics.test_catalog
+            WHERE repo = ? AND commit = ?
+            """,
+            [cfg.repo, cfg.commit],
+        ).fetchall()
+    }
     test_goid_by_id, test_urn_by_id = _backfill_test_goids(con, cfg)
     test_meta_by_id = {
         test_id: (test_goid_by_id.get(test_id), test_urn_by_id.get(test_id))

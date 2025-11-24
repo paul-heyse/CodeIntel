@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codeintel.dev/export/base.json",
+  "title": "Base export schema",
+  "type": "object",
+  "properties": {
+    "repo": { "type": "string" },
+    "commit": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "required": ["repo", "commit"],
+  "additionalProperties": true
+}

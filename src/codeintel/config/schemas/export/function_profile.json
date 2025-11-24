@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codeintel.dev/export/function_profile.json",
+  "title": "Function Profile Export",
+  "allOf": [
+    { "$ref": "./base.json" },
+    {
+      "type": "object",
+      "properties": {
+        "function_goid_h128": { "type": ["integer", "string"] },
+        "urn": { "type": "string" },
+        "rel_path": { "type": "string" },
+        "module": { "type": "string" },
+        "qualname": { "type": "string" },
+        "risk_level": { "type": "string" }
+      },
+      "required": ["function_goid_h128", "urn", "rel_path"]
+    }
+  ]
+}

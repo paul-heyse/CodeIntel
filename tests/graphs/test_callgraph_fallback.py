@@ -4,15 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from codeintel.graphs import call_ast, call_cst, callgraph_builder
+from codeintel.graphs import callgraph_builder
 from codeintel.graphs.callgraph_builder import CallGraphRunScope
 from codeintel.graphs.function_catalog import FunctionCatalog, FunctionMeta
 from codeintel.models.rows import CallGraphEdgeRow
 
 
-def test_callgraph_falls_back_to_ast(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_callgraph_falls_back_to_ast(tmp_path: Path) -> None:
     """
     When CST yields no edges, AST collector should still populate edges.
 
@@ -57,9 +55,6 @@ def test_callgraph_falls_back_to_ast(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         ast_calls.append(Path(rel_path))
         return [fake_edge]
 
-    monkeypatch.setattr(call_cst, "collect_edges_cst", _fake_collect_edges_cst)
-    monkeypatch.setattr(call_ast, "collect_edges_ast", _fake_collect_edges_ast)
-
     # Arrange: repo structure with one function span
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
@@ -83,9 +78,13 @@ def test_callgraph_falls_back_to_ast(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     edges = callgraph_builder._collect_edges(  # noqa: SLF001
         catalog,
         scope,
-        {"mod.foo": 1, "foo": 1},
-        {},
-        {},
+        callgraph_builder.CallGraphInputs(
+            global_callee_by_name={"mod.foo": 1, "foo": 1},
+            scip_candidates_by_use={},
+            def_goids_by_path={},
+            cst_collector=_fake_collect_edges_cst,
+            ast_collector=_fake_collect_edges_ast,
+        ),
     )
 
     # Assert: AST path used to supply edges when CST returns none

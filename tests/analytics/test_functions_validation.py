@@ -27,7 +27,7 @@ from codeintel.analytics.functions import (
 )
 from codeintel.config.models import FunctionAnalyticsConfig, FunctionAnalyticsOverrides
 from codeintel.ingestion.ast_utils import AstSpanIndex
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import open_memory_gateway
 
 
 def _insert_goid(con: duckdb.DuckDBPyConnection, *, rel_path: str, qualname: str) -> None:
@@ -66,8 +66,8 @@ def _insert_goid(con: duckdb.DuckDBPyConnection, *, rel_path: str, qualname: str
 
 def test_records_validation_when_parser_returns_none(tmp_path: Path) -> None:
     """Parser hook returning None records validation rows instead of failing silently."""
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    gateway = open_memory_gateway()
+    con = gateway.con
 
     rel_path = "mod.py"
     file_path = tmp_path / rel_path
@@ -107,8 +107,8 @@ def test_records_validation_when_parser_returns_none(tmp_path: Path) -> None:
 
 def test_custom_parser_hook_is_used(tmp_path: Path) -> None:
     """Custom parser hook is invoked and metrics are emitted when it returns a ParsedFile."""
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    gateway = open_memory_gateway()
+    con = gateway.con
 
     rel_path = "mod.py"
     qualname = "pkg.mod.foo"
@@ -186,30 +186,29 @@ def test_config_invalid_parser_string_raises(tmp_path: Path) -> None:
 
 def test_build_and_persist_paths_are_separate(tmp_path: Path) -> None:
     """build_function_analytics remains pure until persisted."""
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    gateway = open_memory_gateway()
+    con = gateway.con
 
-    rel_path = "mod.py"
-    qualname = "pkg.mod.foo"
-    file_path = tmp_path / rel_path
+    file_path = tmp_path / "mod.py"
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text("def foo():\n    return 1\n", encoding="utf-8")
-    _insert_goid(con, rel_path=rel_path, qualname=qualname)
+    _insert_goid(con, rel_path="mod.py", qualname="pkg.mod.foo")
 
     cfg = FunctionAnalyticsConfig.from_paths(
         repo="demo/repo",
         commit="deadbeef",
         repo_root=tmp_path,
     )
+    rel_path = "mod.py"
     goid_row: GoidRow = {
         "goid_h128": 1,
-        "urn": f"urn:{qualname}",
+        "urn": "urn:pkg.mod.foo",
         "repo": cfg.repo,
         "commit": cfg.commit,
         "rel_path": rel_path,
         "language": "python",
         "kind": "function",
-        "qualname": qualname,
+        "qualname": "pkg.mod.foo",
         "start_line": 1,
         "end_line": 2,
     }
@@ -255,8 +254,8 @@ def test_build_and_persist_paths_are_separate(tmp_path: Path) -> None:
 
 def test_validation_reporter_emits_counts(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """Validation reporter produces structured counters."""
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    gateway = open_memory_gateway()
+    con = gateway.con
 
     rel_path = "mod.py"
     file_path = tmp_path / rel_path
