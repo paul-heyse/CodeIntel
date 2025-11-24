@@ -2,42 +2,44 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from typing import Protocol, cast
+from typing import Protocol
 
 import anyio
 import duckdb
 import httpx
 
+from codeintel.config.serving_models import verify_db_identity
 from codeintel.mcp import errors
 from codeintel.mcp.config import McpServerConfig
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
+    FileHintsResponse,
     FileProfileResponse,
     FileSummaryResponse,
+    FunctionArchitectureResponse,
     FunctionProfileResponse,
     FunctionSummaryResponse,
     HighRiskFunctionsResponse,
-    Message,
+    ModuleArchitectureResponse,
     ModuleProfileResponse,
+    ModuleSubsystemResponse,
     ProblemDetail,
-    ResponseMeta,
+    SubsystemModulesResponse,
+    SubsystemSearchResponse,
+    SubsystemSummaryResponse,
     TestsForFunctionResponse,
-    ViewRow,
 )
-from codeintel.mcp.query_service import (
-    BackendLimits,
-    DuckDBQueryService,
-    clamp_limit_value,
-    clamp_offset_value,
-)
-from codeintel.server.datasets import build_dataset_registry, describe_dataset
+from codeintel.mcp.query_service import BackendLimits, DuckDBQueryService
+from codeintel.server.datasets import build_dataset_registry
+from codeintel.services.query_service import HttpQueryService, LocalQueryService
 
-VALID_DIRECTIONS = frozenset({"in", "out", "both"})
 MAX_ROWS_LIMIT = BackendLimits().max_rows_per_call
 HTTP_ERROR_STATUS = 400
+LOG = logging.getLogger("codeintel.mcp.backend")
 
 
 async def _aclose_client(client: httpx.AsyncClient) -> None:
@@ -77,7 +79,7 @@ class QueryBackend(Protocol):
         self,
         *,
         min_risk: float = 0.7,
-        limit: int = 50,
+        limit: int | None = None,
         tested_only: bool = False,
     ) -> HighRiskFunctionsResponse:
         """List high-risk functions from analytics.goid_risk_factors."""
@@ -88,7 +90,7 @@ class QueryBackend(Protocol):
         *,
         goid_h128: int,
         direction: str = "both",
-        limit: int = 50,
+        limit: int | None = None,
     ) -> CallGraphNeighborsResponse:
         """Return incoming/outgoing call graph neighbors."""
         ...
@@ -123,6 +125,44 @@ class QueryBackend(Protocol):
         """Return a module profile."""
         ...
 
+    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
+        """Return call-graph architecture metrics for a function."""
+        ...
+
+    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
+        """Return import-graph architecture metrics for a module."""
+        ...
+
+    def list_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSummaryResponse:
+        """List inferred subsystems."""
+        ...
+
+    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
+        """Return subsystem memberships for a module."""
+        ...
+
+    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+        """Return IDE-focused hints for a file (module + subsystem context)."""
+        ...
+
+    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+        """Return subsystem details and module memberships."""
+        ...
+
+    def search_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSearchResponse:
+        """Search-oriented subsystem listing."""
+        ...
+
+    def summarize_subsystem(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
+        """Summarize a subsystem with truncated module list."""
+        ...
+
     def list_datasets(self) -> list[DatasetDescriptor]:
         """List datasets available to browse."""
         ...
@@ -153,6 +193,7 @@ class DuckDBBackend(QueryBackend):
     limits: BackendLimits = field(default_factory=BackendLimits)
     dataset_tables: dict[str, str] = field(default_factory=build_dataset_registry)
     query: DuckDBQueryService = field(init=False)
+    service: LocalQueryService = field(init=False)
 
     def __post_init__(self) -> None:
         """Initialize the query service and dataset registry."""
@@ -163,12 +204,19 @@ class DuckDBBackend(QueryBackend):
             limits=self.limits,
             dataset_tables=self.dataset_tables,
         )
+        self.service = LocalQueryService(
+            query=self.query,
+            dataset_tables=self.dataset_tables,
+        )
 
     def __setattr__(self, name: str, value: object) -> None:
         """Propagate dataset registry changes to the underlying query service."""
         super().__setattr__(name, value)
         if name == "dataset_tables" and hasattr(self, "query"):
-            self.query.dataset_tables = value if isinstance(value, dict) else {}
+            tables = value if isinstance(value, dict) else {}
+            self.query.dataset_tables = tables
+            if hasattr(self, "service"):
+                self.service.dataset_tables = tables
 
     def get_function_summary(
         self,
@@ -186,7 +234,7 @@ class DuckDBBackend(QueryBackend):
         FunctionSummaryResponse
             Summary payload with found flag and metadata.
         """
-        return self.query.get_function_summary(
+        return self.service.get_function_summary(
             urn=urn,
             goid_h128=goid_h128,
             rel_path=rel_path,
@@ -208,7 +256,7 @@ class DuckDBBackend(QueryBackend):
         HighRiskFunctionsResponse
             High-risk functions plus truncation metadata.
         """
-        return self.query.list_high_risk_functions(
+        return self.service.list_high_risk_functions(
             min_risk=min_risk,
             limit=limit,
             tested_only=tested_only,
@@ -229,7 +277,7 @@ class DuckDBBackend(QueryBackend):
         CallGraphNeighborsResponse
             Incoming and outgoing edges with metadata.
         """
-        return self.query.get_callgraph_neighbors(
+        return self.service.get_callgraph_neighbors(
             goid_h128=goid_h128,
             direction=direction,
             limit=limit,
@@ -250,7 +298,7 @@ class DuckDBBackend(QueryBackend):
         TestsForFunctionResponse
             Tests exercising the function plus messages.
         """
-        return self.query.get_tests_for_function(
+        return self.service.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
             limit=limit,
@@ -269,7 +317,7 @@ class DuckDBBackend(QueryBackend):
         FileSummaryResponse
             File-level summary and nested function entries.
         """
-        return self.query.get_file_summary(rel_path=rel_path)
+        return self.service.get_file_summary(rel_path=rel_path)
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """
@@ -280,7 +328,7 @@ class DuckDBBackend(QueryBackend):
         FunctionProfileResponse
             Profile payload and found flag.
         """
-        return self.query.get_function_profile(goid_h128=goid_h128)
+        return self.service.get_function_profile(goid_h128=goid_h128)
 
     def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
         """
@@ -291,7 +339,7 @@ class DuckDBBackend(QueryBackend):
         FileProfileResponse
             Profile payload and found flag.
         """
-        return self.query.get_file_profile(rel_path=rel_path)
+        return self.service.get_file_profile(rel_path=rel_path)
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
         """
@@ -302,7 +350,104 @@ class DuckDBBackend(QueryBackend):
         ModuleProfileResponse
             Profile payload and found flag.
         """
-        return self.query.get_module_profile(module=module)
+        return self.service.get_module_profile(module=module)
+
+    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
+        """
+        Return call-graph architecture metrics for a function.
+
+        Returns
+        -------
+        FunctionArchitectureResponse
+            Architecture payload and found flag.
+        """
+        return self.service.get_function_architecture(goid_h128=goid_h128)
+
+    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
+        """
+        Return import-graph and symbol-coupling metrics for a module.
+
+        Returns
+        -------
+        ModuleArchitectureResponse
+            Architecture payload and found flag.
+        """
+        return self.service.get_module_architecture(module=module)
+
+    def list_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSummaryResponse:
+        """
+        List inferred subsystems for the current repo/commit.
+
+        Returns
+        -------
+        SubsystemSummaryResponse
+            Subsystem rows and metadata.
+        """
+        return self.service.list_subsystems(limit=limit, role=role, q=q)
+
+    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
+        """
+        Return subsystem memberships for a module.
+
+        Returns
+        -------
+        ModuleSubsystemResponse
+            Membership rows and metadata.
+        """
+        return self.service.get_module_subsystems(module=module)
+
+    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+        """
+        Return IDE-focused hints for a file path.
+
+        Returns
+        -------
+        FileHintsResponse
+            Hints including subsystem context and module metrics.
+        """
+        return self.service.get_file_hints(rel_path=rel_path)
+
+    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+        """
+        Return subsystem details and module memberships.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem detail payload.
+        """
+        return self.service.get_subsystem_modules(subsystem_id=subsystem_id)
+
+    def search_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSearchResponse:
+        """
+        Search subsystems with optional role/name filters.
+
+        Returns
+        -------
+        SubsystemSearchResponse
+            Subsystem rows and metadata.
+        """
+        return self.service.search_subsystems(limit=limit, role=role, q=q)
+
+    def summarize_subsystem(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
+        """
+        Summarize a subsystem with optional module truncation.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem detail payload.
+        """
+        return self.service.summarize_subsystem(
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
 
     def list_datasets(self) -> list[DatasetDescriptor]:
         """
@@ -313,14 +458,9 @@ class DuckDBBackend(QueryBackend):
         list[DatasetDescriptor]
             Dataset metadata entries.
         """
-        return [
-            DatasetDescriptor(
-                name=name,
-                table=table,
-                description=describe_dataset(name, table),
-            )
-            for name, table in sorted(self.dataset_tables.items())
-        ]
+        datasets = self.service.list_datasets()
+        LOG.info("Listed %d datasets", len(datasets))
+        return datasets
 
     def read_dataset_rows(
         self,
@@ -336,64 +476,23 @@ class DuckDBBackend(QueryBackend):
         -------
         DatasetRowsResponse
             Dataset slice payload with metadata.
-
-        Raises
-        ------
-        errors.invalid_argument
-            When the dataset name is unknown.
         """
-        table = self.dataset_tables.get(dataset_name)
-        if not table:
-            message = f"Unknown dataset: {dataset_name}"
-            raise errors.invalid_argument(message)
-
-        limit_clamp = clamp_limit_value(
+        resp = self.service.read_dataset_rows(
+            dataset_name=dataset_name,
+            limit=limit,
+            offset=offset,
+        )
+        LOG.info(
+            "Read dataset=%s limit=%s offset=%s returned_rows=%d",
+            dataset_name,
             limit,
-            default=limit,
-            max_limit=self.limits.max_rows_per_call,
+            offset,
+            len(resp.rows),
         )
-        offset_clamp = clamp_offset_value(offset)
-        meta = ResponseMeta(
-            requested_limit=limit,
-            applied_limit=limit_clamp.applied,
-            requested_offset=offset,
-            applied_offset=offset_clamp.applied,
-            messages=[*limit_clamp.messages, *offset_clamp.messages],
-        )
-
-        if limit_clamp.has_error or offset_clamp.has_error:
-            return DatasetRowsResponse(
-                dataset=dataset_name,
-                limit=limit_clamp.applied,
-                offset=offset_clamp.applied,
-                rows=[],
-                meta=meta,
-            )
-
-        relation = self.con.table(table).limit(limit_clamp.applied, offset_clamp.applied)
-        rows = relation.fetchall()
-        cols = [desc[0] for desc in relation.description]
-        mapped = [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
-        meta.truncated = limit_clamp.applied > 0 and len(mapped) == limit_clamp.applied
-        if not mapped:
-            meta.messages.append(
-                Message(
-                    code="dataset_empty",
-                    severity="info",
-                    detail="Dataset returned no rows for the requested slice.",
-                    context={"dataset": dataset_name, "offset": offset_clamp.applied},
-                )
-            )
-        return DatasetRowsResponse(
-            dataset=dataset_name,
-            limit=limit_clamp.applied,
-            offset=offset_clamp.applied,
-            rows=[ViewRow.model_validate(r) for r in mapped],
-            meta=meta,
-        )
+        return resp
 
 
-@dataclass
+@dataclass  # noqa: PLR0904
 class HttpBackend(QueryBackend):
     """HTTP-backed QueryBackend that talks to the FastAPI server."""
 
@@ -405,6 +504,7 @@ class HttpBackend(QueryBackend):
     client: httpx.Client | httpx.AsyncClient | None = None
     _owns_client: bool = field(init=False, default=False)
     _async_client: bool = field(init=False, default=False)
+    service: HttpQueryService = field(init=False)
 
     def __post_init__(self) -> None:
         """Initialize the HTTP client and verify server health."""
@@ -412,12 +512,12 @@ class HttpBackend(QueryBackend):
             self.client = httpx.Client(base_url=self.base_url, timeout=self.timeout)
             self._owns_client = True
             self._async_client = False
-            self._verify_health()
-            return
+        else:
+            self._owns_client = False
+            self._async_client = isinstance(self.client, httpx.AsyncClient)
 
-        self._owns_client = False
-        self._async_client = isinstance(self.client, httpx.AsyncClient)
         self._verify_health()
+        self.service = HttpQueryService(self._request_json, self.limits)
 
     def close(self) -> None:
         """Close the underlying HTTP client."""
@@ -446,6 +546,24 @@ class HttpBackend(QueryBackend):
             problem = ProblemDetail.model_validate(payload)
             raise errors.McpError(detail=problem)
         return response.json()
+
+    def request_json(self, path: str, params: dict[str, object]) -> object:
+        """
+        Public wrapper around HTTP GET to avoid private attribute access.
+
+        Parameters
+        ----------
+        path:
+            API path to fetch.
+        params:
+            Query parameters to include in the request.
+
+        Returns
+        -------
+        object
+            Decoded JSON payload.
+        """
+        return self._request_json(path, params)
 
     def _verify_health(self) -> None:
         """
@@ -499,19 +617,11 @@ class HttpBackend(QueryBackend):
         HighRiskFunctionsResponse
             Functions ordered by risk with truncation metadata.
         """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
+        return self.service.list_high_risk_functions(
+            min_risk=min_risk,
+            limit=limit,
+            tested_only=tested_only,
         )
-        if clamp.has_error:
-            return HighRiskFunctionsResponse(functions=[], truncated=False, meta=ResponseMeta())
-        data = self._request_json(
-            "/functions/high-risk",
-            {"min_risk": min_risk, "limit": clamp.applied, "tested_only": tested_only},
-        )
-        return HighRiskFunctionsResponse.model_validate(data)
 
     def get_callgraph_neighbors(
         self,
@@ -528,19 +638,11 @@ class HttpBackend(QueryBackend):
         CallGraphNeighborsResponse
             Neighbor edges and metadata.
         """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
+        return self.service.get_callgraph_neighbors(
+            goid_h128=goid_h128,
+            direction=direction,
+            limit=limit,
         )
-        if clamp.has_error:
-            return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=ResponseMeta())
-        data = self._request_json(
-            "/function/callgraph",
-            {"goid_h128": goid_h128, "direction": direction, "limit": clamp.applied},
-        )
-        return CallGraphNeighborsResponse.model_validate(data)
 
     def get_tests_for_function(
         self,
@@ -557,19 +659,11 @@ class HttpBackend(QueryBackend):
         TestsForFunctionResponse
             Tests hitting the function plus messages.
         """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
+        return self.service.get_tests_for_function(
+            goid_h128=goid_h128,
+            urn=urn,
+            limit=limit,
         )
-        if clamp.has_error:
-            return TestsForFunctionResponse(tests=[], meta=ResponseMeta())
-        data = self._request_json(
-            "/function/tests",
-            {"goid_h128": goid_h128, "urn": urn, "limit": clamp.applied},
-        )
-        return TestsForFunctionResponse.model_validate(data)
 
     def get_file_summary(
         self,
@@ -584,8 +678,7 @@ class HttpBackend(QueryBackend):
         FileSummaryResponse
             File-level summary payload with functions.
         """
-        data = self._request_json("/file/summary", {"rel_path": rel_path})
-        return FileSummaryResponse.model_validate(data)
+        return self.service.get_file_summary(rel_path=rel_path)
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """
@@ -596,11 +689,7 @@ class HttpBackend(QueryBackend):
         FunctionProfileResponse
             Profile payload including found flag.
         """
-        data = self._request_json(
-            "/profiles/function",
-            {"goid_h128": goid_h128},
-        )
-        return FunctionProfileResponse.model_validate(data)
+        return self.service.get_function_profile(goid_h128=goid_h128)
 
     def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
         """
@@ -611,11 +700,7 @@ class HttpBackend(QueryBackend):
         FileProfileResponse
             Profile payload including found flag.
         """
-        data = self._request_json(
-            "/profiles/file",
-            {"rel_path": rel_path},
-        )
-        return FileProfileResponse.model_validate(data)
+        return self.service.get_file_profile(rel_path=rel_path)
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
         """
@@ -626,11 +711,104 @@ class HttpBackend(QueryBackend):
         ModuleProfileResponse
             Profile payload including found flag.
         """
-        data = self._request_json(
-            "/profiles/module",
-            {"module": module},
+        return self.service.get_module_profile(module=module)
+
+    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
+        """
+        Return function architecture metrics from the remote API.
+
+        Returns
+        -------
+        FunctionArchitectureResponse
+            Architecture payload including found flag.
+        """
+        return self.service.get_function_architecture(goid_h128=goid_h128)
+
+    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
+        """
+        Return module architecture metrics from the remote API.
+
+        Returns
+        -------
+        ModuleArchitectureResponse
+            Architecture payload including found flag.
+        """
+        return self.service.get_module_architecture(module=module)
+
+    def list_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSummaryResponse:
+        """
+        List subsystems from the remote API.
+
+        Returns
+        -------
+        SubsystemSummaryResponse
+            Subsystem rows and metadata.
+        """
+        return self.service.list_subsystems(limit=limit, role=role, q=q)
+
+    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
+        """
+        Return subsystem memberships for a module from the remote API.
+
+        Returns
+        -------
+        ModuleSubsystemResponse
+            Membership rows and metadata.
+        """
+        return self.service.get_module_subsystems(module=module)
+
+    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+        """
+        Return IDE-focused hints for a file from the remote API.
+
+        Returns
+        -------
+        FileHintsResponse
+            Hint rows and metadata for the path.
+        """
+        return self.service.get_file_hints(rel_path=rel_path)
+
+    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+        """
+        Return subsystem details and module memberships from the remote API.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem detail payload.
+        """
+        return self.service.get_subsystem_modules(subsystem_id=subsystem_id)
+
+    def search_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSearchResponse:
+        """
+        Search subsystems from the remote API.
+
+        Returns
+        -------
+        SubsystemSearchResponse
+            Subsystem rows and metadata.
+        """
+        return self.service.search_subsystems(limit=limit, role=role, q=q)
+
+    def summarize_subsystem(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
+        """
+        Summarize subsystem detail with optional module truncation.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem detail payload.
+        """
+        return self.service.summarize_subsystem(
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
         )
-        return ModuleProfileResponse.model_validate(data)
 
     def list_datasets(self) -> list[DatasetDescriptor]:
         """
@@ -641,9 +819,9 @@ class HttpBackend(QueryBackend):
         list[DatasetDescriptor]
             Dataset descriptors provided by the API.
         """
-        data = self._request_json("/datasets", {})
-        datasets = cast("list[dict[str, object]]", data)
-        return [DatasetDescriptor.model_validate(item) for item in datasets]
+        datasets = self.service.list_datasets()
+        LOG.info("Listed %d datasets (remote)", len(datasets))
+        return datasets
 
     def read_dataset_rows(
         self,
@@ -660,26 +838,19 @@ class HttpBackend(QueryBackend):
         DatasetRowsResponse
             Dataset slice payload with metadata.
         """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
+        resp = self.service.read_dataset_rows(
+            dataset_name=dataset_name,
+            limit=limit,
+            offset=offset,
         )
-        if clamp.has_error:
-            return DatasetRowsResponse(
-                dataset=dataset_name,
-                limit=0,
-                offset=offset,
-                rows=[],
-                meta=ResponseMeta(),
-            )
-        data = self._request_json(
-            f"/datasets/{dataset_name}",
-            {"limit": clamp.applied, "offset": offset},
+        LOG.info(
+            "Read dataset=%s limit=%s offset=%s returned_rows=%d (remote)",
+            dataset_name,
+            limit,
+            offset,
+            len(resp.rows),
         )
-        response = cast("dict[str, object]", data)
-        return DatasetRowsResponse.model_validate(response)
+        return resp
 
 
 def create_backend(
@@ -717,6 +888,7 @@ def create_backend(
             message = "db_path is required for local_db backend"
             raise ValueError(message)
         connection = con or duckdb.connect(str(cfg.db_path), read_only=True)
+        verify_db_identity(connection, cfg)
         return DuckDBBackend(
             con=connection,
             repo=cfg.repo,

@@ -11,12 +11,20 @@ from codeintel.mcp.backend import QueryBackend
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetRowsResponse,
+    FileHintsResponse,
     FileSummaryResponse,
+    FunctionArchitectureResponse,
     FunctionSummaryResponse,
     HighRiskFunctionsResponse,
+    ModuleArchitectureResponse,
+    ModuleSubsystemResponse,
     ProblemDetail,
+    SubsystemModulesResponse,
+    SubsystemSearchResponse,
+    SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
+from codeintel.services.query_service import QueryService
 
 
 def _wrap(tool: Callable[..., object]) -> Callable[..., object]:
@@ -38,7 +46,7 @@ def _wrap(tool: Callable[..., object]) -> Callable[..., object]:
     return _inner
 
 
-def _register_function_tools(mcp: FastMCP, backend: QueryBackend) -> None:
+def _register_function_tools(mcp: FastMCP, backend: QueryBackend | QueryService) -> None:
     """Register function-centric MCP tools."""
 
     @mcp.tool()
@@ -107,7 +115,7 @@ def _register_function_tools(mcp: FastMCP, backend: QueryBackend) -> None:
         return resp.model_dump()
 
 
-def _register_profile_tools(mcp: FastMCP, backend: QueryBackend) -> None:
+def _register_profile_tools(mcp: FastMCP, backend: QueryBackend | QueryService) -> None:
     """Register profile-oriented MCP tools."""
 
     @mcp.tool()
@@ -129,7 +137,68 @@ def _register_profile_tools(mcp: FastMCP, backend: QueryBackend) -> None:
         return resp.model_dump()
 
 
-def _register_dataset_tools(mcp: FastMCP, backend: QueryBackend) -> None:
+def _register_architecture_tools(mcp: FastMCP, backend: QueryBackend | QueryService) -> None:
+    """Register architecture and subsystem MCP tools."""
+
+    @mcp.tool()
+    @_wrap
+    def get_function_architecture(goid_h128: int) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp: FunctionArchitectureResponse = backend.get_function_architecture(goid_h128=goid_h128)
+        return resp.model_dump()
+
+    @mcp.tool()
+    @_wrap
+    def get_module_architecture(module: str) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp: ModuleArchitectureResponse = backend.get_module_architecture(module=module)
+        return resp.model_dump()
+
+    @mcp.tool()
+    @_wrap
+    def list_subsystems(
+        limit: int = 50, role: str | None = None, q: str | None = None
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp: SubsystemSummaryResponse = backend.list_subsystems(limit=limit, role=role, q=q)
+        return resp.model_dump()
+
+    @mcp.tool()
+    @_wrap
+    def get_module_subsystems(module: str) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp: ModuleSubsystemResponse = backend.get_module_subsystems(module=module)
+        return resp.model_dump()
+
+    @mcp.tool()
+    @_wrap
+    def get_file_hints(rel_path: str) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp: FileHintsResponse = backend.get_file_hints(rel_path=rel_path)
+        return resp.model_dump()
+
+    @mcp.tool()
+    @_wrap
+    def get_subsystem_modules(subsystem_id: str) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp: SubsystemModulesResponse = backend.get_subsystem_modules(subsystem_id=subsystem_id)
+        return resp.model_dump()
+
+    @mcp.tool()
+    @_wrap
+    def search_subsystems(
+        limit: int = 20, role: str | None = None, q: str | None = None
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp: SubsystemSearchResponse = backend.search_subsystems(limit=limit, role=role, q=q)
+        return resp.model_dump()
+
+    @mcp.tool()
+    @_wrap
+    def summarize_subsystem(
+        subsystem_id: str, module_limit: int | None = None
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp: SubsystemModulesResponse = backend.summarize_subsystem(
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
+        return resp.model_dump()
+
+
+def _register_dataset_tools(mcp: FastMCP, backend: QueryBackend | QueryService) -> None:
     """Register dataset browsing MCP tools."""
 
     @mcp.tool()
@@ -152,8 +221,18 @@ def _register_dataset_tools(mcp: FastMCP, backend: QueryBackend) -> None:
         return resp.model_dump()
 
 
-def register_tools(mcp: FastMCP, backend: QueryBackend) -> None:
-    """Register all MCP tools on the given FastMCP instance."""
+def register_tools(mcp: FastMCP, backend: QueryBackend | QueryService) -> None:
+    """
+    Register all MCP tools on the given FastMCP instance.
+
+    Parameters
+    ----------
+    mcp:
+        FastMCP instance to register tools against.
+    backend:
+        Concrete MCP backend or any QueryService implementation.
+    """
     _register_function_tools(mcp, backend)
     _register_profile_tools(mcp, backend)
+    _register_architecture_tools(mcp, backend)
     _register_dataset_tools(mcp, backend)

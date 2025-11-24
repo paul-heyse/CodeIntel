@@ -28,6 +28,27 @@ class ViewRow(BaseModel):
         """
         return self.model_dump()[key]
 
+    def get(self, key: str, default: object | None = None) -> object | None:
+        """
+        Provide a dict-like getter for backward compatibility.
+
+        Parameters
+        ----------
+        key:
+            Field name to retrieve.
+        default:
+            Value to return when the field is missing.
+
+        Returns
+        -------
+        object | None
+            Value for the requested field or the provided default.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
 
 class ProblemDetail(BaseModel):
     """Problem Details payload for MCP error responses."""
@@ -120,6 +141,61 @@ class ModuleProfileResponse(BaseModel):
 
     found: bool
     profile: ViewRow | None = None
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class FunctionArchitectureResponse(BaseModel):
+    """Architecture metrics for a function."""
+
+    found: bool
+    architecture: ViewRow | None = None
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class ModuleArchitectureResponse(BaseModel):
+    """Architecture metrics for a module."""
+
+    found: bool
+    architecture: ViewRow | None = None
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class SubsystemSummaryResponse(BaseModel):
+    """Summary of inferred subsystems."""
+
+    subsystems: list[ViewRow]
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class ModuleSubsystemResponse(BaseModel):
+    """Subsystem membership for a module."""
+
+    found: bool
+    memberships: list[ViewRow] = Field(default_factory=list)
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class FileHintsResponse(BaseModel):
+    """IDE-ready hints for a file path (module + subsystem context)."""
+
+    found: bool
+    hints: list[ViewRow] = Field(default_factory=list)
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class SubsystemModulesResponse(BaseModel):
+    """Subsystem detail payload with module membership rows."""
+
+    found: bool
+    subsystem: ViewRow | None = None
+    modules: list[ViewRow] = Field(default_factory=list)
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class SubsystemSearchResponse(BaseModel):
+    """Search-oriented subsystem listing."""
+
+    subsystems: list[ViewRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
 

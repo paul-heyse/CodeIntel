@@ -16,9 +16,17 @@ SELECT
 FROM graph.call_graph_edges e
 LEFT JOIN core.goids gc
   ON gc.goid_h128 = e.caller_goid_h128
+  AND gc.repo = e.repo
+  AND gc.commit = e.commit
 LEFT JOIN core.goids gcallee
   ON gcallee.goid_h128 = e.callee_goid_h128
+  AND gcallee.repo = e.repo
+  AND gcallee.commit = e.commit
 LEFT JOIN analytics.goid_risk_factors rc
   ON rc.function_goid_h128 = e.caller_goid_h128
+  AND rc.repo = e.repo
+  AND rc.commit = e.commit
 LEFT JOIN analytics.goid_risk_factors rcallee
-  ON rcallee.function_goid_h128 = e.callee_goid_h128;
+  ON rcallee.function_goid_h128 = e.callee_goid_h128
+  AND rcallee.repo = e.repo
+  AND rcallee.commit = e.commit;

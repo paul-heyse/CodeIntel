@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -11,10 +12,16 @@ from pathlib import Path
 
 import duckdb
 
-from codeintel.config.models import CodeIntelConfig, PathsConfig, RepoConfig
+from codeintel.config.models import (
+    CodeIntelConfig,
+    FunctionAnalyticsOverrides,
+    PathsConfig,
+    RepoConfig,
+)
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.mcp.backend import DuckDBBackend
 from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
 from codeintel.storage.duckdb_client import DuckDBClient, DuckDBConfig
 from codeintel.storage.views import create_all_views
@@ -84,6 +91,40 @@ def _add_common_repo_args(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_subsystem_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register subsystem-related subcommands."""
+    p_subsys = subparsers.add_parser("subsystem", help="Subsystem exploration helpers")
+    subsys_sub = p_subsys.add_subparsers(dest="subcommand", required=True)
+
+    p_subsys_list = subsys_sub.add_parser(
+        "list",
+        help="List inferred subsystems with role/risk metadata.",
+    )
+    _add_common_repo_args(p_subsys_list)
+    p_subsys_list.add_argument("--role", help="Filter subsystems by role tag")
+    p_subsys_list.add_argument("--q", help="Search substring on name/description")
+    p_subsys_list.add_argument("--limit", type=int, default=None, help="Limit subsystem count")
+    p_subsys_list.set_defaults(func=_cmd_subsystem_list)
+
+    p_subsys_show = subsys_sub.add_parser(
+        "show",
+        help="Show subsystem detail and modules.",
+    )
+    _add_common_repo_args(p_subsys_show)
+    p_subsys_show.add_argument("--subsystem-id", required=True, help="Subsystem identifier")
+    p_subsys_show.set_defaults(func=_cmd_subsystem_show)
+
+    p_subsys_modules = subsys_sub.add_parser(
+        "module-memberships",
+        help="List subsystem memberships for a module.",
+    )
+    _add_common_repo_args(p_subsys_modules)
+    p_subsys_modules.add_argument("--module", required=True, help="Module name (e.g., pkg.mod)")
+    p_subsys_modules.set_defaults(func=_cmd_subsystem_modules)
+
+
 def _make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="codeintel",
@@ -124,6 +165,15 @@ def _make_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip SCIP ingestion (sets CODEINTEL_SKIP_SCIP=true).",
     )
+    p_run.add_argument(
+        "--function-fail-on-missing-spans",
+        action="store_true",
+        help="Fail pipeline when function spans are missing or files cannot be parsed.",
+    )
+    p_run.add_argument(
+        "--function-parser",
+        help="Optional parser selector/hint for function analytics (e.g., 'python').",
+    )
     p_run.set_defaults(func=_cmd_pipeline_run)
 
     # -----------------------------------------------------------------------
@@ -138,6 +188,26 @@ def _make_parser() -> argparse.ArgumentParser:
     )
     _add_common_repo_args(p_export)
     p_export.set_defaults(func=_cmd_docs_export)
+
+    # -----------------------------------------------------------------------
+    # IDE helpers
+    # -----------------------------------------------------------------------
+    p_ide = subparsers.add_parser("ide", help="IDE helper commands")
+    ide_sub = p_ide.add_subparsers(dest="subcommand", required=True)
+
+    p_ide_hints = ide_sub.add_parser(
+        "hints",
+        help="Emit IDE hints (module + subsystem context) for a relative file path.",
+    )
+    _add_common_repo_args(p_ide_hints)
+    p_ide_hints.add_argument(
+        "--rel-path",
+        required=True,
+        help="File path relative to repo root (e.g., pkg/module.py)",
+    )
+    p_ide_hints.set_defaults(func=_cmd_ide_hints)
+
+    _add_subsystem_subparser(subparsers)
 
     return parser
 
@@ -199,6 +269,11 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
     if args.skip_scip:
         os.environ["CODEINTEL_SKIP_SCIP"] = "true"
 
+    overrides = FunctionAnalyticsOverrides(
+        fail_on_missing_spans=args.function_fail_on_missing_spans,
+        parser=args.function_parser,
+    )
+
     targets = list(args.target) if args.target else None
     LOG.info(
         "Running Prefect export_docs_flow for repo=%s commit=%s targets=%s",
@@ -216,9 +291,80 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
             build_dir=build_dir,
             tools=cfg.tools,
             scan_config=ScanConfig(repo_root=repo_root),
+            function_overrides=overrides,
         ),
         targets=targets,
     )
+    return 0
+
+
+def _cmd_ide_hints(args: argparse.Namespace) -> int:
+    cfg = _build_config_from_args(args)
+    con = _open_connection(cfg, read_only=True)
+    backend = DuckDBBackend(con=con, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    response = backend.get_file_hints(rel_path=args.rel_path)
+    if not response.found or not response.hints:
+        LOG.error("No IDE hints found for %s", args.rel_path)
+        return 1
+
+    payload = {
+        "rel_path": args.rel_path,
+        "hints": [hint.model_dump() for hint in response.hints],
+        "meta": response.meta.model_dump(),
+    }
+    sys.stdout.write(json.dumps(payload))
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_subsystem_list(args: argparse.Namespace) -> int:
+    cfg = _build_config_from_args(args)
+    con = _open_connection(cfg, read_only=True)
+    backend = DuckDBBackend(con=con, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    response = backend.list_subsystems(
+        limit=args.limit,
+        role=args.role,
+        q=args.q,
+    )
+    payload = {
+        "subsystems": [row.model_dump() for row in response.subsystems],
+        "meta": response.meta.model_dump(),
+    }
+    sys.stdout.write(json.dumps(payload))
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_subsystem_show(args: argparse.Namespace) -> int:
+    cfg = _build_config_from_args(args)
+    con = _open_connection(cfg, read_only=True)
+    backend = DuckDBBackend(con=con, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    response = backend.get_subsystem_modules(subsystem_id=args.subsystem_id)
+    if not response.found or response.subsystem is None:
+        LOG.error("Subsystem not found: %s", args.subsystem_id)
+        return 1
+    payload = {
+        "subsystem": response.subsystem.model_dump(),
+        "modules": [row.model_dump() for row in response.modules],
+        "meta": response.meta.model_dump(),
+    }
+    sys.stdout.write(json.dumps(payload))
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_subsystem_modules(args: argparse.Namespace) -> int:
+    cfg = _build_config_from_args(args)
+    con = _open_connection(cfg, read_only=True)
+    backend = DuckDBBackend(con=con, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    response = backend.get_module_subsystems(module=args.module)
+    payload = {
+        "found": response.found,
+        "memberships": [row.model_dump() for row in response.memberships],
+        "meta": response.meta.model_dump(),
+    }
+    sys.stdout.write(json.dumps(payload))
+    sys.stdout.write("\n")
     return 0
 
 

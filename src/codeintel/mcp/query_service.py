@@ -9,14 +9,22 @@ import duckdb
 from codeintel.mcp import errors
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
+    DatasetRowsResponse,
+    FileHintsResponse,
     FileProfileResponse,
     FileSummaryResponse,
+    FunctionArchitectureResponse,
     FunctionProfileResponse,
     FunctionSummaryResponse,
     HighRiskFunctionsResponse,
     Message,
+    ModuleArchitectureResponse,
     ModuleProfileResponse,
+    ModuleSubsystemResponse,
     ResponseMeta,
+    SubsystemModulesResponse,
+    SubsystemSearchResponse,
+    SubsystemSummaryResponse,
     TestsForFunctionResponse,
     ViewRow,
 )
@@ -155,6 +163,21 @@ def _fetch_all_dicts(
     rows = result.fetchall()
     cols = [desc[0] for desc in result.description]
     return [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
+
+
+def _normalize_entrypoints(rows: list[RowDict]) -> None:
+    """Ensure entrypoints_json is always a list for downstream consumers."""
+    for row in rows:
+        if row.get("entrypoints_json") is None:
+            row["entrypoints_json"] = []
+
+
+def _normalize_entrypoints_dict(row: RowDict | None) -> None:
+    """Ensure a single row has a non-null entrypoints_json list."""
+    if row is None:
+        return
+    if row.get("entrypoints_json") is None:
+        row["entrypoints_json"] = []
 
 
 @dataclass
@@ -745,4 +768,400 @@ class DuckDBQueryService:
             found=True,
             profile=ViewRow.model_validate(row),
             meta=ResponseMeta(),
+        )
+
+    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
+        """
+        Return architecture metrics for a function.
+
+        Returns
+        -------
+        FunctionArchitectureResponse
+            Architecture payload and found flag.
+        """
+        row = _fetch_one_dict(
+            self.con,
+            """
+            SELECT *
+            FROM docs.v_function_architecture
+            WHERE repo = ?
+              AND commit = ?
+              AND function_goid_h128 = ?
+            LIMIT 1
+            """,
+            [self.repo, self.commit, goid_h128],
+        )
+        if row is None:
+            return FunctionArchitectureResponse(
+                found=False,
+                architecture=None,
+                meta=ResponseMeta(
+                    messages=[
+                        Message(
+                            code="not_found",
+                            severity="info",
+                            detail="Function architecture not found",
+                            context={"goid_h128": goid_h128},
+                        )
+                    ]
+                ),
+            )
+        return FunctionArchitectureResponse(
+            found=True,
+            architecture=ViewRow.model_validate(row),
+            meta=ResponseMeta(),
+        )
+
+    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
+        """
+        Return architecture metrics for a module.
+
+        Returns
+        -------
+        ModuleArchitectureResponse
+            Architecture payload and found flag.
+        """
+        row = _fetch_one_dict(
+            self.con,
+            """
+            SELECT *
+            FROM docs.v_module_architecture
+            WHERE repo = ?
+              AND commit = ?
+              AND module = ?
+            LIMIT 1
+            """,
+            [self.repo, self.commit, module],
+        )
+        if row is None:
+            return ModuleArchitectureResponse(
+                found=False,
+                architecture=None,
+                meta=ResponseMeta(
+                    messages=[
+                        Message(
+                            code="not_found",
+                            severity="info",
+                            detail="Module architecture not found",
+                            context={"module": module},
+                        )
+                    ]
+                ),
+            )
+        return ModuleArchitectureResponse(
+            found=True,
+            architecture=ViewRow.model_validate(row),
+            meta=ResponseMeta(),
+        )
+
+    def list_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSummaryResponse:
+        """
+        Return subsystem summaries ordered by module_count desc.
+
+        Returns
+        -------
+        SubsystemSummaryResponse
+            Subsystem rows and metadata.
+        """
+        filters = ["s.repo = ?", "s.commit = ?"]
+        params: list[object] = [self.repo, self.commit]
+        if role:
+            filters.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM analytics.subsystem_modules sm
+                    WHERE sm.repo = s.repo
+                      AND sm.commit = s.commit
+                      AND sm.subsystem_id = s.subsystem_id
+                      AND sm.role = ?
+                )
+                """
+            )
+            params.append(role)
+        if q:
+            filters.append("(s.name ILIKE ? OR s.description ILIKE ?)")
+            pattern = f"%{q}%"
+            params.extend([pattern, pattern])
+
+        limit_value = limit if limit is not None else self.limits.default_limit
+        where_clause = " AND ".join(filters)
+        query_parts = [
+            "SELECT *",
+            "FROM docs.v_subsystem_summary s",
+            "WHERE " + where_clause,
+            "ORDER BY module_count DESC, subsystem_id",
+            "LIMIT ?",
+        ]
+        query = "\n".join(query_parts)
+        rows = _fetch_all_dicts(
+            self.con,
+            query,
+            [*params, limit_value],
+        )
+        _normalize_entrypoints(rows)
+        return SubsystemSummaryResponse(
+            subsystems=[ViewRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(
+                applied_limit=limit_value,
+                requested_limit=limit,
+            ),
+        )
+
+    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
+        """
+        Return subsystem memberships for a module.
+
+        Returns
+        -------
+        ModuleSubsystemResponse
+            Membership rows and metadata.
+        """
+        rows = _fetch_all_dicts(
+            self.con,
+            """
+            SELECT *
+            FROM docs.v_module_with_subsystem
+            WHERE repo = ?
+              AND commit = ?
+              AND module = ?
+            """,
+            [self.repo, self.commit, module],
+        )
+        if not rows:
+            return ModuleSubsystemResponse(
+                found=False,
+                memberships=[],
+                meta=ResponseMeta(
+                    messages=[
+                        Message(
+                            code="not_found",
+                            severity="info",
+                            detail="Module has no subsystem mappings",
+                            context={"module": module},
+                        )
+                    ]
+                ),
+            )
+        return ModuleSubsystemResponse(
+            found=True,
+            memberships=[ViewRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(),
+        )
+
+    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+        """
+        Return IDE-focused hints for a file path.
+
+        Returns
+        -------
+        FileHintsResponse
+            Hint rows scoped to the provided relative path.
+        """
+        rows = _fetch_all_dicts(
+            self.con,
+            """
+            SELECT *
+            FROM docs.v_ide_hints
+            WHERE repo = ?
+              AND commit = ?
+              AND rel_path = ?
+            """,
+            [self.repo, self.commit, rel_path],
+        )
+        if not rows:
+            return FileHintsResponse(
+                found=False,
+                hints=[],
+                meta=ResponseMeta(
+                    messages=[
+                        Message(
+                            code="not_found",
+                            severity="info",
+                            detail="No IDE hints found for path",
+                            context={"rel_path": rel_path},
+                        )
+                    ]
+                ),
+            )
+        return FileHintsResponse(
+            found=True,
+            hints=[ViewRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(),
+        )
+
+    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+        """
+        Return subsystem details and module memberships.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem detail and module rows.
+        """
+        subsystem_row = _fetch_one_dict(
+            self.con,
+            """
+            SELECT *
+            FROM docs.v_subsystem_summary
+            WHERE repo = ?
+              AND commit = ?
+              AND subsystem_id = ?
+            LIMIT 1
+            """,
+            [self.repo, self.commit, subsystem_id],
+        )
+        _normalize_entrypoints_dict(subsystem_row)
+        modules = _fetch_all_dicts(
+            self.con,
+            """
+            SELECT *
+            FROM docs.v_module_with_subsystem
+            WHERE repo = ?
+              AND commit = ?
+              AND subsystem_id = ?
+            ORDER BY module
+            """,
+            [self.repo, self.commit, subsystem_id],
+        )
+        if subsystem_row is None:
+            return SubsystemModulesResponse(
+                found=False,
+                subsystem=None,
+                modules=[],
+                meta=ResponseMeta(
+                    messages=[
+                        Message(
+                            code="not_found",
+                            severity="info",
+                            detail="Subsystem not found",
+                            context={"subsystem_id": subsystem_id},
+                        )
+                    ]
+                ),
+            )
+        return SubsystemModulesResponse(
+            found=True,
+            subsystem=ViewRow.model_validate(subsystem_row),
+            modules=[ViewRow.model_validate(r) for r in modules],
+            meta=ResponseMeta(),
+        )
+
+    def search_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSearchResponse:
+        """
+        Search wrapper returning subsystem summaries.
+
+        Returns
+        -------
+        SubsystemSearchResponse
+            Subsystem rows and metadata for search-oriented use.
+        """
+        result = self.list_subsystems(limit=limit, role=role, q=q)
+        return SubsystemSearchResponse(subsystems=result.subsystems, meta=result.meta)
+
+    def summarize_subsystem(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
+        """
+        Return subsystem detail with optional module truncation.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem detail payload, optionally with a limited module list.
+        """
+        detail = self.get_subsystem_modules(subsystem_id=subsystem_id)
+        if not detail.found or detail.subsystem is None:
+            return detail
+        if module_limit is None:
+            return detail
+        limited_modules = detail.modules[:module_limit]
+        return SubsystemModulesResponse(
+            found=detail.found,
+            subsystem=detail.subsystem,
+            modules=limited_modules,
+            meta=detail.meta,
+        )
+
+    def read_dataset_rows(
+        self,
+        *,
+        dataset_name: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> DatasetRowsResponse:
+        """
+        Read dataset rows with clamping and messaging.
+
+        Parameters
+        ----------
+        dataset_name:
+            Registry name for the dataset.
+        limit:
+            Requested row limit.
+        offset:
+            Requested offset.
+
+        Returns
+        -------
+        DatasetRowsResponse
+            Dataset slice plus metadata.
+
+        Raises
+        ------
+        errors.invalid_argument
+            When the dataset name is unknown.
+        """
+        table = self.dataset_tables.get(dataset_name)
+        if not table:
+            message = f"Unknown dataset: {dataset_name}"
+            raise errors.invalid_argument(message)
+
+        limit_clamp = clamp_limit_value(
+            limit,
+            default=limit,
+            max_limit=self.limits.max_rows_per_call,
+        )
+        offset_clamp = clamp_offset_value(offset)
+        meta = ResponseMeta(
+            requested_limit=limit,
+            applied_limit=limit_clamp.applied,
+            requested_offset=offset,
+            applied_offset=offset_clamp.applied,
+            messages=[*limit_clamp.messages, *offset_clamp.messages],
+        )
+
+        if limit_clamp.has_error or offset_clamp.has_error:
+            return DatasetRowsResponse(
+                dataset=dataset_name,
+                limit=limit_clamp.applied,
+                offset=offset_clamp.applied,
+                rows=[],
+                meta=meta,
+            )
+
+        relation = self.con.table(table).limit(limit_clamp.applied, offset_clamp.applied)
+        rows = relation.fetchall()
+        cols = [desc[0] for desc in relation.description]
+        mapped = [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
+        meta.truncated = limit_clamp.applied > 0 and len(mapped) == limit_clamp.applied
+        if not mapped:
+            meta.messages.append(
+                Message(
+                    code="dataset_empty",
+                    severity="info",
+                    detail="Dataset returned no rows for the requested slice.",
+                    context={"dataset": dataset_name, "offset": offset_clamp.applied},
+                )
+            )
+        return DatasetRowsResponse(
+            dataset=dataset_name,
+            limit=limit_clamp.applied,
+            offset=offset_clamp.applied,
+            rows=[ViewRow.model_validate(r) for r in mapped],
+            meta=meta,
         )

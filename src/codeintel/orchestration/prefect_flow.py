@@ -25,6 +25,7 @@ from codeintel.config.models import (
     CFGBuilderConfig,
     CoverageAnalyticsConfig,
     FunctionAnalyticsConfig,
+    FunctionAnalyticsOverrides,
     GoidBuilderConfig,
     GraphMetricsConfig,
     HotspotsConfig,
@@ -77,6 +78,7 @@ class ExportArgs:
     build_dir: Path
     tools: ToolsConfig | None = None
     scan_config: ScanConfig | None = None
+    function_overrides: FunctionAnalyticsOverrides | None = None
 
 
 def _connect(db_path: Path, *, read_only: bool = False) -> duckdb.DuckDBPyConnection:
@@ -364,11 +366,31 @@ def t_hotspots(
 
 
 @task(name="function_metrics", retries=1, retry_delay_seconds=2)
-def t_function_metrics(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+def t_function_metrics(
+    repo_root: Path,
+    repo: str,
+    commit: str,
+    db_path: Path,
+    overrides: FunctionAnalyticsOverrides | None = None,
+) -> None:
     """Compute per-function metrics and types."""
+    run_logger = get_run_logger()
     con = _connect(db_path)
-    cfg = FunctionAnalyticsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    compute_function_metrics_and_types(con, cfg)
+    cfg = FunctionAnalyticsConfig.from_paths(
+        repo=repo,
+        commit=commit,
+        repo_root=repo_root,
+        overrides=overrides,
+    )
+    summary = compute_function_metrics_and_types(con, cfg)
+    run_logger.info(
+        "function_metrics summary rows=%d types=%d validation=%d parse_failed=%d span_not_found=%d",
+        summary["metrics_rows"],
+        summary["types_rows"],
+        summary["validation_total"],
+        summary["validation_parse_failed"],
+        summary["validation_span_not_found"],
+    )
     con.close()
 
 
@@ -645,6 +667,7 @@ def export_docs_flow(
                 ctx.repo,
                 ctx.commit,
                 ctx.db_path,
+                args.function_overrides,
             ),
         ),
         (

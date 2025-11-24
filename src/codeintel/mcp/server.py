@@ -2,26 +2,17 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
-from pathlib import Path
 
 import duckdb
-from mcp.server.fastmcp import (
-    FastMCP,  # official Python SDK quickstart :contentReference[oaicite:7]{index=7}
-)
+from mcp.server.fastmcp import FastMCP
 
+from codeintel.config.serving_models import ServingConfig
 from codeintel.mcp.backend import QueryBackend, create_backend
-from codeintel.mcp.config import McpServerConfig
 from codeintel.mcp.registry import register_tools
 
 
-def _env_path(name: str, default: str) -> Path:
-    v = os.environ.get(name, default)
-    return Path(v).expanduser().resolve()
-
-
-def _build_backend(cfg: McpServerConfig) -> tuple[QueryBackend, Callable[[], None]]:
+def _build_backend(cfg: ServingConfig) -> tuple[QueryBackend, Callable[[], None]]:
     """
     Build a QueryBackend from config, opening a DuckDB connection when local.
 
@@ -56,17 +47,26 @@ def _build_backend(cfg: McpServerConfig) -> tuple[QueryBackend, Callable[[], Non
     return backend, close
 
 
-cfg = McpServerConfig.from_env()
-backend, _close = _build_backend(cfg)
+def create_mcp_server(cfg: ServingConfig | None = None) -> tuple[FastMCP, Callable[[], None]]:
+    """
+    Create the MCP server instance plus shutdown hook.
 
-# Create the MCP server; json_response=True returns plain JSON in results. :contentReference[oaicite:8]{index=8}
-mcp = FastMCP("CodeIntel", json_response=True)
-register_tools(mcp, backend)
+    Parameters
+    ----------
+    cfg:
+        Optional pre-loaded ServingConfig. When omitted, environment variables are used.
 
-
-# --------------------------------------------------------------------------------------
-# Entry point
-# --------------------------------------------------------------------------------------
+    Returns
+    -------
+    tuple[FastMCP, Callable[[], None]]
+        Configured MCP server and shutdown callback.
+    """
+    config = cfg or ServingConfig.from_env()
+    backend, close = _build_backend(config)
+    server = FastMCP("CodeIntel", json_response=True)
+    service = getattr(backend, "service", None)
+    register_tools(server, service or backend)
+    return server, close
 
 
 def main() -> None:
@@ -76,10 +76,11 @@ def main() -> None:
     By default this uses stdio transport, which is what Cursor and the
     OpenAI CLI expect for local MCP servers. :contentReference[oaicite:14]{index=14}
     """
+    server, close = create_mcp_server()
     try:
-        mcp.run()  # stdio by default
+        server.run()  # stdio by default
     finally:
-        _close()
+        close()
 
 
 if __name__ == "__main__":

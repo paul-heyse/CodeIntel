@@ -131,6 +131,8 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
     for src, dst in sorted(raw_edges):
         rows.append(
             ImportEdgeRow(
+                repo=cfg.repo,
+                commit=cfg.commit,
                 src_module=src,
                 dst_module=dst,
                 src_fan_out=fan_out.get(src, 0),
@@ -143,7 +145,7 @@ def build_import_graph(con: duckdb.DuckDBPyConnection, cfg: ImportGraphConfig) -
         con,
         "graph.import_graph_edges",
         [import_edge_to_tuple(row) for row in rows],
-        delete_params=[],
+        delete_params=[cfg.repo, cfg.commit],
         scope="import_graph_edges",
     )
 
