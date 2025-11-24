@@ -54,9 +54,35 @@ class AstSpanIndex:
         node = self.node_map.get((start_line, end))
         if node is not None:
             return node
+
+        # Prefer nodes that enclose the requested start line.
+        enclosing: ast.AST | None = None
+        smallest_enclosing_span: tuple[int, int] | None = None
+
+        # Also allow nodes that begin after the requested start (e.g., decorator spans widen start_line)
+        # as long as the requested end is within the candidate span.
+        overlap: ast.AST | None = None
+        smallest_overlap_span: tuple[int, int] | None = None
+
         for (span_start, span_end), candidate in self.node_map.items():
             if span_start <= start_line <= span_end:
-                return candidate
+                if smallest_enclosing_span is None or (
+                    span_end - span_start
+                ) < (smallest_enclosing_span[1] - smallest_enclosing_span[0]):
+                    smallest_enclosing_span = (span_start, span_end)
+                    enclosing = candidate
+                continue
+            if start_line <= span_start <= end <= span_end and (
+                smallest_overlap_span is None
+                or (span_end - span_start) < (smallest_overlap_span[1] - smallest_overlap_span[0])
+            ):
+                smallest_overlap_span = (span_start, span_end)
+                overlap = candidate
+
+        if enclosing is not None:
+            return enclosing
+        if overlap is not None:
+            return overlap
         return None
 
 

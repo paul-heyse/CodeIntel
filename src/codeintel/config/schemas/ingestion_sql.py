@@ -81,6 +81,27 @@ CONFIG_VALUES_COLUMNS = [
     "reference_count",
 ]
 
+TYPEDNESS_COLUMNS = [
+    "repo",
+    "commit",
+    "path",
+    "type_error_count",
+    "annotation_ratio",
+    "untyped_defs",
+    "overlay_needed",
+]
+
+STATIC_DIAGNOSTICS_COLUMNS = [
+    "repo",
+    "commit",
+    "rel_path",
+    "pyrefly_errors",
+    "pyright_errors",
+    "ruff_errors",
+    "total_errors",
+    "has_errors",
+]
+
 
 def _assert_columns(table_key: str, columns: list[str]) -> None:
     registry_cols = TABLE_SCHEMAS[table_key].column_names()
@@ -95,6 +116,8 @@ _assert_columns("core.cst_nodes", CST_NODES_COLUMNS)
 _assert_columns("analytics.coverage_lines", COVERAGE_LINES_COLUMNS)
 _assert_columns("analytics.test_catalog", TEST_CATALOG_COLUMNS)
 _assert_columns("analytics.config_values", CONFIG_VALUES_COLUMNS)
+_assert_columns("analytics.typedness", TYPEDNESS_COLUMNS)
+_assert_columns("analytics.static_diagnostics", STATIC_DIAGNOSTICS_COLUMNS)
 
 
 # SQL literals derived from column lists above (no dynamic f-strings)

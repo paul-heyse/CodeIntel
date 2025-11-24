@@ -369,6 +369,8 @@ def ingest_typing_signals(
 
         typedness_rows.append(
             TypednessRow(
+                repo=cfg.repo,
+                commit=cfg.commit,
                 path=rel_path,
                 type_error_count=total_errors,
                 annotation_ratio={
@@ -382,6 +384,8 @@ def ingest_typing_signals(
 
         diag_rows.append(
             StaticDiagnosticRow(
+                repo=cfg.repo,
+                commit=cfg.commit,
                 rel_path=rel_path,
                 pyrefly_errors=pf_errors,
                 pyright_errors=py_errors,

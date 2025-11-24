@@ -173,6 +173,8 @@ TAGS_INDEX_COLUMNS = [
 ]
 
 TYPEDNESS_COLUMNS = [
+    "repo",
+    "commit",
     "path",
     "type_error_count",
     "annotation_ratio",
@@ -181,6 +183,8 @@ TYPEDNESS_COLUMNS = [
 ]
 
 STATIC_DIAGNOSTICS_COLUMNS = [
+    "repo",
+    "commit",
     "rel_path",
     "pyrefly_errors",
     "pyright_errors",
@@ -382,6 +386,8 @@ _assert_columns("analytics.function_metrics", FUNCTION_METRICS_COLUMNS)
 _assert_columns("analytics.function_types", FUNCTION_TYPES_COLUMNS)
 _assert_columns("analytics.test_catalog", TEST_CATALOG_COLUMNS)
 _assert_columns("analytics.config_values", CONFIG_VALUES_COLUMNS)
+_assert_columns("analytics.typedness", TYPEDNESS_COLUMNS)
+_assert_columns("analytics.static_diagnostics", STATIC_DIAGNOSTICS_COLUMNS)
 _assert_columns("analytics.hotspots", HOTSPOTS_COLUMNS)
 _assert_columns("analytics.tags_index", TAGS_INDEX_COLUMNS)
 _assert_columns("analytics.typedness", TYPEDNESS_COLUMNS)
@@ -482,16 +488,16 @@ CONFIG_VALUES_INSERT = (
 TAGS_INDEX_DELETE = "DELETE FROM analytics.tags_index"
 TAGS_INDEX_INSERT = "INSERT INTO analytics.tags_index (tag, description, includes, excludes, matches) VALUES (?, ?, ?, ?, ?)"
 
-TYPEDNESS_DELETE = "DELETE FROM analytics.typedness WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
+TYPEDNESS_DELETE = "DELETE FROM analytics.typedness WHERE repo = ? AND commit = ?"
 TYPEDNESS_INSERT = (
-    "INSERT INTO analytics.typedness (path, type_error_count, annotation_ratio, untyped_defs, overlay_needed) "
-    "VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO analytics.typedness (repo, commit, path, type_error_count, annotation_ratio, untyped_defs, overlay_needed) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 
-STATIC_DIAGNOSTICS_DELETE = "DELETE FROM analytics.static_diagnostics WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
+STATIC_DIAGNOSTICS_DELETE = "DELETE FROM analytics.static_diagnostics WHERE repo = ? AND commit = ?"
 STATIC_DIAGNOSTICS_INSERT = (
-    "INSERT INTO analytics.static_diagnostics (rel_path, pyrefly_errors, pyright_errors, ruff_errors, total_errors, has_errors) "
-    "VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO analytics.static_diagnostics (repo, commit, rel_path, pyrefly_errors, pyright_errors, ruff_errors, total_errors, has_errors) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 HOTSPOTS_INSERT = (
