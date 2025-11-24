@@ -14,6 +14,8 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from codeintel.config.parser_types import FunctionParserKind
+
 
 class RepoConfig(BaseModel):
     """
@@ -379,6 +381,8 @@ class TestsIngestConfig(BaseModel):
             Normalized tests ingestion configuration.
         """
         resolved = pytest_report_path or (tools.pytest_report_path if tools else None)
+        if resolved is None:
+            resolved = repo_root / "build" / "test-results" / "pytest-report.json"
         return cls(repo_root=repo_root, repo=repo, commit=commit, pytest_report_path=resolved)
 
     @field_validator("repo_root", mode="before")
@@ -706,7 +710,7 @@ class FunctionAnalyticsOverrides:
 
     fail_on_missing_spans: bool = False
     max_workers: int | None = None
-    parser: str | None = None
+    parser: FunctionParserKind | None = None
 
 
 @dataclass(frozen=True)
@@ -718,7 +722,7 @@ class FunctionAnalyticsConfig:
     repo_root: Path
     fail_on_missing_spans: bool = False
     max_workers: int | None = None
-    parser: str | None = None
+    parser: FunctionParserKind | None = None
 
     @classmethod
     def from_paths(
@@ -738,13 +742,16 @@ class FunctionAnalyticsConfig:
             Normalized function analytics configuration.
         """
         applied = overrides or FunctionAnalyticsOverrides()
+        parser_kind = applied.parser
+        if isinstance(parser_kind, str):
+            parser_kind = FunctionParserKind(parser_kind)
         return cls(
             repo=repo,
             commit=commit,
             repo_root=repo_root,
             fail_on_missing_spans=applied.fail_on_missing_spans,
             max_workers=applied.max_workers,
-            parser=applied.parser,
+            parser=parser_kind,
         )
 
 

@@ -12,6 +12,8 @@ AST_NODES_COLUMNS = [
     "qualname",
     "lineno",
     "end_lineno",
+    "decorator_start_line",
+    "decorator_end_line",
     "col_offset",
     "end_col_offset",
     "parent_qualname",
@@ -99,9 +101,9 @@ _assert_columns("analytics.config_values", CONFIG_VALUES_COLUMNS)
 AST_NODES_DELETE = "DELETE FROM core.ast_nodes WHERE path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"
 AST_NODES_INSERT = (
     "INSERT INTO core.ast_nodes ("
-    "path, node_type, name, qualname, lineno, end_lineno, col_offset, end_col_offset, "
-    "parent_qualname, decorators, docstring, hash"
-    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "path, node_type, name, qualname, lineno, end_lineno, decorator_start_line, decorator_end_line, "
+    "col_offset, end_col_offset, parent_qualname, decorators, docstring, hash"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 AST_METRICS_DELETE = "DELETE FROM core.ast_metrics WHERE rel_path IN (SELECT path FROM core.modules WHERE repo = ? AND commit = ?)"

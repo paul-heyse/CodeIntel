@@ -159,14 +159,14 @@ def _seed_profile_fixtures(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         """
         INSERT INTO graph.call_graph_edges (
-            caller_goid_h128, callee_goid_h128, callsite_path, callsite_line, callsite_col,
-            language, kind, resolved_via, confidence, evidence_json
+            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
+            callsite_col, language, kind, resolved_via, confidence, evidence_json
         )
         VALUES
-            (1, 2, ?, 1, 1, 'python', 'direct', 'local_name', 1.0, '{}'),
-            (3, 1, ?, 2, 2, 'python', 'direct', 'global_name', 1.0, '{}')
+            (?, ?, 1, 2, ?, 1, 1, 'python', 'direct', 'local_name', 1.0, '{}'),
+            (?, ?, 3, 1, ?, 2, 2, 'python', 'direct', 'global_name', 1.0, '{}')
         """,
-        [REL_PATH, REL_PATH],
+        [REPO, COMMIT, REL_PATH, REPO, COMMIT, REL_PATH],
     )
     con.execute(
         """
@@ -180,10 +180,10 @@ def _seed_profile_fixtures(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        INSERT INTO graph.import_graph_edges (src_module, dst_module, src_fan_out, dst_fan_in, cycle_group)
-        VALUES (?, ?, 1, 1, 1)
+        INSERT INTO graph.import_graph_edges (repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group)
+        VALUES (?, ?, ?, ?, 1, 1, 1)
         """,
-        [MODULE, MODULE],
+        [REPO, COMMIT, MODULE, MODULE],
     )
 
 

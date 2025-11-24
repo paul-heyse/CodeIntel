@@ -52,9 +52,10 @@ def test_run_graph_validations_emits_warnings(caplog: LogCaptureFixture) -> None
     con.execute(
         """
         INSERT INTO graph.call_graph_edges (
-            caller_goid_h128, callee_goid_h128, callsite_path, callsite_line, callsite_col, language, kind, resolved_via, confidence, evidence_json
-        ) VALUES (1, NULL, 'pkg/b.py', 50, 0, 'python', 'unresolved', 'unresolved', 0.0, '{}')
-        """
+            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line, callsite_col, language, kind, resolved_via, confidence, evidence_json
+        ) VALUES (?, ?, 1, NULL, 'pkg/b.py', 50, 0, 'python', 'unresolved', 'unresolved', 0.0, '{}')
+        """,
+        [repo, commit],
     )
 
     with caplog.at_level("WARNING"):

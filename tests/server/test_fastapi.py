@@ -134,7 +134,7 @@ def app(api_config: ApiAppConfig, backend: DuckDBBackend) -> FastAPI:
         return api_config
 
     def _backend_factory(_: ApiAppConfig) -> BackendResource:
-        return BackendResource(backend=backend, close=lambda: None)
+        return BackendResource(backend=backend, service=backend.service, close=lambda: None)
 
     return create_app(config_loader=_config_loader, backend_factory=_backend_factory)
 

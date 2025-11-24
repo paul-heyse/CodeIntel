@@ -234,6 +234,8 @@ def goid_to_tuple(row: GoidRow) -> tuple[object, ...]:
 class GoidCrosswalkRow(TypedDict):
     """Row shape for core.goid_crosswalk inserts."""
 
+    repo: str
+    commit: str
     goid: str
     lang: str
     module_path: str
@@ -258,6 +260,8 @@ def goid_crosswalk_to_tuple(row: GoidCrosswalkRow) -> tuple[object, ...]:
         Values in the order expected by goid_crosswalk INSERTs.
     """
     return (
+        row["repo"],
+        row["commit"],
         row["goid"],
         row["lang"],
         row["module_path"],

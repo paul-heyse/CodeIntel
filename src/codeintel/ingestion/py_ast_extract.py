@@ -6,6 +6,7 @@ import ast
 import hashlib
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -55,6 +56,8 @@ class AstRow:
     name: str | None
     qualname: str | None
     parent_qualname: str | None
+    decorator_start_line: int | None
+    decorator_end_line: int | None
     decorators: list[str]
     docstring: str | None
 
@@ -121,6 +124,8 @@ class AstVisitor(ast.NodeVisitor):
                 name=self.module_name.split(".")[-1],
                 qualname=qualname,
                 parent_qualname=None,
+                decorator_start_line=None,
+                decorator_end_line=None,
                 decorators=[],
                 docstring=ast.get_docstring(node),
             ),
@@ -133,6 +138,7 @@ class AstVisitor(ast.NodeVisitor):
         qualname = f"{parent_qual}.{name}" if parent_qual else f"{self.module_name}.{name}"
         self._scope_stack.append(name)
         self.metrics.class_count += 1
+        dec_start, dec_end = self._decorator_span(node.decorator_list)
         self._record_ast_row(
             node=node,
             info=AstRow(
@@ -140,6 +146,8 @@ class AstVisitor(ast.NodeVisitor):
                 name=name,
                 qualname=qualname,
                 parent_qualname=parent_qual or self.module_name,
+                decorator_start_line=dec_start,
+                decorator_end_line=dec_end,
                 decorators=[self._decorator_to_str(d) for d in node.decorator_list],
                 docstring=ast.get_docstring(node),
             ),
@@ -155,6 +163,7 @@ class AstVisitor(ast.NodeVisitor):
         self._scope_stack.append(name)
         self.metrics.function_count += 1
         node_type = "AsyncFunctionDef" if is_async else "FunctionDef"
+        dec_start, dec_end = self._decorator_span(node.decorator_list)
         self._record_ast_row(
             node=node,
             info=AstRow(
@@ -162,6 +171,8 @@ class AstVisitor(ast.NodeVisitor):
                 name=name,
                 qualname=qualname,
                 parent_qualname=parent_qual or self.module_name,
+                decorator_start_line=dec_start,
+                decorator_end_line=dec_end,
                 decorators=[self._decorator_to_str(d) for d in node.decorator_list],
                 docstring=ast.get_docstring(node),
             ),
@@ -181,6 +192,31 @@ class AstVisitor(ast.NodeVisitor):
             return ast.unparse(node)
         except (AttributeError, SyntaxError, TypeError, ValueError):
             return type(node).__name__
+
+    @staticmethod
+    def _decorator_span(
+        decorators: Sequence[ast.AST],
+    ) -> tuple[int | None, int | None]:
+        """
+        Determine the span covered by decorators, if present.
+
+        Returns
+        -------
+        tuple[int | None, int | None]
+            Minimum and maximum decorator lines (inclusive).
+        """
+        if not decorators:
+            return None, None
+        start: int | None = None
+        end: int | None = None
+        for dec in decorators:
+            dec_start = getattr(dec, "lineno", None)
+            dec_end = getattr(dec, "end_lineno", None) or dec_start
+            if dec_start is not None:
+                start = dec_start if start is None else min(start, dec_start)
+            if dec_end is not None:
+                end = dec_end if end is None else max(end, dec_end)
+        return start, end
 
     def _record_ast_row(
         self,
@@ -203,6 +239,8 @@ class AstVisitor(ast.NodeVisitor):
                 info.qualname,
                 lineno,
                 end_lineno,
+                info.decorator_start_line,
+                info.decorator_end_line,
                 col,
                 end_col,
                 info.parent_qualname,

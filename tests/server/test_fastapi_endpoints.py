@@ -207,6 +207,8 @@ def _seed_db(db_path: Path, *, repo: str, commit: str) -> duckdb.DuckDBPyConnect
     con.execute(
         """
         CREATE TABLE graph.call_graph_edges(
+            repo TEXT,
+            commit TEXT,
             caller_goid_h128 DECIMAL(38,0),
             callee_goid_h128 DECIMAL(38,0),
             callsite_path TEXT,
@@ -509,9 +511,9 @@ def _seed_db(db_path: Path, *, repo: str, commit: str) -> duckdb.DuckDBPyConnect
     con.execute(
         """
         INSERT INTO graph.call_graph_edges VALUES
-        (?, ?, 'pkg/mod.py', 1, 1, 'python', 'direct', 'local', 0.9, '{}')
+        (?, ?, ?, ?, 'pkg/mod.py', 1, 1, 'python', 'direct', 'local', 0.9, '{}')
         """,
-        [1, 1],
+        [repo, commit, 1, 1],
     )
     con.execute(
         """
@@ -657,7 +659,7 @@ def _build_app(con: duckdb.DuckDBPyConnection, db_path: Path, *, repo: str, comm
 
     def _backend_factory(_: ApiAppConfig) -> BackendResource:
         backend = DuckDBBackend(con=con, repo=repo, commit=commit)
-        return BackendResource(backend=backend, close=lambda: None)
+        return BackendResource(backend=backend, service=backend.service, close=lambda: None)
 
     return create_app(config_loader=_loader, backend_factory=_backend_factory)
 

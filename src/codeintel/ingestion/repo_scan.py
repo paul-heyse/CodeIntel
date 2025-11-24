@@ -104,6 +104,8 @@ def ingest_repo(
     con: duckdb.DuckDBPyConnection,
     cfg: RepoScanConfig,
     scan_config: ScanConfig | None = None,
+    *,
+    apply_schema: bool = False,
 ) -> None:
     """
     Scan the repository and populate module metadata tables.
@@ -122,13 +124,18 @@ def ingest_repo(
         Repository context and optional tags_index override.
     scan_config:
         Optional shared scan configuration; defaults to Python-only scanning.
+    apply_schema:
+        When True, apply all schemas prior to ingestion (destructive). Default False.
     """
     repo_root = cfg.repo_root
     scan_cfg = scan_config or ScanConfig(repo_root=repo_root)
     tags_index_path = cfg.tags_index_path or (repo_root / "tags_index.yaml")
 
     log.info("Scanning repo %s at %s", cfg.repo, repo_root)
-    apply_all_schemas(con)
+    if apply_schema:
+        message = "apply_schema=True will drop/recreate tables; use sparingly"
+        log.warning(message)
+        apply_all_schemas(con)
 
     tags_entries = _load_tags_index(tags_index_path)
     if tags_entries:

@@ -39,8 +39,9 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         """
         CREATE TABLE core.goid_crosswalk (
-            goid_h128 DECIMAL(38,0),
-            urn TEXT
+            repo TEXT,
+            commit TEXT,
+            goid TEXT
         );
         """
     )
@@ -71,6 +72,8 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         """
         CREATE TABLE graph.call_graph_edges (
+            repo TEXT,
+            commit TEXT,
             caller_goid_h128 DECIMAL(38,0),
             callee_goid_h128 DECIMAL(38,0)
         );
@@ -103,6 +106,8 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         """
         CREATE TABLE graph.import_graph_edges (
+            repo TEXT,
+            commit TEXT,
             src_module TEXT,
             dst_module TEXT
         );
@@ -198,13 +203,13 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(
         """
         INSERT INTO core.goids VALUES (1, 'urn:foo', 'r', 'c');
-        INSERT INTO core.goid_crosswalk VALUES (1, 'urn:foo');
+        INSERT INTO core.goid_crosswalk VALUES ('r', 'c', 'urn:foo');
         INSERT INTO core.modules VALUES ('r','c','foo.py','pkg.foo','python','[]','[]');
         INSERT INTO core.repo_map VALUES ('r','c','{\"pkg.foo\": \"foo.py\"}','{}', CURRENT_TIMESTAMP);
         INSERT INTO graph.call_graph_nodes VALUES (1,'r','c','foo.py','foo');
-        INSERT INTO graph.call_graph_edges VALUES (1,1);
+        INSERT INTO graph.call_graph_edges VALUES ('r','c',1,1);
         INSERT INTO graph.cfg_blocks VALUES (1,0);
-        INSERT INTO graph.import_graph_edges VALUES ('pkg.foo','pkg.bar');
+        INSERT INTO graph.import_graph_edges VALUES ('r','c','pkg.foo','pkg.bar');
         INSERT INTO core.docstrings VALUES ('foo.py','foo','{\"summary\": \"demo\"}');
         INSERT INTO analytics.function_metrics VALUES (1,'r','c','foo.py','foo');
         INSERT INTO analytics.function_types VALUES (1,'typed');

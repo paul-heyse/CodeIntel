@@ -144,6 +144,9 @@ def _build_goid_entries(
         kind = "function"
 
     start_line = _safe_int(row["lineno"], default=1) or 1
+    decorator_start = _safe_int(row.get("decorator_start_line"))
+    if decorator_start is not None and decorator_start > 0:
+        start_line = min(start_line, decorator_start)
     end_line = _safe_int(row["end_lineno"])
 
     descriptor = GoidDescriptor(
@@ -176,6 +179,8 @@ def _build_goid_entries(
 
     module_name = module_by_path.get(rel_path, _relpath_to_module(Path(rel_path)))
     xwalk_row = GoidCrosswalkRow(
+        repo=cfg.repo,
+        commit=cfg.commit,
         goid=urn,
         lang=cfg.language,
         module_path=module_name,
@@ -239,16 +244,6 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
         goid_rows.append(goid_row)
         xwalk_rows.append(xwalk_row)
 
-    con.execute(
-        """
-        DELETE FROM core.goid_crosswalk
-        WHERE goid IN (
-            SELECT urn FROM core.goids WHERE repo = ? AND commit = ?
-        )
-        """,
-        [cfg.repo, cfg.commit],
-    )
-
     run_batch(
         con,
         "core.goids",
@@ -260,7 +255,7 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
         con,
         "core.goid_crosswalk",
         [goid_crosswalk_to_tuple(row) for row in xwalk_rows],
-        delete_params=None,
+        delete_params=[cfg.repo, cfg.commit],
         scope=f"{cfg.repo}@{cfg.commit}",
     )
 
