@@ -961,6 +961,9 @@ def create_backend(
     """
     Create a QueryBackend using local DuckDB or remote HTTP.
 
+    Prefer providing a ``StorageGateway`` for local_db mode; ``con`` and manual
+    registry overrides are compatibility paths.
+
     Parameters
     ----------
     cfg:
@@ -969,6 +972,7 @@ def create_backend(
         Optional DuckDB connection to reuse in local_db mode.
     gateway:
         Optional StorageGateway to supply connection and dataset registry in local_db mode.
+        Preferred over raw ``con``/``dataset_tables`` for consistency with server wiring.
     registry:
         Optional dataset registry override or options.
     observability:

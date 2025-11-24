@@ -7,6 +7,9 @@ from pathlib import Path
 
 import duckdb
 
+from codeintel.docs_export.validate_exports import validate_files
+from codeintel.services.errors import ExportError, problem
+
 log = logging.getLogger(__name__)
 
 
@@ -113,6 +116,15 @@ def export_all_parquet(
     document_output_dir:
         Path to the `Document Output/` directory (will be created
         if it does not exist).
+    validate_exports:
+        Whether to validate selected datasets against JSON Schemas after export.
+    schemas:
+        Optional subset of schema names to validate; defaults to the standard export set.
+
+    Raises
+    ------
+    ExportError
+        If validation fails for any selected schema.
     """
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
@@ -134,9 +146,6 @@ def export_all_parquet(
             )
 
     if validate_exports:
-        from codeintel.docs_export.validate_exports import validate_files
-        from codeintel.services.errors import ExportError, problem
-
         schema_list = schemas or [
             "function_profile",
             "file_profile",

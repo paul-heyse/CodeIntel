@@ -267,10 +267,21 @@ def _build_app(gateway: StorageGateway, db_path: Path, *, repo: str, commit: str
         return cfg
 
     def _backend_factory(_: ApiAppConfig) -> BackendResource:
-        backend = DuckDBBackend(con=gateway.con, repo=repo, commit=commit)
+        backend = DuckDBBackend(gateway=gateway, repo=repo, commit=commit)
         return BackendResource(backend=backend, service=backend.service, close=lambda: None)
 
     return create_app(config_loader=_loader, backend_factory=_backend_factory)
+
+
+def test_backend_registry_matches_gateway(tmp_path: Path) -> None:
+    """Backend should mirror the gateway dataset registry."""
+    repo = "demo/repo"
+    commit = "deadbeef"
+    gateway = _seed_db(tmp_path / "codeintel.duckdb", repo=repo, commit=commit)
+    backend = DuckDBBackend(gateway=gateway, repo=repo, commit=commit)
+    if backend.dataset_tables != dict(gateway.datasets.mapping):
+        pytest.fail("Backend registry should match gateway mapping")
+    gateway.close()
 
 
 def test_fastapi_endpoints_smoke(tmp_path: Path) -> None:

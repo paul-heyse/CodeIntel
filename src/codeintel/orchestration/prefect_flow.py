@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from logging import Logger, LoggerAdapter
 from pathlib import Path
 
-import duckdb
 from prefect import flow, get_run_logger, task
 
 from codeintel.analytics.ast_metrics import build_hotspots
@@ -68,8 +67,8 @@ from codeintel.orchestration.steps import (
     ProfilesStep,
     RiskFactorsStep,
 )
-from codeintel.services.errors import log_problem, problem
-from codeintel.storage.duckdb_client import connect_with_schema
+from codeintel.services.errors import ExportError, log_problem, problem
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.views import create_all_views
 
 
@@ -85,31 +84,80 @@ class ExportArgs:
     tools: ToolsConfig | None = None
     scan_config: ScanConfig | None = None
     function_overrides: FunctionAnalyticsOverrides | None = None
+    validate_exports: bool = False
+    export_schemas: list[str] | None = None
 
 
-def _connect(
+_GATEWAY_CACHE: dict[tuple[str, bool, bool, bool, bool], StorageGateway] = {}
+_GATEWAY_STATS: dict[str, int] = {"opens": 0, "hits": 0}
+
+
+def _get_gateway(
     db_path: Path,
     *,
     read_only: bool = False,
-    apply_schema: bool = False,
-    ensure_views: bool = False,
+    apply_schema: bool = True,
+    ensure_views: bool = True,
     validate_schema: bool = True,
-) -> duckdb.DuckDBPyConnection:
+) -> StorageGateway:
     """
-    Open a DuckDB connection, applying schemas and optionally views.
+    Return a cached StorageGateway for the flow run.
+
+    Parameters mirror StorageConfig; cache key includes all toggles to avoid
+    mixing incompatible configs.
 
     Returns
     -------
-    duckdb.DuckDBPyConnection
-        Live connection for the requested db_path.
+    StorageGateway
+        Cached gateway bound to the provided db_path.
     """
-    return connect_with_schema(
-        db_path,
+    key = (
+        str(db_path.resolve()),
+        read_only,
+        apply_schema,
+        ensure_views,
+        validate_schema,
+    )
+    cached = _GATEWAY_CACHE.get(key)
+    if cached is not None:
+        _GATEWAY_STATS["hits"] += 1
+        return cached
+    gateway_cfg = StorageConfig(
+        db_path=db_path,
         read_only=read_only,
         apply_schema=apply_schema,
         ensure_views=ensure_views,
         validate_schema=validate_schema,
     )
+    gateway = open_gateway(gateway_cfg)
+    _GATEWAY_STATS["opens"] += 1
+    _GATEWAY_CACHE[key] = gateway
+    return gateway
+
+
+def _close_gateways() -> None:
+    """Close and clear any cached gateways."""
+    for gateway in _GATEWAY_CACHE.values():
+        gateway.close()
+    _GATEWAY_CACHE.clear()
+    _GATEWAY_STATS["opens"] = 0
+    _GATEWAY_STATS["hits"] = 0
+
+
+def gateway_cache_stats() -> dict[str, int]:
+    """
+    Return cache statistics for flow gateway reuse.
+
+    Returns
+    -------
+    dict[str, int]
+        Dictionary containing opens, hits, and current cache size.
+    """
+    return {
+        "opens": _GATEWAY_STATS["opens"],
+        "hits": _GATEWAY_STATS["hits"],
+        "size": len(_GATEWAY_CACHE),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -140,14 +188,13 @@ def _log_task_done(name: str, start_ts: float, logger: Logger | LoggerAdapter) -
 
 def _ensure_db_schema(db_path: Path) -> None:
     """Apply schemas and validate alignment for the target database."""
-    con = _connect(
+    _ = _get_gateway(
         db_path,
         read_only=False,
         apply_schema=True,
         ensure_views=True,
         validate_schema=True,
     )
-    con.close()
 
 
 def _run_task(
@@ -243,9 +290,8 @@ def _scan_from_env(repo_root: Path, base: ScanConfig | None = None) -> ScanConfi
 )
 def t_repo_scan(ctx: IngestionContext) -> None:
     """Ingest repository modules and repo_map rows."""
-    con = _connect(ctx.db_path)
+    con = _get_gateway(ctx.db_path).con
     run_repo_scan(con, ctx)
-    con.close()
 
 
 @task(
@@ -262,11 +308,10 @@ def t_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
     scip_ingest.ScipIngestResult
         Status and artifact paths for SCIP ingestion.
     """
-    con = _connect(ctx.db_path)
+    con = _get_gateway(ctx.db_path).con
     result = run_scip_ingest(con, ctx)
     if result.status != "success":
         log.info("SCIP ingestion skipped or failed: %s", result.reason or result.status)
-    con.close()
     return result
 
 
@@ -277,9 +322,8 @@ def t_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
 )
 def t_cst_extract(ctx: IngestionContext) -> None:
     """Parse CST and persist into cst_nodes."""
-    con = _connect(ctx.db_path)
+    con = _get_gateway(ctx.db_path).con
     run_cst_extract(con, ctx)
-    con.close()
 
 
 @task(
@@ -289,33 +333,29 @@ def t_cst_extract(ctx: IngestionContext) -> None:
 )
 def t_ast_extract(ctx: IngestionContext) -> None:
     """Parse Python stdlib AST and persist into ast tables."""
-    con = _connect(ctx.db_path)
+    con = _get_gateway(ctx.db_path).con
     run_ast_extract(con, ctx)
-    con.close()
 
 
 @task(name="coverage_ingest", retries=1, retry_delay_seconds=2)
 def t_coverage_ingest(ctx: IngestionContext) -> None:
     """Load coverage lines into analytics.coverage_lines."""
-    con = _connect(ctx.db_path)
+    con = _get_gateway(ctx.db_path).con
     run_coverage_ingest(con, ctx)
-    con.close()
 
 
 @task(name="tests_ingest", retries=1, retry_delay_seconds=2)
 def t_tests_ingest(ctx: IngestionContext) -> None:
     """Load pytest test catalog into analytics.test_catalog."""
-    con = _connect(ctx.db_path)
+    con = _get_gateway(ctx.db_path).con
     run_tests_ingest(con, ctx)
-    con.close()
 
 
 @task(name="typing_ingest", retries=1, retry_delay_seconds=2)
 def t_typing_ingest(ctx: IngestionContext) -> None:
     """Collect typedness/static diagnostics."""
-    con = _connect(ctx.db_path)
+    con = _get_gateway(ctx.db_path).con
     run_typing_ingest(con, ctx)
-    con.close()
 
 
 @task(
@@ -325,53 +365,47 @@ def t_typing_ingest(ctx: IngestionContext) -> None:
 )
 def t_docstrings_ingest(ctx: IngestionContext) -> None:
     """Extract structured docstrings into core.docstrings."""
-    con = _connect(ctx.db_path)
+    con = _get_gateway(ctx.db_path).con
     run_docstrings_ingest(con, ctx)
-    con.close()
 
 
 @task(name="config_ingest", retries=1, retry_delay_seconds=2)
 def t_config_ingest(ctx: IngestionContext) -> None:
     """Flatten config values into analytics.config_values."""
-    con = _connect(ctx.db_path)
+    con = _get_gateway(ctx.db_path).con
     run_config_ingest(con, ctx)
-    con.close()
 
 
 @task(name="goids", retries=1, retry_delay_seconds=2)
 def t_goids(repo: str, commit: str, db_path: Path) -> None:
     """Build GOID registry and crosswalk."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = GoidBuilderConfig.from_paths(repo=repo, commit=commit, language="python")
     build_goids(con, cfg)
-    con.close()
 
 
 @task(name="callgraph", retries=1, retry_delay_seconds=2)
 def t_callgraph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Construct call graph nodes and edges."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_call_graph(con, cfg)
-    con.close()
 
 
 @task(name="cfg_dfg", retries=1, retry_delay_seconds=2)
 def t_cfg(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Emit minimal CFG/DFG scaffolding."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = CFGBuilderConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_cfg_and_dfg(con, cfg)
-    con.close()
 
 
 @task(name="import_graph", retries=1, retry_delay_seconds=2)
 def t_import_graph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Build import graph edges via LibCST analysis."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = ImportGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_import_graph(con, cfg)
-    con.close()
 
 
 @task(name="symbol_uses", retries=1, retry_delay_seconds=2)
@@ -380,9 +414,8 @@ def t_symbol_uses(
     db_path: Path,
 ) -> None:
     """Derive symbol use edges from SCIP JSON."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     build_symbol_use_edges(con, cfg)
-    con.close()
 
 
 @task(name="hotspots", retries=1, retry_delay_seconds=2)
@@ -390,10 +423,9 @@ def t_hotspots(
     repo_root: Path, repo: str, commit: str, db_path: Path, runner: ToolRunner | None = None
 ) -> None:
     """Compute file-level hotspot scores."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = HotspotsConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
     build_hotspots(con, cfg, runner=runner)
-    con.close()
 
 
 @task(name="function_metrics", retries=1, retry_delay_seconds=2)
@@ -406,7 +438,7 @@ def t_function_metrics(
 ) -> None:
     """Compute per-function metrics and types."""
     run_logger = get_run_logger()
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = FunctionAnalyticsConfig.from_paths(
         repo=repo,
         commit=commit,
@@ -427,34 +459,30 @@ def t_function_metrics(
         summary["validation_parse_failed"],
         summary["validation_span_not_found"],
     )
-    con.close()
 
 
 @task(name="coverage_functions", retries=1, retry_delay_seconds=2)
 def t_coverage_functions(repo: str, commit: str, db_path: Path) -> None:
     """Aggregate coverage lines to function spans."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = CoverageAnalyticsConfig.from_paths(repo=repo, commit=commit)
     compute_coverage_functions(con, cfg)
-    con.close()
 
 
 @task(name="test_coverage_edges", retries=1, retry_delay_seconds=2)
 def t_test_coverage_edges(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Build test-to-function coverage edges."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = TestCoverageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     compute_test_coverage_edges(con, cfg)
-    con.close()
 
 
 @task(name="graph_metrics", retries=1, retry_delay_seconds=2)
 def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
     """Compute graph metrics for functions and modules."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = GraphMetricsConfig.from_paths(repo=repo, commit=commit)
     compute_graph_metrics(con, cfg)
-    con.close()
 
 
 @task(name="risk_factors", retries=1, retry_delay_seconds=2)
@@ -462,7 +490,7 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
     """Populate analytics.goid_risk_factors from analytics tables."""
     run_logger = get_run_logger()
     try:
-        con = _connect(db_path)
+        con = _get_gateway(db_path).con
         catalog = FunctionCatalogService.from_db(con, repo=repo, commit=commit)
         step = RiskFactorsStep()
         ctx = PipelineContext(
@@ -483,23 +511,20 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
         )
         log_problem(run_logger, pd)
         raise
-    finally:
-        con.close()
 
 
 @task(name="subsystems", retries=1, retry_delay_seconds=2)
 def t_subsystems(repo: str, commit: str, db_path: Path) -> None:
     """Infer subsystem clusters and membership."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     cfg = SubsystemsConfig.from_paths(repo=repo, commit=commit)
     build_subsystems(con, cfg)
-    con.close()
 
 
 @task(name="profiles", retries=1, retry_delay_seconds=2)
 def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir: Path) -> None:
     """Build function, file, and module profiles."""
-    con = _connect(db_path)
+    con = _get_gateway(db_path).con
     step = ProfilesStep()
     ctx = PipelineContext(
         repo_root=repo_root,
@@ -509,17 +534,52 @@ def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir
         commit=commit,
     )
     step.run(ctx, con)
-    con.close()
 
 
 @task(name="export_docs", retries=1, retry_delay_seconds=2)
-def t_export_docs(db_path: Path, document_output_dir: Path) -> None:
-    """Create views and export Parquet/JSONL artifacts."""
-    con = _connect(db_path, ensure_views=True)
-    create_all_views(con)
-    export_all_parquet(con, document_output_dir)
-    export_all_jsonl(con, document_output_dir)
-    con.close()
+def t_export_docs(
+    db_path: Path,
+    document_output_dir: Path,
+    *,
+    validate_exports: bool = False,
+    schemas: list[str] | None = None,
+) -> None:
+    """
+    Create views and export Parquet/JSONL artifacts.
+
+    Raises
+    ------
+    ExportError
+        If export validation fails for any selected dataset.
+    """
+    run_logger = get_run_logger()
+    con = _get_gateway(db_path, ensure_views=True).con
+    try:
+        create_all_views(con)
+        export_all_parquet(
+            con,
+            document_output_dir,
+            validate_exports=validate_exports,
+            schemas=schemas,
+        )
+        export_all_jsonl(
+            con,
+            document_output_dir,
+            validate_exports=validate_exports,
+            schemas=schemas,
+        )
+    except ExportError as exc:
+        log_problem(run_logger, exc.problem_detail)
+        raise
+    except Exception as exc:  # pragma: no cover - error path
+        pd = problem(
+            code="pipeline.task_failed",
+            title="export_docs task failed",
+            detail=str(exc),
+            extras={"task": "export_docs"},
+        )
+        log_problem(run_logger, pd)
+        raise
 
 
 @task(name="graph_validation", retries=1, retry_delay_seconds=2)
@@ -527,7 +587,7 @@ def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
     """Run graph validation warnings."""
     run_logger = get_run_logger()
     try:
-        con = _connect(db_path, read_only=False)
+        con = _get_gateway(db_path, read_only=False).con
         catalog = FunctionCatalogService.from_db(con, repo=repo, commit=commit)
         run_graph_validations(con, repo=repo, commit=commit, catalog_provider=catalog, logger=log)
     except Exception as exc:  # pragma: no cover - error path
@@ -539,8 +599,6 @@ def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
         )
         log_problem(run_logger, pd)
         raise
-    finally:
-        con.close()
 
 
 def _preflight_checks(
@@ -592,6 +650,25 @@ def _preflight_checks(
     (logger or log).info("Prefect preflight succeeded for %s", repo_root)
 
 
+def _resolve_validation_settings(args: ExportArgs) -> tuple[bool, list[str] | None]:
+    """
+    Resolve export validation settings from args and environment overrides.
+
+    Returns
+    -------
+    tuple[bool, list[str] | None]
+        Flag indicating whether to validate exports and optional schema overrides.
+    """
+    env_value = os.getenv("CODEINTEL_VALIDATE_EXPORTS", "")
+    env_enabled = env_value.lower() in {"1", "true", "yes", "on"}
+    env_schemas = os.getenv("CODEINTEL_VALIDATE_SCHEMAS")
+
+    schemas = args.export_schemas
+    if env_schemas:
+        schemas = [schema.strip() for schema in env_schemas.split(",") if schema.strip()]
+    return args.validate_exports or env_enabled, schemas
+
+
 @flow(name="export_docs_flow")
 def export_docs_flow(
     args: ExportArgs,
@@ -615,6 +692,7 @@ def export_docs_flow(
     scan_cfg = _scan_from_env(repo_root, args.scan_config)
     tool_runner = ToolRunner(cache_dir=build_dir / ".tool_cache")
     skip_scip = os.getenv("CODEINTEL_SKIP_SCIP", "false").lower() == "true"
+    validate_exports, export_schemas = _resolve_validation_settings(args)
 
     ctx = IngestionContext(
         repo_root=repo_root,
@@ -811,18 +889,27 @@ def export_docs_flow(
         (
             "export_docs",
             lambda: _run_task(
-                "export_docs", t_export_docs, run_logger, ctx.db_path, ctx.document_output_dir
+                "export_docs",
+                t_export_docs,
+                run_logger,
+                ctx.db_path,
+                ctx.document_output_dir,
+                validate_exports=validate_exports,
+                schemas=export_schemas,
             ),
         ),
     ]
 
     handlers = dict(step_handlers)
-    for name in _toposort_targets(targets):
-        handler = handlers.get(name)
-        if handler is None:
-            run_logger.warning("No handler registered for step %s; skipping.", name)
-            continue
-        handler()
+    try:
+        for name in _toposort_targets(targets):
+            handler = handlers.get(name)
+            if handler is None:
+                run_logger.warning("No handler registered for step %s; skipping.", name)
+                continue
+            handler()
+    finally:
+        _close_gateways()
 
 
 def _toposort_targets(targets: Iterable[str] | None) -> list[str]:
@@ -906,7 +993,6 @@ def t_schema_bootstrap(db_path: Path) -> None:
 
     This is intentionally a distinct task for visibility and future adjustments.
     """
-    con = _connect(
+    _ = _get_gateway(
         db_path, read_only=False, apply_schema=True, ensure_views=True, validate_schema=True
     )
-    con.close()

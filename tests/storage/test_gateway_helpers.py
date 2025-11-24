@@ -279,3 +279,5 @@ def test_insert_helpers_write_expected_rows() -> None:
         minimum = expected_min.get(key, 1)
         if value < minimum:
             pytest.fail(f"Insert helper row counts mismatch for {key}: {value} < {minimum}")
+
+    con.close()

@@ -128,11 +128,18 @@ def build_dataset_registry(*, include_views: bool = True) -> DatasetRegistry:
     DatasetRegistry
         Registry containing table/view identifiers and validation helpers.
     """
-    tables = tuple(sorted(TABLE_SCHEMAS.keys()))
-    view_names = DOCS_VIEWS if include_views else ()
-    mapping = {name: name for name in tables}
-    mapping.update({name: name for name in view_names})
-    return DatasetRegistry(mapping=mapping, tables=tables, views=view_names)
+
+    def _dataset_name(key: str) -> str:
+        schema, name = key.split(".", maxsplit=1) if "." in key else ("", key)
+        return name
+
+    table_keys = tuple(sorted(TABLE_SCHEMAS.keys()))
+    view_keys = DOCS_VIEWS if include_views else ()
+    mapping = {_dataset_name(key): key for key in table_keys}
+    mapping.update({_dataset_name(key): key for key in view_keys})
+    table_names = tuple(_dataset_name(key) for key in table_keys)
+    view_names = tuple(_dataset_name(key) for key in view_keys)
+    return DatasetRegistry(mapping=mapping, tables=table_names, views=view_names)
 
 
 @dataclass(frozen=True)
