@@ -218,6 +218,8 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
             an.qualname,
             an.lineno,
             an.end_lineno,
+            an.decorator_start_line,
+            an.decorator_end_line,
             an.parent_qualname
         FROM core.ast_nodes an
         JOIN core.modules m

@@ -280,6 +280,8 @@ def goid_crosswalk_to_tuple(row: GoidCrosswalkRow) -> tuple[object, ...]:
 class TypednessRow(TypedDict):
     """Row shape for analytics.typedness inserts."""
 
+    repo: str
+    commit: str
     path: str
     type_error_count: int
     annotation_ratio: dict[str, float]
@@ -297,6 +299,8 @@ def typedness_row_to_tuple(row: TypednessRow) -> tuple[object, ...]:
         Values in the order expected by typedness INSERTs.
     """
     return (
+        row["repo"],
+        row["commit"],
         row["path"],
         row["type_error_count"],
         row["annotation_ratio"],
@@ -308,6 +312,8 @@ def typedness_row_to_tuple(row: TypednessRow) -> tuple[object, ...]:
 class StaticDiagnosticRow(TypedDict):
     """Row shape for analytics.static_diagnostics inserts."""
 
+    repo: str
+    commit: str
     rel_path: str
     pyrefly_errors: int
     pyright_errors: int
@@ -326,6 +332,8 @@ def static_diagnostic_to_tuple(row: StaticDiagnosticRow) -> tuple[object, ...]:
         Values in the order expected by static_diagnostics INSERTs.
     """
     return (
+        row["repo"],
+        row["commit"],
         row["rel_path"],
         row["pyrefly_errors"],
         row["pyright_errors"],

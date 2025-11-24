@@ -96,6 +96,19 @@ def export_jsonl_for_table(
         message = f"Refusing to export unknown table: {table_name}"
         raise ValueError(message)
     log.info("Exporting %s -> %s", table_name, output_path)
+
+    if table_name == "analytics.function_validation":
+        row = con.execute("SELECT COUNT(*) FROM analytics.function_validation").fetchone()
+        count = int(row[0]) if row is not None else 0
+        if count == 0:
+            payload = {
+                "message": "No function validation issues found.",
+                "error_types": ["parse_failed", "span_not_found"],
+                "generated_at": datetime.now(UTC).isoformat(),
+            }
+            output_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+            return
+
     rel = con.table(table_name)
     write_json = getattr(rel, "write_json", None)
     if write_json is not None:

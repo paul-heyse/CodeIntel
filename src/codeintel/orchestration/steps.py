@@ -136,11 +136,23 @@ class PipelineStep(Protocol):
 
 
 @dataclass
+class SchemaBootstrapStep:
+    """Apply schemas and create views before ingestion."""
+
+    name: str = "schema_bootstrap"
+    deps: Sequence[str] = ()
+
+    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:  # noqa: ARG002
+        """No-op here; actual bootstrap is handled in the Prefect task."""
+        _log_step(self.name)
+
+
+@dataclass
 class RepoScanStep:
     """Ingest repository modules and repo_map."""
 
     name: str = "repo_scan"
-    deps: Sequence[str] = ()
+    deps: Sequence[str] = ("schema_bootstrap",)
 
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Execute repository scan ingestion."""
@@ -669,6 +681,7 @@ class ExportDocsStep:
 
 PIPELINE_STEPS: dict[str, PipelineStep] = {
     # ingestion
+    "schema_bootstrap": SchemaBootstrapStep(),
     "repo_scan": RepoScanStep(),
     "scip_ingest": SCIPIngestStep(),
     "cst_extract": CSTStep(),

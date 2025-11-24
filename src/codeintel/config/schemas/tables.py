@@ -296,19 +296,23 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         schema="analytics",
         name="typedness",
         columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
             Column("path", "VARCHAR", nullable=False),
             Column("type_error_count", "INTEGER", nullable=False),
             Column("annotation_ratio", "JSON", nullable=False),
             Column("untyped_defs", "INTEGER", nullable=False),
             Column("overlay_needed", "BOOLEAN", nullable=False),
         ],
-        primary_key=("path",),
+        primary_key=("repo", "commit", "path"),
         description="Per-file annotation ratios and static error counts",
     ),
     "analytics.static_diagnostics": TableSchema(
         schema="analytics",
         name="static_diagnostics",
         columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
             Column("rel_path", "VARCHAR", nullable=False),
             Column("pyrefly_errors", "INTEGER", nullable=False),
             Column("pyright_errors", "INTEGER", nullable=False),
@@ -316,7 +320,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("total_errors", "INTEGER", nullable=False),
             Column("has_errors", "BOOLEAN", nullable=False),
         ],
-        primary_key=("rel_path",),
+        primary_key=("repo", "commit", "rel_path"),
         description="Per-file static diagnostic counts",
     ),
     "analytics.function_validation": TableSchema(
