@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codeintel.dev/export/module_profile.json",
+  "title": "Module Profile Export",
+  "allOf": [
+    { "$ref": "./base.json" },
+    {
+      "type": "object",
+      "properties": {
+        "module": { "type": "string" },
+        "path": { "type": "string" },
+        "language": { "type": "string" }
+      },
+      "required": ["module", "path"]
+    }
+  ]
+}

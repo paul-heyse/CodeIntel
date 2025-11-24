@@ -8,6 +8,7 @@ import duckdb
 
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
+from codeintel.storage.gateway import StorageConfig, open_gateway
 
 
 def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
@@ -16,7 +17,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     con.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
     con.execute(
         """
-        CREATE TABLE core.repo_map (
+        CREATE TABLE IF NOT EXISTS core.repo_map (
             repo TEXT,
             commit TEXT,
             modules JSON,
@@ -28,7 +29,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
 
     con.execute(
         """
-        CREATE TABLE core.goids (
+        CREATE TABLE IF NOT EXISTS core.goids (
             goid_h128 DECIMAL(38,0),
             urn TEXT,
             repo TEXT,
@@ -38,7 +39,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE core.goid_crosswalk (
+        CREATE TABLE IF NOT EXISTS core.goid_crosswalk (
             repo TEXT,
             commit TEXT,
             goid TEXT
@@ -47,7 +48,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE core.modules (
+        CREATE TABLE IF NOT EXISTS core.modules (
             repo TEXT,
             commit TEXT,
             path TEXT,
@@ -60,7 +61,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE graph.call_graph_nodes (
+        CREATE TABLE IF NOT EXISTS graph.call_graph_nodes (
             goid_h128 DECIMAL(38,0),
             repo TEXT,
             commit TEXT,
@@ -71,7 +72,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE graph.call_graph_edges (
+        CREATE TABLE IF NOT EXISTS graph.call_graph_edges (
             repo TEXT,
             commit TEXT,
             caller_goid_h128 DECIMAL(38,0),
@@ -81,7 +82,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE graph.cfg_blocks (
+        CREATE TABLE IF NOT EXISTS graph.cfg_blocks (
             function_goid_h128 DECIMAL(38,0),
             block_idx INTEGER
         );
@@ -89,7 +90,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE graph.cfg_edges (
+        CREATE TABLE IF NOT EXISTS graph.cfg_edges (
             src_block_id TEXT,
             dst_block_id TEXT
         );
@@ -97,7 +98,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE graph.dfg_edges (
+        CREATE TABLE IF NOT EXISTS graph.dfg_edges (
             src_block_id TEXT,
             dst_block_id TEXT
         );
@@ -105,7 +106,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE graph.import_graph_edges (
+        CREATE TABLE IF NOT EXISTS graph.import_graph_edges (
             repo TEXT,
             commit TEXT,
             src_module TEXT,
@@ -115,7 +116,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE graph.symbol_use_edges (
+        CREATE TABLE IF NOT EXISTS graph.symbol_use_edges (
             symbol TEXT,
             def_path TEXT,
             use_path TEXT,
@@ -126,77 +127,77 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
     )
     con.execute(
         """
-        CREATE TABLE core.ast_nodes(path TEXT);
+        CREATE TABLE IF NOT EXISTS core.ast_nodes(path TEXT);
         """
     )
     con.execute(
         """
-        CREATE TABLE core.ast_metrics(rel_path TEXT, function_count INTEGER);
+        CREATE TABLE IF NOT EXISTS core.ast_metrics(rel_path TEXT, function_count INTEGER);
         """
     )
     con.execute(
         """
-        CREATE TABLE core.cst_nodes(path TEXT);
+        CREATE TABLE IF NOT EXISTS core.cst_nodes(path TEXT);
         """
     )
     con.execute(
         """
-        CREATE TABLE core.docstrings(rel_path TEXT, qualname TEXT, doc JSON);
+        CREATE TABLE IF NOT EXISTS core.docstrings(rel_path TEXT, qualname TEXT, doc JSON);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.config_values(key TEXT, value TEXT);
+        CREATE TABLE IF NOT EXISTS analytics.config_values(key TEXT, value TEXT);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.static_diagnostics(rel_path TEXT, total_errors INTEGER);
+        CREATE TABLE IF NOT EXISTS analytics.static_diagnostics(rel_path TEXT, total_errors INTEGER);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.hotspots(rel_path TEXT, score DOUBLE);
+        CREATE TABLE IF NOT EXISTS analytics.hotspots(rel_path TEXT, score DOUBLE);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.typedness(path TEXT, annotation_ratio JSON);
+        CREATE TABLE IF NOT EXISTS analytics.typedness(path TEXT, annotation_ratio JSON);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.function_metrics(function_goid_h128 DECIMAL(38,0), repo TEXT, commit TEXT, rel_path TEXT, qualname TEXT);
+        CREATE TABLE IF NOT EXISTS analytics.function_metrics(function_goid_h128 DECIMAL(38,0), repo TEXT, commit TEXT, rel_path TEXT, qualname TEXT);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.function_types(function_goid_h128 DECIMAL(38,0), typedness_bucket TEXT);
+        CREATE TABLE IF NOT EXISTS analytics.function_types(function_goid_h128 DECIMAL(38,0), typedness_bucket TEXT);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.coverage_lines(rel_path TEXT);
+        CREATE TABLE IF NOT EXISTS analytics.coverage_lines(rel_path TEXT);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.coverage_functions(function_goid_h128 DECIMAL(38,0), coverage_ratio DOUBLE);
+        CREATE TABLE IF NOT EXISTS analytics.coverage_functions(function_goid_h128 DECIMAL(38,0), coverage_ratio DOUBLE);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.test_catalog(test_id TEXT);
+        CREATE TABLE IF NOT EXISTS analytics.test_catalog(test_id TEXT);
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.test_coverage_edges(test_id TEXT, function_goid_h128 DECIMAL(38,0));
+        CREATE TABLE IF NOT EXISTS analytics.test_coverage_edges(test_id TEXT, function_goid_h128 DECIMAL(38,0));
         """
     )
     con.execute(
         """
-        CREATE TABLE analytics.goid_risk_factors(function_goid_h128 DECIMAL(38,0), repo TEXT, commit TEXT, rel_path TEXT, qualname TEXT);
+        CREATE TABLE IF NOT EXISTS analytics.goid_risk_factors(function_goid_h128 DECIMAL(38,0), repo TEXT, commit TEXT, rel_path TEXT, qualname TEXT);
         """
     )
 
@@ -233,7 +234,10 @@ def test_export_all_writes_expected_files(tmp_path: Path) -> None:
         If any expected export is missing after running both exporters.
     """
     db_path = tmp_path / "test.duckdb"
-    con = duckdb.connect(str(db_path))
+    gateway = open_gateway(
+        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=False, validate_schema=False)
+    )
+    con = gateway.con
     _seed_minimal_db(con)
 
     output_dir = tmp_path / "Document Output"

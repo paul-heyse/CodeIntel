@@ -42,6 +42,7 @@ from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
+from codeintel.graphs.function_catalog_service import FunctionCatalogService
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.graphs.import_graph import build_import_graph
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
@@ -67,6 +68,7 @@ from codeintel.orchestration.steps import (
     ProfilesStep,
     RiskFactorsStep,
 )
+from codeintel.services.errors import log_problem, problem
 from codeintel.storage.duckdb_client import connect_with_schema
 from codeintel.storage.views import create_all_views
 
@@ -458,17 +460,31 @@ def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
 @task(name="risk_factors", retries=1, retry_delay_seconds=2)
 def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir: Path) -> None:
     """Populate analytics.goid_risk_factors from analytics tables."""
-    con = _connect(db_path)
-    step = RiskFactorsStep()
-    ctx = PipelineContext(
-        repo_root=repo_root,
-        db_path=db_path,
-        build_dir=build_dir,
-        repo=repo,
-        commit=commit,
-    )
-    step.run(ctx, con)
-    con.close()
+    run_logger = get_run_logger()
+    try:
+        con = _connect(db_path)
+        catalog = FunctionCatalogService.from_db(con, repo=repo, commit=commit)
+        step = RiskFactorsStep()
+        ctx = PipelineContext(
+            repo_root=repo_root,
+            db_path=db_path,
+            build_dir=build_dir,
+            repo=repo,
+            commit=commit,
+            function_catalog=catalog,
+        )
+        step.run(ctx, con)
+    except Exception as exc:  # pragma: no cover - error path
+        pd = problem(
+            code="pipeline.task_failed",
+            title="risk_factors task failed",
+            detail=str(exc),
+            extras={"task": "risk_factors", "repo": repo, "commit": commit},
+        )
+        log_problem(run_logger, pd)
+        raise
+    finally:
+        con.close()
 
 
 @task(name="subsystems", retries=1, retry_delay_seconds=2)
@@ -509,9 +525,22 @@ def t_export_docs(db_path: Path, document_output_dir: Path) -> None:
 @task(name="graph_validation", retries=1, retry_delay_seconds=2)
 def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
     """Run graph validation warnings."""
-    con = _connect(db_path, read_only=False)
-    run_graph_validations(con, repo=repo, commit=commit, logger=log)
-    con.close()
+    run_logger = get_run_logger()
+    try:
+        con = _connect(db_path, read_only=False)
+        catalog = FunctionCatalogService.from_db(con, repo=repo, commit=commit)
+        run_graph_validations(con, repo=repo, commit=commit, catalog_provider=catalog, logger=log)
+    except Exception as exc:  # pragma: no cover - error path
+        pd = problem(
+            code="pipeline.task_failed",
+            title="graph_validation task failed",
+            detail=str(exc),
+            extras={"task": "graph_validation", "repo": repo, "commit": commit},
+        )
+        log_problem(run_logger, pd)
+        raise
+    finally:
+        con.close()
 
 
 def _preflight_checks(
@@ -602,7 +631,10 @@ def export_docs_flow(
     scip_state: dict[str, scip_ingest.ScipIngestResult | None] = {"result": None}
 
     step_handlers = [
-        ("schema_bootstrap", lambda: _run_task("schema_bootstrap", t_schema_bootstrap, run_logger, db_path)),
+        (
+            "schema_bootstrap",
+            lambda: _run_task("schema_bootstrap", t_schema_bootstrap, run_logger, db_path),
+        ),
         ("repo_scan", lambda: _run_task("repo_scan", t_repo_scan, run_logger, ctx)),
         (
             "scip_ingest",
@@ -865,6 +897,8 @@ def _run_symbol_uses(
         commit=ctx.commit,
     )
     _run_task("symbol_uses", t_symbol_uses, logger, cfg, ctx.db_path)
+
+
 @task(name="schema_bootstrap", retries=1, retry_delay_seconds=1)
 def t_schema_bootstrap(db_path: Path) -> None:
     """
@@ -872,5 +906,7 @@ def t_schema_bootstrap(db_path: Path) -> None:
 
     This is intentionally a distinct task for visibility and future adjustments.
     """
-    con = _connect(db_path, read_only=False, apply_schema=True, ensure_views=True, validate_schema=True)
+    con = _connect(
+        db_path, read_only=False, apply_schema=True, ensure_views=True, validate_schema=True
+    )
     con.close()

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codeintel.dev/export/call_graph_edges.json",
+  "title": "Call Graph Edges Export",
+  "allOf": [
+    { "$ref": "./base.json" },
+    {
+      "type": "object",
+      "properties": {
+        "caller_goid_h128": { "type": ["integer", "string", "null"] },
+        "callee_goid_h128": { "type": ["integer", "string", "null"] },
+        "callsite_path": { "type": ["string", "null"] },
+        "language": { "type": ["string", "null"] }
+      },
+      "required": ["repo", "commit"]
+    }
+  ]
+}

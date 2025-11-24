@@ -15,13 +15,74 @@ import duckdb
 
 from codeintel.config.models import ProfilesAnalyticsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
+from codeintel.graphs.function_catalog_service import (
+    FunctionCatalogProvider,
+    FunctionCatalogService,
+)
 
 log = logging.getLogger(__name__)
 
 SLOW_TEST_THRESHOLD_MS = 1000.0
 
 
-def build_function_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsConfig) -> None:
+def _seed_catalog_modules(
+    con: duckdb.DuckDBPyConnection,
+    catalog_provider: FunctionCatalogProvider | None,
+    repo: str,
+    commit: str,
+) -> bool:
+    """
+    Create or refresh a temp module mapping table from a catalog provider.
+
+    Returns
+    -------
+    bool
+        True when a catalog provided a module map and the temp table exists.
+    """
+    if catalog_provider is None:
+        return False
+
+    module_by_path = catalog_provider.catalog().module_by_path
+    if not module_by_path:
+        return False
+
+    con.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE temp.catalog_modules (
+            path VARCHAR,
+            module VARCHAR,
+            repo VARCHAR,
+            commit VARCHAR,
+            language VARCHAR,
+            tags JSON,
+            owners JSON
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO temp.catalog_modules VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                path,
+                module,
+                repo,
+                commit,
+                "python",
+                "[]",
+                "[]",
+            )
+            for path, module in module_by_path.items()
+        ],
+    )
+    return True
+
+
+def build_function_profile(
+    con: duckdb.DuckDBPyConnection,
+    cfg: ProfilesAnalyticsConfig,
+    *,
+    catalog_provider: FunctionCatalogProvider | None = None,
+) -> None:
     """
     Populate `analytics.function_profile` for a repo/commit snapshot.
 
@@ -30,6 +91,12 @@ def build_function_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalytic
     """
     ensure_schema(con, "analytics.function_profile")
     ensure_schema(con, "analytics.goid_risk_factors")
+    use_catalog_modules = _seed_catalog_modules(con, catalog_provider, cfg.repo, cfg.commit)
+    _ = catalog_provider or FunctionCatalogService.from_db(
+        con,
+        repo=cfg.repo,
+        commit=cfg.commit,
+    )
 
     con.execute(
         "DELETE FROM analytics.function_profile WHERE repo = ? AND commit = ?",
@@ -38,8 +105,7 @@ def build_function_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalytic
 
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
+    sql_core = """
         INSERT INTO analytics.function_profile (
             function_goid_h128,
             urn,
@@ -291,7 +357,10 @@ def build_function_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalytic
          AND doc.rel_path = rf.rel_path
          AND doc.qualname = rf.qualname
          AND doc.kind = rf.kind;
-        """,
+        """
+    sql_temp = sql_core.replace("core.modules", "temp.catalog_modules")
+    con.execute(
+        sql_temp if use_catalog_modules else sql_core,
         [
             cfg.repo,
             cfg.commit,
@@ -313,7 +382,12 @@ def build_function_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalytic
     log.info("function_profile populated: %s rows for %s@%s", count, cfg.repo, cfg.commit)
 
 
-def build_file_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsConfig) -> None:
+def build_file_profile(
+    con: duckdb.DuckDBPyConnection,
+    cfg: ProfilesAnalyticsConfig,
+    *,
+    catalog_provider: FunctionCatalogProvider | None = None,
+) -> None:
     """
     Populate `analytics.file_profile` by aggregating function_profile rows.
 
@@ -321,6 +395,7 @@ def build_file_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsCon
     coverage summaries to give a holistic view of each path.
     """
     ensure_schema(con, "analytics.file_profile")
+    use_catalog_modules = _seed_catalog_modules(con, catalog_provider, cfg.repo, cfg.commit)
 
     con.execute(
         "DELETE FROM analytics.file_profile WHERE repo = ? AND commit = ?",
@@ -329,8 +404,7 @@ def build_file_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsCon
 
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
+    sql_core = """
         INSERT INTO analytics.file_profile (
             repo,
             commit,
@@ -471,9 +545,9 @@ def build_file_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsCon
           ON fm.repo = mod.repo
          AND fm.commit = mod.commit
          AND fm.rel_path = mod.path;
-        """,
-        [cfg.repo, cfg.commit, now],
-    )
+        """
+    sql_temp = sql_core.replace("core.modules", "temp.catalog_modules")
+    con.execute(sql_temp if use_catalog_modules else sql_core, [cfg.repo, cfg.commit, now])
 
     count_row = con.execute(
         "SELECT COUNT(*) FROM analytics.file_profile WHERE repo = ? AND commit = ?",
@@ -483,9 +557,15 @@ def build_file_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsCon
     log.info("file_profile populated: %s rows for %s@%s", count, cfg.repo, cfg.commit)
 
 
-def build_module_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsConfig) -> None:
+def build_module_profile(
+    con: duckdb.DuckDBPyConnection,
+    cfg: ProfilesAnalyticsConfig,
+    *,
+    catalog_provider: FunctionCatalogProvider | None = None,
+) -> None:
     """Populate `analytics.module_profile` by aggregating file and function profiles."""
     ensure_schema(con, "analytics.module_profile")
+    use_catalog_modules = _seed_catalog_modules(con, catalog_provider, cfg.repo, cfg.commit)
 
     con.execute(
         "DELETE FROM analytics.module_profile WHERE repo = ? AND commit = ?",
@@ -494,8 +574,7 @@ def build_module_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsC
 
     now = datetime.now(tz=UTC)
 
-    con.execute(
-        """
+    sql_core = """
         INSERT INTO analytics.module_profile (
             repo,
             commit,
@@ -625,7 +704,10 @@ def build_module_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsC
          AND imports.commit = mod.commit
         WHERE mod.repo = ?
           AND mod.commit = ?;
-        """,
+        """
+    sql_temp = sql_core.replace("core.modules", "temp.catalog_modules")
+    con.execute(
+        sql_temp if use_catalog_modules else sql_core,
         [
             cfg.repo,
             cfg.commit,

@@ -2,114 +2,97 @@
 
 from __future__ import annotations
 
-import duckdb
 import pytest
 
 from codeintel.mcp import errors
 from codeintel.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
+from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 
 
 @pytest.fixture
-def con() -> duckdb.DuckDBPyConnection:
+def gateway() -> StorageGateway:
     """
-    Create an in-memory DuckDB connection with minimal MCP tables.
+    Create an in-memory DuckDB gateway with minimal MCP tables.
 
     Returns
     -------
-    duckdb.DuckDBPyConnection
+    StorageGateway
         Connection seeded with fixture tables for MCP backend tests.
     """
-    con = duckdb.connect(":memory:")
-    con.execute("CREATE SCHEMA IF NOT EXISTS docs;")
-    con.execute("CREATE SCHEMA IF NOT EXISTS graph;")
-    con.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
+    gateway = open_memory_gateway(apply_schema=True, ensure_views=True)
+    con = gateway.con
     con.execute(
         """
-        CREATE TABLE docs.v_function_summary (
-            repo TEXT, commit TEXT, rel_path TEXT, qualname TEXT,
-            urn TEXT, function_goid_h128 DECIMAL(38,0),
-            start_line INTEGER
-        );
+        INSERT INTO analytics.goid_risk_factors (
+            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
+            loc, logical_loc, cyclomatic_complexity, complexity_bucket, typedness_bucket,
+            typedness_source, hotspot_score, file_typed_ratio, static_error_count,
+            has_static_errors, executable_lines, covered_lines, coverage_ratio, tested,
+            test_count, failing_test_count, last_test_status, risk_score, risk_level,
+            tags, owners, created_at
+        )
+        VALUES
+        (1, 'urn:foo', 'r', 'c', 'foo.py', 'python', 'function', 'foo', 1, 1, 1, 'low',
+         'typed', 'analysis', 0.0, 1.0, 0, FALSE, 1, 1, 1.0, TRUE, 1, 0, 'passed', 0.1,
+         'low', '[]', '[]', CURRENT_TIMESTAMP);
         """
     )
     con.execute(
         """
-        INSERT INTO docs.v_function_summary VALUES
-        ('r', 'c', 'foo.py', 'foo', 'urn:foo', 1, 1);
+        INSERT INTO analytics.function_metrics (
+            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
+            start_line, end_line, loc, logical_loc, param_count, positional_params,
+            keyword_only_params, has_varargs, has_varkw, is_async, is_generator,
+            return_count, yield_count, raise_count, cyclomatic_complexity,
+            max_nesting_depth, stmt_count, decorator_count, has_docstring,
+            complexity_bucket, created_at
+        )
+        VALUES
+        (1, 'urn:foo', 'r', 'c', 'foo.py', 'python', 'function', 'foo', 1, 1, 1, 1, 0,
+         0, 0, FALSE, FALSE, FALSE, FALSE, 1, 0, 0, 1, 1, 1, 0, TRUE, 'low',
+         CURRENT_TIMESTAMP);
         """
     )
     con.execute(
         """
-        CREATE TABLE docs.v_call_graph_enriched (
-            caller_goid_h128 DECIMAL(38,0),
-            callee_goid_h128 DECIMAL(38,0),
-            caller_qualname TEXT,
-            callee_qualname TEXT
-        );
+        INSERT INTO analytics.function_validation (
+            repo, commit, rel_path, qualname, issue, detail, created_at
+        )
+        VALUES ('r', 'c', 'foo.py', 'foo', 'span_not_found', 'Span 1-2', CURRENT_TIMESTAMP);
         """
     )
     con.execute(
         """
-        INSERT INTO docs.v_call_graph_enriched VALUES
-        (1, 2, 'foo', 'bar'),
-        (3, 1, 'baz', 'foo');
+        INSERT INTO graph.call_graph_edges (
+            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
+            callsite_col, language, kind, resolved_via, confidence, evidence_json
+        )
+        VALUES ('r', 'c', 1, 2, 'foo.py', 1, 0, 'python', 'direct', 'local_name', 1.0, '{}'),
+               ('r', 'c', 3, 1, 'bar.py', 1, 0, 'python', 'direct', 'local_name', 1.0, '{}');
         """
     )
     con.execute(
         """
-        CREATE TABLE docs.v_test_to_function (
-            repo TEXT, commit TEXT, test_id TEXT, function_goid_h128 DECIMAL(38,0)
-        );
+        INSERT INTO analytics.test_catalog (
+            test_id, repo, commit, rel_path, qualname, status, created_at
+        )
+        VALUES ('t1', 'r', 'c', 'tests/t.py', 'tests.t', 'passed', CURRENT_TIMESTAMP);
         """
     )
     con.execute(
         """
-        INSERT INTO docs.v_test_to_function VALUES
-        ('r', 'c', 't1', 1);
+        INSERT INTO analytics.test_coverage_edges (
+            test_id, function_goid_h128, urn, repo, commit, rel_path, qualname,
+            covered_lines, executable_lines, coverage_ratio, last_status, created_at
+        )
+        VALUES ('t1', 1, 'urn:foo', 'r', 'c', 'foo.py', 'foo', 1, 1, 1.0, 'passed', CURRENT_TIMESTAMP);
         """
     )
-    con.execute(
-        """
-        CREATE TABLE docs.v_file_summary (
-            repo TEXT, commit TEXT, rel_path TEXT
-        );
-        """
-    )
-    con.execute(
-        """
-        INSERT INTO docs.v_file_summary VALUES
-        ('r', 'c', 'foo.py');
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE graph.call_graph_edges_dummy(d INT);
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.function_validation(
-            repo TEXT,
-            commit TEXT,
-            rel_path TEXT,
-            qualname TEXT,
-            issue TEXT,
-            detail TEXT,
-            created_at TIMESTAMP
-        );
-        """
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.function_validation VALUES
-        ('r', 'c', 'foo.py', 'foo', 'span_not_found', 'Span 1-2', CURRENT_TIMESTAMP);
-        """
-    )
-    return con
+    return gateway
 
 
 @pytest.fixture
-def backend(con: duckdb.DuckDBPyConnection) -> DuckDBBackend:
+def backend(gateway: StorageGateway) -> DuckDBBackend:
     """
     Backend configured against the in-memory DuckDB.
 
@@ -118,7 +101,7 @@ def backend(con: duckdb.DuckDBPyConnection) -> DuckDBBackend:
     DuckDBBackend
         Backend under test.
     """
-    return DuckDBBackend(con=con, repo="r", commit="c")
+    return DuckDBBackend(con=gateway.con, repo="r", commit="c")
 
 
 def test_get_function_summary(backend: DuckDBBackend) -> None:

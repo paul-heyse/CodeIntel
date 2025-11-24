@@ -24,6 +24,7 @@ from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.mcp.backend import DuckDBBackend
 from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
+from codeintel.services.errors import log_problem, problem
 from codeintel.storage.duckdb_client import DuckDBClient, DuckDBConfig
 from codeintel.storage.views import create_all_views
 
@@ -449,8 +450,14 @@ def main(argv: Iterable[str] | None = None) -> int:
     try:
         func: CommandHandler = args.func
         return int(func(args))
-    except Exception:
-        LOG.exception("Command failed")
+    except Exception as exc:  # noqa: BLE001 pragma: no cover - error path
+        pd = problem(
+            code="cli.failure",
+            title="CLI command failed",
+            detail=str(exc),
+            extras={"command": args.command},
+        )
+        log_problem(LOG, pd)
         return 1
 
 

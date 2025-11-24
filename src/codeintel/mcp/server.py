@@ -9,9 +9,16 @@ from mcp.server.fastmcp import FastMCP
 from codeintel.config.serving_models import ServingConfig
 from codeintel.mcp.registry import register_tools
 from codeintel.services.factory import BackendResource, build_backend_resource
+from codeintel.storage.gateway import StorageGateway
 
 
-def create_mcp_server(cfg: ServingConfig | None = None) -> tuple[FastMCP, Callable[[], None]]:
+def create_mcp_server(
+    cfg: ServingConfig | None = None,
+    *,
+    backend_factory: Callable[[ServingConfig], BackendResource] | None = None,
+    gateway: StorageGateway | None = None,
+    register_tools_fn: Callable[[FastMCP, object], None] | None = None,
+) -> tuple[FastMCP, Callable[[], None]]:
     """
     Create the MCP server instance plus shutdown hook.
 
@@ -19,6 +26,12 @@ def create_mcp_server(cfg: ServingConfig | None = None) -> tuple[FastMCP, Callab
     ----------
     cfg:
         Optional pre-loaded ServingConfig. When omitted, environment variables are used.
+    backend_factory:
+        Optional factory for producing BackendResource (defaults to build_backend_resource).
+    gateway:
+        Optional StorageGateway supplying the DuckDB connection and registry.
+    register_tools_fn:
+        Optional function to register tools against the MCP server (defaults to registry helper).
 
     Returns
     -------
@@ -26,12 +39,15 @@ def create_mcp_server(cfg: ServingConfig | None = None) -> tuple[FastMCP, Callab
         Configured MCP server and shutdown callback.
     """
     config = cfg or ServingConfig.from_env()
-    resource: BackendResource = build_backend_resource(config)
+    if gateway is not None and backend_factory is None:
+        resource = build_backend_resource(config, gateway=gateway)
+    else:
+        resource: BackendResource = (backend_factory or build_backend_resource)(config)
     backend = resource.backend
     close = resource.close
     server = FastMCP("CodeIntel", json_response=True)
     service = getattr(backend, "service", None)
-    register_tools(server, service or backend)
+    (register_tools_fn or register_tools)(server, service or backend)
     return server, close
 
 

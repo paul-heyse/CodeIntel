@@ -99,6 +99,9 @@ def export_parquet_for_table(
 def export_all_parquet(
     con: duckdb.DuckDBPyConnection,
     document_output_dir: Path,
+    *,
+    validate_exports: bool = False,
+    schemas: list[str] | None = None,
 ) -> None:
     """
     Export all known datasets to Parquet files under `Document Output/`.
@@ -114,10 +117,13 @@ def export_all_parquet(
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
 
+    written: list[Path] = []
+
     for table_name, filename in PARQUET_DATASETS.items():
         output_path = document_output_dir / filename
         try:
             export_parquet_for_table(con, table_name, output_path)
+            written.append(output_path)
         except duckdb.Error as exc:
             # Log and continue: some tables may legitimately be empty or missing
             log.warning(
@@ -126,3 +132,29 @@ def export_all_parquet(
                 output_path,
                 exc,
             )
+
+    if validate_exports:
+        from codeintel.docs_export.validate_exports import validate_files
+        from codeintel.services.errors import ExportError, problem
+
+        schema_list = schemas or [
+            "function_profile",
+            "file_profile",
+            "module_profile",
+            "call_graph_edges",
+            "symbol_use_edges",
+            "test_coverage_edges",
+        ]
+        for schema_name in schema_list:
+            matching = [p for p in written if p.name.startswith(schema_name)]
+            if not matching:
+                continue
+            exit_code = validate_files(schema_name, matching)
+            if exit_code != 0:
+                pd = problem(
+                    code="export.validation_failed",
+                    title="Export validation failed",
+                    detail=f"Validation failed for schema {schema_name}",
+                    extras={"schema": schema_name, "files": [str(p) for p in matching]},
+                )
+                raise ExportError(pd)

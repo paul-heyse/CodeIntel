@@ -6,18 +6,17 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import open_memory_gateway
 
 
 def test_function_validation_export(tmp_path: Path) -> None:
     """Export writes function_validation artifacts when rows exist."""
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    gateway = open_memory_gateway()
+    con = gateway.con
 
     now = datetime.now(UTC)
     con.execute(

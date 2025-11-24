@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
-import duckdb
 from coverage import Coverage
 
 from codeintel.analytics.tests_analytics import compute_test_coverage_edges
@@ -19,34 +18,8 @@ from codeintel.config.models import (
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
-from codeintel.storage.schemas import apply_all_schemas
-
-
-class _FakeCoverageData:
-    def __init__(self, contexts_by_file: dict[str, dict[int, set[str]]]) -> None:
-        self._contexts_by_file = contexts_by_file
-
-    def measured_files(self) -> list[str]:
-        return list(self._contexts_by_file.keys())
-
-    def contexts_by_lineno(self, filename: str) -> dict[int, set[str]]:
-        return self._contexts_by_file.get(filename, {})
-
-
-class _FakeCoverage(Coverage):
-    def __init__(
-        self, statements: dict[str, list[int]], contexts: dict[str, dict[int, set[str]]]
-    ) -> None:
-        super().__init__()
-        self._statements = statements
-        self._contexts = contexts
-
-    def analysis2(self, filename: str) -> tuple[str, list[int], list[int], list[int], list[int]]:
-        stmts = self._statements.get(filename, [])
-        return filename, stmts, [], [], stmts
-
-    def get_data(self) -> _FakeCoverageData:
-        return _FakeCoverageData(self._contexts)
+from codeintel.storage.gateway import open_memory_gateway
+from tests._helpers.fakes import FakeCoverage
 
 
 def _write_repo(repo_root: Path) -> tuple[int, int]:
@@ -77,8 +50,7 @@ def test_span_alignment_across_components(tmp_path: Path) -> None:
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
 
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    con = open_memory_gateway().con
 
     # Seed modules for module mapping.
     con.executemany(
@@ -182,7 +154,7 @@ def test_span_alignment_across_components(tmp_path: Path) -> None:
         abs_b = str((repo_root / "pkg" / "b.py").resolve())
         statements = {abs_b: [caller_start, caller_end]}
         contexts = {abs_b: {caller_start: {"tests/test_sample.py::test_caller"}}}
-        return _FakeCoverage(statements, contexts)
+        return FakeCoverage(statements, contexts)
 
     compute_test_coverage_edges(
         con,

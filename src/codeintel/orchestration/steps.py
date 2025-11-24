@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 import duckdb
+from coverage import Coverage
 
 from codeintel.analytics.ast_metrics import build_hotspots
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
@@ -41,6 +42,7 @@ from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
+from codeintel.graphs.function_catalog_service import FunctionCatalogService
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.graphs.import_graph import build_import_graph
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
@@ -57,8 +59,10 @@ from codeintel.ingestion.runner import (
     run_tests_ingest,
     run_typing_ingest,
 )
+from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
 from codeintel.storage.views import create_all_views
 
 log = logging.getLogger(__name__)
@@ -89,6 +93,15 @@ class PipelineContext:
     tools: ToolsConfig | None = None
     scan_config: ScanConfig | None = None
     tool_runner: ToolRunner | None = None
+    coverage_loader: Callable[[TestCoverageConfig], Coverage | None] | None = None
+    scip_runner: Callable[..., ScipIngestResult] | None = None
+    cst_collector: Callable[..., list[CallGraphEdgeRow]] | None = None
+    ast_collector: Callable[..., list[CallGraphEdgeRow]] | None = None
+    cfg_builder: (
+        Callable[..., tuple[list[CFGBlockRow], list[CFGEdgeRow], list[DFGEdgeRow]]] | None
+    ) = None
+    artifact_writer: Callable[[Path, Path, Path], None] | None = None
+    function_catalog: FunctionCatalogService | None = None
     extra: dict[str, object] = field(default_factory=dict)
     function_overrides: FunctionAnalyticsOverrides | None = None
 
@@ -117,7 +130,70 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
         tools=ctx.tools,
         scan_config=ctx.scan_config,
         tool_runner=ctx.tool_runner,
+        scip_runner=ctx.scip_runner,
     )
+
+
+def _function_catalog(
+    ctx: PipelineContext, con: duckdb.DuckDBPyConnection
+) -> FunctionCatalogService:
+    """
+    Return a cached FunctionCatalogService, constructing it on first access.
+
+    Parameters
+    ----------
+    ctx
+        Pipeline context carrying previously constructed catalog if available.
+    con
+        DuckDB connection used for catalog construction when needed.
+
+    Returns
+    -------
+    FunctionCatalogService
+        Catalog service for the current repo and commit.
+    """
+    if ctx.function_catalog is None:
+        ctx.function_catalog = FunctionCatalogService.from_db(con, repo=ctx.repo, commit=ctx.commit)
+    return ctx.function_catalog
+
+
+def _seed_catalog_modules(
+    con: duckdb.DuckDBPyConnection,
+    catalog: FunctionCatalogService | None,
+    *,
+    repo: str,
+    commit: str,
+) -> bool:
+    """
+    Create a temporary table of modules from a catalog when available.
+
+    Returns
+    -------
+    bool
+        True when a temp table was created.
+    """
+    if catalog is None:
+        return False
+    module_by_path = catalog.catalog().module_by_path
+    if not module_by_path:
+        return False
+    con.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE temp.catalog_modules (
+            path VARCHAR,
+            module VARCHAR,
+            repo VARCHAR,
+            commit VARCHAR,
+            tags JSON,
+            owners JSON
+        )
+        """
+    )
+    con.executemany(
+        "INSERT INTO temp.catalog_modules VALUES (?, ?, ?, ?, ?, ?)",
+        [(path, module, repo, commit, "[]", "[]") for path, module in module_by_path.items()],
+    )
+    return True
 
 
 class PipelineStep(Protocol):
@@ -297,8 +373,15 @@ class CallGraphStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Construct static call graph nodes and edges."""
         _log_step(self.name)
-        cfg = CallGraphConfig.from_paths(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
-        build_call_graph(con, cfg)
+        catalog = _function_catalog(ctx, con)
+        cfg = CallGraphConfig(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            cst_collector=ctx.cst_collector,
+            ast_collector=ctx.ast_collector,
+        )
+        build_call_graph(con, cfg, catalog_provider=catalog)
 
 
 @dataclass
@@ -311,8 +394,14 @@ class CFGStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Create minimal CFG/DFG scaffolding."""
         _log_step(self.name)
-        cfg = CFGBuilderConfig.from_paths(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
-        build_cfg_and_dfg(con, cfg)
+        catalog = _function_catalog(ctx, con)
+        cfg = CFGBuilderConfig(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            cfg_builder=ctx.cfg_builder,
+        )
+        build_cfg_and_dfg(con, cfg, catalog_provider=catalog)
 
 
 @dataclass
@@ -343,6 +432,7 @@ class SymbolUsesStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Derive symbol definition→use edges from SCIP JSON."""
         _log_step(self.name)
+        catalog = _function_catalog(ctx, con)
         scip_json = ctx.build_dir / "scip" / "index.scip.json"
         if not scip_json.is_file():
             log.info("Skipping symbol_uses: SCIP JSON missing at %s", scip_json)
@@ -353,7 +443,7 @@ class SymbolUsesStep:
             repo=ctx.repo,
             commit=ctx.commit,
         )
-        build_symbol_use_edges(con, cfg)
+        build_symbol_use_edges(con, cfg, catalog_provider=catalog)
 
 
 @dataclass
@@ -366,7 +456,14 @@ class GraphValidationStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Emit warnings for missing GOIDs, span mismatches, and orphans."""
         _log_step(self.name)
-        run_graph_validations(con, repo=ctx.repo, commit=ctx.commit, logger=log)
+        catalog = _function_catalog(ctx, con)
+        run_graph_validations(
+            con,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            catalog_provider=catalog,
+            logger=log,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -443,12 +540,14 @@ class TestCoverageEdgesStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Derive test-to-function edges using coverage contexts."""
         _log_step(self.name)
-        cfg = TestCoverageConfig.from_paths(
+        catalog = _function_catalog(ctx, con)
+        cfg = TestCoverageConfig(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
+            coverage_loader=ctx.coverage_loader,
         )
-        compute_test_coverage_edges(con, cfg)
+        compute_test_coverage_edges(con, cfg, catalog_provider=catalog)
 
 
 @dataclass
@@ -470,12 +569,15 @@ class RiskFactorsStep:
         """Compute risk factors by joining analytics tables."""
         _log_step(self.name)
         log.info("Computing risk_factors for %s@%s", ctx.repo, ctx.commit)
+        catalog = ctx.function_catalog
 
         # Clear previous rows for this repo/commit
         con.execute(
             "DELETE FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?",
             [ctx.repo, ctx.commit],
         )
+
+        use_catalog_modules = _seed_catalog_modules(con, catalog, repo=ctx.repo, commit=ctx.commit)
 
         risk_sql = """
         INSERT INTO analytics.goid_risk_factors
@@ -576,6 +678,8 @@ class RiskFactorsStep:
         WHERE fm.repo = ?
           AND fm.commit = ?;
         """
+        if use_catalog_modules:
+            risk_sql = risk_sql.replace("core.modules", "temp.catalog_modules")
 
         con.execute(risk_sql, [ctx.repo, ctx.commit])
 
@@ -598,7 +702,8 @@ class GraphMetricsStep:
         """Populate analytics.graph_metrics_* tables."""
         _log_step(self.name)
         cfg = GraphMetricsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        compute_graph_metrics(con, cfg)
+        catalog = _function_catalog(ctx, con)
+        compute_graph_metrics(con, cfg, catalog_provider=catalog)
 
 
 @dataclass
@@ -625,10 +730,11 @@ class ProfilesStep:
     def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
         """Aggregate profile tables for functions, files, and modules."""
         _log_step(self.name)
+        catalog = _function_catalog(ctx, con)
         cfg = ProfilesAnalyticsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        build_function_profile(con, cfg)
-        build_file_profile(con, cfg)
-        build_module_profile(con, cfg)
+        build_function_profile(con, cfg, catalog_provider=catalog)
+        build_file_profile(con, cfg, catalog_provider=catalog)
+        build_module_profile(con, cfg, catalog_provider=catalog)
 
 
 # ---------------------------------------------------------------------------

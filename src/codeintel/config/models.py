@@ -8,13 +8,19 @@ settings.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
+from coverage import Coverage
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from codeintel.config.parser_types import FunctionParserKind
+from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
+
+if TYPE_CHECKING:
+    from codeintel.ingestion.scip_ingest import ScipIngestResult
 
 
 class RepoConfig(BaseModel):
@@ -276,6 +282,7 @@ class RepoScanConfig(BaseModel):
     repo: str
     commit: str
     tags_index_path: Path | None = None
+    tool_runner: object | None = None
 
     @classmethod
     def from_paths(
@@ -285,6 +292,7 @@ class RepoScanConfig(BaseModel):
         repo: str,
         commit: str,
         tags_index_path: Path | None = None,
+        tool_runner: object | None = None,
     ) -> Self:
         """
         Create a RepoScanConfig from repository context.
@@ -294,7 +302,13 @@ class RepoScanConfig(BaseModel):
         Self
             Normalized scan configuration.
         """
-        return cls(repo_root=repo_root, repo=repo, commit=commit, tags_index_path=tags_index_path)
+        return cls(
+            repo_root=repo_root,
+            repo=repo,
+            commit=commit,
+            tags_index_path=tags_index_path,
+            tool_runner=tool_runner,
+        )
 
     @field_validator("repo_root", mode="before")
     @classmethod
@@ -314,6 +328,7 @@ class CoverageIngestConfig(BaseModel):
     repo: str
     commit: str
     coverage_file: Path | None = Field(default=None)
+    tool_runner: object | None = None
 
     @classmethod
     def from_paths(
@@ -402,9 +417,17 @@ class TypingIngestConfig(BaseModel):
     repo_root: Path
     repo: str
     commit: str
+    tool_runner: object | None = None
 
     @classmethod
-    def from_paths(cls, *, repo_root: Path, repo: str, commit: str) -> Self:
+    def from_paths(
+        cls,
+        *,
+        repo_root: Path,
+        repo: str,
+        commit: str,
+        tool_runner: object | None = None,
+    ) -> Self:
         """
         Build typing ingestion settings from repository context.
 
@@ -413,7 +436,7 @@ class TypingIngestConfig(BaseModel):
         Self
             Normalized typing ingestion configuration.
         """
-        return cls(repo_root=repo_root, repo=repo, commit=commit)
+        return cls(repo_root=repo_root, repo=repo, commit=commit, tool_runner=tool_runner)
 
     @field_validator("repo_root", mode="before")
     @classmethod
@@ -485,6 +508,8 @@ class ScipIngestConfig:
     document_output_dir: Path
     scip_python_bin: str = "scip-python"
     scip_bin: str = "scip"
+    scip_runner: Callable[..., ScipIngestResult] | None = None
+    artifact_writer: Callable[[Path, Path, Path], None] | None = None
 
     @classmethod
     def from_paths(
@@ -494,6 +519,7 @@ class ScipIngestConfig:
         commit: str,
         paths: PathsConfig,
         tools: ToolsConfig | None = None,
+        artifact_writer: Callable[[Path, Path, Path], None] | None = None,
     ) -> Self:
         """
         Create SCIP ingest settings from shared path/tool configuration.
@@ -512,6 +538,7 @@ class ScipIngestConfig:
             document_output_dir=doc_dir,
             scip_python_bin=tools.scip_python_bin if tools else "scip-python",
             scip_bin=tools.scip_bin if tools else "scip",
+            artifact_writer=artifact_writer,
         )
 
 
@@ -543,9 +570,17 @@ class CallGraphConfig:
     repo: str
     commit: str
     repo_root: Path
+    cst_collector: Callable[..., list[CallGraphEdgeRow]] | None = None
+    ast_collector: Callable[..., list[CallGraphEdgeRow]] | None = None
 
     @classmethod
-    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+    ) -> Self:
         """
         Build call graph settings from repository context.
 
@@ -564,9 +599,18 @@ class CFGBuilderConfig:
     repo: str
     commit: str
     repo_root: Path
+    cfg_builder: (
+        Callable[..., tuple[list[CFGBlockRow], list[CFGEdgeRow], list[DFGEdgeRow]]] | None
+    ) = None
 
     @classmethod
-    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+    ) -> Self:
         """
         Build CFG/DFG settings from repository context.
 
@@ -902,6 +946,7 @@ class TestCoverageConfig:
     commit: str
     repo_root: Path
     coverage_file: Path | None = None
+    coverage_loader: Callable[[TestCoverageConfig], Coverage | None] | None = None
 
     @classmethod
     def from_paths(

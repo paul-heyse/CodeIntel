@@ -7,6 +7,7 @@ import logging
 import duckdb
 
 from codeintel.graphs.function_catalog import FunctionCatalog, load_function_catalog
+from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 
 FINDINGS_TABLE = "analytics.graph_validation"
 
@@ -16,6 +17,7 @@ def run_graph_validations(
     *,
     repo: str,
     commit: str,
+    catalog_provider: FunctionCatalogProvider | None = None,
     logger: logging.Logger | None = None,
 ) -> None:
     """
@@ -27,11 +29,15 @@ def run_graph_validations(
     - Modules with no GOIDs (orphans).
     """
     active_log = logger or logging.getLogger(__name__)
-    catalog = load_function_catalog(con, repo=repo, commit=commit)
+    catalog = (
+        catalog_provider.catalog()
+        if catalog_provider is not None
+        else load_function_catalog(con, repo=repo, commit=commit)
+    )
     findings = []
     findings.extend(_warn_missing_function_goids(con, repo, commit, active_log))
     findings.extend(_warn_callsite_span_mismatches(con, catalog, repo, commit, active_log))
-    findings.extend(_warn_orphan_modules(con, repo, commit, active_log))
+    findings.extend(_warn_orphan_modules(con, repo, commit, active_log, catalog))
     _persist_findings(con, findings)
     active_log.info(
         "Graph validation completed for %s@%s: %d finding(s)",
@@ -147,7 +153,11 @@ def _warn_callsite_span_mismatches(
 
 
 def _warn_orphan_modules(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str, log: logging.Logger
+    con: duckdb.DuckDBPyConnection,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
+    catalog: FunctionCatalog,
 ) -> list[dict[str, object]]:
     try:
         rows = con.execute(
@@ -161,7 +171,10 @@ def _warn_orphan_modules(
             [repo, commit, repo, commit],
         ).fetchall()
     except duckdb.Error:
-        return []
+        rows = []
+
+    if not rows and catalog.module_by_path:
+        rows = [(path,) for path in catalog.module_by_path]
 
     if not rows:
         return []

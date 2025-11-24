@@ -7,10 +7,14 @@ from dataclasses import dataclass
 
 import duckdb
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.mcp.query_service import BackendLimits, DuckDBQueryService
-from codeintel.server.datasets import build_dataset_registry, describe_dataset
+from codeintel.server.datasets import (
+    build_dataset_registry,
+    build_registry_and_limits,
+    describe_dataset,
+    validate_dataset_registry,
+)
 from codeintel.services.query_service import (
     HttpQueryService,
     LocalQueryService,
@@ -43,83 +47,6 @@ def _split_table_identifier(table: str) -> tuple[str, str]:
         raise ValueError(message)
     schema_name, table_name = table.split(".", maxsplit=1)
     return schema_name, table_name
-
-
-def validate_dataset_registry(
-    con: duckdb.DuckDBPyConnection, dataset_tables: dict[str, str]
-) -> None:
-    """
-    Validate that registered datasets exist and match expected schemas.
-
-    Parameters
-    ----------
-    con:
-        Open DuckDB connection.
-    dataset_tables:
-        Mapping of dataset name to fully qualified table/view name.
-
-    Raises
-    ------
-    ValueError
-        When required tables/views are missing or schemas do not match.
-    """
-    missing: list[str] = []
-    mismatched: list[str] = []
-
-    for dataset_name, table in sorted(dataset_tables.items()):
-        schema_name, table_name = _split_table_identifier(table)
-        exists = con.execute(
-            """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = ? AND table_name = ?
-            LIMIT 1
-            """,
-            [schema_name, table_name],
-        ).fetchone()
-        if exists is None:
-            missing.append(f"{dataset_name} ({table})")
-            continue
-
-        expected_schema = TABLE_SCHEMAS.get(table)
-        if expected_schema is None:
-            continue
-
-        rows = con.execute(
-            """
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns
-            WHERE table_schema = ? AND table_name = ?
-            ORDER BY ordinal_position
-            """,
-            [schema_name, table_name],
-        ).fetchall()
-        actual = [
-            (str(col_name).lower(), str(col_type).upper(), str(nullable).upper() == "YES")
-            for col_name, col_type, nullable in rows
-        ]
-        expected = [
-            (col.name.lower(), col.type.upper(), col.nullable) for col in expected_schema.columns
-        ]
-        if actual != expected:
-            actual_desc = ", ".join(
-                f"{name}:{col_type}:{'null' if is_nullable else 'notnull'}"
-                for name, col_type, is_nullable in actual
-            )
-            expected_desc = ", ".join(
-                f"{name}:{col_type}:{'null' if is_nullable else 'notnull'}"
-                for name, col_type, is_nullable in expected
-            )
-            mismatched.append(f"{table} expected [{expected_desc}] found [{actual_desc}]")
-
-    if missing or mismatched:
-        parts: list[str] = []
-        if missing:
-            parts.append(f"missing tables/views: {', '.join(missing)}")
-        if mismatched:
-            parts.append(f"schema mismatches: {', '.join(mismatched)}")
-        message = "Dataset registry validation failed; " + " | ".join(parts)
-        raise ValueError(message)
 
 
 @dataclass
@@ -260,7 +187,7 @@ def build_service_from_config(
         When required inputs (connection for local_db or request_json for remote_api)
         are missing or the serving mode is unsupported.
     """
-    limits = BackendLimits.from_config(cfg)
+    _, limits = build_registry_and_limits(cfg)
     resolved_observability = observability or get_observability_from_config(cfg)
     if cfg.mode == "local_db":
         if con is None:

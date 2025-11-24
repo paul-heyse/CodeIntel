@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import duckdb
-
-from codeintel.storage.schemas import apply_all_schemas
-from codeintel.storage.views import create_all_views
+from codeintel.storage.gateway import open_memory_gateway
 
 
 def test_call_graph_view_scopes_edges_to_repo_commit() -> None:
@@ -17,17 +14,16 @@ def test_call_graph_view_scopes_edges_to_repo_commit() -> None:
     AssertionError
         If caller repos leak across snapshots.
     """
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    con = open_memory_gateway(apply_schema=True, ensure_views=True).con
 
-    create_all_views(con)
-
+    now = "2024-01-01T00:00:00Z"
     con.execute(
         """
         INSERT INTO core.goids VALUES
-        (1, 'urn:1', 'r1', 'c1', 'a.py', 'python', 'function', 'a.f', 1, 2, TIMESTAMP '2024-01-01'),
-        (2, 'urn:2', 'r2', 'c2', 'b.py', 'python', 'function', 'b.f', 1, 2, TIMESTAMP '2024-01-01')
-        """
+        (1, 'urn:1', 'r1', 'c1', 'a.py', 'python', 'function', 'a.f', 1, 2, ?),
+        (2, 'urn:2', 'r2', 'c2', 'b.py', 'python', 'function', 'b.f', 1, 2, ?)
+        """,
+        [now, now],
     )
     con.execute(
         """

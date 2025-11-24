@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,7 +14,11 @@ from codeintel.config.models import CallGraphConfig
 from codeintel.graphs import call_ast, call_cst, call_persist, symbol_uses
 from codeintel.graphs.call_context import EdgeResolutionContext
 from codeintel.graphs.call_resolution import resolve_callee
-from codeintel.graphs.function_catalog import FunctionCatalog, FunctionMeta, load_function_catalog
+from codeintel.graphs.function_catalog import FunctionCatalog, FunctionMeta
+from codeintel.graphs.function_catalog_service import (
+    FunctionCatalogProvider,
+    FunctionCatalogService,
+)
 from codeintel.graphs.function_index import FunctionSpan
 from codeintel.graphs.import_resolver import collect_aliases
 from codeintel.graphs.validation import run_graph_validations
@@ -33,14 +38,33 @@ class CallGraphRunScope:
     repo_root: Path
 
 
-def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> None:
+@dataclass(frozen=True)
+class CallGraphInputs:
+    """Resolution inputs and optional collectors for call graph edges."""
+
+    global_callee_by_name: dict[str, int]
+    scip_candidates_by_use: dict[str, tuple[str, ...]]
+    def_goids_by_path: dict[str, int]
+    cst_collector: Callable[..., list[CallGraphEdgeRow]] | None = None
+    ast_collector: Callable[..., list[CallGraphEdgeRow]] | None = None
+
+
+def build_call_graph(
+    con: duckdb.DuckDBPyConnection,
+    cfg: CallGraphConfig,
+    *,
+    catalog_provider: FunctionCatalogProvider | None = None,
+) -> None:
     """Populate call graph nodes and edges for a repository snapshot."""
     repo_root = cfg.repo_root.resolve()
 
     node_rows = _build_call_graph_nodes(con, cfg)
     _persist_call_graph_nodes(con, node_rows)
 
-    catalog = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit)
+    catalog_provider = catalog_provider or FunctionCatalogService.from_db(
+        con, repo=cfg.repo, commit=cfg.commit
+    )
+    catalog = catalog_provider.catalog()
     func_rows = catalog.function_spans
     if not func_rows:
         log.info("No function GOIDs found; skipping call graph edges.")
@@ -50,9 +74,14 @@ def build_call_graph(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> No
     scip_candidates_by_use = _load_scip_candidates(con, repo_root)
     def_goids_by_path = _load_def_goid_map(con, repo=cfg.repo, commit=cfg.commit)
     scope = CallGraphRunScope(repo=cfg.repo, commit=cfg.commit, repo_root=repo_root)
-    edges = _collect_edges(
-        catalog, scope, global_callee_by_name, scip_candidates_by_use, def_goids_by_path
+    inputs = CallGraphInputs(
+        global_callee_by_name=global_callee_by_name,
+        scip_candidates_by_use=scip_candidates_by_use,
+        def_goids_by_path=def_goids_by_path,
+        cst_collector=cfg.cst_collector,
+        ast_collector=cfg.ast_collector,
     )
+    edges = _collect_edges(catalog, scope, inputs)
     unique_edges = call_persist.dedupe_edges(edges)
     call_persist.persist_call_graph_edges(con, unique_edges, cfg.repo, cfg.commit)
     run_graph_validations(con, repo=cfg.repo, commit=cfg.commit, logger=log)
@@ -122,13 +151,13 @@ def _callee_map(func_rows: list[FunctionSpan]) -> dict[str, int]:
 def _collect_edges(
     catalog: FunctionCatalog,
     scope: CallGraphRunScope,
-    global_callee_by_name: dict[str, int],
-    scip_candidates_by_use: dict[str, tuple[str, ...]],
-    def_goids_by_path: dict[str, int],
+    inputs: CallGraphInputs,
 ) -> list[CallGraphEdgeRow]:
     edges: list[CallGraphEdgeRow] = []
     function_index = catalog.function_index
     functions_by_path = catalog.functions_by_path
+    cst_collect = inputs.cst_collector or call_cst.collect_edges_cst
+    ast_collect = inputs.ast_collector or call_ast.collect_edges_ast
 
     for rel_path in sorted(functions_by_path):
         callee_by_name = function_index.local_name_map(rel_path)
@@ -150,17 +179,17 @@ def _collect_edges(
             commit=scope.commit,
             function_index=function_index,
             local_callees=callee_by_name,
-            global_callees=global_callee_by_name,
+            global_callees=inputs.global_callee_by_name,
             import_aliases=alias_collector,
-            scip_candidates_by_use_path=scip_candidates_by_use,
-            def_goids_by_path=def_goids_by_path,
+            scip_candidates_by_use_path=inputs.scip_candidates_by_use,
+            def_goids_by_path=inputs.def_goids_by_path,
         )
-        cst_edges = call_cst.collect_edges_cst(rel_path=rel_path, module=module, context=context)
+        cst_edges = cst_collect(rel_path=rel_path, module=module, context=context)
         if cst_edges:
             edges.extend(cst_edges)
         else:
             edges.extend(
-                call_ast.collect_edges_ast(
+                ast_collect(
                     rel_path=rel_path,
                     file_path=file_path,
                     context=context,
@@ -250,6 +279,7 @@ def collect_edges_for_testing(
     *,
     repo: str = "test_repo",
     commit: str = "test_commit",
+    inputs: CallGraphInputs | None = None,
 ) -> list[CallGraphEdgeRow]:
     """
     Collect call graph edges for tests without touching DuckDB state.
@@ -261,7 +291,12 @@ def collect_edges_for_testing(
     """
     catalog = _catalog_from_spans(func_rows)
     scope = CallGraphRunScope(repo=repo, commit=commit, repo_root=repo_root)
-    return _collect_edges(catalog, scope, _callee_map(func_rows), {}, {})
+    base_inputs = inputs or CallGraphInputs(
+        global_callee_by_name=_callee_map(func_rows),
+        scip_candidates_by_use={},
+        def_goids_by_path={},
+    )
+    return _collect_edges(catalog, scope, base_inputs)
 
 
 def resolve_callee_for_testing(

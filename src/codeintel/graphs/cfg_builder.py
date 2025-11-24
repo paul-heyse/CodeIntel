@@ -6,13 +6,17 @@ import ast
 import json
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
 
 from codeintel.config.models import CFGBuilderConfig
-from codeintel.graphs.function_catalog import load_function_catalog
+from codeintel.graphs.function_catalog_service import (
+    FunctionCatalogProvider,
+    FunctionCatalogService,
+)
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import (
     CFGBlockRow,
@@ -512,7 +516,17 @@ def _flush(
         )
 
 
-def build_cfg_and_dfg(con: duckdb.DuckDBPyConnection, cfg: CFGBuilderConfig) -> None:
+def build_cfg_and_dfg(
+    con: duckdb.DuckDBPyConnection,
+    cfg: CFGBuilderConfig,
+    *,
+    cfg_builder: Callable[
+        [FunctionBuildSpec, dict[str, str]],
+        tuple[list[CFGBlockRow], list[CFGEdgeRow], list[DFGEdgeRow]],
+    ]
+    | None = None,
+    catalog_provider: FunctionCatalogProvider | None = None,
+) -> None:
     """Emit CFG and DFG edges for each function GOID."""
     # Clear existing data for this repo/commit to allow idempotent re-runs
     log.info("Clearing existing CFG/DFG data for %s@%s", cfg.repo, cfg.commit)
@@ -544,7 +558,10 @@ def build_cfg_and_dfg(con: duckdb.DuckDBPyConnection, cfg: CFGBuilderConfig) -> 
         [cfg.repo, cfg.commit],
     )
 
-    function_spans = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit).function_spans
+    provider = catalog_provider or FunctionCatalogService.from_db(
+        con, repo=cfg.repo, commit=cfg.commit
+    )
+    function_spans = provider.catalog().function_spans
     if not function_spans:
         log.warning("No function GOIDs found; skipping CFG/DFG build.")
         return
@@ -568,7 +585,8 @@ def build_cfg_and_dfg(con: duckdb.DuckDBPyConnection, cfg: CFGBuilderConfig) -> 
             lines=(start, end),
             qualname=span.qualname,
         )
-        blocks, edges, dfg = _build_cfg_for_function(spec, file_cache)
+        builder = cfg_builder or cfg.cfg_builder or _build_cfg_for_function
+        blocks, edges, dfg = builder(spec, file_cache)
 
         all_blocks.extend(blocks)
         all_cfg_edges.extend(edges)

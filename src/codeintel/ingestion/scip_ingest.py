@@ -47,6 +47,9 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> ScipIn
             status="unavailable", index_scip=None, index_json=None, reason=reason
         )
 
+    if cfg.scip_runner is not None:
+        return cast("ScipIngestResult", cfg.scip_runner(con, cfg))
+
     probe_result = _probe_binaries(cfg)
     if probe_result is not None:
         return probe_result
@@ -70,8 +73,8 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> ScipIn
             status="failed", index_scip=index_scip, index_json=None, reason=message
         )
 
-    shutil.copy2(index_scip, doc_dir / "index.scip")
-    shutil.copy2(index_json, doc_dir / "index.scip.json")
+    writer = cfg.artifact_writer or _copy_artifacts
+    writer(index_scip, index_json, doc_dir)
 
     docs_table = con.execute(
         "SELECT unnest(documents, recursive:=true) AS document FROM read_json(?)",
@@ -84,6 +87,12 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> ScipIn
     _update_scip_symbols(con, index_json)
     log.info("SCIP index ingested for %s@%s", cfg.repo, cfg.commit)
     return ScipIngestResult(status="success", index_scip=index_scip, index_json=index_json)
+
+
+def _copy_artifacts(index_scip: Path, index_json: Path, doc_dir: Path) -> None:
+    """Copy SCIP artifacts into the document output directory."""
+    shutil.copy2(index_scip, doc_dir / "index.scip")
+    shutil.copy2(index_json, doc_dir / "index.scip.json")
 
 
 def _probe_binaries(cfg: ScipIngestConfig) -> ScipIngestResult | None:

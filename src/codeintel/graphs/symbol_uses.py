@@ -10,7 +10,11 @@ from typing import cast
 import duckdb
 
 from codeintel.config.models import SymbolUsesConfig
-from codeintel.graphs.function_catalog import load_function_catalog
+from codeintel.graphs.function_catalog import FunctionCatalog
+from codeintel.graphs.function_catalog_service import (
+    FunctionCatalogProvider,
+    FunctionCatalogService,
+)
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import SymbolUseRow, symbol_use_to_tuple
 from codeintel.types import ScipDocument
@@ -21,6 +25,7 @@ log = logging.getLogger(__name__)
 def build_symbol_use_edges(
     con: duckdb.DuckDBPyConnection,
     cfg: SymbolUsesConfig,
+    catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """
     Populate graph.symbol_use_edges from `index.scip.json`.
@@ -37,7 +42,10 @@ def build_symbol_use_edges(
     if docs is None:
         return
 
-    module_by_path = load_function_catalog(con, repo=cfg.repo, commit=cfg.commit).module_by_path
+    provider = catalog_provider or FunctionCatalogService.from_db(
+        con, repo=cfg.repo, commit=cfg.commit
+    )
+    module_by_path = _merge_module_map(con, docs, cfg.repo, cfg.commit, provider.catalog())
     def_path_by_symbol = build_def_map(docs)
     rows = _build_symbol_edges(docs, def_path_by_symbol, module_by_path)
 
@@ -209,3 +217,68 @@ def build_use_def_mapping(
                 continue
             mapping.setdefault(use_path, set()).add(def_path)
     return mapping
+
+
+def _collect_missing_paths(docs: list[ScipDocument], module_by_path: dict[str, str]) -> set[str]:
+    missing: set[str] = set()
+    for doc in docs:
+        use_path = doc.get("relative_path")
+        if use_path:
+            use_path = str(use_path).replace("\\", "/")
+            if use_path not in module_by_path:
+                missing.add(use_path)
+        for occ in doc.get("occurrences", []):
+            symbol = occ.get("symbol")
+            if not symbol:
+                continue
+            def_path = doc.get("relative_path") if int(occ.get("symbol_roles", 0)) & 1 else None
+            if def_path:
+                def_path = str(def_path).replace("\\", "/")
+                if def_path not in module_by_path:
+                    missing.add(def_path)
+    return missing
+
+
+def _load_modules_map(
+    con: duckdb.DuckDBPyConnection, repo: str, commit: str, paths: set[str] | None = None
+) -> dict[str, str]:
+    rows = con.execute(
+        """
+        SELECT path, module
+        FROM core.modules
+        WHERE repo = ? AND commit = ?
+        """,
+        [repo, commit],
+    ).fetchall()
+    mapping = {str(path).replace("\\", "/"): str(module) for path, module in rows}
+    if paths is None:
+        return mapping
+    normalized_paths = {path.replace("\\", "/") for path in paths}
+    return {path: module for path, module in mapping.items() if path in normalized_paths}
+
+
+def _merge_module_map(
+    con: duckdb.DuckDBPyConnection,
+    docs: list[ScipDocument],
+    repo: str,
+    commit: str,
+    catalog: FunctionCatalog,
+) -> dict[str, str]:
+    """
+    Combine catalog module map with DB modules for missing paths.
+
+    Returns
+    -------
+    dict[str, str]
+        Normalized path -> module mapping combining catalog and DB.
+    """
+    base_map = {path.replace("\\", "/"): module for path, module in catalog.module_by_path.items()}
+    if not base_map:
+        return _load_modules_map(con, repo, commit)
+
+    missing_paths = _collect_missing_paths(docs, base_map)
+    if missing_paths:
+        db_map = _load_modules_map(con, repo, commit, paths=missing_paths)
+        for path, module in db_map.items():
+            base_map.setdefault(path, module)
+    return base_map

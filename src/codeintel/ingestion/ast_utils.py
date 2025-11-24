@@ -66,9 +66,9 @@ class AstSpanIndex:
 
         for (span_start, span_end), candidate in self.node_map.items():
             if span_start <= start_line <= span_end:
-                if smallest_enclosing_span is None or (
-                    span_end - span_start
-                ) < (smallest_enclosing_span[1] - smallest_enclosing_span[0]):
+                if smallest_enclosing_span is None or (span_end - span_start) < (
+                    smallest_enclosing_span[1] - smallest_enclosing_span[0]
+                ):
                     smallest_enclosing_span = (span_start, span_end)
                     enclosing = candidate
                 continue

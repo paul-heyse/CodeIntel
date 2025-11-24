@@ -40,6 +40,7 @@ from codeintel.mcp.models import (
 )
 from codeintel.services.factory import BackendResource, build_backend_resource
 from codeintel.services.query_service import HttpQueryService, LocalQueryService
+from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger("codeintel.server.fastapi")
 
@@ -129,7 +130,9 @@ def load_api_config() -> ApiAppConfig:
     return ApiAppConfig(server=config, read_only=config.read_only)
 
 
-def create_backend_resource(cfg: ApiAppConfig | ServingConfig) -> BackendResource:
+def create_backend_resource(
+    cfg: ApiAppConfig | ServingConfig, *, gateway: StorageGateway | None = None
+) -> BackendResource:
     """
     Instantiate the DuckDB backend for the API.
 
@@ -137,6 +140,8 @@ def create_backend_resource(cfg: ApiAppConfig | ServingConfig) -> BackendResourc
     ----------
     cfg:
         Application configuration containing repo metadata and paths.
+    gateway:
+        Optional StorageGateway supplying the connection and dataset registry.
 
     Returns
     -------
@@ -151,7 +156,7 @@ def create_backend_resource(cfg: ApiAppConfig | ServingConfig) -> BackendResourc
     serving_cfg = cfg.server if isinstance(cfg, ApiAppConfig) else cfg
     read_only = cfg.read_only if isinstance(cfg, ApiAppConfig) else serving_cfg.read_only
     try:
-        return build_backend_resource(serving_cfg, read_only=read_only)
+        return build_backend_resource(serving_cfg, gateway=gateway, read_only=read_only)
     except Exception as exc:
         raise errors.backend_failure(str(exc)) from exc
 
@@ -881,9 +886,18 @@ def build_health_router() -> APIRouter:
         -------
         dict[str, object]
             Health payload including repo/commit and read-only state.
+
+        Raises
+        ------
+        errors.backend_failure
+            If the backend connection is unavailable.
         """
         if isinstance(backend, DuckDBBackend):
-            backend.con.execute("SELECT 1;")
+            con = backend.con
+            if con is None:
+                message = "Backend connection is not initialized"
+                raise errors.backend_failure(message)
+            con.execute("SELECT 1;")
         return {
             "status": "ok",
             "repo": config.repo,
@@ -907,7 +921,8 @@ def register_routes(app: FastAPI) -> None:
 def create_app(
     *,
     config_loader: Callable[[], ApiAppConfig] = load_api_config,
-    backend_factory: Callable[[ApiAppConfig], BackendResource] = create_backend_resource,
+    backend_factory: Callable[..., BackendResource] = create_backend_resource,
+    gateway: StorageGateway | None = None,
 ) -> FastAPI:
     """
     Build the FastAPI application with configured lifecycle and routes.
@@ -918,6 +933,8 @@ def create_app(
         Factory for loading application configuration.
     backend_factory:
         Factory that yields a backend resource for the given configuration.
+    gateway:
+        Optional StorageGateway to supply the connection/registry to the backend factory.
 
     Returns
     -------
@@ -928,7 +945,10 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config = config_loader()
-        backend_resource = backend_factory(config)
+        if gateway is not None and backend_factory is create_backend_resource:
+            backend_resource = backend_factory(config, gateway=gateway)
+        else:
+            backend_resource = backend_factory(config)
         app.state.config = config
         app.state.backend = backend_resource.backend
         app.state.service = backend_resource.service

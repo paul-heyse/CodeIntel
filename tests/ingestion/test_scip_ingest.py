@@ -5,11 +5,10 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from codeintel.ingestion import scip_ingest
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import StorageConfig, open_gateway
 
 
 def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
@@ -43,8 +42,10 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
         document_output_dir=document_output_dir,
     )
 
-    con = duckdb.connect(str(db_path))
-    apply_all_schemas(con)
+    gateway = open_gateway(
+        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
+    )
+    con = gateway.con
 
     result = scip_ingest.ingest_scip(con=con, cfg=cfg)
     if result.status != "success":
@@ -69,3 +70,38 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
         pytest.fail("scip_index_view is empty; expected rows after ingest")
 
     con.close()
+
+
+def test_ingest_scip_uses_injected_runner(tmp_path: Path) -> None:
+    """Injected scip_runner should bypass binary probes."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    (repo_root / ".git").mkdir()
+
+    build_dir = repo_root / "build"
+    document_output_dir = repo_root / "document_output"
+    db_path = build_dir / "db" / "codeintel_prefect.duckdb"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cfg = scip_ingest.ScipIngestConfig(
+        repo_root=repo_root,
+        repo="demo/repo",
+        commit="deadbeef",
+        build_dir=build_dir,
+        document_output_dir=document_output_dir,
+        scip_runner=lambda _con, _cfg: scip_ingest.ScipIngestResult(  # type: ignore[arg-type]
+            status="success",
+            index_scip=build_dir / "scip" / "index.scip",
+            index_json=build_dir / "scip" / "index.scip.json",
+        ),
+        artifact_writer=lambda _idx, _json, _doc: None,
+    )
+
+    gateway = open_gateway(
+        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
+    )
+    con = gateway.con
+
+    result = scip_ingest.ingest_scip(con=con, cfg=cfg)
+    if result.status != "success":
+        pytest.fail(f"Injected runner should succeed, got {result.status}")

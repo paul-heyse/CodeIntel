@@ -18,7 +18,8 @@ from codeintel.analytics.tests_analytics import (
     build_edges_for_file_for_tests,
     compute_test_coverage_edges,
 )
-from codeintel.storage.schemas import apply_all_schemas
+from tests._helpers.db import make_memory_gateway
+from tests._helpers.fakes import FakeCoverage
 
 cast("Any", TestCoverageConfig).__test__ = False  # prevent pytest from collecting the dataclass
 
@@ -41,8 +42,8 @@ def _insert_goids(con: duckdb.DuckDBPyConnection, cfg: TestCoverageConfig) -> No
 
 def test_backfill_test_goids_updates_catalog() -> None:
     """Ensure test_catalog entries receive GOIDs and URNs when matched to GOIDs."""
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    gateway = make_memory_gateway()
+    con = gateway.con
 
     cfg = TestCoverageConfig(
         repo="demo/repo",
@@ -139,8 +140,8 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
     target_file = pkg_dir / "mod.py"
     target_file.write_text("def func():\n    return 1\n", encoding="utf-8")
 
-    con = duckdb.connect(":memory:")
-    apply_all_schemas(con)
+    gateway = make_memory_gateway()
+    con = gateway.con
 
     cfg = TestCoverageConfig(
         repo="demo/repo",
@@ -211,3 +212,48 @@ def _assert_single_edge(con: duckdb.DuckDBPyConnection) -> None:
         pytest.fail(f"Unexpected coverage_ratio {cov_ratio}")
     if status != "passed":
         pytest.fail(f"Unexpected last_status {status}")
+
+
+def test_compute_test_coverage_edges_respects_injected_loader(tmp_path: Path) -> None:
+    """compute_test_coverage_edges should call injected loader when provided."""
+    repo_root = tmp_path / "repo"
+    pkg_dir = repo_root / "pkg"
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    target_file = pkg_dir / "mod.py"
+    target_file.write_text("def func():\n    return 1\n", encoding="utf-8")
+
+    gateway = make_memory_gateway()
+    con = gateway.con
+
+    cfg = TestCoverageConfig(
+        repo="demo/repo",
+        commit="deadbeef",
+        repo_root=repo_root,
+    )
+
+    now = datetime.now(UTC)
+    con.execute(
+        """
+        INSERT INTO core.goids (goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at)
+        VALUES
+            (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, 'pkg/mod.py', 'python', 'function', 'pkg.mod.func', 1, 2, ?),
+            (99, 'goid:demo/repo#python:function:pkg.mod.test_func', ?, ?, 'pkg/mod.py', 'python', 'test', 'pkg.mod.test_func', 1, 2, ?)
+        """,
+        [cfg.repo, cfg.commit, now, cfg.repo, cfg.commit, now],
+    )
+    con.execute(
+        """
+        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
+        VALUES ('pkg/mod.py::test_func', 'pkg/mod.py', 'pkg.mod.test_func', ?, ?, 'passed', ?)
+        """,
+        [cfg.repo, cfg.commit, now],
+    )
+
+    def _coverage_loader(_cfg: TestCoverageConfig) -> Coverage:
+        abs_mod = str(target_file.resolve())
+        statements = {abs_mod: [1, 2]}
+        contexts = {abs_mod: {1: {"pkg/mod.py::test_func"}, 2: {"pkg/mod.py::test_func"}}}
+        return FakeCoverage(statements, contexts)
+
+    compute_test_coverage_edges(con, cfg, coverage_loader=_coverage_loader)
+    _assert_single_edge(con)

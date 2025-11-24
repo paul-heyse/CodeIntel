@@ -23,7 +23,7 @@ class _StubBackend:
     service: object
 
 
-def test_mcp_wiring_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_mcp_wiring_smoke() -> None:
     """Server registers tools via shared helper and close hook is invoked."""
     called = False
     closed = False
@@ -49,16 +49,17 @@ def test_mcp_wiring_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
         if backend_arg is not service:
             pytest.fail("Registry received unexpected backend")
 
-    monkeypatch.setattr("codeintel.mcp.server.build_backend_resource", _fake_build_backend_resource)
-    monkeypatch.setattr("codeintel.mcp.server.register_tools", _fake_register_tools)
-
     cfg = ServingConfig(
         mode="remote_api",
         repo="r",
         commit="c",
         api_base_url="http://test",
     )
-    server, close = create_mcp_server(cfg)
+    server, close = create_mcp_server(
+        cfg,
+        backend_factory=_fake_build_backend_resource,
+        register_tools_fn=_fake_register_tools,
+    )
 
     if not called:
         pytest.fail("register_tools was not invoked")
@@ -66,6 +67,5 @@ def test_mcp_wiring_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
     close()
     if not closed:
         pytest.fail("Close hook was not executed")
-
     if server is None:
         pytest.fail("MCP server was not created")

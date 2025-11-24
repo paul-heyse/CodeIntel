@@ -9,7 +9,7 @@ import pytest
 
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.config.models import GraphMetricsConfig
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import open_memory_gateway
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -27,9 +27,8 @@ def _setup_db() -> duckdb.DuckDBPyConnection:
     duckdb.DuckDBPyConnection
         Connected in-memory database ready for inserts.
     """
-    con = duckdb.connect(database=":memory:")
-    apply_all_schemas(con)
-    return con
+    gateway = open_memory_gateway()
+    return gateway.con
 
 
 def test_compute_function_graph_metrics_counts_and_cycles() -> None:

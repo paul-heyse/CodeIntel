@@ -123,6 +123,9 @@ def export_jsonl_for_table(
 def export_all_jsonl(
     con: duckdb.DuckDBPyConnection,
     document_output_dir: Path,
+    *,
+    validate_exports: bool = False,
+    schemas: list[str] | None = None,
 ) -> list[Path]:
     """
     Export all configured datasets to JSONL files under `Document Output/`.
@@ -171,6 +174,32 @@ def export_all_jsonl(
     }
     index_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     written.append(index_path)
+
+    if validate_exports:
+        from codeintel.docs_export.validate_exports import validate_files
+        from codeintel.services.errors import ExportError, problem
+
+        schema_list = schemas or [
+            "function_profile",
+            "file_profile",
+            "module_profile",
+            "call_graph_edges",
+            "symbol_use_edges",
+            "test_coverage_edges",
+        ]
+        for schema_name in schema_list:
+            matching = [p for p in written if p.name.startswith(schema_name)]
+            if not matching:
+                continue
+            exit_code = validate_files(schema_name, matching)
+            if exit_code != 0:
+                pd = problem(
+                    code="export.validation_failed",
+                    title="Export validation failed",
+                    detail=f"Validation failed for schema {schema_name}",
+                    extras={"schema": schema_name, "files": [str(p) for p in matching]},
+                )
+                raise ExportError(pd)
 
     return written
 

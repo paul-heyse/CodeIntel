@@ -15,12 +15,13 @@ import httpx
 
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.mcp.query_service import BackendLimits
-from codeintel.server.datasets import build_dataset_registry
+from codeintel.server.datasets import build_dataset_registry, build_registry_and_limits
 from codeintel.services.query_service import (
     LocalQueryService,
     QueryService,
     ServiceObservability,
 )
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
@@ -42,6 +43,7 @@ class BackendResource:
 def build_backend_resource(  # noqa: PLR0913
     cfg: ServingConfig,
     *,
+    gateway: StorageGateway | None = None,
     con: duckdb.DuckDBPyConnection | None = None,
     http_client: httpx.Client | httpx.AsyncClient | None = None,
     registry: DatasetRegistryOptions | None = None,
@@ -55,6 +57,8 @@ def build_backend_resource(  # noqa: PLR0913
     ----------
     cfg:
         Validated serving configuration.
+    gateway:
+        Optional StorageGateway supplying connection and dataset registry for local_db mode.
     con:
         Optional DuckDB connection for local_db mode.
     http_client:
@@ -83,15 +87,22 @@ def build_backend_resource(  # noqa: PLR0913
 
     resolved_observability = observability or get_observability_from_config(cfg)
     registry_opts = registry or DatasetRegistryOptions()
+    if registry_opts.tables is None and gateway is not None:
+        registry_opts.tables = dict(gateway.datasets.mapping)
     resolved_read_only = cfg.read_only if read_only is None else read_only
+    registry_default, limits = build_registry_and_limits(cfg)
+    if registry_opts.tables is None:
+        registry_opts.tables = registry_default
 
     if cfg.mode == "local_db":
         return _build_local_resource(
             cfg,
+            gateway=gateway,
             con=con,
             registry_opts=registry_opts,
             observability=resolved_observability,
             read_only=resolved_read_only,
+            limits=limits,
         )
 
     if cfg.mode == "remote_api":
@@ -99,19 +110,22 @@ def build_backend_resource(  # noqa: PLR0913
             cfg,
             http_client=http_client,
             observability=resolved_observability,
+            limits=limits,
         )
 
     message = f"Unsupported serving mode: {cfg.mode}"
     raise ValueError(message)
 
 
-def _build_local_resource(
+def _build_local_resource(  # noqa: PLR0913
     cfg: ServingConfig,
     *,
+    gateway: StorageGateway | None,
     con: duckdb.DuckDBPyConnection | None,
     registry_opts: DatasetRegistryOptions,
     observability: ServiceObservability | None,
     read_only: bool,
+    limits: BackendLimits,
 ) -> BackendResource:
     """
     Construct a local DuckDB backend and service bundle.
@@ -127,21 +141,20 @@ def _build_local_resource(
         When the DuckDB path is missing for local_db mode.
     """
     owns_con = False
-    connection = con
+    connection = con or (gateway.con if gateway is not None else None)
+    effective_read_only = gateway.config.read_only if gateway is not None else read_only
     if connection is None:
         if cfg.db_path is None:
             message = "db_path is required for local_db mode"
             raise ValueError(message)
-        connection = duckdb.connect(str(cfg.db_path), read_only=read_only)
+        connection = duckdb.connect(str(cfg.db_path), read_only=effective_read_only)
         owns_con = True
 
     verify_db_identity(connection, cfg)
-    if not read_only:
+    if not effective_read_only:
         create_all_views(connection)
 
     tables = registry_opts.tables if registry_opts.tables is not None else build_dataset_registry()
-    limits = BackendLimits.from_config(cfg)
-
     from codeintel.mcp.backend import DuckDBBackend  # noqa: PLC0415
     from codeintel.services.factory import build_service_from_config  # noqa: PLC0415
 
@@ -152,6 +165,7 @@ def _build_local_resource(
         observability=observability,
     )
     backend = DuckDBBackend(
+        gateway=gateway,
         con=connection,
         repo=cfg.repo,
         commit=cfg.commit,
@@ -173,6 +187,7 @@ def _build_remote_resource(
     *,
     http_client: httpx.Client | httpx.AsyncClient | None,
     observability: ServiceObservability | None,
+    limits: BackendLimits,
 ) -> BackendResource:
     """
     Construct a remote HTTP backend and service bundle.
@@ -204,7 +219,7 @@ def _build_remote_resource(
         repo=cfg.repo,
         commit=cfg.commit,
         timeout=cfg.timeout_seconds,
-        limits=BackendLimits.from_config(cfg),
+        limits=limits,
         client=client,
         observability=observability,
     )
