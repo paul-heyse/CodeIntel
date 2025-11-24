@@ -43,12 +43,17 @@ def _write_repo(repo_root: Path) -> tuple[int, int]:
 def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     """Ensure pipeline steps and builders all consume the shared function catalog."""
     repo_root = tmp_path / "repo"
-    caller_start, caller_end = _write_repo(repo_root)
+    caller_lines = _write_repo(repo_root)
 
-    db_path = tmp_path / "db.duckdb"
-    con = open_gateway(
-        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=False, validate_schema=True)
-    ).con
+    gateway = open_gateway(
+        StorageConfig(
+            db_path=tmp_path / "db.duckdb",
+            apply_schema=True,
+            ensure_views=False,
+            validate_schema=True,
+        )
+    )
+    con = gateway.con
 
     run_batch(
         con,
@@ -71,19 +76,23 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
 
     ctx = PipelineContext(
         repo_root=repo_root,
-        db_path=db_path,
+        db_path=tmp_path / "db.duckdb",
         build_dir=tmp_path / "build",
         repo=REPO,
         commit=COMMIT,
+        gateway=gateway,
     )
 
-    RepoScanStep().run(ctx, con)
-    AstStep().run(ctx, con)
-    GoidsStep().run(ctx, con)
+    RepoScanStep().run(ctx)
+    AstStep().run(ctx)
+    GoidsStep().run(ctx)
 
-    build_call_graph(con, CallGraphConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root))
+    build_call_graph(
+        gateway, CallGraphConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root)
+    )
     build_cfg_and_dfg(
-        con, CFGBuilderConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root)
+        gateway,
+        CFGBuilderConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root),
     )
 
     scip_json = ctx.build_dir / "scip" / "index.scip.json"
@@ -108,7 +117,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         encoding="utf8",
     )
     build_symbol_use_edges(
-        con,
+        gateway,
         SymbolUsesConfig.from_paths(
             repo_root=repo_root,
             repo=REPO,
@@ -119,12 +128,12 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
 
     def _load_fake(_cfg: TestCoverageConfig) -> Coverage:
         abs_b = str((repo_root / "pkg" / "b.py").resolve())
-        statements = {abs_b: [caller_start, caller_end]}
-        contexts = {abs_b: {caller_start: {"tests/test_sample.py::test_caller"}}}
+        statements = {abs_b: [caller_lines[0], caller_lines[1]]}
+        contexts = {abs_b: {caller_lines[0]: {"tests/test_sample.py::test_caller"}}}
         return FakeCoverage(statements, contexts)
 
     compute_test_coverage_edges(
-        con,
+        gateway,
         TestCoverageConfig.from_paths(
             repo=REPO,
             commit=COMMIT,
@@ -139,9 +148,9 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
             return
         raise AssertionError(detail)
 
-    catalog = load_function_catalog(con, repo=REPO, commit=COMMIT)
+    catalog = load_function_catalog(gateway, repo=REPO, commit=COMMIT)
     callee_goid = catalog.lookup_goid("pkg/a.py", 1, 2, "pkg.a.callee")
-    caller_goid = catalog.lookup_goid("pkg/b.py", caller_start, caller_end, "pkg.b.caller")
+    caller_goid = catalog.lookup_goid("pkg/b.py", caller_lines[0], caller_lines[1], "pkg.b.caller")
     _assert(callee_goid is not None, detail="Catalog missing callee GOID")
     _assert(caller_goid is not None, detail="Catalog missing caller GOID")
     _assert(

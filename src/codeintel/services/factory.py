@@ -5,12 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-import duckdb
-
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.mcp.query_service import BackendLimits, DuckDBQueryService
 from codeintel.server.datasets import (
-    build_dataset_registry,
     build_registry_and_limits,
     describe_dataset,
     validate_dataset_registry,
@@ -21,6 +18,7 @@ from codeintel.services.query_service import (
     ServiceObservability,
 )
 from codeintel.services.wiring import BackendResource, build_backend_resource
+from codeintel.storage.gateway import StorageGateway
 
 
 def _split_table_identifier(table: str) -> tuple[str, str]:
@@ -81,7 +79,7 @@ def get_observability_from_config(cfg: ServingConfig) -> ServiceObservability | 
 
 
 def build_local_query_service(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: ServingConfig,
     *,
     query: DuckDBQueryService,
@@ -93,8 +91,8 @@ def build_local_query_service(
 
     Parameters
     ----------
-    con:
-        Open DuckDB connection.
+    gateway:
+        StorageGateway providing the DuckDB connection and dataset registry.
     cfg:
         Serving configuration describing repo/commit and limits.
     query:
@@ -109,14 +107,12 @@ def build_local_query_service(
     LocalQueryService
         Service bound to the provided DuckDB connection.
     """
-    verify_db_identity(con, cfg)
+    verify_db_identity(gateway, cfg)
     opts = registry or DatasetRegistryOptions()
-    tables = opts.tables if opts.tables is not None else build_dataset_registry()
-    if opts.validate and tables:
-        validate_dataset_registry(con, tables)
+    if opts.validate:
+        validate_dataset_registry(gateway)
     return LocalQueryService(
         query=query,
-        dataset_tables=tables,
         describe_dataset_fn=opts.describe_fn,
         observability=observability,
     )
@@ -155,7 +151,7 @@ def build_http_query_service(
 def build_service_from_config(
     cfg: ServingConfig,
     *,
-    con: duckdb.DuckDBPyConnection | None = None,
+    gateway: StorageGateway | None = None,
     request_json: Callable[[str, dict[str, object]], object] | None = None,
     registry: DatasetRegistryOptions | None = None,
     observability: ServiceObservability | None = None,
@@ -167,8 +163,8 @@ def build_service_from_config(
     ----------
     cfg:
         Validated serving configuration.
-    con:
-        Open DuckDB connection for local_db mode.
+    gateway:
+        StorageGateway for local_db mode.
     request_json:
         HTTP JSON request callable for remote_api mode.
     registry:
@@ -184,28 +180,24 @@ def build_service_from_config(
     Raises
     ------
     ValueError
-        When required inputs (connection for local_db or request_json for remote_api)
+        When required inputs (gateway for local_db or request_json for remote_api)
         are missing or the serving mode is unsupported.
     """
     _, limits = build_registry_and_limits(cfg)
     resolved_observability = observability or get_observability_from_config(cfg)
     if cfg.mode == "local_db":
-        if con is None:
-            message = "DuckDB connection is required for local_db service construction"
+        if gateway is None:
+            message = "StorageGateway is required for local_db service construction"
             raise ValueError(message)
         registry_opts = registry or DatasetRegistryOptions()
-        tables = (
-            registry_opts.tables if registry_opts.tables is not None else build_dataset_registry()
-        )
         query = DuckDBQueryService(
-            con=con,
+            gateway=gateway,
             repo=cfg.repo,
             commit=cfg.commit,
             limits=limits,
-            dataset_tables=tables,
         )
         return build_local_query_service(
-            con,
+            gateway,
             cfg,
             query=query,
             registry=registry_opts,

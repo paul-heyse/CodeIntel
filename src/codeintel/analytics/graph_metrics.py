@@ -9,10 +9,8 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any
 
 import duckdb
@@ -21,6 +19,8 @@ import networkx as nx
 from codeintel.config.models import GraphMetricsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.graphs.nx_views import load_call_graph, load_import_graph
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -54,30 +54,20 @@ class ComponentMetadata:
 
 
 def compute_graph_metrics(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: GraphMetricsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """Populate analytics graph metrics tables for the provided repo/commit."""
+    con = gateway.con
     ensure_schema(con, "analytics.graph_metrics_functions")
     ensure_schema(con, "analytics.graph_metrics_modules")
-    _compute_function_graph_metrics(con, cfg)
+    _compute_function_graph_metrics(gateway, cfg)
     module_by_path = None
     if catalog_provider is not None:
         module_by_path = catalog_provider.catalog().module_by_path
-    _compute_module_graph_metrics(con, cfg, module_by_path=module_by_path)
-
-
-def _normalize_goid(raw: object) -> int:
-    if isinstance(raw, int):
-        return raw
-    if isinstance(raw, str):
-        return int(raw)
-    if isinstance(raw, Decimal):
-        return int(raw)
-    message = f"Unsupported GOID value: {raw!r}"
-    raise TypeError(message)
+    _compute_module_graph_metrics(gateway, cfg, module_by_path=module_by_path)
 
 
 def _dag_layers(graph: nx.DiGraph) -> dict[Any, int]:
@@ -105,6 +95,56 @@ def _component_metadata(
     return ComponentMetadata(ids=comp_index, in_cycle=cycle_member, layer=layer_by_node)
 
 
+def _component_metadata_from_import_table(
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+) -> ComponentMetadata | None:
+    try:
+        rows = gateway.con.execute(
+            """
+            SELECT module, scc_id, component_size, layer
+            FROM graph.import_modules
+            WHERE repo = ? AND commit = ?
+            """,
+            [repo, commit],
+        ).fetchall()
+    except duckdb.Error:
+        return None
+    if not rows:
+        return None
+
+    comp_id: dict[str, int] = {}
+    in_cycle: dict[str, bool] = {}
+    layer_by_module: dict[str, int] = {}
+    for module, scc_id, component_size, layer in rows:
+        name = str(module)
+        comp_id[name] = int(scc_id) if scc_id is not None else -1
+        size = int(component_size) if component_size is not None else 0
+        in_cycle[name] = size > 1
+        if layer is not None:
+            layer_by_module[name] = int(layer)
+    return ComponentMetadata(ids=comp_id, in_cycle=in_cycle, layer=layer_by_module)
+
+
+def _merge_component_metadata(
+    graph_nodes: set[Any],
+    computed: ComponentMetadata,
+    cached: ComponentMetadata | None,
+) -> ComponentMetadata:
+    if cached is None:
+        return computed
+    ids = computed.ids.copy()
+    in_cycle = computed.in_cycle.copy()
+    layer = computed.layer.copy()
+    for node in graph_nodes:
+        if node in cached.ids:
+            ids[node] = cached.ids[node]
+            in_cycle[node] = cached.in_cycle.get(node, False)
+            layer[node] = cached.layer.get(node, layer.get(node, 0))
+    return ComponentMetadata(ids=ids, in_cycle=in_cycle, layer=layer)
+
+
 def _centrality(graph: nx.DiGraph, max_betweenness_sample: int | None) -> CentralityMetrics:
     if graph.number_of_nodes() == 0:
         return CentralityMetrics(pagerank={}, betweenness={}, closeness={})
@@ -128,62 +168,20 @@ def _centrality(graph: nx.DiGraph, max_betweenness_sample: int | None) -> Centra
     return CentralityMetrics(pagerank=pagerank, betweenness=betweenness, closeness=closeness)
 
 
-def _load_call_graph(
-    con: duckdb.DuckDBPyConnection,
-    repo: str,
-    commit: str,
-) -> tuple[set[int], dict[tuple[int, int], int]]:
-    nodes: set[int] = set()
-    edge_counts: dict[tuple[int, int], int] = defaultdict(int)
-
-    rows = con.execute(
-        """
-        SELECT caller_goid_h128, callee_goid_h128
-        FROM graph.call_graph_edges
-        WHERE callee_goid_h128 IS NOT NULL
-          AND repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
-    for caller_raw, callee_raw in rows:
-        caller = _normalize_goid(caller_raw)
-        callee = _normalize_goid(callee_raw)
-        nodes.update((caller, callee))
-        edge_counts[caller, callee] += 1
-
-    node_rows = con.execute("SELECT goid_h128 FROM graph.call_graph_nodes").fetchall()
-    for (node_raw,) in node_rows:
-        if node_raw is not None:
-            nodes.add(_normalize_goid(node_raw))
-
-    return nodes, edge_counts
-
-
-def _build_directed_graph(
-    nodes: Iterable[Any], edge_counts: dict[tuple[Any, Any], int]
-) -> nx.DiGraph:
-    graph = nx.DiGraph()
-    graph.add_nodes_from(nodes)
-    for (src, dst), weight in edge_counts.items():
-        graph.add_edge(src, dst, weight=weight)
-    return graph
-
-
-def _compute_function_graph_metrics(
-    con: duckdb.DuckDBPyConnection, cfg: GraphMetricsConfig
-) -> None:
-    nodes, edge_counts = _load_call_graph(con, cfg.repo, cfg.commit)
-    graph = _build_directed_graph(nodes, edge_counts)
+def _compute_function_graph_metrics(gateway: StorageGateway, cfg: GraphMetricsConfig) -> None:
+    con = gateway.con
+    graph = load_call_graph(gateway, cfg.repo, cfg.commit)
 
     neighbor_in: dict[int, set[int]] = defaultdict(set)
     neighbor_out: dict[int, set[int]] = defaultdict(set)
     in_edge_count: dict[int, int] = defaultdict(int)
     out_edge_count: dict[int, int] = defaultdict(int)
-    for (src, dst), count in edge_counts.items():
-        neighbor_out[src].add(dst)
-        neighbor_in[dst].add(src)
-        out_edge_count[src] += count
-        in_edge_count[dst] += count
+    for src, dst, data in graph.edges(data=True):
+        weight = int(data.get("weight", 1))
+        neighbor_out[int(src)].add(int(dst))
+        neighbor_in[int(dst)].add(int(src))
+        out_edge_count[int(src)] += weight
+        in_edge_count[int(dst)] += weight
 
     centrality = _centrality(graph, cfg.max_betweenness_sample)
     component_meta = _component_metadata(graph)
@@ -211,7 +209,7 @@ def _compute_function_graph_metrics(
             component_meta.layer.get(node),
             now,
         )
-        for node in sorted(nodes)
+        for node in sorted(graph.nodes)
     ]
 
     if rows_to_insert:
@@ -234,43 +232,8 @@ def _compute_function_graph_metrics(
         )
 
 
-def _load_import_edges(
-    con: duckdb.DuckDBPyConnection,
-    repo: str,
-    commit: str,
-) -> tuple[set[str], dict[tuple[str, str], int]]:
-    modules: set[str] = set()
-    edge_counts: dict[tuple[str, str], int] = defaultdict(int)
-
-    rows = con.execute(
-        """
-        SELECT src_module, dst_module
-        FROM graph.import_graph_edges
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
-    for src, dst in rows:
-        if src is None or dst is None:
-            continue
-        src_module = str(src)
-        dst_module = str(dst)
-        modules.update((src_module, dst_module))
-        edge_counts[src_module, dst_module] += 1
-
-    module_rows = con.execute(
-        "SELECT module FROM core.modules WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    ).fetchall()
-    for (module,) in module_rows:
-        if module is not None:
-            modules.add(str(module))
-
-    return modules, edge_counts
-
-
 def _load_symbol_module_edges(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     module_by_path: dict[str, str] | None,
 ) -> tuple[set[str], dict[str, set[str]], dict[str, set[str]]]:
     modules: set[str] = set()
@@ -278,7 +241,7 @@ def _load_symbol_module_edges(
     outbound: dict[str, set[str]] = defaultdict(set)
 
     if module_by_path is None:
-        rows = con.execute(
+        rows = gateway.con.execute(
             """
             SELECT m_use.module, m_def.module
             FROM graph.symbol_use_edges su
@@ -296,7 +259,9 @@ def _load_symbol_module_edges(
             inbound[dst].add(src)
         return modules, inbound, outbound
 
-    path_rows = con.execute("SELECT def_path, use_path FROM graph.symbol_use_edges").fetchall()
+    path_rows = gateway.con.execute(
+        "SELECT def_path, use_path FROM graph.symbol_use_edges"
+    ).fetchall()
     for def_path, use_path in path_rows:
         def_module = module_by_path.get(str(def_path))
         use_module = module_by_path.get(str(use_path))
@@ -309,16 +274,17 @@ def _load_symbol_module_edges(
     return modules, inbound, outbound
 
 
-def _summarize_import_edges(edge_counts: dict[tuple[str, str], int]) -> ImportNeighborStats:
+def _import_stats_from_graph(graph: nx.DiGraph) -> ImportNeighborStats:
     in_neighbors: dict[str, set[str]] = defaultdict(set)
     out_neighbors: dict[str, set[str]] = defaultdict(set)
     in_counts: dict[str, int] = defaultdict(int)
     out_counts: dict[str, int] = defaultdict(int)
-    for (src, dst), count in edge_counts.items():
+    for src, dst, data in graph.edges(data=True):
+        weight = int(data.get("weight", 1))
         out_neighbors[src].add(dst)
         in_neighbors[dst].add(src)
-        out_counts[src] += count
-        in_counts[dst] += count
+        out_counts[src] += weight
+        in_counts[dst] += weight
     return ImportNeighborStats(
         in_neighbors=in_neighbors,
         out_neighbors=out_neighbors,
@@ -328,22 +294,31 @@ def _summarize_import_edges(edge_counts: dict[tuple[str, str], int]) -> ImportNe
 
 
 def _compute_module_graph_metrics(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: GraphMetricsConfig,
     module_by_path: dict[str, str] | None,
 ) -> None:
-    import_modules, import_edges = _load_import_edges(con, cfg.repo, cfg.commit)
-    symbol_modules, symbol_inbound, symbol_outbound = _load_symbol_module_edges(con, module_by_path)
-    modules = import_modules | symbol_modules
+    con = gateway.con
+    graph = load_import_graph(gateway, cfg.repo, cfg.commit)
+    symbol_modules, symbol_inbound, symbol_outbound = _load_symbol_module_edges(
+        gateway, module_by_path
+    )
+    modules = set(graph.nodes) | symbol_modules
+    module_rows = con.execute(
+        "SELECT module FROM core.modules WHERE repo = ? AND commit = ?",
+        [cfg.repo, cfg.commit],
+    ).fetchall()
+    for (module,) in module_rows:
+        if module is not None:
+            modules.add(str(module))
+    if modules:
+        graph.add_nodes_from(modules)
 
-    graph = nx.DiGraph()
-    graph.add_nodes_from(modules)
-    for (src, dst), weight in import_edges.items():
-        graph.add_edge(src, dst, weight=weight)
-
-    import_stats = _summarize_import_edges(import_edges)
+    import_stats = _import_stats_from_graph(graph)
     centrality = _centrality(graph, cfg.max_betweenness_sample)
     component_meta = _component_metadata(graph)
+    cached_component_meta = _component_metadata_from_import_table(gateway, cfg.repo, cfg.commit)
+    component_meta = _merge_component_metadata(modules, component_meta, cached_component_meta)
 
     con.execute(
         "DELETE FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",

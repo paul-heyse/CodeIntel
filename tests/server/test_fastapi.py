@@ -124,8 +124,9 @@ def api_config(gateway: StorageGateway) -> ApiAppConfig:
         repo="r",
         commit="c",
         db_path=db_path,
+        read_only=False,
     )
-    return ApiAppConfig(server=server_cfg, read_only=True)
+    return ApiAppConfig(server=server_cfg, read_only=False)
 
 
 @pytest.fixture
@@ -142,9 +143,9 @@ def backend(gateway: StorageGateway) -> DuckDBBackend:
 
 
 @pytest.fixture
-def app(api_config: ApiAppConfig, backend: DuckDBBackend) -> FastAPI:
+def app(api_config: ApiAppConfig, backend: DuckDBBackend, gateway: StorageGateway) -> FastAPI:
     """
-    Construct a FastAPI app using injected configuration and backend.
+    Construct a FastAPI app using injected configuration, backend, and gateway.
 
     Returns
     -------
@@ -155,10 +156,14 @@ def app(api_config: ApiAppConfig, backend: DuckDBBackend) -> FastAPI:
     def _config_loader() -> ApiAppConfig:
         return api_config
 
-    def _backend_factory(_: ApiAppConfig) -> BackendResource:
+    def _backend_factory(_: ApiAppConfig, *, _gateway: StorageGateway) -> BackendResource:
+        # Use the provided backend/gateway; do not reopen connections.
         return BackendResource(backend=backend, service=backend.service, close=lambda: None)
 
-    return create_app(config_loader=_config_loader, backend_factory=_backend_factory)
+    # Pass the seeded gateway so create_app does not reopen with conflicting flags.
+    return create_app(
+        config_loader=_config_loader, backend_factory=_backend_factory, gateway=gateway
+    )
 
 
 @pytest.fixture
@@ -207,7 +212,7 @@ def test_tests_for_function_validation(client: TestClient) -> None:
 
 def test_backend_registry_matches_gateway(gateway: StorageGateway, backend: DuckDBBackend) -> None:
     """Backend should inherit dataset registry from the gateway."""
-    if backend.dataset_tables != dict(gateway.datasets.mapping):
+    if backend.gateway.datasets.mapping != gateway.datasets.mapping:
         pytest.fail("Backend dataset registry should match gateway mapping")
 
 

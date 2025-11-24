@@ -4,17 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
-
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from tests._helpers.gateway import seed_tables
 
 
-def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
+def _seed_minimal_db(gateway: StorageGateway) -> None:
     seed_tables(
-        con,
+        gateway,
         [
             "CREATE SCHEMA IF NOT EXISTS core;",
             "CREATE SCHEMA IF NOT EXISTS graph;",
@@ -194,6 +192,7 @@ def _seed_minimal_db(con: duckdb.DuckDBPyConnection) -> None:
         ],
     )
 
+    con = gateway.con
     con.execute(
         """
         INSERT INTO core.goids VALUES (1, 'urn:foo', 'r', 'c');
@@ -235,14 +234,12 @@ def test_export_all_writes_expected_files(tmp_path: Path) -> None:
             db_path=db_path, apply_schema=False, ensure_views=False, validate_schema=False
         )
     )
-    con = gateway.con
-    _seed_minimal_db(con)
-    con.close()
+    _seed_minimal_db(gateway)
 
     output_dir = tmp_path / "Document Output"
-    con = duckdb.connect(str(db_path))
-    export_all_parquet(con, output_dir)
-    export_all_jsonl(con, output_dir)
+    export_all_parquet(gateway, output_dir)
+    export_all_jsonl(gateway, output_dir)
+    gateway.close()
 
     expected_basenames = {
         "goids.parquet",
@@ -291,9 +288,8 @@ def test_export_validation_passes_on_minimal_data(tmp_path: Path) -> None:
             db_path=db_path, apply_schema=False, ensure_views=False, validate_schema=False
         )
     )
-    con = gateway.con
-    _seed_minimal_db(con)
+    _seed_minimal_db(gateway)
 
     output_dir = tmp_path / "Document Output"
-    export_all_parquet(con, output_dir, validate_exports=True, schemas=["function_profile"])
-    export_all_jsonl(con, output_dir, validate_exports=True, schemas=["function_profile"])
+    export_all_parquet(gateway, output_dir, validate_exports=True, schemas=["function_profile"])
+    export_all_jsonl(gateway, output_dir, validate_exports=True, schemas=["function_profile"])

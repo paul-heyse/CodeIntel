@@ -8,8 +8,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-import duckdb
-
 from codeintel.config.models import (
     ConfigIngestConfig,
     CoverageIngestConfig,
@@ -36,6 +34,7 @@ from codeintel.ingestion import (
 from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +71,7 @@ class IngestionContext:
     db_path: Path
     build_dir: Path
     document_output_dir: Path
+    gateway: StorageGateway
     tools: ToolsConfig | None = None
     scan_config: ScanConfig | None = None
     tool_runner: ToolRunner | None = None
@@ -113,8 +113,8 @@ def _log_step_done(step: str, start_ts: float, ctx: IngestionContext) -> None:
     log.info("ingest done: %s repo=%s commit=%s (%.2fs)", step, ctx.repo, ctx.commit, duration)
 
 
-def run_repo_scan(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None:
-    """Ingest repository structure and modules."""
+def run_repo_scan(ctx: IngestionContext) -> None:
+    """Ingest repository structure and modules using the provided storage gateway."""
     start = _log_step_start("repo_scan", ctx)
     cfg = RepoScanConfig.from_paths(
         repo_root=ctx.repo_root,
@@ -122,13 +122,11 @@ def run_repo_scan(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None
         commit=ctx.commit,
         tool_runner=ctx.tool_runner,
     )
-    repo_scan.ingest_repo(con=con, cfg=cfg, scan_config=ctx.scan_config)
+    repo_scan.ingest_repo(ctx.gateway, cfg=cfg, scan_config=ctx.scan_config)
     _log_step_done("repo_scan", start, ctx)
 
 
-def run_scip_ingest(
-    con: duckdb.DuckDBPyConnection, ctx: IngestionContext
-) -> scip_ingest.ScipIngestResult:
+def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
     """
     Execute scip-python indexing and register outputs.
 
@@ -150,16 +148,16 @@ def run_scip_ingest(
         scip_runner=ctx.scip_runner,
         artifact_writer=ctx.artifact_writer,
     )
-    result = scip_ingest.ingest_scip(con=con, cfg=cfg)
+    result = scip_ingest.ingest_scip(ctx.gateway, cfg=cfg)
     _log_step_done("scip_ingest", start, ctx)
     return result
 
 
-def run_cst_extract(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None:
-    """Extract LibCST nodes for the repository."""
+def run_cst_extract(ctx: IngestionContext) -> None:
+    """Extract LibCST nodes for the repository using the gateway connection."""
     start = _log_step_start("cst_extract", ctx)
     cst_extract.ingest_cst(
-        con=con,
+        ctx.gateway,
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
@@ -168,20 +166,20 @@ def run_cst_extract(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> No
     _log_step_done("cst_extract", start, ctx)
 
 
-def run_ast_extract(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None:
-    """Extract stdlib AST nodes and metrics."""
+def run_ast_extract(ctx: IngestionContext) -> None:
+    """Extract stdlib AST nodes and metrics using the gateway connection."""
     start = _log_step_start("ast_extract", ctx)
     cfg = PyAstIngestConfig.from_paths(
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
     )
-    py_ast_extract.ingest_python_ast(con=con, cfg=cfg, scan_config=ctx.scan_config)
+    py_ast_extract.ingest_python_ast(ctx.gateway, cfg=cfg, scan_config=ctx.scan_config)
     _log_step_done("ast_extract", start, ctx)
 
 
-def run_coverage_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None:
-    """Load coverage lines from coverage.json or coverage.py data."""
+def run_coverage_ingest(ctx: IngestionContext) -> None:
+    """Load coverage lines from coverage.json or coverage.py data via the gateway connection."""
     start = _log_step_start("coverage_ingest", ctx)
     cfg = CoverageIngestConfig(
         repo_root=ctx.repo_root,
@@ -192,7 +190,7 @@ def run_coverage_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -
     )
     runner = ctx.tool_runner or ToolRunner(cache_dir=ctx.build_paths.tool_cache)
     coverage_ingest.ingest_coverage_lines(
-        con=con,
+        gateway=ctx.gateway,
         cfg=cfg,
         runner=runner,
         json_output_path=ctx.build_paths.coverage_json,
@@ -200,8 +198,8 @@ def run_coverage_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -
     _log_step_done("coverage_ingest", start, ctx)
 
 
-def run_tests_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None:
-    """Ingest pytest catalog rows."""
+def run_tests_ingest(ctx: IngestionContext) -> None:
+    """Ingest pytest catalog rows via the gateway connection."""
     start = _log_step_start("tests_ingest", ctx)
     cfg = TestsIngestConfig.from_paths(
         repo_root=ctx.repo_root,
@@ -211,7 +209,7 @@ def run_tests_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> N
     )
     runner = ctx.tool_runner or ToolRunner(cache_dir=ctx.build_paths.tool_cache)
     tests_ingest.ingest_tests(
-        con=con,
+        gateway=ctx.gateway,
         cfg=cfg,
         runner=runner,
         report_path=ctx.build_paths.pytest_report,
@@ -219,8 +217,8 @@ def run_tests_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> N
     _log_step_done("tests_ingest", start, ctx)
 
 
-def run_typing_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None:
-    """Collect static typing diagnostics and typedness."""
+def run_typing_ingest(ctx: IngestionContext) -> None:
+    """Collect static typing diagnostics and typedness via the gateway connection."""
     start = _log_step_start("typing_ingest", ctx)
     cfg = TypingIngestConfig.from_paths(
         repo_root=ctx.repo_root,
@@ -230,7 +228,7 @@ def run_typing_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> 
     )
     runner = ctx.tool_runner or ToolRunner(cache_dir=ctx.build_paths.tool_cache)
     typing_ingest.ingest_typing_signals(
-        con=con,
+        gateway=ctx.gateway,
         cfg=cfg,
         scan_config=ctx.scan_config,
         runner=runner,
@@ -239,21 +237,21 @@ def run_typing_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> 
     _log_step_done("typing_ingest", start, ctx)
 
 
-def run_docstrings_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None:
-    """Extract docstrings and persist structured rows."""
+def run_docstrings_ingest(ctx: IngestionContext) -> None:
+    """Extract docstrings and persist structured rows via the gateway connection."""
     start = _log_step_start("docstrings_ingest", ctx)
     cfg = DocstringConfig.from_paths(
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
     )
-    docstrings_ingest.ingest_docstrings(con, cfg, scan_config=ctx.scan_config)
+    docstrings_ingest.ingest_docstrings(ctx.gateway, cfg, scan_config=ctx.scan_config)
     _log_step_done("docstrings_ingest", start, ctx)
 
 
-def run_config_ingest(con: duckdb.DuckDBPyConnection, ctx: IngestionContext) -> None:
-    """Flatten configuration files into analytics.config_values."""
+def run_config_ingest(ctx: IngestionContext) -> None:
+    """Flatten configuration files into analytics.config_values via the gateway connection."""
     start = _log_step_start("config_ingest", ctx)
     cfg = ConfigIngestConfig.from_paths(repo_root=ctx.repo_root)
-    config_ingest.ingest_config_values(con=con, cfg=cfg, scan_config=ctx.scan_config)
+    config_ingest.ingest_config_values(ctx.gateway, cfg=cfg, scan_config=ctx.scan_config)
     _log_step_done("config_ingest", start, ctx)

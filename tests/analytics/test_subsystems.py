@@ -9,7 +9,7 @@ import pytest
 
 from codeintel.analytics.subsystems import build_subsystems
 from codeintel.config.models import SubsystemsConfig, SubsystemsOverrides
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -19,17 +19,16 @@ TARGET_CLUSTER_SIZE = 2
 EXPECTED_HIGH_RISK_COUNT = 1
 
 
-def _setup_db() -> duckdb.DuckDBPyConnection:
+def _setup_db() -> StorageGateway:
     """
     Create an in-memory DuckDB with schemas applied.
 
     Returns
     -------
-    duckdb.DuckDBPyConnection
+    StorageGateway
         Connected in-memory database ready for writes.
     """
-    gateway = open_memory_gateway(apply_schema=True)
-    return gateway.con
+    return open_memory_gateway(apply_schema=True)
 
 
 def _seed_modules(con: duckdb.DuckDBPyConnection) -> None:
@@ -113,7 +112,8 @@ def _seed_modules(con: duckdb.DuckDBPyConnection) -> None:
 
 def test_subsystems_cluster_and_risk_aggregation() -> None:
     """Clusters modules and aggregates risk across subsystems."""
-    con = _setup_db()
+    gateway = _setup_db()
+    con = gateway.con
     _seed_modules(con)
 
     cfg = SubsystemsConfig.from_paths(
@@ -121,7 +121,7 @@ def test_subsystems_cluster_and_risk_aggregation() -> None:
         commit=COMMIT,
         overrides=SubsystemsOverrides(max_subsystems=2, min_modules=1),
     )
-    build_subsystems(con, cfg)
+    build_subsystems(gateway, cfg)
 
     subsystems = con.execute(
         """

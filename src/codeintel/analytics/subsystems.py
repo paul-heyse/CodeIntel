@@ -17,10 +17,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-import duckdb
+import networkx as nx
 
 from codeintel.config.models import SubsystemsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
+from codeintel.graphs.nx_views import load_import_graph
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +86,7 @@ class SubsystemBuildContext:
     cfg: SubsystemsConfig
     labels: dict[str, str]
     tags_by_module: dict[str, list[str]]
-    import_edges: dict[tuple[str, str], int]
+    import_graph: nx.DiGraph
     risk_stats: dict[str, SubsystemRisk]
     now: datetime
 
@@ -107,8 +109,9 @@ class RiskTally:
             self.high += 1
 
 
-def build_subsystems(con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig) -> None:
+def build_subsystems(gateway: StorageGateway, cfg: SubsystemsConfig) -> None:
     """Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit."""
+    con = gateway.con
     ensure_schema(con, "analytics.subsystems")
     ensure_schema(con, "analytics.subsystem_modules")
 
@@ -121,27 +124,28 @@ def build_subsystems(con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig) -> N
         [cfg.repo, cfg.commit],
     )
 
-    modules, tags_by_module = _load_modules(con, cfg)
+    modules, tags_by_module = _load_modules(gateway, cfg)
     if not modules:
         log.info("No modules available for subsystem inference; skipping.")
         return
 
-    adjacency = _build_weighted_adjacency(con, cfg, modules)
+    affinity_graph = _build_weighted_graph(gateway, cfg, modules)
+    adjacency = _graph_to_adjacency(affinity_graph)
     seed_labels = _seed_labels_from_tags(tags_by_module)
-    labels = _label_propagation(modules, adjacency, seed_labels)
+    labels = _label_propagation_nx(affinity_graph, seed_labels)
     labels = _reassign_small_clusters(labels, adjacency, cfg.min_modules)
     labels = _limit_clusters(labels, adjacency, cfg.max_subsystems)
     clusters = _clusters_from_labels(labels)
 
-    import_edge_counts = _load_import_edge_counts(con, cfg)
-    risk_stats = _aggregate_risk(con, cfg, labels)
+    import_graph = load_import_graph(gateway, cfg.repo, cfg.commit)
+    risk_stats = _aggregate_risk(gateway, cfg, labels)
 
     now = datetime.now(UTC)
     ctx = SubsystemBuildContext(
         cfg=cfg,
         labels=labels,
         tags_by_module=tags_by_module,
-        import_edges=import_edge_counts,
+        import_graph=import_graph,
         risk_stats=risk_stats,
         now=now,
     )
@@ -193,7 +197,7 @@ def _build_rows(
         name = _derive_name(member_list, subsystem_id, dominant_role)
         description = _describe_subsystem(member_list, name, dominant_role)
         entrypoints = _entrypoints_for_cluster(member_list, ctx.tags_by_module)
-        edge_stats = _subsystem_edge_stats(member_list, ctx.labels, ctx.import_edges)
+        edge_stats = _subsystem_edge_stats(member_list, ctx.labels, ctx.import_graph)
         risk = ctx.risk_stats.get(label, default_risk)
 
         subsystem_rows.append(
@@ -234,8 +238,9 @@ def _build_rows(
 
 
 def _load_modules(
-    con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig
+    gateway: StorageGateway, cfg: SubsystemsConfig
 ) -> tuple[set[str], dict[str, list[str]]]:
+    con = gateway.con
     rows = con.execute(
         "SELECT module, tags FROM core.modules WHERE repo = ? AND commit = ?",
         [cfg.repo, cfg.commit],
@@ -272,22 +277,19 @@ def _parse_tags(raw: object) -> list[str]:
     return [str(raw)]
 
 
-def _add_weight(
-    adjacency: dict[str, dict[str, float]],
-    a: str,
-    b: str,
-    weight: float,
-) -> None:
-    if a == b or weight <= 0:
-        return
-    adjacency[a][b] = adjacency[a].get(b, 0.0) + weight
-    adjacency[b][a] = adjacency[b].get(a, 0.0) + weight
-
-
 def _build_weighted_adjacency(
-    con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig, modules: set[str]
+    gateway: StorageGateway, cfg: SubsystemsConfig, modules: set[str]
 ) -> dict[str, dict[str, float]]:
-    adjacency: dict[str, dict[str, float]] = defaultdict(dict)
+    graph = _build_weighted_graph(gateway, cfg, modules)
+    return _graph_to_adjacency(graph)
+
+
+def _build_weighted_graph(
+    gateway: StorageGateway, cfg: SubsystemsConfig, modules: set[str]
+) -> nx.Graph:
+    con = gateway.con
+    graph = nx.Graph()
+    graph.add_nodes_from(modules)
 
     rows = con.execute(
         "SELECT src_module, dst_module FROM graph.import_graph_edges WHERE repo = ? AND commit = ?",
@@ -299,7 +301,7 @@ def _build_weighted_adjacency(
         src_mod = str(src)
         dst_mod = str(dst)
         if src_mod in modules and dst_mod in modules:
-            _add_weight(adjacency, src_mod, dst_mod, cfg.import_weight)
+            _add_graph_weight(graph, src_mod, dst_mod, cfg.import_weight)
 
     rows = con.execute(
         """
@@ -314,7 +316,7 @@ def _build_weighted_adjacency(
         src_mod = str(use_module)
         dst_mod = str(def_module)
         if src_mod in modules and dst_mod in modules:
-            _add_weight(adjacency, src_mod, dst_mod, cfg.symbol_weight)
+            _add_graph_weight(graph, src_mod, dst_mod, cfg.symbol_weight)
 
     rows = con.execute("SELECT reference_modules FROM analytics.config_values").fetchall()
     for (mods_raw,) in rows:
@@ -325,28 +327,67 @@ def _build_weighted_adjacency(
         weight = cfg.config_weight / max(len(filtered) - 1, 1)
         for idx, left in enumerate(filtered):
             for right in filtered[idx + 1 :]:
-                _add_weight(adjacency, left, right, weight)
+                _add_graph_weight(graph, left, right, weight)
 
+    return graph
+
+
+def _add_graph_weight(graph: nx.Graph, left: str, right: str, weight: float) -> None:
+    """Accumulate symmetric edge weights on an undirected graph."""
+    if left == right or weight <= 0:
+        return
+    if graph.has_edge(left, right):
+        graph[left][right]["weight"] += weight
+    else:
+        graph.add_edge(left, right, weight=weight)
+
+
+def _graph_to_adjacency(graph: nx.Graph) -> dict[str, dict[str, float]]:
+    """
+    Return a plain adjacency dict copy from a weighted undirected graph.
+
+    Parameters
+    ----------
+    graph : nx.Graph
+        Weighted undirected graph to convert.
+
+    Returns
+    -------
+    dict[str, dict[str, float]]
+        Nested mapping of source -> target -> weight.
+    """
+    adjacency: dict[str, dict[str, float]] = defaultdict(dict)
+    for src, dst, data in graph.edges(data=True):
+        weight = float(data.get("weight", 1.0))
+        adjacency[src][dst] = weight
+        adjacency[dst][src] = weight
     return adjacency
 
 
 def _seed_labels_from_tags(tags_by_module: dict[str, list[str]]) -> dict[str, str]:
     labels: dict[str, str] = {}
     for module, tags in tags_by_module.items():
-        if tags:
-            labels[module] = str(tags[0]).lower()
+        if not tags:
+            continue
+        first = tags[0]
+        if first is None:
+            continue
+        labels[module] = str(first).lower()
     return labels
 
 
-def _label_propagation(
-    modules: set[str],
-    adjacency: dict[str, dict[str, float]],
+def _label_propagation_nx(
+    graph: nx.Graph,
     seed_labels: dict[str, str],
     max_iters: int = 20,
 ) -> dict[str, str]:
-    labels: dict[str, str] = {module: seed_labels.get(module, module) for module in modules}
+    labels: dict[str, str] = {}
+    for node in graph.nodes:
+        fallback = node if isinstance(node, str) else str(node)
+        seed = seed_labels.get(node)
+        labels[node] = seed if seed is not None else fallback
     frozen: set[str] = set(seed_labels)
-    ordered_nodes = sorted(modules)
+    ordered_nodes = sorted(graph.nodes)
 
     for _ in range(max_iters):
         changed = False
@@ -354,11 +395,11 @@ def _label_propagation(
             if node in frozen:
                 continue
             weights: dict[str, float] = defaultdict(float)
-            for neighbor, weight in adjacency.get(node, {}).items():
+            for neighbor, data in graph[node].items():
                 neighbor_label = labels.get(neighbor)
                 if neighbor_label is None:
                     continue
-                weights[neighbor_label] += weight
+                weights[neighbor_label] += float(data.get("weight", 1.0))
             if not weights:
                 continue
             best_label = max(weights.items(), key=lambda item: (item[1], item[0]))[0]
@@ -533,8 +574,9 @@ def _entrypoints_for_cluster(
 
 
 def _aggregate_risk(
-    con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig, labels: dict[str, str]
+    gateway: StorageGateway, cfg: SubsystemsConfig, labels: dict[str, str]
 ) -> dict[str, SubsystemRisk]:
+    con = gateway.con
     risk_by_label: dict[str, SubsystemRisk] = {}
     stats: dict[str, RiskTally] = defaultdict(RiskTally)
     rows = con.execute(
@@ -579,45 +621,31 @@ def _aggregate_risk(
     return risk_by_label
 
 
-def _load_import_edge_counts(
-    con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig
-) -> dict[tuple[str, str], int]:
-    edge_counts: dict[tuple[str, str], int] = defaultdict(int)
-    rows = con.execute(
-        "SELECT src_module, dst_module FROM graph.import_graph_edges WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    ).fetchall()
-    for src, dst in rows:
-        if src is None or dst is None:
-            continue
-        edge_counts[str(src), str(dst)] += 1
-    return edge_counts
-
-
 def _subsystem_edge_stats(
     members: list[str],
     labels: dict[str, str],
-    import_edges: dict[tuple[str, str], int],
+    import_graph: nx.DiGraph,
 ) -> SubsystemEdgeStats:
     member_set = set(members)
-    label = labels[members[0]]
+    label = labels.get(members[0]) if members else None
     internal_edges = 0
     external_edges = 0
     fan_in: set[str] = set()
     fan_out: set[str] = set()
 
-    for (src, dst), count in import_edges.items():
+    for src, dst, data in import_graph.edges(data=True):
         src_label = labels.get(src)
         dst_label = labels.get(dst)
         if src_label is None or dst_label is None:
             continue
+        weight = int(data.get("weight", 1))
         if src in member_set and dst in member_set:
-            internal_edges += count
+            internal_edges += weight
         elif src_label == label and dst_label != label:
-            external_edges += count
+            external_edges += weight
             fan_out.add(dst_label)
         elif dst_label == label and src_label != label:
-            external_edges += count
+            external_edges += weight
             fan_in.add(src_label)
 
     return SubsystemEdgeStats(

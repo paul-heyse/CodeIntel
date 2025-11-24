@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from codeintel.config.models import CoverageIngestConfig, RepoScanConfig, TypingIngestConfig
@@ -12,13 +11,13 @@ from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 from codeintel.ingestion.repo_scan import ingest_repo
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.fakes import FakeToolRunner
+from tests._helpers.gateway import open_ingestion_gateway
 
 
-def _setup_db() -> duckdb.DuckDBPyConnection:
-    gateway = open_memory_gateway()
-    return gateway.con
+def _setup_gateway() -> StorageGateway:
+    return open_ingestion_gateway()
 
 
 def test_repo_scan_honors_scan_config(tmp_path: Path) -> None:
@@ -31,12 +30,12 @@ def test_repo_scan_honors_scan_config(tmp_path: Path) -> None:
     (keep_dir / "a.py").write_text("print('ok')\n", encoding="utf8")
     (ignore_dir / "b.py").write_text("print('skip')\n", encoding="utf8")
 
-    con = _setup_db()
+    gateway = _setup_gateway()
     cfg = RepoScanConfig.from_paths(repo_root=repo_root, repo="r", commit="c")
     scan_cfg = ScanConfig(repo_root=repo_root, ignore_dirs=("ignore",), include_patterns=("*.py",))
-    ingest_repo(con=con, cfg=cfg, scan_config=scan_cfg)
+    ingest_repo(gateway, cfg=cfg, scan_config=scan_cfg)
 
-    rows = con.execute("SELECT path FROM core.modules").fetchall()
+    rows = gateway.con.execute("SELECT path FROM core.modules").fetchall()
     if rows != [("keep/a.py",)]:
         pytest.fail(f"Unexpected modules: {rows}")
 
@@ -61,15 +60,15 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
         }
     }
     runner = FakeToolRunner(cache_dir=tmp_path / "cache", payloads=payload)
-    con = _setup_db()
+    gateway = _setup_gateway()
     cfg = CoverageIngestConfig.from_paths(
         repo_root=repo_root, repo="r", commit="c", coverage_file=coverage_file
     )
-    ingest_coverage_lines(con=con, cfg=cfg, runner=runner)
+    ingest_coverage_lines(gateway, cfg=cfg, runner=runner)
 
     if not any(call[0] == "coverage" for call in runner.calls):
         pytest.fail("Expected coverage tool to be invoked via runner")
-    row = con.execute("SELECT COUNT(*) FROM analytics.coverage_lines").fetchone()
+    row = gateway.con.execute("SELECT COUNT(*) FROM analytics.coverage_lines").fetchone()
     count = row[0] if row is not None else 0
     if count != 1:
         pytest.fail(f"Expected 1 coverage row, got {count}")
@@ -86,14 +85,14 @@ def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
     payloads = {"pyright": pyright_stdout, "json": {"errors": []}, "ruff": "[]"}
     runner = FakeToolRunner(cache_dir=tmp_path / "cache", payloads=payloads)
 
-    con = _setup_db()
+    gateway = _setup_gateway()
     cfg = TypingIngestConfig.from_paths(repo_root=repo_root, repo="r", commit="c")
-    ingest_typing_signals(con=con, cfg=cfg, runner=runner)
+    ingest_typing_signals(gateway, cfg=cfg, runner=runner)
 
     tools_called = {tool for tool, _ in runner.calls}
     if not {"pyrefly", "pyright", "ruff"} <= tools_called:
         pytest.fail(f"Expected pyrefly/pyright/ruff calls, saw {tools_called}")
-    row = con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
+    row = gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
     typedness_rows = row[0] if row is not None else 0
     if typedness_rows < 1:
         pytest.fail("Typedness ingestion wrote no rows")

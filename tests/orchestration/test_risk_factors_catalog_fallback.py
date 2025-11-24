@@ -60,10 +60,11 @@ def test_risk_factors_uses_catalog_modules_when_core_modules_empty(tmp_path: Pat
         build_dir=tmp_path / "build",
         repo="r",
         commit="c",
+        gateway=gateway,
         function_catalog=provider,
     )
 
-    RiskFactorsStep().run(ctx, con)
+    RiskFactorsStep().run(ctx)
 
     row = con.execute(
         "SELECT rel_path, risk_level FROM analytics.goid_risk_factors WHERE repo = 'r' AND commit = 'c'"

@@ -60,7 +60,7 @@ def test_backfill_test_goids_updates_catalog() -> None:
         [cfg.repo, cfg.commit, datetime.now(UTC)],
     )
 
-    goid_map, urn_map = backfill_test_goids_for_catalog(con, cfg)
+    goid_map, urn_map = backfill_test_goids_for_catalog(gateway, cfg)
 
     expected_goid_map = {"tests/test_mod.py::test_func": 1}
     expected_urn_map = {
@@ -147,7 +147,7 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
         repo="demo/repo",
         commit="deadbeef",
         repo_root=repo_root,
-        coverage_file=tmp_path / ".coverage",  # unused with monkeypatch
+        coverage_file=tmp_path / ".coverage",
     )
 
     now = datetime.now(UTC)
@@ -194,7 +194,7 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
     def fake_loader(cfg_arg: TestCoverageConfig) -> Coverage:
         return _FakeCoverage(cfg_arg.repo_root)  # type: ignore[return-value]
 
-    compute_test_coverage_edges(con, cfg, coverage_loader=fake_loader)
+    compute_test_coverage_edges(gateway, cfg, coverage_loader=fake_loader)
     _assert_single_edge(con)
 
 
@@ -255,5 +255,5 @@ def test_compute_test_coverage_edges_respects_injected_loader(tmp_path: Path) ->
         contexts = {abs_mod: {1: {"pkg/mod.py::test_func"}, 2: {"pkg/mod.py::test_func"}}}
         return FakeCoverage(statements, contexts)
 
-    compute_test_coverage_edges(con, cfg, coverage_loader=_coverage_loader)
+    compute_test_coverage_edges(gateway, cfg, coverage_loader=_coverage_loader)
     _assert_single_edge(con)

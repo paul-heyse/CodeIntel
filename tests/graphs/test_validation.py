@@ -20,7 +20,8 @@ def test_run_graph_validations_emits_warnings(caplog: LogCaptureFixture) -> None
     AssertionError
         If expected warning text is absent.
     """
-    con = open_memory_gateway().con
+    gateway = open_memory_gateway()
+    con = gateway.con
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
 
@@ -57,7 +58,7 @@ def test_run_graph_validations_emits_warnings(caplog: LogCaptureFixture) -> None
     )
 
     with caplog.at_level("WARNING"):
-        run_graph_validations(con, repo=repo, commit=commit)
+        run_graph_validations(gateway, repo=repo, commit=commit)
 
     messages = " ".join(record.message for record in caplog.records)
     expected = [

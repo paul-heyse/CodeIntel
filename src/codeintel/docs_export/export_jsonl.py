@@ -11,8 +11,10 @@ from typing import cast
 
 import duckdb
 
+from codeintel.docs_export import DEFAULT_VALIDATION_SCHEMAS
 from codeintel.docs_export.validate_exports import validate_files
 from codeintel.services.errors import ExportError, problem
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -60,14 +62,31 @@ JSONL_DATASETS: dict[str, str] = {
     "analytics.file_profile": "file_profile.jsonl",
     "analytics.module_profile": "module_profile.jsonl",
     "analytics.graph_metrics_functions": "graph_metrics_functions.jsonl",
+    "analytics.graph_metrics_functions_ext": "graph_metrics_functions_ext.jsonl",
     "analytics.graph_metrics_modules": "graph_metrics_modules.jsonl",
+    "analytics.graph_metrics_modules_ext": "graph_metrics_modules_ext.jsonl",
+    "analytics.subsystem_graph_metrics": "subsystem_graph_metrics.jsonl",
+    "analytics.symbol_graph_metrics_modules": "symbol_graph_metrics_modules.jsonl",
+    "analytics.symbol_graph_metrics_functions": "symbol_graph_metrics_functions.jsonl",
+    "analytics.config_graph_metrics_keys": "config_graph_metrics_keys.jsonl",
+    "analytics.config_graph_metrics_modules": "config_graph_metrics_modules.jsonl",
+    "analytics.config_projection_key_edges": "config_projection_key_edges.jsonl",
+    "analytics.config_projection_module_edges": "config_projection_module_edges.jsonl",
+    "analytics.subsystem_agreement": "subsystem_agreement.jsonl",
+    "analytics.graph_stats": "graph_stats.jsonl",
+    "analytics.test_graph_metrics_tests": "test_graph_metrics_tests.jsonl",
+    "analytics.test_graph_metrics_functions": "test_graph_metrics_functions.jsonl",
+    "analytics.cfg_block_metrics": "cfg_block_metrics.jsonl",
+    "analytics.cfg_function_metrics": "cfg_function_metrics.jsonl",
+    "analytics.dfg_block_metrics": "dfg_block_metrics.jsonl",
+    "analytics.dfg_function_metrics": "dfg_function_metrics.jsonl",
     "analytics.subsystems": "subsystems.jsonl",
     "analytics.subsystem_modules": "subsystem_modules.jsonl",
 }
 
 
 def export_jsonl_for_table(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     table_name: str,
     output_path: Path,
 ) -> None:
@@ -76,8 +95,8 @@ def export_jsonl_for_table(
 
     Parameters
     ----------
-    con : duckdb.DuckDBPyConnection
-        Live DuckDB connection.
+    gateway :
+        StorageGateway providing the DuckDB connection.
     table_name : str
         Fully qualified table name (schema.table) to export.
     output_path : Path
@@ -99,6 +118,7 @@ def export_jsonl_for_table(
         message = f"Refusing to export unknown table: {table_name}"
         raise ValueError(message)
     log.info("Exporting %s -> %s", table_name, output_path)
+    con = gateway.con
 
     if table_name == "analytics.function_validation":
         row = con.execute("SELECT COUNT(*) FROM analytics.function_validation").fetchone()
@@ -124,7 +144,7 @@ def export_jsonl_for_table(
 
 
 def export_all_jsonl(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     document_output_dir: Path,
     *,
     validate_exports: bool = False,
@@ -135,8 +155,8 @@ def export_all_jsonl(
 
     Parameters
     ----------
-    con : duckdb.DuckDBPyConnection
-        DuckDB connection seeded with CodeIntel schemas.
+    gateway :
+        StorageGateway providing the DuckDB connection seeded with CodeIntel schemas.
     document_output_dir : Path
         Target directory where JSONL artifacts are written.
     validate_exports : bool
@@ -162,9 +182,9 @@ def export_all_jsonl(
     for table_name, filename in JSONL_DATASETS.items():
         output_path = document_output_dir / filename
         try:
-            export_jsonl_for_table(con, table_name, output_path)
+            export_jsonl_for_table(gateway, table_name, output_path)
             written.append(output_path)
-        except duckdb.Error as exc:
+        except (duckdb.Error, OSError, ValueError) as exc:
             # Log and continue: some tables may legitimately be empty or missing
             log.warning(
                 "Failed to export %s to %s: %s",
@@ -174,7 +194,7 @@ def export_all_jsonl(
             )
 
     # repo_map.json is handled separately
-    repo_map_path = export_repo_map_json(con, document_output_dir)
+    repo_map_path = export_repo_map_json(gateway, document_output_dir)
     if repo_map_path is not None:
         written.append(repo_map_path)
 
@@ -188,14 +208,7 @@ def export_all_jsonl(
     written.append(index_path)
 
     if validate_exports:
-        schema_list = schemas or [
-            "function_profile",
-            "file_profile",
-            "module_profile",
-            "call_graph_edges",
-            "symbol_use_edges",
-            "test_coverage_edges",
-        ]
+        schema_list = schemas or DEFAULT_VALIDATION_SCHEMAS
         for schema_name in schema_list:
             matching = [p for p in written if p.name.startswith(schema_name)]
             if not matching:
@@ -214,7 +227,7 @@ def export_all_jsonl(
 
 
 def export_repo_map_json(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     document_output_dir: Path,
 ) -> Path | None:
     """
@@ -242,6 +255,7 @@ def export_repo_map_json(
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
 
+    con = gateway.con
     df = con.execute(
         "SELECT repo, commit, modules, overlays, generated_at FROM core.repo_map"
     ).fetch_df()

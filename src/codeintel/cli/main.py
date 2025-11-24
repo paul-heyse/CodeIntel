@@ -413,7 +413,6 @@ def _cmd_docs_export(args: argparse.Namespace) -> int:
     """
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
-    con = gateway.con
 
     out_dir = cfg.paths.document_output_dir
     if out_dir is None:
@@ -425,13 +424,13 @@ def _cmd_docs_export(args: argparse.Namespace) -> int:
     schemas = list(args.schemas) if getattr(args, "schemas", None) else None
     try:
         export_all_parquet(
-            con,
+            gateway,
             out_dir,
             validate_exports=bool(getattr(args, "validate_exports", False)),
             schemas=schemas,
         )
         export_all_jsonl(
-            con,
+            gateway,
             out_dir,
             validate_exports=bool(getattr(args, "validate_exports", False)),
             schemas=schemas,

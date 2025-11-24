@@ -9,12 +9,12 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import TypedDict
 
-import duckdb
 import yaml
 
 from codeintel.config.models import RepoScanConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.source_scanner import ScanConfig, SourceScanner
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
 from codeintel.utils.paths import relpath_to_module, repo_relpath
 
@@ -60,7 +60,7 @@ def _load_tags_index(tags_index_path: Path) -> list[TagEntry]:
 
 
 def _write_tags_index_table(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     tags_entries: list[TagEntry],
 ) -> None:
     # This table does not carry repo/commit; assume one-repo-per-DB.
@@ -73,7 +73,7 @@ def _write_tags_index_table(
         matches = entry.get("matches") or []
         values.append([tag, description, includes, excludes, matches])
 
-    run_batch(con, "analytics.tags_index", values, delete_params=[], scope="tags_index")
+    run_batch(gateway, "analytics.tags_index", values, delete_params=[], scope="tags_index")
 
 
 def _tags_for_path(rel_path: str, tags_entries: list[TagEntry]) -> list[str]:
@@ -101,7 +101,7 @@ def _tags_for_path(rel_path: str, tags_entries: list[TagEntry]) -> list[str]:
 
 
 def ingest_repo(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: RepoScanConfig,
     scan_config: ScanConfig | None = None,
     *,
@@ -118,8 +118,8 @@ def ingest_repo(
 
     Parameters
     ----------
-    con:
-        DuckDB connection.
+    gateway:
+        StorageGateway providing access to the target DuckDB database.
     cfg:
         Repository context and optional tags_index override.
     scan_config:
@@ -127,6 +127,7 @@ def ingest_repo(
     apply_schema:
         When True, apply all schemas prior to ingestion (destructive). Default False.
     """
+    con = gateway.con
     repo_root = cfg.repo_root
     scan_cfg = scan_config or ScanConfig(repo_root=repo_root)
     tags_index_path = cfg.tags_index_path or (repo_root / "tags_index.yaml")
@@ -139,7 +140,7 @@ def ingest_repo(
 
     tags_entries = _load_tags_index(tags_index_path)
     if tags_entries:
-        _write_tags_index_table(con, tags_entries)
+        _write_tags_index_table(gateway, tags_entries)
 
     modules: dict[str, ModuleRow] = {}
 
@@ -176,7 +177,7 @@ def ingest_repo(
         for m in modules.values()
     ]
     run_batch(
-        con,
+        gateway,
         "core.modules",
         module_values,
         delete_params=[cfg.repo, cfg.commit],
@@ -186,7 +187,7 @@ def ingest_repo(
     modules_json = {m.module: m.path for m in modules.values()}
     now = datetime.now(UTC)
     run_batch(
-        con,
+        gateway,
         "core.repo_map",
         [[cfg.repo, cfg.commit, modules_json, {}, now]],
         delete_params=[cfg.repo, cfg.commit],

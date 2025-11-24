@@ -101,7 +101,7 @@ def backend(gateway: StorageGateway) -> DuckDBBackend:
     DuckDBBackend
         Backend under test.
     """
-    return DuckDBBackend(con=gateway.con, repo="r", commit="c")
+    return DuckDBBackend(gateway=gateway, repo="r", commit="c")
 
 
 def test_get_function_summary(backend: DuckDBBackend) -> None:
@@ -148,8 +148,7 @@ def test_read_dataset_rows_unknown(backend: DuckDBBackend) -> None:
 
 def test_dataset_rows_clamping(backend: DuckDBBackend) -> None:
     """Limits/offsets clamp with messages instead of raising."""
-    backend.dataset_tables = {"functions": "docs.v_function_summary"}
-    resp = backend.read_dataset_rows(dataset_name="functions", limit=1000, offset=-2)
+    resp = backend.read_dataset_rows(dataset_name="function_validation", limit=1000, offset=-2)
     if resp.limit != MAX_ROWS_LIMIT or resp.offset != 0:
         pytest.fail("Expected clamped limit/offset values")
     codes = {m.code for m in resp.meta.messages}

@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 import anyio
-import duckdb
 import httpx
 
 from codeintel.mcp import errors
@@ -33,12 +32,7 @@ from codeintel.mcp.models import (
     TestsForFunctionResponse,
 )
 from codeintel.mcp.query_service import BackendLimits, DuckDBQueryService
-from codeintel.server.datasets import build_dataset_registry
-from codeintel.services.factory import (
-    DatasetRegistryOptions,
-    build_service_from_config,
-    get_observability_from_config,
-)
+from codeintel.services.factory import build_service_from_config, get_observability_from_config
 from codeintel.services.query_service import (
     HttpQueryService,
     LocalQueryService,
@@ -231,17 +225,15 @@ class DuckDBBackend(QueryBackend):
     """
     DuckDB-backed implementation of QueryBackend.
 
-    Prefer injecting a StorageGateway to source the connection and dataset
-    registry. Assumes a single repo/commit per DuckDB file, but repo/commit
-    filters are still applied for future multi-repo support.
+    Requires a StorageGateway to source the connection and dataset registry.
+    Assumes a single repo/commit per DuckDB file, but repo/commit filters are
+    still applied for future multi-repo support.
     """
 
-    gateway: StorageGateway | None = None
-    con: duckdb.DuckDBPyConnection | None = None
+    gateway: StorageGateway
     repo: str | None = None
     commit: str | None = None
     limits: BackendLimits = field(default_factory=BackendLimits)
-    dataset_tables: dict[str, str] | None = None
     observability: ServiceObservability | None = None
     service_override: LocalQueryService | None = None
     service: QueryService = field(init=False)
@@ -262,65 +254,27 @@ class DuckDBBackend(QueryBackend):
                 self.query = self.service.query
             return
 
-        gateway_con = self.gateway.con if self.gateway is not None else None
-        con = self.con or gateway_con
-        if con is None:
-            message = "DuckDBBackend requires either a gateway or a DuckDB connection."
-            raise ValueError(message)
-
-        gateway_repo = self.gateway.config.repo if self.gateway is not None else None
-        gateway_commit = self.gateway.config.commit if self.gateway is not None else None
+        gateway_repo = self.gateway.config.repo
+        gateway_commit = self.gateway.config.commit
         repo = self.repo or gateway_repo
         commit = self.commit or gateway_commit
         if repo is None or commit is None:
             message = "repo and commit must be provided either directly or via the gateway config."
             raise ValueError(message)
 
-        registry_from_gateway = (
-            dict(self.gateway.datasets.mapping) if self.gateway is not None else None
-        )
-        dataset_tables = self.dataset_tables or registry_from_gateway or build_dataset_registry()
-
-        self.con = con
         self.repo = repo
         self.commit = commit
-        self.dataset_tables = dataset_tables
-
-        con_instance = self.con
-        repo_value = self.repo
-        commit_value = self.commit
-        dataset_tables_value = self.dataset_tables
-        if con_instance is None or repo_value is None or commit_value is None:
-            message = "DuckDBBackend requires non-null con, repo, and commit after initialization."
-            raise ValueError(message)
-        if dataset_tables_value is None:
-            message = "dataset_tables must be provided or derived from gateway/datasets."
-            raise ValueError(message)
 
         self.query = DuckDBQueryService(
-            con=con_instance,
-            repo=repo_value,
-            commit=commit_value,
+            gateway=self.gateway,
+            repo=self.repo,
+            commit=self.commit,
             limits=self.limits,
-            dataset_tables=dataset_tables_value,
         )
         self.service = LocalQueryService(
             query=self.query,
-            dataset_tables=dataset_tables_value,
             observability=self.observability,
         )
-
-    def __setattr__(self, name: str, value: object) -> None:
-        """Propagate dataset registry changes to the underlying query service."""
-        super().__setattr__(name, value)
-        if name == "dataset_tables":
-            tables = value if isinstance(value, dict) else {}
-            query = getattr(self, "query", None)
-            service = getattr(self, "service", None)
-            if query is not None:
-                query.dataset_tables = tables
-            if isinstance(service, LocalQueryService):
-                service.dataset_tables = tables
 
     def get_function_summary(
         self,
@@ -953,28 +907,18 @@ class HttpBackend(QueryBackend):
 def create_backend(
     cfg: McpServerConfig,
     *,
-    con: duckdb.DuckDBPyConnection | None = None,
-    gateway: StorageGateway | None = None,
-    registry: DatasetRegistryOptions | dict[str, str] | None = None,
+    gateway: StorageGateway,
     observability: ServiceObservability | None = None,
 ) -> QueryBackend:
     """
-    Create a QueryBackend using local DuckDB or remote HTTP.
-
-    Prefer providing a ``StorageGateway`` for local_db mode; ``con`` and manual
-    registry overrides are compatibility paths.
+    Create a QueryBackend using a StorageGateway or remote HTTP.
 
     Parameters
     ----------
     cfg:
         Server configuration loaded from env or caller.
-    con:
-        Optional DuckDB connection to reuse in local_db mode.
     gateway:
-        Optional StorageGateway to supply connection and dataset registry in local_db mode.
-        Preferred over raw ``con``/``dataset_tables`` for consistency with server wiring.
-    registry:
-        Optional dataset registry override or options.
+        StorageGateway supplying the DuckDB connection and dataset registry in local_db mode.
     observability:
         Optional observability configuration for structured logging.
 
@@ -989,41 +933,18 @@ def create_backend(
         If required configuration is missing or the mode is unsupported.
     """
     limits = BackendLimits.from_config(cfg)
-    registry_from_gateway = dict(gateway.datasets.mapping) if gateway is not None else None
-    registry_tables = registry.tables if isinstance(registry, DatasetRegistryOptions) else registry
-    tables = (
-        registry_tables
-        if isinstance(registry_tables, dict)
-        else registry_from_gateway
-        if registry_from_gateway is not None
-        else build_dataset_registry()
-    )
-    registry_opts = registry if isinstance(registry, DatasetRegistryOptions) else None
-    registry_opts = registry_opts or DatasetRegistryOptions(tables=tables)
     resolved_observability = observability or get_observability_from_config(cfg)
     if cfg.mode == "local_db":
-        if cfg.db_path is None and con is None and gateway is None:
-            message = "db_path is required for local_db backend"
-            raise ValueError(message)
-        connection = con or (gateway.con if gateway is not None else None)
-        if connection is None and cfg.db_path is not None:
-            connection = duckdb.connect(str(cfg.db_path), read_only=True)
-        if connection is None:
-            message = "Unable to open DuckDB connection for local_db backend"
-            raise ValueError(message)
         service = build_service_from_config(
             cfg,
-            con=connection,
-            registry=registry_opts,
+            gateway=gateway,
             observability=resolved_observability,
         )
         return DuckDBBackend(
             gateway=gateway,
-            con=connection,
             repo=cfg.repo,
             commit=cfg.commit,
             limits=limits,
-            dataset_tables=tables,
             observability=resolved_observability,
             service_override=service if isinstance(service, LocalQueryService) else None,
         )

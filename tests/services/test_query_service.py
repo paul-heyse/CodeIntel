@@ -87,7 +87,7 @@ class StubDuckQuery:
 def test_local_read_dataset_rows_defaults_limit() -> None:
     """Local service uses backend default limit when none is provided."""
     query = StubDuckQuery()
-    service = LocalQueryService(query=cast("DuckDBQueryService", query))
+    service = LocalQueryService(query=cast("DuckDBQueryService", query), dataset_tables={})
     _resp = service.read_dataset_rows(dataset_name="docs", limit=None, offset=0)
     if query.last_call != ("docs", query.limits.default_limit, 0):
         message = f"Unexpected call args: {query.last_call}"
@@ -96,7 +96,9 @@ def test_local_read_dataset_rows_defaults_limit() -> None:
 
 def test_local_read_dataset_rows_propagates_errors() -> None:
     """Local service does not swallow errors from the query layer."""
-    service = LocalQueryService(query=cast("DuckDBQueryService", StubDuckQuery()))
+    service = LocalQueryService(
+        query=cast("DuckDBQueryService", StubDuckQuery()), dataset_tables={}
+    )
     with pytest.raises(ValueError, match="Unknown dataset"):
         service.read_dataset_rows(dataset_name="missing", limit=1, offset=0)
 
@@ -167,7 +169,7 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
         """Service that records method calls."""
 
         def __init__(self) -> None:
-            super().__init__(query=cast("DuckDBQueryService", StubDuckQuery()))
+            super().__init__(query=cast("DuckDBQueryService", StubDuckQuery()), dataset_tables={})
 
         def get_function_summary(
             self,
@@ -192,15 +194,15 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
 
     def load_config() -> ApiAppConfig:
         server_cfg = McpServerConfig(
-            mode="local_db",
+            mode="remote_api",
             repo_root=tmp_path,
             repo="r",
             commit="c",
-            db_path=tmp_path / "db.duckdb",
+            api_base_url="http://test",
         )
         return ApiAppConfig(server=server_cfg, read_only=True)
 
-    def backend_factory(_: ApiAppConfig) -> BackendResource:
+    def backend_factory(_: ApiAppConfig, *, _gateway: object | None = None) -> BackendResource:
         return BackendResource(backend=backend, service=service, close=lambda: None)
 
     app = create_app(config_loader=load_config, backend_factory=backend_factory)
@@ -224,7 +226,7 @@ def test_mcp_tool_delegation() -> None:
         """Service that records method invocations."""
 
         def __init__(self) -> None:
-            super().__init__(query=cast("DuckDBQueryService", StubDuckQuery()))
+            super().__init__(query=cast("DuckDBQueryService", StubDuckQuery()), dataset_tables={})
 
         def get_function_summary(
             self,

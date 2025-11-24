@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import duckdb
 import pytest
 
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.config.models import GraphMetricsConfig
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -18,22 +17,22 @@ MODULE_A = "pkg.mod_a"
 MODULE_B = "pkg.mod_b"
 
 
-def _setup_db() -> duckdb.DuckDBPyConnection:
+def _setup_gateway() -> StorageGateway:
     """
-    Create an in-memory DuckDB instance with schemas applied.
+    Create an in-memory gateway with schemas applied.
 
     Returns
     -------
-    duckdb.DuckDBPyConnection
-        Connected in-memory database ready for inserts.
+    StorageGateway
+        Gateway with an in-memory DuckDB connection ready for inserts.
     """
-    gateway = open_memory_gateway()
-    return gateway.con
+    return open_memory_gateway()
 
 
 def test_compute_function_graph_metrics_counts_and_cycles() -> None:
     """Compute function graph metrics with cycles and aggregated edge counts."""
-    con = _setup_db()
+    gateway = _setup_gateway()
+    con = gateway.con
 
     con.execute(
         """
@@ -66,7 +65,7 @@ def test_compute_function_graph_metrics_counts_and_cycles() -> None:
     )
 
     cfg = GraphMetricsConfig.from_paths(repo=REPO, commit=COMMIT)
-    compute_graph_metrics(con, cfg)
+    compute_graph_metrics(gateway, cfg)
 
     row = con.execute(
         """
@@ -82,7 +81,8 @@ def test_compute_function_graph_metrics_counts_and_cycles() -> None:
 
 def test_compute_module_graph_metrics_with_symbol_coupling() -> None:
     """Compute module graph metrics including symbol coupling fan counts."""
-    con = _setup_db()
+    gateway = _setup_gateway()
+    con = gateway.con
 
     con.execute(
         """
@@ -119,7 +119,7 @@ def test_compute_module_graph_metrics_with_symbol_coupling() -> None:
     )
 
     cfg = GraphMetricsConfig.from_paths(repo=REPO, commit=COMMIT)
-    compute_graph_metrics(con, cfg)
+    compute_graph_metrics(gateway, cfg)
 
     row = con.execute(
         """

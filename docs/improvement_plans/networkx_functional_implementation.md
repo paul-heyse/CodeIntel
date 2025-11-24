@@ -21,7 +21,7 @@ from __future__ import annotations
 import duckdb
 import networkx as nx
 
-def load_call_graph(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> nx.DiGraph:
+def load_call_graph(con: StorageGateway, repo: str, commit: str) -> nx.DiGraph:
     rows = con.execute("""
         SELECT caller_goid_h128, callee_goid_h128
         FROM graph.call_graph_edges
@@ -38,7 +38,7 @@ def load_call_graph(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> n
     return g
 
 
-def load_import_graph(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> nx.DiGraph:
+def load_import_graph(con: StorageGateway, repo: str, commit: str) -> nx.DiGraph:
     rows = con.execute("""
         SELECT src_module, dst_module
         FROM graph.import_graph_edges
@@ -89,7 +89,7 @@ Today `_build_weighted_adjacency` returns `dict[str, dict[str, float]]`. I’d c
 import networkx as nx
 
 def _build_weighted_graph(
-    con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig, modules: set[str]
+    con: StorageGateway, cfg: SubsystemsConfig, modules: set[str]
 ) -> nx.Graph:
     g = nx.Graph()
     g.add_nodes_from(modules)
@@ -1027,7 +1027,7 @@ import networkx as nx
 
 
 def load_call_graph(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+    con: StorageGateway, repo: str, commit: str
 ) -> nx.DiGraph:
     """
     Build a NetworkX DiGraph of the call graph for a given repo/commit.
@@ -1079,7 +1079,7 @@ from .nx_views import load_call_graph
 
 
 def compute_function_graph_metrics_ext_for_repo(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+    con: StorageGateway, repo: str, commit: str
 ) -> list[dict[str, Any]]:
     G = load_call_graph(con, repo, commit)
     G_und = G.to_undirected()
@@ -1167,7 +1167,7 @@ import pandas as pd
 
 
 def upsert_graph_metrics_functions_ext(
-    con: duckdb.DuckDBPyConnection, rows: list[dict[str, Any]]
+    con: StorageGateway, rows: list[dict[str, Any]]
 ) -> None:
     if not rows:
         return
@@ -1263,7 +1263,7 @@ from decimal import Decimal
 
 
 def load_test_function_bipartite(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+    con: StorageGateway, repo: str, commit: str
 ) -> nx.Graph:
     """
     Bipartite graph: tests <-> functions.
@@ -1375,7 +1375,7 @@ from .nx_views import load_test_function_bipartite
 
 
 def compute_test_graph_metrics_for_repo(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+    con: StorageGateway, repo: str, commit: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     B = load_test_function_bipartite(con, repo, commit)
 
@@ -1466,7 +1466,7 @@ import pandas as pd
 
 
 def upsert_test_graph_metrics(
-    con: duckdb.DuckDBPyConnection,
+    con: StorageGateway,
     repo: str,
     commit: str,
     test_rows: list[dict[str, Any]],
@@ -1826,7 +1826,7 @@ Again, designed to join directly into `docs.v_function_architecture`.
 
 Below is reasonably close to drop‑in code. It assumes:
 
-* `get_connection(db_path: str) -> duckdb.DuckDBPyConnection` exists.
+* `get_connection(db_path: str) -> StorageGateway` exists.
 * You’re using Prefect 2 (`@task`/`@flow`).
 
 ### 3.1 Loading CFG & DFG from DuckDB
@@ -1854,7 +1854,7 @@ class RepoContext:
 
 ```python
 def load_cfg_rows(
-    con: duckdb.DuckDBPyConnection,
+    con: StorageGateway,
     ctx: RepoContext,
 ) -> tuple[
     Dict[int, List[Tuple[int, str, int, int]]],
@@ -1907,7 +1907,7 @@ def load_cfg_rows(
 
 ```python
 def load_dfg_rows(
-    con: duckdb.DuckDBPyConnection,
+    con: StorageGateway,
     ctx: RepoContext,
 ) -> Dict[int, List[Tuple[int, int, str, str, bool, str]]]:
     """
@@ -1945,7 +1945,7 @@ def load_dfg_rows(
 
 ```python
 def compute_cfg_metrics_for_repo(
-    con: duckdb.DuckDBPyConnection,
+    con: StorageGateway,
     ctx: RepoContext,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     blocks_by_fn, edges_by_fn = load_cfg_rows(con, ctx)
@@ -2184,7 +2184,7 @@ def compute_cfg_metrics_for_repo(
 
 ```python
 def compute_dfg_metrics_for_repo(
-    con: duckdb.DuckDBPyConnection,
+    con: StorageGateway,
     ctx: RepoContext,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     dfg_by_fn = load_dfg_rows(con, ctx)
@@ -2361,7 +2361,7 @@ def compute_dfg_metrics_for_repo(
 
 ```python
 def upsert_cfg_metrics(
-    con: duckdb.DuckDBPyConnection,
+    con: StorageGateway,
     ctx: RepoContext,
     df_blocks: pd.DataFrame,
     df_functions: pd.DataFrame,
@@ -2391,7 +2391,7 @@ def upsert_cfg_metrics(
 
 
 def upsert_dfg_metrics(
-    con: duckdb.DuckDBPyConnection,
+    con: StorageGateway,
     ctx: RepoContext,
     df_blocks: pd.DataFrame,
     df_functions: pd.DataFrame,
@@ -2753,6 +2753,239 @@ A few small details to watch when you wire this up:
 If you’d like, I can also sketch those block‑level `docs.v_cfg_block_*` / `docs.v_dfg_block_*` views so you have a clean, parallel surface for “zooming in” on a single function’s internal structure.
 
  
+# docs.v_cfg_block_architecture detailed specification #
+
+Nice, let’s give you “zoom‑in” surfaces for blocks that match what you already have at the function level.
+
+I’ll define two docs views:
+
+* `docs.v_cfg_block_architecture` – per basic block, CFG‑centric.
+* `docs.v_dfg_block_architecture` – per basic block, DFG‑centric.
+
+Both are built on top of your existing `graph.cfg_blocks.*` / `graph.dfg_edges.*` plus the `*_block_metrics` / `*_function_metrics` tables we designed, and they pull in function context via `analytics.function_profile.*`.
+
+---
+
+## 1. `docs.v_cfg_block_architecture`
+
+**Purpose:** one row per `(function_goid_h128, block_idx)` giving:
+
+* function context (URN, path, qualname, risk),
+* CFG block identity + span + degrees, and
+* NetworkX‑derived CFG metrics (dominance, centrality, loops) from `analytics.cfg_block_metrics` / `analytics.cfg_function_metrics`. 
+
+### SQL
+
+```sql
+CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
+SELECT
+    ----------------------------------------------------------------
+    -- Function context
+    ----------------------------------------------------------------
+    fp.function_goid_h128,
+    fp.urn              AS function_urn,
+    fp.repo,
+    fp.commit,
+    fp.rel_path,
+    fp.module,
+    fp.kind             AS function_kind,
+    fp.qualname         AS function_qualname,
+    fp.risk_level       AS function_risk_level,
+    fp.risk_score       AS function_risk_score,
+
+    ----------------------------------------------------------------
+    -- Block identity & basic CFG structure
+    ----------------------------------------------------------------
+    cb.block_idx,
+    cb.block_id,
+    cb.label            AS block_label,
+    cb.kind             AS block_kind,
+    cb.file_path        AS block_file_path,
+    cb.start_line       AS block_start_line,
+    cb.end_line         AS block_end_line,
+    cb.in_degree        AS cfg_in_degree,
+    cb.out_degree       AS cfg_out_degree,
+    cb.stmts_json,
+
+    ----------------------------------------------------------------
+    -- Per-block CFG metrics (from analytics.cfg_block_metrics)
+    ----------------------------------------------------------------
+    bm.is_entry,
+    bm.is_exit,
+    bm.is_branch,
+    bm.is_join,
+
+    bm.dom_depth,
+    bm.dominates_exit,
+
+    bm.bc_betweenness,
+    bm.bc_closeness,
+    bm.bc_eigenvector,
+
+    bm.in_loop_scc,
+    bm.loop_header,
+    bm.loop_nesting_depth,
+
+    ----------------------------------------------------------------
+    -- Function-level CFG context (from analytics.cfg_function_metrics)
+    ----------------------------------------------------------------
+    cfg_fn.cfg_block_count,
+    cfg_fn.cfg_edge_count,
+    cfg_fn.cfg_has_cycles,
+    cfg_fn.cfg_scc_count,
+    cfg_fn.cfg_longest_path_len        AS cfg_longest_path_len_approx,
+    cfg_fn.cfg_avg_shortest_path_len,
+    cfg_fn.cfg_branching_factor_mean,
+    cfg_fn.cfg_branching_factor_max,
+    cfg_fn.cfg_linear_block_fraction,
+    cfg_fn.cfg_dom_tree_height,
+    cfg_fn.cfg_dominance_frontier_size_mean,
+    cfg_fn.cfg_dominance_frontier_size_max,
+    cfg_fn.cfg_loop_count,
+    cfg_fn.cfg_loop_nesting_depth_max,
+    cfg_fn.cfg_bc_betweenness_max,
+    cfg_fn.cfg_bc_betweenness_mean,
+    cfg_fn.cfg_bc_closeness_mean,
+    cfg_fn.cfg_bc_eigenvector_max
+
+FROM graph.cfg_blocks AS cb
+JOIN analytics.function_profile AS fp
+  ON fp.function_goid_h128 = cb.function_goid_h128
+
+LEFT JOIN analytics.cfg_block_metrics AS bm
+  ON bm.function_goid_h128 = cb.function_goid_h128
+ AND bm.repo               = fp.repo
+ AND bm.commit             = fp.commit
+ AND bm.block_idx          = cb.block_idx
+
+LEFT JOIN analytics.cfg_function_metrics AS cfg_fn
+  ON cfg_fn.function_goid_h128 = fp.function_goid_h128
+ AND cfg_fn.repo               = fp.repo
+ AND cfg_fn.commit             = fp.commit;
+```
+
+**Notes:**
+
+* `graph.cfg_blocks.*` gives the structural per‑block data (span, kind, degrees). 
+* `analytics.cfg_block_metrics` / `analytics.cfg_function_metrics` are the NetworkX‑derived metrics we designed in the previous step.
+* Joining via `function_profile` ensures we match the correct `(repo, commit)` even if you ever load multiple commits into one DuckDB. 
+
+This view is your “zoom in from `docs.v_function_architecture` to block‑level CFG” surface.
+
+---
+
+## 2. `docs.v_dfg_block_architecture`
+
+**Purpose:** one row per `(function_goid_h128, block_idx)` giving:
+
+* the same function + block identity,
+* DFG‑centric block metrics (data‑flow degrees, phi edges, centrality) from `analytics.dfg_block_metrics`, and
+* function‑level DFG context from `analytics.dfg_function_metrics`. 
+
+We reuse `graph.cfg_blocks` to anchor block spans and labels, because DFG indices reference the same `block_idx`/function pairs as CFG. 
+
+### SQL
+
+```sql
+CREATE OR REPLACE VIEW docs.v_dfg_block_architecture AS
+SELECT
+    ----------------------------------------------------------------
+    -- Function context
+    ----------------------------------------------------------------
+    fp.function_goid_h128,
+    fp.urn              AS function_urn,
+    fp.repo,
+    fp.commit,
+    fp.rel_path,
+    fp.module,
+    fp.kind             AS function_kind,
+    fp.qualname         AS function_qualname,
+    fp.risk_level       AS function_risk_level,
+    fp.risk_score       AS function_risk_score,
+
+    ----------------------------------------------------------------
+    -- Block identity (reused from CFG blocks)
+    ----------------------------------------------------------------
+    cb.block_idx,
+    cb.block_id,
+    cb.label            AS block_label,
+    cb.kind             AS block_kind,
+    cb.file_path        AS block_file_path,
+    cb.start_line       AS block_start_line,
+    cb.end_line         AS block_end_line,
+
+    ----------------------------------------------------------------
+    -- Per-block DFG metrics (from analytics.dfg_block_metrics)
+    ----------------------------------------------------------------
+    dbm.dfg_in_degree,
+    dbm.dfg_out_degree,
+    dbm.dfg_phi_in_degree,
+    dbm.dfg_phi_out_degree,
+    dbm.dfg_bc_betweenness,
+    dbm.dfg_bc_closeness,
+    dbm.dfg_bc_eigenvector,
+    dbm.dfg_in_chain,
+    dbm.dfg_in_scc,
+
+    ----------------------------------------------------------------
+    -- Function-level DFG context (from analytics.dfg_function_metrics)
+    ----------------------------------------------------------------
+    dfg_fn.dfg_block_count,
+    dfg_fn.dfg_edge_count,
+    dfg_fn.dfg_phi_edge_count,
+    dfg_fn.dfg_symbol_count,
+    dfg_fn.dfg_component_count,
+    dfg_fn.dfg_scc_count,
+    dfg_fn.dfg_has_cycles           AS dfg_has_data_cycles,
+    dfg_fn.dfg_longest_chain_len,
+    dfg_fn.dfg_avg_shortest_path_len,
+    dfg_fn.dfg_avg_in_degree,
+    dfg_fn.dfg_avg_out_degree,
+    dfg_fn.dfg_max_in_degree,
+    dfg_fn.dfg_max_out_degree,
+    dfg_fn.dfg_branchy_block_fraction,
+    dfg_fn.dfg_bc_betweenness_max,
+    dfg_fn.dfg_bc_betweenness_mean,
+    dfg_fn.dfg_bc_eigenvector_max
+
+FROM graph.cfg_blocks AS cb
+JOIN analytics.function_profile AS fp
+  ON fp.function_goid_h128 = cb.function_goid_h128
+
+LEFT JOIN analytics.dfg_block_metrics AS dbm
+  ON dbm.function_goid_h128 = cb.function_goid_h128
+ AND dbm.repo               = fp.repo
+ And dbm.commit             = fp.commit
+ AND dbm.block_idx          = cb.block_idx
+
+LEFT JOIN analytics.dfg_function_metrics AS dfg_fn
+  ON dfg_fn.function_goid_h128 = fp.function_goid_h128
+ AND dfg_fn.repo               = fp.repo
+ AND dfg_fn.commit             = fp.commit;
+```
+
+**Notes:**
+
+* `graph.dfg_edges.*` is what you used to *build* `analytics.dfg_block_metrics` and `analytics.dfg_function_metrics`; the docs view only needs those precomputed metrics + CFG blocks to be useful for LLMs. 
+* If you later extend `dfg_block_metrics` (e.g., per‑block symbol counts, type of uses), you just add new columns and surface them here; the join pattern doesn’t change.
+
+---
+
+## 3. How this fits into the docs layer
+
+Together with your existing docs views:
+
+* `docs.v_function_architecture` – one row per function (call/test/CFG/DFG + module/subsystem context).
+* `docs.v_cfg_block_architecture` – “zoom in” to internal control‑flow structure per block.
+* `docs.v_dfg_block_architecture` – “zoom in” to internal data‑flow structure per block.
+
+An MCP agent can now:
+
+1. Start from a risky function in `docs.v_function_architecture`.
+2. Pull all its CFG/DFG blocks via a simple `WHERE function_goid_h128 = ?`.
+3. Use block‑level centrality, dominance, and data‑flow metrics to decide *where* inside the function to focus edits or inspections.
+
+If you’d like, a small next step would be adding *edge‑level* docs views (e.g., `docs.v_cfg_block_edges_enriched`, `docs.v_dfg_block_edges_enriched`) that join `cfg_edges` / `dfg_edges` with these block views, but the two views above are already enough for a very rich “zoom‑in” story.
 
 
 

@@ -55,7 +55,7 @@ def test_partial_catalog_map_falls_back_to_db(tmp_path: Path) -> None:
         commit="c",
         scip_json_path=scip_path,
     )
-    build_symbol_use_edges(con, cfg, catalog_provider=provider)
+    build_symbol_use_edges(gateway, cfg, catalog_provider=provider)
 
     row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
     if row is None:
@@ -80,7 +80,7 @@ def test_no_module_mapping_keeps_same_module_false(tmp_path: Path) -> None:
         commit="c",
         scip_json_path=scip_path,
     )
-    build_symbol_use_edges(con, cfg)
+    build_symbol_use_edges(gateway, cfg)
 
     row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
     if row is None:

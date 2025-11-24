@@ -13,6 +13,7 @@ import duckdb
 
 from codeintel.config.schemas.sql_builder import PREPARED, ensure_schema
 from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ def log_progress(op: str, *, scope: str, table: str, rows: int, duration_s: floa
 
 
 def load_module_map(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     repo: str,
     commit: str,
     *,
@@ -70,6 +71,7 @@ def load_module_map(
     dict[str, str]
         Normalized mapping of relative path -> module name.
     """
+    con = gateway.con
     params: list[object] = [repo, commit]
     query = """
         SELECT path, module
@@ -165,7 +167,7 @@ def read_module_source(record: ModuleRecord, *, logger: logging.Logger | None = 
 
 
 def run_batch(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway | duckdb.DuckDBPyConnection,
     table_key: str,
     rows: Sequence[Sequence[object]],
     *,
@@ -180,14 +182,15 @@ def run_batch(
     BatchResult
         Summary of rows inserted and elapsed time.
     """
-    ensure_schema(con, table_key)
+    active_con = gateway if isinstance(gateway, duckdb.DuckDBPyConnection) else gateway.con
+    ensure_schema(active_con, table_key)
     stmts = PREPARED[table_key]
 
     start = time.perf_counter()
     if delete_params is not None and stmts.delete_sql is not None:
-        con.execute(stmts.delete_sql, delete_params)
+        active_con.execute(stmts.delete_sql, delete_params)
     if rows:
-        con.executemany(stmts.insert_sql, rows)
+        active_con.executemany(stmts.insert_sql, rows)
     duration = time.perf_counter() - start
 
     if scope is not None:
@@ -199,20 +202,21 @@ def run_batch(
 
 
 def insert_relation(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     table_key: str,
     rows: Sequence[Sequence[object]],
     *,
     delete_params: Sequence[object] | None = None,
     scope: str | None = None,
+    con: duckdb.DuckDBPyConnection | None = None,
 ) -> BatchResult:
     """
     Insert rows via a temporary relation to avoid large VALUES clauses.
 
     Parameters
     ----------
-    con:
-        Live DuckDB connection.
+    gateway:
+        StorageGateway providing access to the DuckDB connection.
     table_key:
         Registry table key (e.g., "core.ast_nodes").
     rows:
@@ -221,6 +225,8 @@ def insert_relation(
         Optional parameters for delete statement if present.
     scope:
         Optional repo@commit string for structured logging.
+    con:
+        Optional explicit connection override for advanced scenarios.
 
     Returns
     -------
@@ -228,11 +234,12 @@ def insert_relation(
         Summary of rows inserted and elapsed time.
     """
     return run_batch(
-        con,
+        gateway,
         table_key,
         rows,
         delete_params=delete_params,
         scope=scope,
+        con=con,
     )
 
 

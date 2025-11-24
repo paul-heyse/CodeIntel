@@ -8,12 +8,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
-
 from codeintel.config.models import TestsIngestConfig
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.models.rows import TestCatalogRowModel, test_catalog_row_to_tuple
+from codeintel.storage.gateway import StorageGateway
 from codeintel.types import PytestTestEntry
 
 log = logging.getLogger(__name__)
@@ -213,7 +212,7 @@ def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
 
 
 def ingest_tests(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: TestsIngestConfig,
     runner: ToolRunner | None = None,
     report_path: Path | None = None,
@@ -226,8 +225,8 @@ def ingest_tests(
 
     Parameters
     ----------
-    con:
-        Active DuckDB connection.
+    gateway:
+        StorageGateway providing access to the DuckDB database.
     cfg:
         Tests ingestion configuration (paths and identifiers).
     runner:
@@ -235,6 +234,7 @@ def ingest_tests(
     report_path:
         Optional explicit path to write a pytest JSON report.
     """
+    con = gateway.con
     pytest_report_path = _resolve_report_path(cfg, runner, report_path)
 
     if pytest_report_path is None or should_skip_missing_file(
@@ -259,7 +259,7 @@ def ingest_tests(
         return
 
     run_batch(
-        con,
+        gateway,
         "analytics.test_catalog",
         [test_catalog_row_to_tuple(row.to_row(cfg.repo, cfg.commit, now)) for row in rows],
         delete_params=[cfg.repo, cfg.commit],

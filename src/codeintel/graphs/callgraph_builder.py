@@ -24,6 +24,7 @@ from codeintel.graphs.import_resolver import collect_aliases
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import CallGraphEdgeRow, CallGraphNodeRow, call_graph_node_to_tuple
+from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path, relpath_to_module
 
 log = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class CallGraphInputs:
 
 
 def build_call_graph(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: CallGraphConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
@@ -58,11 +59,11 @@ def build_call_graph(
     """Populate call graph nodes and edges for a repository snapshot."""
     repo_root = cfg.repo_root.resolve()
 
-    node_rows = _build_call_graph_nodes(con, cfg)
-    _persist_call_graph_nodes(con, node_rows)
+    node_rows = _build_call_graph_nodes(gateway, cfg)
+    _persist_call_graph_nodes(gateway, node_rows)
 
     catalog_provider = catalog_provider or FunctionCatalogService.from_db(
-        con, repo=cfg.repo, commit=cfg.commit
+        gateway, repo=cfg.repo, commit=cfg.commit
     )
     catalog = catalog_provider.catalog()
     func_rows = catalog.function_spans
@@ -71,8 +72,8 @@ def build_call_graph(
         return
 
     global_callee_by_name = _callee_map(func_rows)
-    scip_candidates_by_use = _load_scip_candidates(con, repo_root)
-    def_goids_by_path = _load_def_goid_map(con, repo=cfg.repo, commit=cfg.commit)
+    scip_candidates_by_use = _load_scip_candidates(gateway, repo_root)
+    def_goids_by_path = _load_def_goid_map(gateway, repo=cfg.repo, commit=cfg.commit)
     scope = CallGraphRunScope(repo=cfg.repo, commit=cfg.commit, repo_root=repo_root)
     inputs = CallGraphInputs(
         global_callee_by_name=global_callee_by_name,
@@ -83,8 +84,8 @@ def build_call_graph(
     )
     edges = _collect_edges(catalog, scope, inputs)
     unique_edges = call_persist.dedupe_edges(edges)
-    call_persist.persist_call_graph_edges(con, unique_edges, cfg.repo, cfg.commit)
-    run_graph_validations(con, repo=cfg.repo, commit=cfg.commit, logger=log)
+    call_persist.persist_call_graph_edges(gateway, unique_edges, cfg.repo, cfg.commit)
+    run_graph_validations(gateway, repo=cfg.repo, commit=cfg.commit, logger=log)
 
     log.info(
         "Call graph build complete for repo=%s commit=%s: %d nodes, %d edges",
@@ -95,8 +96,8 @@ def build_call_graph(
     )
 
 
-def _build_call_graph_nodes(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig) -> list[tuple]:
-    rows = con.execute(
+def _build_call_graph_nodes(gateway: StorageGateway, cfg: CallGraphConfig) -> list[tuple]:
+    rows = gateway.con.execute(
         """
         SELECT
             goid_h128,
@@ -119,7 +120,7 @@ def _build_call_graph_nodes(con: duckdb.DuckDBPyConnection, cfg: CallGraphConfig
     return node_rows
 
 
-def _persist_call_graph_nodes(con: duckdb.DuckDBPyConnection, rows: list[tuple]) -> None:
+def _persist_call_graph_nodes(gateway: StorageGateway, rows: list[tuple]) -> None:
     node_models: list[CallGraphNodeRow] = [
         CallGraphNodeRow(
             goid_h128=row[0],
@@ -132,7 +133,7 @@ def _persist_call_graph_nodes(con: duckdb.DuckDBPyConnection, rows: list[tuple])
         for row in rows
     ]
     run_batch(
-        con,
+        gateway,
         "graph.call_graph_nodes",
         [call_graph_node_to_tuple(row) for row in node_models],
         delete_params=[],
@@ -199,12 +200,12 @@ def _collect_edges(
     return edges
 
 
-def _load_scip_candidates(
-    con: duckdb.DuckDBPyConnection, repo_root: Path
-) -> dict[str, tuple[str, ...]]:
+def _load_scip_candidates(gateway: StorageGateway, repo_root: Path) -> dict[str, tuple[str, ...]]:
     rows: list[tuple[str | None, str | None]]
     try:
-        rows = con.execute("SELECT def_path, use_path FROM graph.symbol_use_edges").fetchall()
+        rows = gateway.con.execute(
+            "SELECT def_path, use_path FROM graph.symbol_use_edges"
+        ).fetchall()
     except duckdb.Error:
         rows = []
 
@@ -225,9 +226,9 @@ def _load_scip_candidates(
     return {path: tuple(sorted(defs)) for path, defs in mapping.items()}
 
 
-def _load_def_goid_map(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> dict[str, int]:
+def _load_def_goid_map(gateway: StorageGateway, *, repo: str, commit: str) -> dict[str, int]:
     try:
-        rows = con.execute(
+        rows = gateway.con.execute(
             """
             SELECT gc.file_path, g.goid_h128
             FROM core.goid_crosswalk gc

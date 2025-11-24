@@ -7,8 +7,10 @@ from pathlib import Path
 
 import duckdb
 
+from codeintel.docs_export import DEFAULT_VALIDATION_SCHEMAS
 from codeintel.docs_export.validate_exports import validate_files
 from codeintel.services.errors import ExportError, problem
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -56,14 +58,31 @@ PARQUET_DATASETS: dict[str, str] = {
     "analytics.file_profile": "file_profile.parquet",
     "analytics.module_profile": "module_profile.parquet",
     "analytics.graph_metrics_functions": "graph_metrics_functions.parquet",
+    "analytics.graph_metrics_functions_ext": "graph_metrics_functions_ext.parquet",
     "analytics.graph_metrics_modules": "graph_metrics_modules.parquet",
+    "analytics.graph_metrics_modules_ext": "graph_metrics_modules_ext.parquet",
+    "analytics.subsystem_graph_metrics": "subsystem_graph_metrics.parquet",
+    "analytics.symbol_graph_metrics_modules": "symbol_graph_metrics_modules.parquet",
+    "analytics.symbol_graph_metrics_functions": "symbol_graph_metrics_functions.parquet",
+    "analytics.config_graph_metrics_keys": "config_graph_metrics_keys.parquet",
+    "analytics.config_graph_metrics_modules": "config_graph_metrics_modules.parquet",
+    "analytics.config_projection_key_edges": "config_projection_key_edges.parquet",
+    "analytics.config_projection_module_edges": "config_projection_module_edges.parquet",
+    "analytics.subsystem_agreement": "subsystem_agreement.parquet",
+    "analytics.graph_stats": "graph_stats.parquet",
+    "analytics.test_graph_metrics_tests": "test_graph_metrics_tests.parquet",
+    "analytics.test_graph_metrics_functions": "test_graph_metrics_functions.parquet",
+    "analytics.cfg_block_metrics": "cfg_block_metrics.parquet",
+    "analytics.cfg_function_metrics": "cfg_function_metrics.parquet",
+    "analytics.dfg_block_metrics": "dfg_block_metrics.parquet",
+    "analytics.dfg_function_metrics": "dfg_function_metrics.parquet",
     "analytics.subsystems": "subsystems.parquet",
     "analytics.subsystem_modules": "subsystem_modules.parquet",
 }
 
 
 def export_parquet_for_table(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     table_name: str,
     output_path: Path,
 ) -> None:
@@ -72,8 +91,8 @@ def export_parquet_for_table(
 
     Parameters
     ----------
-    con : duckdb.DuckDBPyConnection
-        Live DuckDB connection.
+    gateway :
+        StorageGateway providing the DuckDB connection.
     table_name : str
         Fully qualified table name (schema.table) to export.
     output_path : Path
@@ -95,12 +114,12 @@ def export_parquet_for_table(
         message = f"Refusing to export unknown table: {table_name}"
         raise ValueError(message)
     log.info("Exporting %s -> %s", table_name, output_path)
-    rel = con.table(table_name)
+    rel = gateway.con.table(table_name)
     rel.write_parquet(str(output_path))
 
 
 def export_all_parquet(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     document_output_dir: Path,
     *,
     validate_exports: bool = False,
@@ -111,8 +130,8 @@ def export_all_parquet(
 
     Parameters
     ----------
-    con:
-        DuckDB connection with all tables populated.
+    gateway:
+        StorageGateway with all tables populated.
     document_output_dir:
         Path to the `Document Output/` directory (will be created
         if it does not exist).
@@ -134,9 +153,9 @@ def export_all_parquet(
     for table_name, filename in PARQUET_DATASETS.items():
         output_path = document_output_dir / filename
         try:
-            export_parquet_for_table(con, table_name, output_path)
+            export_parquet_for_table(gateway, table_name, output_path)
             written.append(output_path)
-        except duckdb.Error as exc:
+        except (duckdb.Error, OSError, ValueError) as exc:
             # Log and continue: some tables may legitimately be empty or missing
             log.warning(
                 "Failed to export %s to %s: %s",
@@ -146,14 +165,7 @@ def export_all_parquet(
             )
 
     if validate_exports:
-        schema_list = schemas or [
-            "function_profile",
-            "file_profile",
-            "module_profile",
-            "call_graph_edges",
-            "symbol_use_edges",
-            "test_coverage_edges",
-        ]
+        schema_list = schemas or DEFAULT_VALIDATION_SCHEMAS
         for schema_name in schema_list:
             matching = [p for p in written if p.name.startswith(schema_name)]
             if not matching:

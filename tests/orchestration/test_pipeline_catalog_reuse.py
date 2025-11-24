@@ -42,7 +42,6 @@ def test_steps_share_function_catalog(tmp_path: Path) -> None:
     gateway = open_gateway(
         StorageConfig(db_path=db_path, apply_schema=True, ensure_views=False, validate_schema=True)
     )
-    con = gateway.con
 
     ctx = PipelineContext(
         repo_root=repo_root,
@@ -50,17 +49,18 @@ def test_steps_share_function_catalog(tmp_path: Path) -> None:
         build_dir=tmp_path / "build",
         repo="r",
         commit="c",
+        gateway=gateway,
     )
 
-    RepoScanStep().run(ctx, con)
-    AstStep().run(ctx, con)
-    GoidsStep().run(ctx, con)
+    RepoScanStep().run(ctx)
+    AstStep().run(ctx)
+    GoidsStep().run(ctx)
 
-    CallGraphStep().run(ctx, con)
+    CallGraphStep().run(ctx)
     first_catalog = ctx.function_catalog
     _expect(condition=first_catalog is not None, detail="function_catalog was not set")
 
-    CFGStep().run(ctx, con)
+    CFGStep().run(ctx)
     _expect(condition=ctx.function_catalog is first_catalog, detail="catalog was not reused")
 
     scip_json = ctx.build_dir / "scip" / "index.scip.json"
@@ -84,5 +84,5 @@ def test_steps_share_function_catalog(tmp_path: Path) -> None:
         """.strip(),
         encoding="utf8",
     )
-    SymbolUsesStep().run(ctx, con)
+    SymbolUsesStep().run(ctx)
     _expect(condition=ctx.function_catalog is first_catalog, detail="catalog was not reused")

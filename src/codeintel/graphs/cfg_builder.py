@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import duckdb
+import networkx as nx
 
 from codeintel.config.models import CFGBuilderConfig
 from codeintel.graphs.function_catalog_service import (
@@ -26,6 +26,7 @@ from codeintel.models.rows import (
     cfg_edge_to_tuple,
     dfg_edge_to_tuple,
 )
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -127,6 +128,28 @@ class CFGBuilder:
             self.add_edge(self.current_block.idx, exit_block.idx)
 
         return self.blocks, self.edges
+
+    def as_nx_digraph(self) -> nx.DiGraph:
+        """
+        Convert the current CFG into a NetworkX `DiGraph`.
+
+        Returns
+        -------
+        nx.DiGraph
+            Directed graph with block indices as nodes and edge_kind attributes.
+        """
+        graph = nx.DiGraph()
+        for block in self.blocks:
+            graph.add_node(
+                block.idx,
+                kind=block.kind,
+                label=block.label,
+                start_line=block.start_line,
+                end_line=block.end_line,
+            )
+        for edge in self.edges:
+            graph.add_edge(edge.src, edge.dst, edge_kind=edge.kind)
+        return graph
 
     def visit(self, node: ast.AST) -> None:
         """Dispatch visit to specific node handlers."""
@@ -376,6 +399,8 @@ class DFGBuilder:
                         src_var=sym,
                         dst_var=sym,
                         edge_kind="intra-block",
+                        via_phi=False,
+                        use_kind="intra-block",
                     )
                 )
                 continue
@@ -388,8 +413,58 @@ class DFGBuilder:
                         src_var=sym,
                         dst_var=sym,
                         edge_kind="data-flow",
+                        via_phi=False,
+                        use_kind="data-flow",
                     )
                 )
+
+    def as_nx_digraph(self) -> nx.DiGraph:
+        """
+        Convert emitted DFG edges into a NetworkX `DiGraph`.
+
+        Returns
+        -------
+        nx.DiGraph
+            Directed data-flow graph keyed by block indices.
+        """
+        graph = nx.DiGraph()
+        for block in self.blocks:
+            graph.add_node(block.idx, kind=block.kind, label=block.label)
+        for edge in self.dfg_edges:
+            src_idx = _parse_block_idx(edge["src_block_id"])
+            dst_idx = _parse_block_idx(edge["dst_block_id"])
+            if src_idx is None or dst_idx is None:
+                continue
+            graph.add_edge(
+                src_idx,
+                dst_idx,
+                src_var=edge.get("src_var"),
+                dst_var=edge.get("dst_var"),
+                edge_kind=edge.get("edge_kind"),
+            )
+        return graph
+
+
+def _parse_block_idx(block_id: str) -> int | None:
+    """
+    Extract the integer block index suffix from a block identifier.
+
+    Parameters
+    ----------
+    block_id : str
+        Block identifier shaped like "<goid>:block<idx>".
+
+    Returns
+    -------
+    int | None
+        Parsed block index or None when parsing fails.
+    """
+    if "block" not in block_id:
+        return None
+    try:
+        return int(block_id.rsplit("block", 1)[-1])
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)
@@ -487,14 +562,14 @@ def _build_cfg_for_function(
 
 
 def _flush(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     blocks: list[CFGBlockRow],
     cfg_edges: list[CFGEdgeRow],
     dfg_edges: list[DFGEdgeRow],
 ) -> None:
     if blocks:
         run_batch(
-            con,
+            gateway,
             "graph.cfg_blocks",
             [cfg_block_to_tuple(r) for r in blocks],
             delete_params=[],  # Append only
@@ -502,14 +577,14 @@ def _flush(
         )
     if cfg_edges:
         run_batch(
-            con,
+            gateway,
             "graph.cfg_edges",
             [cfg_edge_to_tuple(r) for r in cfg_edges],
             scope="cfg_edges",
         )
     if dfg_edges:
         run_batch(
-            con,
+            gateway,
             "graph.dfg_edges",
             [dfg_edge_to_tuple(r) for r in dfg_edges],
             scope="dfg_edges",
@@ -517,7 +592,7 @@ def _flush(
 
 
 def build_cfg_and_dfg(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: CFGBuilderConfig,
     *,
     cfg_builder: Callable[
@@ -528,6 +603,7 @@ def build_cfg_and_dfg(
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """Emit CFG and DFG edges for each function GOID."""
+    con = gateway.con
     # Clear existing data for this repo/commit to allow idempotent re-runs
     log.info("Clearing existing CFG/DFG data for %s@%s", cfg.repo, cfg.commit)
     con.execute(
@@ -559,7 +635,7 @@ def build_cfg_and_dfg(
     )
 
     provider = catalog_provider or FunctionCatalogService.from_db(
-        con, repo=cfg.repo, commit=cfg.commit
+        gateway, repo=cfg.repo, commit=cfg.commit
     )
     function_spans = provider.catalog().function_spans
     if not function_spans:
@@ -592,6 +668,6 @@ def build_cfg_and_dfg(
         all_cfg_edges.extend(edges)
         all_dfg_edges.extend(dfg)
 
-    _flush(con, all_blocks, all_cfg_edges, all_dfg_edges)
+    _flush(gateway, all_blocks, all_cfg_edges, all_dfg_edges)
 
     log.info("CFG/DFG build complete.")

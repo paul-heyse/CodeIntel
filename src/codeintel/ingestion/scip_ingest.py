@@ -11,10 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-import duckdb
-
 from codeintel.config.models import ScipIngestConfig
 from codeintel.config.schemas.sql_builder import GOID_CROSSWALK_UPDATE_SCIP, ensure_schema
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 MISSING_BINARY_EXIT_CODE = 127
@@ -30,7 +29,7 @@ class ScipIngestResult:
     reason: str | None = None
 
 
-def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> ScipIngestResult:
+def ingest_scip(gateway: StorageGateway, cfg: ScipIngestConfig) -> ScipIngestResult:
     """
     Run scip-python + scip print, register view, and backfill SCIP symbols.
 
@@ -39,6 +38,7 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> ScipIn
     ScipIngestResult
         Status and artifact paths. Unavailable/failed states do not raise.
     """
+    con = gateway.con
     repo_root = cfg.repo_root.resolve()
     if not (repo_root / ".git").is_dir():
         reason = "SCIP ingestion requires a git repository (.git missing)"
@@ -48,7 +48,7 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> ScipIn
         )
 
     if cfg.scip_runner is not None:
-        return cast("ScipIngestResult", cfg.scip_runner(con, cfg))
+        return cast("ScipIngestResult", cfg.scip_runner(gateway, cfg))
 
     probe_result = _probe_binaries(cfg)
     if probe_result is not None:
@@ -84,7 +84,7 @@ def ingest_scip(con: duckdb.DuckDBPyConnection, cfg: ScipIngestConfig) -> ScipIn
     con.register("scip_index_view_temp", docs_table)
     con.execute("CREATE VIEW scip_index_view AS SELECT * FROM scip_index_view_temp")
 
-    _update_scip_symbols(con, index_json)
+    _update_scip_symbols(gateway, index_json)
     log.info("SCIP index ingested for %s@%s", cfg.repo, cfg.commit)
     return ScipIngestResult(status="success", index_scip=index_scip, index_json=index_json)
 
@@ -164,15 +164,16 @@ def _run_scip_print(binary: str, index_scip: Path, output_json: Path) -> bool:
     return False
 
 
-def _update_scip_symbols(con: duckdb.DuckDBPyConnection, index_json: Path) -> None:
+def _update_scip_symbols(gateway: StorageGateway, index_json: Path) -> None:
     """Populate core.goid_crosswalk.scip_symbol by matching SCIP definitions to GOIDs."""
+    con = gateway.con
     ensure_schema(con, "core.goid_crosswalk")
     docs = _load_scip_documents(index_json)
     def_map = _build_definition_map(docs)
     if not def_map:
         return
 
-    updates = _build_symbol_updates(def_map, _fetch_goids(con))
+    updates = _build_symbol_updates(def_map, _fetch_goids(gateway))
     if not updates:
         return
 
@@ -246,10 +247,10 @@ def _build_definition_map(docs: list[dict[str, object]]) -> dict[tuple[str, int]
     return def_map
 
 
-def _fetch_goids(con: duckdb.DuckDBPyConnection) -> list[tuple[str, str, int, str, str]]:
+def _fetch_goids(gateway: StorageGateway) -> list[tuple[str, str, int, str, str]]:
     return cast(
         "list[tuple[str, str, int, str, str]]",
-        con.execute(
+        gateway.con.execute(
             """
             SELECT urn, rel_path, start_line, repo, commit
             FROM core.goids

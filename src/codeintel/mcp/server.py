@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 
 from mcp.server.fastmcp import FastMCP
@@ -29,7 +30,7 @@ def create_mcp_server(
     backend_factory:
         Optional factory for producing BackendResource (defaults to build_backend_resource).
     gateway:
-        Optional StorageGateway supplying the DuckDB connection and registry.
+        StorageGateway supplying the DuckDB connection and registry.
     register_tools_fn:
         Optional function to register tools against the MCP server (defaults to registry helper).
 
@@ -37,12 +38,24 @@ def create_mcp_server(
     -------
     tuple[FastMCP, Callable[[], None]]
         Configured MCP server and shutdown callback.
+
+    Raises
+    ------
+    ValueError
+        If a gateway is not provided for local_db mode.
     """
     config = cfg or ServingConfig.from_env()
-    if gateway is not None and backend_factory is None:
-        resource = build_backend_resource(config, gateway=gateway)
-    else:
-        resource: BackendResource = (backend_factory or build_backend_resource)(config)
+    if gateway is None and config.mode == "local_db":
+        message = "StorageGateway is required for MCP server in local_db mode"
+        raise ValueError(message)
+    factory = backend_factory or build_backend_resource
+    kwargs: dict[str, object] = {}
+    params = inspect.signature(factory).parameters
+    if "gateway" in params:
+        kwargs["gateway"] = gateway
+    elif "_gateway" in params:
+        kwargs["_gateway"] = gateway
+    resource: BackendResource = factory(config, **kwargs)  # type: ignore[arg-type]
     backend = resource.backend
     close = resource.close
     server = FastMCP("CodeIntel", json_response=True)

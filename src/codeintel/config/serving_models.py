@@ -9,6 +9,8 @@ from typing import Literal
 import duckdb
 from pydantic import BaseModel, Field, model_validator
 
+from codeintel.storage.gateway import StorageGateway
+
 ServingMode = Literal["local_db", "remote_api"]
 
 
@@ -163,14 +165,14 @@ class ServingConfig(BaseModel):
         return self
 
 
-def verify_db_identity(con: duckdb.DuckDBPyConnection, cfg: ServingConfig) -> None:
+def verify_db_identity(gateway: StorageGateway, cfg: ServingConfig) -> None:
     """
     Ensure the connected DuckDB matches the configured repo and commit.
 
     Parameters
     ----------
-    con:
-        Open DuckDB connection.
+    gateway:
+        Storage gateway providing access to the DuckDB connection.
     cfg:
         Serving configuration describing the expected repo and commit.
 
@@ -180,7 +182,7 @@ def verify_db_identity(con: duckdb.DuckDBPyConnection, cfg: ServingConfig) -> No
         If the repo/commit cannot be read or does not match the configuration.
     """
     try:
-        row = con.execute(
+        row = gateway.con.execute(
             "SELECT repo, commit FROM core.repo_map LIMIT 1",
         ).fetchone()
     except duckdb.Error as exc:

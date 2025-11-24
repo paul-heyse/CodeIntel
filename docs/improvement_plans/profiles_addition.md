@@ -321,7 +321,7 @@ from codeintel.config.schemas.sql_builder import ensure_schema
 log = logging.getLogger(__name__)
 
 
-def build_function_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsConfig) -> None:
+def build_function_profile(con: StorageGateway, cfg: ProfilesAnalyticsConfig) -> None:
     """Populate analytics.function_profile for a given repo/commit."""
     ensure_schema(con, "analytics.function_profile")
 
@@ -604,7 +604,7 @@ Notes:
 Add:
 
 ```python
-def build_file_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsConfig) -> None:
+def build_file_profile(con: StorageGateway, cfg: ProfilesAnalyticsConfig) -> None:
     ensure_schema(con, "analytics.file_profile")
     con.execute(
         "DELETE FROM analytics.file_profile WHERE repo = ? AND commit = ?",
@@ -770,7 +770,7 @@ This uses `function_profile` as the main aggregation source so you get all risk/
 ### 2.4 Building module_profile
 
 ```python
-def build_module_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsConfig) -> None:
+def build_module_profile(con: StorageGateway, cfg: ProfilesAnalyticsConfig) -> None:
     ensure_schema(con, "analytics.module_profile")
     con.execute(
         "DELETE FROM analytics.module_profile WHERE repo = ? AND commit = ?",
@@ -944,7 +944,7 @@ class ProfilesStep:
         "import_graph",   # for module import metrics
     )
 
-    def run(self, ctx: PipelineContext, con: duckdb.DuckDBPyConnection) -> None:
+    def run(self, ctx: PipelineContext, con: StorageGateway) -> None:
         _log_step(self.name)
         cfg = ProfilesAnalyticsConfig.from_paths(
             repo=ctx.repo,
@@ -981,7 +981,7 @@ Add simple passâ€‘through views so the server & MCP can treat profiles as firstâ
 ```python
 # storage/views.py
 
-def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
+def create_all_views(con: StorageGateway) -> None:
     # existing v_function_summary, v_call_graph_enriched...
 
     con.execute(

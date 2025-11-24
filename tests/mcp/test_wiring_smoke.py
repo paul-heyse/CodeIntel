@@ -30,7 +30,9 @@ def test_mcp_wiring_smoke() -> None:
     service = cast("QueryService", object())
     backend = _StubBackend(service)
 
-    def _fake_build_backend_resource(_cfg: ServingConfig) -> BackendResource:
+    def _fake_build_backend_resource(
+        _cfg: ServingConfig, *, _gateway: object | None = None
+    ) -> BackendResource:
         nonlocal closed
 
         def _close() -> None:

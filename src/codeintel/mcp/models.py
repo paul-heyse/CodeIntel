@@ -112,6 +112,22 @@ class TestsForFunctionResponse(BaseModel):
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
 
+class GraphNeighborhoodResponse(BaseModel):
+    """Nodes and edges for a bounded graph neighborhood."""
+
+    nodes: list[ViewRow]
+    edges: list[ViewRow]
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class ImportBoundaryResponse(BaseModel):
+    """Edges crossing subsystem boundaries in the import graph."""
+
+    nodes: list[ViewRow]
+    edges: list[ViewRow]
+    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
 class FileSummaryResponse(BaseModel):
     """Summary of a file plus nested function rows."""
 

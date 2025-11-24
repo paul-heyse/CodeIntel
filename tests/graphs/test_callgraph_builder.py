@@ -202,7 +202,7 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
     _seed_goids(con, repo, commit)
 
     cfg = CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    build_call_graph(con, cfg)
+    build_call_graph(gateway, cfg)
 
     df_edges = con.execute(
         "SELECT caller_goid_h128, callee_goid_h128, kind, resolved_via, evidence_json "

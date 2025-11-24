@@ -89,7 +89,7 @@ def test_records_validation_when_parser_returns_none(tmp_path: Path) -> None:
         repo_root=tmp_path,
         overrides=FunctionAnalyticsOverrides(fail_on_missing_spans=False),
     )
-    compute_function_metrics_and_types(con, cfg, parser_registry=registry)
+    compute_function_metrics_and_types(gateway, cfg, parser_registry=registry)
 
     metrics_rows = con.execute("SELECT * FROM analytics.function_metrics").fetchall()
     validation_rows = con.execute(
@@ -139,7 +139,7 @@ def test_custom_parser_hook_is_used(tmp_path: Path) -> None:
         commit="deadbeef",
         repo_root=tmp_path,
     )
-    summary = compute_function_metrics_and_types(con, cfg, parser_registry=registry)
+    summary = compute_function_metrics_and_types(gateway, cfg, parser_registry=registry)
 
     metrics_rows = con.execute(
         "SELECT qualname FROM analytics.function_metrics WHERE repo = ? AND commit = ?",
@@ -237,7 +237,7 @@ def test_build_and_persist_paths_are_separate(tmp_path: Path) -> None:
     if metrics_before_row[0] != 0 or types_before_row[0] != 0:
         pytest.fail("builder should not persist results")
 
-    summary = persist_function_analytics(con, cfg, result, created_at=ctx.now)
+    summary = persist_function_analytics(gateway, cfg, result, created_at=ctx.now)
     counts_after = con.execute(
         """
         SELECT COUNT(*) FROM analytics.function_metrics WHERE repo = ? AND commit = ?
@@ -279,7 +279,7 @@ def test_validation_reporter_emits_counts(tmp_path: Path, caplog: pytest.LogCapt
     )
 
     compute_function_metrics_and_types(
-        con,
+        gateway,
         cfg,
         parser_registry=registry,
         validation_reporter=reporter,

@@ -9,7 +9,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-import duckdb
 import libcst as cst
 from libcst import metadata
 
@@ -23,6 +22,7 @@ from codeintel.ingestion.common import (
 )
 from codeintel.ingestion.cst_utils import CstCaptureConfig, CstCaptureVisitor
 from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 ASYNC_FUNC_DEF = getattr(cst, "AsyncFunctionDef", cst.FunctionDef)
@@ -74,7 +74,7 @@ class CstVisitor(CstCaptureVisitor):
 
 
 def _flush_batch(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     rows: list[Row],
 ) -> list[Row]:
     if not rows:
@@ -92,7 +92,7 @@ def _flush_batch(
         for rel_path, node_id, kind, span, snippet, parents, qnames in rows
     ]
     run_batch(
-        con,
+        gateway,
         "core.cst_nodes",
         normalized_rows,
         delete_params=None,
@@ -124,7 +124,7 @@ def _resolve_worker_count() -> int:
 
 
 def ingest_cst(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     repo_root: Path,
     repo: str,
     commit: str,
@@ -135,8 +135,8 @@ def ingest_cst(
 
     Parameters
     ----------
-    con:
-        DuckDB connection.
+    gateway:
+        StorageGateway providing access to the DuckDB database.
     repo_root:
         Repository root containing source files.
     repo:
@@ -147,7 +147,7 @@ def ingest_cst(
         Optional scan configuration to tune logging cadence.
     """
     repo_root = repo_root.resolve()
-    module_map = load_module_map(con, repo, commit, language="python", logger=log)
+    module_map = load_module_map(gateway, repo, commit, language="python", logger=log)
     if should_skip_empty(module_map, logger=log):
         return
     total_modules = len(module_map)
@@ -161,7 +161,7 @@ def ingest_cst(
     # We can do this by running an empty batch with delete_params, or just relying on the first flush.
     # Relying on first flush is safer if we yield at least one row, but if no rows are found,
     # we still want to clear old data.
-    run_batch(con, "core.cst_nodes", [], delete_params=[repo, commit])
+    run_batch(gateway, "core.cst_nodes", [], delete_params=[repo, commit])
 
     records = list(
         iter_modules(
@@ -180,9 +180,9 @@ def ingest_cst(
             if result.rows:
                 cst_values.extend(result.rows)
             if len(cst_values) >= FLUSH_EVERY:
-                cst_values = _flush_batch(con, cst_values)
+                cst_values = _flush_batch(gateway, cst_values)
 
-    _flush_batch(con, cst_values)
+    _flush_batch(gateway, cst_values)
     duration = time.perf_counter() - start_ts
     log.info(
         "CST extraction complete for %s@%s (%d modules, %d rows, %.2fs)",
