@@ -86,6 +86,25 @@ def con() -> duckdb.DuckDBPyConnection:
         CREATE TABLE graph.call_graph_edges_dummy(d INT);
         """
     )
+    con.execute(
+        """
+        CREATE TABLE analytics.function_validation(
+            repo TEXT,
+            commit TEXT,
+            rel_path TEXT,
+            qualname TEXT,
+            issue TEXT,
+            detail TEXT,
+            created_at TIMESTAMP
+        );
+        """
+    )
+    con.execute(
+        """
+        INSERT INTO analytics.function_validation VALUES
+        ('r', 'c', 'foo.py', 'foo', 'span_not_found', 'Span 1-2', CURRENT_TIMESTAMP);
+        """
+    )
     return con
 
 
@@ -165,3 +184,31 @@ def test_tests_for_function_not_found(backend: DuckDBBackend) -> None:
     codes = [m.code for m in resp.meta.messages]
     if "not_found" not in codes:
         pytest.fail(f"Expected not_found message; got {codes}")
+
+
+def test_read_function_validation_dataset(backend: DuckDBBackend) -> None:
+    """function_validation dataset should be readable via dataset APIs."""
+    resp = backend.read_dataset_rows(dataset_name="function_validation", limit=5)
+    if not resp.rows:
+        pytest.fail("Expected rows for function_validation dataset")
+    row = resp.rows[0]
+    if row.get("issue") != "span_not_found":
+        pytest.fail("Unexpected issue value in function_validation dataset")
+
+
+def test_dataset_list_includes_function_validation(backend: DuckDBBackend) -> None:
+    """Dataset registry should include function_validation."""
+    datasets = backend.list_datasets()
+    names = {ds.name for ds in datasets}
+    if "function_validation" not in names:
+        pytest.fail(f"function_validation missing from dataset list: {names}")
+
+
+def test_function_validation_clamping(backend: DuckDBBackend) -> None:
+    """Clamping should apply and return messages for function_validation reads."""
+    resp = backend.read_dataset_rows(dataset_name="function_validation", limit=10, offset=-1)
+    codes = {m.code for m in resp.meta.messages}
+    if "offset_invalid" not in codes:
+        pytest.fail(f"Expected offset_invalid message; got {codes}")
+    if resp.offset != 0:
+        pytest.fail("Expected offset to clamp to 0")

@@ -26,6 +26,7 @@ from codeintel.config.models import (
     CFGBuilderConfig,
     CoverageAnalyticsConfig,
     FunctionAnalyticsConfig,
+    FunctionAnalyticsOverrides,
     GoidBuilderConfig,
     GraphMetricsConfig,
     HotspotsConfig,
@@ -89,6 +90,7 @@ class PipelineContext:
     scan_config: ScanConfig | None = None
     tool_runner: ToolRunner | None = None
     extra: dict[str, object] = field(default_factory=dict)
+    function_overrides: FunctionAnalyticsOverrides | None = None
 
     @property
     def document_output_dir(self) -> Path:
@@ -392,6 +394,7 @@ class FunctionAnalyticsStep:
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
+            overrides=ctx.function_overrides,
         )
         compute_function_metrics_and_types(con, cfg)
 

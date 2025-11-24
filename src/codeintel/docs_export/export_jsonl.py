@@ -50,6 +50,7 @@ JSONL_DATASETS: dict[str, str] = {
     "analytics.test_catalog": "test_catalog.jsonl",
     "analytics.test_coverage_edges": "test_coverage_edges.jsonl",
     "analytics.graph_validation": "graph_validation.jsonl",
+    "analytics.function_validation": "function_validation.jsonl",
     # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.jsonl",
     "analytics.function_profile": "function_profile.jsonl",

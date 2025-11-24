@@ -2,6 +2,11 @@
 
 This document describes the consolidated artifacts emitted by `generate_documents.sh` under `Document Output/`. Each dataset is produced by the CodeIntel enrichment pipeline and captures different facets of the repository graph. The intent is to give downstream AI agents enough semantic context to reason about the codebase without re-running the heavy analysis steps.
 
+## New architecture datasets
+
+- **Graph metrics** (`graph_metrics_functions.*`, `graph_metrics_modules.*`): graph-theoretic signals over call and import graphs (fan-in/out, degree counts, PageRank/centralities, cycle membership, layers, symbol coupling). Stored under `analytics.*` and surfaced via `docs.v_function_architecture` / `docs.v_module_architecture`.
+- **Subsystems** (`subsystems.*`, `subsystem_modules.*`): inferred architectural clusters of modules plus risk rollups, membership, and entrypoint hints. Exposed via `docs.v_subsystem_summary` and `docs.v_module_with_subsystem`.
+
 ## 1. GOID Registry (`goids.parquet` / `goids.jsonl`)
 
 **Purpose**: Stable identifier canonicalization for all Python entities (modules, functions, classes, and CFG blocks). Downstream graph tables reference GOIDs exclusively.

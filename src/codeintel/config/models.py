@@ -701,15 +701,34 @@ class CoverageAnalyticsConfig:
 
 
 @dataclass(frozen=True)
+class FunctionAnalyticsOverrides:
+    """Optional overrides for function analytics behavior."""
+
+    fail_on_missing_spans: bool = False
+    max_workers: int | None = None
+    parser: str | None = None
+
+
+@dataclass(frozen=True)
 class FunctionAnalyticsConfig:
     """Configuration for function metrics and typedness analytics."""
 
     repo: str
     commit: str
     repo_root: Path
+    fail_on_missing_spans: bool = False
+    max_workers: int | None = None
+    parser: str | None = None
 
     @classmethod
-    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        overrides: FunctionAnalyticsOverrides | None = None,
+    ) -> Self:
         """
         Build function analytics settings from repository context.
 
@@ -718,7 +737,15 @@ class FunctionAnalyticsConfig:
         Self
             Normalized function analytics configuration.
         """
-        return cls(repo=repo, commit=commit, repo_root=repo_root)
+        applied = overrides or FunctionAnalyticsOverrides()
+        return cls(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root,
+            fail_on_missing_spans=applied.fail_on_missing_spans,
+            max_workers=applied.max_workers,
+            parser=applied.parser,
+        )
 
 
 @dataclass(frozen=True)
@@ -773,6 +800,41 @@ class ProfilesAnalyticsConfig:
 
 
 @dataclass(frozen=True)
+class SubsystemsOverrides:
+    """Optional overrides for subsystem inference."""
+
+    min_modules: int | None = None
+    max_subsystems: int | None = None
+    import_weight: float | None = None
+    symbol_weight: float | None = None
+    config_weight: float | None = None
+
+
+def _coerce_int(value: float | None, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        message = f"{field_name} must be an integer, not bool"
+        raise TypeError(message)
+    if isinstance(value, int):
+        return value
+    message = f"{field_name} must be an integer, got {value!r}"
+    raise TypeError(message)
+
+
+def _coerce_float(value: float | None, field_name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        message = f"{field_name} must be a float, not bool"
+        raise TypeError(message)
+    if isinstance(value, (int, float)):
+        return float(value)
+    message = f"{field_name} must be numeric, got {value!r}"
+    raise TypeError(message)
+
+
+@dataclass(frozen=True)
 class SubsystemsConfig:
     """Configuration for subsystem inference."""
 
@@ -790,7 +852,7 @@ class SubsystemsConfig:
         *,
         repo: str,
         commit: str,
-        overrides: dict[str, float | int | None] | None = None,
+        overrides: SubsystemsOverrides | None = None,
     ) -> Self:
         """
         Build subsystem inference configuration from repository context.
@@ -799,16 +861,29 @@ class SubsystemsConfig:
         -------
         Self
             Normalized subsystem configuration.
+
+        Raises
+        ------
+        TypeError
+            If overrides contain non-numeric or non-integer values.
         """
-        merged = overrides or {}
+        merged = overrides or SubsystemsOverrides()
+        min_modules = _coerce_int(merged.min_modules, "min_modules") or cls.min_modules
+        max_subsystems = merged.max_subsystems
+        if max_subsystems is not None and not isinstance(max_subsystems, int):
+            message = f"max_subsystems must be an integer or None, got {max_subsystems!r}"
+            raise TypeError(message)
+        import_weight = _coerce_float(merged.import_weight, "import_weight") or cls.import_weight
+        symbol_weight = _coerce_float(merged.symbol_weight, "symbol_weight") or cls.symbol_weight
+        config_weight = _coerce_float(merged.config_weight, "config_weight") or cls.config_weight
         return cls(
             repo=repo,
             commit=commit,
-            min_modules=int(merged.get("min_modules", cls.min_modules)),
-            max_subsystems=merged.get("max_subsystems", cls.max_subsystems),
-            import_weight=float(merged.get("import_weight", cls.import_weight)),
-            symbol_weight=float(merged.get("symbol_weight", cls.symbol_weight)),
-            config_weight=float(merged.get("config_weight", cls.config_weight)),
+            min_modules=min_modules,
+            max_subsystems=max_subsystems,
+            import_weight=import_weight,
+            symbol_weight=symbol_weight,
+            config_weight=config_weight,
         )
 
 

@@ -156,6 +156,7 @@ def build_function_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalytic
                 COUNT(*) AS call_edge_out_count,
                 COUNT(DISTINCT callee_goid_h128) AS call_fan_out
             FROM graph.call_graph_edges
+            WHERE repo = ? AND commit = ?
             GROUP BY caller_goid_h128
         ),
         cg_in AS (
@@ -165,6 +166,7 @@ def build_function_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalytic
                 COUNT(DISTINCT caller_goid_h128) AS call_fan_in
             FROM graph.call_graph_edges
             WHERE callee_goid_h128 IS NOT NULL
+              AND repo = ? AND commit = ?
             GROUP BY callee_goid_h128
         ),
         cg_nodes AS (
@@ -290,7 +292,17 @@ def build_function_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalytic
          AND doc.qualname = rf.qualname
          AND doc.kind = rf.kind;
         """,
-        [cfg.repo, cfg.commit, SLOW_TEST_THRESHOLD_MS, SLOW_TEST_THRESHOLD_MS, now],
+        [
+            cfg.repo,
+            cfg.commit,
+            SLOW_TEST_THRESHOLD_MS,
+            cfg.repo,
+            cfg.commit,
+            cfg.repo,
+            cfg.commit,
+            SLOW_TEST_THRESHOLD_MS,
+            now,
+        ],
     )
 
     count_row = con.execute(
@@ -552,13 +564,16 @@ def build_module_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsC
         ),
         imports AS (
             SELECT
+                repo,
+                commit,
                 src_module AS module,
                 MAX(src_fan_out) AS import_fan_out,
                 MAX(dst_fan_in) FILTER (WHERE dst_module = src_module) AS import_fan_in,
                 MAX(cycle_group) AS cycle_group,
                 MAX(CASE WHEN cycle_group IS NOT NULL THEN 1 ELSE 0 END) AS in_cycle_flag
             FROM graph.import_graph_edges
-            GROUP BY src_module
+            WHERE repo = ? AND commit = ?
+            GROUP BY repo, commit, src_module
         )
         SELECT
             mod.repo,
@@ -606,10 +621,22 @@ def build_module_profile(con: duckdb.DuckDBPyConnection, cfg: ProfilesAnalyticsC
          AND files.commit = mod.commit
         LEFT JOIN imports
           ON imports.module = mod.module
+         AND imports.repo = mod.repo
+         AND imports.commit = mod.commit
         WHERE mod.repo = ?
           AND mod.commit = ?;
         """,
-        [cfg.repo, cfg.commit, cfg.repo, cfg.commit, now, cfg.repo, cfg.commit],
+        [
+            cfg.repo,
+            cfg.commit,
+            cfg.repo,
+            cfg.commit,
+            now,
+            cfg.repo,
+            cfg.commit,
+            cfg.repo,
+            cfg.commit,
+        ],
     )
 
     count_row = con.execute(

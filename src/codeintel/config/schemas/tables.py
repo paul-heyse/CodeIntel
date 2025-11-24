@@ -314,6 +314,22 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         primary_key=("rel_path",),
         description="Per-file static diagnostic counts",
     ),
+    "analytics.function_validation": TableSchema(
+        schema="analytics",
+        name="function_validation",
+        columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("qualname", "VARCHAR", nullable=False),
+            Column("issue", "VARCHAR", nullable=False),
+            Column("detail", "VARCHAR"),
+            Column("created_at", "TIMESTAMP", nullable=False),
+        ],
+        primary_key=("repo", "commit", "rel_path", "qualname", "issue"),
+        indexes=(Index("idx_function_validation_repo_commit", ("repo", "commit")),),
+        description="Validation findings for function analytics gaps",
+    ),
     "analytics.test_coverage_edges": TableSchema(
         schema="analytics",
         name="test_coverage_edges",
@@ -760,6 +776,8 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         schema="graph",
         name="call_graph_edges",
         columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
             Column("caller_goid_h128", "DECIMAL(38,0)", nullable=False),
             Column("callee_goid_h128", "DECIMAL(38,0)"),
             Column("callsite_path", "VARCHAR", nullable=False),
@@ -772,6 +790,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("evidence_json", "JSON"),
         ],
         indexes=(
+            Index("idx_graph_call_edges_repo_commit", ("repo", "commit")),
             Index("idx_graph_call_edges_caller", ("caller_goid_h128",)),
             Index("idx_graph_call_edges_callee", ("callee_goid_h128",)),
         ),
@@ -781,6 +800,8 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         schema="graph",
         name="import_graph_edges",
         columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
             Column("src_module", "VARCHAR", nullable=False),
             Column("dst_module", "VARCHAR", nullable=False),
             Column("src_fan_out", "INTEGER", nullable=False),
@@ -788,6 +809,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("cycle_group", "INTEGER", nullable=False),
         ],
         indexes=(
+            Index("idx_graph_import_edges_repo_commit", ("repo", "commit")),
             Index("idx_graph_import_edges_src", ("src_module",)),
             Index("idx_graph_import_edges_dst", ("dst_module",)),
         ),

@@ -15,6 +15,10 @@ DOCS_VIEWS = {
     "v_function_profile": "docs.v_function_profile",
     "v_file_profile": "docs.v_file_profile",
     "v_module_profile": "docs.v_module_profile",
+    "v_function_architecture": "docs.v_function_architecture",
+    "v_module_architecture": "docs.v_module_architecture",
+    "v_subsystem_summary": "docs.v_subsystem_summary",
+    "v_module_with_subsystem": "docs.v_module_with_subsystem",
 }
 
 

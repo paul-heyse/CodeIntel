@@ -94,16 +94,20 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
         FROM graph.call_graph_edges e
         LEFT JOIN core.goids gc
           ON gc.goid_h128 = e.caller_goid_h128
+         AND gc.repo = e.repo
+         AND gc.commit = e.commit
         LEFT JOIN core.goids gcallee
           ON gcallee.goid_h128 = e.callee_goid_h128
+         AND gcallee.repo = e.repo
+         AND gcallee.commit = e.commit
         LEFT JOIN analytics.goid_risk_factors rc
           ON rc.function_goid_h128 = e.caller_goid_h128
-         AND rc.repo = gc.repo
-         AND rc.commit = gc.commit
+         AND rc.repo = e.repo
+         AND rc.commit = e.commit
         LEFT JOIN analytics.goid_risk_factors rcallee
           ON rcallee.function_goid_h128 = e.callee_goid_h128
-         AND rcallee.repo = gcallee.repo
-         AND rcallee.commit = gcallee.commit;
+         AND rcallee.repo = e.repo
+         AND rcallee.commit = e.commit;
         """
     )
 
@@ -191,7 +195,7 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
             s.description,
             s.module_count,
             s.modules_json,
-            s.entrypoints_json,
+            coalesce(s.entrypoints_json, '[]') AS entrypoints_json,
             s.internal_edge_count,
             s.external_edge_count,
             s.fan_in,
@@ -231,6 +235,48 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
           ON ma.repo = sm.repo
          AND ma.commit = sm.commit
          AND ma.module = sm.module
+        LEFT JOIN analytics.subsystems subs
+          ON subs.repo = sm.repo
+         AND subs.commit = sm.commit
+         AND subs.subsystem_id = sm.subsystem_id;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_ide_hints AS
+        SELECT
+            m.repo,
+            m.commit,
+            m.path                    AS rel_path,
+            m.module,
+            ma.import_fan_in,
+            ma.import_fan_out,
+            ma.symbol_fan_in,
+            ma.symbol_fan_out,
+            ma.avg_risk_score         AS module_avg_risk_score,
+            ma.max_risk_score         AS module_max_risk_score,
+            ma.module_coverage_ratio,
+            ma.tested_function_count,
+            ma.untested_function_count,
+            m.tags,
+            m.owners,
+            subs.subsystem_id,
+            subs.name                 AS subsystem_name,
+            subs.description          AS subsystem_description,
+            sm.role                   AS subsystem_role,
+            subs.risk_level           AS subsystem_risk_level,
+            subs.module_count         AS subsystem_module_count,
+            subs.entrypoints_json     AS subsystem_entrypoints
+        FROM core.modules m
+        LEFT JOIN docs.v_module_architecture ma
+          ON ma.repo = m.repo
+         AND ma.commit = m.commit
+         AND ma.module = m.module
+        LEFT JOIN analytics.subsystem_modules sm
+          ON sm.repo = m.repo
+         AND sm.commit = m.commit
+         AND sm.module = m.module
         LEFT JOIN analytics.subsystems subs
           ON subs.repo = sm.repo
          AND subs.commit = sm.commit

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -17,23 +16,35 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
+from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.mcp import errors
-from codeintel.mcp.backend import DuckDBBackend, QueryBackend, create_backend
-from codeintel.mcp.config import McpServerConfig
+from codeintel.mcp.backend import DuckDBBackend, HttpBackend, QueryBackend, create_backend
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
+    FileHintsResponse,
     FileProfileResponse,
     FileSummaryResponse,
+    FunctionArchitectureResponse,
     FunctionProfileResponse,
     FunctionSummaryResponse,
     HighRiskFunctionsResponse,
+    ModuleArchitectureResponse,
     ModuleProfileResponse,
+    ModuleSubsystemResponse,
     ProblemDetail,
+    SubsystemModulesResponse,
+    SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
 from codeintel.server.datasets import build_dataset_registry
+from codeintel.services.factory import (
+    DatasetRegistryOptions,
+    build_http_query_service,
+    build_local_query_service,
+)
+from codeintel.services.query_service import HttpQueryService, LocalQueryService
 from codeintel.storage.duckdb_client import DuckDBClient, DuckDBConfig
 from codeintel.storage.views import create_all_views
 
@@ -42,10 +53,25 @@ LOG = logging.getLogger("codeintel.server.fastapi")
 
 @dataclass
 class ApiAppConfig:
-    """Application configuration for the FastAPI server."""
+    """Application configuration for the FastAPI server (compat wrapper)."""
 
-    server: McpServerConfig
+    server: ServingConfig
     read_only: bool
+
+    @property
+    def default_limit(self) -> int:
+        """Expose default limit for backwards compatibility."""
+        return self.server.default_limit
+
+    @property
+    def repo(self) -> str:
+        """Repository slug for this deployment."""
+        return self.server.repo
+
+    @property
+    def commit(self) -> str:
+        """Commit SHA backing the current database."""
+        return self.server.commit
 
 
 @dataclass
@@ -54,28 +80,12 @@ class BackendResource:
 
     backend: QueryBackend
     close: Callable[[], None]
+    service: LocalQueryService | HttpQueryService | None = None
 
-
-def _env_flag(name: str, *, default: bool) -> bool:
-    """
-    Interpret an environment variable as a boolean.
-
-    Parameters
-    ----------
-    name:
-        Environment variable name.
-    default:
-        Default value when the variable is not set.
-
-    Returns
-    -------
-    bool
-        True when the variable is set to a truthy value.
-    """
-    raw_value = os.environ.get(name)
-    if raw_value is None:
-        return default
-    return raw_value.lower() not in {"0", "false", "no", "off"}
+    def __post_init__(self) -> None:
+        """Populate service from backend when not provided."""
+        if self.service is None:
+            self.service = getattr(self.backend, "service", None)
 
 
 def _ensure_readable_db(path: Path) -> None:
@@ -122,34 +132,25 @@ def load_api_config() -> ApiAppConfig:
     Returns
     -------
     ApiAppConfig
-        Validated configuration including read-only mode.
+        Validated configuration for the FastAPI surface.
     """
-    server_cfg = McpServerConfig.from_env()
-    if not server_cfg.repo:
+    config = ServingConfig.from_env()
+    if not config.repo:
         message = "CODEINTEL_REPO must be set for the FastAPI server"
         raise ValueError(message)
-    if not server_cfg.commit:
+    if not config.commit:
         message = "CODEINTEL_COMMIT must be set for the FastAPI server"
         raise ValueError(message)
-    if server_cfg.mode == "local_db":
-        db_path = server_cfg.db_path
+    if config.mode == "local_db":
+        db_path = config.db_path
         if db_path is None:
             message = "CODEINTEL_DB_PATH is required when CODEINTEL_MCP_MODE='local_db'"
             raise ValueError(message)
         _ensure_readable_db(db_path)
-    elif server_cfg.mode == "remote_api":
-        if not server_cfg.api_base_url:
-            message = "CODEINTEL_API_BASE_URL is required when CODEINTEL_MCP_MODE='remote_api'"
-            raise ValueError(message)
-    else:
-        message = f"Unsupported CODEINTEL_MCP_MODE: {server_cfg.mode}"
-        raise ValueError(message)
-
-    read_only = _env_flag("CODEINTEL_API_READ_ONLY", default=True)
-    return ApiAppConfig(server=server_cfg, read_only=read_only)
+    return ApiAppConfig(server=config, read_only=config.read_only)
 
 
-def create_backend_resource(cfg: ApiAppConfig) -> BackendResource:
+def create_backend_resource(cfg: ApiAppConfig | ServingConfig) -> BackendResource:
     """
     Instantiate the DuckDB backend for the API.
 
@@ -167,29 +168,56 @@ def create_backend_resource(cfg: ApiAppConfig) -> BackendResource:
     ------
     ValueError
         If the database path is missing after configuration validation.
+    errors.backend_failure
+        If the query service cannot be constructed for the selected mode.
     """
     dataset_registry = build_dataset_registry()
-    if cfg.server.mode == "local_db":
-        db_path = cfg.server.db_path
+    serving_cfg = cfg.server if isinstance(cfg, ApiAppConfig) else cfg
+    read_only = cfg.read_only if isinstance(cfg, ApiAppConfig) else serving_cfg.read_only
+
+    if serving_cfg.mode == "local_db":
+        db_path = serving_cfg.db_path
         if db_path is None:
             message = "db_path cannot be None after validation"
             raise ValueError(message)
 
-        client = DuckDBClient(DuckDBConfig(db_path=db_path, read_only=cfg.read_only))
+        client = DuckDBClient(DuckDBConfig(db_path=db_path, read_only=read_only))
         connection = client.con
-        if not cfg.read_only:
+        verify_db_identity(connection, serving_cfg)
+        if not read_only:
             create_all_views(connection)
 
-        backend = create_backend(
-            cfg.server,
-            con=connection,
-            dataset_tables=dataset_registry,
+        backend = create_backend(serving_cfg, con=connection, dataset_tables=dataset_registry)
+        service = getattr(backend, "service", None)
+        if service is None and isinstance(backend, DuckDBBackend):
+            service = build_local_query_service(
+                backend.con,
+                serving_cfg,
+                query=backend.query,
+                registry=DatasetRegistryOptions(tables=dataset_registry),
+            )
+        if service is None:
+            message = "Query service could not be constructed for local_db mode"
+            raise errors.backend_failure(message)
+        return BackendResource(
+            backend=backend,
+            service=service,
+            close=client.close,
         )
-        return BackendResource(backend=backend, close=client.close)
 
-    backend = create_backend(cfg.server, dataset_tables=dataset_registry)
+    backend = create_backend(serving_cfg, dataset_tables=dataset_registry)
+    service = getattr(backend, "service", None)
+    if service is None and isinstance(backend, HttpBackend):
+        service = build_http_query_service(backend.request_json, limits=backend.limits)
+    if service is None:
+        message = "Query service could not be constructed for remote_api mode"
+        raise errors.backend_failure(message)
     close = getattr(backend, "close", lambda: None)
-    return BackendResource(backend=backend, close=close)
+    return BackendResource(
+        backend=backend,
+        service=service,
+        close=close,
+    )
 
 
 def problem_response(detail: ProblemDetail) -> JSONResponse:
@@ -263,8 +291,12 @@ def install_logging_middleware(app: FastAPI) -> None:
         duration_ms = (time.perf_counter() - start) * 1000
 
         config = getattr(request.app.state, "config", None)
-        repo = config.server.repo if isinstance(config, ApiAppConfig) else "unknown"
-        commit = config.server.commit if isinstance(config, ApiAppConfig) else "unknown"
+        if isinstance(config, (ApiAppConfig, ServingConfig)):
+            repo = config.repo
+            commit = config.commit
+        else:
+            repo = "unknown"
+            commit = "unknown"
 
         LOG.info(
             "Handled %s %s status=%s repo=%s commit=%s duration_ms=%.2f params=%s",
@@ -290,7 +322,7 @@ def get_app_config(request: Request) -> ApiAppConfig:
 
     Returns
     -------
-    ApiAppConfig
+    ServingConfig
         Loaded application configuration.
 
     Raises
@@ -299,10 +331,12 @@ def get_app_config(request: Request) -> ApiAppConfig:
         If the configuration is missing.
     """
     config = getattr(request.app.state, "config", None)
-    if not isinstance(config, ApiAppConfig):
-        message = "Server configuration is not initialized"
-        raise errors.backend_failure(message)
-    return config
+    if isinstance(config, ApiAppConfig):
+        return config
+    if isinstance(config, ServingConfig):
+        return ApiAppConfig(server=config, read_only=config.read_only)
+    message = "Server configuration is not initialized"
+    raise errors.backend_failure(message)
 
 
 def get_backend(request: Request) -> QueryBackend:
@@ -331,8 +365,40 @@ def get_backend(request: Request) -> QueryBackend:
     return backend
 
 
+def get_service(request: Request) -> LocalQueryService | HttpQueryService:
+    """
+    Retrieve the shared query service from state.
+
+    Parameters
+    ----------
+    request:
+        Incoming request providing access to application state.
+
+    Returns
+    -------
+    LocalQueryService | HttpQueryService
+        Service used to satisfy API queries.
+
+    Raises
+    ------
+    errors.backend_failure
+        If the service is missing.
+    """
+    service: LocalQueryService | HttpQueryService | None = getattr(
+        request.app.state, "service", None
+    )
+    if service is None:
+        backend: QueryBackend | None = getattr(request.app.state, "backend", None)
+        service = getattr(backend, "service", None) if backend is not None else None
+    if service is None:
+        message = "Query service is not initialized"
+        raise errors.backend_failure(message)
+    return service
+
+
 ConfigDep = Annotated[ApiAppConfig, Depends(get_app_config)]
 BackendDep = Annotated[QueryBackend, Depends(get_backend)]
+ServiceDep = Annotated[LocalQueryService | HttpQueryService, Depends(get_service)]
 
 
 def build_functions_router() -> APIRouter:
@@ -353,7 +419,7 @@ def build_functions_router() -> APIRouter:
     )
     def function_summary(
         *,
-        backend: BackendDep,
+        service: ServiceDep,
         urn: str | None = None,
         goid_h128: int | None = None,
         rel_path: str | None = None,
@@ -372,7 +438,7 @@ def build_functions_router() -> APIRouter:
         errors.not_found
             If the function cannot be located.
         """
-        summary = backend.get_function_summary(
+        summary = service.get_function_summary(
             urn=urn,
             goid_h128=goid_h128,
             rel_path=rel_path,
@@ -390,8 +456,7 @@ def build_functions_router() -> APIRouter:
     )
     def list_high_risk_functions(
         *,
-        backend: BackendDep,
-        config: ConfigDep,
+        service: ServiceDep,
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
@@ -404,9 +469,9 @@ def build_functions_router() -> APIRouter:
         HighRiskFunctionsResponse
             High-risk functions and truncation flag.
         """
-        result = backend.list_high_risk_functions(
+        result = service.list_high_risk_functions(
             min_risk=min_risk,
-            limit=config.server.default_limit if limit is None else limit,
+            limit=limit,
             tested_only=tested_only,
         )
         return HighRiskFunctionsResponse(functions=result.functions, truncated=result.truncated)
@@ -418,8 +483,7 @@ def build_functions_router() -> APIRouter:
     )
     def function_callgraph(
         *,
-        backend: BackendDep,
-        config: ConfigDep,
+        service: ServiceDep,
         goid_h128: int,
         direction: Literal["in", "out", "both"] = "both",
         limit: int | None = None,
@@ -432,10 +496,10 @@ def build_functions_router() -> APIRouter:
         CallGraphNeighborsResponse
             Incoming and outgoing edges adjacent to the function.
         """
-        return backend.get_callgraph_neighbors(
+        return service.get_callgraph_neighbors(
             goid_h128=goid_h128,
             direction=direction,
-            limit=config.server.default_limit if limit is None else limit,
+            limit=limit,
         )
 
     @router.get(
@@ -445,8 +509,7 @@ def build_functions_router() -> APIRouter:
     )
     def tests_for_function(
         *,
-        backend: BackendDep,
-        config: ConfigDep,
+        service: ServiceDep,
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
@@ -459,10 +522,10 @@ def build_functions_router() -> APIRouter:
         TestsForFunctionResponse
             Tests linked to the requested function.
         """
-        return backend.get_tests_for_function(
+        return service.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
-            limit=config.server.default_limit if limit is None else limit,
+            limit=limit,
         )
 
     @router.get(
@@ -472,7 +535,7 @@ def build_functions_router() -> APIRouter:
     )
     def file_summary(
         *,
-        backend: BackendDep,
+        service: ServiceDep,
         rel_path: str,
     ) -> FileSummaryResponse:
         """
@@ -488,7 +551,7 @@ def build_functions_router() -> APIRouter:
         errors.not_found
             If the file cannot be located in metadata tables.
         """
-        summary = backend.get_file_summary(rel_path=rel_path)
+        summary = service.get_file_summary(rel_path=rel_path)
         if not summary.found or summary.file is None:
             message = "File not found"
             raise errors.not_found(message)
@@ -515,7 +578,7 @@ def build_profiles_router() -> APIRouter:
     )
     def function_profile(
         *,
-        backend: BackendDep,
+        service: ServiceDep,
         goid_h128: int,
     ) -> FunctionProfileResponse:
         """
@@ -531,7 +594,7 @@ def build_profiles_router() -> APIRouter:
         errors.not_found
             If the profile cannot be located.
         """
-        profile = backend.get_function_profile(goid_h128=goid_h128)
+        profile = service.get_function_profile(goid_h128=goid_h128)
         if not profile.found or profile.profile is None:
             message = "Function profile not found"
             raise errors.not_found(message)
@@ -544,7 +607,7 @@ def build_profiles_router() -> APIRouter:
     )
     def file_profile(
         *,
-        backend: BackendDep,
+        service: ServiceDep,
         rel_path: str,
     ) -> FileProfileResponse:
         """
@@ -560,7 +623,7 @@ def build_profiles_router() -> APIRouter:
         errors.not_found
             If the profile cannot be located.
         """
-        profile = backend.get_file_profile(rel_path=rel_path)
+        profile = service.get_file_profile(rel_path=rel_path)
         if not profile.found or profile.profile is None:
             message = "File profile not found"
             raise errors.not_found(message)
@@ -573,7 +636,7 @@ def build_profiles_router() -> APIRouter:
     )
     def module_profile(
         *,
-        backend: BackendDep,
+        service: ServiceDep,
         module: str,
     ) -> ModuleProfileResponse:
         """
@@ -589,11 +652,210 @@ def build_profiles_router() -> APIRouter:
         errors.not_found
             If the profile cannot be located.
         """
-        profile = backend.get_module_profile(module=module)
+        profile = service.get_module_profile(module=module)
         if not profile.found or profile.profile is None:
             message = "Module profile not found"
             raise errors.not_found(message)
         return profile
+
+    return router
+
+
+def build_architecture_router() -> APIRouter:
+    """
+    Construct the router for architecture and subsystem endpoints.
+
+    Returns
+    -------
+    APIRouter
+        Router exposing architecture datasets without direct SQL.
+    """
+    router = APIRouter()
+
+    @router.get(
+        "/architecture/function",
+        response_model=FunctionArchitectureResponse,
+        summary="Get architecture metrics for a function",
+    )
+    def function_architecture(
+        *,
+        service: ServiceDep,
+        goid_h128: int,
+    ) -> FunctionArchitectureResponse:
+        """
+        Return call-graph architecture metrics for a function.
+
+        Returns
+        -------
+        FunctionArchitectureResponse
+            Architecture payload for the GOID.
+
+        Raises
+        ------
+        errors.not_found
+            If no architecture row exists for the GOID.
+        """
+        response = service.get_function_architecture(goid_h128=goid_h128)
+        if not response.found or response.architecture is None:
+            message = "Function architecture not found"
+            raise errors.not_found(message)
+        return response
+
+    @router.get(
+        "/architecture/module",
+        response_model=ModuleArchitectureResponse,
+        summary="Get architecture metrics for a module",
+    )
+    def module_architecture(
+        *,
+        service: ServiceDep,
+        module: str,
+    ) -> ModuleArchitectureResponse:
+        """
+        Return import-graph architecture metrics for a module.
+
+        Returns
+        -------
+        ModuleArchitectureResponse
+            Architecture payload for the module.
+
+        Raises
+        ------
+        errors.not_found
+            If no architecture row exists for the module.
+        """
+        response = service.get_module_architecture(module=module)
+        if not response.found or response.architecture is None:
+            message = "Module architecture not found"
+            raise errors.not_found(message)
+        return response
+
+    @router.get(
+        "/architecture/subsystems",
+        response_model=SubsystemSummaryResponse,
+        summary="List inferred subsystems",
+    )
+    def list_subsystems(
+        *,
+        service: ServiceDep,
+        limit: int | None = None,
+        role: str | None = None,
+        q: str | None = None,
+    ) -> SubsystemSummaryResponse:
+        """
+        List inferred subsystems derived from module coupling.
+
+        Returns
+        -------
+        SubsystemSummaryResponse
+            Subsystem rows and metadata.
+        """
+        return service.list_subsystems(limit=limit, role=role, q=q)
+
+    @router.get(
+        "/architecture/module-subsystems",
+        response_model=ModuleSubsystemResponse,
+        summary="List subsystem memberships for a module",
+    )
+    def module_subsystems(
+        *,
+        service: ServiceDep,
+        module: str,
+    ) -> ModuleSubsystemResponse:
+        """
+        Return subsystem memberships for the requested module.
+
+        Returns
+        -------
+        ModuleSubsystemResponse
+            Membership rows and metadata.
+
+        Raises
+        ------
+        errors.not_found
+            If the module is not mapped to any subsystem.
+        """
+        response = service.get_module_subsystems(module=module)
+        if not response.found or not response.memberships:
+            message = "Module has no subsystem mappings"
+            raise errors.not_found(message)
+        return response
+
+    @router.get(
+        "/architecture/subsystem",
+        response_model=SubsystemModulesResponse,
+        summary="Get modules and detail for a subsystem",
+    )
+    def subsystem_modules(
+        *,
+        service: ServiceDep,
+        subsystem_id: str,
+        module_limit: int | None = None,
+    ) -> SubsystemModulesResponse:
+        """
+        Return subsystem metadata and modules.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem detail and member modules.
+
+        Raises
+        ------
+        errors.not_found
+            If the subsystem cannot be located.
+        """
+        response = service.summarize_subsystem(
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
+        if not response.found or response.subsystem is None:
+            message = "Subsystem not found"
+            raise errors.not_found(message)
+        return response
+
+    return router
+
+
+def build_ide_router() -> APIRouter:
+    """
+    Construct the router for IDE-facing hint endpoints.
+
+    Returns
+    -------
+    APIRouter
+        Router exposing contextual hints for editor integrations.
+    """
+    router = APIRouter()
+
+    @router.get(
+        "/ide/hints",
+        response_model=FileHintsResponse,
+        summary="Get IDE hints for a file",
+    )
+    def ide_hints(
+        *,
+        service: ServiceDep,
+        rel_path: str,
+    ) -> FileHintsResponse:
+        """
+        Return subsystem and module context suitable for IDE tooltips.
+
+        Returns
+        -------
+        FileHintsResponse
+            Hint rows keyed by the provided relative path.
+
+        Raises
+        ------
+        errors.not_found
+            If no hints can be derived for the path.
+        """
+        response = service.get_file_hints(rel_path=rel_path)
+        if not response.found or not response.hints:
+            message = "IDE hints not found for path"
+            raise errors.not_found(message)
+        return response
 
     return router
 
@@ -610,7 +872,7 @@ def build_datasets_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/datasets", response_model=list[DatasetDescriptor], summary="List datasets")
-    def list_datasets(*, backend: BackendDep) -> list[DatasetDescriptor]:
+    def list_datasets(*, service: ServiceDep) -> list[DatasetDescriptor]:
         """
         Return dataset descriptors available through the backend.
 
@@ -619,7 +881,9 @@ def build_datasets_router() -> APIRouter:
         list[DatasetDescriptor]
             Dataset descriptors sorted by name.
         """
-        return backend.list_datasets()
+        datasets = service.list_datasets()
+        LOG.info("Listed %d datasets", len(datasets))
+        return datasets
 
     @router.get(
         "/datasets/{dataset_name}",
@@ -628,8 +892,7 @@ def build_datasets_router() -> APIRouter:
     )
     def read_dataset_rows(
         *,
-        backend: BackendDep,
-        config: ConfigDep,
+        service: ServiceDep,
         dataset_name: str,
         limit: int | None = None,
         offset: int = 0,
@@ -642,11 +905,15 @@ def build_datasets_router() -> APIRouter:
         DatasetRowsResponse
             Dataset slice with pagination metadata.
         """
-        return backend.read_dataset_rows(
-            dataset_name=dataset_name,
-            limit=config.server.default_limit if limit is None else limit,
-            offset=offset,
+        resp = service.read_dataset_rows(dataset_name=dataset_name, limit=limit, offset=offset)
+        LOG.info(
+            "Read dataset=%s limit=%s offset=%s returned_rows=%d",
+            dataset_name,
+            limit,
+            offset,
+            len(resp.rows),
         )
+        return resp
 
     return router
 
@@ -683,8 +950,8 @@ def build_health_router() -> APIRouter:
             backend.con.execute("SELECT 1;")
         return {
             "status": "ok",
-            "repo": config.server.repo,
-            "commit": config.server.commit,
+            "repo": config.repo,
+            "commit": config.commit,
             "read_only": config.read_only,
         }
 
@@ -695,6 +962,8 @@ def register_routes(app: FastAPI) -> None:
     """Wire all API routes onto the provided FastAPI application."""
     app.include_router(build_functions_router())
     app.include_router(build_profiles_router())
+    app.include_router(build_architecture_router())
+    app.include_router(build_ide_router())
     app.include_router(build_datasets_router())
     app.include_router(build_health_router())
 
@@ -726,6 +995,7 @@ def create_app(
         backend_resource = backend_factory(config)
         app.state.config = config
         app.state.backend = backend_resource.backend
+        app.state.service = backend_resource.service
         try:
             await asyncio.sleep(0)
             yield

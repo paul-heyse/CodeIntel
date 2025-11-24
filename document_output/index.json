@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-11-23T23:13:51.275905+00:00",
+  "generated_at": "2025-11-24T04:30:14.918710+00:00",
   "files": [
     "goids.jsonl",
     "goid_crosswalk.jsonl",
@@ -30,6 +30,10 @@
     "function_profile.jsonl",
     "file_profile.jsonl",
     "module_profile.jsonl",
+    "graph_metrics_functions.jsonl",
+    "graph_metrics_modules.jsonl",
+    "subsystems.jsonl",
+    "subsystem_modules.jsonl",
     "repo_map.json"
   ]
 }

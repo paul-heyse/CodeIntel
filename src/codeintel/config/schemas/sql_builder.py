@@ -268,6 +268,8 @@ CALL_GRAPH_NODE_COLUMNS = [
 ]
 
 CALL_GRAPH_EDGE_COLUMNS = [
+    "repo",
+    "commit",
     "caller_goid_h128",
     "callee_goid_h128",
     "callsite_path",
@@ -281,6 +283,8 @@ CALL_GRAPH_EDGE_COLUMNS = [
 ]
 
 IMPORT_EDGE_COLUMNS = [
+    "repo",
+    "commit",
     "src_module",
     "dst_module",
     "src_fan_out",
@@ -533,18 +537,19 @@ CALL_GRAPH_NODES_INSERT = (
     "VALUES (?, ?, ?, ?, ?, ?)"
 )
 
-CALL_GRAPH_EDGES_DELETE = "DELETE FROM graph.call_graph_edges"
+CALL_GRAPH_EDGES_DELETE = "DELETE FROM graph.call_graph_edges WHERE repo = ? AND commit = ?"
 CALL_GRAPH_EDGES_INSERT = (
     "INSERT INTO graph.call_graph_edges ("
-    "caller_goid_h128, callee_goid_h128, callsite_path, callsite_line, callsite_col, "
+    "repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line, callsite_col, "
     "language, kind, resolved_via, confidence, evidence_json"
-    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
-IMPORT_EDGES_DELETE = "DELETE FROM graph.import_graph_edges"
+IMPORT_EDGES_DELETE = "DELETE FROM graph.import_graph_edges WHERE repo = ? AND commit = ?"
 IMPORT_EDGES_INSERT = (
-    "INSERT INTO graph.import_graph_edges (src_module, dst_module, src_fan_out, dst_fan_in, cycle_group) "
-    "VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO graph.import_graph_edges ("
+    "repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 
 CFG_BLOCKS_DELETE = "DELETE FROM graph.cfg_blocks"
@@ -566,6 +571,15 @@ DFG_EDGES_INSERT = (
     "INSERT INTO graph.dfg_edges ("
     "function_goid_h128, src_block_id, dst_block_id, src_var, dst_var, edge_kind"
     ") VALUES (?, ?, ?, ?, ?, ?)"
+)
+
+FUNCTION_VALIDATION_DELETE = (
+    "DELETE FROM analytics.function_validation WHERE repo = ? AND commit = ?"
+)
+FUNCTION_VALIDATION_INSERT = (
+    "INSERT INTO analytics.function_validation ("
+    "repo, commit, rel_path, qualname, issue, detail, created_at"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 
 
@@ -620,6 +634,10 @@ PREPARED: dict[str, PreparedStatements] = {
     "analytics.static_diagnostics": PreparedStatements(
         insert_sql=STATIC_DIAGNOSTICS_INSERT,
         delete_sql=STATIC_DIAGNOSTICS_DELETE,
+    ),
+    "analytics.function_validation": PreparedStatements(
+        insert_sql=FUNCTION_VALIDATION_INSERT,
+        delete_sql=FUNCTION_VALIDATION_DELETE,
     ),
     "analytics.hotspots": PreparedStatements(insert_sql=HOTSPOTS_INSERT),
     "analytics.test_coverage_edges": PreparedStatements(
@@ -731,6 +749,8 @@ __all__ = [
     "FUNCTION_TYPES_COLUMNS",
     "FUNCTION_TYPES_DELETE",
     "FUNCTION_TYPES_INSERT",
+    "FUNCTION_VALIDATION_DELETE",
+    "FUNCTION_VALIDATION_INSERT",
     "GOID_CROSSWALK_UPDATE_SCIP",
     "HOTSPOTS_COLUMNS",
     "HOTSPOTS_INSERT",

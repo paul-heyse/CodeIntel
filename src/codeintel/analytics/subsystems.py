@@ -27,6 +27,26 @@ log = logging.getLogger(__name__)
 MIN_SHARED_MODULES = 2
 HASH_PREFIX_LENGTH = 16
 MEDIUM_RISK_THRESHOLD = 0.4
+ROLE_TAGS = {
+    "api": "api",
+    "endpoint": "api",
+    "routes": "api",
+    "core": "core",
+    "domain": "domain",
+    "service": "core",
+    "services": "core",
+    "infra": "infra",
+    "ops": "infra",
+    "platform": "platform",
+    "data": "data",
+    "ml": "ml",
+    "ai": "ml",
+    "etl": "data",
+    "cli": "cli",
+    "tool": "cli",
+    "tests": "tests",
+    "test": "tests",
+}
 
 
 @dataclass(frozen=True)
@@ -69,6 +89,24 @@ class SubsystemBuildContext:
     now: datetime
 
 
+@dataclass
+class RiskTally:
+    """Mutable accumulator for subsystem risk."""
+
+    count: int = 0
+    total: float = 0.0
+    max_score: float | None = None
+    high: int = 0
+
+    def add(self, score: float, *, is_high: bool) -> None:
+        """Update the tally with a new score."""
+        self.count += 1
+        self.total += score
+        self.max_score = score if self.max_score is None else max(self.max_score, score)
+        if is_high:
+            self.high += 1
+
+
 def build_subsystems(con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig) -> None:
     """Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit."""
     ensure_schema(con, "analytics.subsystems")
@@ -95,7 +133,7 @@ def build_subsystems(con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig) -> N
     labels = _limit_clusters(labels, adjacency, cfg.max_subsystems)
     clusters = _clusters_from_labels(labels)
 
-    import_edge_counts = _load_import_edge_counts(con)
+    import_edge_counts = _load_import_edge_counts(con, cfg)
     risk_stats = _aggregate_risk(con, cfg, labels)
 
     now = datetime.now(UTC)
@@ -151,8 +189,9 @@ def _build_rows(
     for label, members in clusters.items():
         member_list = sorted(members)
         subsystem_id = _subsystem_id(ctx.cfg.repo, member_list)
-        name = _derive_name(member_list, subsystem_id)
-        description = _describe_subsystem(member_list, name)
+        dominant_role = _dominant_role(member_list, ctx.tags_by_module)
+        name = _derive_name(member_list, subsystem_id, dominant_role)
+        description = _describe_subsystem(member_list, name, dominant_role)
         entrypoints = _entrypoints_for_cluster(member_list, ctx.tags_by_module)
         edge_stats = _subsystem_edge_stats(member_list, ctx.labels, ctx.import_edges)
         risk = ctx.risk_stats.get(label, default_risk)
@@ -250,7 +289,10 @@ def _build_weighted_adjacency(
 ) -> dict[str, dict[str, float]]:
     adjacency: dict[str, dict[str, float]] = defaultdict(dict)
 
-    rows = con.execute("SELECT src_module, dst_module FROM graph.import_graph_edges").fetchall()
+    rows = con.execute(
+        "SELECT src_module, dst_module FROM graph.import_graph_edges WHERE repo = ? AND commit = ?",
+        [cfg.repo, cfg.commit],
+    ).fetchall()
     for src, dst in rows:
         if src is None or dst is None:
             continue
@@ -313,7 +355,10 @@ def _label_propagation(
                 continue
             weights: dict[str, float] = defaultdict(float)
             for neighbor, weight in adjacency.get(node, {}).items():
-                weights[labels.get(neighbor, neighbor)] += weight
+                neighbor_label = labels.get(neighbor)
+                if neighbor_label is None:
+                    continue
+                weights[neighbor_label] += weight
             if not weights:
                 continue
             best_label = max(weights.items(), key=lambda item: (item[1], item[0]))[0]
@@ -356,8 +401,10 @@ def _best_neighbor_label(
     weights: dict[str, float] = defaultdict(float)
     for neighbor, weight in adjacency.get(node, {}).items():
         label = labels.get(neighbor)
-        if label in allowed_labels:
-            weights[label] += weight
+        if label is None or label not in allowed_labels:
+            continue
+        current = weights.get(label, 0.0)
+        weights[label] = current + weight
     if not weights:
         return None
     return max(weights.items(), key=lambda item: (item[1], item[0]))[0]
@@ -409,10 +456,15 @@ def _subsystem_id(repo: str, modules: Iterable[str]) -> str:
     return digest[:HASH_PREFIX_LENGTH]
 
 
-def _derive_name(modules: list[str], subsystem_id: str) -> str:
+def _derive_name(modules: list[str], subsystem_id: str, dominant_role: str | None) -> str:
     prefix = _common_prefix(modules)
     if prefix:
-        return prefix.replace(".", "_")
+        base = prefix.replace(".", "_")
+        if dominant_role and not base.startswith(f"{dominant_role}_"):
+            return f"{dominant_role}_{base}"
+        return base
+    if dominant_role:
+        return f"{dominant_role}_subsys_{subsystem_id[:6]}"
     return f"subsys_{subsystem_id[:8]}"
 
 
@@ -431,15 +483,43 @@ def _common_prefix(modules: list[str]) -> str | None:
     return None
 
 
-def _describe_subsystem(modules: list[str], name: str) -> str:
+def _describe_subsystem(modules: list[str], name: str, dominant_role: str | None) -> str:
     examples = ", ".join(modules[:3])
-    return f"Subsystem {name} covering {len(modules)} modules (e.g., {examples})."
+    role_hint = f" ({dominant_role})" if dominant_role else ""
+    return f"Subsystem {name}{role_hint} covering {len(modules)} modules (e.g., {examples})."
 
 
 def _role_from_tags(tags: list[str] | None) -> str | None:
     if not tags:
         return None
-    return str(tags[0])
+    for tag in tags:
+        tag_lower = str(tag).lower()
+        role = ROLE_TAGS.get(tag_lower)
+        if role:
+            return role
+    return str(tags[0]).lower()
+
+
+def _dominant_role(
+    members: list[str],
+    tags_by_module: dict[str, list[str]],
+) -> str | None:
+    role_counts: dict[str, int] = defaultdict(int)
+    for module in members:
+        parts = module.split(".")
+        for idx, segment in enumerate(parts):
+            role = ROLE_TAGS.get(segment.lower())
+            if role:
+                weight = 2 if idx == 0 else 1
+                role_counts[role] += weight
+        for tag in tags_by_module.get(module, []):
+            role = ROLE_TAGS.get(str(tag).lower())
+            if role:
+                role_counts[role] += 3
+
+    if not role_counts:
+        return None
+    return max(role_counts.items(), key=lambda item: (item[1], item[0]))[0]
 
 
 def _entrypoints_for_cluster(
@@ -456,9 +536,7 @@ def _aggregate_risk(
     con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig, labels: dict[str, str]
 ) -> dict[str, SubsystemRisk]:
     risk_by_label: dict[str, SubsystemRisk] = {}
-    stats: dict[str, dict[str, float | int]] = defaultdict(
-        lambda: {"count": 0, "total": 0.0, "max": None, "high": 0}
-    )
+    stats: dict[str, RiskTally] = defaultdict(RiskTally)
     rows = con.execute(
         """
         SELECT rf.risk_score, rf.risk_level, m.module
@@ -479,17 +557,13 @@ def _aggregate_risk(
             continue
         score = float(risk_score) if risk_score is not None else 0.0
         entry = stats[label]
-        entry["count"] = int(entry["count"]) + 1
-        entry["total"] = float(entry["total"]) + score
-        entry["max"] = score if entry["max"] is None else max(float(entry["max"]), score)
-        if risk_level == "high":
-            entry["high"] = int(entry["high"]) + 1
+        entry.add(score, is_high=risk_level == "high")
 
     for label, entry in stats.items():
-        count = int(entry["count"])
-        total = float(entry["total"])
-        max_score = float(entry["max"]) if entry["max"] is not None else None
-        high = int(entry["high"])
+        count = entry.count
+        total = entry.total
+        max_score = entry.max_score
+        high = entry.high
         risk_level = "low"
         if high > 0:
             risk_level = "high"
@@ -505,9 +579,14 @@ def _aggregate_risk(
     return risk_by_label
 
 
-def _load_import_edge_counts(con: duckdb.DuckDBPyConnection) -> dict[tuple[str, str], int]:
+def _load_import_edge_counts(
+    con: duckdb.DuckDBPyConnection, cfg: SubsystemsConfig
+) -> dict[tuple[str, str], int]:
     edge_counts: dict[tuple[str, str], int] = defaultdict(int)
-    rows = con.execute("SELECT src_module, dst_module FROM graph.import_graph_edges").fetchall()
+    rows = con.execute(
+        "SELECT src_module, dst_module FROM graph.import_graph_edges WHERE repo = ? AND commit = ?",
+        [cfg.repo, cfg.commit],
+    ).fetchall()
     for src, dst in rows:
         if src is None or dst is None:
             continue

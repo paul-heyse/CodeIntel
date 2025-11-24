@@ -321,6 +321,26 @@ PY
   fi
 }
 
+apply_schema_if_db_present() {
+  local db_path="${1:-"$(pwd)/build/db/codeintel.duckdb"}"
+  if [ ! -f "${db_path}" ]; then
+    info "Skipping schema apply (no DB at ${db_path} yet)"
+    return 0
+  fi
+  info "Applying schemas to ${db_path} ..."
+  CODEINTEL_DB_PATH="${db_path}" uv run python - <<'PY'
+import os
+import duckdb
+from codeintel.storage.schemas import apply_all_schemas
+
+db_path = os.environ["CODEINTEL_DB_PATH"]
+con = duckdb.connect(db_path)
+apply_all_schemas(con)
+con.close()
+print(f"Schemas applied to {db_path}")
+PY
+}
+
 # ------------- Diagnostics -------------
 print_summary() {
   cat <<EOF
@@ -350,5 +370,6 @@ ok "Editable install complete"
 ensure_src_pth
 export PYTHONPATH="$(pwd)/src:${PYTHONPATH:-}"
 ok "PYTHONPATH includes src (current: ${PYTHONPATH})"
+apply_schema_if_db_present
 generate_path_map
 print_summary

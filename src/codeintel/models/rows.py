@@ -14,6 +14,7 @@ __all__ = [
     "CoverageLineRow",
     "DFGEdgeRow",
     "DocstringRow",
+    "FunctionValidationRow",
     "GoidCrosswalkRow",
     "GoidRow",
     "HotspotRow",
@@ -31,6 +32,7 @@ __all__ = [
     "coverage_line_to_tuple",
     "dfg_edge_to_tuple",
     "docstring_row_to_tuple",
+    "function_validation_row_to_tuple",
     "goid_crosswalk_to_tuple",
     "goid_to_tuple",
     "hotspot_row_to_tuple",
@@ -329,6 +331,38 @@ def static_diagnostic_to_tuple(row: StaticDiagnosticRow) -> tuple[object, ...]:
     )
 
 
+class FunctionValidationRow(TypedDict):
+    """Row shape for analytics.function_validation inserts."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    qualname: str
+    issue: str
+    detail: str | None
+    created_at: datetime
+
+
+def function_validation_row_to_tuple(row: FunctionValidationRow) -> tuple[object, ...]:
+    """
+    Serialize a FunctionValidationRow into the INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by function_validation INSERTs.
+    """
+    return (
+        row["repo"],
+        row["commit"],
+        row["rel_path"],
+        row["qualname"],
+        row["issue"],
+        row["detail"],
+        row["created_at"],
+    )
+
+
 class HotspotRow(TypedDict):
     """Row shape for analytics.hotspots inserts."""
 
@@ -393,6 +427,8 @@ def call_graph_node_to_tuple(row: CallGraphNodeRow) -> tuple[object, ...]:
 class CallGraphEdgeRow(TypedDict):
     """Row shape for graph.call_graph_edges inserts."""
 
+    repo: str
+    commit: str
     caller_goid_h128: int
     callee_goid_h128: int | None
     callsite_path: str
@@ -414,6 +450,8 @@ def call_graph_edge_to_tuple(row: CallGraphEdgeRow) -> tuple[object, ...]:
         Values aligned with call_graph_edges INSERT order.
     """
     return (
+        row["repo"],
+        row["commit"],
         row["caller_goid_h128"],
         row["callee_goid_h128"],
         row["callsite_path"],
@@ -430,6 +468,8 @@ def call_graph_edge_to_tuple(row: CallGraphEdgeRow) -> tuple[object, ...]:
 class ImportEdgeRow(TypedDict):
     """Row shape for graph.import_graph_edges inserts."""
 
+    repo: str
+    commit: str
     src_module: str
     dst_module: str
     src_fan_out: int
@@ -446,6 +486,8 @@ def import_edge_to_tuple(row: ImportEdgeRow) -> tuple[object, ...]:
         Values aligned with import_graph_edges INSERT order.
     """
     return (
+        row["repo"],
+        row["commit"],
         row["src_module"],
         row["dst_module"],
         row["src_fan_out"],

@@ -109,7 +109,9 @@ def _warn_callsite_span_mismatches(
                 e.callsite_line
             FROM graph.call_graph_edges e
             WHERE e.callsite_line IS NOT NULL
+              AND e.repo = ? AND e.commit = ?
             """,
+            [repo, commit],
         ).fetchall()
     except duckdb.Error:
         return []

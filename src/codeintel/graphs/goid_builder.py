@@ -207,16 +207,20 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
     df = con.execute(
         """
         SELECT
-            path,
-            node_type,
-            name,
-            qualname,
-            lineno,
-            end_lineno,
-            parent_qualname
-        FROM core.ast_nodes
-        WHERE node_type IN ('Module', 'ClassDef', 'FunctionDef', 'AsyncFunctionDef')
-        """
+            an.path,
+            an.node_type,
+            an.name,
+            an.qualname,
+            an.lineno,
+            an.end_lineno,
+            an.parent_qualname
+        FROM core.ast_nodes an
+        JOIN core.modules m
+          ON m.path = an.path
+        WHERE m.repo = ? AND m.commit = ?
+          AND an.node_type IN ('Module', 'ClassDef', 'FunctionDef', 'AsyncFunctionDef')
+        """,
+        [cfg.repo, cfg.commit],
     ).fetch_df()
 
     if df.empty:
@@ -235,6 +239,16 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
         goid_rows.append(goid_row)
         xwalk_rows.append(xwalk_row)
 
+    con.execute(
+        """
+        DELETE FROM core.goid_crosswalk
+        WHERE goid IN (
+            SELECT urn FROM core.goids WHERE repo = ? AND commit = ?
+        )
+        """,
+        [cfg.repo, cfg.commit],
+    )
+
     run_batch(
         con,
         "core.goids",
@@ -246,7 +260,7 @@ def build_goids(con: duckdb.DuckDBPyConnection, cfg: GoidBuilderConfig) -> None:
         con,
         "core.goid_crosswalk",
         [goid_crosswalk_to_tuple(row) for row in xwalk_rows],
-        delete_params=[],
+        delete_params=None,
         scope=f"{cfg.repo}@{cfg.commit}",
     )
 
