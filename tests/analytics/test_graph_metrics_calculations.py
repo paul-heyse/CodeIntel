@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.config.models import GraphMetricsConfig
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from tests._helpers.fixtures import (
+    graph_metrics_ready_gateway,
+    seed_function_graph_cycle,
+    seed_module_graph_inputs,
+)
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -17,57 +21,23 @@ MODULE_A = "pkg.mod_a"
 MODULE_B = "pkg.mod_b"
 
 
-def _setup_gateway() -> StorageGateway:
-    """
-    Create an in-memory gateway with schemas applied.
-
-    Returns
-    -------
-    StorageGateway
-        Gateway with an in-memory DuckDB connection ready for inserts.
-    """
-    return open_memory_gateway()
-
-
-def test_compute_function_graph_metrics_counts_and_cycles() -> None:
+def test_compute_function_graph_metrics_counts_and_cycles(tmp_path: Path) -> None:
     """Compute function graph metrics with cycles and aggregated edge counts."""
-    gateway = _setup_gateway()
-    con = gateway.con
-
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_edges (
-            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
-            callsite_col, language, kind, resolved_via, confidence, evidence_json
-        ) VALUES
-            (?, ?, ?, ?, ?, 1, 1, 'python', 'direct', 'local_name', 1.0, '{}'),
-            (?, ?, ?, ?, ?, 2, 2, 'python', 'direct', 'local_name', 1.0, '{}')
-        """,
-        [REPO, COMMIT, 1, 2, REL_PATH, REPO, COMMIT, 1, 2, REL_PATH],
+    ctx = graph_metrics_ready_gateway(
+        tmp_path / "graph_metrics",
+        repo=REPO,
+        commit=COMMIT,
+        include_symbol_edges=False,
+        run_metrics=False,
+        build_callgraph_enabled=False,
+        file_backed=False,
     )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_edges (
-            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
-            callsite_col, language, kind, resolved_via, confidence, evidence_json
-        ) VALUES (?, ?, ?, ?, ?, 3, 1, 'python', 'direct', 'local_name', 1.0, '{}')
-        """,
-        [REPO, COMMIT, Decimal("2"), Decimal("1"), REL_PATH],
-    )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_nodes (goid_h128, language, kind, arity, is_public, rel_path)
-        VALUES
-            (1, 'python', 'function', 0, TRUE, ?),
-            (2, 'python', 'function', 0, FALSE, ?)
-        """,
-        [REL_PATH, REL_PATH],
-    )
+    seed_function_graph_cycle(ctx.gateway, repo=REPO, commit=COMMIT, rel_path=REL_PATH)
 
     cfg = GraphMetricsConfig.from_paths(repo=REPO, commit=COMMIT)
-    compute_graph_metrics(gateway, cfg)
+    compute_graph_metrics(ctx.gateway, cfg)
 
-    row = con.execute(
+    row = ctx.gateway.con.execute(
         """
         SELECT call_fan_in, call_fan_out, call_in_degree, call_out_degree,
                call_cycle_member
@@ -77,51 +47,32 @@ def test_compute_function_graph_metrics_counts_and_cycles() -> None:
     ).fetchone()
     if row != (1, 1, 2, 1, True):
         pytest.fail(f"Unexpected function metrics row: {row}")
+    ctx.close()
 
 
-def test_compute_module_graph_metrics_with_symbol_coupling() -> None:
+def test_compute_module_graph_metrics_with_symbol_coupling(tmp_path: Path) -> None:
     """Compute module graph metrics including symbol coupling fan counts."""
-    gateway = _setup_gateway()
-    con = gateway.con
-
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES
-            (?, ?, ?, ?, 'python', '["api"]', '[]'),
-            (?, ?, ?, ?, 'python', '["core"]', '[]')
-        """,
-        [
-            MODULE_A,
-            "pkg/mod_a.py",
-            REPO,
-            COMMIT,
-            MODULE_B,
-            "pkg/mod_b.py",
-            REPO,
-            COMMIT,
-        ],
+    ctx = graph_metrics_ready_gateway(
+        tmp_path / "graph_metrics_mod",
+        repo=REPO,
+        commit=COMMIT,
+        include_symbol_edges=False,
+        run_metrics=False,
+        build_callgraph_enabled=False,
+        file_backed=False,
     )
-    con.execute(
-        """
-        INSERT INTO graph.import_graph_edges (
-            repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group
-        )
-        VALUES (?, ?, ?, ?, 1, 1, 0)
-        """,
-        [REPO, COMMIT, MODULE_A, MODULE_B],
-    )
-    con.execute(
-        """
-        INSERT INTO graph.symbol_use_edges (symbol, def_path, use_path, same_file, same_module)
-        VALUES ('sym', 'pkg/mod_b.py', 'pkg/mod_a.py', FALSE, FALSE)
-        """
+    seed_module_graph_inputs(
+        ctx.gateway,
+        repo=REPO,
+        commit=COMMIT,
+        module_a=MODULE_A,
+        module_b=MODULE_B,
     )
 
     cfg = GraphMetricsConfig.from_paths(repo=REPO, commit=COMMIT)
-    compute_graph_metrics(gateway, cfg)
+    compute_graph_metrics(ctx.gateway, cfg)
 
-    row = con.execute(
+    row = ctx.gateway.con.execute(
         """
         SELECT import_fan_in, import_fan_out, symbol_fan_in, symbol_fan_out, import_cycle_member
         FROM analytics.graph_metrics_modules
@@ -131,3 +82,19 @@ def test_compute_module_graph_metrics_with_symbol_coupling() -> None:
     ).fetchone()
     if row != (0, 1, 0, 1, False):
         pytest.fail(f"Unexpected module metrics row: {row}")
+    ctx.close()
+
+
+def test_graph_metrics_ready_gateway_smoke(tmp_path: Path) -> None:
+    """End-to-end helper produces graph metrics rows."""
+    ctx = graph_metrics_ready_gateway(tmp_path / "gm_smoke", repo=REPO, commit=COMMIT)
+    con = ctx.gateway.con
+    row = con.execute(
+        """
+        SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?
+        """,
+        [REPO, COMMIT],
+    ).fetchone()
+    if row is None or int(row[0]) <= 0:
+        pytest.fail("graph_metrics_ready_gateway did not produce function metrics")
+    ctx.close()

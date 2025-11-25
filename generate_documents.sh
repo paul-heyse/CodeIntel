@@ -12,6 +12,7 @@ db_path=${4:-"$repo_root/build/db/codeintel_prefect.duckdb"}
 build_dir=${5:-"$repo_root/build"}
 skip_scip=${6:-false}
 document_output_dir=${7:-"$repo_root/document_output"}
+serve_db_path=${8:-"$repo_root/build/db/codeintel.duckdb"}
 
 if [[ -z "$commit_sha" ]]; then
   if git -C "$repo_root" rev-parse --verify HEAD >/dev/null 2>&1; then
@@ -25,6 +26,7 @@ db_path=$(realpath -m "$db_path")
 build_dir=$(realpath -m "$build_dir")
 repo_root=$(realpath -m "$repo_root")
 document_output_dir=$(realpath -m "$document_output_dir")
+serve_db_path=$(realpath -m "$serve_db_path")
 
 mkdir -p "$build_dir" "$(dirname "$db_path")" "$document_output_dir"
 
@@ -36,6 +38,7 @@ export GEN_DOCS_BUILD_DIR="$build_dir"
 export GEN_DOCS_SKIP_SCIP="$skip_scip"
 export CODEINTEL_OUTPUT_DIR="$document_output_dir"
 export CODEINTEL_SKIP_SCIP="$skip_scip"
+export GEN_DOCS_SERVE_DB="$serve_db_path"
 
 echo "Running export_docs_flow directly (no external Prefect services needed)..."
 uv run python - <<'PY'
@@ -49,7 +52,8 @@ repo = os.environ["GEN_DOCS_REPO"]
 commit = os.environ["GEN_DOCS_COMMIT"]
 db_path = Path(os.environ["GEN_DOCS_DB_PATH"])
 build_dir = Path(os.environ["GEN_DOCS_BUILD_DIR"])
-skip_scip = os.environ["GEN_DOCS_SKIP_SCIP"].lower() == "false"
+serve_db = Path(os.environ["GEN_DOCS_SERVE_DB"])
+skip_scip = os.environ["GEN_DOCS_SKIP_SCIP"].lower() == "true"
 
 export_docs_flow(
     args=ExportArgs(
@@ -58,6 +62,7 @@ export_docs_flow(
         commit=commit,
         db_path=db_path,
         build_dir=build_dir,
+        serve_db_path=serve_db,
     )
 )
 PY

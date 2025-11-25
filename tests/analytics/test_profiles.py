@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import duckdb
 import pytest
 
@@ -14,177 +12,11 @@ from codeintel.analytics.profiles import (
     build_module_profile,
 )
 from codeintel.config.models import ProfilesAnalyticsConfig
-from tests._helpers.db import make_memory_gateway
+from tests._helpers.fixtures import ProvisionedGateway, seed_profile_data
 
 EPSILON = 1e-6
-REPO = "demo/repo"
-COMMIT = "abc123"
 REL_PATH = "pkg/mod.py"
 MODULE = "pkg.mod"
-
-
-def _seed_profile_fixtures(con: duckdb.DuckDBPyConnection) -> None:
-    now = datetime.now(tz=UTC)
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, 'python', '["server"]', '["team@example.com"]')
-        """,
-        [MODULE, REL_PATH, REPO, COMMIT],
-    )
-    con.execute(
-        """
-        INSERT INTO core.ast_metrics (rel_path, node_count, function_count, class_count,
-                                      avg_depth, max_depth, complexity, generated_at)
-        VALUES (?, 10, 1, 0, 1.0, 1, 2.0, ?)
-        """,
-        [REL_PATH, now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.hotspots (rel_path, commit_count, author_count, lines_added,
-                                        lines_deleted, complexity, score)
-        VALUES (?, 1, 1, 5, 1, 2.0, 0.5)
-        """,
-        [REL_PATH],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.typedness (path, type_error_count, annotation_ratio,
-                                         untyped_defs, overlay_needed, repo, commit)
-        VALUES (?, 1, '{"params": 0.5}', 0, FALSE, ?, ?)
-        """,
-        [REL_PATH, REPO, COMMIT],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.static_diagnostics (rel_path, pyrefly_errors, pyright_errors,
-                                                  ruff_errors, total_errors, has_errors, repo, commit)
-        VALUES (?, 1, 0, 0, 1, TRUE, ?, ?)
-        """,
-        [REL_PATH, REPO, COMMIT],
-    )
-    con.execute(
-        """
-        INSERT INTO core.docstrings (
-            repo, commit, rel_path, module, qualname, kind, lineno, end_lineno, raw_docstring,
-            style, short_desc, long_desc, params, returns, raises, examples, created_at
-        )
-        VALUES (?, ?, ?, ?, 'pkg.mod.func', 'function', 1, 2, 'Doc', 'auto',
-                'Short doc', 'Longer doc', '[]', '{"return": "int"}', '[]', '[]', ?)
-        """,
-        [REPO, COMMIT, REL_PATH, MODULE, now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.goid_risk_factors (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname, loc,
-            logical_loc, cyclomatic_complexity, complexity_bucket, typedness_bucket,
-            typedness_source, hotspot_score, file_typed_ratio, static_error_count,
-            has_static_errors, executable_lines, covered_lines, coverage_ratio, tested,
-            test_count, failing_test_count, last_test_status, risk_score, risk_level, tags,
-            owners, created_at
-        )
-        VALUES (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, ?, 'python',
-                'function', 'pkg.mod.func', 4, 3, 2, 'medium', 'typed', 'analysis',
-                0.5, 0.5, 1, TRUE, 4, 2, 0.5, TRUE, 1, 1, 'some_failing', 0.9, 'high',
-                '["server"]', '["team@example.com"]', ?)
-        """,
-        [REPO, COMMIT, REL_PATH, now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.function_metrics (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, loc, logical_loc, param_count, positional_params,
-            keyword_only_params, has_varargs, has_varkw, is_async, is_generator,
-            return_count, yield_count, raise_count, cyclomatic_complexity, max_nesting_depth,
-            stmt_count, decorator_count, has_docstring, complexity_bucket, created_at
-        )
-        VALUES (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, ?, 'python', 'function',
-                'pkg.mod.func', 1, 2, 4, 3, 2, 1, 1, TRUE, FALSE, FALSE, FALSE, 1, 0, 0, 2, 1,
-                2, 0, TRUE, 'medium', ?)
-        """,
-        [REPO, COMMIT, REL_PATH, now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.function_types (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, total_params, annotated_params, unannotated_params,
-            param_typed_ratio, has_return_annotation, return_type, return_type_source,
-            type_comment, param_types, fully_typed, partial_typed, untyped, typedness_bucket,
-            typedness_source, created_at
-        )
-        VALUES (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, ?, 'python', 'function',
-                'pkg.mod.func', 1, 2, 2, 2, 0, 1.0, TRUE, 'int', 'annotation', NULL, '[]', TRUE,
-                FALSE, FALSE, 'typed', 'analysis', ?)
-        """,
-        [REPO, COMMIT, REL_PATH, now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.coverage_functions (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, executable_lines, covered_lines, coverage_ratio, tested,
-            untested_reason, created_at
-        )
-        VALUES (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, ?, 'python', 'function',
-                'pkg.mod.func', 1, 2, 4, 2, 0.5, TRUE, '', ?)
-        """,
-        [REPO, COMMIT, REL_PATH, now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (
-            test_id, test_goid_h128, urn, repo, commit, rel_path, qualname, kind, status,
-            duration_ms, markers, parametrized, flaky, created_at
-        )
-        VALUES ('pkg/mod.py::test_func', 2, 'goid:demo/repo#python:function:pkg.mod.test_func',
-                ?, ?, ?, 'pkg.mod.test_func', 'function', 'failed', 1500, '[]', FALSE, TRUE, ?)
-        """,
-        [REPO, COMMIT, REL_PATH, now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.test_coverage_edges (
-            test_id, test_goid_h128, function_goid_h128, urn, repo, commit, rel_path, qualname,
-            covered_lines, executable_lines, coverage_ratio, last_status, created_at
-        )
-        VALUES ('pkg/mod.py::test_func', 2, 1, 'goid:demo/repo#python:function:pkg.mod.func',
-                ?, ?, ?, 'pkg.mod.func', 2, 4, 0.5, 'failed', ?)
-        """,
-        [REPO, COMMIT, REL_PATH, now],
-    )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_edges (
-            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
-            callsite_col, language, kind, resolved_via, confidence, evidence_json
-        )
-        VALUES
-            (?, ?, 1, 2, ?, 1, 1, 'python', 'direct', 'local_name', 1.0, '{}'),
-            (?, ?, 3, 1, ?, 2, 2, 'python', 'direct', 'global_name', 1.0, '{}')
-        """,
-        [REPO, COMMIT, REL_PATH, REPO, COMMIT, REL_PATH],
-    )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_nodes (goid_h128, language, kind, arity, is_public, rel_path)
-        VALUES
-            (1, 'python', 'function', 0, TRUE, ?),
-            (2, 'python', 'function', 0, FALSE, ?),
-            (3, 'python', 'function', 0, FALSE, ?)
-        """,
-        [REL_PATH, REL_PATH, REL_PATH],
-    )
-    con.execute(
-        """
-        INSERT INTO graph.import_graph_edges (repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group)
-        VALUES (?, ?, ?, ?, 1, 1, 1)
-        """,
-        [REPO, COMMIT, MODULE, MODULE],
-    )
 
 
 def _assert_function_profile(con: duckdb.DuckDBPyConnection) -> None:
@@ -252,12 +84,20 @@ def _assert_module_profile(con: duckdb.DuckDBPyConnection) -> None:
         pytest.fail("Expected module to be marked as in_cycle")
 
 
-def test_profile_builders_aggregate_expected_fields() -> None:
+def test_profile_builders_aggregate_expected_fields(
+    provisioned_repo: ProvisionedGateway,
+) -> None:
     """Ensure profile builders compose metrics, tests, coverage, and graph data."""
-    gateway = make_memory_gateway()
+    gateway = provisioned_repo.gateway
     con = gateway.con
-    _seed_profile_fixtures(con)
-    cfg = ProfilesAnalyticsConfig(repo=REPO, commit=COMMIT)
+    seed_profile_data(
+        gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        rel_path=REL_PATH,
+        module=MODULE,
+    )
+    cfg = ProfilesAnalyticsConfig(repo=provisioned_repo.repo, commit=provisioned_repo.commit)
     build_function_profile(gateway, cfg)
     build_file_profile(gateway, cfg)
     build_module_profile(gateway, cfg)

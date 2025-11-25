@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Final
 
 from _pytest.logging import LogCaptureFixture
 
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.storage.gateway import open_memory_gateway
+from tests._helpers.fixtures import seed_graph_validation_gaps
 
 
 def test_run_graph_validations_emits_warnings(caplog: LogCaptureFixture) -> None:
@@ -20,42 +20,10 @@ def test_run_graph_validations_emits_warnings(caplog: LogCaptureFixture) -> None
     AssertionError
         If expected warning text is absent.
     """
-    gateway = open_memory_gateway()
-    con = gateway.con
+    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
-
-    # File with AST functions but no GOIDs -> missing GOIDs + orphan module.
-    con.execute(
-        """
-        INSERT INTO core.ast_nodes (path, node_type, name, qualname, lineno, end_lineno, col_offset, end_col_offset, parent_qualname, decorators, docstring, hash)
-        VALUES ('pkg/a.py', 'FunctionDef', 'foo', 'pkg.a.foo', 1, 2, 0, 0, 'pkg.a', '[]', NULL, 'h1')
-        """
-    )
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES ('pkg.a', 'pkg/a.py', ?, ?, 'python', '[]', '[]')
-        """,
-        [repo, commit],
-    )
-
-    # Caller GOID with out-of-span callsite -> span mismatch.
-    con.execute(
-        """
-        INSERT INTO core.goids (goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at)
-        VALUES (1, 'urn:pkg.b.caller', ?, ?, 'pkg/b.py', 'python', 'function', 'pkg.b.caller', 1, 5, ?)
-        """,
-        [repo, commit, datetime.now(UTC)],
-    )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_edges (
-            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line, callsite_col, language, kind, resolved_via, confidence, evidence_json
-        ) VALUES (?, ?, 1, NULL, 'pkg/b.py', 50, 0, 'python', 'unresolved', 'unresolved', 0.0, '{}')
-        """,
-        [repo, commit],
-    )
+    seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
 
     with caplog.at_level("WARNING"):
         run_graph_validations(gateway, repo=repo, commit=commit)

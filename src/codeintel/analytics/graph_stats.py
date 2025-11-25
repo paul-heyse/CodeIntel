@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 import networkx as nx
 from networkx.algorithms import approximation
-from networkx.exception import NetworkXError
+from networkx.exception import NetworkXAlgorithmError, NetworkXError
 
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import (
@@ -17,6 +18,8 @@ from codeintel.graphs.nx_views import (
     load_symbol_module_graph,
 )
 from codeintel.storage.gateway import StorageGateway
+
+log = logging.getLogger(__name__)
 
 
 def _component_counts(graph: nx.Graph | nx.DiGraph) -> tuple[int, int]:
@@ -66,6 +69,53 @@ def _diameter_and_spl(graph: nx.Graph | nx.DiGraph) -> tuple[float | None, float
     return diameter, avg_spl
 
 
+def _safe_project(graph: nx.Graph, nodes: set[object], *, partition_label: str) -> nx.Graph:
+    """
+    Project a bipartite graph onto a node set, warning instead of raising on errors.
+
+    Returns
+    -------
+    nx.Graph
+        Projected graph when successful, otherwise an empty graph.
+    """
+    if not nodes:
+        log.warning(
+            "Skipping %s projection: empty partition (graph_nodes=%d)",
+            partition_label,
+            graph.number_of_nodes(),
+        )
+        return nx.Graph()
+    graph_nodes = set(graph)
+    if not nodes.issubset(graph_nodes):
+        missing = nodes - graph_nodes
+        log.warning(
+            "Skipping %s projection: nodes not in graph (missing=%d of %d)",
+            partition_label,
+            len(missing),
+            len(nodes),
+        )
+        return nx.Graph()
+    if len(nodes) >= graph.number_of_nodes():
+        log.warning(
+            "Skipping %s projection: partition size %d >= graph size %d",
+            partition_label,
+            len(nodes),
+            graph.number_of_nodes(),
+        )
+        return nx.Graph()
+    try:
+        return nx.bipartite.weighted_projected_graph(graph, nodes)
+    except NetworkXAlgorithmError as exc:
+        log.warning(
+            "Bipartite projection failed for %s: %s (nodes=%d graph_nodes=%d)",
+            partition_label,
+            exc,
+            len(nodes),
+            graph.number_of_nodes(),
+        )
+        return nx.Graph()
+
+
 def compute_graph_stats(gateway: StorageGateway, *, repo: str, commit: str) -> None:
     """
     Populate analytics.graph_stats for call/import graphs.
@@ -91,16 +141,24 @@ def compute_graph_stats(gateway: StorageGateway, *, repo: str, commit: str) -> N
     if config_bipartite.number_of_nodes() > 0:
         keys = {n for n, d in config_bipartite.nodes(data=True) if d.get("bipartite") == 0}
         modules = set(config_bipartite) - keys
-        graphs["config_key_projection"] = (
-            nx.bipartite.weighted_projected_graph(config_bipartite, keys)
-            if len(keys) > 1
-            else nx.Graph()
-        )
-        graphs["config_module_projection"] = (
-            nx.bipartite.weighted_projected_graph(config_bipartite, modules)
-            if len(modules) > 1
-            else nx.Graph()
-        )
+        if keys and modules:
+            graphs["config_key_projection"] = (
+                _safe_project(config_bipartite, keys, partition_label="config_keys")
+                if len(keys) > 1
+                else nx.Graph()
+            )
+            graphs["config_module_projection"] = (
+                _safe_project(config_bipartite, modules, partition_label="config_modules")
+                if len(modules) > 1
+                else nx.Graph()
+            )
+        else:
+            log.warning(
+                "Skipping config projections: keys=%d modules=%d graph_nodes=%d",
+                len(keys),
+                len(modules),
+                config_bipartite.number_of_nodes(),
+            )
     now = datetime.now(UTC)
     rows: list[tuple[object, ...]] = []
 

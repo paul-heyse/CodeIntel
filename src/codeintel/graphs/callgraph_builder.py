@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -21,7 +22,6 @@ from codeintel.graphs.function_catalog_service import (
 )
 from codeintel.graphs.function_index import FunctionSpan
 from codeintel.graphs.import_resolver import collect_aliases
-from codeintel.graphs.validation import run_graph_validations
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import CallGraphEdgeRow, CallGraphNodeRow, call_graph_node_to_tuple
 from codeintel.storage.gateway import StorageGateway
@@ -59,6 +59,7 @@ def build_call_graph(
     """Populate call graph nodes and edges for a repository snapshot."""
     repo_root = cfg.repo_root.resolve()
 
+    _log_repo_state(gateway, cfg.repo, cfg.commit)
     node_rows = _build_call_graph_nodes(gateway, cfg)
     _persist_call_graph_nodes(gateway, node_rows)
 
@@ -85,7 +86,6 @@ def build_call_graph(
     edges = _collect_edges(catalog, scope, inputs)
     unique_edges = call_persist.dedupe_edges(edges)
     call_persist.persist_call_graph_edges(gateway, unique_edges, cfg.repo, cfg.commit)
-    run_graph_validations(gateway, repo=cfg.repo, commit=cfg.commit, logger=log)
 
     log.info(
         "Call graph build complete for repo=%s commit=%s: %d nodes, %d edges",
@@ -94,6 +94,59 @@ def build_call_graph(
         len(node_rows),
         len(unique_edges),
     )
+
+
+def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
+    """Log current module/GOID counts to aid validation diagnostics."""
+    con = gateway.con
+    modules = con.execute(
+        "SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    ).fetchone()
+    goids = con.execute(
+        "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    ).fetchone()
+    module_goids = con.execute(
+        "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'module'",
+        [repo, commit],
+    ).fetchone()
+    class_goids = con.execute(
+        "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'class'",
+        [repo, commit],
+    ).fetchone()
+    function_goids = con.execute(
+        """
+        SELECT COUNT(*) FROM core.goids
+        WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
+        """,
+        [repo, commit],
+    ).fetchone()
+    log.info(
+        "Callgraph inputs repo=%s commit=%s modules=%s goids=%s module_goids=%s class_goids=%s function_goids=%s",
+        repo,
+        commit,
+        int(modules[0]) if modules else 0,
+        int(goids[0]) if goids else 0,
+        int(module_goids[0]) if module_goids else 0,
+        int(class_goids[0]) if class_goids else 0,
+        int(function_goids[0]) if function_goids else 0,
+    )
+    _append_log(
+        f"[callgraph] repo={repo} commit={commit} modules={int(modules[0]) if modules else 0} "
+        f"goids={int(goids[0]) if goids else 0} module_goids={int(module_goids[0]) if module_goids else 0} "
+        f"class_goids={int(class_goids[0]) if class_goids else 0} "
+        f"function_goids={int(function_goids[0]) if function_goids else 0}"
+    )
+
+
+def _append_log(message: str) -> None:
+    """Append a timestamped line to a lightweight build log for offline inspection."""
+    log_path = Path("build/logs/pipeline.log")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(tz=UTC).isoformat()
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"{timestamp} {message}\n")
 
 
 def _build_call_graph_nodes(gateway: StorageGateway, cfg: CallGraphConfig) -> list[tuple]:

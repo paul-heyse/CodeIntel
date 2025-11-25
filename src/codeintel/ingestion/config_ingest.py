@@ -192,7 +192,6 @@ def ingest_config_values(
     scan_config:
         Optional scan configuration to honor ignore/include rules while walking files.
     """
-    con = gateway.con
     repo_root = cfg.repo_root
 
     rows: list[ConfigValueRow] = []

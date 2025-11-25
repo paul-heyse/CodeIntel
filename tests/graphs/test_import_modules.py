@@ -24,7 +24,7 @@ def _persist_import_tables(
 ) -> None:
     scc_map, layer_by_module = components_and_layers(raw_edges, modules)
     run_batch(
-        gateway.con,
+        gateway,
         "graph.import_modules",
         [
             import_module_to_tuple(row)
@@ -44,7 +44,7 @@ def _persist_import_tables(
         fan_counts[src]["out"] += 1
         fan_counts[dst]["in"] += 1
     run_batch(
-        gateway.con,
+        gateway,
         "graph.import_graph_edges",
         [
             import_edge_to_tuple(

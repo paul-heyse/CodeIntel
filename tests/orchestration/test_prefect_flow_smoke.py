@@ -10,8 +10,8 @@ import pytest
 
 from codeintel.cli.main import main as cli_main
 from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
+from tests._helpers.fixtures import seed_docs_export_minimal
 from tests._helpers.gateway import open_fresh_duckdb
-from tests.docs_export.test_export_smoke import _seed_minimal_db
 
 
 def test_prefect_flow_imports() -> None:
@@ -81,7 +81,7 @@ def test_cli_docs_export_with_validation(tmp_path: Path, prefect_quiet_env: None
     build_dir = repo_root / "build"
     db_path = build_dir / "db" / "codeintel.duckdb"
     gateway = open_fresh_duckdb(db_path)
-    _seed_minimal_db(gateway)
+    seed_docs_export_minimal(gateway, repo="demo/repo", commit="deadbeef")
     gateway.close()
 
     document_output_dir = repo_root / "Document Output"

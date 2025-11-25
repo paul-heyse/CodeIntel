@@ -177,6 +177,19 @@ def run_batch(
     """
     Ensure schema, delete prior rows (optional), insert batch, and log.
 
+    Parameters
+    ----------
+    gateway
+        StorageGateway (preferred) or raw DuckDB connection.
+    table_key
+        Registry table key (e.g., "core.ast_nodes").
+    rows
+        Row payload matching the prepared insert statement.
+    delete_params
+        Optional parameters for the delete statement when defined.
+    scope
+        Optional repo@commit string for structured logging.
+
     Returns
     -------
     BatchResult
@@ -202,13 +215,12 @@ def run_batch(
 
 
 def insert_relation(
-    gateway: StorageGateway,
+    gateway: StorageGateway | duckdb.DuckDBPyConnection,
     table_key: str,
     rows: Sequence[Sequence[object]],
     *,
     delete_params: Sequence[object] | None = None,
     scope: str | None = None,
-    con: duckdb.DuckDBPyConnection | None = None,
 ) -> BatchResult:
     """
     Insert rows via a temporary relation to avoid large VALUES clauses.
@@ -216,7 +228,7 @@ def insert_relation(
     Parameters
     ----------
     gateway:
-        StorageGateway providing access to the DuckDB connection.
+        StorageGateway providing access to the DuckDB connection or a raw connection.
     table_key:
         Registry table key (e.g., "core.ast_nodes").
     rows:
@@ -225,8 +237,6 @@ def insert_relation(
         Optional parameters for delete statement if present.
     scope:
         Optional repo@commit string for structured logging.
-    con:
-        Optional explicit connection override for advanced scenarios.
 
     Returns
     -------
@@ -239,7 +249,6 @@ def insert_relation(
         rows,
         delete_params=delete_params,
         scope=scope,
-        con=con,
     )
 
 

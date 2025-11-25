@@ -7,40 +7,29 @@ from pathlib import Path
 import pytest
 
 from codeintel.cli import main as cli_main
-from tests._helpers.gateway import open_fresh_duckdb
+from tests._helpers.fixtures import GatewayOptions, provision_gateway_with_repo
 
 
-def _seed_invalid_function_profile(db_path: Path) -> None:
-    gateway = open_fresh_duckdb(db_path)
-    con = gateway.con
-    con.execute("CREATE SCHEMA IF NOT EXISTS core;")
-    con.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
-    con.execute(
-        """
-        CREATE TABLE core.repo_map (
-            repo TEXT,
-            commit TEXT,
-            modules JSON,
-            overlays JSON,
-            generated_at TIMESTAMP
-        );
-        """
+def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
+    ctx = provision_gateway_with_repo(
+        repo_root,
+        repo="demo/repo",
+        commit="deadbeef",
+        options=GatewayOptions(
+            db_path=db_path,
+            apply_schema=True,
+            ensure_views=True,
+            validate_schema=True,
+            file_backed=True,
+        ),
     )
+    con = ctx.gateway.con
+    con.execute("DELETE FROM analytics.function_profile")
+    con.execute("DELETE FROM core.repo_map")
     con.execute(
         """
         INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
-        VALUES ('demo/repo', 'deadbeef', '{}', '{}', CURRENT_TIMESTAMP);
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.function_profile (
-            function_goid_h128 DECIMAL(38,0),
-            urn TEXT,
-            repo TEXT,
-            commit TEXT,
-            rel_path TEXT
-        );
+        VALUES ('demo/repo', 'deadbeef', '{}', '{}', CURRENT_TIMESTAMP)
         """
     )
     con.execute(
@@ -52,16 +41,16 @@ def _seed_invalid_function_profile(db_path: Path) -> None:
             commit,
             rel_path
         ) VALUES
-            (1, 'urn:demo', 'demo/repo', NULL, 'src/file.py');
+            (1, 'urn:demo', 'demo/repo', NULL, 'src/file.py')
         """
     )
-    gateway.close()
+    ctx.close()
 
 
 def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> None:
     """Verify docs export honors validation toggle and surfaces failures."""
     db_path = tmp_path / "db.duckdb"
-    _seed_invalid_function_profile(db_path)
+    _seed_invalid_function_profile(db_path, tmp_path)
 
     output_dir = tmp_path / "out_validate"
     args_validate = [

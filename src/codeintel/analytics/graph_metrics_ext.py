@@ -148,8 +148,8 @@ def compute_graph_metrics_functions_ext(
     """
     con = gateway.con
     ensure_schema(con, "analytics.graph_metrics_functions_ext")
-    graph = load_call_graph(gateway, repo, commit)
-    simple_graph = graph.copy()
+    graph: nx.DiGraph = load_call_graph(gateway, repo, commit)
+    simple_graph: nx.DiGraph = cast("nx.DiGraph", graph.copy())
     simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
     undirected = simple_graph.to_undirected()
     now = datetime.now(UTC)

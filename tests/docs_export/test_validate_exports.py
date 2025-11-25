@@ -11,7 +11,8 @@ from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.docs_export.validate_exports import main
 from codeintel.services.errors import ExportError
-from tests._helpers.gateway import open_fresh_duckdb, seed_tables
+from codeintel.storage.gateway import open_memory_gateway
+from tests._helpers.fixtures import seed_docs_export_invalid_profile
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
@@ -63,113 +64,46 @@ def test_validate_jsonl_failure(tmp_path: Path) -> None:
 
 def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
     """Export functions should raise ExportError when schema validation fails."""
-    db_path = tmp_path / "db.duckdb"
-    gateway = open_fresh_duckdb(db_path)
-    con = gateway.con
-    con.execute("CREATE SCHEMA IF NOT EXISTS core;")
-    con.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
-    con.execute(
-        """
-        CREATE TABLE analytics.function_profile (
-            function_goid_h128 DECIMAL(38,0),
-            urn TEXT,
-            repo TEXT,
-            commit TEXT,
-            rel_path TEXT
-        );
-        """
+    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    seed_docs_export_invalid_profile(
+        gateway,
+        repo="r",
+        commit="c",
+        null_commit=True,
     )
-    con.execute(
-        """
-        INSERT INTO analytics.function_profile VALUES (1, 'urn:foo', NULL, 'c', 'foo.py');
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE core.repo_map (
-            repo TEXT,
-            commit TEXT,
-            modules JSON,
-            overlays JSON,
-            generated_at TIMESTAMP
-        );
-        """
-    )
-    con.execute(
-        """
-        INSERT INTO core.repo_map VALUES ('r','c','{}','{}', CURRENT_TIMESTAMP);
-        """
-    )
-    gateway.close()
 
     output_dir = tmp_path / "out"
-    gw_parquet = open_fresh_duckdb(db_path)
     with pytest.raises(ExportError):
         export_all_parquet(
-            gw_parquet,
+            gateway,
             output_dir,
             validate_exports=True,
             schemas=["function_profile"],
         )
-    gw_parquet.close()
 
 
 def test_export_logs_problem_detail_on_validation_failure(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Validation failures should log ProblemDetails and raise ExportError."""
-    db_path = tmp_path / "db.duckdb"
-    gateway = open_fresh_duckdb(db_path)
-    seed_tables(
+    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    seed_docs_export_invalid_profile(
         gateway,
-        [
-            "CREATE SCHEMA IF NOT EXISTS core;",
-            "CREATE SCHEMA IF NOT EXISTS analytics;",
-            "DROP TABLE IF EXISTS analytics.function_profile;",
-            """
-            CREATE TABLE analytics.function_profile (
-                function_goid_h128 DECIMAL(38,0),
-                urn TEXT,
-                repo TEXT,
-                commit TEXT,
-                rel_path TEXT
-            );
-            """,
-            "DROP TABLE IF EXISTS core.repo_map;",
-            """
-            CREATE TABLE core.repo_map (
-                repo TEXT,
-                commit TEXT,
-                modules JSON,
-                overlays JSON,
-                generated_at TIMESTAMP
-            );
-            """,
-        ],
+        repo="r",
+        commit="c",
+        null_commit=True,
+        drop_commit_column=True,
     )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.function_profile VALUES (1, 'urn:foo', NULL, 'c', 'foo.py');
-        """
-    )
-    gateway.con.execute(
-        """
-        INSERT INTO core.repo_map VALUES ('r','c','{}','{}', CURRENT_TIMESTAMP);
-        """
-    )
-    gateway.close()
 
     output_dir = tmp_path / "out_jsonl"
     caplog.set_level("ERROR")
-    gw_jsonl = open_fresh_duckdb(db_path)
     with pytest.raises(ExportError):
         export_all_jsonl(
-            gw_jsonl,
+            gateway,
             output_dir,
             validate_exports=True,
             schemas=["function_profile"],
         )
-    gw_jsonl.close()
     error_logs = [rec for rec in caplog.records if "export.validation_failed" in rec.getMessage()]
     if not error_logs:
         pytest.fail("Expected ProblemDetail log entry for validation failure")

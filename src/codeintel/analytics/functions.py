@@ -852,7 +852,6 @@ def _persist_validation(
     *,
     created_at: datetime,
 ) -> None:
-    con = gateway.con
     rows = [
         function_validation_row_to_tuple(
             FunctionValidationRow(

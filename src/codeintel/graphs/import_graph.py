@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
-from typing import Any
 
-import duckdb
 import libcst as cst
 import networkx as nx
 
@@ -202,7 +200,6 @@ def build_import_graph(gateway: StorageGateway, cfg: ImportGraphConfig) -> None:
     The collector resolves relative imports conservatively to the current
     package. Strongly connected components are computed to identify cycles.
     """
-    con = gateway.con
     repo_root = cfg.repo_root.resolve()
 
     catalog = load_function_catalog(gateway, repo=cfg.repo, commit=cfg.commit)

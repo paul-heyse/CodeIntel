@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
@@ -9,9 +10,13 @@ import sys
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from logging import Logger, LoggerAdapter
 from pathlib import Path
+from typing import cast
 
+import duckdb
+import networkx as nx
 from prefect import flow, get_run_logger, task
 from prefect.cache_policies import NO_CACHE
 from prefect.logging.configuration import setup_logging
@@ -97,11 +102,34 @@ class ExportArgs:
     commit: str
     db_path: Path
     build_dir: Path
+    serve_db_path: Path | None = None
+    log_db_path: Path | None = None
     tools: ToolsConfig | None = None
     scan_config: ScanConfig | None = None
     function_overrides: FunctionAnalyticsOverrides | None = None
     validate_exports: bool = False
     export_schemas: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class SnapshotArgs:
+    """Snapshot context for logging pipeline database state."""
+
+    db_path: Path
+    repo: str
+    commit: str
+    log_db_path: Path
+    run_id: str
+
+
+@dataclass(frozen=True)
+class SnapshotRecord:
+    """Snapshot result details for persistence."""
+
+    stage: str
+    status: str
+    counts: dict[str, int]
+    error: str | None = None
 
 
 _GATEWAY_CACHE: dict[tuple[str, bool, bool, bool, bool], StorageGateway] = {}
@@ -260,12 +288,17 @@ def _run_task(
     fn: Callable[..., object],
     logger: Logger | LoggerAdapter,
     *args: object,
+    snapshot: SnapshotArgs | None = None,
     **kwargs: object,
 ) -> None:
     """Run a Prefect task with start/finish logging."""
+    if snapshot is not None:
+        _snapshot_db_state(snapshot, stage=f"{name}:before", logger=cast("Logger", logger))
     start = _log_task(name, logger)
     fn(*args, **kwargs)
     _log_task_done(name, start, logger)
+    if snapshot is not None:
+        _snapshot_db_state(snapshot, stage=f"{name}:after", logger=cast("Logger", logger))
 
 
 def _resolve_output_dir(repo_root: Path) -> Path:
@@ -280,6 +313,150 @@ def _resolve_output_dir(repo_root: Path) -> Path:
     env_dir = os.getenv("CODEINTEL_OUTPUT_DIR")
     folder = env_dir if env_dir else "document_output"
     return repo_root / folder
+
+
+def _resolve_log_db_path(path_arg: Path | None, build_dir: Path) -> Path:
+    """Choose the log database path, defaulting to build/db/codeintel_logs.duckdb.
+
+    Returns
+    -------
+    Path
+        Resolved log database path.
+    """
+    return (
+        path_arg.resolve()
+        if path_arg is not None
+        else (build_dir / "db" / "codeintel_logs.duckdb")
+    )
+
+
+def _snapshot_db_state(
+    snapshot: SnapshotArgs,
+    *,
+    stage: str,
+    logger: Logger,
+) -> None:
+    """Log row counts for key tables to aid debugging between tasks."""
+    counts: dict[str, int] = {}
+    status = "ok"
+    error: str | None = None
+    con: duckdb.DuckDBPyConnection | None = None
+    if not snapshot.db_path.exists():
+        status = "missing"
+        error = "database not found"
+    else:
+        try:
+            # Match the configuration of the main pipeline gateway (read/write)
+            # to avoid DuckDB config mismatch errors, but run read-only queries.
+            con = duckdb.connect(str(snapshot.db_path), read_only=False)
+        except duckdb.Error as exc:
+            status = "error"
+            error = f"open failed: {exc}"
+    if con is not None:
+        queries = {
+            "core.modules": "SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?",
+            "core.goids": "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ?",
+            "core.goids.module": (
+                "SELECT COUNT(*) FROM core.goids "
+                "WHERE repo = ? AND commit = ? AND kind = 'module'"
+            ),
+            "core.goids.class": (
+                "SELECT COUNT(*) FROM core.goids "
+                "WHERE repo = ? AND commit = ? AND kind = 'class'"
+            ),
+            "core.goids.func": (
+                "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind IN "
+                "('function','method')"
+            ),
+            "graph.call_graph_nodes": "SELECT COUNT(*) FROM graph.call_graph_nodes",
+            "graph.call_graph_edges": "SELECT COUNT(*) FROM graph.call_graph_edges",
+            "analytics.graph_validation": (
+                "SELECT COUNT(*) FROM analytics.graph_validation WHERE repo = ? AND commit = ?"
+            ),
+            "analytics.cfg_function_metrics_ext": (
+                "SELECT COUNT(*) FROM analytics.cfg_function_metrics_ext "
+                "WHERE repo = ? AND commit = ?"
+            ),
+            "analytics.dfg_function_metrics_ext": (
+                "SELECT COUNT(*) FROM analytics.dfg_function_metrics_ext "
+                "WHERE repo = ? AND commit = ?"
+            ),
+        }
+        params = [snapshot.repo, snapshot.commit]
+        for label, sql in queries.items():
+            try:
+                row = con.execute(sql, params if "?" in sql else []).fetchone()
+                counts[label] = int(row[0]) if row and row[0] is not None else 0
+            except duckdb.Error:
+                counts[label] = -1
+        con.close()
+    message = (
+        f"[snapshot {stage}] status={status} repo={snapshot.repo} commit={snapshot.commit} "
+        + " ".join(f"{k}={v}" for k, v in counts.items())
+    )
+    if error is not None:
+        message = f"{message} error={error}"
+    logger.info(message)
+    _append_log(message)
+    record = SnapshotRecord(stage=stage, status=status, counts=counts, error=error)
+    _write_snapshot_log(snapshot=snapshot, record=record, logger=logger)
+
+
+def _append_log(message: str) -> None:
+    """Append a timestamped line to build/logs/pipeline.log for offline inspection."""
+    log_path = Path("build/logs/pipeline.log")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(tz=UTC).isoformat()
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"{timestamp} {message}\n")
+
+
+def _write_snapshot_log(
+    *,
+    snapshot: SnapshotArgs,
+    record: SnapshotRecord,
+    logger: Logger,
+) -> None:
+    """Persist snapshot metadata into the dedicated logging database."""
+    log_db_path = snapshot.log_db_path
+    log_db_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        con = duckdb.connect(str(log_db_path), read_only=False)
+    except duckdb.Error as exc:
+        logger.warning("Snapshot log skipped: could not open log DB at %s (%s)", log_db_path, exc)
+        return
+    try:
+        con.execute("CREATE SCHEMA IF NOT EXISTS analytics")
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS analytics.snapshot_logs ("
+            "run_id TEXT,"
+            "repo TEXT,"
+            "commit TEXT,"
+            "stage TEXT,"
+            "status TEXT,"
+            "counts JSON,"
+            "error TEXT,"
+            "created_at TIMESTAMPTZ DEFAULT current_timestamp"
+            ")"
+        )
+        con.execute(
+            "INSERT INTO analytics.snapshot_logs "
+            "(run_id, repo, commit, stage, status, counts, error) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                snapshot.run_id,
+                snapshot.repo,
+                snapshot.commit,
+                record.stage,
+                record.status,
+                json.dumps(record.counts),
+                record.error,
+            ),
+        )
+    except duckdb.Error as exc:
+        logger.warning("Snapshot log write failed: %s", exc)
+    finally:
+        con.close()
 
 
 def _tools_from_env(base: ToolsConfig | None = None) -> ToolsConfig:
@@ -662,9 +839,9 @@ def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
             repo=repo,
             commit=commit,
             catalog_provider=catalog,
-            logger=log,
+            logger=cast("Logger", run_logger),
         )
-    except Exception as exc:  # pragma: no cover - error path
+    except (duckdb.Error, nx.NetworkXException, ValueError, RuntimeError) as exc:  # pragma: no cover - error path
         pd = problem(
             code="pipeline.task_failed",
             title="graph_validation task failed",
@@ -672,7 +849,7 @@ def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
             extras={"task": "graph_validation", "repo": repo, "commit": commit},
         )
         log_problem(run_logger, pd)
-        raise
+        run_logger.warning("Graph validation failed but continuing: %s", exc)
 
 
 def _preflight_checks(
@@ -763,17 +940,11 @@ def export_docs_flow(
     repo_root = args.repo_root.resolve()
     db_path = args.db_path.resolve()
     build_dir = args.build_dir.resolve()
-    tools_cfg = _tools_from_env(args.tools)
-    scan_cfg = _scan_from_env(repo_root, args.scan_config)
+    serve_db_path = args.serve_db_path.resolve() if args.serve_db_path is not None else None
+    log_db_path = _resolve_log_db_path(args.log_db_path, build_dir)
     skip_scip = os.getenv("CODEINTEL_SKIP_SCIP", "false").lower() == "true"
     validate_exports, export_schemas = _resolve_validation_settings(args)
-    gateway = _get_gateway(
-        db_path,
-        read_only=False,
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
+    run_id = f"{args.repo}:{args.commit}:{int(time.time() * 1000)}"
 
     ctx = IngestionContext(
         repo_root=repo_root,
@@ -782,20 +953,48 @@ def export_docs_flow(
         db_path=db_path,
         build_dir=build_dir,
         document_output_dir=_resolve_output_dir(repo_root),
-        gateway=gateway,
-        tools=tools_cfg,
-        scan_config=scan_cfg,
+        gateway=_get_gateway(
+            db_path,
+            read_only=False,
+            apply_schema=True,
+            ensure_views=True,
+            validate_schema=True,
+        ),
+        tools=_tools_from_env(args.tools),
+        scan_config=_scan_from_env(repo_root, args.scan_config),
         tool_runner=ToolRunner(cache_dir=build_dir / ".tool_cache"),
     )
     _preflight_checks(ctx, skip_scip=skip_scip, logger=run_logger)
     scip_state: dict[str, scip_ingest.ScipIngestResult | None] = {"result": None}
+    snapshot_args = SnapshotArgs(
+        db_path=db_path,
+        repo=ctx.repo,
+        commit=ctx.commit,
+        log_db_path=log_db_path,
+        run_id=run_id,
+    )
 
     step_handlers = [
         (
             "schema_bootstrap",
-            lambda: _run_task("schema_bootstrap", t_schema_bootstrap, run_logger, db_path),
+            lambda: _run_task(
+                "schema_bootstrap",
+                t_schema_bootstrap,
+                run_logger,
+                db_path,
+                snapshot=snapshot_args,
+            ),
         ),
-        ("repo_scan", lambda: _run_task("repo_scan", t_repo_scan, run_logger, ctx)),
+        (
+            "repo_scan",
+            lambda: _run_task(
+                "repo_scan",
+                t_repo_scan,
+                run_logger,
+                ctx,
+                snapshot=snapshot_args,
+            ),
+        ),
         (
             "scip_ingest",
             lambda: _run_scip_ingest(
@@ -806,13 +1005,31 @@ def export_docs_flow(
             ),
         ),
         ("cst_extract", lambda: _run_task("cst_extract", t_cst_extract, run_logger, ctx)),
-        ("ast_extract", lambda: _run_task("ast_extract", t_ast_extract, run_logger, ctx)),
+        (
+            "ast_extract",
+            lambda: _run_task(
+                "ast_extract",
+                t_ast_extract,
+                run_logger,
+                ctx,
+                snapshot=snapshot_args,
+            ),
+        ),
         (
             "coverage_ingest",
             lambda: _run_task("coverage_ingest", t_coverage_ingest, run_logger, ctx),
         ),
         ("tests_ingest", lambda: _run_task("tests_ingest", t_tests_ingest, run_logger, ctx)),
-        ("typing_ingest", lambda: _run_task("typing_ingest", t_typing_ingest, run_logger, ctx)),
+        (
+            "typing_ingest",
+            lambda: _run_task(
+                "typing_ingest",
+                t_typing_ingest,
+                run_logger,
+                ctx,
+                snapshot=snapshot_args,
+            ),
+        ),
         (
             "docstrings_ingest",
             lambda: _run_task("docstrings_ingest", t_docstrings_ingest, run_logger, ctx),
@@ -832,6 +1049,7 @@ def export_docs_flow(
                 ctx.commit,
                 ctx.repo_root,
                 ctx.db_path,
+                snapshot=snapshot_args,
             ),
         ),
         (
@@ -850,6 +1068,7 @@ def export_docs_flow(
                 ctx.commit,
                 ctx.repo_root,
                 ctx.db_path,
+                snapshot=snapshot_args,
             ),
         ),
         (
@@ -869,6 +1088,7 @@ def export_docs_flow(
                 ctx.repo,
                 ctx.commit,
                 ctx.db_path,
+                snapshot=snapshot_args,
             ),
         ),
         (
@@ -895,6 +1115,7 @@ def export_docs_flow(
                 ctx.commit,
                 ctx.db_path,
                 args.function_overrides,
+                snapshot=snapshot_args,
             ),
         ),
         (
@@ -918,6 +1139,7 @@ def export_docs_flow(
                 ctx.repo,
                 ctx.commit,
                 ctx.db_path,
+                snapshot=snapshot_args,
             ),
         ),
         (
@@ -929,6 +1151,7 @@ def export_docs_flow(
                 ctx.repo,
                 ctx.commit,
                 ctx.db_path,
+                snapshot=snapshot_args,
             ),
         ),
         (
@@ -953,6 +1176,7 @@ def export_docs_flow(
                 ctx.repo,
                 ctx.commit,
                 ctx.db_path,
+                snapshot=snapshot_args,
             ),
         ),
         (
@@ -966,6 +1190,7 @@ def export_docs_flow(
                 ctx.commit,
                 ctx.db_path,
                 ctx.build_dir,
+                snapshot=snapshot_args,
             ),
         ),
         (
@@ -982,7 +1207,49 @@ def export_docs_flow(
         ),
     ]
 
+    _execute_step_handlers(
+        step_handlers=step_handlers,
+        targets=targets,
+        run_logger=run_logger,
+        db_path=db_path,
+        serve_db_path=serve_db_path,
+    )
+
+
+def _copy_database(source: Path, target: Path, logger: Logger) -> None:
+    """
+    Copy a staging database to the serving path after a successful flow run.
+
+    Parameters
+    ----------
+    source
+        Source DuckDB path (staging).
+    target
+        Destination DuckDB path (serving).
+    logger
+        Logger for status messages.
+    """
+    if source.resolve() == target.resolve():
+        logger.info("Serving DB path matches staging; skipping copy.")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = target.with_suffix(target.suffix + ".tmp")
+    shutil.copy2(source, tmp_path)
+    tmp_path.replace(target)
+    logger.info("Copied staging DB %s -> %s", source, target)
+
+
+def _execute_step_handlers(
+    *,
+    step_handlers: list[tuple[str, Callable[[], None]]],
+    targets: Iterable[str] | None,
+    run_logger: Logger | LoggerAdapter,
+    db_path: Path,
+    serve_db_path: Path | None,
+) -> None:
+    """Execute step handlers in topological order and handle DB promotion."""
     handlers = dict(step_handlers)
+    success = False
     try:
         for name in _toposort_targets(targets):
             handler = handlers.get(name)
@@ -990,8 +1257,11 @@ def export_docs_flow(
                 run_logger.warning("No handler registered for step %s; skipping.", name)
                 continue
             handler()
+        success = True
     finally:
         _close_gateways()
+        if success and serve_db_path is not None:
+            _copy_database(db_path, serve_db_path, cast("Logger", run_logger))
 
 
 def _toposort_targets(targets: Iterable[str] | None) -> list[str]:
