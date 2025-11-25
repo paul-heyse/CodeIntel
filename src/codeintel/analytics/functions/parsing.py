@@ -33,6 +33,11 @@ def parse_functions_in_module(
         Raw file contents.
     kind :
         Parser kind to use; defaults to Python.
+
+    Returns
+    -------
+    Iterable[ParsedFunction]
+        Parsed functions extracted from the module.
     """
     parser = get_parser(kind)
     return parser(path, content)
@@ -44,16 +49,21 @@ def parse_python_file(path: Path) -> ParsedModule:
 
     This helper exists for analytics flows that need both functions and the
     associated span index or source lines.
+
+    Returns
+    -------
+    ParsedModule
+        Parsed module containing functions, spans, and source lines.
     """
     content = path.read_bytes()
     return parse_python_module(path, content)
 
 
 __all__ = [
+    "FunctionParserKind",
     "FunctionParserRegistry",
     "ParsedFunction",
     "ParsedModule",
-    "FunctionParserKind",
     "parse_functions_in_module",
     "parse_python_file",
     "resolve_span",

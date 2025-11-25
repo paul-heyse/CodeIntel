@@ -17,10 +17,11 @@ from typing import Any
 import duckdb
 import networkx as nx
 
-from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     GraphBundle,
     GraphContext,
+    build_graph_context,
     centrality_directed,
     component_metadata,
     neighbor_stats,
@@ -39,25 +40,36 @@ def compute_graph_metrics(
     cfg: GraphMetricsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
-    """Populate analytics graph metrics tables for the provided repo/commit."""
+    """
+    Populate analytics graph metrics tables for the provided repo/commit.
+
+    Parameters
+    ----------
+    gateway :
+        Storage gateway used for graph reads and metric writes.
+    cfg :
+        Graph metrics configuration for the current repository snapshot.
+    catalog_provider :
+        Optional catalog provider reused for module lookups.
+    runtime : GraphRuntimeOptions | None
+        Optional runtime options supplying cached graphs and backend selection.
+    """
+    runtime = runtime or GraphRuntimeOptions()
+    context = runtime.context
+    graph_ctx = runtime.graph_ctx
     con = gateway.con
     ensure_schema(con, "analytics.graph_metrics_functions")
     ensure_schema(con, "analytics.graph_metrics_modules")
-    ctx = graph_ctx or GraphContext(
-        repo=cfg.repo,
-        commit=cfg.commit,
-        now=datetime.now(UTC),
-        betweenness_sample=cfg.max_betweenness_sample or 500,
-        eigen_max_iter=cfg.eigen_max_iter,
-        pagerank_weight=cfg.pagerank_weight,
-        betweenness_weight=cfg.betweenness_weight,
-        seed=cfg.seed,
+    use_gpu = runtime.use_gpu
+    ctx = graph_ctx or build_graph_context(
+        cfg,
+        now=datetime.now(tz=UTC),
+        use_gpu=use_gpu,
     )
-    if ctx.repo != cfg.repo or ctx.commit != cfg.commit:
-        ctx = replace(ctx, repo=cfg.repo, commit=cfg.commit)
+    if ctx.repo != cfg.repo or ctx.commit != cfg.commit or ctx.use_gpu != use_gpu:
+        ctx = replace(ctx, repo=cfg.repo, commit=cfg.commit, use_gpu=use_gpu)
     call_graph_cached = context.call_graph if context is not None else None
     import_graph_cached = context.import_graph if context is not None else None
 
@@ -65,14 +77,14 @@ def compute_graph_metrics(
         return (
             call_graph_cached
             if call_graph_cached is not None
-            else load_call_graph(gateway, cfg.repo, cfg.commit)
+            else load_call_graph(gateway, cfg.repo, cfg.commit, use_gpu=use_gpu)
         )
 
     def _import_graph_loader() -> nx.DiGraph:
         return (
             import_graph_cached
             if import_graph_cached is not None
-            else load_import_graph(gateway, cfg.repo, cfg.commit)
+            else load_import_graph(gateway, cfg.repo, cfg.commit, use_gpu=use_gpu)
         )
 
     bundle: GraphBundle[nx.DiGraph] = GraphBundle(

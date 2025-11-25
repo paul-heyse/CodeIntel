@@ -8,7 +8,7 @@ from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     GraphContext,
     centrality_directed,
@@ -24,13 +24,20 @@ CENTRALITY_SAMPLE_LIMIT = 500
 EIGEN_MAX_ITER = 200
 
 
+def _bridge_endpoint_counts(graph: nx.Graph) -> dict[int, int]:
+    counts: dict[int, int] = dict.fromkeys(graph.nodes, 0)
+    for left, right in nx.bridges(graph):
+        counts[left] += 1
+        counts[right] += 1
+    return counts
+
+
 def compute_graph_metrics_functions_ext(
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate analytics.graph_metrics_functions_ext with additional centralities.
@@ -43,11 +50,13 @@ def compute_graph_metrics_functions_ext(
         Repository identifier anchoring the metrics.
     commit : str
         Commit hash anchoring the metrics snapshot.
-    context : AnalyticsContext | None
-        Optional shared context to reuse cached call graphs.
-    graph_ctx : GraphContext | None
-        Optional graph context to control weights, seeds, and sampling limits.
+    runtime : GraphRuntimeOptions | None
+        Optional runtime options including cached graphs and backend selection.
     """
+    runtime = runtime or GraphRuntimeOptions()
+    context = runtime.context
+    graph_ctx = runtime.graph_ctx
+    use_gpu = runtime.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.graph_metrics_functions_ext")
     ctx = graph_ctx or GraphContext(
@@ -58,6 +67,7 @@ def compute_graph_metrics_functions_ext(
         eigen_max_iter=EIGEN_MAX_ITER,
         pagerank_weight="weight",
         betweenness_weight="weight",
+        use_gpu=use_gpu,
     )
     if ctx.betweenness_sample > CENTRALITY_SAMPLE_LIMIT or ctx.eigen_max_iter > EIGEN_MAX_ITER:
         ctx = replace(
@@ -65,8 +75,12 @@ def compute_graph_metrics_functions_ext(
             betweenness_sample=min(ctx.betweenness_sample, CENTRALITY_SAMPLE_LIMIT),
             eigen_max_iter=min(ctx.eigen_max_iter, EIGEN_MAX_ITER),
         )
+    if ctx.use_gpu != use_gpu:
+        ctx = replace(ctx, use_gpu=use_gpu)
     graph: nx.DiGraph = (
-        context.call_graph if context is not None else load_call_graph(gateway, repo, commit)
+        context.call_graph
+        if context is not None
+        else load_call_graph(gateway, repo, commit, use_gpu=use_gpu)
     )
     simple_graph: nx.DiGraph = cast("nx.DiGraph", graph.copy())
     simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
@@ -78,10 +92,7 @@ def compute_graph_metrics_functions_ext(
     articulations = (
         set(nx.articulation_points(undirected)) if undirected.number_of_nodes() > 0 else set()
     )
-    bridge_incident: dict[int, int] = dict.fromkeys(undirected.nodes, 0)
-    for left, right in nx.bridges(undirected):
-        bridge_incident[left] += 1
-        bridge_incident[right] += 1
+    bridge_incident = _bridge_endpoint_counts(undirected)
 
     rows: list[tuple[object, ...]] = []
     for node in simple_graph.nodes:

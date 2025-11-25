@@ -112,7 +112,7 @@ def load_function_asts(
                 start_line=meta.start_line,
                 end_line=meta.end_line,
                 node=node,
-                lines=parsed.lines,
+                lines=list(parsed.lines),
             )
 
     return ast_by_goid, missing

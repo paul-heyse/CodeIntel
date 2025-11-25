@@ -22,6 +22,7 @@ from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config.models import SemanticRolesConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.graphs.nx_views import _normalize_decimal
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
@@ -317,26 +318,30 @@ def _build_function_role_rows(
 def _load_function_rows(
     con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
 ) -> list[tuple[int, str, str, int | None]]:
-    rows: Iterable[tuple[int, str, str, int | None]] = con.execute(
+    rows: Iterable[tuple[object, str, str, int | None]] = con.execute(
         """
-        SELECT function_goid_h128::BIGINT, rel_path, qualname, loc
+        SELECT function_goid_h128, rel_path, qualname, loc
         FROM analytics.function_metrics
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
     ).fetchall()
-    return [
-        (int(goid), str(rel_path), str(qualname), loc) for goid, rel_path, qualname, loc in rows
-    ]
+    result: list[tuple[int, str, str, int | None]] = []
+    for goid_raw, rel_path, qualname, loc in rows:
+        goid = _normalize_decimal(goid_raw)
+        if goid is None:
+            continue
+        result.append((goid, str(rel_path), str(qualname), loc))
+    return result
 
 
 def _load_effects(
     con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    rows: Iterable[tuple[int, bool, bool, bool, bool, bool, bool, bool]] = con.execute(
+    rows: Iterable[tuple[object, bool, bool, bool, bool, bool, bool, bool]] = con.execute(
         """
         SELECT
-            function_goid_h128::BIGINT,
+            function_goid_h128,
             touches_db,
             uses_io,
             uses_time,
@@ -351,7 +356,7 @@ def _load_effects(
     ).fetchall()
     mapping: dict[int, dict[str, object]] = {}
     for (
-        goid,
+        goid_raw,
         touches_db,
         uses_io,
         uses_time,
@@ -360,7 +365,10 @@ def _load_effects(
         modifies_closure,
         spawns_threads_or_tasks,
     ) in rows:
-        mapping[int(goid)] = {
+        goid = _normalize_decimal(goid_raw)
+        if goid is None:
+            continue
+        mapping[goid] = {
             "touches_db": bool(touches_db),
             "uses_io": bool(uses_io),
             "uses_time": bool(uses_time),
@@ -375,17 +383,20 @@ def _load_effects(
 def _load_contracts(
     con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    rows: Iterable[tuple[int, object, object, object]] = con.execute(
+    rows: Iterable[tuple[object, object, object, object]] = con.execute(
         """
-        SELECT function_goid_h128::BIGINT, preconditions_json, raises_json, param_nullability_json
+        SELECT function_goid_h128, preconditions_json, raises_json, param_nullability_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
     ).fetchall()
     mapping: dict[int, dict[str, object]] = {}
-    for goid, preconditions, raises_json, param_nullability in rows:
-        mapping[int(goid)] = {
+    for goid_raw, preconditions, raises_json, param_nullability in rows:
+        goid = _normalize_decimal(goid_raw)
+        if goid is None:
+            continue
+        mapping[goid] = {
             "preconditions": _coerce_json(preconditions) or [],
             "raises": _coerce_json(raises_json) or [],
             "param_nullability": _coerce_json(param_nullability) or {},
@@ -396,17 +407,20 @@ def _load_contracts(
 def _load_graph_metrics(
     con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
 ) -> dict[int, dict[str, int]]:
-    rows: Iterable[tuple[int, int | None, int | None]] = con.execute(
+    rows: Iterable[tuple[object, int | None, int | None]] = con.execute(
         """
-        SELECT function_goid_h128::BIGINT, call_fan_in, call_fan_out
+        SELECT function_goid_h128, call_fan_in, call_fan_out
         FROM analytics.graph_metrics_functions
         WHERE repo = ? AND commit = ?
         """,
         [repo, commit],
     ).fetchall()
     mapping: dict[int, dict[str, int]] = {}
-    for goid, call_fan_in, call_fan_out in rows:
-        mapping[int(goid)] = {
+    for goid_raw, call_fan_in, call_fan_out in rows:
+        goid = _normalize_decimal(goid_raw)
+        if goid is None:
+            continue
+        mapping[goid] = {
             "call_fan_in": int(call_fan_in or 0),
             "call_fan_out": int(call_fan_out or 0),
         }

@@ -9,7 +9,7 @@ from typing import cast
 import duckdb
 import networkx as nx
 
-from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     GraphContext,
     ProjectionMetrics,
@@ -121,10 +121,26 @@ def compute_config_graph_metrics(
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
-    """Compute metrics for config keys/modules and their projections."""
+    """
+    Compute metrics for config keys/modules and their projections.
+
+    Parameters
+    ----------
+    gateway :
+        Storage gateway used for reading graphs and writing metrics.
+    repo : str
+        Repository identifier anchoring the metrics.
+    commit : str
+        Commit hash anchoring the metrics snapshot.
+    runtime : GraphRuntimeOptions | None
+        Optional runtime options supplying cached graphs and backend selection.
+    """
+    runtime = runtime or GraphRuntimeOptions()
+    context = runtime.context
+    graph_ctx = runtime.graph_ctx
+    use_gpu = runtime.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.config_graph_metrics_keys")
     ensure_schema(con, "analytics.config_graph_metrics_modules")
@@ -134,7 +150,7 @@ def compute_config_graph_metrics(
     if context is not None and (context.repo != repo or context.commit != commit):
         return
 
-    graph = load_config_module_bipartite(gateway, repo, commit)
+    graph = load_config_module_bipartite(gateway, repo, commit, use_gpu=use_gpu)
     if graph.number_of_nodes() == 0:
         log_empty_graph("config_module_bipartite", graph)
         _clear_config_tables(gateway, repo, commit)
@@ -146,9 +162,12 @@ def compute_config_graph_metrics(
         now=created_at,
         pagerank_weight="weight",
         betweenness_weight="weight",
+        use_gpu=use_gpu,
     )
     if ctx.betweenness_sample > MAX_BETWEENNESS_NODES:
         ctx = replace(ctx, betweenness_sample=MAX_BETWEENNESS_NODES)
+    if ctx.use_gpu != use_gpu:
+        ctx = replace(ctx, use_gpu=use_gpu)
 
     keys = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}
     modules = set(graph) - keys

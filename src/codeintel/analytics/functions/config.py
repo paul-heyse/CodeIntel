@@ -10,9 +10,8 @@ from codeintel.analytics.context import AnalyticsContext
 from codeintel.config.models import FunctionAnalyticsConfig
 
 if TYPE_CHECKING:
+    from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
     from codeintel.analytics.parsing.validation import FunctionValidationReporter
-    from codeintel.analytics.parsing.models import ParsedModule
-    from codeintel.analytics.parsing.models import SourceSpan
 
 
 @dataclass(frozen=True)

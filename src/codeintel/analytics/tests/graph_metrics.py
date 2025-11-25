@@ -9,7 +9,7 @@ from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     BipartiteDegrees,
     GraphContext,
@@ -118,10 +118,13 @@ def compute_test_graph_metrics(
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate test and function-side metrics derived from test coverage graphs."""
+    runtime = runtime or GraphRuntimeOptions()
+    context = runtime.context
+    graph_ctx = runtime.graph_ctx
+    use_gpu = runtime.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.test_graph_metrics_tests")
     ensure_schema(con, "analytics.test_graph_metrics_functions")
@@ -129,14 +132,27 @@ def compute_test_graph_metrics(
     if context is not None and (context.repo != repo or context.commit != commit):
         return
 
-    graph: nx.Graph = load_test_function_bipartite(gateway, repo, commit)
+    graph: nx.Graph = load_test_function_bipartite(gateway, repo, commit, use_gpu=use_gpu)
     graph_ctx = graph_ctx or GraphContext(
         repo=repo,
         commit=commit,
         now=datetime.now(UTC),
         pagerank_weight="weight",
         betweenness_weight="weight",
+        use_gpu=use_gpu,
     )
+    if graph_ctx.use_gpu != use_gpu:
+        graph_ctx = GraphContext(
+            repo=graph_ctx.repo,
+            commit=graph_ctx.commit,
+            now=graph_ctx.now,
+            betweenness_sample=graph_ctx.betweenness_sample,
+            eigen_max_iter=graph_ctx.eigen_max_iter,
+            seed=graph_ctx.seed,
+            pagerank_weight=graph_ctx.pagerank_weight,
+            betweenness_weight=graph_ctx.betweenness_weight,
+            use_gpu=use_gpu,
+        )
     now = graph_ctx.resolved_now()
 
     tests = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}

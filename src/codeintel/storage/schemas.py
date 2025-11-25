@@ -57,7 +57,34 @@ def _build_table_ddl(table: TableSchema) -> str:
     )
 
 
+def _build_table_ddl_if_not_exists(table: TableSchema) -> str:
+    """
+    Generate non-destructive CREATE TABLE DDL from a TableSchema.
+
+    Returns
+    -------
+    str
+        CREATE TABLE IF NOT EXISTS statement for the provided schema.
+    """
+    col_lines: list[str] = []
+    for col in table.columns:
+        nullable_sql = "" if col.nullable else " NOT NULL"
+        col_lines.append(f"    {_quote(col.name)} {col.type}{nullable_sql}")
+    if table.primary_key:
+        pk_cols = ", ".join(_quote(col) for col in table.primary_key)
+        col_lines.append(f"    PRIMARY KEY ({pk_cols})")
+    cols_sql = ",\n".join(col_lines)
+    return (
+        f"CREATE TABLE IF NOT EXISTS {_quote(table.schema)}.{_quote(table.name)} (\n"
+        f"{cols_sql}\n"
+        ");"
+    )
+
+
 TABLE_DDL: dict[str, str] = {key: _build_table_ddl(schema) for key, schema in TABLE_SCHEMAS.items()}
+TABLE_DDL_IF_NOT_EXISTS: dict[str, str] = {
+    key: _build_table_ddl_if_not_exists(schema) for key, schema in TABLE_SCHEMAS.items()
+}
 
 
 def _build_index_ddl(table: TableSchema) -> list[str]:
@@ -101,6 +128,26 @@ def apply_all_schemas(
     for ddl in INDEX_DDL:
         con.execute(ddl)
 
+    if extra_ddl:
+        for stmt in extra_ddl:
+            con.execute(stmt)
+
+
+def ensure_schemas_preserve(
+    con: DuckDBPyConnection,
+    extra_ddl: Iterable[str] | None = None,
+) -> None:
+    """
+    Ensure schemas and tables exist without dropping existing data.
+
+    Creates missing tables and indexes using IF NOT EXISTS; existing tables are left
+    untouched. Use assert_schema_alignment separately to detect drift.
+    """
+    create_schemas(con)
+    for ddl in TABLE_DDL_IF_NOT_EXISTS.values():
+        con.execute(ddl)
+    for ddl in INDEX_DDL:
+        con.execute(ddl)
     if extra_ddl:
         for stmt in extra_ddl:
             con.execute(stmt)

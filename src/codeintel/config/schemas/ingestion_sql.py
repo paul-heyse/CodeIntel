@@ -156,7 +156,7 @@ CST_NODES_INSERT = (
     ") VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 
-FILE_STATE_DELETE = "DELETE FROM core.file_state WHERE repo = ? AND commit = ? AND language = ?"
+FILE_STATE_DELETE = "DELETE FROM core.file_state WHERE repo = ? AND rel_path = ? AND language = ?"
 FILE_STATE_INSERT = (
     "INSERT INTO core.file_state ("
     "repo, commit, rel_path, language, size_bytes, mtime_ns, content_hash"

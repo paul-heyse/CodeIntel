@@ -34,6 +34,7 @@ class GraphContext:
     seed: int = 0
     pagerank_weight: str | None = "weight"
     betweenness_weight: str | None = "weight"
+    use_gpu: bool = False
 
     def resolved_now(self) -> datetime:
         """
@@ -56,6 +57,7 @@ def build_graph_context(
     now: datetime | None = None,
     betweenness_cap: int | None = None,
     eigen_cap: int | None = None,
+    use_gpu: bool = False,
 ) -> GraphContext:
     """
     Construct a GraphContext from GraphMetricsConfig with optional caps.
@@ -70,6 +72,8 @@ def build_graph_context(
         Optional upper bound for betweenness sampling.
     eigen_cap :
         Optional upper bound for eigenvector iterations.
+    use_gpu :
+        Whether to prefer GPU-backed NetworkX execution when available.
 
     Returns
     -------
@@ -89,6 +93,7 @@ def build_graph_context(
         seed=cfg.seed,
         pagerank_weight=cfg.pagerank_weight,
         betweenness_weight=cfg.betweenness_weight,
+        use_gpu=use_gpu,
     )
 
 

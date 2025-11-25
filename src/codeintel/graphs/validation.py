@@ -10,6 +10,8 @@ from typing import Any, cast
 import duckdb
 import networkx as nx
 
+from codeintel.analytics.parsing.validation import GraphValidationReporter
+from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog import FunctionCatalog, load_function_catalog
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.graphs.nx_views import (
@@ -20,7 +22,6 @@ from codeintel.graphs.nx_views import (
 )
 from codeintel.storage.gateway import StorageGateway
 
-FINDINGS_TABLE = "analytics.graph_validation"
 SAMPLE_LIMIT = 5
 SYMBOL_COMMUNITY_MIN = 2
 CONFIG_KEY_MIN_THRESHOLD = 2
@@ -74,7 +75,7 @@ def run_graph_validations(
     findings.extend(_warn_callsite_span_mismatches(gateway, catalog, repo, commit, active_log))
     findings.extend(_warn_orphan_modules(gateway, repo, commit, active_log, catalog))
     findings.extend(warn_graph_structure(gateway, repo, commit, active_log))
-    _persist_findings(gateway, findings)
+    _persist_findings(gateway, findings, repo, commit)
     active_log.info(
         "Graph validation completed for %s@%s: %d finding(s)",
         repo,
@@ -647,43 +648,35 @@ def _warn_orphan_modules(
     ]
 
 
-def _persist_findings(gateway: StorageGateway, findings: list[dict[str, object]]) -> None:
+def _persist_findings(
+    gateway: StorageGateway, findings: list[dict[str, object]], repo: str, commit: str
+) -> None:
     if not findings:
         return
     con = gateway.con
+    ensure_schema(con, "analytics.graph_validation")
     con.execute(
-        """
-        CREATE TABLE IF NOT EXISTS analytics.graph_validation (
-            repo VARCHAR,
-            commit VARCHAR,
-            check_name VARCHAR,
-            severity VARCHAR,
-            path VARCHAR,
-            detail VARCHAR,
-            context JSON,
-            created_at TIMESTAMP
+        "DELETE FROM analytics.graph_validation WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    )
+    reporter = GraphValidationReporter(repo=repo, commit=commit)
+    for finding in findings:
+        graph_name = str(finding.get("check_name") or "graph_validation")
+        entity_id = str(
+            finding.get("path")
+            or finding.get("entity_id")
+            or finding.get("graph_name")
+            or graph_name
         )
-        """
-    )
-    con.executemany(
-        """
-        INSERT INTO analytics.graph_validation
-        (repo, commit, check_name, severity, path, detail, context, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        """,
-        [
-            (
-                finding.get("repo"),
-                finding.get("commit"),
-                finding.get("check_name"),
-                finding.get("severity"),
-                finding.get("path"),
-                finding.get("detail"),
-                finding.get("context"),
-            )
-            for finding in findings
-        ],
-    )
+        kind = str(finding.get("severity") or "info")
+        message = str(finding.get("detail") or "")
+        reporter.record(
+            graph_name=graph_name,
+            entity_id=entity_id,
+            kind=kind,
+            message=message,
+        )
+    reporter.flush(gateway)
 
 
 def _log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: logging.Logger) -> None:

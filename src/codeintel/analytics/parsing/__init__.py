@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from .function_parsing import parse_python_module
-from .models import ParsedFunction, ParsedModule, SourceSpan
-from .registry import FunctionParserRegistry, get_parser, register_parser
-from .span_resolver import (
+from codeintel.analytics.parsing.function_parsing import parse_python_module
+from codeintel.analytics.parsing.models import ParsedFunction, ParsedModule, SourceSpan
+from codeintel.analytics.parsing.registry import FunctionParserRegistry, get_parser, register_parser
+from codeintel.analytics.parsing.span_resolver import (
     SpanResolutionError,
     SpanResolutionResult,
     build_span_index,
     resolve_span,
 )
-from .validation import (
+from codeintel.analytics.parsing.validation import (
     BaseValidationReporter,
     FunctionValidationReporter,
     GraphValidationReporter,

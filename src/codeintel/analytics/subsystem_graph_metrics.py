@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import GraphContext, centrality_directed
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import load_import_graph
@@ -63,19 +64,25 @@ def compute_subsystem_graph_metrics(
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """Build subsystem-level condensed import graph metrics."""
+    runtime = runtime or GraphRuntimeOptions()
+    graph_ctx = runtime.graph_ctx
     con = gateway.con
     ensure_schema(con, "analytics.subsystem_graph_metrics")
-    ctx = graph_ctx or GraphContext(
+    graph_ctx = graph_ctx or GraphContext(
         repo=repo,
         commit=commit,
         now=datetime.now(UTC),
+        use_gpu=runtime.use_gpu,
     )
+    if graph_ctx.use_gpu != runtime.use_gpu:
+        graph_ctx = replace(graph_ctx, use_gpu=runtime.use_gpu)
 
-    if context is not None and (context.repo != repo or context.commit != commit):
+    if runtime.context is not None and (
+        runtime.context.repo != repo or runtime.context.commit != commit
+    ):
         return
 
     membership_rows = con.execute(
@@ -100,7 +107,9 @@ def compute_subsystem_graph_metrics(
     subsystem_graph.add_nodes_from({subsystem_id for subsystem_id, _ in membership_rows})
 
     import_graph = (
-        context.import_graph if context is not None else load_import_graph(gateway, repo, commit)
+        runtime.context.import_graph
+        if runtime.context is not None
+        else load_import_graph(gateway, repo, commit, use_gpu=runtime.use_gpu)
     )
     if import_graph is None:
         con.execute(
@@ -113,7 +122,7 @@ def compute_subsystem_graph_metrics(
         dst_sub = module_to_subsystem.get(dst)
         if src_sub is None or dst_sub is None or src_sub == dst_sub:
             continue
-        weight = float(data.get(ctx.betweenness_weight or "weight", 1.0))
+        weight = float(data.get(graph_ctx.betweenness_weight or "weight", 1.0))
         if subsystem_graph.has_edge(src_sub, dst_sub):
             subsystem_graph[src_sub][dst_sub]["weight"] += weight
         else:
@@ -126,18 +135,18 @@ def compute_subsystem_graph_metrics(
         )
         return
 
-    centralities = _subsystem_centralities(subsystem_graph, ctx)
+    centralities = _subsystem_centralities(subsystem_graph, graph_ctx)
     layer_by_subsystem = _layer_by_subsystem(subsystem_graph)
-    in_degree, out_degree = _degree_maps(subsystem_graph, weight=ctx.betweenness_weight)
+    degree_maps = _degree_maps(subsystem_graph, weight=graph_ctx.betweenness_weight)
 
-    now = ctx.resolved_now()
+    now = graph_ctx.resolved_now()
     rows = [
         (
             repo,
             commit,
             subsystem,
-            float(in_degree.get(subsystem, 0.0)),
-            float(out_degree.get(subsystem, 0.0)),
+            float(degree_maps[0].get(subsystem, 0.0)),
+            float(degree_maps[1].get(subsystem, 0.0)),
             centralities[0].get(subsystem, 0.0),
             centralities[1].get(subsystem, 0.0),
             centralities[2].get(subsystem, 0.0),

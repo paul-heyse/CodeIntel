@@ -4,25 +4,30 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Dict
 
+from codeintel.analytics.parsing.models import ParsedFunction
 from codeintel.config.parser_types import FunctionParserKind
 
-from .models import ParsedFunction
-
 ParseModuleFn = Callable[[Path, bytes], Iterable[ParsedFunction]]
-DEFAULT_PARSERS: Dict[FunctionParserKind, ParseModuleFn] = {}
+DEFAULT_PARSERS: dict[FunctionParserKind, ParseModuleFn] = {}
 
 
 class FunctionParserRegistry:
     """Registry for function parsers keyed by FunctionParserKind."""
 
     def __init__(self) -> None:
-        self._by_kind: Dict[FunctionParserKind, ParseModuleFn] = dict(DEFAULT_PARSERS)
+        self._by_kind: dict[FunctionParserKind, ParseModuleFn] = dict(DEFAULT_PARSERS)
 
     def register(self, kind: FunctionParserKind, fn: ParseModuleFn) -> None:
         """
         Register a parser implementation for the given kind.
+
+        Parameters
+        ----------
+        kind :
+            Parser identifier.
+        fn :
+            Parser implementation that returns parsed functions for a module.
 
         Raises
         ------
@@ -65,7 +70,14 @@ _registry = FunctionParserRegistry()
 
 
 def register_parser(kind: FunctionParserKind, fn: ParseModuleFn) -> None:
-    """Register a parser globally."""
+    """
+    Register a parser globally.
+
+    Raises
+    ------
+    ValueError
+        If a parser is already registered for the given kind.
+    """
     if kind in DEFAULT_PARSERS:
         message = f"Parser already registered for kind {kind}"
         raise ValueError(message)
@@ -74,5 +86,12 @@ def register_parser(kind: FunctionParserKind, fn: ParseModuleFn) -> None:
 
 
 def get_parser(kind: FunctionParserKind | None = None) -> ParseModuleFn:
-    """Return the globally registered parser for the requested kind."""
+    """
+    Return the globally registered parser for the requested kind.
+
+    Returns
+    -------
+    ParseModuleFn
+        Parser callable registered for the requested kind.
+    """
     return _registry.get(kind)

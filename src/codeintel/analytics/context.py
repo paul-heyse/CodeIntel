@@ -50,6 +50,7 @@ class AnalyticsContextConfig:
     sample_seed: int = 0
     load_symbol_graphs: bool = False
     metrics_hook: Callable[[dict[str, object]], None] | None = None
+    use_gpu: bool = False
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,7 @@ class AnalyticsContext:
     snapshot_id: str
     stats: AnalyticsContextStats
     resources: AnalyticsResourceCounters
+    use_gpu: bool
 
 
 def _rotate[T](items: list[T], offset: int) -> list[T]:
@@ -183,9 +185,11 @@ def _import_graph_or_none(
     gateway: StorageGateway,
     repo: str,
     commit: str,
+    *,
+    use_gpu: bool,
 ) -> nx.DiGraph | None:
     try:
-        graph = load_import_graph(gateway, repo, commit)
+        graph = load_import_graph(gateway, repo, commit, use_gpu=use_gpu)
     except Exception:
         log.exception("Failed to load import graph for %s@%s", repo, commit)
         return None
@@ -287,7 +291,7 @@ def build_analytics_context(
 
     _record_graph(
         "call_graph",
-        lambda: load_call_graph(gateway, cfg.repo, cfg.commit),
+        lambda: load_call_graph(gateway, cfg.repo, cfg.commit, use_gpu=cfg.use_gpu),
         max_nodes=cfg.max_call_graph_nodes,
         max_edges=cfg.max_graph_edges,
         seed=cfg.sample_seed,
@@ -295,7 +299,12 @@ def build_analytics_context(
 
     _record_graph(
         "import_graph",
-        lambda: _import_graph_or_none(gateway, cfg.repo, cfg.commit),
+        lambda: _import_graph_or_none(
+            gateway,
+            cfg.repo,
+            cfg.commit,
+            use_gpu=cfg.use_gpu,
+        ),
         max_nodes=cfg.max_import_graph_nodes,
         max_edges=cfg.max_graph_edges,
         seed=cfg.sample_seed + 1,
@@ -312,14 +321,24 @@ def build_analytics_context(
     if cfg.load_symbol_graphs:
         _record_graph(
             "symbol_module_graph",
-            lambda: load_symbol_module_graph(gateway, cfg.repo, cfg.commit),
+            lambda: load_symbol_module_graph(
+                gateway,
+                cfg.repo,
+                cfg.commit,
+                use_gpu=cfg.use_gpu,
+            ),
             max_nodes=cfg.max_symbol_graph_nodes,
             max_edges=cfg.max_symbol_graph_edges,
             seed=cfg.sample_seed + 2,
         )
         _record_graph(
             "symbol_function_graph",
-            lambda: load_symbol_function_graph(gateway, cfg.repo, cfg.commit),
+            lambda: load_symbol_function_graph(
+                gateway,
+                cfg.repo,
+                cfg.commit,
+                use_gpu=cfg.use_gpu,
+            ),
             max_nodes=cfg.max_symbol_graph_nodes,
             max_edges=cfg.max_symbol_graph_edges,
             seed=cfg.sample_seed + 3,
@@ -395,6 +414,7 @@ def build_analytics_context(
             symbol_module_graph_ms=timers["symbol_module_graph_ms"],
             symbol_function_graph_ms=timers["symbol_function_graph_ms"],
         ),
+        use_gpu=cfg.use_gpu,
     )
 
     if cfg.metrics_hook is not None:
