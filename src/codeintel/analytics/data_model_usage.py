@@ -10,8 +10,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-import duckdb
-
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
 from codeintel.analytics.context import (
     AnalyticsContext,
@@ -24,7 +22,7 @@ from codeintel.config.models import DataModelUsageConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.data_models import DataModelRow, fetch_models
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
@@ -409,7 +407,7 @@ def _load_models(gateway: StorageGateway, repo: str, commit: str) -> list[ModelI
 
 
 def _subsystem_by_module(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+    con: DuckDBConnection, repo: str, commit: str
 ) -> dict[str, tuple[str, str]]:
     rows = con.execute(
         """

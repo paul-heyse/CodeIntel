@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-import duckdb
 import networkx as nx
 
 from codeintel.analytics.parsing.validation import GraphValidationReporter
@@ -20,7 +19,7 @@ from codeintel.graphs.nx_views import (
     load_import_graph,
     load_symbol_module_graph,
 )
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 SAMPLE_LIMIT = 5
 SYMBOL_COMMUNITY_MIN = 2
@@ -110,7 +109,7 @@ def _warn_missing_function_goids(
             """,
             [repo, commit, repo, commit],
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         return []
 
     if not rows:
@@ -156,7 +155,7 @@ def _warn_callsite_span_mismatches(
             """,
             [repo, commit],
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         return []
 
     mismatches = []
@@ -623,7 +622,7 @@ def _warn_orphan_modules(
                 commit,
                 sample_detail,
             )
-    except duckdb.Error:
+    except DuckDBError:
         query_failed = True
         rows = []
 
@@ -690,7 +689,7 @@ def _log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggi
                 if use_params
                 else con.execute(query).fetchone()
             )
-        except duckdb.Error as exc:  # pragma: no cover - defensive logging
+        except DuckDBError as exc:  # pragma: no cover - defensive logging
             log.warning("Validation snapshot count failed for %s: %s", query, exc)
             return -1
         if row is None:

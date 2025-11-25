@@ -11,8 +11,6 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-import duckdb
-
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.config.models import ProfilesAnalyticsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
@@ -20,7 +18,7 @@ from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +26,7 @@ SLOW_TEST_THRESHOLD_MS = 1000.0
 
 
 def _seed_catalog_modules(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     catalog_provider: FunctionCatalogProvider | None,
     repo: str,
     commit: str,

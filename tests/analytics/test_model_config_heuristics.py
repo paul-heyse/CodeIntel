@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from codeintel.analytics.config_data_flow import compute_config_data_flow
@@ -17,7 +16,7 @@ from codeintel.analytics.data_model_usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
 from codeintel.config.models import ConfigDataFlowConfig, DataModelsConfig, DataModelUsageConfig
 from codeintel.storage.data_models import NormalizedDataModel, fetch_models_normalized
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from tests._helpers.builders import (
     CallGraphNodeRow,
     FunctionTypesRow,
@@ -157,7 +156,7 @@ def _seed_function_types(gateway: StorageGateway, goids: Iterable[GoidRow]) -> N
     insert_function_types(gateway, rows)
 
 
-def _seed_config_values(con: duckdb.DuckDBPyConnection, rel_path: str) -> None:
+def _seed_config_values(con: DuckDBConnection, rel_path: str) -> None:
     con.execute(
         "DELETE FROM analytics.config_values WHERE repo = ? AND commit = ?",
         [REPO, COMMIT],
@@ -181,7 +180,7 @@ def _seed_config_values(con: duckdb.DuckDBPyConnection, rel_path: str) -> None:
     )
 
 
-def _seed_entrypoints(con: duckdb.DuckDBPyConnection, handler_goid: int) -> None:
+def _seed_entrypoints(con: DuckDBConnection, handler_goid: int) -> None:
     con.execute(
         """
         INSERT INTO analytics.entrypoints (
@@ -268,9 +267,7 @@ def _assert_models(gateway: StorageGateway) -> dict[str, str]:
     return {model.model_name: model.model_id for model in models}
 
 
-def _assert_field_relationship_tables(
-    con: duckdb.DuckDBPyConnection, model_ids: dict[str, str]
-) -> None:
+def _assert_field_relationship_tables(con: DuckDBConnection, model_ids: dict[str, str]) -> None:
     fields_rows = con.execute(
         """
         SELECT field_name, field_type, source
@@ -294,7 +291,7 @@ def _assert_field_relationship_tables(
         pytest.fail("Expected Post->User relationship in data_model_relationships")
 
 
-def _assert_model_usage(con: duckdb.DuckDBPyConnection, goid_index: dict[str, int]) -> None:
+def _assert_model_usage(con: DuckDBConnection, goid_index: dict[str, int]) -> None:
     usage_rows = con.execute(
         """
         SELECT model_id, function_goid_h128, usage_kinds_json
@@ -312,7 +309,7 @@ def _assert_model_usage(con: duckdb.DuckDBPyConnection, goid_index: dict[str, in
         pytest.fail("Expected serialize usage for serialize_payload")
 
 
-def _assert_config_usage(con: duckdb.DuckDBPyConnection) -> None:
+def _assert_config_usage(con: DuckDBConnection) -> None:
     config_rows = con.execute(
         """
         SELECT usage_kind, evidence_json
@@ -341,7 +338,9 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
         _seed_config_values(con, config_rel_path)
         _seed_entrypoints(con, goid_index["config_checks"])
 
-        compute_data_models(con, DataModelsConfig(repo=REPO, commit=COMMIT, repo_root=repo_root))
+        compute_data_models(
+            gateway, DataModelsConfig(repo=REPO, commit=COMMIT, repo_root=repo_root)
+        )
         compute_data_model_usage(
             gateway=gateway,
             cfg=DataModelUsageConfig(repo=REPO, commit=COMMIT, repo_root=repo_root),

@@ -6,7 +6,6 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
 
-import duckdb
 import networkx as nx
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
@@ -20,7 +19,7 @@ from codeintel.analytics.graph_service import (
 )
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import load_config_module_bipartite
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 MAX_BETWEENNESS_NODES = 1000
 
@@ -111,7 +110,7 @@ def _projection_payload(
     )
 
 
-def _persist_rows(con: duckdb.DuckDBPyConnection, sql: str, rows: list[tuple[object, ...]]) -> None:
+def _persist_rows(con: DuckDBConnection, sql: str, rows: list[tuple[object, ...]]) -> None:
     if rows:
         con.executemany(sql, rows)
 

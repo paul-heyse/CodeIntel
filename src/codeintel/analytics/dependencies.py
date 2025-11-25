@@ -13,7 +13,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import duckdb
 import yaml
 
 from codeintel.analytics.ast_utils import resolve_call_target, safe_unparse, snippet_from_lines
@@ -27,7 +26,7 @@ from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config.models import ExternalDependenciesConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 if TYPE_CHECKING:
@@ -370,9 +369,7 @@ def build_external_dependencies(
     )
 
 
-def _prepare_external_dependencies(
-    con: duckdb.DuckDBPyConnection, cfg: ExternalDependenciesConfig
-) -> None:
+def _prepare_external_dependencies(con: DuckDBConnection, cfg: ExternalDependenciesConfig) -> None:
     ensure_schema(con, "analytics.external_dependencies")
     con.execute(
         "DELETE FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
@@ -381,7 +378,7 @@ def _prepare_external_dependencies(
 
 
 def _fetch_dependency_call_rows(
-    con: duckdb.DuckDBPyConnection, cfg: ExternalDependenciesConfig
+    con: DuckDBConnection, cfg: ExternalDependenciesConfig
 ) -> list[tuple[object, ...]]:
     return con.execute(
         """
@@ -622,9 +619,7 @@ def _classify_modes(
     return (["unknown"], None)
 
 
-def _load_config_keys(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
-) -> dict[str, set[str]]:
+def _load_config_keys(con: DuckDBConnection, repo: str, commit: str) -> dict[str, set[str]]:
     mapping: dict[str, set[str]] = defaultdict(set)
     rows = con.execute(
         """
@@ -643,9 +638,7 @@ def _load_config_keys(
     return mapping
 
 
-def load_config_key_map(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
-) -> dict[str, set[str]]:
+def load_config_key_map(con: DuckDBConnection, repo: str, commit: str) -> dict[str, set[str]]:
     """
     Load config keys keyed by module for a repo snapshot.
 

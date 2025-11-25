@@ -18,7 +18,7 @@ from codeintel.ingestion.common import (
     run_batch,
     should_skip_empty,
 )
-from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.models.rows import DocstringRow, docstring_row_to_tuple
 from codeintel.storage.gateway import StorageGateway
 
@@ -140,7 +140,7 @@ class DocstringVisitor(ast.NodeVisitor):
 def ingest_docstrings(
     gateway: StorageGateway,
     cfg: DocstringConfig,
-    scan_config: ScanConfig | None = None,
+    code_profile: ScanProfile | None = None,
 ) -> None:
     """
     Extract docstrings for all Python modules in core.modules and persist them.
@@ -151,8 +151,8 @@ def ingest_docstrings(
         StorageGateway providing access to the DuckDB database.
     cfg : DocstringConfig
         Repository context for this ingestion run.
-    scan_config : ScanConfig | None
-        Optional scan configuration controlling iteration cadence.
+    code_profile : ScanProfile | None
+        Optional scan profile controlling iteration cadence.
     """
     repo_root = cfg.repo_root.resolve()
     module_map = load_module_map(gateway, cfg.repo, cfg.commit, language="python", logger=log)
@@ -166,7 +166,7 @@ def ingest_docstrings(
         module_map,
         repo_root,
         logger=log,
-        scan_config=scan_config,
+        scan_profile=code_profile,
     ):
         source = read_module_source(record, logger=log)
         if source is None:

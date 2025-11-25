@@ -6,14 +6,12 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-import duckdb
-
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.git_history import FileCommitDelta, iter_file_history
 from codeintel.config.models import FunctionHistoryConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -269,7 +267,7 @@ def _build_insert_row(
 
 
 def _load_function_spans(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     repo: str,
     commit: str,
 ) -> dict[str, list[FuncSpan]]:

@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import duckdb
-
 from codeintel.docs_export import DEFAULT_VALIDATION_SCHEMAS
 from codeintel.docs_export.validate_exports import validate_files
 from codeintel.services.errors import ExportError, problem
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import (
+    DuckDBConnection,
+    DuckDBError,
+    DuckDBRelation,
+    StorageGateway,
+)
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +102,7 @@ PARQUET_DATASETS: dict[str, str] = {
 }
 
 
-def _default_repo_commit(con: duckdb.DuckDBPyConnection) -> tuple[str, str]:
+def _default_repo_commit(con: DuckDBConnection) -> tuple[str, str]:
     row = con.execute("SELECT repo, commit FROM core.repo_map LIMIT 1").fetchone()
     if row is None:
         return "", ""
@@ -107,9 +110,7 @@ def _default_repo_commit(con: duckdb.DuckDBPyConnection) -> tuple[str, str]:
     return str(repo), str(commit)
 
 
-def _normalized_relation(
-    con: duckdb.DuckDBPyConnection, table_name: str
-) -> duckdb.DuckDBPyRelation:
+def _normalized_relation(con: DuckDBConnection, table_name: str) -> DuckDBRelation:
     if table_name == "graph.call_graph_edges":
         return con.sql(
             """
@@ -238,7 +239,7 @@ def export_all_parquet(
         try:
             export_parquet_for_table(gateway, table_name, output_path)
             written.append(output_path)
-        except (duckdb.Error, OSError, ValueError) as exc:
+        except (DuckDBError, OSError, ValueError) as exc:
             # Log and continue: some tables may legitimately be empty or missing
             log.warning(
                 "Failed to export %s to %s: %s",

@@ -15,7 +15,6 @@ from logging import Logger, LoggerAdapter
 from pathlib import Path
 from typing import cast
 
-import duckdb
 import networkx as nx
 from prefect import flow, get_run_logger, task
 from prefect.cache_policies import NO_CACHE
@@ -117,8 +116,14 @@ from codeintel.ingestion.runner import (
     run_tests_ingest,
     run_typing_ingest,
 )
-from codeintel.ingestion.source_scanner import IGNORES, ScanConfig
+from codeintel.ingestion.source_scanner import (
+    ScanProfile,
+    default_code_profile,
+    default_config_profile,
+    profile_from_env,
+)
 from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.tool_service import ToolService
 from codeintel.orchestration.steps import (
     PIPELINE_STEPS,
     PipelineContext,
@@ -127,6 +132,7 @@ from codeintel.orchestration.steps import (
 )
 from codeintel.services.errors import ExportError, log_problem, problem
 from codeintel.storage.gateway import (
+    DuckDBError,
     StorageConfig,
     StorageGateway,
     build_snapshot_gateway_resolver,
@@ -148,7 +154,8 @@ class ExportArgs:
     serve_db_path: Path | None = None
     log_db_path: Path | None = None
     tools: ToolsConfig | None = None
-    scan_config: ScanConfig | None = None
+    code_profile: ScanProfile | None = None
+    config_profile: ScanProfile | None = None
     function_overrides: FunctionAnalyticsOverrides | None = None
     validate_exports: bool = False
     export_schemas: list[str] | None = None
@@ -178,54 +185,59 @@ class SnapshotRecord:
     error: str | None = None
 
 
-_GATEWAY_CACHE: dict[tuple[str, bool, bool, bool, bool], StorageGateway] = {}
+_GATEWAY_CACHE: dict[
+    tuple[str, str, bool, bool, bool, bool, bool],
+    StorageGateway,
+] = {}
 _GATEWAY_STATS: dict[str, int] = {"opens": 0, "hits": 0}
 _PREFECT_LOGGING_SETTINGS_PATH = Path(__file__).with_name("prefect_logging.yml")
 os.environ.setdefault("PREFECT_LOGGING_SETTINGS_PATH", str(_PREFECT_LOGGING_SETTINGS_PATH))
 _GRAPH_BACKEND_STATE: dict[str, GraphBackendConfig] = {"config": GraphBackendConfig()}
 
 
-def _get_gateway(
-    db_path: Path,
-    *,
-    read_only: bool = False,
-    apply_schema: bool = False,
-    ensure_views: bool = False,
-    validate_schema: bool = True,
-) -> StorageGateway:
+def _gateway_cache_key(config: StorageConfig) -> tuple[str, str, bool, bool, bool, bool, bool]:
+    history = str(config.history_db_path.resolve()) if config.history_db_path is not None else ""
+    return (
+        str(config.db_path.resolve()),
+        history,
+        config.read_only,
+        config.apply_schema,
+        config.ensure_views,
+        config.validate_schema,
+        config.attach_history,
+    )
+
+
+def _get_gateway(config: StorageConfig) -> StorageGateway:
     """
     Return a cached StorageGateway for the flow run.
 
-    Parameters mirror StorageConfig; cache key includes all toggles to avoid
-    mixing incompatible configs.
+    Cache key includes all toggles to avoid mixing incompatible configs.
 
     Returns
     -------
     StorageGateway
         Cached gateway bound to the provided db_path.
     """
-    key = (
-        str(db_path.resolve()),
-        read_only,
-        apply_schema,
-        ensure_views,
-        validate_schema,
-    )
+    key = _gateway_cache_key(config)
     cached = _GATEWAY_CACHE.get(key)
     if cached is not None:
         _GATEWAY_STATS["hits"] += 1
         return cached
-    gateway_cfg = StorageConfig(
-        db_path=db_path,
-        read_only=read_only,
-        apply_schema=apply_schema,
-        ensure_views=ensure_views,
-        validate_schema=validate_schema,
-    )
-    gateway = open_gateway(gateway_cfg)
+    gateway = open_gateway(config)
     _GATEWAY_STATS["opens"] += 1
     _GATEWAY_CACHE[key] = gateway
     return gateway
+
+
+def _ingest_config(db_path: Path, *, history_db_path: Path | None = None) -> StorageConfig:
+    """Return a write-capable StorageConfig for the primary pipeline database."""
+    return StorageConfig.for_ingest(db_path, history_db_path=history_db_path)
+
+
+def _ingest_gateway(db_path: Path, *, history_db_path: Path | None = None) -> StorageGateway:
+    """Open or reuse an ingest-mode gateway for the given database path."""
+    return _get_gateway(_ingest_config(db_path, history_db_path=history_db_path))
 
 
 def _close_gateways() -> None:
@@ -360,14 +372,9 @@ def _log_task_done(name: str, start_ts: float, logger: Logger | LoggerAdapter) -
 
 def _ensure_db_schema(db_path: Path) -> None:
     """Apply schemas and validate alignment for the target database."""
-    _ = _get_gateway(
-        db_path,
-        read_only=False,
-        apply_schema=False,
-        ensure_views=False,
-        validate_schema=False,
-        ensure_schemas_preserve=True,
-    )
+    gateway = _ingest_gateway(db_path)
+    ensure_schemas_preserve(gateway.con)
+    assert_schema_alignment(gateway.con, strict=True)
 
 
 def _run_task(
@@ -425,7 +432,7 @@ def _snapshot_db_state(
     counts: dict[str, int] = {}
     status = "ok"
     error: str | None = None
-    con: duckdb.DuckDBPyConnection | None = None
+    gateway: StorageGateway | None = None
     if not snapshot.db_path.exists():
         status = "missing"
         error = "database not found"
@@ -433,11 +440,12 @@ def _snapshot_db_state(
         try:
             # Match the configuration of the main pipeline gateway (read/write)
             # to avoid DuckDB config mismatch errors, but run read-only queries.
-            con = duckdb.connect(str(snapshot.db_path), read_only=False)
-        except duckdb.Error as exc:
+            gateway = _ingest_gateway(snapshot.db_path)
+        except DuckDBError as exc:
             status = "error"
             error = f"open failed: {exc}"
-    if con is not None:
+    if gateway is not None:
+        con = gateway.con
         queries = {
             "core.modules": "SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?",
             "core.goids": "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ?",
@@ -470,9 +478,8 @@ def _snapshot_db_state(
             try:
                 row = con.execute(sql, params if "?" in sql else []).fetchone()
                 counts[label] = int(row[0]) if row and row[0] is not None else 0
-            except duckdb.Error:
+            except DuckDBError:
                 counts[label] = -1
-        con.close()
     message = (
         f"[snapshot {stage}] status={status} repo={snapshot.repo} commit={snapshot.commit} "
         + " ".join(f"{k}={v}" for k, v in counts.items())
@@ -503,12 +510,14 @@ def _write_snapshot_log(
     """Persist snapshot metadata into the dedicated logging database."""
     log_db_path = snapshot.log_db_path
     log_db_path.parent.mkdir(parents=True, exist_ok=True)
+    config = StorageConfig(db_path=log_db_path, read_only=False, validate_schema=False)
     try:
-        con = duckdb.connect(str(log_db_path), read_only=False)
-    except duckdb.Error as exc:
+        gateway = _get_gateway(config)
+    except DuckDBError as exc:
         logger.warning("Snapshot log skipped: could not open log DB at %s (%s)", log_db_path, exc)
         return
     try:
+        con = gateway.con
         con.execute("CREATE SCHEMA IF NOT EXISTS analytics")
         con.execute(
             "CREATE TABLE IF NOT EXISTS analytics.snapshot_logs ("
@@ -536,10 +545,8 @@ def _write_snapshot_log(
                 record.error,
             ),
         )
-    except duckdb.Error as exc:
+    except DuckDBError as exc:
         logger.warning("Snapshot log write failed: %s", exc)
-    finally:
-        con.close()
 
 
 def _tools_from_env(base: ToolsConfig | None = None) -> ToolsConfig:
@@ -556,6 +563,11 @@ def _tools_from_env(base: ToolsConfig | None = None) -> ToolsConfig:
         "CODEINTEL_SCIP_PYTHON_BIN": "scip_python_bin",
         "CODEINTEL_SCIP_BIN": "scip_bin",
         "CODEINTEL_PYRIGHT_BIN": "pyright_bin",
+        "CODEINTEL_PYREFLY_BIN": "pyrefly_bin",
+        "CODEINTEL_RUFF_BIN": "ruff_bin",
+        "CODEINTEL_COVERAGE_BIN": "coverage_bin",
+        "CODEINTEL_PYTEST_BIN": "pytest_bin",
+        "CODEINTEL_GIT_BIN": "git_bin",
         "CODEINTEL_COVERAGE_FILE": "coverage_file",
         "CODEINTEL_PYTEST_REPORT": "pytest_report_path",
     }
@@ -566,39 +578,14 @@ def _tools_from_env(base: ToolsConfig | None = None) -> ToolsConfig:
     return ToolsConfig.model_validate(data)
 
 
-def _scan_from_env(repo_root: Path, base: ScanConfig | None = None) -> ScanConfig:
-    """
-    Build a ScanConfig with optional environment overrides for ignore/include patterns.
+def _code_profile_from_env(repo_root: Path, base: ScanProfile | None = None) -> ScanProfile:
+    """Build a code ScanProfile honoring environment overrides."""
+    return profile_from_env(base or default_code_profile(repo_root))
 
-    Returns
-    -------
-    ScanConfig
-        Normalized scan configuration for source discovery.
-    """
-    include_patterns = base.include_patterns if base is not None else ("*.py",)
-    ignore_dirs = tuple(base.ignore_dirs) if base is not None else tuple(sorted(IGNORES))
-    log_every = base.log_every if base is not None else 50
-    log_interval = base.log_interval if base is not None else 5.0
 
-    env_includes = os.getenv("CODEINTEL_INCLUDE_PATTERNS")
-    if env_includes:
-        include_patterns = tuple(
-            pattern.strip() for pattern in env_includes.split(",") if pattern.strip()
-        )
-    env_ignores = os.getenv("CODEINTEL_IGNORE_DIRS")
-    if env_ignores:
-        merged = set(ignore_dirs) | {
-            part.strip() for part in env_ignores.split(",") if part.strip()
-        }
-        ignore_dirs = tuple(sorted(merged))
-
-    return ScanConfig(
-        repo_root=repo_root,
-        include_patterns=include_patterns,
-        ignore_dirs=ignore_dirs,
-        log_every=log_every,
-        log_interval=log_interval,
-    )
+def _config_profile_from_env(repo_root: Path, base: ScanProfile | None = None) -> ScanProfile:
+    """Build a config ScanProfile honoring environment overrides."""
+    return profile_from_env(base or default_config_profile(repo_root))
 
 
 @task(
@@ -693,7 +680,7 @@ def t_config_ingest(ctx: IngestionContext) -> None:
 @task(name="goids", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_goids(repo: str, commit: str, db_path: Path) -> None:
     """Build GOID registry and crosswalk."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = GoidBuilderConfig.from_paths(repo=repo, commit=commit, language="python")
     build_goids(gateway, cfg)
 
@@ -701,7 +688,7 @@ def t_goids(repo: str, commit: str, db_path: Path) -> None:
 @task(name="callgraph", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_callgraph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Construct call graph nodes and edges."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_call_graph(gateway, cfg)
 
@@ -709,7 +696,7 @@ def t_callgraph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
 @task(name="cfg_dfg", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_cfg(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Emit minimal CFG/DFG scaffolding."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = CFGBuilderConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_cfg_and_dfg(gateway, cfg)
 
@@ -717,7 +704,7 @@ def t_cfg(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
 @task(name="import_graph", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_import_graph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Build import graph edges via LibCST analysis."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = ImportGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_import_graph(gateway, cfg)
 
@@ -728,7 +715,7 @@ def t_symbol_uses(
     db_path: Path,
 ) -> None:
     """Derive symbol use edges from SCIP JSON."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     build_symbol_use_edges(gateway, cfg)
 
 
@@ -737,7 +724,7 @@ def t_hotspots(
     repo_root: Path, repo: str, commit: str, db_path: Path, runner: ToolRunner | None = None
 ) -> None:
     """Compute file-level hotspot scores."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = HotspotsConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
     build_hotspots(gateway, cfg, runner=runner)
 
@@ -747,7 +734,7 @@ def t_function_history(
     repo_root: Path, repo: str, commit: str, db_path: Path, runner: ToolRunner | None = None
 ) -> None:
     """Aggregate per-function git history."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = FunctionHistoryConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     compute_function_history(gateway, cfg, runner=runner)
 
@@ -762,7 +749,7 @@ def t_function_metrics(
 ) -> None:
     """Compute per-function metrics and types."""
     run_logger = get_run_logger()
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = FunctionAnalyticsConfig.from_paths(
         repo=repo,
         commit=commit,
@@ -788,7 +775,7 @@ def t_function_metrics(
 @task(name="function_effects", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_function_effects(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Classify side effects and purity."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = FunctionEffectsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     compute_function_effects(
@@ -802,7 +789,7 @@ def t_function_effects(repo_root: Path, repo: str, commit: str, db_path: Path) -
 @task(name="function_contracts", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_function_contracts(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Infer contracts and nullability."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = FunctionContractsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     compute_function_contracts(
@@ -816,15 +803,15 @@ def t_function_contracts(repo_root: Path, repo: str, commit: str, db_path: Path)
 @task(name="data_models", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_data_models(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Extract structured data models."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = DataModelsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    compute_data_models(gateway.con, cfg)
+    compute_data_models(gateway, cfg)
 
 
 @task(name="data_model_usage", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_data_model_usage(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Classify model usage per function."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = DataModelUsageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     compute_data_model_usage(
@@ -838,7 +825,7 @@ def t_data_model_usage(repo_root: Path, repo: str, commit: str, db_path: Path) -
 @task(name="coverage_functions", retries=1, retry_delay_seconds=2)
 def t_coverage_functions(repo: str, commit: str, db_path: Path) -> None:
     """Aggregate coverage lines to function spans."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = CoverageAnalyticsConfig.from_paths(repo=repo, commit=commit)
     compute_coverage_functions(gateway, cfg)
 
@@ -846,7 +833,7 @@ def t_coverage_functions(repo: str, commit: str, db_path: Path) -> None:
 @task(name="test_coverage_edges", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_test_coverage_edges(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Build test-to-function coverage edges."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = TestCoverageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     compute_test_coverage_edges(gateway, cfg)
 
@@ -854,7 +841,7 @@ def t_test_coverage_edges(repo_root: Path, repo: str, commit: str, db_path: Path
 @task(name="test_profile", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_test_profile(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Build per-test profiles."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = TestProfileConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_test_profile(gateway, cfg)
 
@@ -862,7 +849,7 @@ def t_test_profile(repo_root: Path, repo: str, commit: str, db_path: Path) -> No
 @task(name="behavioral_coverage", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_behavioral_coverage(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Assign behavior tags to tests."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = BehavioralCoverageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     build_behavioral_coverage(gateway, cfg)
 
@@ -870,7 +857,7 @@ def t_behavioral_coverage(repo_root: Path, repo: str, commit: str, db_path: Path
 @task(name="graph_metrics", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
     """Compute graph metrics for functions and modules."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = GraphMetricsConfig.from_paths(repo=repo, commit=commit)
     graph_backend = _graph_backend_config()
     graph_ctx = build_graph_context(
@@ -935,7 +922,7 @@ def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
 @task(name="semantic_roles", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_semantic_roles(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Classify semantic roles for functions and modules."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = SemanticRolesConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     compute_semantic_roles(
@@ -952,15 +939,15 @@ def t_entrypoints(
     repo: str,
     commit: str,
     db_path: Path,
-    scan_config: ScanConfig | None,
+    code_profile: ScanProfile | None,
 ) -> None:
     """Detect entrypoints across supported frameworks."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = EntryPointsConfig.from_paths(
         repo=repo,
         commit=commit,
         repo_root=repo_root,
-        scan_config=scan_config,
+        scan_profile=code_profile,
     )
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     build_entrypoints(
@@ -973,15 +960,19 @@ def t_entrypoints(
 
 @task(name="external_dependencies", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_external_dependencies(
-    repo_root: Path, repo: str, commit: str, db_path: Path, scan_config: ScanConfig | None
+    repo_root: Path,
+    repo: str,
+    commit: str,
+    db_path: Path,
+    code_profile: ScanProfile | None,
 ) -> None:
     """Capture external dependency usage."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = ExternalDependenciesConfig.from_paths(
         repo=repo,
         commit=commit,
         repo_root=repo_root,
-        scan_config=scan_config,
+        scan_profile=code_profile,
     )
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     build_external_dependency_calls(
@@ -996,7 +987,7 @@ def t_external_dependencies(
 @task(name="config_data_flow", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_config_data_flow(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Track config key usage and call chains."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = ConfigDataFlowConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     compute_config_data_flow(gateway, cfg, context=context)
@@ -1007,7 +998,7 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
     """Populate analytics.goid_risk_factors from analytics tables."""
     run_logger = get_run_logger()
     try:
-        gateway = _get_gateway(db_path)
+        gateway = _ingest_gateway(db_path)
         catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
         step = RiskFactorsStep()
         ctx = PipelineContext(
@@ -1017,6 +1008,8 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
             repo=repo,
             commit=commit,
             gateway=gateway,
+            code_profile=_code_profile_from_env(repo_root),
+            config_profile=_config_profile_from_env(repo_root),
             function_catalog=catalog,
             graph_backend=_graph_backend_config(),
         )
@@ -1035,7 +1028,7 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
 @task(name="subsystems", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_subsystems(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Infer subsystem clusters and membership."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     cfg = SubsystemsConfig.from_paths(repo=repo, commit=commit)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     build_subsystems(gateway, cfg, context=context)
@@ -1044,7 +1037,7 @@ def t_subsystems(repo_root: Path, repo: str, commit: str, db_path: Path) -> None
 @task(name="profiles", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir: Path) -> None:
     """Build function, file, and module profiles."""
-    gateway = _get_gateway(db_path)
+    gateway = _ingest_gateway(db_path)
     step = ProfilesStep()
     ctx = PipelineContext(
         repo_root=repo_root,
@@ -1075,12 +1068,14 @@ def t_history_timeseries(params: HistoryTimeseriesTaskParams) -> None:
     """Aggregate analytics.history_timeseries using multiple commit snapshots."""
     if not params.commits:
         return
-    gateway = _get_gateway(
-        params.db_path,
+    gateway_cfg = StorageConfig(
+        db_path=params.db_path,
+        read_only=False,
         apply_schema=False,
         ensure_views=False,
         validate_schema=False,
     )
+    gateway = _get_gateway(gateway_cfg)
     params.history_db_dir.mkdir(parents=True, exist_ok=True)
 
     cfg = HistoryTimeseriesConfig.from_args(
@@ -1118,7 +1113,7 @@ def t_export_docs(
         If export validation fails for any selected dataset.
     """
     run_logger = get_run_logger()
-    gateway = _get_gateway(db_path, ensure_views=True)
+    gateway = _ingest_gateway(db_path)
     con = gateway.con
     try:
         create_all_views(con)
@@ -1153,7 +1148,7 @@ def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
     """Run graph validation warnings."""
     run_logger = get_run_logger()
     try:
-        gateway = _get_gateway(db_path, read_only=False)
+        gateway = _ingest_gateway(db_path)
         catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
         run_graph_validations(
             gateway,
@@ -1163,7 +1158,7 @@ def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
             logger=cast("Logger", run_logger),
         )
     except (
-        duckdb.Error,
+        DuckDBError,
         nx.NetworkXException,
         ValueError,
         RuntimeError,
@@ -1299,6 +1294,14 @@ def export_docs_flow(
     validation_settings = _resolve_validation_settings(args)
     history_commits = _resolve_history_commits(args)
     history_db_dir = (args.history_db_dir or build_dir / "db").resolve()
+    tools_cfg = _tools_from_env(args.tools)
+    tool_runner = ToolRunner(
+        tools_config=tools_cfg,
+        cache_dir=build_dir / ".tool_cache",
+    )
+    tool_service = ToolService(tool_runner, tools_cfg)
+    code_profile = _code_profile_from_env(args.repo_root.resolve(), args.code_profile)
+    config_profile = _config_profile_from_env(args.repo_root.resolve(), args.config_profile)
 
     ctx = IngestionContext(
         repo_root=args.repo_root.resolve(),
@@ -1308,15 +1311,19 @@ def export_docs_flow(
         build_dir=build_dir,
         document_output_dir=_resolve_output_dir(args.repo_root.resolve()),
         gateway=_get_gateway(
-            args.db_path.resolve(),
-            read_only=False,
-            apply_schema=False,  # t_schema_bootstrap handles schema setup non-destructively
-            ensure_views=False,  # t_schema_bootstrap handles view creation
-            validate_schema=False,  # t_schema_bootstrap handles validation
+            StorageConfig(
+                db_path=args.db_path.resolve(),
+                read_only=False,
+                apply_schema=False,  # t_schema_bootstrap handles schema setup non-destructively
+                ensure_views=False,  # t_schema_bootstrap handles view creation
+                validate_schema=False,  # t_schema_bootstrap handles validation
+            )
         ),
-        tools=_tools_from_env(args.tools),
-        scan_config=_scan_from_env(args.repo_root.resolve(), args.scan_config),
-        tool_runner=ToolRunner(cache_dir=build_dir / ".tool_cache"),
+        tools=tools_cfg,
+        code_profile=code_profile,
+        config_profile=config_profile,
+        tool_runner=tool_runner,
+        tool_service=tool_service,
     )
     db_path = ctx.db_path
     _preflight_checks(ctx, skip_scip=skip_scip, logger=run_logger)
@@ -1597,7 +1604,7 @@ def export_docs_flow(
                 ctx.repo,
                 ctx.commit,
                 ctx.db_path,
-                ctx.scan_config,
+                ctx.code_profile,
                 snapshot=snapshot_args,
             ),
         ),
@@ -1611,7 +1618,7 @@ def export_docs_flow(
                 ctx.repo,
                 ctx.commit,
                 ctx.db_path,
-                ctx.scan_config,
+                ctx.code_profile,
                 snapshot=snapshot_args,
             ),
         ),
@@ -1862,11 +1869,13 @@ def t_schema_bootstrap(db_path: Path) -> None:
     This is intentionally a distinct task for visibility and future adjustments.
     """
     gateway = _get_gateway(
-        db_path,
-        read_only=False,
-        apply_schema=False,
-        ensure_views=False,
-        validate_schema=False,
+        StorageConfig(
+            db_path=db_path,
+            read_only=False,
+            apply_schema=False,
+            ensure_views=False,
+            validate_schema=False,
+        )
     )
     ensure_schemas_preserve(gateway.con)
     create_all_views(gateway.con)

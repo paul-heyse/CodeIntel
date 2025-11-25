@@ -4,19 +4,21 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import json
 import logging
-import shutil
-import tempfile
-from asyncio.subprocess import PIPE
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.config.models import ToolsConfig, TypingIngestConfig
 from codeintel.ingestion.common import run_batch
-from codeintel.ingestion.source_scanner import ScanConfig, SourceScanner
-from codeintel.ingestion.tool_runner import ToolResult, ToolRunner
+from codeintel.ingestion.source_scanner import (
+    ScanProfile,
+    SourceScanner,
+    default_code_profile,
+    profile_from_env,
+)
+from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.tool_service import ToolService
 from codeintel.models.rows import (
     StaticDiagnosticRow,
     TypednessRow,
@@ -24,27 +26,9 @@ from codeintel.models.rows import (
     typedness_row_to_tuple,
 )
 from codeintel.storage.gateway import StorageGateway
-from codeintel.types import PyreflyError
 from codeintel.utils.paths import repo_relpath
 
 log = logging.getLogger(__name__)
-MISSING_BINARY_EXIT_CODE = 127
-PYRIGHT_BIN = "pyright"
-RUFF_BIN = "ruff"
-
-IGNORE_DIRS = {
-    ".git",
-    ".hg",
-    ".svn",
-    ".venv",
-    "venv",
-    ".tox",
-    "__pycache__",
-    "build",
-    "dist",
-    ".mypy_cache",
-    ".pytest_cache",
-}
 
 
 @dataclass
@@ -67,12 +51,9 @@ class AnnotationInfo:
     untyped_defs: int
 
 
-def _iter_python_files(repo_root: Path, scan_cfg: ScanConfig | None) -> Iterable[Path]:
-    scanner = SourceScanner(
-        scan_cfg or ScanConfig(repo_root=repo_root, ignore_dirs=tuple(sorted(IGNORE_DIRS)))
-    )
-    for record in scanner.iter_files(log):
-        yield record.path
+def _iter_python_files(profile: ScanProfile) -> Iterable[Path]:
+    scanner = SourceScanner(profile)
+    yield from scanner.iter_files()
 
 
 def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
@@ -131,193 +112,30 @@ def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
     )
 
 
-def _run_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    async def _exec() -> tuple[int, str, str]:
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            cwd=str(cwd) if cwd is not None else None,
-            stdout=PIPE,
-            stderr=PIPE,
-        )
-        stdout_b, stderr_b = await proc.communicate()
-        return (
-            proc.returncode if proc.returncode is not None else 1,
-            stdout_b.decode(),
-            stderr_b.decode(),
-        )
-
-    try:
-        return asyncio.run(_exec())
-    except FileNotFoundError as exc:
-        return MISSING_BINARY_EXIT_CODE, "", str(exc)
-
-
-def _resolve_pyrefly_bin() -> str:
-    return shutil.which("pyrefly") or "pyrefly"
-
-
-def _run_pyrefly(repo_root: Path, runner: ToolRunner) -> dict[str, int]:
-    """
-    Run pyrefly and aggregate error counts per file.
-
-    Parameters
-    ----------
-    repo_root : Path
-        Root directory to scan with pyrefly.
-    runner : ToolRunner
-        Shared tool runner for invoking pyrefly.
-    runner : ToolRunner
-        Shared tool runner for invoking pyrefly.
-
-    Returns
-    -------
-    dict[str, int]
-        Mapping from repository-relative paths to error counts.
-    """
-    repo_root = repo_root.resolve()
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-        output_path = Path(tmp.name)
-
-    output_path = runner.cache_dir / "pyrefly.json"
-    args = [
-        _resolve_pyrefly_bin(),
-        "check",
-        str(repo_root),
-        "--output-format",
-        "json",
-        "--output",
-        str(output_path),
-        "--summary",
-        "none",
-        "--count-errors=0",
-    ]
-
-    result: ToolResult = runner.run("pyrefly", args, cwd=repo_root, output_path=output_path)
-    if result.returncode == MISSING_BINARY_EXIT_CODE:
-        log.warning("pyrefly binary not found; treating all files as 0 errors")
-        output_path.unlink(missing_ok=True)
-        return {}
-
-    payload = runner.load_json(output_path) or {}
-    if not payload and result.returncode != 0:
-        log.warning(
-            "pyrefly check exited with code %s and no output; stdout=%s stderr=%s",
-            result.returncode,
-            result.stdout.strip(),
-            result.stderr.strip(),
-        )
-        output_path.unlink(missing_ok=True)
-        return {}
-
-    errors_field = payload.get("errors") if isinstance(payload, dict) else None
-    errors: list[PyreflyError] = errors_field if isinstance(errors_field, list) else []
-    errors_by_file: dict[str, int] = {}
-    for diag in errors:
-        if diag.get("severity") != "error":
-            continue
-        file_name = diag.get("path")
-        if not file_name:
-            continue
-        file_path = Path(str(file_name)).resolve()
-        try:
-            rel_path = repo_relpath(repo_root, file_path)
-        except ValueError:
-            continue
-        errors_by_file[rel_path] = errors_by_file.get(rel_path, 0) + 1
-
-    return errors_by_file
-
-
-def _run_pyright(
-    repo_root: Path, runner: ToolRunner, *, pyright_bin: str = PYRIGHT_BIN
-) -> dict[str, int]:
-    """
-    Run pyright and aggregate error counts per file.
-
-    Returns
-    -------
-    dict[str, int]
-        Mapping from repository-relative paths to error counts.
-    """
-    args = [
-        pyright_bin,
-        "--outputjson",
-        str(repo_root),
-    ]
-    result = runner.run("pyright", args, cwd=repo_root)
-    if result.returncode == MISSING_BINARY_EXIT_CODE:
-        log.warning("pyright binary not found; treating all files as 0 errors")
-        return {}
-    payload = {}
-    try:
-        payload = json.loads(result.stdout) if result.stdout else {}
-    except json.JSONDecodeError as exc:
-        log.warning("Failed to parse pyright JSON output: %s", exc)
-        return {}
-
-    diagnostics = payload.get("generalDiagnostics") if isinstance(payload, dict) else None
-    if not isinstance(diagnostics, list):
-        return {}
-    errors_by_file: dict[str, int] = {}
-    for diag in diagnostics:
-        if not isinstance(diag, dict):
-            continue
-        if diag.get("severity") != "error":
-            continue
-        file_name = diag.get("file")
-        if not file_name:
-            continue
-        rel_path = repo_relpath(repo_root, Path(str(file_name)))
-        errors_by_file[rel_path] = errors_by_file.get(rel_path, 0) + 1
-    return errors_by_file
-
-
-def _run_ruff(repo_root: Path, runner: ToolRunner) -> dict[str, int]:
-    """
-    Run ruff and aggregate error counts per file.
-
-    Returns
-    -------
-    dict[str, int]
-        Mapping from repository-relative paths to error counts.
-    """
-    args = [
-        RUFF_BIN,
-        "check",
-        str(repo_root),
-        "--output-format",
-        "json",
-    ]
-    result = runner.run("ruff", args, cwd=repo_root)
-    if result.returncode == MISSING_BINARY_EXIT_CODE:
-        log.warning("ruff binary not found; treating all files as 0 errors")
-        return {}
-    try:
-        payload = json.loads(result.stdout) if result.stdout else []
-    except json.JSONDecodeError as exc:
-        log.warning("Failed to parse ruff JSON output: %s", exc)
-        return {}
-    if not isinstance(payload, list):
-        return {}
-    errors_by_file: dict[str, int] = {}
-    for diag in payload:
-        if not isinstance(diag, dict):
-            continue
-        file_name = diag.get("filename")
-        if not file_name:
-            continue
-        rel_path = repo_relpath(repo_root, Path(str(file_name)))
-        errors_by_file[rel_path] = errors_by_file.get(rel_path, 0) + 1
-    return errors_by_file
+async def _collect_error_maps(
+    repo_root: Path,
+    service: ToolService,
+) -> dict[str, dict[str, int]]:
+    pyrefly_map, pyright_map, ruff_map = await asyncio.gather(
+        service.run_pyrefly(repo_root),
+        service.run_pyright(repo_root),
+        service.run_ruff(repo_root),
+    )
+    return {
+        "pyrefly": dict(pyrefly_map),
+        "pyright": dict(pyright_map),
+        "ruff": dict(ruff_map),
+    }
 
 
 def ingest_typing_signals(
     gateway: StorageGateway,
     cfg: TypingIngestConfig,
     *,
-    scan_config: ScanConfig | None = None,
+    code_profile: ScanProfile | None = None,
     runner: ToolRunner | None = None,
     tools: ToolsConfig | None = None,
+    tool_service: ToolService | None = None,
 ) -> None:
     """
     Populate per-file typedness and static diagnostics.
@@ -331,25 +149,24 @@ def ingest_typing_signals(
         (params & returns).
     """
     repo_root = cfg.repo_root
-    scan_cfg = scan_config or ScanConfig(
-        repo_root=repo_root, ignore_dirs=tuple(sorted(IGNORE_DIRS))
-    )
-    shared_runner = runner or ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
-    pyright_bin = tools.pyright_bin if tools is not None else PYRIGHT_BIN
+    profile = code_profile or profile_from_env(default_code_profile(repo_root))
+    active_tools = tools or ToolsConfig()
+    active_service = tool_service
+    if active_service is None:
+        shared_runner = runner or ToolRunner(
+            tools_config=active_tools, cache_dir=repo_root / "build" / ".tool_cache"
+        )
+        active_service = ToolService(shared_runner, active_tools)
 
     # Compute annotation info for each Python file
     annotation_info: dict[str, AnnotationInfo] = {}
-    for path in _iter_python_files(repo_root, scan_cfg):
+    for path in _iter_python_files(profile):
         rel_path = repo_relpath(repo_root, path)
         info = _compute_annotation_info_for_file(path)
         if info is not None:
             annotation_info[rel_path] = info
 
-    error_maps = {
-        "pyrefly": _run_pyrefly(repo_root, shared_runner),
-        "pyright": _run_pyright(repo_root, shared_runner, pyright_bin=pyright_bin),
-        "ruff": _run_ruff(repo_root, shared_runner),
-    }
+    error_maps = asyncio.run(_collect_error_maps(repo_root, active_service))
     path_set = (
         set(annotation_info)
         | set(error_maps["pyrefly"])

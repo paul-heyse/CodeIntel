@@ -6,7 +6,6 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from codeintel.analytics.dependencies import (
@@ -18,13 +17,13 @@ from codeintel.config.models import (
     EntryPointsConfig,
     ExternalDependenciesConfig,
     GoidBuilderConfig,
-    PyAstIngestConfig,
     RepoScanConfig,
 )
 from codeintel.graphs.function_catalog_service import FunctionCatalogService
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.ingestion.py_ast_extract import ingest_python_ast
 from codeintel.ingestion.repo_scan import ingest_repo
+from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.builders import (
     CoverageFunctionRow,
     ModuleRow,
@@ -78,7 +77,7 @@ def _write_sample_repo(repo_root: Path) -> None:
     )
 
 
-def _get_goid_row(con: duckdb.DuckDBPyConnection, qualname: str) -> GoidRow:
+def _get_goid_row(con: DuckDBConnection, qualname: str) -> GoidRow:
     row = con.execute(
         """
         SELECT goid_h128, urn, rel_path, language, kind, qualname, start_line, end_line
@@ -180,7 +179,7 @@ def _seed_coverage_and_tests(ctx: ProvisionedGateway, hello_row: GoidRow, now: d
     )
 
 
-def _validate_entrypoint_rows(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> None:
+def _validate_entrypoint_rows(con: DuckDBConnection, repo: str, commit: str) -> None:
     entry_row = con.execute(
         """
         SELECT http_method, route_path, status_codes, tests_touching,
@@ -240,7 +239,7 @@ def _validate_entrypoint_rows(con: duckdb.DuckDBPyConnection, repo: str, commit:
     _ensure(command_name == "cli", "CLI command_name not recorded")
 
 
-def _validate_dependency_rows(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> None:
+def _validate_dependency_rows(con: DuckDBConnection, repo: str, commit: str) -> None:
     libraries = {
         row[0]
         for row in con.execute(
@@ -292,7 +291,7 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
     _write_sample_repo(repo_root)
 
     with provision_gateway_with_repo(repo_root) as ctx:
-        ingest_repo(
+        tracker = ingest_repo(
             ctx.gateway,
             cfg=RepoScanConfig.from_paths(
                 repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit
@@ -309,13 +308,7 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
                 )
             ],
         )
-        ingest_python_ast(
-            ctx.gateway,
-            cfg=PyAstIngestConfig.from_paths(
-                repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit
-            ),
-            scan_config=None,
-        )
+        ingest_python_ast(tracker)
         build_goids(ctx.gateway, GoidBuilderConfig.from_paths(repo=ctx.repo, commit=ctx.commit))
 
         con = ctx.gateway.con

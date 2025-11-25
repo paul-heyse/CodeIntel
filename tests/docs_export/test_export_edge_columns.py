@@ -5,14 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import duckdb
-
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.docs_export.export_jsonl import export_jsonl_for_table
+from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.fixtures import provision_graph_ready_repo
 
 
-def _setup_edge_table(con: duckdb.DuckDBPyConnection, table: str) -> None:
+def _setup_edge_table(con: DuckDBConnection, table: str) -> None:
     con.execute("CREATE SCHEMA IF NOT EXISTS graph;")
     schema = TABLE_SCHEMAS[table]
     cols = ", ".join(f"{col.name} {col.type}" for col in schema.columns)

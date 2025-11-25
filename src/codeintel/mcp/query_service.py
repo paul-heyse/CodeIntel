@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import duckdb
 import networkx as nx
 
 from codeintel.graphs.nx_views import load_call_graph, load_import_graph
@@ -32,7 +31,7 @@ from codeintel.mcp.models import (
     TestsForFunctionResponse,
     ViewRow,
 )
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, DuckDBRelation, StorageGateway
 
 RowDict = dict[str, object]
 DOCS_VIEW_QUERIES: dict[str, str] = {
@@ -169,9 +168,7 @@ def clamp_offset_value(offset: int) -> ClampResult:
     return ClampResult(applied=offset)
 
 
-def _fetch_one_dict(
-    cur: duckdb.DuckDBPyConnection, sql: str, params: list[object]
-) -> RowDict | None:
+def _fetch_one_dict(cur: DuckDBConnection, sql: str, params: list[object]) -> RowDict | None:
     result = cur.execute(sql, params)
     row = result.fetchone()
     if row is None:
@@ -180,9 +177,7 @@ def _fetch_one_dict(
     return {col: row[idx] for idx, col in enumerate(cols)}
 
 
-def _fetch_all_dicts(
-    cur: duckdb.DuckDBPyConnection, sql: str, params: list[object]
-) -> list[RowDict]:
+def _fetch_all_dicts(cur: DuckDBConnection, sql: str, params: list[object]) -> list[RowDict]:
     result = cur.execute(sql, params)
     rows = result.fetchall()
     cols = [desc[0] for desc in result.description]
@@ -214,7 +209,7 @@ class DuckDBQueryService:
     limits: BackendLimits
 
     @property
-    def con(self) -> duckdb.DuckDBPyConnection:
+    def con(self) -> DuckDBConnection:
         """Underlying DuckDB connection."""
         return self.gateway.con
 
@@ -1345,7 +1340,7 @@ class DuckDBQueryService:
                 meta=meta,
             )
 
-        relation: duckdb.DuckDBPyRelation
+        relation: DuckDBRelation
         if table in DOCS_VIEW_QUERIES:
             relation = self.con.sql(DOCS_VIEW_QUERIES[table])
         else:

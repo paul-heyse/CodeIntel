@@ -6,10 +6,9 @@ import os
 from pathlib import Path
 from typing import Literal
 
-import duckdb
 from pydantic import BaseModel, Field, model_validator
 
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 ServingMode = Literal["local_db", "remote_api"]
 
@@ -185,7 +184,7 @@ def verify_db_identity(gateway: StorageGateway, cfg: ServingConfig) -> None:
         row = gateway.con.execute(
             "SELECT repo, commit FROM core.repo_map LIMIT 1",
         ).fetchone()
-    except duckdb.Error as exc:
+    except DuckDBError as exc:
         message = "Failed to read repo identity from core.repo_map"
         raise ValueError(message) from exc
 

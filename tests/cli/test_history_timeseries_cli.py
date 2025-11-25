@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
-
 from codeintel.cli.main import main
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.history import SnapshotSpec, create_snapshot_db
 
@@ -60,8 +59,9 @@ def test_history_timeseries_cli_happy_path(tmp_path: Path) -> None:
     )
     expect_equal(rc, 0)
 
-    con = duckdb.connect(str(output_db), read_only=True)
-    rows = con.execute("SELECT COUNT(*) FROM analytics.history_timeseries").fetchone()
+    gateway = open_gateway(StorageConfig.for_readonly(output_db))
+    rows = gateway.con.execute("SELECT COUNT(*) FROM analytics.history_timeseries").fetchone()
+    gateway.close()
     expect_true(rows is not None and rows[0] == EXPECTED_HISTORY_ROW_COUNT)
 
 

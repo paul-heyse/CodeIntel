@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import duckdb
 import pytest
 
 from codeintel.analytics.profiles import (
@@ -12,6 +11,7 @@ from codeintel.analytics.profiles import (
     build_module_profile,
 )
 from codeintel.config.models import ProfilesAnalyticsConfig
+from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.fixtures import ProvisionedGateway, seed_profile_data
 
 EPSILON = 1e-6
@@ -19,7 +19,7 @@ REL_PATH = "pkg/mod.py"
 MODULE = "pkg.mod"
 
 
-def _assert_function_profile(con: duckdb.DuckDBPyConnection) -> None:
+def _assert_function_profile(con: DuckDBConnection) -> None:
     row = con.execute(
         """
         SELECT tests_touching, failing_tests, slow_tests, call_fan_in, call_fan_out,
@@ -46,7 +46,7 @@ def _assert_function_profile(con: duckdb.DuckDBPyConnection) -> None:
         pytest.fail(f"Slow threshold mismatch: {row[7]}")
 
 
-def _assert_file_profile(con: duckdb.DuckDBPyConnection) -> None:
+def _assert_file_profile(con: DuckDBConnection) -> None:
     row = con.execute(
         """
         SELECT file_coverage_ratio, high_risk_function_count, module
@@ -65,7 +65,7 @@ def _assert_file_profile(con: duckdb.DuckDBPyConnection) -> None:
         pytest.fail(f"Module mismatch: {row[2]}")
 
 
-def _assert_module_profile(con: duckdb.DuckDBPyConnection) -> None:
+def _assert_module_profile(con: DuckDBConnection) -> None:
     row = con.execute(
         """
         SELECT module_coverage_ratio, import_fan_in, import_fan_out, in_cycle

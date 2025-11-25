@@ -10,12 +10,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-import duckdb
-
 from codeintel.config.models import BehavioralCoverageConfig, TestProfileConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.ast_utils import parse_python_module
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import relpath_to_module
 
 log = logging.getLogger(__name__)
@@ -297,8 +295,8 @@ def build_test_profile(gateway: StorageGateway, cfg: TestProfileConfig) -> None:
             tg_proj_betweenness,
             created_at
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
         """,
         rows,
@@ -308,7 +306,7 @@ def build_test_profile(gateway: StorageGateway, cfg: TestProfileConfig) -> None:
 
 def _build_profile_context(
     *,
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     cfg: TestProfileConfig,
     tests: list[TestRecord],
 ) -> TestProfileContext:
@@ -754,7 +752,7 @@ def _markers_use_fixtures(markers: Iterable[str]) -> bool:
 
 
 def _load_test_records(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     repo: str,
     commit: str,
 ) -> list[TestRecord]:
@@ -828,7 +826,7 @@ def _load_test_records(
 
 
 def _load_functions_covered(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     repo: str,
     commit: str,
 ) -> dict[str, FunctionCoverageEntry]:
@@ -921,7 +919,7 @@ def _load_functions_covered(
 
 
 def _load_subsystems_covered(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     repo: str,
     commit: str,
 ) -> dict[str, SubsystemCoverageEntry]:
@@ -998,7 +996,7 @@ def _load_subsystems_covered(
 
 
 def _load_test_graph_metrics(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     repo: str,
     commit: str,
 ) -> dict[str, TestGraphMetrics]:
@@ -1039,7 +1037,7 @@ def _load_test_graph_metrics(
 
 
 def _load_test_profile_context(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     repo: str,
     commit: str,
 ) -> dict[str, dict[str, object]]:

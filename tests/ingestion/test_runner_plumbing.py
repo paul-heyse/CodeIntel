@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config.models import CoverageIngestConfig, RepoScanConfig, TypingIngestConfig
+from codeintel.config.models import CoverageIngestConfig, RepoScanConfig, ToolsConfig, TypingIngestConfig
 from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 from codeintel.ingestion.repo_scan import ingest_repo
-from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
 from codeintel.storage.gateway import StorageGateway
+from codeintel.ingestion.tool_service import ToolService
 from tests._helpers.fakes import FakeToolRunner
 from tests._helpers.gateway import open_ingestion_gateway
 
@@ -20,8 +21,8 @@ def _setup_gateway() -> StorageGateway:
     return open_ingestion_gateway()
 
 
-def test_repo_scan_honors_scan_config(tmp_path: Path) -> None:
-    """Ensure repo_scan respects ignore lists from ScanConfig."""
+def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
+    """Ensure repo_scan respects ignore lists from ScanProfile."""
     repo_root = tmp_path / "repo"
     keep_dir = repo_root / "keep"
     ignore_dir = repo_root / "ignore"
@@ -32,8 +33,13 @@ def test_repo_scan_honors_scan_config(tmp_path: Path) -> None:
 
     gateway = _setup_gateway()
     cfg = RepoScanConfig.from_paths(repo_root=repo_root, repo="r", commit="c")
-    scan_cfg = ScanConfig(repo_root=repo_root, ignore_dirs=("ignore",), include_patterns=("*.py",))
-    ingest_repo(gateway, cfg=cfg, scan_config=scan_cfg)
+    profile = ScanProfile(
+        repo_root=repo_root,
+        source_roots=(repo_root,),
+        include_globs=("*.py",),
+        ignore_dirs=("ignore",),
+    )
+    ingest_repo(gateway, cfg=cfg, code_profile=profile)
 
     rows = gateway.con.execute("SELECT path FROM core.modules").fetchall()
     if rows != [("keep/a.py",)]:
@@ -84,10 +90,11 @@ def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
     pyright_stdout = '{"generalDiagnostics": []}'
     payloads = {"pyright": pyright_stdout, "json": {"errors": []}, "ruff": "[]"}
     runner = FakeToolRunner(cache_dir=tmp_path / "cache", payloads=payloads)
+    tool_service = ToolService(runner, ToolsConfig())
 
     gateway = _setup_gateway()
     cfg = TypingIngestConfig.from_paths(repo_root=repo_root, repo="r", commit="c")
-    ingest_typing_signals(gateway, cfg=cfg, runner=runner)
+    ingest_typing_signals(gateway, cfg=cfg, tool_service=tool_service, tools=ToolsConfig())
 
     tools_called = {tool for tool, _ in runner.calls}
     if not {"pyrefly", "pyright", "ruff"} <= tools_called:

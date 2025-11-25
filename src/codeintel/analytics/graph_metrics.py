@@ -14,7 +14,6 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
-import duckdb
 import networkx as nx
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
@@ -30,7 +29,7 @@ from codeintel.config.models import GraphMetricsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.graphs.nx_views import load_call_graph, load_import_graph
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -182,7 +181,7 @@ def _component_metadata_from_import_table(
             """,
             [repo, commit],
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         return None
     if not rows:
         return None

@@ -8,9 +8,8 @@ import logging
 import os
 import sys
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from pathlib import Path
-
-import duckdb
 
 from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
@@ -25,12 +24,17 @@ from codeintel.config.models import (
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.ingestion.source_scanner import (
+    default_code_profile,
+    default_config_profile,
+    profile_from_env,
+)
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.mcp.backend import DuckDBBackend
 from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
 from codeintel.services.errors import ExportError, log_problem, problem
 from codeintel.storage.gateway import (
+    DuckDBError,
     StorageConfig,
     StorageGateway,
     build_snapshot_gateway_resolver,
@@ -385,12 +389,13 @@ def _open_gateway(cfg: CodeIntelConfig, *, read_only: bool) -> StorageGateway:
         Gateway bound to the configured DuckDB database.
     """
     cfg.paths.db_dir.mkdir(parents=True, exist_ok=True)
-    gateway_cfg = StorageConfig(
-        db_path=cfg.paths.db_path,
-        read_only=read_only,
-        apply_schema=not read_only,
-        ensure_views=not read_only,
-        validate_schema=not read_only,
+    base_cfg = (
+        StorageConfig.for_readonly(cfg.paths.db_path)
+        if read_only
+        else StorageConfig.for_ingest(cfg.paths.db_path)
+    )
+    gateway_cfg = replace(
+        base_cfg,
         repo=cfg.repo.repo,
         commit=cfg.repo.commit,
     )
@@ -432,7 +437,8 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
             db_path=db_path,
             build_dir=build_dir,
             tools=cfg.tools,
-            scan_config=ScanConfig(repo_root=repo_root),
+            code_profile=profile_from_env(default_code_profile(repo_root)),
+            config_profile=profile_from_env(default_config_profile(repo_root)),
             function_overrides=overrides,
             history_commits=tuple(args.history_commits) if args.history_commits else None,
             history_db_dir=args.history_db_dir,
@@ -587,12 +593,7 @@ def _cmd_history_timeseries(args: argparse.Namespace) -> int:
         overrides=overrides,
     )
 
-    storage_cfg = StorageConfig(
-        db_path=args.output_db,
-        read_only=False,
-        apply_schema=True,
-        ensure_views=True,
-    )
+    storage_cfg = StorageConfig.for_ingest(args.output_db)
     gateway = open_gateway(storage_cfg)
     snapshot_resolver = build_snapshot_gateway_resolver(
         db_dir=args.db_dir,
@@ -609,7 +610,7 @@ def _cmd_history_timeseries(args: argparse.Namespace) -> int:
     except FileNotFoundError:
         LOG.exception("Missing snapshot database for history_timeseries")
         return 1
-    except duckdb.Error:  # pragma: no cover - surfaced to caller
+    except DuckDBError:  # pragma: no cover - surfaced to caller
         LOG.exception("Failed to compute history_timeseries")
         return 1
     LOG.info(

@@ -9,22 +9,19 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-try:
-    from prefect import get_run_logger
-except ImportError:  # pragma: no cover
-    get_run_logger = None
-
 from codeintel.config.models import (
     ConfigIngestConfig,
     CoverageIngestConfig,
     DocstringConfig,
     PathsConfig,
-    PyAstIngestConfig,
     RepoScanConfig,
     ScipIngestConfig,
     TestsIngestConfig,
     ToolsConfig,
     TypingIngestConfig,
+)
+from codeintel.ingestion import (
+    change_tracker as change_tracker_module,
 )
 from codeintel.ingestion import (
     config_ingest,
@@ -37,15 +34,10 @@ from codeintel.ingestion import (
     tests_ingest,
     typing_ingest,
 )
-from codeintel.ingestion.common import (
-    ChangeRequest,
-    ChangeSet,
-    compute_changes,
-    get_cached_change_set,
-)
 from codeintel.ingestion.scip_ingest import ScipIngestResult
-from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -73,7 +65,7 @@ class BuildPaths:
         return (self.build_dir / "test-results" / "pytest-report.json").resolve()
 
 
-@dataclass(frozen=True)
+@dataclass
 class IngestionContext:
     """Shared parameters required for all ingestion steps."""
 
@@ -85,10 +77,13 @@ class IngestionContext:
     document_output_dir: Path
     gateway: StorageGateway
     tools: ToolsConfig | None = None
-    scan_config: ScanConfig | None = None
+    code_profile: ScanProfile | None = None
+    config_profile: ScanProfile | None = None
     tool_runner: ToolRunner | None = None
+    tool_service: ToolService | None = None
     scip_runner: Callable[..., ScipIngestResult] | None = None
     artifact_writer: Callable[[Path, Path, Path], None] | None = None
+    change_tracker: change_tracker_module.ChangeTracker | None = None
 
     @property
     def paths(self) -> PathsConfig:
@@ -120,51 +115,40 @@ def _log_step_start(step: str, ctx: IngestionContext) -> float:
 
 
 def _log_step_done(step: str, start_ts: float, ctx: IngestionContext) -> None:
-    """Emit completion log with duration for an ingestion step."""
+    """
+    Emit completion log with duration for an ingestion step.
+
+    Returns
+    -------
+    None
+        This function logs step completion and does not return a value.
+    """
     duration = time.perf_counter() - start_ts
     log.info("ingest done: %s repo=%s commit=%s (%.2fs)", step, ctx.repo, ctx.commit, duration)
 
 
-def _resolve_change_set(ctx: IngestionContext, logger: logging.Logger) -> ChangeSet:
+def _require_change_tracker(ctx: IngestionContext) -> change_tracker_module.ChangeTracker:
     """
-    Return a cached change set or compute a fresh snapshot for the repo.
+    Return the change tracker populated during repo_scan.
+
+    Raises
+    ------
+    RuntimeError
+        When the tracker is missing because repo_scan has not been executed.
 
     Returns
     -------
-    ChangeSet
-        Cached change set when available; otherwise a freshly computed one.
+    change_tracker_module.ChangeTracker
+        Cached change tracker for the current ingestion context.
     """
-    cached = get_cached_change_set(ctx.repo, ctx.commit)
-    if cached is not None:
-        return cached
-    return compute_changes(
-        ctx.gateway,
-        ChangeRequest(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-            scan_config=ctx.scan_config,
-            logger=logger,
-        ),
-    )
+    tracker = ctx.change_tracker
+    if tracker is None:
+        message = "change_tracker is not set; run repo_scan before incremental ingest"
+        raise RuntimeError(message)
+    return tracker
 
 
-def _run_logger() -> logging.Logger:
-    """
-    Return a Prefect task logger when available, otherwise module logger.
-
-    Returns
-    -------
-    logging.Logger
-        Active task logger for runtime diagnostics.
-    """
-    if get_run_logger is None:
-        return log
-    logger = get_run_logger()  # type: ignore[return-value]
-    return logger if logger is not None else log
-
-
-def run_repo_scan(ctx: IngestionContext) -> None:
+def run_repo_scan(ctx: IngestionContext) -> change_tracker_module.ChangeTracker:
     """Ingest repository structure and modules using the provided storage gateway."""
     start = _log_step_start("repo_scan", ctx)
     cfg = RepoScanConfig.from_paths(
@@ -173,8 +157,14 @@ def run_repo_scan(ctx: IngestionContext) -> None:
         commit=ctx.commit,
         tool_runner=ctx.tool_runner,
     )
-    repo_scan.ingest_repo(ctx.gateway, cfg=cfg, scan_config=ctx.scan_config)
+    tracker = repo_scan.ingest_repo(
+        ctx.gateway,
+        cfg=cfg,
+        code_profile=ctx.code_profile,
+    )
+    ctx.change_tracker = tracker
     _log_step_done("repo_scan", start, ctx)
+    return tracker
 
 
 def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
@@ -187,7 +177,6 @@ def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
         Status and artifact paths for the SCIP run.
     """
     start = _log_step_start("scip_ingest", ctx)
-    logger = _run_logger()
     doc_dir = ctx.paths.document_output_dir or (ctx.repo_root / "Document Output")
     cfg = ScipIngestConfig(
         repo_root=ctx.repo_root,
@@ -200,14 +189,21 @@ def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
         scip_runner=ctx.scip_runner,
         artifact_writer=ctx.artifact_writer,
     )
-    change_set = _resolve_change_set(ctx, logger)
-    logger.info(
-        "scip_ingest change_set added=%d modified=%d deleted=%d",
-        len(change_set.added),
-        len(change_set.modified),
-        len(change_set.deleted),
+    tracker = ctx.change_tracker
+    if tracker is None:
+        tracker = _require_change_tracker(ctx)
+    tools_cfg = ctx.tools or ToolsConfig()
+    runner = ctx.tool_runner or ToolRunner(
+        cache_dir=ctx.build_paths.tool_cache,
+        tools_config=tools_cfg,
     )
-    result = scip_ingest.ingest_scip(ctx.gateway, cfg=cfg, change_set=change_set)
+    service = ctx.tool_service or ToolService(runner, tools_cfg)
+    result = scip_ingest.ingest_scip(
+        ctx.gateway,
+        cfg=cfg,
+        tracker=tracker,
+        tool_service=service,
+    )
     _log_step_done("scip_ingest", start, ctx)
     return result
 
@@ -215,25 +211,10 @@ def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
 def run_cst_extract(ctx: IngestionContext) -> None:
     """Extract LibCST nodes for the repository using the gateway connection."""
     start = _log_step_start("cst_extract", ctx)
-    logger = _run_logger()
-    change_set = _resolve_change_set(ctx, logger)
-    exec_kind = os.getenv("CODEINTEL_CST_EXECUTOR", "process").lower()
-    logger.info(
-        "cst_extract change_set added=%d modified=%d deleted=%d executor=%s",
-        len(change_set.added),
-        len(change_set.modified),
-        len(change_set.deleted),
-        exec_kind,
-    )
+    tracker = _require_change_tracker(ctx)
     cst_extract.ingest_cst(
-        ctx.gateway,
-        ChangeRequest(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-            scan_config=ctx.scan_config,
-        ),
-        change_set=change_set,
+        tracker,
+        executor_kind=os.getenv("CODEINTEL_CST_EXECUTOR", "process"),
     )
     _log_step_done("cst_extract", start, ctx)
 
@@ -241,16 +222,8 @@ def run_cst_extract(ctx: IngestionContext) -> None:
 def run_ast_extract(ctx: IngestionContext) -> None:
     """Extract stdlib AST nodes and metrics using the gateway connection."""
     start = _log_step_start("ast_extract", ctx)
-    logger = _run_logger()
-    change_set = _resolve_change_set(ctx, logger)
-    cfg = PyAstIngestConfig.from_paths(
-        repo_root=ctx.repo_root,
-        repo=ctx.repo,
-        commit=ctx.commit,
-    )
-    py_ast_extract.ingest_python_ast(
-        ctx.gateway, cfg=cfg, scan_config=ctx.scan_config, change_set=change_set
-    )
+    tracker = _require_change_tracker(ctx)
+    py_ast_extract.ingest_python_ast(tracker)
     _log_step_done("ast_extract", start, ctx)
 
 
@@ -264,11 +237,17 @@ def run_coverage_ingest(ctx: IngestionContext) -> None:
         coverage_file=(ctx.tools.coverage_file if ctx.tools else None),  # type: ignore[arg-type]
         tool_runner=ctx.tool_runner,
     )
-    runner = ctx.tool_runner or ToolRunner(cache_dir=ctx.build_paths.tool_cache)
+    tools_cfg = ctx.tools or ToolsConfig()
+    runner = ctx.tool_runner or ToolRunner(
+        cache_dir=ctx.build_paths.tool_cache,
+        tools_config=tools_cfg,
+    )
+    service = ctx.tool_service or ToolService(runner, tools_cfg)
     coverage_ingest.ingest_coverage_lines(
         gateway=ctx.gateway,
         cfg=cfg,
-        runner=runner,
+        tools=tools_cfg,
+        tool_service=service,
         json_output_path=ctx.build_paths.coverage_json,
     )
     _log_step_done("coverage_ingest", start, ctx)
@@ -283,12 +262,18 @@ def run_tests_ingest(ctx: IngestionContext) -> None:
         commit=ctx.commit,
         tools=ctx.tools,
     )
-    runner = ctx.tool_runner or ToolRunner(cache_dir=ctx.build_paths.tool_cache)
+    tools_cfg = ctx.tools or ToolsConfig()
+    runner = ctx.tool_runner or ToolRunner(
+        cache_dir=ctx.build_paths.tool_cache,
+        tools_config=tools_cfg,
+    )
+    service = ctx.tool_service or ToolService(runner, tools_cfg)
     tests_ingest.ingest_tests(
         gateway=ctx.gateway,
         cfg=cfg,
-        runner=runner,
         report_path=ctx.build_paths.pytest_report,
+        tools=tools_cfg,
+        tool_service=service,
     )
     _log_step_done("tests_ingest", start, ctx)
 
@@ -302,13 +287,18 @@ def run_typing_ingest(ctx: IngestionContext) -> None:
         commit=ctx.commit,
         tool_runner=ctx.tool_runner,
     )
-    runner = ctx.tool_runner or ToolRunner(cache_dir=ctx.build_paths.tool_cache)
+    tools_cfg = ctx.tools or ToolsConfig()
+    runner = ctx.tool_runner or ToolRunner(
+        cache_dir=ctx.build_paths.tool_cache,
+        tools_config=tools_cfg,
+    )
+    service = ctx.tool_service or ToolService(runner, tools_cfg)
     typing_ingest.ingest_typing_signals(
         gateway=ctx.gateway,
         cfg=cfg,
-        scan_config=ctx.scan_config,
-        runner=runner,
-        tools=ctx.tools,
+        code_profile=ctx.code_profile,
+        tools=tools_cfg,
+        tool_service=service,
     )
     _log_step_done("typing_ingest", start, ctx)
 
@@ -321,7 +311,11 @@ def run_docstrings_ingest(ctx: IngestionContext) -> None:
         repo=ctx.repo,
         commit=ctx.commit,
     )
-    docstrings_ingest.ingest_docstrings(ctx.gateway, cfg, scan_config=ctx.scan_config)
+    docstrings_ingest.ingest_docstrings(
+        ctx.gateway,
+        cfg,
+        code_profile=ctx.code_profile,
+    )
     _log_step_done("docstrings_ingest", start, ctx)
 
 
@@ -329,5 +323,5 @@ def run_config_ingest(ctx: IngestionContext) -> None:
     """Flatten configuration files into analytics.config_values via the gateway connection."""
     start = _log_step_start("config_ingest", ctx)
     cfg = ConfigIngestConfig.from_paths(repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit)
-    config_ingest.ingest_config_values(ctx.gateway, cfg=cfg, scan_config=ctx.scan_config)
+    config_ingest.ingest_config_values(ctx.gateway, cfg=cfg, config_profile=ctx.config_profile)
     _log_step_done("config_ingest", start, ctx)

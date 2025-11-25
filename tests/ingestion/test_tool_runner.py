@@ -6,25 +6,22 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.ingestion.tool_runner import ToolResult, ToolRunner
-
-MISSING = 127
+from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.tool_runner import ToolName, ToolNotFoundError, ToolRunner
 
 
 def test_tool_runner_missing_binary(tmp_path: Path) -> None:
-    """Missing binary yields 127 and structured result."""
-    runner = ToolRunner(cache_dir=tmp_path)
-    result = runner.run("pyright", ["nonexistent-binary"], cwd=tmp_path)
-    if not isinstance(result, ToolResult):
-        pytest.fail("ToolRunner did not return ToolResult")
-    if result.returncode != MISSING:
-        pytest.fail(f"Expected returncode {MISSING}, got {result.returncode}")
-    if "not found" not in result.stderr:
-        pytest.fail("Expected missing binary message in stderr")
+    """Missing binary raises ToolNotFoundError."""
+    runner = ToolRunner(
+        cache_dir=tmp_path,
+        tools_config=ToolsConfig(pyright_bin="does-not-exist"),
+    )
+    with pytest.raises(ToolNotFoundError):
+        runner.run(ToolName.PYRIGHT, [], cwd=tmp_path)
 
 
-def test_tool_runner_empty_args(tmp_path: Path) -> None:
-    """Empty args raise ValueError."""
+def test_tool_runner_unknown_tool(tmp_path: Path) -> None:
+    """Unknown tool names raise ValueError."""
     runner = ToolRunner(cache_dir=tmp_path)
-    with pytest.raises(ValueError, match="args must include"):
-        runner.run("pyright", [], cwd=tmp_path)
+    with pytest.raises(ValueError, match="Unknown tool"):
+        runner.run("unknown-tool", ["--version"])

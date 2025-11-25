@@ -100,13 +100,14 @@ class FakeToolRunner(ToolRunner):
         self.calls: list[tuple[ToolName, list[str]]] = []
         self.on_run = on_run
 
-    def run(
+    async def run_async(
         self,
-        tool: ToolName,
+        tool: ToolName | str,
         args: list[str],
         *,
         cwd: Path | None = None,
         output_path: Path | None = None,
+        timeout_s: float | None = None,
     ) -> ToolResult:
         """
         Execute a tool invocation with canned outputs.
@@ -117,38 +118,28 @@ class FakeToolRunner(ToolRunner):
             Structured result capturing stdout/stderr and codes.
         """
         _ = cwd
-        self.calls.append((tool, args))
+        _ = timeout_s
+        tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
+        args_list = list(args)
+        self.calls.append((tool_enum, args_list))
         if self.on_run is not None:
-            self.on_run(tool, args)
-        payload_stdout = self.payloads.get(tool, "")
-        if tool == "coverage" and output_path is not None:
-            json_payload = self.payloads.get("json", {})
+            self.on_run(tool_enum, args_list)
+        payload_stdout = self.payloads.get(tool_enum.value, "")
+        if output_path is not None and tool_enum in {ToolName.COVERAGE, ToolName.PYREFLY}:
+            json_payload = self.payloads.get(
+                f"{tool_enum.value}_json",
+                self.payloads.get("json", {}),
+            )
             output_path.write_text(json.dumps(json_payload), encoding="utf8")
         return ToolResult(
-            tool=tool,
+            tool=tool_enum,
+            args=tuple(args_list),
             returncode=0,
             stdout=str(payload_stdout),
             stderr="",
             output_path=output_path,
             duration_s=0.0,
         )
-
-    @staticmethod
-    def load_json(path: Path) -> dict[str, object] | None:
-        """
-        Load JSON payload from a path when present.
-
-        Returns
-        -------
-        dict[str, object] | None
-            Parsed JSON content or None when missing.
-        """
-        if not path.is_file():
-            return None
-        content = path.read_text(encoding="utf8")
-        if not content:
-            return {}
-        return ToolRunner.load_json(path)
 
 
 @dataclass(frozen=True)

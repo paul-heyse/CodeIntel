@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import duckdb
-
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.storage.gateway import DuckDBConnection
 
 # ---------------------------------------------------------------------------
 # Column lists (single source of truth for SQL literals below)
@@ -931,7 +930,7 @@ def prepared_statements(table_key: str) -> PreparedStatements:
     return PREPARED[table_key]
 
 
-def ensure_schema(con: duckdb.DuckDBPyConnection, table_key: str) -> None:
+def ensure_schema(con: DuckDBConnection, table_key: str) -> None:
     """
     Validate that the live DuckDB table matches the registry definition.
 

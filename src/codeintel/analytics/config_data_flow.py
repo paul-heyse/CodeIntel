@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import duckdb
 import networkx as nx
 
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
@@ -23,7 +22,7 @@ from codeintel.analytics.context import (
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.config.models import ConfigDataFlowConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 if TYPE_CHECKING:
@@ -233,7 +232,7 @@ def _coerce_paths(raw: str | list[str] | tuple[str, ...] | None) -> list[str]:
 
 
 def _config_references(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+    con: DuckDBConnection, repo: str, commit: str
 ) -> dict[str, list[tuple[str, str]]]:
     rows = con.execute(
         """
@@ -250,7 +249,7 @@ def _config_references(
     return refs
 
 
-def _entrypoints(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> set[int]:
+def _entrypoints(con: DuckDBConnection, repo: str, commit: str) -> set[int]:
     rows = con.execute(
         """
         SELECT handler_goid_h128

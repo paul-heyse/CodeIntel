@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -52,6 +52,11 @@ DOCS_VIEWS: tuple[str, ...] = (
 )
 
 
+DuckDBConnection = duckdb.DuckDBPyConnection
+DuckDBRelation = duckdb.DuckDBPyRelation
+DuckDBError = duckdb.Error
+
+
 @dataclass(frozen=True)
 class StorageConfig:
     """Define configuration for opening a CodeIntel DuckDB database."""
@@ -60,9 +65,66 @@ class StorageConfig:
     read_only: bool = False
     apply_schema: bool = False
     ensure_views: bool = False
-    validate_schema: bool = True
+    validate_schema: bool = False
+    attach_history: bool = False
+    history_db_path: Path | None = None
     repo: str | None = None
     commit: str | None = None
+
+    @classmethod
+    def for_ingest(
+        cls,
+        db_path: Path,
+        *,
+        history_db_path: Path | None = None,
+    ) -> StorageConfig:
+        """
+        Build a write-capable configuration used by ingestion and analytics runs.
+
+        Parameters
+        ----------
+        db_path
+            Primary DuckDB database path.
+        history_db_path
+            Optional history database to attach for cross-commit analytics.
+
+        Returns
+        -------
+        StorageConfig
+            Preconfigured ingest-ready storage configuration.
+        """
+        return cls(
+            db_path=db_path,
+            read_only=False,
+            apply_schema=True,
+            ensure_views=True,
+            validate_schema=True,
+            attach_history=history_db_path is not None,
+            history_db_path=history_db_path,
+        )
+
+    @classmethod
+    def for_readonly(cls, db_path: Path) -> StorageConfig:
+        """
+        Build a read-only configuration for serving/inspection surfaces.
+
+        Parameters
+        ----------
+        db_path
+            DuckDB database path to open read-only.
+
+        Returns
+        -------
+        StorageConfig
+            Preconfigured read-only storage configuration.
+        """
+        return cls(
+            db_path=db_path,
+            read_only=True,
+            apply_schema=False,
+            ensure_views=True,
+            validate_schema=True,
+        )
 
 
 @dataclass(frozen=True)
@@ -121,19 +183,27 @@ class StorageGateway(Protocol):
     analytics: AnalyticsTables
 
     @property
-    def con(self) -> duckdb.DuckDBPyConnection:
+    def con(self) -> DuckDBConnection:
         """
         Return an open DuckDB connection.
 
         Returns
         -------
-        duckdb.DuckDBPyConnection
+        DuckDBConnection
             Live connection bound to the configured database.
         """
         ...
 
     def close(self) -> None:
         """Close the underlying DuckDB connection."""
+        ...
+
+    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBRelation:
+        """Execute SQL against the underlying connection."""
+        ...
+
+    def table(self, name: str) -> DuckDBRelation:
+        """Return a relation for a fully qualified table or view name."""
         ...
 
 
@@ -173,37 +243,37 @@ def build_dataset_registry(*, include_views: bool = True) -> DatasetRegistry:
 class CoreTables:
     """Accessors for core schema tables."""
 
-    con: duckdb.DuckDBPyConnection
+    con: DuckDBConnection
 
-    def goids(self) -> duckdb.DuckDBPyRelation:
+    def goids(self) -> DuckDBRelation:
         """
         Return relation for core.goids.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting core.goids.
         """
         return self.con.table("core.goids")
 
-    def modules(self) -> duckdb.DuckDBPyRelation:
+    def modules(self) -> DuckDBRelation:
         """
         Return relation for core.modules.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting core.modules.
         """
         return self.con.table("core.modules")
 
-    def repo_map(self) -> duckdb.DuckDBPyRelation:
+    def repo_map(self) -> DuckDBRelation:
         """
         Return relation for core.repo_map.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting core.repo_map.
         """
         return self.con.table("core.repo_map")
@@ -291,15 +361,15 @@ class CoreTables:
 class GraphTables:
     """Accessors for graph schema tables."""
 
-    con: duckdb.DuckDBPyConnection
+    con: DuckDBConnection
 
-    def call_graph_edges(self) -> duckdb.DuckDBPyRelation:
+    def call_graph_edges(self) -> DuckDBRelation:
         """
         Return relation for graph.call_graph_edges.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting graph.call_graph_edges.
         """
         return self.con.table("graph.call_graph_edges")
@@ -345,13 +415,13 @@ class GraphTables:
             rows,
         )
 
-    def call_graph_nodes(self) -> duckdb.DuckDBPyRelation:
+    def call_graph_nodes(self) -> DuckDBRelation:
         """
         Return relation for graph.call_graph_nodes.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting graph.call_graph_nodes.
         """
         return self.con.table("graph.call_graph_nodes")
@@ -378,13 +448,13 @@ class GraphTables:
             rows,
         )
 
-    def import_graph_edges(self) -> duckdb.DuckDBPyRelation:
+    def import_graph_edges(self) -> DuckDBRelation:
         """
         Return relation for graph.import_graph_edges.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting graph.import_graph_edges.
         """
         return self.con.table("graph.import_graph_edges")
@@ -412,13 +482,13 @@ class GraphTables:
             rows,
         )
 
-    def symbol_use_edges(self) -> duckdb.DuckDBPyRelation:
+    def symbol_use_edges(self) -> DuckDBRelation:
         """
         Return relation for graph.symbol_use_edges.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting graph.symbol_use_edges.
         """
         return self.con.table("graph.symbol_use_edges")
@@ -518,37 +588,37 @@ class GraphTables:
 class DocsViews:
     """Accessors for docs schema views."""
 
-    con: duckdb.DuckDBPyConnection
+    con: DuckDBConnection
 
-    def function_summary(self) -> duckdb.DuckDBPyRelation:
+    def function_summary(self) -> DuckDBRelation:
         """
         Return relation for docs.v_function_summary.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting docs.v_function_summary.
         """
         return self.con.table("docs.v_function_summary")
 
-    def call_graph_enriched(self) -> duckdb.DuckDBPyRelation:
+    def call_graph_enriched(self) -> DuckDBRelation:
         """
         Return relation for docs.v_call_graph_enriched.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting docs.v_call_graph_enriched.
         """
         return self.con.table("docs.v_call_graph_enriched")
 
-    def function_profile(self) -> duckdb.DuckDBPyRelation:
+    def function_profile(self) -> DuckDBRelation:
         """
         Return relation for docs.v_function_profile.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting docs.v_function_profile.
         """
         return self.con.table("docs.v_function_profile")
@@ -558,37 +628,37 @@ class DocsViews:
 class AnalyticsTables:
     """Accessors for analytics schema tables."""
 
-    con: duckdb.DuckDBPyConnection
+    con: DuckDBConnection
 
-    def function_metrics(self) -> duckdb.DuckDBPyRelation:
+    def function_metrics(self) -> DuckDBRelation:
         """
         Return relation for analytics.function_metrics.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting analytics.function_metrics.
         """
         return self.con.table("analytics.function_metrics")
 
-    def function_types(self) -> duckdb.DuckDBPyRelation:
+    def function_types(self) -> DuckDBRelation:
         """
         Return relation for analytics.function_types.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting analytics.function_types.
         """
         return self.con.table("analytics.function_types")
 
-    def coverage_functions(self) -> duckdb.DuckDBPyRelation:
+    def coverage_functions(self) -> DuckDBRelation:
         """
         Return relation for analytics.coverage_functions.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting analytics.coverage_functions.
         """
         return self.con.table("analytics.coverage_functions")
@@ -636,13 +706,13 @@ class AnalyticsTables:
             rows,
         )
 
-    def coverage_lines(self) -> duckdb.DuckDBPyRelation:
+    def coverage_lines(self) -> DuckDBRelation:
         """
         Return relation for analytics.coverage_lines.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting analytics.coverage_lines.
         """
         return self.con.table("analytics.coverage_lines")
@@ -670,13 +740,13 @@ class AnalyticsTables:
             rows,
         )
 
-    def test_catalog(self) -> duckdb.DuckDBPyRelation:
+    def test_catalog(self) -> DuckDBRelation:
         """
         Return relation for analytics.test_catalog.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting analytics.test_catalog.
         """
         return self.con.table("analytics.test_catalog")
@@ -721,13 +791,13 @@ class AnalyticsTables:
             rows,
         )
 
-    def test_coverage_edges(self) -> duckdb.DuckDBPyRelation:
+    def test_coverage_edges(self) -> DuckDBRelation:
         """
         Return relation for analytics.test_coverage_edges.
 
         Returns
         -------
-        duckdb.DuckDBPyRelation
+        DuckDBRelation
             Relation selecting analytics.test_coverage_edges.
         """
         return self.con.table("analytics.test_coverage_edges")
@@ -1127,7 +1197,7 @@ class _DuckDBGateway:
 
     config: StorageConfig
     datasets: DatasetRegistry
-    con: duckdb.DuckDBPyConnection
+    con: DuckDBConnection
     core: CoreTables = field(init=False)
     graph: GraphTables = field(init=False)
     docs: DocsViews = field(init=False)
@@ -1143,8 +1213,16 @@ class _DuckDBGateway:
         """Close the underlying connection."""
         self.con.close()
 
+    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBRelation:
+        """Execute a SQL statement using the active DuckDB connection."""
+        return self.con.execute(sql, params)
 
-def _connect(config: StorageConfig) -> duckdb.DuckDBPyConnection:
+    def table(self, name: str) -> DuckDBRelation:
+        """Return a relation object for the specified table or view."""
+        return self.con.table(name)
+
+
+def _connect(config: StorageConfig) -> DuckDBConnection:
     """
     Open a DuckDB connection using the provided configuration.
 
@@ -1155,13 +1233,24 @@ def _connect(config: StorageConfig) -> duckdb.DuckDBPyConnection:
 
     Returns
     -------
-    duckdb.DuckDBPyConnection
+    DuckDBConnection
         Live DuckDB connection with optional schema/views applied.
     """
     if not config.read_only and config.db_path != Path(":memory:"):
         config.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     con = duckdb.connect(str(config.db_path), read_only=config.read_only)
+    if config.attach_history:
+        if config.history_db_path is None:
+            message = "attach_history requires history_db_path"
+            raise ValueError(message)
+        if not config.history_db_path.exists():
+            message = f"History database not found: {config.history_db_path}"
+            raise FileNotFoundError(message)
+        con.execute(
+            "ATTACH DATABASE ? AS history",
+            [str(config.history_db_path)],
+        )
     if config.apply_schema and not config.read_only:
         apply_all_schemas(con)
     if config.ensure_views and not config.read_only:

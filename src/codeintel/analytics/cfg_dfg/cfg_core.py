@@ -8,8 +8,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
-import duckdb
-
 from codeintel.analytics.graph_service import (
     GraphContext,
     bounded_simple_path_count,
@@ -21,7 +19,7 @@ from codeintel.analytics.graph_service import (
     dfg_component_stats,
 )
 from codeintel.graphs.nx_views import _normalize_decimal
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 MAX_SIMPLE_PATHS = 1000
 MAX_PATH_CUTOFF = 50
@@ -124,7 +122,7 @@ def load_cfg_blocks(
             FROM graph.cfg_blocks
             """
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         return blocks_by_fn, edges_by_fn
     for fn, idx, kind, in_deg, out_deg in block_rows:
         blocks_by_fn[int(fn)].append((int(idx), str(kind), int(in_deg), int(out_deg)))
@@ -136,7 +134,7 @@ def load_cfg_blocks(
             FROM graph.cfg_edges
             """
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         return blocks_by_fn, edges_by_fn
     for fn, src_id, dst_id, edge_type in edge_rows:
         src_idx = parse_block_idx(src_id) if src_id is not None else None
