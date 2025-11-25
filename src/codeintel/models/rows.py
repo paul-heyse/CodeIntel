@@ -166,6 +166,8 @@ def symbol_use_to_tuple(row: SymbolUseRow) -> tuple[object, ...]:
 class ConfigValueRow(TypedDict):
     """Row shape for analytics.config_values inserts."""
 
+    repo: str
+    commit: str
     config_path: str
     format: str
     key: str
@@ -184,6 +186,8 @@ def config_value_to_tuple(row: ConfigValueRow) -> tuple[object, ...]:
         Values in the order expected by config_values INSERTs.
     """
     return (
+        row["repo"],
+        row["commit"],
         row["config_path"],
         row["format"],
         row["key"],

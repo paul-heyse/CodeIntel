@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
-import duckdb
 import pytest
 
 from codeintel.analytics.subsystems import build_subsystems
 from codeintel.config.models import SubsystemsConfig, SubsystemsOverrides
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.builders import (
+    ConfigValueRow,
+    FunctionMetricsRow,
+    ImportGraphEdgeRow,
+    ModuleRow,
+    RiskFactorRow,
+    SymbolUseEdgeRow,
+    insert_config_values,
+    insert_function_metrics,
+    insert_import_graph_edges,
+    insert_modules,
+    insert_risk_factors,
+    insert_symbol_use_edges,
+)
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -19,102 +33,227 @@ TARGET_CLUSTER_SIZE = 2
 EXPECTED_HIGH_RISK_COUNT = 1
 
 
-def _setup_db() -> StorageGateway:
-    """
-    Create an in-memory DuckDB with schemas applied.
-
-    Returns
-    -------
-    StorageGateway
-        Connected in-memory database ready for writes.
-    """
-    return open_memory_gateway(apply_schema=True)
-
-
-def _seed_modules(con: duckdb.DuckDBPyConnection) -> None:
+def _seed_modules(gateway: StorageGateway) -> None:
     """Insert sample modules, edges, and risk data to drive clustering."""
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES
-            ('pkg.api', 'pkg/api.py', ?, ?, 'python', '["api"]', '[]'),
-            ('pkg.core', 'pkg/core.py', ?, ?, 'python', '["api"]', '[]'),
-            ('pkg.misc', 'pkg/misc.py', ?, ?, 'python', '[]', '[]')
-        """,
-        [REPO, COMMIT, REPO, COMMIT, REPO, COMMIT],
+    insert_modules(
+        gateway,
+        [
+            ModuleRow(
+                module="pkg.api",
+                path="pkg/api.py",
+                repo=REPO,
+                commit=COMMIT,
+                tags='["api"]',
+            ),
+            ModuleRow(
+                module="pkg.core",
+                path="pkg/core.py",
+                repo=REPO,
+                commit=COMMIT,
+                tags='["api"]',
+            ),
+            ModuleRow(
+                module="pkg.misc",
+                path="pkg/misc.py",
+                repo=REPO,
+                commit=COMMIT,
+            ),
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.import_graph_edges (
-            repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group
-        )
-        VALUES
-            (?, ?, 'pkg.api', 'pkg.core', 1, 1, 0),
-            (?, ?, 'pkg.core', 'pkg.api', 1, 1, 0)
-        """,
-        [REPO, COMMIT, REPO, COMMIT],
+    insert_import_graph_edges(
+        gateway,
+        [
+            ImportGraphEdgeRow(
+                repo=REPO,
+                commit=COMMIT,
+                src_module="pkg.api",
+                dst_module="pkg.core",
+                src_fan_out=1,
+                dst_fan_in=1,
+                cycle_group=0,
+            ),
+            ImportGraphEdgeRow(
+                repo=REPO,
+                commit=COMMIT,
+                src_module="pkg.core",
+                dst_module="pkg.api",
+                src_fan_out=1,
+                dst_fan_in=1,
+                cycle_group=0,
+            ),
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.symbol_use_edges (symbol, def_path, use_path, same_file, same_module)
-        VALUES
-            ('sym_core', 'pkg/core.py', 'pkg/api.py', FALSE, FALSE)
-        """
+    insert_symbol_use_edges(
+        gateway,
+        [
+            SymbolUseEdgeRow(
+                symbol="sym_core",
+                def_path="pkg/core.py",
+                use_path="pkg/api.py",
+                same_file=False,
+                same_module=False,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.config_values (
-            config_path, format, key, reference_paths, reference_modules, reference_count
-        )
-        VALUES (
-            'cfg/app.yaml', 'yaml', 'feature.flag', '[]', '["pkg.api", "pkg.core"]', 2
-        )
-        """
+    insert_config_values(
+        gateway,
+        [
+            ConfigValueRow(
+                repo=REPO,
+                commit=COMMIT,
+                config_path="cfg/app.yaml",
+                format="yaml",
+                key="feature.flag",
+                reference_paths=[],
+                reference_modules=["pkg.api", "pkg.core"],
+                reference_count=2,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.function_metrics (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, loc, logical_loc, param_count, positional_params,
-            keyword_only_params, has_varargs, has_varkw, is_async, is_generator,
-            return_count, yield_count, raise_count, cyclomatic_complexity, max_nesting_depth,
-            stmt_count, decorator_count, has_docstring, complexity_bucket, created_at
-        ) VALUES
-            (10, 'goid:demo/repo#python:function:pkg.api.handler', ?, ?, 'pkg/api.py', 'python',
-             'function', 'pkg.api.handler', 1, 2, 4, 3, 1, 1, 0, FALSE, FALSE, FALSE, FALSE, 1, 0,
-             0, 1, 1, 2, 0, TRUE, 'low', NOW()),
-            (11, 'goid:demo/repo#python:function:pkg.core.service', ?, ?, 'pkg/core.py', 'python',
-             'function', 'pkg.core.service', 1, 2, 4, 3, 1, 1, 0, FALSE, FALSE, FALSE, FALSE, 1,
-             0, 0, 1, 1, 2, 0, TRUE, 'low', NOW())
-        """,
-        [REPO, COMMIT, REPO, COMMIT],
+    now = datetime.now(tz=UTC)
+    insert_function_metrics(
+        gateway,
+        [
+            FunctionMetricsRow(
+                function_goid_h128=10,
+                urn="goid:demo/repo#python:function:pkg.api.handler",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path="pkg/api.py",
+                language="python",
+                kind="function",
+                qualname="pkg.api.handler",
+                start_line=1,
+                end_line=2,
+                loc=4,
+                logical_loc=3,
+                param_count=1,
+                positional_params=1,
+                keyword_only_params=0,
+                has_varargs=False,
+                has_varkw=False,
+                is_async=False,
+                is_generator=False,
+                return_count=1,
+                yield_count=0,
+                raise_count=0,
+                cyclomatic_complexity=1,
+                max_nesting_depth=1,
+                stmt_count=2,
+                decorator_count=0,
+                has_docstring=True,
+                complexity_bucket="low",
+                created_at=now,
+            ),
+            FunctionMetricsRow(
+                function_goid_h128=11,
+                urn="goid:demo/repo#python:function:pkg.core.service",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path="pkg/core.py",
+                language="python",
+                kind="function",
+                qualname="pkg.core.service",
+                start_line=1,
+                end_line=2,
+                loc=4,
+                logical_loc=3,
+                param_count=1,
+                positional_params=1,
+                keyword_only_params=0,
+                has_varargs=False,
+                has_varkw=False,
+                is_async=False,
+                is_generator=False,
+                return_count=1,
+                yield_count=0,
+                raise_count=0,
+                cyclomatic_complexity=1,
+                max_nesting_depth=1,
+                stmt_count=2,
+                decorator_count=0,
+                has_docstring=True,
+                complexity_bucket="low",
+                created_at=now,
+            ),
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.goid_risk_factors (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname, loc,
-            logical_loc, cyclomatic_complexity, complexity_bucket, typedness_bucket,
-            typedness_source, hotspot_score, file_typed_ratio, static_error_count,
-            has_static_errors, executable_lines, covered_lines, coverage_ratio, tested,
-            test_count, failing_test_count, last_test_status, risk_score, risk_level, tags,
-            owners, created_at
-        ) VALUES
-            (10, 'goid:demo/repo#python:function:pkg.api.handler', ?, ?, 'pkg/api.py', 'python',
-             'function', 'pkg.api.handler', 4, 3, 1, 'low', 'typed', 'analysis', 0.0, 1.0, 0,
-             FALSE, 4, 2, 0.5, TRUE, 1, 0, 'all_passing', 0.2, 'low', '[]', '[]', NOW()),
-            (11, 'goid:demo/repo#python:function:pkg.core.service', ?, ?, 'pkg/core.py', 'python',
-             'function', 'pkg.core.service', 4, 3, 1, 'low', 'typed', 'analysis', 0.0, 1.0, 0,
-             FALSE, 4, 2, 0.5, TRUE, 1, 0, 'all_passing', 0.8, 'high', '[]', '[]', NOW())
-        """,
-        [REPO, COMMIT, REPO, COMMIT],
+    insert_risk_factors(
+        gateway,
+        [
+            RiskFactorRow(
+                function_goid_h128=10,
+                urn="goid:demo/repo#python:function:pkg.api.handler",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path="pkg/api.py",
+                language="python",
+                kind="function",
+                qualname="pkg.api.handler",
+                loc=4,
+                logical_loc=3,
+                cyclomatic_complexity=1,
+                complexity_bucket="low",
+                typedness_bucket="typed",
+                typedness_source="analysis",
+                hotspot_score=0.0,
+                file_typed_ratio=1.0,
+                static_error_count=0,
+                has_static_errors=False,
+                executable_lines=4,
+                covered_lines=2,
+                coverage_ratio=0.5,
+                tested=True,
+                test_count=1,
+                failing_test_count=0,
+                last_test_status="all_passing",
+                risk_score=0.2,
+                risk_level="low",
+                tags="[]",
+                owners="[]",
+                created_at=now,
+            ),
+            RiskFactorRow(
+                function_goid_h128=11,
+                urn="goid:demo/repo#python:function:pkg.core.service",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path="pkg/core.py",
+                language="python",
+                kind="function",
+                qualname="pkg.core.service",
+                loc=4,
+                logical_loc=3,
+                cyclomatic_complexity=1,
+                complexity_bucket="low",
+                typedness_bucket="typed",
+                typedness_source="analysis",
+                hotspot_score=0.0,
+                file_typed_ratio=1.0,
+                static_error_count=0,
+                has_static_errors=False,
+                executable_lines=4,
+                covered_lines=2,
+                coverage_ratio=0.5,
+                tested=True,
+                test_count=1,
+                failing_test_count=0,
+                last_test_status="all_passing",
+                risk_score=0.8,
+                risk_level="high",
+                tags="[]",
+                owners="[]",
+                created_at=now,
+            ),
+        ],
     )
 
 
-def test_subsystems_cluster_and_risk_aggregation() -> None:
+def test_subsystems_cluster_and_risk_aggregation(fresh_gateway: StorageGateway) -> None:
     """Clusters modules and aggregates risk across subsystems."""
-    gateway = _setup_db()
+    gateway = fresh_gateway
     con = gateway.con
-    _seed_modules(con)
+    _seed_modules(gateway)
 
     cfg = SubsystemsConfig.from_paths(
         repo=REPO,

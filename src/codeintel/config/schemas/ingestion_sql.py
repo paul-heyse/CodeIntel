@@ -73,6 +73,8 @@ TEST_CATALOG_COLUMNS = [
 ]
 
 CONFIG_VALUES_COLUMNS = [
+    "repo",
+    "commit",
     "config_path",
     "format",
     "key",
@@ -160,8 +162,8 @@ TEST_CATALOG_INSERT = (
 
 CONFIG_VALUES_INSERT = (
     "INSERT INTO analytics.config_values ("
-    "config_path, format, key, reference_paths, reference_modules, reference_count"
-    ") VALUES (?, ?, ?, ?, ?, ?)"
+    "repo, commit, config_path, format, key, reference_paths, reference_modules, reference_count"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 __all__ = [

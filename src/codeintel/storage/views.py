@@ -138,6 +138,17 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
             fp.tests_touching,
             fp.failing_tests,
             fp.slow_tests,
+            fp.created_in_commit,
+            fp.created_at_history AS created_at,
+            fp.last_modified_commit,
+            fp.last_modified_at,
+            fp.age_days,
+            fp.commit_count,
+            fp.author_count,
+            fp.lines_added,
+            fp.lines_deleted,
+            fp.churn_score,
+            fp.stability_bucket,
             fp.risk_score,
             fp.risk_level,
             fp.is_pure,
@@ -269,6 +280,79 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
           ON ss.subsystem_id = sm.subsystem_id
          AND ss.repo = sm.repo
          AND ss.commit = sm.commit;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_function_history AS
+        SELECT
+            fp.repo,
+            fp.commit,
+            fp.function_goid_h128,
+            fp.urn,
+            fp.rel_path,
+            fp.module,
+            fp.qualname,
+            fh.created_in_commit,
+            fh.created_at,
+            fh.last_modified_commit,
+            fh.last_modified_at,
+            fh.age_days,
+            fh.commit_count,
+            fh.author_count,
+            fh.lines_added,
+            fh.lines_deleted,
+            fh.churn_score,
+            fh.stability_bucket
+        FROM analytics.function_profile fp
+        LEFT JOIN analytics.function_history fh
+          ON fh.repo = fp.repo
+         AND fh.commit = fp.commit
+         AND fh.function_goid_h128 = fp.function_goid_h128;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_function_history_timeseries AS
+        SELECT
+            h.repo,
+            h.entity_stable_id,
+            h.commit,
+            h.commit_ts,
+            h.rel_path,
+            h.module,
+            h.qualname,
+            h.loc,
+            h.cyclomatic_complexity,
+            h.coverage_ratio,
+            h.static_error_count,
+            h.typedness_bucket,
+            h.risk_score,
+            h.risk_level,
+            h.bucket_label
+        FROM analytics.history_timeseries h
+        WHERE h.entity_kind = 'function';
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_module_history_timeseries AS
+        SELECT
+            h.repo,
+            h.entity_stable_id,
+            h.commit,
+            h.commit_ts,
+            h.module,
+            h.rel_path,
+            h.coverage_ratio,
+            h.risk_score,
+            h.risk_level,
+            h.bucket_label
+        FROM analytics.history_timeseries h
+        WHERE h.entity_kind = 'module';
         """
     )
 
@@ -697,6 +781,89 @@ CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
 
     con.execute(
         """
+        CREATE OR REPLACE VIEW docs.v_test_architecture AS
+        SELECT
+            p.repo,
+            p.commit,
+            p.test_id,
+            p.test_goid_h128,
+            p.urn,
+            p.rel_path,
+            p.module,
+            p.qualname,
+            p.language,
+            p.kind,
+            p.status,
+            p.duration_ms,
+            p.markers,
+            p.flaky,
+            p.flakiness_score,
+            p.importance_score,
+            p.functions_covered,
+            p.functions_covered_count,
+            p.primary_function_goids,
+            p.subsystems_covered,
+            p.subsystems_covered_count,
+            p.primary_subsystem_id,
+            p.assert_count,
+            p.raise_count,
+            p.uses_parametrize,
+            p.uses_fixtures,
+            p.io_bound,
+            p.uses_network,
+            p.uses_db,
+            p.uses_filesystem,
+            p.uses_subprocess,
+            p.tg_degree,
+            p.tg_weighted_degree,
+            p.tg_proj_degree,
+            p.tg_proj_weight,
+            p.tg_proj_clustering,
+            p.tg_proj_betweenness,
+            b.behavior_tags,
+            b.tag_source,
+            b.heuristic_version,
+            b.llm_model,
+            b.llm_run_id,
+            p.created_at
+        FROM analytics.test_profile p
+        LEFT JOIN analytics.behavioral_coverage b
+          ON b.repo = p.repo
+         AND b.commit = p.commit
+         AND b.test_id = p.test_id;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_behavioral_classification_input AS
+        SELECT
+            p.repo,
+            p.commit,
+            p.test_id,
+            p.rel_path,
+            p.qualname,
+            p.markers,
+            p.functions_covered,
+            p.subsystems_covered,
+            p.assert_count,
+            p.raise_count,
+            p.status,
+            p.duration_ms,
+            p.flaky,
+            b.behavior_tags,
+            b.tag_source,
+            b.heuristic_version
+        FROM analytics.test_profile p
+        LEFT JOIN analytics.behavioral_coverage b
+          ON b.repo = p.repo
+         AND b.commit = p.commit
+         AND b.test_id = p.test_id;
+        """
+    )
+
+    con.execute(
+        """
         CREATE OR REPLACE VIEW docs.v_file_summary AS
         WITH per_file_risk AS (
             SELECT
@@ -761,6 +928,7 @@ CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
             commit,
             entrypoint_id,
             kind,
+            framework,
             handler_goid_h128,
             handler_urn,
             handler_rel_path,
@@ -774,6 +942,7 @@ CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
             arguments_schema,
             schedule,
             trigger,
+            extra,
             subsystem_id,
             subsystem_name,
             tags,

@@ -365,7 +365,9 @@ def load_config_module_bipartite(
         """
         SELECT key, reference_modules
         FROM analytics.config_values
+        WHERE repo = ? AND commit = ?
         """,
+        [repo, commit],
     ).fetchall()
 
     graph = nx.Graph()

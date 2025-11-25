@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import SupportsFloat, SupportsIndex, TypeAlias
 
 import duckdb
 
@@ -19,6 +20,7 @@ from codeintel.ingestion.tool_runner import ToolRunner
 log = logging.getLogger(__name__)
 
 DBResolver = Callable[[str], duckdb.DuckDBPyConnection]
+NumericLike: TypeAlias = SupportsFloat | SupportsIndex | str | bytes | bytearray | int | float | Decimal
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,15 @@ class EntitySelection:
 
     functions: set[str]
     modules: set[str]
+
+
+@dataclass(frozen=True)
+class CommitContext:
+    """Commit metadata shared across entity collectors."""
+
+    commit: str
+    commit_ts: datetime
+    created_at: datetime
 
 
 def make_entity_stable_id(
@@ -52,9 +63,23 @@ def make_entity_stable_id(
         Entity kind (e.g., ``function`` or ``module``).
     qualname:
         Qualified name for functions; empty for modules.
+
+    Returns
+    -------
+    str
+        Stable identifier hashed from entity coordinates.
     """
     raw = f"{repo}:{rel_path}:{language}:{kind}:{qualname}"
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
+    return hashlib.sha256(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:20]
+
+
+def _safe_number(value: NumericLike | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def compute_history_timeseries(
@@ -98,27 +123,24 @@ def compute_history_timeseries(
     for commit in cfg.commits:
         con_ci = db_resolver(commit)
         commit_ts = _fetch_commit_timestamp(cfg.repo_root, commit, runner) or now
+        commit_ctx = CommitContext(commit=commit, commit_ts=commit_ts, created_at=now)
 
-        if cfg.entity_kind in ("function", "both"):
+        if cfg.entity_kind in {"function", "both"}:
             rows.extend(
                 _collect_function_rows_for_commit(
                     cfg,
                     con_ci,
-                    commit=commit,
-                    commit_ts=commit_ts,
+                    commit_ctx=commit_ctx,
                     selection=selection.functions,
-                    created_at_row=now,
                 )
             )
-        if cfg.entity_kind in ("module", "both"):
+        if cfg.entity_kind in {"module", "both"}:
             rows.extend(
                 _collect_module_rows_for_commit(
                     cfg,
                     con_ci,
-                    commit=commit,
-                    commit_ts=commit_ts,
+                    commit_ctx=commit_ctx,
                     selection=selection.modules,
-                    created_at_row=now,
                 )
             )
 
@@ -227,10 +249,8 @@ def _collect_function_rows_for_commit(
     cfg: HistoryTimeseriesConfig,
     con_ci: duckdb.DuckDBPyConnection,
     *,
-    commit: str,
-    commit_ts: datetime,
+    commit_ctx: CommitContext,
     selection: set[str],
-    created_at_row: datetime,
 ) -> Iterable[tuple[object, ...]]:
     rows = con_ci.execute(
         """
@@ -250,7 +270,7 @@ def _collect_function_rows_for_commit(
         FROM analytics.function_profile
         WHERE repo = ? AND commit = ?
         """,
-        [cfg.repo, commit],
+        [cfg.repo, commit_ctx.commit],
     ).fetchall()
 
     for (
@@ -276,7 +296,7 @@ def _collect_function_rows_for_commit(
         )
         if stable_id not in selection:
             continue
-        goid_val = int(goid) if isinstance(goid, (int, float, Decimal)) else int(goid)
+        goid_val = int(goid)
         yield (
             cfg.repo,
             "function",
@@ -286,17 +306,17 @@ def _collect_function_rows_for_commit(
             str(rel_path),
             str(language),
             str(qualname),
-            commit,
-            commit_ts,
-            int(loc or 0),
-            int(cyclomatic_complexity or 0),
-            float(coverage_ratio) if coverage_ratio is not None else None,
-            int(static_error_count or 0),
+            commit_ctx.commit,
+            commit_ctx.commit_ts,
+            _safe_number(loc),
+            _safe_number(cyclomatic_complexity),
+            _safe_number(coverage_ratio),
+            _safe_number(static_error_count),
             typedness_bucket,
-            float(risk_score) if risk_score is not None else None,
+            _safe_number(risk_score),
             risk_level,
-            commit_ts.date().isoformat(),
-            created_at_row,
+            commit_ctx.commit_ts.date().isoformat(),
+            commit_ctx.created_at,
         )
 
 
@@ -304,10 +324,8 @@ def _collect_module_rows_for_commit(
     cfg: HistoryTimeseriesConfig,
     con_ci: duckdb.DuckDBPyConnection,
     *,
-    commit: str,
-    commit_ts: datetime,
+    commit_ctx: CommitContext,
     selection: set[str],
-    created_at_row: datetime,
 ) -> Iterable[tuple[object, ...]]:
     rows = con_ci.execute(
         """
@@ -323,19 +341,19 @@ def _collect_module_rows_for_commit(
         FROM analytics.module_profile
         WHERE repo = ? AND commit = ?
         """,
-        [cfg.repo, commit],
+        [cfg.repo, commit_ctx.commit],
     ).fetchall()
 
     for (
         module,
         path,
         language,
-            module_coverage_ratio,
-            max_risk_score,
-            avg_risk_score,
-            _role,
-            _role_confidence,
-        ) in rows:
+        module_coverage_ratio,
+        max_risk_score,
+        _avg_risk_score,
+        _role,
+        _role_confidence,
+    ) in rows:
         stable_id = make_entity_stable_id(
             repo=cfg.repo,
             rel_path=str(path),
@@ -354,17 +372,17 @@ def _collect_module_rows_for_commit(
             str(path),
             str(language),
             None,
-            commit,
-            commit_ts,
+            commit_ctx.commit,
+            commit_ctx.commit_ts,
             None,
             None,
-            float(module_coverage_ratio) if module_coverage_ratio is not None else None,
+            _safe_number(module_coverage_ratio),
             None,
             None,
-            float(max_risk_score) if max_risk_score is not None else None,
+            _safe_number(max_risk_score),
             None,
-            commit_ts.date().isoformat(),
-            created_at_row,
+            commit_ctx.commit_ts.date().isoformat(),
+            commit_ctx.created_at,
         )
 
 

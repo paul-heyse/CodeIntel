@@ -28,7 +28,12 @@ def _seed_db(db_path: Path, *, repo: str, commit: str) -> StorageGateway:
     StorageGateway
         Gateway seeded with architecture data.
     """
-    return open_seeded_architecture_gateway(repo=repo, commit=commit, db_path=db_path)
+    return open_seeded_architecture_gateway(
+        repo=repo,
+        commit=commit,
+        db_path=db_path,
+        strict_schema=True,
+    )
 
 
 def _build_app(gateway: StorageGateway, db_path: Path, *, repo: str, commit: str) -> FastAPI:

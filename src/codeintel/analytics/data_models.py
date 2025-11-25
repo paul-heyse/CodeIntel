@@ -29,6 +29,8 @@ FIELD_CONSTRAINT_KEYS: tuple[str, ...] = (
     "min_length",
     "max_length",
     "regex",
+    "nullable",
+    "unique",
 )
 
 
@@ -70,6 +72,7 @@ class ModelRecord:
     base_classes: list[dict[str, str]]
     fields: list[FieldSpec]
     relationships: list[dict[str, object]]
+    relationship_hints: list[dict[str, object]]
     doc_short: str | None
     doc_long: str | None
 
@@ -129,17 +132,23 @@ def _is_dataclass(decorators: list[str]) -> bool:
 
 def _class_kind(decorators: list[str], bases: list[str]) -> str:
     lowered_bases = {base.split(".")[-1].lower() for base in bases}
+    lowered_full = {base.lower() for base in bases}
+    kind = "generic_class"
     if _is_dataclass(decorators):
-        return "dataclass"
-    if "basemodel" in lowered_bases:
-        return "pydantic_model"
-    if "typeddict" in lowered_bases:
-        return "typeddict"
-    if "protocol" in lowered_bases:
-        return "protocol"
-    if "model" in lowered_bases:
-        return "orm_model"
-    return "generic_class"
+        kind = "dataclass"
+    elif "basemodel" in lowered_bases:
+        kind = "pydantic_model"
+    elif "typeddict" in lowered_bases:
+        kind = "typeddict"
+    elif "protocol" in lowered_bases:
+        kind = "protocol"
+    elif any("django" in base and base.endswith("model") for base in lowered_full):
+        kind = "django_model"
+    elif "model" in lowered_bases or any(
+        base.endswith("base") or "declarative" in base for base in lowered_bases
+    ):
+        kind = "orm_model"
+    return kind
 
 
 def _constraints_from_call(value: ast.AST | None) -> dict[str, object]:
@@ -175,7 +184,27 @@ def _field_source(value: ast.AST | None) -> str:
             return "pydantic_field"
         if func_name.endswith("field"):
             return "dataclass_field"
+        if func_name.lower().endswith("column"):
+            return "orm_column"
+        if func_name.lower().endswith("relationship"):
+            return "orm_relationship"
     return "annotation"
+
+
+def _constraints_from_keywords(keywords: list[ast.keyword]) -> dict[str, object]:
+    constraints: dict[str, object | None] = dict.fromkeys(FIELD_CONSTRAINT_KEYS, None)
+    for kw in keywords:
+        if kw.arg is None:
+            continue
+        if kw.arg in constraints:
+            constraints[kw.arg] = _literal_value(kw.value)
+        if kw.arg == "max_length":
+            constraints["max_length"] = _literal_value(kw.value)
+        if kw.arg == "nullable":
+            constraints["nullable"] = _literal_value(kw.value)
+        if kw.arg == "unique":
+            constraints["unique"] = _literal_value(kw.value)
+    return constraints
 
 
 def _total_flag(node: ast.ClassDef) -> bool:
@@ -196,6 +225,100 @@ def _total_flag(node: ast.ClassDef) -> bool:
             if isinstance(total_value, bool):
                 total_flag = total_value
     return total_flag
+
+
+def _relationship_hint(
+    *,
+    field_name: str,
+    target: str,
+    multiplicity: str,
+    kind: str,
+    via: str,
+) -> dict[str, object]:
+    return {
+        "field": field_name,
+        "target": target,
+        "multiplicity": multiplicity,
+        "kind": kind,
+        "via": via,
+    }
+
+
+def _foreign_key_target(args: list[ast.AST], keywords: list[ast.keyword]) -> str | None:
+    for arg in args:
+        if isinstance(arg, ast.Call):
+            call_name = _call_name(arg.func) or ""
+            if "foreignkey" in call_name.lower() and arg.args:
+                return str(_literal_value(arg.args[0]))
+        if isinstance(arg, (ast.Constant, ast.Name, ast.Attribute)):
+            call_name = _call_name(arg)
+            if call_name is not None and "foreignkey" in call_name.lower():
+                return call_name
+    for kw in keywords:
+        if kw.arg and "foreignkey" in kw.arg.lower():
+            return str(_literal_value(kw.value))
+    return None
+
+
+def _relationship_hints_from_call(field_name: str, value: ast.Call) -> list[dict[str, object]]:
+    func_name = (_call_name(value.func) or "").lower()
+    hints: list[dict[str, object]] = []
+    target_value: str | None = None
+    multiplicity = "many"
+    if "relationship" in func_name:
+        if value.args:
+            target_value = str(_literal_value(value.args[0]))
+        uselist_kw = next((kw for kw in value.keywords if kw.arg == "uselist"), None)
+        if uselist_kw is not None:
+            use_list_val = _literal_value(uselist_kw.value)
+            if isinstance(use_list_val, bool) and not use_list_val:
+                multiplicity = "one"
+        hints.append(
+            _relationship_hint(
+                field_name=field_name,
+                target=target_value or "",
+                multiplicity=multiplicity,
+                kind="relationship",
+                via="sqlalchemy_relationship",
+            )
+        )
+    fk_target = _foreign_key_target(list(value.args), value.keywords)
+    if fk_target:
+        hints.append(
+            _relationship_hint(
+                field_name=field_name,
+                target=fk_target,
+                multiplicity="many",
+                kind="foreign_key",
+                via="sqlalchemy_column",
+            )
+        )
+    if "foreignkey" in func_name:
+        if value.args:
+            target_value = str(_literal_value(value.args[0]))
+        hints.append(
+            _relationship_hint(
+                field_name=field_name,
+                target=target_value or "",
+                multiplicity="many",
+                kind="foreign_key",
+                via="django_field",
+            )
+        )
+    if any(name in func_name for name in ("onetoonefield", "manytomanyfield")):
+        if value.args:
+            target_value = str(_literal_value(value.args[0]))
+        multiplicity = "one" if "onetoonefield" in func_name else "many"
+        hints.append(
+            _relationship_hint(
+                field_name=field_name,
+                target=target_value or "",
+                multiplicity=multiplicity,
+                kind="relationship",
+                via="django_field",
+            )
+        )
+    return hints
 
 
 def _field_spec_from_assign(
@@ -231,20 +354,81 @@ def _field_spec_from_assign(
     )
 
 
+def _field_spec_from_call(
+    field_name: str,
+    value: ast.Call,
+    *,
+    model_kind: str,
+) -> tuple[FieldSpec | None, list[dict[str, object]]]:
+    func_name = (_call_name(value.func) or "").lower()
+    constraints = _constraints_from_keywords(value.keywords)
+    required = True
+    has_default = False
+    default_expr = None
+    field_type = None
+    relationship_hints = _relationship_hints_from_call(field_name, value)
+    if "column" in func_name or "field" in func_name or "relationship" in func_name:
+        if value.args:
+            arg0 = value.args[0]
+            if isinstance(arg0, ast.Call) and "foreignkey" in (_call_name(arg0.func) or "").lower():
+                field_type = "ForeignKey"
+            else:
+                field_type = _annotation_to_str(arg0)
+        required = constraints.get("nullable") is not True
+        has_default = any(kw.arg in {"default", "server_default"} for kw in value.keywords)
+        default_kw = next((kw for kw in value.keywords if kw.arg == "default"), None)
+        if default_kw is not None:
+            default_expr = _safe_unparse(default_kw.value)
+        if model_kind == "django_model":
+            null_kw = next((kw for kw in value.keywords if kw.arg == "null"), None)
+            blank_kw = next((kw for kw in value.keywords if kw.arg == "blank"), None)
+            if null_kw is not None:
+                required = not bool(_literal_value(null_kw.value))
+            if blank_kw is not None and bool(_literal_value(blank_kw.value)):
+                required = False
+            if default_kw is not None:
+                has_default = True
+        source = _field_source(value)
+        field_spec = FieldSpec(
+            name=field_name,
+            type=field_type,
+            required=required,
+            has_default=has_default,
+            default_expr=default_expr,
+            constraints=constraints,
+            source=source,
+        )
+        return field_spec, relationship_hints
+    return None, relationship_hints
+
+
 def _build_field_specs(
     node: ast.ClassDef,
     *,
     model_kind: str,
-) -> list[FieldSpec]:
+) -> tuple[list[FieldSpec], list[dict[str, object]]]:
     fields: list[FieldSpec] = []
+    rel_hints: list[dict[str, object]] = []
     total_flag = _total_flag(node)
     for stmt in node.body:
-        if not isinstance(stmt, ast.AnnAssign):
-            continue
-        field_spec = _field_spec_from_assign(stmt, model_kind=model_kind, total_flag=total_flag)
-        if field_spec is not None:
-            fields.append(field_spec)
-    return fields
+        if isinstance(stmt, ast.AnnAssign):
+            field_spec = _field_spec_from_assign(stmt, model_kind=model_kind, total_flag=total_flag)
+            if field_spec is not None:
+                fields.append(field_spec)
+                if isinstance(stmt.value, ast.Call):
+                    rel_hints.extend(_relationship_hints_from_call(field_spec.name, stmt.value))
+        if isinstance(stmt, ast.Assign):
+            if not stmt.targets:
+                continue
+            target = stmt.targets[0]
+            if not isinstance(target, ast.Name):
+                continue
+            if isinstance(stmt.value, ast.Call):
+                spec, hints = _field_spec_from_call(target.id, stmt.value, model_kind=model_kind)
+                rel_hints.extend(hints)
+                if spec is not None:
+                    fields.append(spec)
+    return fields, rel_hints
 
 
 def _load_class_metadata(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> list[ClassMeta]:
@@ -353,7 +537,7 @@ def _gather_models_for_path(
         base_classes = _base_classes(cls_node)
         base_names = [base["qualname"] for base in base_classes]
         model_kind = _class_kind(decorators, base_names)
-        fields = _build_field_specs(cls_node, model_kind=model_kind)
+        fields, rel_hints = _build_field_specs(cls_node, model_kind=model_kind)
         doc_short, doc_long = docstrings.get((rel_path, meta.qualname), (None, None))
         model_id = _compute_model_id(cfg.repo, cfg.commit, meta.module, meta.qualname, model_kind)
         models.append(
@@ -367,6 +551,7 @@ def _gather_models_for_path(
                 base_classes=base_classes,
                 fields=fields,
                 relationships=[],
+                relationship_hints=rel_hints,
                 doc_short=doc_short,
                 doc_long=doc_long,
             )
@@ -378,22 +563,79 @@ def _normalize_snake(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9_\.]", "", text)
 
 
+def _candidate_tokens(value: str) -> list[str]:
+    separators = re.split(r"[^A-Za-z0-9_]+", value)
+    tokens = [value]
+    tokens.extend(separators)
+    for part in separators:
+        if "." in part:
+            tokens.extend(part.split("."))
+    return [token for token in tokens if token]
+
+
+def _match_qualified_pattern(
+    normalized: str, qualified_index: dict[str, ModelRecord]
+) -> ModelRecord | None:
+    for qualified_name, candidate in qualified_index.items():
+        if re.search(rf"\b{re.escape(qualified_name)}\b", normalized):
+            return candidate
+    return None
+
+
+def _match_name_pattern(
+    normalized: str, name_index: dict[str, list[ModelRecord]]
+) -> ModelRecord | None:
+    for name, candidates in name_index.items():
+        if re.search(rf"\b{re.escape(name)}\b", normalized):
+            return candidates[0]
+    return None
+
+
+def _match_tokenized(
+    type_hint: str,
+    *,
+    qualified_index: dict[str, ModelRecord],
+    name_index: dict[str, list[ModelRecord]],
+    qualified_index_lower: dict[str, ModelRecord],
+    name_index_lower: dict[str, list[ModelRecord]],
+) -> ModelRecord | None:
+    for token in _candidate_tokens(type_hint):
+        lowered = token.lower()
+        if token in qualified_index:
+            return qualified_index[token]
+        if lowered in qualified_index_lower:
+            return qualified_index_lower[lowered]
+        if token in name_index:
+            return name_index[token][0]
+        if lowered in name_index_lower:
+            return name_index_lower[lowered][0]
+    return None
+
+
 def _resolve_target(
     type_hint: str | None,
     *,
     qualified_index: dict[str, ModelRecord],
     name_index: dict[str, list[ModelRecord]],
+    qualified_index_lower: dict[str, ModelRecord],
+    name_index_lower: dict[str, list[ModelRecord]],
 ) -> ModelRecord | None:
     if type_hint is None:
         return None
     normalized = _normalize_snake(type_hint)
-    for qualified_name, candidate in qualified_index.items():
-        if re.search(rf"\b{re.escape(qualified_name)}\b", normalized):
-            return candidate
-    for name, candidates in name_index.items():
-        if re.search(rf"\b{re.escape(name)}\b", normalized):
-            return candidates[0]
-    return None
+    candidate = _match_qualified_pattern(normalized, qualified_index)
+    if candidate is not None:
+        return candidate
+    candidate = _match_name_pattern(normalized, name_index)
+    if candidate is not None:
+        return candidate
+    return _match_tokenized(
+        type_hint,
+        qualified_index=qualified_index,
+        name_index=name_index,
+        qualified_index_lower=qualified_index_lower,
+        name_index_lower=name_index_lower,
+    )
 
 
 def _relationships_for_model(
@@ -401,10 +643,18 @@ def _relationships_for_model(
     *,
     qualified_index: dict[str, ModelRecord],
     name_index: dict[str, list[ModelRecord]],
+    qualified_index_lower: dict[str, ModelRecord],
+    name_index_lower: dict[str, list[ModelRecord]],
 ) -> list[dict[str, object]]:
     relationships: list[dict[str, object]] = []
     for field in model.fields:
-        target = _resolve_target(field.type, qualified_index=qualified_index, name_index=name_index)
+        target = _resolve_target(
+            field.type,
+            qualified_index=qualified_index,
+            name_index=name_index,
+            qualified_index_lower=qualified_index_lower,
+            name_index_lower=name_index_lower,
+        )
         if target is None:
             continue
         multiplicity = (
@@ -422,6 +672,27 @@ def _relationships_for_model(
                 "via": "annotation",
             }
         )
+    for hint in model.relationship_hints:
+        target_text = str(hint.get("target") or "")
+        target = _resolve_target(
+            target_text,
+            qualified_index=qualified_index,
+            name_index=name_index,
+            qualified_index_lower=qualified_index_lower,
+            name_index_lower=name_index_lower,
+        )
+        if target is None:
+            continue
+        relationships.append(
+            {
+                "field": str(hint.get("field")),
+                "target_model_id": target.model_id,
+                "target_model_name": target.model_name,
+                "multiplicity": str(hint.get("multiplicity", "many")),
+                "kind": str(hint.get("kind", "reference")),
+                "via": str(hint.get("via", "hint")),
+            }
+        )
     return relationships
 
 
@@ -429,15 +700,23 @@ def _attach_relationships(models: list[ModelRecord]) -> None:
     if not models:
         return
     name_index: dict[str, list[ModelRecord]] = {}
+    name_index_lower: dict[str, list[ModelRecord]] = {}
     qualified_index: dict[str, ModelRecord] = {}
+    qualified_index_lower: dict[str, ModelRecord] = {}
     for model in models:
         name_index.setdefault(model.model_name, []).append(model)
+        name_index_lower.setdefault(model.model_name.lower(), []).append(model)
         qualified = f"{model.module}.{model.model_name}"
         qualified_index[qualified] = model
+        qualified_index_lower[qualified.lower()] = model
 
     for model in models:
         model.relationships = _relationships_for_model(
-            model, qualified_index=qualified_index, name_index=name_index
+            model,
+            qualified_index=qualified_index,
+            name_index=name_index,
+            qualified_index_lower=qualified_index_lower,
+            name_index_lower=name_index_lower,
         )
 
 

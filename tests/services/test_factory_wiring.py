@@ -71,7 +71,7 @@ def test_build_backend_resource_local(tmp_path: Path) -> None:
                 db_path=db_path,
                 read_only=True,
                 apply_schema=False,
-                ensure_views=False,
+                ensure_views=True,
                 validate_schema=True,
                 repo="r",
                 commit="c",

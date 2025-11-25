@@ -11,7 +11,12 @@ from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.docs_export.validate_exports import main
 from codeintel.services.errors import ExportError
-from tests._helpers.fixtures import ProvisionedGateway, seed_docs_export_invalid_profile
+from tests._helpers.fixtures import (
+    GatewayOptions,
+    ProvisioningConfig,
+    provisioned_gateway,
+    seed_docs_export_invalid_profile,
+)
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
@@ -61,52 +66,67 @@ def test_validate_jsonl_failure(tmp_path: Path) -> None:
         pytest.fail(message)
 
 
-def test_export_raises_on_validation_failure(
-    ingestion_only_gateway: ProvisionedGateway, tmp_path: Path
-) -> None:
-    """Export functions should raise ExportError when schema validation fails."""
-    ctx = ingestion_only_gateway
-    seed_docs_export_invalid_profile(
-        ctx.gateway,
-        repo=ctx.repo,
-        commit=ctx.commit,
-        null_commit=True,
-    )
+def test_docs_export_views_exist(tmp_path: Path) -> None:
+    """Docs export strict provisioning should expose canonical views."""
+    with provisioned_gateway(tmp_path / "repo", config=ProvisioningConfig(run_ingestion=False)) as ctx:
+        ctx.gateway.con.execute("SELECT * FROM docs.v_symbol_module_graph LIMIT 0")
 
-    output_dir = tmp_path / "out"
-    with pytest.raises(ExportError):
-        export_all_parquet(
+
+def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
+    """Export functions should raise ExportError when schema validation fails."""
+    with provisioned_gateway(
+        tmp_path / "repo",
+        config=ProvisioningConfig(
+            run_ingestion=False,
+            gateway_options=GatewayOptions(strict_schema=False, validate_schema=False),
+        ),
+    ) as ctx:
+        seed_docs_export_invalid_profile(
             ctx.gateway,
-            output_dir,
-            validate_exports=True,
-            schemas=["function_profile"],
+            repo=ctx.repo,
+            commit=ctx.commit,
+            null_commit=True,
         )
+        output_dir = tmp_path / "out"
+        with pytest.raises(ExportError):
+            export_all_parquet(
+                ctx.gateway,
+                output_dir,
+                validate_exports=True,
+                schemas=["function_profile"],
+            )
 
 
 def test_export_logs_problem_detail_on_validation_failure(
-    ingestion_only_gateway: ProvisionedGateway,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Validation failures should log ProblemDetails and raise ExportError."""
-    ctx = ingestion_only_gateway
-    seed_docs_export_invalid_profile(
-        ctx.gateway,
-        repo=ctx.repo,
-        commit=ctx.commit,
-        null_commit=True,
-        drop_commit_column=True,
-    )
-
-    output_dir = tmp_path / "out_jsonl"
-    caplog.set_level("ERROR")
-    with pytest.raises(ExportError):
-        export_all_jsonl(
+    with provisioned_gateway(
+        tmp_path / "repo",
+        config=ProvisioningConfig(
+            run_ingestion=False,
+            gateway_options=GatewayOptions(strict_schema=False, validate_schema=False),
+        ),
+    ) as ctx:
+        seed_docs_export_invalid_profile(
             ctx.gateway,
-            output_dir,
-            validate_exports=True,
-            schemas=["function_profile"],
+            repo=ctx.repo,
+            commit=ctx.commit,
+            null_commit=True,
+            drop_commit_column=True,
         )
-    error_logs = [rec for rec in caplog.records if "export.validation_failed" in rec.getMessage()]
-    if not error_logs:
-        pytest.fail("Expected ProblemDetail log entry for validation failure")
+        output_dir = tmp_path / "out_jsonl"
+        caplog.set_level("ERROR")
+        with pytest.raises(ExportError):
+            export_all_jsonl(
+                ctx.gateway,
+                output_dir,
+                validate_exports=True,
+                schemas=["function_profile"],
+            )
+        error_logs = [
+            rec for rec in caplog.records if "export.validation_failed" in rec.getMessage()
+        ]
+        if not error_logs:
+            pytest.fail("Expected ProblemDetail log entry for validation failure")

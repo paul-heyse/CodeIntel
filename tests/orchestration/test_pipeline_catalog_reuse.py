@@ -40,7 +40,7 @@ def test_steps_share_function_catalog(tmp_path: Path) -> None:
 
     db_path = tmp_path / "db.duckdb"
     gateway = open_gateway(
-        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=False, validate_schema=True)
+        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
     )
 
     ctx = PipelineContext(

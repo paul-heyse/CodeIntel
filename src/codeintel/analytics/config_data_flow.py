@@ -35,6 +35,7 @@ LOGGER_METHODS = {
     "critical",
     "log",
 }
+ENV_HELPERS = {"os.getenv", "environ.get", "decouple.config", "settings.get_env"}
 
 
 @dataclass
@@ -102,12 +103,21 @@ class ConfigUsageVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:
         """Record config reads and logging that mention the tracked key."""
         target_name = self._call_name(node.func) or ""
-        if target_name.endswith(("getenv", "environ.get")) and self._first_arg_matches(node.args):
+        if (
+            target_name.endswith(("getenv", "environ.get", "get_env")) or target_name in ENV_HELPERS
+        ) and self._first_arg_matches(node.args):
             self._record(self._kind_for_context("read"), node.lineno)
         if ("config" in target_name or "settings" in target_name) and self._first_arg_matches(
             node.args
         ):
             self._record(self._kind_for_context("read"), node.lineno)
+        if isinstance(node.func, ast.Attribute):
+            attr_name = node.func.attr
+            if attr_name in {"get", "setdefault"} and self._first_arg_matches(node.args):
+                kind = "write" if attr_name == "setdefault" else self._kind_for_context("read")
+                self._record(kind, node.lineno)
+            if attr_name == "update" and self._args_reference_key(node.args):
+                self._record("write", node.lineno)
         if self._is_logger_call(target_name) and self._args_reference_key(node.args):
             self._record("logging", node.lineno)
         self.generic_visit(node)
@@ -138,8 +148,10 @@ class ConfigUsageVisitor(ast.NodeVisitor):
         return None
 
     def _matches_key(self, node: ast.AST | None) -> bool:
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            return node.value == self.config_key
+        if isinstance(node, ast.Constant):
+            value = node.value
+            if isinstance(value, (str, int, float, bool)):
+                return str(value) == self.config_key or value == self.config_key
         return False
 
     def _first_arg_matches(self, args: Sequence[ast.AST]) -> bool:
@@ -170,6 +182,10 @@ class ConfigUsageVisitor(ast.NodeVisitor):
                 return True
             if isinstance(arg, ast.Subscript) and self._subscript_matches(arg):
                 return True
+            if isinstance(arg, ast.Dict):
+                for key in arg.keys:
+                    if self._matches_key(key):
+                        return True
         return False
 
     @staticmethod

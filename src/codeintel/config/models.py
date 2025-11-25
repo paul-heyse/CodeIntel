@@ -28,8 +28,8 @@ class RepoConfig(BaseModel):
     """
     Repository identity used across the pipeline.
 
-    These values are embedded into GOIDs and exported into the
-    Document Output datasets (goids.*, coverage_lines.*, etc.). :contentReference[oaicite:1]{index=1}
+    These values are embedded into GOIDs and exported into the Document Output
+    datasets (goids.*, coverage_lines.*, etc.).
     """
 
     repo: str = Field(..., description="Repository slug, e.g. 'my-org/my-repo'")
@@ -174,7 +174,7 @@ class ToolsConfig(BaseModel):
     )
     pytest_report_path: Path | None = Field(
         default=None,
-        description="Path to pytest JSON report (defaults to pytest-report.json under repo_root or build/)",
+        description="Path to pytest JSON report (default: repo_root/build/pytest-report.json)",
     )
 
     @field_validator("coverage_file", "pytest_report_path", mode="before")
@@ -449,9 +449,11 @@ class ConfigIngestConfig(BaseModel):
     """Configuration for config-values ingestion."""
 
     repo_root: Path = Field(..., description="Repository root containing config files.")
+    repo: str
+    commit: str
 
     @classmethod
-    def from_paths(cls, *, repo_root: Path) -> Self:
+    def from_paths(cls, *, repo_root: Path, repo: str, commit: str) -> Self:
         """
         Build config-values ingestion settings for a repository root.
 
@@ -460,7 +462,7 @@ class ConfigIngestConfig(BaseModel):
         Self
             Normalized config ingestion configuration.
         """
-        return cls(repo_root=repo_root)
+        return cls(repo_root=repo_root, repo=repo, commit=commit)
 
     @field_validator("repo_root", mode="before")
     @classmethod
@@ -766,14 +768,12 @@ class FunctionHistoryConfig:
             Normalized function history configuration.
         """
         applied = overrides or cls.Overrides()
-        max_history_days = (
-            applied.max_history_days if applied.max_history_days is not None else cls.max_history_days
-        )
-        min_lines_threshold = (
-            applied.min_lines_threshold
-            if applied.min_lines_threshold is not None
-            else cls.min_lines_threshold
-        )
+        max_history_days = applied.max_history_days
+        if max_history_days is None:
+            max_history_days = cls.max_history_days
+        min_lines_threshold = applied.min_lines_threshold
+        if min_lines_threshold is None:
+            min_lines_threshold = cls.min_lines_threshold
         default_branch = applied.default_branch or cls.default_branch
         return cls(
             repo=repo,
@@ -1027,6 +1027,21 @@ class ConfigDataFlowConfig:
 
 
 @dataclass(frozen=True)
+class EntryPointDetectionToggles:
+    """Toggle flags for entrypoint detection frameworks."""
+
+    detect_fastapi: bool = True
+    detect_flask: bool = True
+    detect_click: bool = True
+    detect_typer: bool = True
+    detect_cron: bool = True
+    detect_django: bool = True
+    detect_celery: bool = True
+    detect_airflow: bool = True
+    detect_generic_routes: bool = True
+
+
+@dataclass(frozen=True)
 class EntryPointsConfig:
     """Configuration for entrypoint detection analytics."""
 
@@ -1039,6 +1054,10 @@ class EntryPointsConfig:
     detect_click: bool = True
     detect_typer: bool = True
     detect_cron: bool = True
+    detect_django: bool = True
+    detect_celery: bool = True
+    detect_airflow: bool = True
+    detect_generic_routes: bool = True
 
     @classmethod
     def from_paths(
@@ -1048,6 +1067,7 @@ class EntryPointsConfig:
         commit: str,
         repo_root: Path,
         scan_config: ScanConfig | None = None,
+        toggles: EntryPointDetectionToggles | None = None,
     ) -> Self:
         """
         Build entrypoint detection configuration from repository context.
@@ -1057,11 +1077,21 @@ class EntryPointsConfig:
         Self
             Normalized entrypoint configuration.
         """
+        resolved_toggles = toggles or EntryPointDetectionToggles()
         return cls(
             repo=repo,
             commit=commit,
             repo_root=repo_root.resolve(),
             scan_config=scan_config,
+            detect_fastapi=resolved_toggles.detect_fastapi,
+            detect_flask=resolved_toggles.detect_flask,
+            detect_click=resolved_toggles.detect_click,
+            detect_typer=resolved_toggles.detect_typer,
+            detect_cron=resolved_toggles.detect_cron,
+            detect_django=resolved_toggles.detect_django,
+            detect_celery=resolved_toggles.detect_celery,
+            detect_airflow=resolved_toggles.detect_airflow,
+            detect_generic_routes=resolved_toggles.detect_generic_routes,
         )
 
 
@@ -1072,8 +1102,18 @@ class ExternalDependenciesConfig:
     repo: str
     commit: str
     repo_root: Path
+    language: str = "python"
     dependency_patterns_path: Path | None = None
     scan_config: ScanConfig | None = None
+
+
+@dataclass(frozen=True)
+class DependencyPatternOptions:
+    """Options for dependency pattern scanning."""
+
+    language: str = "python"
+    dependency_patterns_path: Path | None = None
+
 
     @classmethod
     def from_paths(
@@ -1082,8 +1122,8 @@ class ExternalDependenciesConfig:
         repo: str,
         commit: str,
         repo_root: Path,
-        dependency_patterns_path: Path | None = None,
         scan_config: ScanConfig | None = None,
+        options: DependencyPatternOptions | None = None,
     ) -> Self:
         """
         Build dependency analytics configuration from repository context.
@@ -1093,11 +1133,17 @@ class ExternalDependenciesConfig:
         Self
             Normalized dependency configuration.
         """
-        patterns = dependency_patterns_path.resolve() if dependency_patterns_path else None
+        resolved_options = options or DependencyPatternOptions()
+        patterns = (
+            resolved_options.dependency_patterns_path.resolve()
+            if resolved_options.dependency_patterns_path
+            else None
+        )
         return cls(
             repo=repo,
             commit=commit,
             repo_root=repo_root.resolve(),
+            language=resolved_options.language,
             dependency_patterns_path=patterns,
             scan_config=scan_config,
         )
@@ -1370,3 +1416,100 @@ class TestCoverageConfig:
         """
         resolved = coverage_file or (tools.coverage_file if tools else None)
         return cls(repo=repo, commit=commit, repo_root=repo_root, coverage_file=resolved)
+
+
+@dataclass(frozen=True)
+class TestProfileConfig:
+    """Define configuration for building analytics.test_profile."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    slow_test_threshold_ms: float = 2000.0
+    io_spec: dict[str, object] | None = None
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        slow_test_threshold_ms: float = 2000.0,
+        io_spec: dict[str, object] | None = None,
+    ) -> Self:
+        """
+        Build test profile settings from repository context.
+
+        Parameters
+        ----------
+        repo :
+            Repository slug.
+        commit :
+            Commit identifier.
+        repo_root :
+            Repository root on disk for AST parsing.
+        slow_test_threshold_ms :
+            Threshold for marking tests as slow.
+        io_spec :
+            Optional IO classification overrides.
+
+        Returns
+        -------
+        Self
+            Normalized test profile configuration.
+        """
+        return cls(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root,
+            slow_test_threshold_ms=slow_test_threshold_ms,
+            io_spec=io_spec,
+        )
+
+
+@dataclass(frozen=True)
+class BehavioralCoverageConfig:
+    """Define configuration for building analytics.behavioral_coverage."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    heuristic_version: str = "v1"
+    enable_llm: bool = False
+    llm_model: str | None = None
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        enable_llm: bool = False,
+        llm_model: str | None = None,
+    ) -> Self:
+        """
+        Build behavioral coverage settings from repository context.
+
+        Parameters
+        ----------
+        repo :
+            Repository slug.
+        commit :
+            Commit identifier.
+        repo_root :
+            Repository root on disk for AST parsing.
+
+        Returns
+        -------
+        Self
+            Normalized behavioral coverage configuration.
+        """
+        return cls(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root,
+            enable_llm=enable_llm,
+            llm_model=llm_model,
+        )

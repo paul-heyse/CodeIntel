@@ -17,7 +17,12 @@ DOCS_VIEWS: tuple[str, ...] = (
     "docs.v_function_summary",
     "docs.v_call_graph_enriched",
     "docs.v_function_architecture",
+    "docs.v_function_history",
+    "docs.v_function_history_timeseries",
+    "docs.v_module_history_timeseries",
     "docs.v_module_architecture",
+    "docs.v_test_architecture",
+    "docs.v_behavioral_classification_input",
     "docs.v_symbol_module_graph",
     "docs.v_config_graph_metrics_keys",
     "docs.v_config_graph_metrics_modules",
@@ -813,7 +818,10 @@ class AnalyticsTables:
                 max_nesting_depth, stmt_count, decorator_count, has_docstring,
                 complexity_bucket, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?
+            )
             """,
             rows,
         )
@@ -873,14 +881,19 @@ class AnalyticsTables:
                 coverage_ratio, tested, test_count, failing_test_count, last_test_status,
                 risk_score, risk_level, tags, owners, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
             """,
             rows,
         )
 
     def insert_config_values(
         self,
-        rows: Iterable[tuple[str, str, str, str | None, str | None, int]],
+        rows: Iterable[
+            tuple[str, str, str, str, str | None, str | None, str | None, int]
+        ],
     ) -> None:
         """
         Insert rows into analytics.config_values.
@@ -888,16 +901,16 @@ class AnalyticsTables:
         Parameters
         ----------
         rows
-            Iterable of (config_path, format, key, reference_paths, reference_modules,
-            reference_count).
+            Iterable of (repo, commit, config_path, format, key, reference_paths,
+            reference_modules, reference_modules_json, reference_count).
         """
         self.con.executemany(
             """
             INSERT INTO analytics.config_values (
-                config_path, format, key, reference_paths, reference_modules,
-                reference_count
+                repo, commit, config_path, format, key, reference_paths,
+                reference_modules, reference_count
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )

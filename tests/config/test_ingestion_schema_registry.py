@@ -35,9 +35,7 @@ def _columns_for(con: duckdb.DuckDBPyConnection, schema_name: str, table_name: s
 
 
 @pytest.mark.parametrize("fq_name", sorted(TABLE_SCHEMAS.keys()))
-def test_ingestion_sql_tables_match_schema(
-    fq_name: str, fresh_gateway: StorageGateway
-) -> None:
+def test_ingestion_sql_tables_match_schema(fq_name: str, fresh_gateway: StorageGateway) -> None:
     """Ensure registry tables exist with expected columns."""
     schema = TABLE_SCHEMAS[fq_name]
     con = fresh_gateway.con

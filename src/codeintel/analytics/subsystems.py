@@ -318,7 +318,14 @@ def _build_weighted_graph(
         if src_mod in modules and dst_mod in modules:
             _add_graph_weight(graph, src_mod, dst_mod, cfg.symbol_weight)
 
-    rows = con.execute("SELECT reference_modules FROM analytics.config_values").fetchall()
+    rows = con.execute(
+        """
+        SELECT reference_modules
+        FROM analytics.config_values
+        WHERE repo = ? AND commit = ?
+        """,
+        [cfg.repo, cfg.commit],
+    ).fetchall()
     for (mods_raw,) in rows:
         modules_list = _parse_tags(mods_raw)
         filtered = [m for m in modules_list if m in modules]

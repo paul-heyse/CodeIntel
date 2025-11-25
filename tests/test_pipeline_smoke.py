@@ -78,8 +78,8 @@ def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
             db_path=db_path,
             read_only=True,
             apply_schema=False,
-            ensure_views=False,
-            validate_schema=False,
+            ensure_views=True,
+            validate_schema=True,
         )
     ).con
     goid_row = con.execute("SELECT COUNT(*) FROM core.goids").fetchone()

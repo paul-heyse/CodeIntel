@@ -7,4 +7,6 @@ DEFAULT_VALIDATION_SCHEMAS: list[str] = [
     "call_graph_edges",
     "symbol_use_edges",
     "test_coverage_edges",
+    "test_profile",
+    "behavioral_coverage",
 ]

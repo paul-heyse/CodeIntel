@@ -136,6 +136,10 @@ def build_entrypoints(
         detect_click=cfg.detect_click,
         detect_typer=cfg.detect_typer,
         detect_cron=cfg.detect_cron,
+        detect_django=cfg.detect_django,
+        detect_celery=cfg.detect_celery,
+        detect_airflow=cfg.detect_airflow,
+        detect_generic_routes=cfg.detect_generic_routes,
     )
     entrypoint_rows, test_rows = _collect_entrypoint_rows(
         context=context, repo_root=cfg.repo_root, settings=settings, scan_config=cfg.scan_config
@@ -145,14 +149,14 @@ def build_entrypoints(
         con.executemany(
             """
             INSERT INTO analytics.entrypoints (
-                repo, commit, entrypoint_id, kind,
+                repo, commit, entrypoint_id, kind, framework,
                 handler_goid_h128, handler_urn, handler_rel_path, handler_module, handler_qualname,
                 http_method, route_path, status_codes, auth_required,
-                command_name, arguments_schema, schedule, trigger,
+                command_name, arguments_schema, schedule, trigger, extra,
                 subsystem_id, subsystem_name, tags, owners,
                 tests_touching, failing_tests, slow_tests, flaky_tests,
                 entrypoint_coverage_ratio, last_test_status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             entrypoint_rows,
         )
@@ -213,6 +217,12 @@ def _build_entrypoint_context(
 ) -> EntryPointContext | None:
     module_ctx = _load_module_context(con, cfg.repo, cfg.commit)
     if not module_ctx:
+        catalog_modules = catalog.catalog().module_by_path
+        module_ctx = {
+            normalize_rel_path(path): ModuleContext(module=module, tags=[], owners=[])
+            for path, module in catalog_modules.items()
+        }
+    if not module_ctx:
         return None
     coverage_by_goid = _load_coverage_by_goid(con, cfg.repo, cfg.commit)
     edges_by_goid = _load_test_edges(con, cfg.repo, cfg.commit)
@@ -259,6 +269,7 @@ def _materialize_candidate(
         ctx.commit,
         entrypoint_id,
         cand.kind,
+        cand.framework,
         _decimal(goid),
         urn,
         rel_path,
@@ -272,6 +283,7 @@ def _materialize_candidate(
         cand.arguments_schema,
         cand.schedule,
         cand.trigger,
+        _normalize_json(cand.extra),
         subsystem_id,
         subsystem_name,
         _normalize_json(module_info.tags),
@@ -293,6 +305,7 @@ def _entrypoint_id(repo: str, commit: str, cand: EntryPointCandidate, urn: str) 
             repo,
             commit,
             cand.kind,
+            cand.framework or "",
             urn,
             cand.http_method or "",
             cand.route_path or "",

@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-import duckdb
 import pytest
 
 from codeintel.analytics.function_parsing import (
@@ -17,7 +16,7 @@ from codeintel.analytics.function_parsing import (
     ParsedFile,
 )
 from codeintel.analytics.functions import (
-    GoidRow,
+    GoidRow as AnalyticsGoidRow,
     ProcessContext,
     ProcessState,
     ValidationReporter,
@@ -27,53 +26,43 @@ from codeintel.analytics.functions import (
 )
 from codeintel.config.models import FunctionAnalyticsConfig, FunctionAnalyticsOverrides
 from codeintel.ingestion.ast_utils import AstSpanIndex
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.builders import GoidRow, insert_goids
 
 
-def _insert_goid(con: duckdb.DuckDBPyConnection, *, rel_path: str, qualname: str) -> None:
+def _insert_goid(gateway: StorageGateway, *, rel_path: str, qualname: str) -> None:
     now = datetime.now(UTC)
-    con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128,
-            urn,
-            repo,
-            commit,
-            rel_path,
-            language,
-            kind,
-            qualname,
-            start_line,
-            end_line,
-            created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    insert_goids(
+        gateway,
         [
-            1,
-            f"urn:{qualname}",
-            "demo/repo",
-            "deadbeef",
-            rel_path,
-            "python",
-            "function",
-            qualname,
-            1,
-            2,
-            now,
+            GoidRow(
+                goid_h128=1,
+                urn=f"urn:{qualname}",
+                repo="demo/repo",
+                commit="deadbeef",
+                rel_path=rel_path,
+                kind="function",
+                qualname=qualname,
+                start_line=1,
+                end_line=2,
+                created_at=now,
+            )
         ],
     )
 
 
-def test_records_validation_when_parser_returns_none(tmp_path: Path) -> None:
+def test_records_validation_when_parser_returns_none(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Parser hook returning None records validation rows instead of failing silently."""
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     con = gateway.con
 
     rel_path = "mod.py"
     file_path = tmp_path / rel_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text("def missing_span():\n    return 1\n", encoding="utf-8")
-    _insert_goid(con, rel_path=rel_path, qualname="pkg.mod.missing_span")
+    _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.missing_span")
 
     called = {"count": 0}
 
@@ -105,9 +94,9 @@ def test_records_validation_when_parser_returns_none(tmp_path: Path) -> None:
         pytest.fail(f"unexpected validation rows: {validation_rows}")
 
 
-def test_custom_parser_hook_is_used(tmp_path: Path) -> None:
+def test_custom_parser_hook_is_used(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """Custom parser hook is invoked and metrics are emitted when it returns a ParsedFile."""
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     con = gateway.con
 
     rel_path = "mod.py"
@@ -115,7 +104,7 @@ def test_custom_parser_hook_is_used(tmp_path: Path) -> None:
     file_path = tmp_path / rel_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text("def foo():\n    return 1\n", encoding="utf-8")
-    _insert_goid(con, rel_path=rel_path, qualname=qualname)
+    _insert_goid(gateway, rel_path=rel_path, qualname=qualname)
 
     source = "def foo():\n    return 1\n"
     parsed_index = AstSpanIndex.from_tree(
@@ -184,15 +173,17 @@ def test_config_invalid_parser_string_raises(tmp_path: Path) -> None:
         )
 
 
-def test_build_and_persist_paths_are_separate(tmp_path: Path) -> None:
+def test_build_and_persist_paths_are_separate(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """build_function_analytics remains pure until persisted."""
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     con = gateway.con
 
     file_path = tmp_path / "mod.py"
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text("def foo():\n    return 1\n", encoding="utf-8")
-    _insert_goid(con, rel_path="mod.py", qualname="pkg.mod.foo")
+    _insert_goid(gateway, rel_path="mod.py", qualname="pkg.mod.foo")
 
     cfg = FunctionAnalyticsConfig.from_paths(
         repo="demo/repo",
@@ -200,7 +191,7 @@ def test_build_and_persist_paths_are_separate(tmp_path: Path) -> None:
         repo_root=tmp_path,
     )
     rel_path = "mod.py"
-    goid_row: GoidRow = {
+    goid_row: AnalyticsGoidRow = {
         "goid_h128": 1,
         "urn": "urn:pkg.mod.foo",
         "repo": cfg.repo,
@@ -252,16 +243,17 @@ def test_build_and_persist_paths_are_separate(tmp_path: Path) -> None:
         pytest.fail(f"unexpected summary after persist: {summary}")
 
 
-def test_validation_reporter_emits_counts(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_validation_reporter_emits_counts(
+    fresh_gateway: StorageGateway, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """Validation reporter produces structured counters."""
-    gateway = open_memory_gateway()
-    con = gateway.con
+    gateway = fresh_gateway
 
     rel_path = "mod.py"
     file_path = tmp_path / rel_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text("def foo():\n    return 1\n", encoding="utf-8")
-    _insert_goid(con, rel_path=rel_path, qualname="pkg.mod.missing_span")
+    _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.missing_span")
 
     cfg = FunctionAnalyticsConfig.from_paths(
         repo="demo/repo",

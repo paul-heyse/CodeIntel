@@ -199,7 +199,7 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
         ]
     )
     gateway.analytics.insert_config_values(
-        [("cfg.yaml", "yaml", "feature.flag", "[]", '["pkg.m"]', 1)]
+        [("r", "c", "cfg.yaml", "yaml", "feature.flag", "[]", '["pkg.m"]', 1)]
     )
     gateway.analytics.insert_typedness([("r", "c", "m.py", 0, '{"params":1}', 0, False)])
     gateway.analytics.insert_static_diagnostics([("r", "c", "m.py", 0, 0, 0, 0, False)])

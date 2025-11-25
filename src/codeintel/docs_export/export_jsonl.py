@@ -70,6 +70,8 @@ JSONL_DATASETS: dict[str, str] = {
     # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.jsonl",
     "analytics.function_profile": "function_profile.jsonl",
+    "analytics.function_history": "function_history.jsonl",
+    "analytics.history_timeseries": "history_timeseries.jsonl",
     "analytics.file_profile": "file_profile.jsonl",
     "analytics.module_profile": "module_profile.jsonl",
     "analytics.graph_metrics_functions": "graph_metrics_functions.jsonl",
@@ -87,6 +89,8 @@ JSONL_DATASETS: dict[str, str] = {
     "analytics.graph_stats": "graph_stats.jsonl",
     "analytics.test_graph_metrics_tests": "test_graph_metrics_tests.jsonl",
     "analytics.test_graph_metrics_functions": "test_graph_metrics_functions.jsonl",
+    "analytics.test_profile": "test_profile.jsonl",
+    "analytics.behavioral_coverage": "behavioral_coverage.jsonl",
     "analytics.cfg_block_metrics": "cfg_block_metrics.jsonl",
     "analytics.cfg_function_metrics": "cfg_function_metrics.jsonl",
     "analytics.dfg_block_metrics": "dfg_block_metrics.jsonl",

@@ -444,6 +444,20 @@ def _classify_function(
     return accumulator.finalize()
 
 
+def classify_function_role(
+    context: FunctionContext,
+) -> tuple[str, float, str | None, dict[str, object]]:
+    """
+    Classify a function using heuristic semantic role signals.
+
+    Returns
+    -------
+    tuple[str, float, str | None, dict[str, object]]
+        Primary role, score, optional secondary role, and debug metadata.
+    """
+    return _classify_function(context)
+
+
 def _score_tests(context: FunctionContext, accumulator: RoleAccumulator) -> None:
     if context.rel_path_lower.startswith("tests") or "/tests/" in context.rel_path_lower:
         accumulator.bump("test", 0.6, "path:tests")

@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
 from tests._helpers.fixtures import (
+    GatewayOptions,
     ProvisionedGateway,
     ProvisioningConfig,
     provision_docs_export_ready,
@@ -21,7 +22,7 @@ from tests._helpers.fixtures import (
 
 
 @pytest.fixture
-def fresh_gateway() -> Iterator[StorageGateway]:
+def fresh_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
     """Provide an in-memory gateway with schema and views applied.
 
     Yields
@@ -29,11 +30,11 @@ def fresh_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway configured with schemas/views; caller must not close.
     """
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    try:
-        yield gateway
-    finally:
-        gateway.close()
+    with provisioned_gateway(
+        tmp_path / "fresh",
+        config=ProvisioningConfig(run_ingestion=False),
+    ) as ctx:
+        yield ctx.gateway
 
 
 @pytest.fixture
@@ -95,6 +96,24 @@ def ingestion_only_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
 
 
 @pytest.fixture
+def loose_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
+    """Opt-out gateway for tests that intentionally drift schemas.
+
+    Yields
+    ------
+    ProvisionedGateway
+        Gateway configured without strict schema enforcement.
+    """
+    with provisioned_gateway(
+        tmp_path / "repo",
+        config=ProvisioningConfig(
+            run_ingestion=False, gateway_options=GatewayOptions(strict_schema=False)
+        ),
+    ) as ctx:
+        yield ctx
+
+
+@pytest.fixture
 def architecture_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
     """Provide a gateway seeded with architecture data (subsystems, call/import graphs).
 
@@ -104,7 +123,10 @@ def architecture_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
         Gateway configured with architecture dataset seeds.
     """
     gateway = open_seeded_architecture_gateway(
-        repo="demo/repo", commit="deadbeef", db_path=tmp_path / "arch.duckdb"
+        repo="demo/repo",
+        commit="deadbeef",
+        db_path=tmp_path / "arch.duckdb",
+        strict_schema=True,
     )
     try:
         yield gateway

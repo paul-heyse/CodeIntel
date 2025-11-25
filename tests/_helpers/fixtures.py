@@ -150,6 +150,7 @@ class GatewayOptions:
     ensure_views: bool = True
     validate_schema: bool = True
     file_backed: bool = True
+    strict_schema: bool = True
 
 
 @dataclass(frozen=True)
@@ -397,27 +398,22 @@ def _make_runner(repo_root: Path, files: list[Path]) -> FakeToolRunner:
     return FakeToolRunner(cache_dir=cache_dir, payloads=payloads)
 
 
-def _open_gateway_from_context(
-    ctx: RepoContext,
-    *,
-    apply_schema: bool = True,
-    ensure_views: bool = True,
-    validate_schema: bool = True,
-    file_backed: bool = True,
-) -> StorageGateway:
-    if file_backed:
+def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> StorageGateway:
+    effective_ensure_views = opts.ensure_views or opts.strict_schema
+    effective_validate_schema = opts.validate_schema or opts.strict_schema
+    if opts.file_backed:
         cfg = StorageConfig(
             db_path=ctx.db_path,
             read_only=False,
-            apply_schema=apply_schema,
-            ensure_views=ensure_views,
-            validate_schema=validate_schema,
+            apply_schema=opts.apply_schema,
+            ensure_views=effective_ensure_views,
+            validate_schema=effective_validate_schema,
         )
         return open_gateway(cfg)
     return open_memory_gateway(
-        apply_schema=apply_schema,
-        ensure_views=ensure_views,
-        validate_schema=validate_schema,
+        apply_schema=opts.apply_schema,
+        ensure_views=effective_ensure_views,
+        validate_schema=effective_validate_schema,
     )
 
 
@@ -450,13 +446,8 @@ def provision_ingested_repo(
     files = _write_sample_repo(repo_root)
     runner = _make_runner(repo_root, files)
 
-    gateway = _open_gateway_from_context(
-        ctx,
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-        file_backed=opts.file_backed,
-    )
+    gateway_opts = GatewayOptions(file_backed=opts.file_backed)
+    gateway = _open_gateway_from_context(ctx, gateway_opts)
     ingest_repo(
         gateway,
         cfg=RepoScanConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit),
@@ -523,13 +514,8 @@ def provision_existing_repo(
     files = sorted(path for path in repo_root.rglob("*.py") if path.is_file())
     runner = _make_runner(repo_root, files)
 
-    gateway = _open_gateway_from_context(
-        ctx,
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-        file_backed=opts.file_backed,
-    )
+    gateway_opts = GatewayOptions(file_backed=opts.file_backed)
+    gateway = _open_gateway_from_context(ctx, gateway_opts)
     ingest_repo(
         gateway,
         cfg=RepoScanConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit),
@@ -593,14 +579,8 @@ def provision_gateway_with_repo(
     coverage_file = repo_root / ".coverage"
     coverage_file.touch()
     runner = _make_runner(repo_root, [])
-    gateway = _open_gateway_from_context(
-        ctx,
-        apply_schema=opts.apply_schema,
-        ensure_views=opts.ensure_views,
-        validate_schema=opts.validate_schema,
-        file_backed=opts.file_backed,
-    )
-    if opts.apply_schema and opts.ensure_views:
+    gateway = _open_gateway_from_context(ctx, opts)
+    if opts.apply_schema and (opts.ensure_views or opts.strict_schema):
         apply_all_schemas(gateway.con)
     return ProvisionedGateway(
         repo=repo,
@@ -670,7 +650,15 @@ def seed_docs_export_invalid_profile(
     drop_commit_column
         When True, removes the commit column from function_profile to induce
         schema validation failures.
+
+    Raises
+    ------
+    ValueError
+        If invoked against a strict gateway; use ``loose_gateway`` instead.
     """
+    if getattr(gateway, "config", None) is not None and gateway.config.validate_schema:
+        message = "seed_docs_export_invalid_profile requires a non-strict gateway (use loose_gateway)."
+        raise ValueError(message)
     seed_docs_export_minimal(gateway, repo=repo, commit=commit)
     con = gateway.con
     con.execute("DROP TABLE IF EXISTS analytics.function_profile")

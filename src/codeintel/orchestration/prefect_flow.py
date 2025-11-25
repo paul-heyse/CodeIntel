@@ -34,9 +34,9 @@ from codeintel.analytics.dependencies import (
     build_external_dependency_calls,
 )
 from codeintel.analytics.entrypoints import build_entrypoints
-from codeintel.analytics.function_history import compute_function_history
 from codeintel.analytics.function_contracts import compute_function_contracts
 from codeintel.analytics.function_effects import compute_function_effects
+from codeintel.analytics.function_history import compute_function_history
 from codeintel.analytics.functions import (
     ValidationReporter,
     compute_function_metrics_and_types,
@@ -44,6 +44,7 @@ from codeintel.analytics.functions import (
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
 from codeintel.analytics.graph_stats import compute_graph_stats
+from codeintel.analytics.history_timeseries import compute_history_timeseries
 from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
 from codeintel.analytics.semantic_roles import compute_semantic_roles
 from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
@@ -54,8 +55,10 @@ from codeintel.analytics.symbol_graph_metrics import (
     compute_symbol_graph_metrics_modules,
 )
 from codeintel.analytics.test_graph_metrics import compute_test_graph_metrics
+from codeintel.analytics.test_profiles import build_behavioral_coverage, build_test_profile
 from codeintel.analytics.tests_analytics import compute_test_coverage_edges
 from codeintel.config.models import (
+    BehavioralCoverageConfig,
     CallGraphConfig,
     CFGBuilderConfig,
     ConfigDataFlowConfig,
@@ -64,19 +67,21 @@ from codeintel.config.models import (
     DataModelUsageConfig,
     EntryPointsConfig,
     ExternalDependenciesConfig,
-    FunctionHistoryConfig,
     FunctionAnalyticsConfig,
     FunctionAnalyticsOverrides,
     FunctionContractsConfig,
     FunctionEffectsConfig,
+    FunctionHistoryConfig,
     GoidBuilderConfig,
     GraphMetricsConfig,
+    HistoryTimeseriesConfig,
     HotspotsConfig,
     ImportGraphConfig,
     SemanticRolesConfig,
     SubsystemsConfig,
     SymbolUsesConfig,
     TestCoverageConfig,
+    TestProfileConfig,
     ToolsConfig,
 )
 from codeintel.docs_export.export_jsonl import export_all_jsonl
@@ -130,6 +135,8 @@ class ExportArgs:
     function_overrides: FunctionAnalyticsOverrides | None = None
     validate_exports: bool = False
     export_schemas: list[str] | None = None
+    history_commits: tuple[str, ...] | None = None
+    history_db_dir: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -768,6 +775,22 @@ def t_test_coverage_edges(repo_root: Path, repo: str, commit: str, db_path: Path
     compute_test_coverage_edges(gateway, cfg)
 
 
+@task(name="test_profile", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_test_profile(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+    """Build per-test profiles."""
+    gateway = _get_gateway(db_path)
+    cfg = TestProfileConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    build_test_profile(gateway, cfg)
+
+
+@task(name="behavioral_coverage", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_behavioral_coverage(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+    """Assign behavior tags to tests."""
+    gateway = _get_gateway(db_path)
+    cfg = BehavioralCoverageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    build_behavioral_coverage(gateway, cfg)
+
+
 @task(name="graph_metrics", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
     """Compute graph metrics for functions and modules."""
@@ -891,6 +914,48 @@ def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir
         gateway=gateway,
     )
     step.run(ctx)
+
+
+@dataclass(frozen=True)
+class HistoryTimeseriesTaskParams:
+    """Arguments for the history_timeseries Prefect task."""
+
+    repo_root: Path
+    repo: str
+    commits: tuple[str, ...]
+    history_db_dir: Path
+    db_path: Path
+    runner: ToolRunner | None = None
+
+
+@task(name="history_timeseries", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_history_timeseries(params: HistoryTimeseriesTaskParams) -> None:
+    """Aggregate analytics.history_timeseries using multiple commit snapshots."""
+    if not params.commits:
+        return
+    gateway = _get_gateway(
+        params.db_path,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+    )
+    params.history_db_dir.mkdir(parents=True, exist_ok=True)
+
+    def _resolve_db(target_commit: str) -> duckdb.DuckDBPyConnection:
+        target_path = params.history_db_dir / f"codeintel-{target_commit}.duckdb"
+        if target_path.resolve() == params.db_path.resolve():
+            return gateway.con
+        if not target_path.is_file():
+            message = f"Missing snapshot database for commit {target_commit}: {target_path}"
+            raise FileNotFoundError(message)
+        return duckdb.connect(str(target_path), read_only=True)
+
+    cfg = HistoryTimeseriesConfig.from_args(
+        repo=params.repo,
+        repo_root=params.repo_root,
+        commits=params.commits,
+    )
+    compute_history_timeseries(gateway.con, cfg, _resolve_db, runner=params.runner)
 
 
 @task(name="export_docs", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -1038,6 +1103,32 @@ def _resolve_validation_settings(args: ExportArgs) -> tuple[bool, list[str] | No
     return args.validate_exports or env_enabled, schemas
 
 
+def _resolve_history_commits(args: ExportArgs) -> tuple[str, ...]:
+    """
+    Determine history commits to include for timeseries aggregation.
+
+    Prefers explicit args, then CODEINTEL_HISTORY_COMMITS env var, and finally
+    falls back to the current commit only.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Commit identifiers ordered with the current commit first.
+    """
+    if args.history_commits:
+        commits = list(args.history_commits)
+    else:
+        env_value = os.getenv("CODEINTEL_HISTORY_COMMITS")
+        commits = [c for c in (env_value or "").split(",") if c]
+    if not commits:
+        commits = [args.commit]
+    if args.commit not in commits:
+        commits.insert(0, args.commit)
+    else:
+        commits = [args.commit] + [c for c in commits if c != args.commit]
+    return tuple(commits)
+
+
 @flow(name="export_docs_flow")
 def export_docs_flow(
     args: ExportArgs,
@@ -1055,33 +1146,34 @@ def export_docs_flow(
     """
     _configure_prefect_logging()
     run_logger = get_run_logger()
-    repo_root = args.repo_root.resolve()
-    db_path = args.db_path.resolve()
     build_dir = args.build_dir.resolve()
     serve_db_path = args.serve_db_path.resolve() if args.serve_db_path is not None else None
     log_db_path = _resolve_log_db_path(args.log_db_path, build_dir)
     skip_scip = os.getenv("CODEINTEL_SKIP_SCIP", "false").lower() == "true"
     validate_exports, export_schemas = _resolve_validation_settings(args)
+    history_commits = _resolve_history_commits(args)
+    history_db_dir = (args.history_db_dir or build_dir / "db").resolve()
     run_id = f"{args.repo}:{args.commit}:{int(time.time() * 1000)}"
 
     ctx = IngestionContext(
-        repo_root=repo_root,
+        repo_root=args.repo_root.resolve(),
         repo=args.repo,
         commit=args.commit,
-        db_path=db_path,
+        db_path=args.db_path.resolve(),
         build_dir=build_dir,
-        document_output_dir=_resolve_output_dir(repo_root),
+        document_output_dir=_resolve_output_dir(args.repo_root.resolve()),
         gateway=_get_gateway(
-            db_path,
+            args.db_path.resolve(),
             read_only=False,
             apply_schema=True,
             ensure_views=True,
             validate_schema=True,
         ),
         tools=_tools_from_env(args.tools),
-        scan_config=_scan_from_env(repo_root, args.scan_config),
+        scan_config=_scan_from_env(args.repo_root.resolve(), args.scan_config),
         tool_runner=ToolRunner(cache_dir=build_dir / ".tool_cache"),
     )
+    db_path = ctx.db_path
     _preflight_checks(ctx, skip_scip=skip_scip, logger=run_logger)
     scip_state: dict[str, scip_ingest.ScipIngestResult | None] = {"result": None}
     snapshot_args = SnapshotArgs(
@@ -1214,6 +1306,19 @@ def export_docs_flow(
             lambda: _run_task(
                 "hotspots",
                 t_hotspots,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                ctx.tool_runner,
+            ),
+        ),
+        (
+            "function_history",
+            lambda: _run_task(
+                "function_history",
+                t_function_history,
                 run_logger,
                 ctx.repo_root,
                 ctx.repo,
@@ -1404,6 +1509,30 @@ def export_docs_flow(
             ),
         ),
         (
+            "test_profile",
+            lambda: _run_task(
+                "test_profile",
+                t_test_profile,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+            ),
+        ),
+        (
+            "behavioral_coverage",
+            lambda: _run_task(
+                "behavioral_coverage",
+                t_behavioral_coverage,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+            ),
+        ),
+        (
             "profiles",
             lambda: _run_task(
                 "profiles",
@@ -1414,6 +1543,23 @@ def export_docs_flow(
                 ctx.commit,
                 ctx.db_path,
                 ctx.build_dir,
+                snapshot=snapshot_args,
+            ),
+        ),
+        (
+            "history_timeseries",
+            lambda: _run_task(
+                "history_timeseries",
+                t_history_timeseries,
+                run_logger,
+                HistoryTimeseriesTaskParams(
+                    repo_root=ctx.repo_root,
+                    repo=ctx.repo,
+                    commits=history_commits,
+                    history_db_dir=history_db_dir,
+                    db_path=ctx.db_path,
+                    runner=ctx.tool_runner,
+                ),
                 snapshot=snapshot_args,
             ),
         ),

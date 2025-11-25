@@ -66,6 +66,8 @@ PARQUET_DATASETS: dict[str, str] = {
     # Risk factors
     "analytics.goid_risk_factors": "goid_risk_factors.parquet",
     "analytics.function_profile": "function_profile.parquet",
+    "analytics.function_history": "function_history.parquet",
+    "analytics.history_timeseries": "history_timeseries.parquet",
     "analytics.file_profile": "file_profile.parquet",
     "analytics.module_profile": "module_profile.parquet",
     "analytics.graph_metrics_functions": "graph_metrics_functions.parquet",
@@ -83,6 +85,8 @@ PARQUET_DATASETS: dict[str, str] = {
     "analytics.graph_stats": "graph_stats.parquet",
     "analytics.test_graph_metrics_tests": "test_graph_metrics_tests.parquet",
     "analytics.test_graph_metrics_functions": "test_graph_metrics_functions.parquet",
+    "analytics.test_profile": "test_profile.parquet",
+    "analytics.behavioral_coverage": "behavioral_coverage.parquet",
     "analytics.cfg_block_metrics": "cfg_block_metrics.parquet",
     "analytics.cfg_function_metrics": "cfg_function_metrics.parquet",
     "analytics.dfg_block_metrics": "dfg_block_metrics.parquet",

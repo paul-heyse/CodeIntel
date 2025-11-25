@@ -12,6 +12,7 @@ class EntryPointCandidate:
     """Detected entrypoint metadata before GOID resolution."""
 
     kind: str
+    framework: str | None
     rel_path: str
     module: str
     qualname: str
@@ -25,6 +26,7 @@ class EntryPointCandidate:
     arguments_schema: Mapping[str, object | list[dict[str, object]]] | None = None
     schedule: str | None = None
     trigger: str | None = None
+    extra: dict[str, object] | None = None
     evidence: dict[str, object] = field(default_factory=dict)
 
 
@@ -37,6 +39,10 @@ class DetectorSettings:
     detect_click: bool = True
     detect_typer: bool = True
     detect_cron: bool = True
+    detect_django: bool = True
+    detect_celery: bool = True
+    detect_airflow: bool = True
+    detect_generic_routes: bool = True
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,8 @@ class ImportContext:
     flask_blueprints: set[str]
     typer_targets: set[str]
     click_groups: set[str]
+    django_url_helpers: set[str]
+    celery_apps: set[str]
 
 
 def detect_entrypoints(
@@ -85,7 +93,12 @@ def detect_entrypoints(
     ctx = _build_import_context(tree)
     visitor = _EntryPointVisitor(settings, rel_path, module, ctx)
     visitor.visit(tree)
-    return visitor.candidates
+    candidates = list(visitor.candidates)
+    if settings.detect_django:
+        candidates.extend(
+            _detect_django_urlpatterns(tree, rel_path=rel_path, module=module, ctx=ctx)
+        )
+    return candidates
 
 
 def _literal_str(node: ast.AST) -> str | None:
@@ -327,6 +340,8 @@ def _build_import_context(tree: ast.AST) -> ImportContext:
     flask_blueprints: set[str] = set()
     typer_targets: set[str] = set()
     click_groups: set[str] = set()
+    django_url_helpers: set[str] = set()
+    celery_apps: set[str] = set()
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign):
@@ -346,6 +361,10 @@ def _build_import_context(tree: ast.AST) -> ImportContext:
             typer_targets.add(target)
         elif lib == "click" and callee in {"Group", "group"}:
             click_groups.add(target)
+        elif lib == "django" and callee in {"path", "re_path", "url"}:
+            django_url_helpers.add(target)
+        elif lib == "celery" and callee == "Celery":
+            celery_apps.add(target)
 
     return ImportContext(
         alias_to_lib=alias_to_lib,
@@ -354,6 +373,8 @@ def _build_import_context(tree: ast.AST) -> ImportContext:
         flask_blueprints=flask_blueprints,
         typer_targets=typer_targets,
         click_groups=click_groups,
+        django_url_helpers=django_url_helpers,
+        celery_apps=celery_apps,
     )
 
 
@@ -377,6 +398,68 @@ def _assignment_target(node: ast.Assign) -> str | None:
     if not node.targets or not isinstance(node.targets[0], ast.Name):
         return None
     return node.targets[0].id
+
+
+def _view_qualname(module: str, view_node: ast.AST) -> str | None:
+    if isinstance(view_node, ast.Name):
+        return f"{module}.{view_node.id}"
+    if isinstance(view_node, ast.Attribute):
+        parts: list[str] = []
+        current: ast.AST | None = view_node
+        while isinstance(current, ast.Attribute):
+            parts.append(current.attr)
+            current = current.value
+        if isinstance(current, ast.Name):
+            parts.append(current.id)
+        parts.reverse()
+        return f"{module}." + ".".join(parts)
+    return None
+
+
+def _detect_django_urlpatterns(
+    tree: ast.AST,
+    *,
+    rel_path: str,
+    module: str,
+    ctx: ImportContext,
+) -> list[EntryPointCandidate]:
+    candidates: list[EntryPointCandidate] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "urlpatterns" for t in node.targets):
+            continue
+        if not isinstance(node.value, (ast.List, ast.Tuple)):
+            continue
+        for elt in node.value.elts:
+            if not isinstance(elt, ast.Call):
+                continue
+            lib, attr, base = _resolve_call_target(elt.func, ctx.alias_to_lib)
+            if lib != "django" and base not in ctx.django_url_helpers and attr not in {
+                "path",
+                "re_path",
+                "url",
+            }:
+                continue
+            route_path = _literal_str(elt.args[0]) if elt.args else None
+            view_node = elt.args[1] if len(elt.args) > 1 else None
+            qualname = _view_qualname(module, view_node) if view_node else None
+            if qualname is None:
+                continue
+            candidates.append(
+                EntryPointCandidate(
+                    kind="http",
+                    framework="django",
+                    rel_path=rel_path,
+                    module=module,
+                    qualname=qualname,
+                    lineno=int(getattr(elt, "lineno", 0) or 0),
+                    end_lineno=getattr(elt, "end_lineno", None),
+                    route_path=route_path,
+                    evidence={"urlpatterns": True},
+                )
+            )
+    return candidates
 
 
 class _EntryPointVisitor(ast.NodeVisitor):
@@ -424,6 +507,9 @@ class _EntryPointVisitor(ast.NodeVisitor):
         self._collect_http_candidates(node, qualname, auth_required=auth_required)
         self._collect_cli_candidates(node, qualname)
         self._collect_job_candidates(node, qualname)
+        self._collect_celery_candidates(node, qualname)
+        self._collect_airflow_candidates(node, qualname)
+        self._collect_generic_route_candidates(node, qualname)
 
     def _collect_http_candidates(
         self,
@@ -438,15 +524,17 @@ class _EntryPointVisitor(ast.NodeVisitor):
             if not isinstance(decorator, ast.Call):
                 continue
             lib, attr, base = _resolve_call_target(decorator.func, self.ctx.alias_to_lib)
+            is_fastapi_target = base in self.ctx.fastapi_targets
             if (
                 self.settings.detect_fastapi
-                and lib == "fastapi"
+                and (lib == "fastapi" or is_fastapi_target)
                 and attr in {"get", "post", "put", "delete", "patch", "options", "head"}
-                and base in self.ctx.fastapi_targets
+                and is_fastapi_target
             ):
                 self.candidates.append(
                     EntryPointCandidate(
                         kind="http",
+                        framework="fastapi",
                         rel_path=self.rel_path,
                         module=self.module,
                         qualname=qualname,
@@ -461,15 +549,19 @@ class _EntryPointVisitor(ast.NodeVisitor):
                 )
             elif (
                 self.settings.detect_flask
-                and lib == "flask"
+                and (
+                    lib == "flask"
+                    or base in self.ctx.flask_targets
+                    or base in self.ctx.flask_blueprints
+                )
                 and attr == "route"
-                and (base in self.ctx.flask_targets or base in self.ctx.flask_blueprints)
             ):
                 methods = _extract_methods(decorator)
                 http_method = methods[0] if methods else "GET"
                 self.candidates.append(
                     EntryPointCandidate(
                         kind="http",
+                        framework="flask",
                         rel_path=self.rel_path,
                         module=self.module,
                         qualname=qualname,
@@ -509,6 +601,7 @@ class _EntryPointVisitor(ast.NodeVisitor):
                 self.candidates.append(
                     EntryPointCandidate(
                         kind="cli",
+                        framework="click",
                         rel_path=self.rel_path,
                         module=self.module,
                         qualname=qualname,
@@ -528,6 +621,7 @@ class _EntryPointVisitor(ast.NodeVisitor):
                 self.candidates.append(
                     EntryPointCandidate(
                         kind="cli",
+                        framework="typer",
                         rel_path=self.rel_path,
                         module=self.module,
                         qualname=qualname,
@@ -567,6 +661,7 @@ class _EntryPointVisitor(ast.NodeVisitor):
             self.candidates.append(
                 EntryPointCandidate(
                     kind=kind,
+                    framework="scheduler",
                     rel_path=self.rel_path,
                     module=self.module,
                     qualname=qualname,
@@ -574,6 +669,114 @@ class _EntryPointVisitor(ast.NodeVisitor):
                     end_lineno=getattr(node, "end_lineno", None),
                     schedule=schedule,
                     trigger=trigger,
+                    evidence={"decorator": _decorator_to_str(decorator)},
+                )
+            )
+
+    def _collect_celery_candidates(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, qualname: str
+    ) -> None:
+        if not self.settings.detect_celery:
+            return
+        task_name = node.name
+        queue = None
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+            lib, attr, base = _resolve_call_target(decorator.func, self.ctx.alias_to_lib)
+            is_shared_task = lib == "celery" and attr == "shared_task"
+            is_app_task = attr == "task" and (lib == "celery" or base in self.ctx.celery_apps)
+            if not (is_shared_task or is_app_task):
+                continue
+            for kw in decorator.keywords:
+                if kw.arg == "name":
+                    task_name = _literal_str(kw.value) or task_name
+                if kw.arg == "queue":
+                    queue = _literal_str(kw.value) or queue
+            extra: dict[str, object] = {}
+            if queue:
+                extra["queue"] = queue
+            self.candidates.append(
+                EntryPointCandidate(
+                    kind="task",
+                    framework="celery",
+                    rel_path=self.rel_path,
+                    module=self.module,
+                    qualname=qualname,
+                    lineno=int(getattr(node, "lineno", 0) or 0),
+                    end_lineno=getattr(node, "end_lineno", None),
+                    command_name=task_name,
+                    extra=extra or None,
+                    evidence={"decorator": _decorator_to_str(decorator)},
+                )
+            )
+
+    def _collect_airflow_candidates(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, qualname: str
+    ) -> None:
+        if not self.settings.detect_airflow:
+            return
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+            lib, attr, _ = _resolve_call_target(decorator.func, self.ctx.alias_to_lib)
+            if lib != "airflow":
+                continue
+            if attr == "task":
+                task_id = _literal_str(decorator.args[0]) if decorator.args else None
+                self.candidates.append(
+                    EntryPointCandidate(
+                        kind="task",
+                        framework="airflow",
+                        rel_path=self.rel_path,
+                        module=self.module,
+                        qualname=qualname,
+                        lineno=int(getattr(node, "lineno", 0) or 0),
+                        end_lineno=getattr(node, "end_lineno", None),
+                        command_name=task_id or node.name,
+                        extra={"task_id": task_id} if task_id else None,
+                        evidence={"decorator": _decorator_to_str(decorator)},
+                    )
+                )
+            if attr == "dag":
+                dag_id = _literal_str(decorator.args[0]) if decorator.args else None
+                self.candidates.append(
+                    EntryPointCandidate(
+                        kind="dag",
+                        framework="airflow",
+                        rel_path=self.rel_path,
+                        module=self.module,
+                        qualname=qualname,
+                        lineno=int(getattr(node, "lineno", 0) or 0),
+                        end_lineno=getattr(node, "end_lineno", None),
+                        command_name=dag_id or node.name,
+                        extra={"dag_id": dag_id} if dag_id else None,
+                        evidence={"decorator": _decorator_to_str(decorator)},
+                    )
+                )
+
+    def _collect_generic_route_candidates(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, qualname: str
+    ) -> None:
+        if not self.settings.detect_generic_routes:
+            return
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+            _, attr, _ = _resolve_call_target(decorator.func, self.ctx.alias_to_lib)
+            if attr not in {"route", "add_route", "add_url_rule"}:
+                continue
+            route_path = _extract_route_path(decorator)
+            self.candidates.append(
+                EntryPointCandidate(
+                    kind="http",
+                    framework="generic",
+                    rel_path=self.rel_path,
+                    module=self.module,
+                    qualname=qualname,
+                    lineno=int(getattr(node, "lineno", 0) or 0),
+                    end_lineno=getattr(node, "end_lineno", None),
+                    route_path=route_path,
                     evidence={"decorator": _decorator_to_str(decorator)},
                 )
             )

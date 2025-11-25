@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 
 import duckdb
 
@@ -15,6 +14,12 @@ from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner
 
 log = logging.getLogger(__name__)
+
+NEW_DAYS_THRESHOLD = 30
+HOT_CHURN_THRESHOLD = 0.5
+HOT_COMMIT_THRESHOLD = 5
+STABLE_COMMIT_THRESHOLD = 2
+CHURNING_THRESHOLD = 0.2
 
 
 @dataclass(frozen=True)
@@ -161,14 +166,14 @@ def _classify_stability(
         return "new_hot" if churn_score > 0 else "unknown"
 
     recent_window_days = window_days or 365
-    is_new = age_days <= 30
-    is_hot = churn_score >= 0.5 or commit_count >= 5
+    is_new = age_days <= NEW_DAYS_THRESHOLD
+    is_hot = churn_score >= HOT_CHURN_THRESHOLD or commit_count >= HOT_COMMIT_THRESHOLD
 
     if is_new and is_hot:
         return "new_hot"
-    if not is_new and not is_hot and commit_count <= 2:
+    if not is_new and not is_hot and commit_count <= STABLE_COMMIT_THRESHOLD:
         return "stable"
-    if churn_score >= 0.2:
+    if churn_score >= CHURNING_THRESHOLD:
         return "churning"
     return "legacy_hot" if age_days > recent_window_days and is_hot else "stable"
 
@@ -279,7 +284,7 @@ def _load_function_spans(
     spans_by_path: dict[str, list[FuncSpan]] = {}
     for row in rows:
         repo_val, commit_val, goid_raw, urn, rel_path, module, qualname, start, end, loc = row
-        goid = int(goid_raw) if isinstance(goid_raw, (int, float, Decimal)) else int(goid_raw)
+        goid = int(goid_raw)
         module_name = module or ""
         spans_by_path.setdefault(rel_path, []).append(
             FuncSpan(

@@ -10,7 +10,15 @@ from codeintel.analytics.profiles import build_function_profile, build_module_pr
 from codeintel.config.models import GraphMetricsConfig, ProfilesAnalyticsConfig, SymbolUsesConfig
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.builders import (
+    ModuleRow,
+    RiskFactorRow,
+    SymbolUseEdgeRow,
+    insert_modules,
+    insert_risk_factors,
+    insert_symbol_use_edges,
+)
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -26,18 +34,20 @@ class _FakeProvider:
     def catalog(self) -> FunctionCatalog:
         return self._catalog
 
-    def urn_for_goid(self, goid: int) -> str | None:  # noqa: ARG002
-        return None
+    def urn_for_goid(self, goid: int) -> str | None:
+        return self._catalog.urn_for_goid(goid)
 
     def lookup_goid(
         self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
     ) -> int | None:
-        return None
+        return self._catalog.lookup_goid(rel_path, start_line, end_line, qualname)
 
 
-def test_symbol_uses_respects_catalog_module_map(tmp_path: Path) -> None:
+def test_symbol_uses_respects_catalog_module_map(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Catalog module map toggles same_module when modules table is empty."""
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     con = gateway.con
 
     scip_path = tmp_path / "index.scip.json"
@@ -79,13 +89,17 @@ def test_symbol_uses_respects_catalog_module_map(tmp_path: Path) -> None:
     )
 
 
-def test_symbol_uses_falls_back_to_modules_when_catalog_partial(tmp_path: Path) -> None:
+def test_symbol_uses_falls_back_to_modules_when_catalog_partial(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
     """Catalog map may be partial; missing paths should fall back to core.modules."""
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     con = gateway.con
-    con.execute(
-        "INSERT INTO core.modules (module, path, repo, commit, language) VALUES (?, ?, ?, ?, ?)",
-        ["pkg.use", "pkg/b.py", "r", "c", "python"],
+    insert_modules(
+        gateway,
+        [
+            ModuleRow(module="pkg.use", path="pkg/b.py", repo="r", commit="c"),
+        ],
     )
     scip_path = tmp_path / "index.scip.json"
     scip_path.write_text(
@@ -127,15 +141,23 @@ def test_symbol_uses_falls_back_to_modules_when_catalog_partial(tmp_path: Path) 
     )
 
 
-def test_graph_metrics_uses_catalog_for_symbol_modules() -> None:
+def test_graph_metrics_uses_catalog_for_symbol_modules(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Graph metrics module rows derive module names from injected catalog."""
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     con = gateway.con
-    con.execute(
-        """
-        INSERT INTO graph.symbol_use_edges (symbol, def_path, use_path, same_file, same_module)
-        VALUES ('sym#def', 'pkg/a.py', 'pkg/b.py', FALSE, FALSE)
-        """
+    insert_symbol_use_edges(
+        gateway,
+        [
+            SymbolUseEdgeRow(
+                symbol="sym#def",
+                def_path="pkg/a.py",
+                use_path="pkg/b.py",
+                same_file=False,
+                same_module=False,
+            )
+        ],
     )
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
@@ -154,27 +176,49 @@ def test_graph_metrics_uses_catalog_for_symbol_modules() -> None:
     )
 
 
-def test_profiles_use_catalog_module_map_when_modules_table_empty() -> None:
+def test_profiles_use_catalog_module_map_when_modules_table_empty(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Profiles builder should backfill modules from catalog when core.modules is empty."""
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     con = gateway.con
     now = datetime.now(tz=UTC)
-    con.execute(
-        """
-        INSERT INTO analytics.goid_risk_factors (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            loc, logical_loc, cyclomatic_complexity, complexity_bucket, typedness_bucket,
-            typedness_source, hotspot_score, file_typed_ratio, static_error_count,
-            has_static_errors, executable_lines, covered_lines, coverage_ratio, tested,
-            test_count, failing_test_count, last_test_status, risk_score, risk_level,
-            tags, owners, created_at
-        ) VALUES (
-            1, 'urn:fn', 'r', 'c', 'pkg/a.py', 'python', 'function', 'pkg.a.fn',
-            1, 1, 1, 'low', 'full', 'typed', 0.0, 1.0, 0, FALSE, 1, 1, 1.0, TRUE,
-            1, 0, 'passed', 0.1, 'low', '[]', '[]', ?
-        )
-        """,
-        [now],
+    insert_risk_factors(
+        gateway,
+        [
+            RiskFactorRow(
+                function_goid_h128=1,
+                urn="urn:fn",
+                repo="r",
+                commit="c",
+                rel_path="pkg/a.py",
+                language="python",
+                kind="function",
+                qualname="pkg.a.fn",
+                loc=1,
+                logical_loc=1,
+                cyclomatic_complexity=1,
+                complexity_bucket="low",
+                typedness_bucket="full",
+                typedness_source="typed",
+                hotspot_score=0.0,
+                file_typed_ratio=1.0,
+                static_error_count=0,
+                has_static_errors=False,
+                executable_lines=1,
+                covered_lines=1,
+                coverage_ratio=1.0,
+                tested=True,
+                test_count=1,
+                failing_test_count=0,
+                last_test_status="passed",
+                risk_score=0.1,
+                risk_level="low",
+                tags="[]",
+                owners="[]",
+                created_at=now,
+            )
+        ],
     )
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod"})
