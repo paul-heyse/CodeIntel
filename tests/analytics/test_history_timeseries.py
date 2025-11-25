@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
-
-from codeintel.analytics.history_timeseries import compute_history_timeseries
+from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
 from codeintel.config.models import HistoryTimeseriesConfig
-from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.gateway import (
+    StorageConfig,
+    build_snapshot_gateway_resolver,
+    open_gateway,
+)
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.fakes import FakeToolRunner
 from tests._helpers.history import SnapshotSpec, create_snapshot_db
@@ -58,9 +60,6 @@ def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
         )
     )
 
-    def _resolve_db(commit: str) -> duckdb.DuckDBPyConnection:
-        return duckdb.connect(str(snapshot_dir / f"codeintel-{commit}.duckdb"), read_only=True)
-
     runner = FakeToolRunner(
         cache_dir=tmp_path / ".tool_cache",
         payloads={"git": "2024-01-01T00:00:00+00:00"},
@@ -72,7 +71,17 @@ def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
         commits=(commit_new, commit_old),
         overrides=overrides,
     )
-    compute_history_timeseries(gateway.con, cfg, _resolve_db, runner=runner)
+    snapshot_resolver = build_snapshot_gateway_resolver(
+        db_dir=snapshot_dir,
+        repo=repo,
+        primary_gateway=gateway,
+    )
+    compute_history_timeseries_gateways(
+        gateway,
+        cfg,
+        snapshot_resolver,
+        runner=runner,
+    )
 
     rows = gateway.con.execute(
         "SELECT entity_kind, commit, risk_score, entity_stable_id FROM analytics.history_timeseries"

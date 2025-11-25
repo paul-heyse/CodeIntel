@@ -756,9 +756,7 @@ def projection_metrics(
     weighted_view = nx.degree(proj, weight=weight_attr)
     degree = {node: int(deg) for node, deg in degree_view}
     weighted_degree = {node: float(deg) for node, deg in weighted_view}
-    clustering_val = (
-        nx.clustering(proj, weight=weight_attr) if proj.number_of_nodes() > 0 else {}
-    )
+    clustering_val = nx.clustering(proj, weight=weight_attr) if proj.number_of_nodes() > 0 else {}
     clustering = clustering_val if isinstance(clustering_val, dict) else {}
     betweenness = (
         nx.betweenness_centrality(

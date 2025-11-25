@@ -12,10 +12,11 @@ from pathlib import Path
 
 import duckdb
 
-from codeintel.analytics.history_timeseries import compute_history_timeseries
+from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
 from codeintel.config.models import (
     CodeIntelConfig,
     FunctionAnalyticsOverrides,
+    GraphBackendConfig,
     HistoryTimeseriesConfig,
     PathsConfig,
     RepoConfig,
@@ -28,7 +29,13 @@ from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.mcp.backend import DuckDBBackend
 from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
 from codeintel.services.errors import ExportError, log_problem, problem
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import (
+    StorageConfig,
+    StorageGateway,
+    build_snapshot_gateway_resolver,
+    open_gateway,
+)
+from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 
 LOG = logging.getLogger("codeintel.cli")
 CommandHandler = Callable[[argparse.Namespace], int]
@@ -92,6 +99,25 @@ def _add_common_repo_args(p: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         help="Override Document Output/ directory (default: <repo-root>/Document Output)",
+    )
+
+
+def _add_graph_backend_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--nx-gpu",
+        action="store_true",
+        help="Prefer GPU backend for NetworkX (nx-cugraph) when available.",
+    )
+    parser.add_argument(
+        "--nx-backend",
+        choices=["auto", "cpu", "nx-cugraph"],
+        default="auto",
+        help="NetworkX backend selection (default: auto).",
+    )
+    parser.add_argument(
+        "--nx-gpu-strict",
+        action="store_true",
+        help="Fail instead of falling back to CPU if GPU backend cannot be enabled.",
     )
 
 
@@ -191,6 +217,7 @@ def _make_parser() -> argparse.ArgumentParser:
         default=Path("build/db"),
         help="Directory containing per-commit DuckDB snapshots for history_timeseries.",
     )
+    _add_graph_backend_args(p_run)
     p_run.set_defaults(func=_cmd_pipeline_run)
 
     # -----------------------------------------------------------------------
@@ -216,6 +243,7 @@ def _make_parser() -> argparse.ArgumentParser:
         action="append",
         help="Schema name to validate (can be repeated). Defaults to the standard export set.",
     )
+    _add_graph_backend_args(p_export)
     p_export.set_defaults(func=_cmd_docs_export)
 
     # -----------------------------------------------------------------------
@@ -314,6 +342,7 @@ def make_parser() -> argparse.ArgumentParser:
 
 
 def _build_config_from_args(args: argparse.Namespace) -> CodeIntelConfig:
+    graph_backend = _build_graph_backend_config(args)
     paths_cfg = PathsConfig(
         repo_root=args.repo_root,
         build_dir=args.build_dir,
@@ -321,7 +350,19 @@ def _build_config_from_args(args: argparse.Namespace) -> CodeIntelConfig:
         document_output_dir=args.document_output_dir,
     )
     repo_cfg = RepoConfig(repo=args.repo, commit=args.commit)
-    return CodeIntelConfig.from_cli_args(repo_cfg=repo_cfg, paths_cfg=paths_cfg)
+    return CodeIntelConfig.from_cli_args(
+        repo_cfg=repo_cfg,
+        paths_cfg=paths_cfg,
+        graph_backend=graph_backend,
+    )
+
+
+def _build_graph_backend_config(args: argparse.Namespace) -> GraphBackendConfig:
+    return GraphBackendConfig(
+        use_gpu=bool(getattr(args, "nx_gpu", False)),
+        backend=str(getattr(args, "nx_backend", "auto")),
+        strict=bool(getattr(args, "nx_gpu_strict", False)),
+    )
 
 
 def _open_gateway(cfg: CodeIntelConfig, *, read_only: bool) -> StorageGateway:
@@ -355,6 +396,7 @@ def _open_gateway(cfg: CodeIntelConfig, *, read_only: bool) -> StorageGateway:
 
 def _cmd_pipeline_run(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
+    maybe_enable_nx_gpu(cfg.graph_backend)
     repo_root = cfg.paths.repo_root
     db_path = cfg.paths.db_path
     build_dir = cfg.paths.build_dir
@@ -391,6 +433,7 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
             function_overrides=overrides,
             history_commits=tuple(args.history_commits) if args.history_commits else None,
             history_db_dir=args.history_db_dir,
+            graph_backend=cfg.graph_backend,
         ),
         targets=targets,
     )
@@ -486,6 +529,7 @@ def _cmd_docs_export(args: argparse.Namespace) -> int:
         If document_output_dir could not be resolved.
     """
     cfg = _build_config_from_args(args)
+    maybe_enable_nx_gpu(cfg.graph_backend)
     gateway = _open_gateway(cfg, read_only=True)
 
     out_dir = cfg.paths.document_output_dir
@@ -540,13 +584,6 @@ def _cmd_history_timeseries(args: argparse.Namespace) -> int:
         overrides=overrides,
     )
 
-    def _resolve_db(commit: str) -> duckdb.DuckDBPyConnection:
-        db_path = args.db_dir / f"codeintel-{commit}.duckdb"
-        if not db_path.is_file():
-            message = f"Missing snapshot database for commit {commit}: {db_path}"
-            raise FileNotFoundError(message)
-        return duckdb.connect(str(db_path), read_only=True)
-
     storage_cfg = StorageConfig(
         db_path=args.output_db,
         read_only=False,
@@ -554,8 +591,18 @@ def _cmd_history_timeseries(args: argparse.Namespace) -> int:
         ensure_views=True,
     )
     gateway = open_gateway(storage_cfg)
+    snapshot_resolver = build_snapshot_gateway_resolver(
+        db_dir=args.db_dir,
+        repo=args.repo,
+        primary_gateway=gateway,
+    )
     try:
-        compute_history_timeseries(gateway.con, cfg, _resolve_db, runner=runner)
+        compute_history_timeseries_gateways(
+            gateway,
+            cfg,
+            snapshot_resolver,
+            runner=runner,
+        )
     except FileNotFoundError:
         LOG.exception("Missing snapshot database for history_timeseries")
         return 1

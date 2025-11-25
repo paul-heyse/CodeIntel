@@ -13,6 +13,7 @@ from codeintel.analytics.git_history import FileCommitDelta, iter_file_history
 from codeintel.config.models import FunctionHistoryConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class FuncHistoryAgg:
 
 
 def compute_function_history(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     cfg: FunctionHistoryConfig,
     *,
     runner: ToolRunner | None = None,
@@ -65,8 +66,8 @@ def compute_function_history(
 
     Parameters
     ----------
-    con:
-        DuckDB connection seeded with CodeIntel schemas.
+    gateway:
+        StorageGateway bound to the CodeIntel DuckDB database.
     cfg:
         Function history configuration.
     runner:
@@ -74,6 +75,7 @@ def compute_function_history(
     context:
         Optional shared analytics context to enforce snapshot consistency.
     """
+    con = gateway.con
     if context is not None and (context.repo != cfg.repo or context.commit != cfg.commit):
         log.warning(
             "function_history context mismatch: context=%s@%s cfg=%s@%s",

@@ -20,7 +20,7 @@ from codeintel.analytics.ast_utils import resolve_call_target, safe_unparse, sni
 from codeintel.analytics.context import (
     AnalyticsContext,
     AnalyticsContextConfig,
-    build_analytics_context,
+    ensure_analytics_context,
 )
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
@@ -199,14 +199,15 @@ def build_external_dependency_calls(
         [cfg.repo, cfg.commit],
     )
 
-    shared_context = context or build_analytics_context(
+    shared_context = ensure_analytics_context(
         gateway,
-        AnalyticsContextConfig(
+        cfg=AnalyticsContextConfig(
             repo=cfg.repo,
             commit=cfg.commit,
             repo_root=cfg.repo_root,
             catalog_provider=catalog_provider,
         ),
+        context=context,
     )
     catalog = shared_context.catalog
     module_map = shared_context.module_map

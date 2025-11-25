@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import duckdb
 
@@ -93,7 +93,7 @@ def _degree_dict(
     raw_pairs = (
         graph.in_degree(weight=weight) if direction == "in" else graph.out_degree(weight=weight)
     )
-    pairs = list(raw_pairs)
+    pairs = cast("Iterable[tuple[int, int | float]]", raw_pairs)
     return {int(node): int(deg) for node, deg in pairs}
 
 

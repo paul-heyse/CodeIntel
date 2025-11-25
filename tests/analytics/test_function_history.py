@@ -94,7 +94,7 @@ def test_function_history_populates_rows(
         payloads={"git": _git_log_payload()},
     )
     cfg = FunctionHistoryConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    compute_function_history(con, cfg, runner=runner)
+    compute_function_history(gateway, cfg, runner=runner)
 
     rows = con.execute("SELECT * FROM analytics.function_history").fetchall()
     expect_equal(len(rows), 1, "Expected a single function history row.")
@@ -163,7 +163,7 @@ def test_function_history_respects_min_threshold(
         repo_root=repo_root,
         overrides=FunctionHistoryConfig.Overrides(min_lines_threshold=10),
     )
-    compute_function_history(con, cfg, runner=runner)
+    compute_function_history(gateway, cfg, runner=runner)
     rows = con.execute(
         "SELECT commit_count, lines_added FROM analytics.function_history"
     ).fetchall()

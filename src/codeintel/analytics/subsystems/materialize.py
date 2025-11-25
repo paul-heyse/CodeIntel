@@ -10,6 +10,7 @@ from typing import Any
 
 import networkx as nx
 
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.subsystems.affinity import (
     build_weighted_graph,
     clusters_from_labels,
@@ -66,8 +67,20 @@ class SubsystemBuildContext:
     now: datetime
 
 
-def build_subsystems(gateway: StorageGateway, cfg: SubsystemsConfig) -> None:
-    """Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit."""
+def build_subsystems(
+    gateway: StorageGateway,
+    cfg: SubsystemsConfig,
+    *,
+    context: AnalyticsContext | None = None,
+) -> None:
+    """
+    Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit.
+
+    Raises
+    ------
+    ValueError
+        If no import graph is available for the target snapshot.
+    """
     con = gateway.con
     ensure_schema(con, "analytics.subsystems")
     ensure_schema(con, "analytics.subsystem_modules")
@@ -94,7 +107,24 @@ def build_subsystems(gateway: StorageGateway, cfg: SubsystemsConfig) -> None:
     labels = limit_clusters(labels, adjacency, cfg.max_subsystems)
     clusters = clusters_from_labels(labels)
 
-    import_graph = load_import_graph(gateway, cfg.repo, cfg.commit)
+    if context is not None and (context.repo != cfg.repo or context.commit != cfg.commit):
+        log.warning(
+            "subsystems context mismatch: context=%s@%s cfg=%s@%s",
+            context.repo,
+            context.commit,
+            cfg.repo,
+            cfg.commit,
+        )
+    import_graph = (
+        context.import_graph
+        if context is not None and context.repo == cfg.repo and context.commit == cfg.commit
+        else None
+    )
+    if import_graph is None:
+        import_graph = load_import_graph(gateway, cfg.repo, cfg.commit)
+    if import_graph is None:
+        message = "Import graph unavailable for subsystem inference"
+        raise ValueError(message)
     risk_stats = aggregate_risk(gateway, cfg, labels)
 
     now = datetime.now(UTC)

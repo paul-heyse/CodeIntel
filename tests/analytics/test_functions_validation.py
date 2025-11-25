@@ -15,18 +15,20 @@ from codeintel.analytics.function_parsing import (
     FunctionParserRegistry,
     ParsedFile,
 )
-from codeintel.analytics.functions import (
+from codeintel.analytics.functions.config import (
     FunctionAnalyticsOptions,
     ProcessContext,
     ProcessState,
-    ValidationReporter,
+)
+from codeintel.analytics.functions.metrics import (
+    GoidRow as AnalyticsGoidRow,
+)
+from codeintel.analytics.functions.metrics import (
     build_function_analytics,
     compute_function_metrics_and_types,
     persist_function_analytics,
 )
-from codeintel.analytics.functions import (
-    GoidRow as AnalyticsGoidRow,
-)
+from codeintel.analytics.functions.validation import ValidationReporter
 from codeintel.config.models import FunctionAnalyticsConfig, FunctionAnalyticsOverrides
 from codeintel.ingestion.ast_utils import AstSpanIndex
 from codeintel.storage.gateway import StorageGateway

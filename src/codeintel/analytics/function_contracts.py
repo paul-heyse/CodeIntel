@@ -15,7 +15,7 @@ from codeintel.analytics.ast_utils import literal_int, literal_value, safe_unpar
 from codeintel.analytics.context import (
     AnalyticsContext,
     AnalyticsContextConfig,
-    build_analytics_context,
+    ensure_analytics_context,
 )
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config.models import FunctionContractsConfig
@@ -66,14 +66,15 @@ def compute_function_contracts(
     con = gateway.con
     ensure_schema(con, "analytics.function_contracts")
 
-    shared_context = context or build_analytics_context(
+    shared_context = ensure_analytics_context(
         gateway,
-        AnalyticsContextConfig(
+        cfg=AnalyticsContextConfig(
             repo=cfg.repo,
             commit=cfg.commit,
             repo_root=cfg.repo_root,
             catalog_provider=catalog_provider,
         ),
+        context=context,
     )
 
     ast_by_goid = shared_context.function_ast_map

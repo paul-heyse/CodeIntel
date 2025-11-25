@@ -26,6 +26,11 @@ from codeintel.analytics.ast_metrics import build_hotspots
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.config_data_flow import compute_config_data_flow
 from codeintel.analytics.config_graph_metrics import compute_config_graph_metrics
+from codeintel.analytics.context import (
+    AnalyticsContext,
+    AnalyticsContextConfig,
+    build_analytics_context,
+)
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
 from codeintel.analytics.data_model_usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
@@ -46,7 +51,7 @@ from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
 from codeintel.analytics.graph_service import build_graph_context
 from codeintel.analytics.graph_stats import compute_graph_stats
-from codeintel.analytics.history_timeseries import compute_history_timeseries
+from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
 from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
 from codeintel.analytics.semantic_roles import compute_semantic_roles
 from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
@@ -120,7 +125,12 @@ from codeintel.orchestration.steps import (
     RiskFactorsStep,
 )
 from codeintel.services.errors import ExportError, log_problem, problem
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import (
+    StorageConfig,
+    StorageGateway,
+    build_snapshot_gateway_resolver,
+    open_gateway,
+)
 from codeintel.storage.views import create_all_views
 
 
@@ -237,6 +247,27 @@ def gateway_cache_stats() -> dict[str, int]:
         "hits": _GATEWAY_STATS["hits"],
         "size": len(_GATEWAY_CACHE),
     }
+
+
+def _build_prefect_analytics_context(
+    gateway: StorageGateway, repo_root: Path, repo: str, commit: str
+) -> AnalyticsContext:
+    """
+    Construct an AnalyticsContext for Prefect tasks.
+
+    Returns
+    -------
+    AnalyticsContext
+        Shared analytics artifacts for the provided repository snapshot.
+    """
+    return build_analytics_context(
+        gateway,
+        AnalyticsContextConfig(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -695,7 +726,7 @@ def t_function_history(
     """Aggregate per-function git history."""
     gateway = _get_gateway(db_path)
     cfg = FunctionHistoryConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    compute_function_history(gateway.con, cfg, runner=runner)
+    compute_function_history(gateway, cfg, runner=runner)
 
 
 @task(name="function_metrics", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -736,7 +767,13 @@ def t_function_effects(repo_root: Path, repo: str, commit: str, db_path: Path) -
     """Classify side effects and purity."""
     gateway = _get_gateway(db_path)
     cfg = FunctionEffectsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    compute_function_effects(gateway, cfg)
+    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
+    compute_function_effects(
+        gateway,
+        cfg,
+        catalog_provider=context.catalog,
+        context=context,
+    )
 
 
 @task(name="function_contracts", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -744,7 +781,13 @@ def t_function_contracts(repo_root: Path, repo: str, commit: str, db_path: Path)
     """Infer contracts and nullability."""
     gateway = _get_gateway(db_path)
     cfg = FunctionContractsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    compute_function_contracts(gateway, cfg)
+    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
+    compute_function_contracts(
+        gateway,
+        cfg,
+        catalog_provider=context.catalog,
+        context=context,
+    )
 
 
 @task(name="data_models", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -760,8 +803,13 @@ def t_data_model_usage(repo_root: Path, repo: str, commit: str, db_path: Path) -
     """Classify model usage per function."""
     gateway = _get_gateway(db_path)
     cfg = DataModelUsageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
-    compute_data_model_usage(gateway, cfg, catalog_provider=catalog)
+    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
+    compute_data_model_usage(
+        gateway,
+        cfg,
+        catalog_provider=context.catalog,
+        context=context,
+    )
 
 
 @task(name="coverage_functions", retries=1, retry_delay_seconds=2)
@@ -821,7 +869,13 @@ def t_semantic_roles(repo_root: Path, repo: str, commit: str, db_path: Path) -> 
     """Classify semantic roles for functions and modules."""
     gateway = _get_gateway(db_path)
     cfg = SemanticRolesConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    compute_semantic_roles(gateway, cfg)
+    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
+    compute_semantic_roles(
+        gateway,
+        cfg,
+        catalog_provider=context.catalog,
+        context=context,
+    )
 
 
 @task(name="entrypoints", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -840,8 +894,13 @@ def t_entrypoints(
         repo_root=repo_root,
         scan_config=scan_config,
     )
-    catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
-    build_entrypoints(gateway, cfg, catalog_provider=catalog)
+    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
+    build_entrypoints(
+        gateway,
+        cfg,
+        catalog_provider=context.catalog,
+        context=context,
+    )
 
 
 @task(name="external_dependencies", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -856,8 +915,13 @@ def t_external_dependencies(
         repo_root=repo_root,
         scan_config=scan_config,
     )
-    catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
-    build_external_dependency_calls(gateway, cfg, catalog_provider=catalog)
+    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
+    build_external_dependency_calls(
+        gateway,
+        cfg,
+        catalog_provider=context.catalog,
+        context=context,
+    )
     build_external_dependencies(gateway, cfg)
 
 
@@ -866,7 +930,8 @@ def t_config_data_flow(repo_root: Path, repo: str, commit: str, db_path: Path) -
     """Track config key usage and call chains."""
     gateway = _get_gateway(db_path)
     cfg = ConfigDataFlowConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    compute_config_data_flow(gateway, cfg)
+    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
+    compute_config_data_flow(gateway, cfg, context=context)
 
 
 @task(name="risk_factors", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -899,11 +964,12 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
 
 
 @task(name="subsystems", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_subsystems(repo: str, commit: str, db_path: Path) -> None:
+def t_subsystems(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Infer subsystem clusters and membership."""
     gateway = _get_gateway(db_path)
     cfg = SubsystemsConfig.from_paths(repo=repo, commit=commit)
-    build_subsystems(gateway, cfg)
+    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
+    build_subsystems(gateway, cfg, context=context)
 
 
 @task(name="profiles", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -947,21 +1013,22 @@ def t_history_timeseries(params: HistoryTimeseriesTaskParams) -> None:
     )
     params.history_db_dir.mkdir(parents=True, exist_ok=True)
 
-    def _resolve_db(target_commit: str) -> duckdb.DuckDBPyConnection:
-        target_path = params.history_db_dir / f"codeintel-{target_commit}.duckdb"
-        if target_path.resolve() == params.db_path.resolve():
-            return gateway.con
-        if not target_path.is_file():
-            message = f"Missing snapshot database for commit {target_commit}: {target_path}"
-            raise FileNotFoundError(message)
-        return duckdb.connect(str(target_path), read_only=True)
-
     cfg = HistoryTimeseriesConfig.from_args(
         repo=params.repo,
         repo_root=params.repo_root,
         commits=params.commits,
     )
-    compute_history_timeseries(gateway.con, cfg, _resolve_db, runner=params.runner)
+    snapshot_resolver = build_snapshot_gateway_resolver(
+        db_dir=params.history_db_dir,
+        repo=params.repo,
+        primary_gateway=gateway,
+    )
+    compute_history_timeseries_gateways(
+        gateway,
+        cfg,
+        snapshot_resolver,
+        runner=params.runner,
+    )
 
 
 @task(name="export_docs", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -1508,6 +1575,7 @@ def export_docs_flow(
                 "subsystems",
                 t_subsystems,
                 run_logger,
+                ctx.repo_root,
                 ctx.repo,
                 ctx.commit,
                 ctx.db_path,

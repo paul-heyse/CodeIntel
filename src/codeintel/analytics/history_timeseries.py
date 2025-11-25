@@ -16,6 +16,7 @@ import duckdb
 from codeintel.config.models import HistoryTimeseriesConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.storage.gateway import SnapshotGatewayResolver, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -175,6 +176,58 @@ def compute_history_timeseries(
         len(rows),
         len(cfg.commits),
     )
+
+
+def compute_history_timeseries_gateways(
+    history_gateway: StorageGateway,
+    cfg: HistoryTimeseriesConfig,
+    snapshot_resolver: SnapshotGatewayResolver,
+    *,
+    runner: ToolRunner | None = None,
+) -> None:
+    """
+    Gateway-based wrapper around compute_history_timeseries.
+
+    Parameters
+    ----------
+    history_gateway:
+        StorageGateway for the destination history DuckDB database.
+    cfg:
+        History aggregation configuration.
+    snapshot_resolver:
+        Callable returning a StorageGateway bound to the per-commit snapshot DB.
+    runner:
+        Optional ToolRunner for git timestamp lookups.
+    """
+    snapshot_gateways: dict[str, StorageGateway] = {}
+
+    def _db_resolver(commit: str) -> duckdb.DuckDBPyConnection:
+        cached_gateway = snapshot_gateways.get(commit)
+        if cached_gateway is not None:
+            return history_gateway.con if cached_gateway is history_gateway else cached_gateway.con
+
+        snapshot_gateway = snapshot_resolver(commit)
+        if snapshot_gateway.config.db_path.resolve() == history_gateway.config.db_path.resolve():
+            if snapshot_gateway is not history_gateway:
+                snapshot_gateway.close()
+            snapshot_gateways[commit] = history_gateway
+            return history_gateway.con
+
+        snapshot_gateways[commit] = snapshot_gateway
+        return snapshot_gateway.con
+
+    try:
+        compute_history_timeseries(
+            history_gateway.con,
+            cfg,
+            _db_resolver,
+            runner=runner,
+        )
+    finally:
+        for gateway in snapshot_gateways.values():
+            if gateway is history_gateway:
+                continue
+            gateway.close()
 
 
 def _select_entities(cfg: HistoryTimeseriesConfig, db_resolver: DBResolver) -> EntitySelection:

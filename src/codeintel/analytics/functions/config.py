@@ -7,15 +7,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.context import AnalyticsContext
-from codeintel.analytics.function_parsing import (
-    FunctionParserRegistry,
-    ParsedFile,
-    ParsedFileLoader,
-)
 from codeintel.config.models import FunctionAnalyticsConfig
 
 if TYPE_CHECKING:
-    from codeintel.analytics.functions.validation import ValidationReporter
+    from codeintel.analytics.parsing.validation import FunctionValidationReporter
+    from codeintel.analytics.parsing.models import ParsedModule
+    from codeintel.analytics.parsing.models import SourceSpan
 
 
 @dataclass(frozen=True)
@@ -30,9 +27,7 @@ class ProcessContext:
 class FunctionAnalyticsOptions:
     """Optional hooks and cached context for function analytics."""
 
-    parser: ParsedFileLoader | None = None
-    parser_registry: FunctionParserRegistry | None = None
-    validation_reporter: ValidationReporter | None = None
+    validation_reporter: FunctionValidationReporter | None = None
     context: AnalyticsContext | None = None
 
 
@@ -41,6 +36,7 @@ class ProcessState:
     """Mutable state shared across per-file processing."""
 
     cfg: FunctionAnalyticsConfig
-    cache: dict[str, ParsedFile | None]
-    parser: ParsedFileLoader
+    cache: dict[str, ParsedModule | None]
+    span_index: dict[int, SourceSpan]
+    reporter: FunctionValidationReporter
     ctx: ProcessContext

@@ -1,0 +1,72 @@
+"""Helpers for configuring NetworkX backends (CPU vs GPU)."""
+
+from __future__ import annotations
+
+import logging
+import os
+
+from codeintel.config.models import GraphBackendConfig
+
+LOG = logging.getLogger(__name__)
+_GPU_AUTOCONFIG_ENV = "NX_CUGRAPH_AUTOCONFIG"
+
+
+def _enable_nx_cugraph_backend() -> None:
+    """
+    Enable the nx-cugraph backend when available.
+
+    Raises
+    ------
+    RuntimeError
+        If nx_cugraph is missing or exposes no backend setter.
+    """
+    try:
+        import nx_cugraph  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover - environment dependent
+        raise RuntimeError("Requested GPU backend, but nx_cugraph is not installed.") from exc
+
+    try:
+        nx_cugraph.set_default_backend()  # type: ignore[attr-defined]
+        LOG.info("NetworkX GPU backend enabled via nx_cugraph.")
+    except AttributeError as exc:  # pragma: no cover - version dependent
+        raise RuntimeError(
+            "nx_cugraph.set_default_backend is not available for this version."
+        ) from exc
+
+
+def maybe_enable_nx_gpu(cfg: GraphBackendConfig) -> None:
+    """
+    Configure NetworkX backend based on GraphBackendConfig.
+
+    Parameters
+    ----------
+    cfg : GraphBackendConfig
+        Backend selection options.
+
+    Raises
+    ------
+    RuntimeError
+        If strict mode is enabled and the GPU backend cannot be configured.
+    """
+    if not cfg.use_gpu:
+        LOG.debug("Graph backend: CPU (use_gpu=False).")
+        return
+
+    backend = cfg.backend
+    LOG.info("Graph backend requested: %s", backend)
+    if backend == "cpu":
+        LOG.info("Graph backend pinned to CPU.")
+        return
+
+    if backend in ("auto", "nx-cugraph"):
+        os.environ.setdefault(_GPU_AUTOCONFIG_ENV, "True")
+        try:
+            _enable_nx_cugraph_backend()
+        except RuntimeError:
+            if cfg.strict:
+                LOG.exception("Failed to enable GPU backend (strict=True).")
+                raise
+            LOG.exception("Failed to enable GPU backend; continuing with CPU backend.")
+        return
+
+    LOG.warning("Unknown graph backend '%s'; using CPU backend.", backend)
