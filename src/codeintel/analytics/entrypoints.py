@@ -12,8 +12,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import duckdb
-
 from codeintel.analytics.context import (
     AnalyticsContext,
     AnalyticsContextConfig,
@@ -29,11 +27,11 @@ from codeintel.config.models import EntryPointsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.common import iter_modules, read_module_source
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.source_scanner import ScanConfig
+    from codeintel.ingestion.source_scanner import ScanProfile
 
 log = logging.getLogger(__name__)
 
@@ -160,7 +158,7 @@ def build_entrypoints(
         context=entrypoint_context,
         repo_root=cfg.repo_root,
         settings=settings,
-        scan_config=cfg.scan_config,
+        scan_profile=cfg.scan_profile,
     )
 
     if entrypoint_rows:
@@ -203,12 +201,17 @@ def _collect_entrypoint_rows(
     context: EntryPointContext,
     repo_root: Path,
     settings: DetectorSettings,
-    scan_config: ScanConfig | None,
+    scan_profile: ScanProfile | None,
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
     entrypoint_rows: list[tuple[object, ...]] = []
     test_rows: list[tuple[object, ...]] = []
 
-    for record in iter_modules(context.module_map, repo_root, logger=log, scan_config=scan_config):
+    for record in iter_modules(
+        context.module_map,
+        repo_root,
+        logger=log,
+        scan_profile=scan_profile,
+    ):
         source = read_module_source(record, logger=log)
         if source is None:
             continue
@@ -229,7 +232,7 @@ def _collect_entrypoint_rows(
 
 
 def _build_entrypoint_context(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     cfg: EntryPointsConfig,
     catalog: FunctionCatalogProvider,
     module_map_override: dict[str, str] | None = None,
@@ -350,9 +353,7 @@ def _decimal(value: int) -> Decimal:
     return Decimal(value)
 
 
-def _load_module_context(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
-) -> dict[str, ModuleContext]:
+def _load_module_context(con: DuckDBConnection, repo: str, commit: str) -> dict[str, ModuleContext]:
     rows = con.execute(
         """
         SELECT path, module, tags, owners
@@ -373,7 +374,7 @@ def _load_module_context(
 
 
 def _load_coverage_by_goid(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+    con: DuckDBConnection, repo: str, commit: str
 ) -> dict[int, float | None]:
     coverage: dict[int, float | None] = {}
     rows = con.execute(
@@ -392,7 +393,7 @@ def _load_coverage_by_goid(
 
 
 def _load_test_edges(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+    con: DuckDBConnection, repo: str, commit: str
 ) -> dict[int, dict[str, TestEdge]]:
     edges_by_goid: dict[int, dict[str, TestEdge]] = defaultdict(dict)
     rows = con.execute(
@@ -413,7 +414,7 @@ def _load_test_edges(
     return edges_by_goid
 
 
-def _load_test_meta(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> dict[str, TestMeta]:
+def _load_test_meta(con: DuckDBConnection, repo: str, commit: str) -> dict[str, TestMeta]:
     meta: dict[str, TestMeta] = {}
     rows = con.execute(
         """
@@ -436,7 +437,7 @@ def _load_test_meta(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> d
 
 
 def _load_subsystem_maps(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+    con: DuckDBConnection, repo: str, commit: str
 ) -> tuple[dict[str, str], dict[str, str]]:
     subsystem_by_module: dict[str, str] = {}
     subsystem_names: dict[str, str] = {}

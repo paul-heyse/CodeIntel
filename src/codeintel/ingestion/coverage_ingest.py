@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -10,9 +11,10 @@ from pathlib import Path
 from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
-from codeintel.config.models import CoverageIngestConfig
+from codeintel.config.models import CoverageIngestConfig, ToolsConfig
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
-from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
+from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
 from codeintel.models.rows import CoverageLineRow, coverage_line_to_tuple
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
@@ -36,13 +38,41 @@ class CoverageFileInfo:
     rel_path: str
 
 
+def _rows_from_reports(
+    cfg: CoverageIngestConfig,
+    reports: list[CoverageFileReport],
+    now: datetime,
+) -> list[CoverageLineRow]:
+    rows: list[CoverageLineRow] = []
+    for report in reports:
+        all_lines = sorted(report.executed_lines | report.missing_lines)
+        for line in all_lines:
+            is_covered = line in report.executed_lines
+            rows.append(
+                CoverageLineRow(
+                    repo=cfg.repo,
+                    commit=cfg.commit,
+                    rel_path=report.rel_path,
+                    line=line,
+                    is_executable=True,
+                    is_covered=is_covered,
+                    hits=1 if is_covered else 0,
+                    context_count=0,
+                    created_at=now,
+                )
+            )
+    return rows
+
+
 log = logging.getLogger(__name__)
 
 
 def ingest_coverage_lines(
     gateway: StorageGateway,
     cfg: CoverageIngestConfig,
-    runner: ToolRunner | None = None,
+    *,
+    tools: ToolsConfig | None = None,
+    tool_service: ToolService | None = None,
     json_output_path: Path | None = None,
 ) -> None:
     """
@@ -59,10 +89,12 @@ def ingest_coverage_lines(
         StorageGateway providing access to the target DuckDB database.
     cfg:
         Coverage ingestion configuration (paths and identifiers).
-    runner:
-        Optional shared ToolRunner for invoking coverage CLI.
     json_output_path:
         Optional explicit path for the coverage JSON output.
+    tools:
+        Optional tool configuration overriding executable resolution.
+    tool_service:
+        Optional ToolService to reuse for running coverage CLI.
     """
     repo_root = cfg.repo_root
     coverage_file = cfg.coverage_file
@@ -73,15 +105,30 @@ def ingest_coverage_lines(
         return
 
     now = datetime.now(UTC)
-    shared_runner = runner or ToolRunner(cache_dir=cfg.repo_root / "build" / ".tool_cache")
-    json_path = (
-        json_output_path
-        if json_output_path is not None
-        else shared_runner.cache_dir / "coverage.json"
-    )
-    cli_rows = _collect_via_cli(repo_root, cfg, now, shared_runner, json_path)
-    if cli_rows is not None:
-        rows = cli_rows
+    active_tools = tools or ToolsConfig()
+    service = tool_service
+    if service is None:
+        shared_runner = ToolRunner(
+            tools_config=active_tools, cache_dir=cfg.repo_root / "build" / ".tool_cache"
+        )
+        service = ToolService(shared_runner, active_tools)
+    json_path = json_output_path or (service.runner.cache_dir / "coverage.json")
+
+    reports: list[CoverageFileReport] | None = None
+    try:
+        reports = asyncio.run(
+            service.run_coverage_json(
+                repo_root,
+                coverage_file=coverage_file,
+                output_path=json_path,
+            )
+        )
+    except (ToolExecutionError, ToolNotFoundError) as exc:
+        log.warning("coverage CLI failed; falling back to API parsing: %s", exc)
+
+    source = "cli" if reports else "api"
+    if reports:
+        rows = _rows_from_reports(cfg, reports, now)
     else:
         rows = _collect_via_api(repo_root, coverage_file, cfg, now)
     if not rows:
@@ -99,60 +146,8 @@ def ingest_coverage_lines(
         cfg.repo,
         cfg.commit,
         len(rows),
-        "cli" if cli_rows is not None else "api",
+        source,
     )
-
-
-def _collect_via_cli(
-    repo_root: Path,
-    cfg: CoverageIngestConfig,
-    now: datetime,
-    runner: ToolRunner,
-    json_path: Path,
-) -> list[CoverageLineRow] | None:
-    args = [
-        "coverage",
-        "json",
-        f"--data-file={cfg.coverage_file}",
-        f"--output={json_path}",
-        "--quiet",
-    ]
-    result = runner.run("coverage", args, cwd=repo_root, output_path=json_path)
-    if not result.ok or not json_path.is_file():
-        return None
-    payload = runner.load_json(json_path) or {}
-    files = payload.get("files") if isinstance(payload, dict) else None
-    if not isinstance(files, dict):
-        return None
-
-    rows: list[CoverageLineRow] = []
-    for file_name, data in files.items():
-        if not isinstance(data, dict):
-            continue
-        executed = {int(line) for line in data.get("executed_lines", []) if isinstance(line, int)}
-        missing = {int(line) for line in data.get("missing_lines", []) if isinstance(line, int)}
-        all_lines = sorted(executed | missing)
-        file_path = Path(str(file_name)).resolve()
-        try:
-            rel_path = normalize_rel_path(file_path.relative_to(repo_root))
-        except ValueError:
-            continue
-        for line in all_lines:
-            is_covered = line in executed
-            rows.append(
-                CoverageLineRow(
-                    repo=cfg.repo,
-                    commit=cfg.commit,
-                    rel_path=rel_path,
-                    line=line,
-                    is_executable=True,
-                    is_covered=is_covered,
-                    hits=1 if is_covered else 0,
-                    context_count=0,
-                    created_at=now,
-                )
-            )
-    return rows if rows else None
 
 
 def _collect_via_api(

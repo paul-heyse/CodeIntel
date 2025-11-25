@@ -9,8 +9,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
-import duckdb
-
 from codeintel.analytics.graph_service import (
     GraphContext,
     bounded_simple_path_count,
@@ -20,7 +18,7 @@ from codeintel.analytics.graph_service import (
     dfg_path_lengths,
 )
 from codeintel.graphs.nx_views import _normalize_decimal
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 MAX_CFG_EIGEN_SAMPLE = 200
 MAX_DFG_CENTRALITY_SAMPLE = 100
@@ -117,7 +115,7 @@ def load_dfg_edges(
             FROM graph.dfg_edges
             """
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         return edges_by_fn
     for fn, src_id, dst_id, src_sym, dst_sym, via_phi, use_kind in rows:
         src_idx = _parse_block_idx(src_id)

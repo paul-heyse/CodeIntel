@@ -5,24 +5,26 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import shutil
-from asyncio.subprocess import PIPE
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-import duckdb
-
-from codeintel.config.models import ScipIngestConfig
+from codeintel.config.models import ScipIngestConfig, ToolsConfig
 from codeintel.config.schemas.sql_builder import GOID_CROSSWALK_UPDATE_SCIP, ensure_schema
-from codeintel.ingestion.common import ChangeSet
-from codeintel.storage.gateway import StorageGateway
+from codeintel.ingestion.change_tracker import (
+    ChangeTracker,
+    IncrementalIngestOps,
+    SupportsFullRebuild,
+    run_incremental_ingest,
+)
+from codeintel.ingestion.common import ModuleRecord
+from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.tool_service import ToolExecutionError, ToolNotFoundError, ToolService
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
-MISSING_BINARY_EXIT_CODE = 127
-DEFAULT_MAX_SHARDS = 50
 
 
 @dataclass(frozen=True)
@@ -42,15 +44,95 @@ class ScipRuntime:
     repo_root: Path
     scip_dir: Path
     doc_dir: Path
-    con: duckdb.DuckDBPyConnection
+    con: DuckDBConnection
+
+
+@dataclass
+class ScipIngestOps(SupportsFullRebuild[Path], IncrementalIngestOps[Path]):
+    """Incremental ingest operations for SCIP shards and symbol updates."""
+
+    cfg: ScipIngestConfig
+    runtime: ScipRuntime
+    service: ToolService
+    shards_dir: Path | None = None
+
+    dataset_name = "core.scip_symbols"
+
+    def __post_init__(self) -> None:
+        """Initialize shard output directory."""
+        self.shards_dir = self.runtime.scip_dir / "docs"
+        self.shards_dir.mkdir(parents=True, exist_ok=True)
+
+    def module_filter(self, module: ModuleRecord) -> bool:
+        """Restrict SCIP shard processing to Python files."""
+        return module.rel_path.endswith(".py")
+
+    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        """Remove shard artifacts and clear symbols for deleted files."""
+        if not rel_paths:
+            return
+        _remove_shards(self.runtime, rel_paths)
+        gateway.con.execute(
+            """
+            UPDATE core.goid_crosswalk
+            SET scip_symbol = NULL
+            WHERE repo = ? AND commit = ? AND file_path IN (SELECT * FROM UNNEST(?))
+            """,
+            [self.cfg.repo, self.cfg.commit, list(rel_paths)],
+        )
+        _register_scip_view_from_shards(self.runtime.con, self.shards_dir)
+
+    def process_module(self, module: ModuleRecord) -> list[Path]:
+        """Generate SCIP shard for a single module using ToolService."""
+        target = self.runtime.repo_root / module.rel_path
+        if not target.is_file():
+            log.warning("SCIP incremental: %s missing; skipping", target)
+            return []
+        shard_id = _shard_name(module.rel_path)
+        shard_scip = self.runtime.scip_dir / f"{shard_id}.scip"
+        shard_json = self.shards_dir / f"{shard_id}.json"
+        try:
+            asyncio.run(
+                self.service.run_scip_shard(
+                    self.runtime.repo_root,
+                    rel_paths=[module.rel_path],
+                    output_scip=shard_scip,
+                    output_json=shard_json,
+                )
+            )
+        except ToolExecutionError as exc:
+            log.warning("SCIP shard %s failed: %s", module.rel_path, exc)
+            return []
+        return [shard_json]
+
+    def insert_rows(self, gateway: StorageGateway, rows: Sequence[Path]) -> None:
+        """Update views and symbols from shard results."""
+        shard_paths = [path for path in rows if path is not None]
+        _register_scip_view_from_shards(self.runtime.con, self.shards_dir)
+        if shard_paths:
+            _update_scip_symbols_from_docs(gateway, shard_paths)
+
+    def run_full_rebuild(self, tracker: ChangeTracker) -> bool:
+        """Execute a full SCIP rebuild when incremental fallback triggers."""
+        index_scip = self.runtime.scip_dir / "index.scip"
+        index_json = self.runtime.scip_dir / "index.scip.json"
+        _run_full_scip(
+            gateway=tracker.gateway,
+            cfg=self.cfg,
+            runtime=self.runtime,
+            index_scip=index_scip,
+            index_json=index_json,
+            service=self.service,
+        )
+        return True
 
 
 def ingest_scip(
     gateway: StorageGateway,
     cfg: ScipIngestConfig,
     *,
-    change_set: ChangeSet | None = None,
-    changed_paths: Collection[str] | None = None,
+    tracker: ChangeTracker | None = None,
+    tool_service: ToolService | None = None,
 ) -> ScipIngestResult:
     """
     Run scip-python + scip print, register view, and backfill SCIP symbols.
@@ -69,12 +151,18 @@ def ingest_scip(
             status="unavailable", index_scip=None, index_json=None, reason=reason
         )
 
-    if cfg.scip_runner is not None and change_set is None and changed_paths is None:
+    if cfg.scip_runner is not None and tracker is None:
         return cast("ScipIngestResult", cfg.scip_runner(gateway, cfg))
 
-    probe_result = _probe_binaries(cfg)
-    if probe_result is not None:
-        return probe_result
+    tools_config = ToolsConfig(
+        scip_python_bin=cfg.scip_python_bin,
+        scip_bin=cfg.scip_bin,
+    )
+    runner = ToolRunner(
+        tools_config=tools_config,
+        cache_dir=cfg.build_dir / ".tool_cache",
+    )
+    service = tool_service or ToolService(runner, tools_config)
 
     scip_dir = cfg.build_dir.resolve() / "scip"
     scip_dir.mkdir(parents=True, exist_ok=True)
@@ -82,66 +170,44 @@ def ingest_scip(
     doc_dir.mkdir(parents=True, exist_ok=True)
     runtime = ScipRuntime(repo_root=repo_root, scip_dir=scip_dir, doc_dir=doc_dir, con=con)
 
-    incremental_paths, deleted_paths = _gather_changed_paths(change_set, changed_paths)
-    if incremental_paths or deleted_paths:
-        if _should_fallback_to_full(incremental_paths, deleted_paths, change_set):
-            log.info(
-                "Falling back to full SCIP index (shards=%d deletes=%d)",
-                len(incremental_paths),
-                len(deleted_paths),
-            )
-        else:
-            return _run_incremental_scip(
-                gateway, cfg, runtime, incremental_paths, deleted_paths
-            )
-        # fall through to full rebuild
-
-    index_scip = scip_dir / "index.scip"
-    index_json = scip_dir / "index.scip.json"
-    return _run_full_scip(gateway, cfg, runtime, index_scip, index_json)
-
-
-def _should_fallback_to_full(
-    incremental_paths: set[str],
-    deleted_paths: set[str],
-    change_set: ChangeSet | None,
-) -> bool:
-    """
-    Decide whether to skip incremental SCIP and run a full index instead.
-
-    Fallback when:
-      - No prior snapshot (change_set is None)
-      - Total touched paths exceeds configured shard threshold
-
-    Returns
-    -------
-    bool
-        True when a full index should be executed.
-    """
-    if change_set is None:
-        return True
-    max_shards = _max_shards()
-    touched = len(incremental_paths) + len(deleted_paths)
-    should_fallback = touched > max_shards
-    if should_fallback:
-        log.info(
-            "SCIP incremental fallback: touched=%d exceeds max_shards=%d",
-            touched,
-            max_shards,
-        )
-    return should_fallback
-
-
-def _max_shards() -> int:
-    env_value = os.getenv("CODEINTEL_SCIP_MAX_SHARDS")
-    if env_value:
+    result: ScipIngestResult | None = None
+    if tracker is None:
+        index_scip = scip_dir / "index.scip"
+        index_json = scip_dir / "index.scip.json"
         try:
-            value = int(env_value)
-            if value > 0:
-                return value
-        except ValueError:
-            log.warning("Ignoring invalid CODEINTEL_SCIP_MAX_SHARDS=%s", env_value)
-    return DEFAULT_MAX_SHARDS
+            result = _run_full_scip(gateway, cfg, runtime, index_scip, index_json, service)
+        except ToolNotFoundError as exc:
+            reason = f"SCIP tools unavailable: {exc}"
+            log.warning(reason)
+            result = ScipIngestResult(
+                status="unavailable", index_scip=None, index_json=None, reason=reason
+            )
+        except ToolExecutionError as exc:
+            reason = str(exc)
+            log.warning("SCIP ingest failed: %s", reason)
+            result = ScipIngestResult(
+                status="failed", index_scip=None, index_json=None, reason=reason
+            )
+    else:
+        ops = ScipIngestOps(cfg=cfg, runtime=runtime, service=service)
+        try:
+            run_incremental_ingest(tracker, ops)
+            result = ScipIngestResult(status="success", index_scip=None, index_json=None)
+        except ToolNotFoundError as exc:
+            reason = f"SCIP tools unavailable: {exc}"
+            log.warning(reason)
+            result = ScipIngestResult(
+                status="unavailable", index_scip=None, index_json=None, reason=reason
+            )
+        except ToolExecutionError as exc:
+            reason = str(exc)
+            log.warning("Incremental SCIP ingest failed: %s", reason)
+            result = ScipIngestResult(status="failed", index_scip=None, index_json=None, reason=reason)
+
+    if result is None:
+        message = "SCIP ingest did not produce a result"
+        raise RuntimeError(message)
+    return result
 
 
 def _copy_artifacts(index_scip: Path, index_json: Path, doc_dir: Path) -> None:
@@ -150,93 +216,21 @@ def _copy_artifacts(index_scip: Path, index_json: Path, doc_dir: Path) -> None:
     shutil.copy2(index_json, doc_dir / "index.scip.json")
 
 
-def _gather_changed_paths(
-    change_set: ChangeSet | None, changed_paths: Collection[str] | None
-) -> tuple[set[str], set[str]]:
-    incremental_paths: set[str] = set(changed_paths or [])
-    deleted_paths: set[str] = set()
-    if change_set is not None:
-        incremental_paths.update(
-            record.rel_path for record in change_set.added + change_set.modified
-        )
-        deleted_paths.update(record.rel_path for record in change_set.deleted)
-    return incremental_paths, deleted_paths
-
-
-def _run_incremental_scip(
-    gateway: StorageGateway,
-    cfg: ScipIngestConfig,
-    runtime: ScipRuntime,
-    incremental_paths: set[str],
-    deleted_paths: set[str],
-) -> ScipIngestResult:
-    shards_dir = runtime.scip_dir / "docs"
-    shards_dir.mkdir(parents=True, exist_ok=True)
-    for rel_path in deleted_paths:
-        shard_id = _shard_name(rel_path)
-        (runtime.scip_dir / f"{shard_id}.scip").unlink(missing_ok=True)
-        (shards_dir / f"{shard_id}.json").unlink(missing_ok=True)
-
-    shard_paths: list[Path] = []
-    for rel_path in sorted(incremental_paths):
-        target = runtime.repo_root / rel_path
-        if not target.is_file():
-            log.warning("SCIP incremental: %s missing; skipping", target)
-            continue
-        shard_id = _shard_name(rel_path)
-        shard_scip = runtime.scip_dir / f"{shard_id}.scip"
-        shard_json = shards_dir / f"{shard_id}.json"
-
-        if not _run_scip_python(
-            cfg.scip_python_bin,
-            runtime.repo_root,
-            shard_scip,
-            target_only=target,
-        ):
-            continue
-        if not _run_scip_print(cfg.scip_bin, shard_scip, shard_json):
-            continue
-        shard_paths.append(shard_json)
-
-    _register_scip_view_from_shards(runtime.con, shards_dir)
-    if shard_paths:
-        _update_scip_symbols_from_docs(gateway, shard_paths)
-    if deleted_paths:
-        gateway.con.execute(
-            """
-            UPDATE core.goid_crosswalk
-            SET scip_symbol = NULL
-            WHERE repo = ? AND commit = ? AND file_path IN (SELECT * FROM UNNEST(?))
-            """,
-            [cfg.repo, cfg.commit, sorted(deleted_paths)],
-        )
-    log.info(
-        "Incremental SCIP ingest complete for %s@%s (indexed=%d deleted=%d)",
-        cfg.repo,
-        cfg.commit,
-        len(shard_paths),
-        len(deleted_paths),
-    )
-    return ScipIngestResult(status="success", index_scip=None, index_json=None)
-
-
 def _run_full_scip(
     gateway: StorageGateway,
     cfg: ScipIngestConfig,
     runtime: ScipRuntime,
     index_scip: Path,
     index_json: Path,
+    service: ToolService,
 ) -> ScipIngestResult:
-    if not _run_scip_python(cfg.scip_python_bin, runtime.repo_root, index_scip, target_only=None):
-        message = f"SCIP indexing failed for {cfg.repo}@{cfg.commit}"
-        log.warning(message)
-        return ScipIngestResult(status="failed", index_scip=None, index_json=None, reason=message)
-    if not _run_scip_print(cfg.scip_bin, index_scip, index_json):
-        message = f"SCIP JSON export failed for {cfg.repo}@{cfg.commit}"
-        log.warning(message)
-        return ScipIngestResult(
-            status="failed", index_scip=index_scip, index_json=None, reason=message
+    asyncio.run(
+        service.run_scip_full(
+            runtime.repo_root,
+            output_scip=index_scip,
+            output_json=index_json,
         )
+    )
 
     writer = cfg.artifact_writer or _copy_artifacts
     writer(index_scip, index_json, runtime.doc_dir)
@@ -266,7 +260,7 @@ def _shard_name(rel_path: str) -> str:
     return rel_path.replace("/", "__").replace("\\", "__")
 
 
-def _register_scip_view_from_shards(con: duckdb.DuckDBPyConnection, shards_dir: Path) -> None:
+def _register_scip_view_from_shards(con: DuckDBConnection, shards_dir: Path) -> None:
     """Rebuild the scip_index_view from JSON shards."""
     con.execute("DROP VIEW IF EXISTS scip_index_view")
     shard_files = list(shards_dir.glob("*.json"))
@@ -280,76 +274,12 @@ def _register_scip_view_from_shards(con: duckdb.DuckDBPyConnection, shards_dir: 
     con.execute("CREATE VIEW scip_index_view AS SELECT * FROM scip_index_view_temp")
 
 
-def _probe_binaries(cfg: ScipIngestConfig) -> ScipIngestResult | None:
-    """
-    Ensure SCIP binaries exist and respond to --version.
-
-    Returns
-    -------
-    ScipIngestResult | None
-        Unavailable result when probes fail; otherwise None.
-    Returns None when binaries look usable; otherwise an unavailable result.
-    """
-    missing: list[str] = []
-    missing = [
-        binary for binary in (cfg.scip_python_bin, cfg.scip_bin) if shutil.which(binary) is None
-    ]
-    if missing:
-        reason = f"Missing SCIP binaries: {', '.join(missing)}"
-        log.warning(reason)
-        return ScipIngestResult(
-            status="unavailable", index_scip=None, index_json=None, reason=reason
-        )
-
-    for binary in (cfg.scip_python_bin, cfg.scip_bin):
-        code, _, stderr = _run_command([binary, "--version"], cwd=cfg.repo_root)
-        if code != 0:
-            reason = f"{binary} --version failed (code {code}): {stderr.strip()}"
-            log.warning(reason)
-            return ScipIngestResult(
-                status="unavailable", index_scip=None, index_json=None, reason=reason
-            )
-    return None
-
-
-def _run_scip_python(
-    binary: str, repo_root: Path, output_path: Path, target_only: Path | None
-) -> bool:
-    target_dir = repo_root / "src"
-    if not target_dir.is_dir():
-        target_dir = repo_root
-
-    args = [binary, "index", str(target_dir), "--output", str(output_path)]
-    if target_only is not None:
-        args.extend(["--target-only", str(target_only.relative_to(repo_root))])
-
-    code, stdout, stderr = _run_command(args, cwd=repo_root)
-    if code == 0:
-        if stderr:
-            log.debug("scip-python stderr: %s", stderr.strip())
-        return True
-    if code == MISSING_BINARY_EXIT_CODE:
-        log.warning("scip-python binary %r not found; skipping SCIP indexing", binary)
-        return False
-    log.warning("scip-python index failed (code %s): %s", code, stderr.strip() or stdout.strip())
-    return False
-
-
-def _run_scip_print(binary: str, index_scip: Path, output_json: Path) -> bool:
-    code, stdout, stderr = _run_command(
-        [binary, "print", "--json", str(index_scip)],
-        cwd=index_scip.parent,
-    )
-    if code == 0:
-        output_json.write_text(stdout or "", encoding="utf8")
-        if stderr:
-            log.debug("scip print stderr: %s", stderr.strip())
-        return True
-    if code == MISSING_BINARY_EXIT_CODE:
-        log.warning("scip binary %r not found; skipping SCIP JSON export", binary)
-        return False
-    log.warning("scip print failed (code %s): %s", code, stderr.strip() or stdout.strip())
-    return False
+def _remove_shards(runtime: ScipRuntime, rel_paths: Sequence[str]) -> None:
+    """Delete shard artifacts for removed files."""
+    for rel_path in rel_paths:
+        shard_id = _shard_name(rel_path)
+        (runtime.scip_dir / f"{shard_id}.scip").unlink(missing_ok=True)
+        (runtime.scip_dir / "docs" / f"{shard_id}.json").unlink(missing_ok=True)
 
 
 def _update_scip_symbols(gateway: StorageGateway, index_json: Path) -> None:
@@ -400,27 +330,6 @@ def _update_scip_symbols_from_docs(gateway: StorageGateway, shard_paths: Iterabl
         return
     con.executemany(GOID_CROSSWALK_UPDATE_SCIP, updates)
     log.info("Incrementally updated SCIP symbols for %d GOIDs", len(updates))
-
-
-def _run_command(args: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    async def _exec() -> tuple[int, str, str]:
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            cwd=str(cwd) if cwd is not None else None,
-            stdout=PIPE,
-            stderr=PIPE,
-        )
-        stdout_b, stderr_b = await proc.communicate()
-        return (
-            proc.returncode if proc.returncode is not None else 1,
-            stdout_b.decode(),
-            stderr_b.decode(),
-        )
-
-    try:
-        return asyncio.run(_exec())
-    except FileNotFoundError as exc:
-        return MISSING_BINARY_EXIT_CODE, "", str(exc)
 
 
 def _load_scip_documents(index_json: Path) -> list[dict[str, object]]:

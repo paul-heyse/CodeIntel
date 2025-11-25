@@ -9,8 +9,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import duckdb
-
 from codeintel.analytics.ast_utils import literal_int, literal_value, safe_unparse
 from codeintel.analytics.context import (
     AnalyticsContext,
@@ -23,7 +21,7 @@ from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.graphs.nx_views import _normalize_decimal
 from codeintel.ingestion.common import run_batch
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -141,7 +139,7 @@ def compute_function_contracts(
 
 
 def _load_docstrings(
-    con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
+    con: DuckDBConnection, *, repo: str, commit: str
 ) -> dict[tuple[str, str], dict[str, object]]:
     rows: Iterable[tuple[str, str, str, str]] = con.execute(
         """
@@ -161,7 +159,7 @@ def _load_docstrings(
 
 
 def _load_function_types(
-    con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
+    con: DuckDBConnection, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
     rows: Iterable[tuple[object, str | None, dict[str, object] | str | None]] = con.execute(
         """

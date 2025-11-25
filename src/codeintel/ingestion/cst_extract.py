@@ -4,24 +4,19 @@ from __future__ import annotations
 
 import logging
 import os
-import time
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 
 import libcst as cst
 from libcst import metadata
 
-from codeintel.ingestion.common import (
-    ChangeRequest,
-    ChangeSet,
-    ModuleRecord,
-    compute_changes,
-    iter_modules,
-    load_module_map,
-    read_module_source,
-    run_batch,
-    should_skip_empty,
+from codeintel.ingestion.change_tracker import (
+    ChangeTracker,
+    IncrementalIngestOps,
+    run_incremental_ingest,
 )
+from codeintel.ingestion.common import ModuleRecord, read_module_source, run_batch
 from codeintel.ingestion.cst_utils import CstCaptureConfig, CstCaptureVisitor
 from codeintel.storage.gateway import StorageGateway
 
@@ -103,7 +98,7 @@ def _flush_batch(
     return []
 
 
-def _resolve_worker_count() -> int:
+def _resolve_worker_count(max_workers: int | None = None) -> int:
     """
     Determine thread pool size with an environment override.
 
@@ -113,6 +108,8 @@ def _resolve_worker_count() -> int:
         Worker count respecting CODEINTEL_CST_WORKERS when set; otherwise a
         conservative default based on host CPU.
     """
+    if max_workers is not None and max_workers > 0:
+        return max_workers
     env_workers = os.getenv("CODEINTEL_CST_WORKERS")
     if env_workers:
         try:
@@ -148,107 +145,43 @@ def _executor(kind: str, max_workers: int) -> ThreadPoolExecutor | ProcessPoolEx
 
 
 def ingest_cst(
-    gateway: StorageGateway,
-    target: ChangeRequest,
-    change_set: ChangeSet | None = None,
+    tracker: ChangeTracker,
+    *,
+    max_workers: int | None = None,
+    executor_kind: str | None = None,
 ) -> None:
     """
     Parse modules listed in core.modules using LibCST and populate cst_nodes.
 
     Parameters
     ----------
-    gateway:
-        StorageGateway providing access to the DuckDB database.
-    target:
-        Change request describing repo, commit, and scan configuration.
-    change_set:
-        Optional precomputed change set; when provided, only touched modules are
-        re-indexed and deletions are applied per file.
+    tracker:
+        Shared change tracker providing access to change sets and gateway.
+    max_workers:
+        Optional pool size override for CST parsing.
+    executor_kind:
+        Optional override for executor selection ("thread" or "process").
     """
-    repo_root = target.repo_root.resolve()
-    module_map = load_module_map(
-        gateway, target.repo, target.commit, language=target.language, logger=log
-    )
-    if should_skip_empty(module_map, logger=log):
-        return
-    active_change_set = change_set or compute_changes(
-        gateway,
-        ChangeRequest(
-            repo=target.repo,
-            commit=target.commit,
-            repo_root=repo_root,
-            scan_config=target.scan_config,
-            language=target.language,
-            logger=log,
-        ),
-    )
-    to_reparse = list(active_change_set.added + active_change_set.modified)
-    deleted_paths = [record.rel_path for record in active_change_set.deleted]
-    if not to_reparse and not deleted_paths:
-        log.info("No CST changes detected for %s@%s", target.repo, target.commit)
-        return
-
-    total_modules = len(to_reparse) if to_reparse else (0 if deleted_paths else len(module_map))
-    exec_kind = os.getenv("CODEINTEL_CST_EXECUTOR", "process").lower()
-    worker_count = _resolve_worker_count()
-    log.info("Parsing CST for %d modules in %s@%s", total_modules, target.repo, target.commit)
-    log.info(
-        "CST ingest executor=%s workers=%d added=%d modified=%d deleted=%d",
-        exec_kind,
-        worker_count,
-        len(active_change_set.added),
-        len(active_change_set.modified),
-        len(active_change_set.deleted),
+    worker_count = _resolve_worker_count(max_workers)
+    exec_kind = (executor_kind or os.getenv("CODEINTEL_CST_EXECUTOR", "process")).lower()
+    ops = CstIngestOps(
+        repo=tracker.change_request.repo,
+        commit=tracker.change_request.commit,
+        executor_kind=exec_kind,
     )
 
-    cst_values: list[Row] = []
-    start_ts = time.perf_counter()
-    inserted_rows = 0
+    def _executor_factory() -> ThreadPoolExecutor | ProcessPoolExecutor:
+        return _executor(exec_kind, worker_count)
 
-    rel_paths = [record.rel_path for record in to_reparse + active_change_set.deleted]
-    _delete_existing_rows(gateway, target, rel_paths)
-
-    records: list[ModuleRecord]
-    if to_reparse:
-        records = to_reparse
-    elif deleted_paths:
-        records = []
-    else:
-        records = list(
-            iter_modules(
-                module_map,
-                repo_root,
-                logger=log,
-                scan_config=target.scan_config,
-            )
-        )
-
-    if records:
-        with _executor(exec_kind, worker_count) as pool:
-            for result in pool.map(_process_module, records):
-                if result.error is not None:
-                    log.warning("Failed to parse %s: %s", result.rel_path, result.error)
-                if result.rows:
-                    cst_values.extend(result.rows)
-                if len(cst_values) >= FLUSH_EVERY:
-                    inserted_rows += len(cst_values)
-                    cst_values = _flush_batch(gateway, cst_values)
-
-        inserted_rows += len(cst_values)
-        cst_values = _flush_batch(gateway, cst_values)
-    duration = time.perf_counter() - start_ts
-    log.info(
-        "CST extraction complete for %s@%s (%d modules, %d rows, %.2fs)",
-        target.repo,
-        target.commit,
-        total_modules,
-        inserted_rows,
-        duration,
-    )
+    run_incremental_ingest(tracker, ops, executor_factory=_executor_factory)
 
 
 def _delete_existing_rows(
-    gateway: StorageGateway, target: ChangeRequest, rel_paths: list[str]
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    rel_paths: list[str],
 ) -> None:
     """Remove stale CST rows prior to incremental inserts."""
     if rel_paths:
@@ -260,13 +193,63 @@ def _delete_existing_rows(
             )
             """,
             [
-                target.repo,
-                target.commit,
+                repo,
+                commit,
                 rel_paths,
             ],
         )
         return
-    run_batch(gateway, "core.cst_nodes", [], delete_params=[target.repo, target.commit])
+    run_batch(gateway, "core.cst_nodes", [], delete_params=[repo, commit])
+
+
+class CstIngestOps(IncrementalIngestOps[ModuleResult]):
+    """Incremental ingest operations for LibCST extraction."""
+
+    dataset_name = "core.cst_nodes"
+
+    def __init__(self, *, repo: str, commit: str, executor_kind: str) -> None:
+        self.repo = repo
+        self.commit = commit
+        self.executor_kind = executor_kind
+
+    def module_filter(self, module: ModuleRecord) -> bool:
+        return module.rel_path.endswith(".py")
+
+    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        if not rel_paths:
+            return
+        _delete_existing_rows(
+            gateway,
+            repo=self.repo,
+            commit=self.commit,
+            rel_paths=list(rel_paths),
+        )
+
+    def process_module(self, module: ModuleRecord) -> list[ModuleResult]:
+        return [_process_module(module)]
+
+    def insert_rows(self, gateway: StorageGateway, rows: Sequence[ModuleResult]) -> None:
+        batch: list[Row] = []
+        inserted_rows = 0
+        for result in rows:
+            if result.error is not None:
+                log.warning("Failed to parse %s: %s", result.rel_path, result.error)
+            if result.rows:
+                batch.extend(result.rows)
+            if len(batch) >= FLUSH_EVERY:
+                inserted_rows += len(batch)
+                batch = _flush_batch(gateway, batch)
+
+        if batch:
+            inserted_rows += len(batch)
+            _flush_batch(gateway, batch)
+        log.info(
+            "CST ingestion complete for %s@%s (rows=%d executor=%s)",
+            self.repo,
+            self.commit,
+            inserted_rows,
+            self.executor_kind,
+        )
 
 
 def _process_module(record: ModuleRecord) -> ModuleResult:

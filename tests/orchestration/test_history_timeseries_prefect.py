@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
-
 from codeintel.orchestration.prefect_flow import (
     HistoryTimeseriesTaskParams,
     t_history_timeseries,
 )
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.views import create_all_views
 from tests._helpers.assertions import expect_equal
 from tests._helpers.fakes import FakeToolRunner
@@ -63,11 +62,12 @@ def test_prefect_history_timeseries_step(tmp_path: Path) -> None:
     )
     t_history_timeseries.fn(params)
 
-    con = duckdb.connect(str(db_path), read_only=False)
-    create_all_views(con)
-    rows = con.execute(
+    gateway = open_gateway(StorageConfig(db_path=db_path, validate_schema=False))
+    create_all_views(gateway.con)
+    rows = gateway.con.execute(
         "SELECT commit FROM analytics.history_timeseries WHERE repo = ?",
         [repo],
     ).fetchall()
+    gateway.close()
     commits = {row[0] for row in rows}
     expect_equal(commits, {commit_new, commit_old})

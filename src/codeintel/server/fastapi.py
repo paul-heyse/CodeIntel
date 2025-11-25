@@ -8,11 +8,10 @@ import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Annotated, Literal
 
-import duckdb
 from fastapi import APIRouter, Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -45,7 +44,7 @@ from codeintel.mcp.models import (
 )
 from codeintel.services.factory import BackendResource, build_backend_resource
 from codeintel.services.query_service import HttpQueryService, LocalQueryService
-from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.gateway import DuckDBError, StorageConfig, StorageGateway, open_gateway
 
 LOG = logging.getLogger("codeintel.server.fastapi")
 
@@ -985,7 +984,7 @@ def build_health_router() -> APIRouter:
             con = backend.gateway.con
             try:
                 con.execute("SELECT 1;")
-            except duckdb.Error as exc:
+            except DuckDBError as exc:
                 message = "Backend connection failed health probe."
                 raise errors.backend_failure(message) from exc
         return {
@@ -1040,15 +1039,13 @@ def create_app(
             server_cfg = config.server
             if server_cfg.mode == "local_db":
                 db_path = server_cfg.db_path or Path(":memory:")
-                apply_schema = not server_cfg.read_only
-                ensure_views = not server_cfg.read_only
-                validate_schema = True
-                gw_cfg = StorageConfig(
-                    db_path=db_path,
-                    read_only=server_cfg.read_only,
-                    apply_schema=apply_schema,
-                    ensure_views=ensure_views,
-                    validate_schema=validate_schema,
+                base_cfg = (
+                    StorageConfig.for_readonly(db_path)
+                    if server_cfg.read_only
+                    else StorageConfig.for_ingest(db_path)
+                )
+                gw_cfg = replace(
+                    base_cfg,
                     repo=server_cfg.repo,
                     commit=server_cfg.commit,
                 )

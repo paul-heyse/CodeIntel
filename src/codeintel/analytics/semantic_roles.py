@@ -10,8 +10,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-import duckdb
-
 from codeintel.analytics.ast_utils import safe_unparse
 from codeintel.analytics.context import (
     AnalyticsContext,
@@ -24,7 +22,7 @@ from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.graphs.nx_views import _normalize_decimal
 from codeintel.ingestion.common import run_batch
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
@@ -316,7 +314,7 @@ def _build_function_role_rows(
 
 
 def _load_function_rows(
-    con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
+    con: DuckDBConnection, *, repo: str, commit: str
 ) -> list[tuple[int, str, str, int | None]]:
     rows: Iterable[tuple[object, str, str, int | None]] = con.execute(
         """
@@ -335,9 +333,7 @@ def _load_function_rows(
     return result
 
 
-def _load_effects(
-    con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
-) -> dict[int, dict[str, object]]:
+def _load_effects(con: DuckDBConnection, *, repo: str, commit: str) -> dict[int, dict[str, object]]:
     rows: Iterable[tuple[object, bool, bool, bool, bool, bool, bool, bool]] = con.execute(
         """
         SELECT
@@ -381,7 +377,7 @@ def _load_effects(
 
 
 def _load_contracts(
-    con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
+    con: DuckDBConnection, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
     rows: Iterable[tuple[object, object, object, object]] = con.execute(
         """
@@ -405,7 +401,7 @@ def _load_contracts(
 
 
 def _load_graph_metrics(
-    con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
+    con: DuckDBConnection, *, repo: str, commit: str
 ) -> dict[int, dict[str, int]]:
     rows: Iterable[tuple[object, int | None, int | None]] = con.execute(
         """
@@ -427,9 +423,7 @@ def _load_graph_metrics(
     return mapping
 
 
-def _load_module_meta(
-    con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
-) -> dict[str, ModuleRecord]:
+def _load_module_meta(con: DuckDBConnection, *, repo: str, commit: str) -> dict[str, ModuleRecord]:
     rows: Iterable[tuple[str, str, list[object] | str | None]] = con.execute(
         """
         SELECT module, path, tags

@@ -75,9 +75,7 @@ def _build_table_ddl_if_not_exists(table: TableSchema) -> str:
         col_lines.append(f"    PRIMARY KEY ({pk_cols})")
     cols_sql = ",\n".join(col_lines)
     return (
-        f"CREATE TABLE IF NOT EXISTS {_quote(table.schema)}.{_quote(table.name)} (\n"
-        f"{cols_sql}\n"
-        ");"
+        f"CREATE TABLE IF NOT EXISTS {_quote(table.schema)}.{_quote(table.name)} (\n{cols_sql}\n);"
     )
 
 

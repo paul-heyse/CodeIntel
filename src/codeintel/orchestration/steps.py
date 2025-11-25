@@ -101,6 +101,7 @@ from codeintel.graphs.goid_builder import build_goids
 from codeintel.graphs.import_graph import build_import_graph
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.graphs.validation import run_graph_validations
+from codeintel.ingestion.change_tracker import ChangeTracker
 from codeintel.ingestion.runner import (
     IngestionContext,
     run_ast_extract,
@@ -114,8 +115,14 @@ from codeintel.ingestion.runner import (
     run_typing_ingest,
 )
 from codeintel.ingestion.scip_ingest import ScipIngestResult
-from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.ingestion.source_scanner import (
+    ScanProfile,
+    default_code_profile,
+    default_config_profile,
+    profile_from_env,
+)
 from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.tool_service import ToolService
 from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
 from codeintel.storage.gateway import (
     StorageGateway,
@@ -169,8 +176,10 @@ class PipelineContext:
     commit: str
     gateway: StorageGateway
     tools: ToolsConfig | None = None
-    scan_config: ScanConfig | None = None
+    code_profile: ScanProfile | None = None
+    config_profile: ScanProfile | None = None
     tool_runner: ToolRunner | None = None
+    tool_service: ToolService | None = None
     coverage_loader: Callable[[TestCoverageConfig], Coverage | None] | None = None
     scip_runner: Callable[..., ScipIngestResult] | None = None
     cst_collector: Callable[..., list[CallGraphEdgeRow]] | None = None
@@ -184,11 +193,30 @@ class PipelineContext:
     function_overrides: FunctionAnalyticsOverrides | None = None
     analytics_context: AnalyticsContext | None = None
     graph_backend: GraphBackendConfig = field(default_factory=GraphBackendConfig)
+    change_tracker: ChangeTracker | None = None
 
     @property
     def document_output_dir(self) -> Path:
         """Document Output directory resolved under repo root."""
         return self.repo_root / "Document Output"
+
+
+def _resolve_code_profile(ctx: PipelineContext) -> ScanProfile:
+    """Return a cached code scan profile with env overrides applied."""
+    if ctx.code_profile is not None:
+        return ctx.code_profile
+    base = default_code_profile(ctx.repo_root)
+    ctx.code_profile = profile_from_env(base)
+    return ctx.code_profile
+
+
+def _resolve_config_profile(ctx: PipelineContext) -> ScanProfile:
+    """Return a cached config scan profile with env overrides applied."""
+    if ctx.config_profile is not None:
+        return ctx.config_profile
+    base = default_config_profile(ctx.repo_root)
+    ctx.config_profile = profile_from_env(base)
+    return ctx.config_profile
 
 
 def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
@@ -200,6 +228,8 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
     IngestionContext
         Normalized ingestion context for downstream runners.
     """
+    code_profile = _resolve_code_profile(ctx)
+    config_profile = _resolve_config_profile(ctx)
     return IngestionContext(
         repo_root=ctx.repo_root,
         repo=ctx.repo,
@@ -209,9 +239,12 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
         document_output_dir=ctx.document_output_dir,
         gateway=ctx.gateway,
         tools=ctx.tools,
-        scan_config=ctx.scan_config,
+        code_profile=code_profile,
+        config_profile=config_profile,
         tool_runner=ctx.tool_runner,
+        tool_service=ctx.tool_service,
         scip_runner=ctx.scip_runner,
+        change_tracker=ctx.change_tracker,
     )
 
 
@@ -339,7 +372,8 @@ class RepoScanStep:
     def run(self, ctx: PipelineContext) -> None:
         """Execute repository scan ingestion."""
         _log_step(self.name)
-        run_repo_scan(_ingestion_ctx(ctx))
+        tracker = run_repo_scan(_ingestion_ctx(ctx))
+        ctx.change_tracker = tracker
 
 
 @dataclass
@@ -749,7 +783,7 @@ class DataModelsStep:
         """Populate analytics.data_models."""
         _log_step(self.name)
         cfg = DataModelsConfig.from_paths(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
-        compute_data_models(ctx.gateway.con, cfg)
+        compute_data_models(ctx.gateway, cfg)
 
 
 @dataclass
@@ -1169,7 +1203,7 @@ class EntryPointsStep:
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
-            scan_config=ctx.scan_config,
+            scan_profile=_resolve_code_profile(ctx),
         )
         build_entrypoints(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
 
@@ -1189,7 +1223,7 @@ class ExternalDependenciesStep:
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
-            scan_config=ctx.scan_config,
+            scan_profile=_resolve_code_profile(ctx),
         )
         build_external_dependency_calls(
             ctx.gateway,

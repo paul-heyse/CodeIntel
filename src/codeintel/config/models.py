@@ -8,7 +8,7 @@ settings.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Self
@@ -21,7 +21,8 @@ from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFG
 
 if TYPE_CHECKING:
     from codeintel.ingestion.scip_ingest import ScipIngestResult
-    from codeintel.ingestion.source_scanner import ScanConfig
+    from codeintel.ingestion.source_scanner import ScanProfile
+    from codeintel.ingestion.tool_runner import ToolName
 
 
 class RepoConfig(BaseModel):
@@ -167,6 +168,14 @@ class ToolsConfig(BaseModel):
     scip_python_bin: str = Field("scip-python", description="Path to scip-python binary")
     scip_bin: str = Field("scip", description="Path to scip binary")
     pyright_bin: str = Field("pyright", description="Path to pyright binary")
+    pyrefly_bin: str = Field("pyrefly", description="Path to pyrefly binary")
+    ruff_bin: str = Field("ruff", description="Path to ruff binary")
+    coverage_bin: str = Field("coverage", description="Path to coverage.py CLI")
+    pytest_bin: str = Field("pytest", description="Path to pytest binary")
+    git_bin: str = Field("git", description="Path to git binary")
+    default_timeout_s: float = Field(
+        300.0, description="Default timeout (seconds) for external tool invocations"
+    )
 
     coverage_file: Path | None = Field(
         default=None,
@@ -185,6 +194,59 @@ class ToolsConfig(BaseModel):
         if isinstance(v, Path):
             return v.expanduser()
         return Path(str(v)).expanduser()
+
+    def resolve_path(self, tool: ToolName | str) -> str:
+        """
+        Return the configured executable path for a tool or fall back to its name.
+
+        Parameters
+        ----------
+        tool
+            Tool identifier (enum or string).
+
+        Returns
+        -------
+        str
+            Executable path or name to invoke.
+        """
+        name = str(tool)
+        mapping = {
+            "scip-python": self.scip_python_bin,
+            "scip": self.scip_bin,
+            "pyright": self.pyright_bin,
+            "pyrefly": self.pyrefly_bin,
+            "coverage": self.coverage_bin,
+            "pytest": self.pytest_bin,
+            "ruff": self.ruff_bin,
+            "git": self.git_bin,
+        }
+        return str(mapping.get(name, name))
+
+    def build_env(
+        self,
+        tool: ToolName | str,
+        *,
+        base_env: Mapping[str, str] | None = None,
+    ) -> dict[str, str]:
+        """
+        Construct an environment mapping for a tool invocation.
+
+        Parameters
+        ----------
+        tool
+            Tool identifier (unused but reserved for future tool-specific envs).
+        base_env
+            Baseline environment to merge into the returned mapping.
+
+        Returns
+        -------
+        dict[str, str]
+            Environment variables to supply to the subprocess call.
+        """
+        _ = tool
+        env: dict[str, str] = dict(base_env or {})
+        env.setdefault("CODEINTEL_TOOL_TIMEOUT", str(int(self.default_timeout_s)))
+        return env
 
 
 @dataclass(frozen=True)
@@ -1072,7 +1134,7 @@ class EntryPointsConfig:
     repo: str
     commit: str
     repo_root: Path
-    scan_config: ScanConfig | None = None
+    scan_profile: ScanProfile | None = None
     detect_fastapi: bool = True
     detect_flask: bool = True
     detect_click: bool = True
@@ -1090,7 +1152,7 @@ class EntryPointsConfig:
         repo: str,
         commit: str,
         repo_root: Path,
-        scan_config: ScanConfig | None = None,
+        scan_profile: ScanProfile | None = None,
         toggles: EntryPointDetectionToggles | None = None,
     ) -> Self:
         """
@@ -1106,7 +1168,7 @@ class EntryPointsConfig:
             repo=repo,
             commit=commit,
             repo_root=repo_root.resolve(),
-            scan_config=scan_config,
+            scan_profile=scan_profile,
             detect_fastapi=resolved_toggles.detect_fastapi,
             detect_flask=resolved_toggles.detect_flask,
             detect_click=resolved_toggles.detect_click,
@@ -1136,7 +1198,7 @@ class ExternalDependenciesConfig:
     repo_root: Path
     language: str = "python"
     dependency_patterns_path: Path | None = None
-    scan_config: ScanConfig | None = None
+    scan_profile: ScanProfile | None = None
 
     @classmethod
     def from_paths(
@@ -1145,7 +1207,7 @@ class ExternalDependenciesConfig:
         repo: str,
         commit: str,
         repo_root: Path,
-        scan_config: ScanConfig | None = None,
+        scan_profile: ScanProfile | None = None,
         options: DependencyPatternOptions | None = None,
     ) -> Self:
         """
@@ -1168,7 +1230,7 @@ class ExternalDependenciesConfig:
             repo_root=repo_root.resolve(),
             language=resolved_options.language,
             dependency_patterns_path=patterns,
-            scan_config=scan_config,
+            scan_profile=scan_profile,
         )
 
 

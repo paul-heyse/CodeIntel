@@ -11,10 +11,8 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-import duckdb
-
 from codeintel.config.schemas.sql_builder import PREPARED, ensure_schema
-from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
@@ -63,7 +61,7 @@ class ChangeRequest:
     commit: str
     repo_root: Path
     language: str = "python"
-    scan_config: ScanConfig | None = None
+    scan_profile: ScanProfile | None = None
     modules: Sequence[ModuleRecord] | None = None
     logger: logging.Logger | None = None
 
@@ -179,7 +177,7 @@ def compute_changes(
                 module_map,
                 request.repo_root,
                 logger=active_log,
-                scan_config=request.scan_config,
+                scan_profile=request.scan_profile,
             )
         )
 
@@ -197,7 +195,7 @@ def compute_changes(
     previous = {
         normalize_rel_path(str(rel_path)): (int(size), int(mtime_ns), str(content_hash))
         for rel_path, size, mtime_ns, content_hash in gateway.con.execute(
-        """
+            """
         WITH ranked AS (
             SELECT
                 rel_path,
@@ -212,7 +210,7 @@ def compute_changes(
         FROM ranked
         WHERE rn = 1
         """,
-        [request.repo, request.language],
+            [request.repo, request.language],
         ).fetchall()
     }
 
@@ -370,7 +368,7 @@ def iter_modules(
     repo_root: Path,
     *,
     logger: logging.Logger | None = None,
-    scan_config: ScanConfig | None = None,
+    scan_profile: ScanProfile | None = None,
 ) -> Iterator[ModuleRecord]:
     """
     Iterate modules with normalized paths and periodic progress logging.
@@ -384,10 +382,12 @@ def iter_modules(
         return iter(())
 
     active_log = logger or log
-    patterns = tuple(scan_config.include_patterns) if scan_config is not None else ("*",)
-    ignore_set = set(scan_config.ignore_dirs) if scan_config is not None else set()
-    log_every = scan_config.log_every if scan_config is not None else PROGRESS_LOG_EVERY
-    log_interval = scan_config.log_interval if scan_config is not None else PROGRESS_LOG_INTERVAL
+    patterns = tuple(scan_profile.include_globs) if scan_profile is not None else ("*",)
+    ignore_set = set(scan_profile.ignore_dirs) if scan_profile is not None else set()
+    log_every = scan_profile.log_every if scan_profile is not None else PROGRESS_LOG_EVERY
+    log_interval = (
+        scan_profile.log_interval if scan_profile is not None else PROGRESS_LOG_INTERVAL
+    )
     filtered_items: list[tuple[str, str]] = []
     for rel_path, module_name in module_map.items():
         parts = Path(rel_path).parts
@@ -444,7 +444,7 @@ def read_module_source(record: ModuleRecord, *, logger: logging.Logger | None = 
 
 
 def run_batch(
-    gateway: StorageGateway | duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     table_key: str,
     rows: Sequence[Sequence[object]],
     *,
@@ -457,7 +457,7 @@ def run_batch(
     Parameters
     ----------
     gateway
-        StorageGateway (preferred) or raw DuckDB connection.
+        StorageGateway providing DuckDB access.
     table_key
         Registry table key (e.g., "core.ast_nodes").
     rows
@@ -472,7 +472,7 @@ def run_batch(
     BatchResult
         Summary of rows inserted and elapsed time.
     """
-    active_con = gateway if isinstance(gateway, duckdb.DuckDBPyConnection) else gateway.con
+    active_con = gateway.con
     ensure_schema(active_con, table_key)
     stmts = PREPARED[table_key]
 
@@ -492,7 +492,7 @@ def run_batch(
 
 
 def insert_relation(
-    gateway: StorageGateway | duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     table_key: str,
     rows: Sequence[Sequence[object]],
     *,

@@ -12,13 +12,12 @@ from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
-
 from codeintel.analytics.ast_utils import call_name, literal_value, safe_unparse, snippet_from_lines
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.config.models import DataModelsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.ast_utils import parse_python_module
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import normalize_rel_path, relpath_to_module
 
 log = logging.getLogger(__name__)
@@ -610,7 +609,7 @@ def _build_field_specs(
     return fields, rel_hints
 
 
-def _load_class_metadata(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> list[ClassMeta]:
+def _load_class_metadata(con: DuckDBConnection, repo: str, commit: str) -> list[ClassMeta]:
     rows = con.execute(
         """
         SELECT g.goid_h128, g.rel_path, g.qualname, g.start_line, g.end_line, m.module
@@ -639,7 +638,7 @@ def _load_class_metadata(con: duckdb.DuckDBPyConnection, repo: str, commit: str)
 
 
 def _doc_map(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     *,
     repo: str,
     commit: str,
@@ -824,7 +823,7 @@ def _attach_relationships(models: list[ModelRecord]) -> None:
 
 
 def _persist_models(
-    con: duckdb.DuckDBPyConnection,
+    con: DuckDBConnection,
     cfg: DataModelsConfig,
     models: list[ModelRecord],
     now: datetime,
@@ -959,17 +958,18 @@ def _persist_models(
         )
 
 
-def compute_data_models(con: duckdb.DuckDBPyConnection, cfg: DataModelsConfig) -> None:
+def compute_data_models(gateway: StorageGateway, cfg: DataModelsConfig) -> None:
     """
     Populate analytics.data_models with extracted model definitions.
 
     Parameters
     ----------
-    con
-        DuckDB connection scoped to the target repository.
+    gateway
+        Storage gateway scoped to the target repository.
     cfg
         Data model extraction configuration.
     """
+    con = gateway.con
     ensure_schema(con, "analytics.data_models")
     ensure_schema(con, "analytics.data_model_fields")
     ensure_schema(con, "analytics.data_model_relationships")

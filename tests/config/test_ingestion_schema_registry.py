@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import duckdb
 import pytest
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
-def _table_exists(con: duckdb.DuckDBPyConnection, schema_name: str, table_name: str) -> bool:
+def _table_exists(con: DuckDBConnection, schema_name: str, table_name: str) -> bool:
     result = con.execute(
         """
         SELECT 1
@@ -22,7 +21,7 @@ def _table_exists(con: duckdb.DuckDBPyConnection, schema_name: str, table_name: 
     return result is not None
 
 
-def _columns_for(con: duckdb.DuckDBPyConnection, schema_name: str, table_name: str) -> set[str]:
+def _columns_for(con: DuckDBConnection, schema_name: str, table_name: str) -> set[str]:
     rows = con.execute(
         """
         SELECT column_name

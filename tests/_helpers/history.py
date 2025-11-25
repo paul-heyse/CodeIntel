@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
 import pandas as pd
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.schemas import apply_all_schemas
 
 
@@ -99,7 +99,9 @@ def create_snapshot_db(base_dir: Path, spec: SnapshotSpec) -> Path:
     """
     base_dir.mkdir(parents=True, exist_ok=True)
     db_path = base_dir / f"codeintel-{spec.commit}.duckdb"
-    con = duckdb.connect(str(db_path))
+    cfg = StorageConfig.for_ingest(db_path)
+    gateway = open_gateway(cfg)
+    con = gateway.con
     apply_all_schemas(con)
     fp_df = pd.DataFrame([_function_profile_row(spec)], columns=pd.Index(_FP_COLUMNS))
     mp_df = pd.DataFrame([_module_profile_row(spec)], columns=pd.Index(_MP_COLUMNS))
@@ -107,15 +109,16 @@ def create_snapshot_db(base_dir: Path, spec: SnapshotSpec) -> Path:
     con.register("mp_df", mp_df)
     con.execute("INSERT INTO analytics.function_profile BY NAME SELECT * FROM fp_df")
     con.execute("INSERT INTO analytics.module_profile BY NAME SELECT * FROM mp_df")
-    con.close()
+    gateway.close()
     return db_path
 
 
 def insert_function_history_row(
-    con: duckdb.DuckDBPyConnection,
+    gateway: StorageGateway,
     spec: SnapshotSpec,
 ) -> None:
     """Insert a minimal function_history row for validation helpers."""
+    con = gateway.con
     defaults: dict[str, object | None] = dict.fromkeys(_FUNCTION_HISTORY_COLUMNS, None)
     now = datetime.now(tz=UTC)
     defaults.update(

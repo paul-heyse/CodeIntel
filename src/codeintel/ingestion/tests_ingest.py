@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.config.models import TestsIngestConfig
+from codeintel.config.models import TestsIngestConfig, ToolsConfig
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
-from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
+from codeintel.ingestion.tool_service import ToolService
 from codeintel.models.rows import TestCatalogRowModel, test_catalog_row_to_tuple
 from codeintel.storage.gateway import StorageGateway
 from codeintel.types import PytestTestEntry
@@ -46,51 +48,6 @@ def _load_tests_from_report(report_path: Path) -> list[PytestTestEntry]:
         return []
 
     return tests
-
-
-def _resolve_report_path(
-    cfg: TestsIngestConfig, runner: ToolRunner | None, report_path: Path | None
-) -> Path | None:
-    """
-    Determine the pytest report path, generating one if a runner is provided.
-
-    Returns
-    -------
-    Path | None
-        Path to an existing report or None when unavailable.
-    """
-    repo_root = cfg.repo_root
-    default_report = cfg.pytest_report_path or _find_default_report(repo_root)
-    pytest_report_path = report_path or default_report
-
-    if runner is None:
-        return pytest_report_path
-
-    def _generate_report(target: Path, tool_runner: ToolRunner) -> Path | None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        result = tool_runner.run(
-            "pytest",
-            [
-                "pytest",
-                "--json-report",
-                f"--json-report-file={target}",
-            ],
-            cwd=repo_root,
-            output_path=target,
-        )
-        if result.returncode != 0:
-            log.warning("pytest report generation failed (code %s)", result.returncode)
-        return target if target.is_file() else None
-
-    if pytest_report_path is None:
-        target = default_report or repo_root / "build" / "test-results" / "pytest-report.json"
-        return _generate_report(target, runner)
-
-    if not pytest_report_path.is_file():
-        log.info("pytest report missing at %s; attempting generation", pytest_report_path)
-        return _generate_report(pytest_report_path, runner)
-
-    return pytest_report_path
 
 
 def _nodeid_to_path_and_qualname(nodeid: str) -> tuple[str, str | None]:
@@ -214,8 +171,10 @@ def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
 def ingest_tests(
     gateway: StorageGateway,
     cfg: TestsIngestConfig,
-    runner: ToolRunner | None = None,
     report_path: Path | None = None,
+    *,
+    tools: ToolsConfig | None = None,
+    tool_service: ToolService | None = None,
 ) -> None:
     """
     Ingest a pytest JSON report into analytics.test_catalog.
@@ -229,12 +188,37 @@ def ingest_tests(
         StorageGateway providing access to the DuckDB database.
     cfg:
         Tests ingestion configuration (paths and identifiers).
-    runner:
-        Optional ToolRunner for generating a pytest JSON report when one is missing.
     report_path:
         Optional explicit path to write a pytest JSON report.
+    tools:
+        Optional tool configuration overriding default executables.
+    tool_service:
+        Optional ToolService for running pytest; constructed from runner/tools when missing.
     """
-    pytest_report_path = _resolve_report_path(cfg, runner, report_path)
+    repo_root = cfg.repo_root
+    pytest_report_path = report_path or cfg.pytest_report_path or _find_default_report(repo_root)
+    active_tools = tools or ToolsConfig()
+    service = tool_service
+    if service is None:
+        runner = ToolRunner(
+            tools_config=active_tools, cache_dir=repo_root / "build" / ".tool_cache"
+        )
+        service = ToolService(runner, active_tools)
+
+    if pytest_report_path is None:
+        pytest_report_path = repo_root / "build" / "test-results" / "pytest-report.json"
+
+    if not pytest_report_path.is_file():
+        try:
+            asyncio.run(
+                service.run_pytest_report(
+                    repo_root,
+                    json_report_path=pytest_report_path,
+                )
+            )
+        except (ToolExecutionError, ToolNotFoundError) as exc:
+            log.warning("pytest report generation failed: %s", exc)
+            return
 
     if pytest_report_path is None or should_skip_missing_file(
         pytest_report_path, logger=log, label="pytest JSON report"

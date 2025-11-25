@@ -14,7 +14,12 @@ import yaml
 
 from codeintel.config.models import ConfigIngestConfig
 from codeintel.ingestion.common import run_batch
-from codeintel.ingestion.source_scanner import IGNORES, ScanConfig
+from codeintel.ingestion.source_scanner import (
+    ScanProfile,
+    SourceScanner,
+    default_config_profile,
+    profile_from_env,
+)
 from codeintel.models.rows import ConfigValueRow, config_value_to_tuple
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import repo_relpath
@@ -24,19 +29,9 @@ log = logging.getLogger(__name__)
 CONFIG_EXTENSIONS = {".yaml", ".yml", ".toml", ".json", ".ini", ".cfg", ".env"}
 
 
-def _iter_config_files(repo_root: Path, scan_cfg: ScanConfig | None = None) -> Iterable[Path]:
-    search_root = repo_root / "src"
-    if not search_root.is_dir():
-        search_root = repo_root
-
-    ignore_dirs = set(scan_cfg.ignore_dirs) if scan_cfg is not None else set(IGNORES)
-    for path in search_root.rglob("*"):
-        if not path.is_file():
-            continue
-        if any(part in ignore_dirs for part in path.relative_to(repo_root).parts):
-            continue
-        if path.suffix.lower() in CONFIG_EXTENSIONS:
-            yield path
+def _iter_config_files(profile: ScanProfile) -> Iterable[Path]:
+    scanner = SourceScanner(profile)
+    yield from scanner.iter_files()
 
 
 def _detect_format(path: Path) -> str:
@@ -169,7 +164,7 @@ def _flatten_config(
 def ingest_config_values(
     gateway: StorageGateway,
     cfg: ConfigIngestConfig,
-    scan_config: ScanConfig | None = None,
+    config_profile: ScanProfile | None = None,
 ) -> None:
     """
     Populate analytics.config_values from configuration files.
@@ -189,15 +184,18 @@ def ingest_config_values(
         StorageGateway providing access to the DuckDB database.
     cfg:
         Repository context for config ingestion.
-    scan_config:
-        Optional scan configuration to honor ignore/include rules while walking files.
+    config_profile:
+        Optional scan profile to honor ignore/include rules while walking files.
     """
     repo_root = cfg.repo_root
     repo = cfg.repo
     commit = cfg.commit
+    profile = config_profile or profile_from_env(default_config_profile(repo_root))
 
     rows: list[ConfigValueRow] = []
-    for path in _iter_config_files(repo_root, scan_cfg=scan_config):
+    for path in _iter_config_files(profile):
+        if path.suffix.lower() not in CONFIG_EXTENSIONS:
+            continue
         rel_path = repo_relpath(repo_root, path)
         fmt = _detect_format(path)
         data = _load_config(path, fmt)

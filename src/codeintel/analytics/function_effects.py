@@ -9,7 +9,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import duckdb
 import networkx as nx
 
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
@@ -28,7 +27,7 @@ from codeintel.graphs.function_catalog_service import (
 )
 from codeintel.graphs.nx_views import _normalize_decimal, load_call_graph
 from codeintel.ingestion.common import run_batch
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -269,9 +268,7 @@ def _compute_transitive_effects(
     return transitive
 
 
-def _unresolved_call_counts(
-    con: duckdb.DuckDBPyConnection, repo: str, commit: str
-) -> dict[int, int]:
+def _unresolved_call_counts(con: DuckDBConnection, repo: str, commit: str) -> dict[int, int]:
     counts: dict[int, int] = {}
     try:
         rows: Iterable[tuple[int, int]] = con.execute(
@@ -284,7 +281,7 @@ def _unresolved_call_counts(
             """,
             [repo, commit],
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         return counts
     for raw_goid, count in rows:
         goid = _normalize_decimal(raw_goid)

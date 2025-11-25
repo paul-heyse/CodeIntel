@@ -12,14 +12,18 @@ from typing import TypedDict
 import yaml
 
 from codeintel.config.models import RepoScanConfig
+from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.ingestion.common import (
     ChangeRequest,
-    ChangeSet,
     ModuleRecord,
-    compute_changes,
     run_batch,
 )
-from codeintel.ingestion.source_scanner import ScanConfig, SourceScanner
+from codeintel.ingestion.source_scanner import (
+    ScanProfile,
+    SourceScanner,
+    default_code_profile,
+    profile_from_env,
+)
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
 from codeintel.utils.paths import relpath_to_module, repo_relpath
@@ -109,10 +113,11 @@ def _tags_for_path(rel_path: str, tags_entries: list[TagEntry]) -> list[str]:
 def ingest_repo(
     gateway: StorageGateway,
     cfg: RepoScanConfig,
-    scan_config: ScanConfig | None = None,
+    code_profile: ScanProfile | None = None,
     *,
     apply_schema: bool = False,
-) -> None:
+    policy: IncrementalIngestPolicy | None = None,
+) -> ChangeTracker:
     """
     Scan the repository and populate module metadata tables.
 
@@ -128,14 +133,14 @@ def ingest_repo(
         StorageGateway providing access to the target DuckDB database.
     cfg:
         Repository context and optional tags_index override.
-    scan_config:
-        Optional shared scan configuration; defaults to Python-only scanning.
+    code_profile:
+        Optional shared scan profile; defaults to Python-only scanning with env overrides.
     apply_schema:
         When True, apply all schemas prior to ingestion (destructive). Default False.
     """
     con = gateway.con
     repo_root = cfg.repo_root
-    scan_cfg = scan_config or ScanConfig(repo_root=repo_root)
+    base_profile = code_profile or profile_from_env(default_code_profile(repo_root))
     tags_index_path = cfg.tags_index_path or (repo_root / "tags_index.yaml")
 
     log.info("Scanning repo %s at %s", cfg.repo, repo_root)
@@ -148,7 +153,7 @@ def ingest_repo(
     if tags_entries:
         _write_tags_index_table(gateway, tags_entries)
 
-    modules, module_records = _discover_modules(repo_root, scan_cfg, cfg, tags_entries)
+    modules, module_records = _discover_modules(repo_root, base_profile, cfg, tags_entries)
 
     log.info("Discovered %d Python modules", len(modules))
     if module_records:
@@ -194,43 +199,44 @@ def ingest_repo(
         scope=f"{cfg.repo}@{cfg.commit}",
     )
 
-    if module_records:
-        change_set: ChangeSet = compute_changes(
-            gateway,
-            ChangeRequest(
-                repo=cfg.repo,
-                commit=cfg.commit,
-                repo_root=repo_root,
-                language="python",
-                scan_config=scan_cfg,
-                modules=module_records,
-                logger=log,
-            ),
-        )
-        log.info(
-            "Module digest snapshot updated for %s@%s (added=%d modified=%d deleted=%d)",
-            cfg.repo,
-            cfg.commit,
-            len(change_set.added),
-            len(change_set.modified),
-            len(change_set.deleted),
-        )
-
+    tracker = ChangeTracker.create(
+        gateway,
+        ChangeRequest(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=repo_root,
+            language="python",
+            scan_profile=base_profile,
+            modules=module_records,
+            logger=log,
+        ),
+        modules=module_records,
+        policy=policy,
+    )
+    change_set = tracker.change_set
+    log.info(
+        "Module digest snapshot updated for %s@%s (added=%d modified=%d deleted=%d)",
+        cfg.repo,
+        cfg.commit,
+        len(change_set.added),
+        len(change_set.modified),
+        len(change_set.deleted),
+    )
     log.info("repo_map and modules written for %s@%s", cfg.repo, cfg.commit)
+    return tracker
 
 
 def _discover_modules(
     repo_root: Path,
-    scan_cfg: ScanConfig,
+    code_profile: ScanProfile,
     cfg: RepoScanConfig,
     tags_entries: list[TagEntry],
 ) -> tuple[dict[str, ModuleRow], list[ModuleRecord]]:
     modules: dict[str, ModuleRow] = {}
     module_records: list[ModuleRecord] = []
-    scanner = SourceScanner(scan_cfg)
+    scanner = SourceScanner(code_profile)
 
-    for idx, record in enumerate(scanner.iter_files(log), start=1):
-        path = record.path
+    for idx, path in enumerate(scanner.iter_files(), start=1):
         rel_path = repo_relpath(repo_root, path)
         module = relpath_to_module(rel_path)
         tags = _tags_for_path(rel_path, tags_entries)

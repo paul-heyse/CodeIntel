@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import duckdb
 import libcst as cst
 
 from codeintel.config.models import CallGraphConfig
@@ -24,7 +23,7 @@ from codeintel.graphs.function_index import FunctionSpan
 from codeintel.graphs.import_resolver import collect_aliases
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import CallGraphEdgeRow, CallGraphNodeRow, call_graph_node_to_tuple
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.utils.paths import normalize_rel_path, relpath_to_module
 
 log = logging.getLogger(__name__)
@@ -259,7 +258,7 @@ def _load_scip_candidates(gateway: StorageGateway, repo_root: Path) -> dict[str,
         rows = gateway.con.execute(
             "SELECT def_path, use_path FROM graph.symbol_use_edges"
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         rows = []
 
     mapping: dict[str, set[str]] = {}
@@ -293,7 +292,7 @@ def _load_def_goid_map(gateway: StorageGateway, *, repo: str, commit: str) -> di
             """,
             [repo, commit],
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         return {}
 
     mapping: dict[str, int] = {}

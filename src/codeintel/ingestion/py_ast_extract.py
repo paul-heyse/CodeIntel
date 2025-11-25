@@ -6,25 +6,17 @@ import ast
 import hashlib
 import logging
 import os
-import time
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from codeintel.config.models import PyAstIngestConfig
-from codeintel.ingestion.common import (
-    ChangeRequest,
-    ChangeSet,
-    ModuleRecord,
-    compute_changes,
-    iter_modules,
-    load_module_map,
-    read_module_source,
-    run_batch,
-    should_skip_empty,
+from codeintel.ingestion.change_tracker import (
+    ChangeTracker,
+    IncrementalIngestOps,
+    run_incremental_ingest,
 )
-from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.ingestion.common import ModuleRecord, read_module_source, run_batch
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -65,6 +57,14 @@ class AstRow:
     decorator_end_line: int | None
     decorators: list[str]
     docstring: str | None
+
+
+@dataclass
+class AstIngestResult:
+    """Rows collected for a single module."""
+
+    ast_rows: list[list[object]]
+    metric_row: list[object] | None
 
 
 class AstVisitor(ast.NodeVisitor):
@@ -256,13 +256,26 @@ class AstVisitor(ast.NodeVisitor):
         )
 
 
-def _collect_module_ast(record: ModuleRecord) -> tuple[list[list[object]], AstMetrics] | None:
+def _metric_row(metrics: AstMetrics) -> list[object]:
+    return [
+        metrics.rel_path,
+        metrics.node_count,
+        metrics.function_count,
+        metrics.class_count,
+        metrics.avg_depth,
+        metrics.max_depth,
+        metrics.complexity,
+        datetime.now(UTC),
+    ]
+
+
+def _collect_module_ast(record: ModuleRecord) -> AstIngestResult | None:
     """
     Parse a module from disk and return serialized AST rows and metrics.
 
     Returns
     -------
-    tuple[list[list[object]], AstMetrics] | None
+    AstIngestResult | None
         Serialized rows plus metrics, or None if parsing fails.
     """
     source = read_module_source(record, logger=log)
@@ -282,18 +295,21 @@ def _collect_module_ast(record: ModuleRecord) -> tuple[list[list[object]], AstMe
         log.warning("AST visit failed for %s: %s", record.file_path, exc)
         return None
 
-    return visitor.ast_rows, visitor.metrics
+    return AstIngestResult(ast_rows=visitor.ast_rows, metric_row=_metric_row(visitor.metrics))
 
 
-def _resolve_worker_count() -> int:
+def _resolve_worker_count(max_workers: int | None = None) -> int:
     """
     Resolve AST worker pool size.
 
     Returns
     -------
     int
-        Worker count derived from environment or CPU.
+        Worker count derived from environment, override, or CPU.
     """
+    if max_workers is not None and max_workers > 0:
+        return max_workers
+
     env_workers = os.getenv("CODEINTEL_AST_WORKERS")
     if env_workers:
         try:
@@ -308,7 +324,11 @@ def _resolve_worker_count() -> int:
 
 
 def _delete_existing_ast_rows(
-    gateway: StorageGateway, cfg: PyAstIngestConfig, rel_paths: list[str]
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    rel_paths: list[str],
 ) -> None:
     """Remove stale AST rows prior to incremental inserts."""
     if rel_paths:
@@ -316,141 +336,83 @@ def _delete_existing_ast_rows(
             """
             DELETE FROM core.ast_nodes
             WHERE path IN (
-                SELECT path FROM core.modules WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
+                SELECT path FROM core.modules
+                WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
             )
             """,
-            [cfg.repo, cfg.commit, rel_paths],
+            [repo, commit, rel_paths],
         )
         gateway.con.execute(
             """
             DELETE FROM core.ast_metrics
             WHERE rel_path IN (
-                SELECT path FROM core.modules WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
+                SELECT path FROM core.modules
+                WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
             )
             """,
-            [cfg.repo, cfg.commit, rel_paths],
+            [repo, commit, rel_paths],
         )
         return
-    run_batch(
-        gateway,
-        "core.ast_nodes",
-        [],
-        delete_params=[cfg.repo, cfg.commit],
-    )
-    run_batch(
-        gateway,
-        "core.ast_metrics",
-        [],
-        delete_params=[cfg.repo, cfg.commit],
-    )
+    run_batch(gateway, "core.ast_nodes", [], delete_params=[repo, commit])
+    run_batch(gateway, "core.ast_metrics", [], delete_params=[repo, commit])
+
+
+class AstIngestOps(IncrementalIngestOps[AstIngestResult]):
+    """Incremental ingest operations for AST nodes and metrics."""
+
+    dataset_name = "core.ast_nodes"
+
+    def __init__(self, *, repo: str, commit: str) -> None:
+        self.repo = repo
+        self.commit = commit
+
+    def module_filter(self, module: ModuleRecord) -> bool:
+        return module.rel_path.endswith(".py")
+
+    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        if not rel_paths:
+            return
+        _delete_existing_ast_rows(
+            gateway,
+            repo=self.repo,
+            commit=self.commit,
+            rel_paths=list(rel_paths),
+        )
+
+    def process_module(self, module: ModuleRecord) -> list[AstIngestResult]:
+        result = _collect_module_ast(module)
+        return [result] if result is not None else []
+
+    def insert_rows(self, gateway: StorageGateway, rows: Sequence[AstIngestResult]) -> None:
+        ast_values: list[list[object]] = []
+        metric_values: list[list[object]] = []
+        for row in rows:
+            ast_values.extend(row.ast_rows)
+            if row.metric_row is not None:
+                metric_values.append(row.metric_row)
+        if ast_values:
+            run_batch(gateway, "core.ast_nodes", ast_values, delete_params=None)
+        if metric_values:
+            run_batch(gateway, "core.ast_metrics", metric_values, delete_params=None)
 
 
 def ingest_python_ast(
-    gateway: StorageGateway,
-    cfg: PyAstIngestConfig,
-    scan_config: ScanConfig | None = None,
-    change_set: ChangeSet | None = None,
+    tracker: ChangeTracker,
+    *,
+    max_workers: int | None = None,
 ) -> None:
-    """
-    Parse modules listed in core.modules using the stdlib ast and populate tables.
-
-    Parameters
-    ----------
-    gateway:
-        StorageGateway providing access to the DuckDB database.
-    cfg:
-        Repository context (root, repo slug, commit).
-    scan_config:
-        Optional scan configuration controlling iteration logging cadence.
-    change_set:
-        Optional precomputed change set enabling incremental ingestion.
-
-    """
-    repo_root = cfg.repo_root.resolve()
-    module_map = load_module_map(gateway, cfg.repo, cfg.commit, language="python", logger=log)
-    if should_skip_empty(module_map, logger=log):
-        return
-    active_change_set = change_set or compute_changes(
-        gateway,
-        ChangeRequest(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=repo_root,
-            scan_config=scan_config,
-            logger=log,
-        ),
-    )
-    to_reparse = list(active_change_set.added + active_change_set.modified)
-    if not to_reparse and not active_change_set.deleted:
-        log.info("No AST changes detected for %s@%s", cfg.repo, cfg.commit)
-        return
-    total_modules = (
-        len(to_reparse) if to_reparse else (0 if active_change_set.deleted else len(module_map))
-    )
-    log.info("Parsing Python AST for %d modules in %s@%s", total_modules, cfg.repo, cfg.commit)
-    start_ts = time.perf_counter()
-
-    ast_values: list[list[object]] = []
-    metric_values: list[list[object]] = []
-
-    records: Sequence[ModuleRecord]
-    if to_reparse:
-        records = to_reparse
-    else:
-        records = tuple(
-            iter_modules(
-                module_map,
-                repo_root,
-                logger=log,
-                scan_config=scan_config,
-            )
-        )
-
-    _delete_existing_ast_rows(
-        gateway,
-        cfg,
-        [record.rel_path for record in to_reparse + active_change_set.deleted],
+    """Parse modules listed in core.modules using the stdlib ast and populate tables."""
+    worker_count = _resolve_worker_count(max_workers)
+    ops = AstIngestOps(
+        repo=tracker.change_request.repo,
+        commit=tracker.change_request.commit,
     )
 
-    if records:
-        with ProcessPoolExecutor(max_workers=_resolve_worker_count()) as pool:
-            for module_data in pool.map(_collect_module_ast, records):
-                if module_data is None:
-                    continue
-                ast_rows, metrics = module_data
-                ast_values.extend(ast_rows)
-                metric_values.append(
-                    [
-                        metrics.rel_path,
-                        metrics.node_count,
-                        metrics.function_count,
-                        metrics.class_count,
-                        metrics.avg_depth,
-                        metrics.max_depth,
-                        metrics.complexity,
-                        datetime.now(UTC),
-                    ]
-                )
+    def _executor_factory() -> ProcessPoolExecutor:
+        return ProcessPoolExecutor(max_workers=worker_count)
 
-    run_batch(
-        gateway,
-        "core.ast_nodes",
-        ast_values,
-        delete_params=None,
-    )
-    run_batch(
-        gateway,
-        "core.ast_metrics",
-        metric_values,
-        delete_params=None,
-    )
-
-    duration = time.perf_counter() - start_ts
-    log.info(
-        "AST extraction complete for %s@%s (%d modules, %d rows, %.2fs)",
-        cfg.repo,
-        cfg.commit,
-        total_modules,
-        len(ast_values),
-        duration,
+    run_incremental_ingest(
+        tracker,
+        ops,
+        executor_factory=_executor_factory,
     )

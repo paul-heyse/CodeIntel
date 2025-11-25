@@ -9,10 +9,9 @@ from collections.abc import Iterable
 from decimal import Decimal
 from typing import cast
 
-import duckdb
 import networkx as nx
 
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -284,7 +283,7 @@ def load_import_graph(
             """,
             [repo, commit],
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         module_rows = []
     if module_rows:
         for module_row in module_rows:
@@ -561,7 +560,7 @@ def load_symbol_function_graph(
               AND su.use_goid_h128 IS NOT NULL
             """,
         ).fetchall()
-    except duckdb.Error:
+    except DuckDBError:
         return nx.Graph()
 
     graph = nx.Graph()

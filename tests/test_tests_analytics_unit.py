@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-import duckdb
 import pytest
 from coverage import Coverage
 
@@ -19,13 +18,14 @@ from codeintel.analytics.tests.coverage_edges import (
     compute_test_coverage_edges,
 )
 from codeintel.config.models import TestCoverageConfig
+from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.fakes import FakeCoverage
 from tests._helpers.fixtures import ProvisionOptions, provision_graph_ready_repo
 
 cast("Any", TestCoverageConfig).__test__ = False  # prevent pytest from collecting the dataclass
 
 
-def _insert_goids(con: duckdb.DuckDBPyConnection, cfg: TestCoverageConfig) -> None:
+def _insert_goids(con: DuckDBConnection, cfg: TestCoverageConfig) -> None:
     now = datetime.now(UTC)
     con.execute(
         """
@@ -215,7 +215,7 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
     _assert_single_edge(con)
 
 
-def _assert_single_edge(con: duckdb.DuckDBPyConnection) -> None:
+def _assert_single_edge(con: DuckDBConnection) -> None:
     rows = con.execute(
         "SELECT test_goid_h128, coverage_ratio, last_status FROM analytics.test_coverage_edges"
     ).fetchall()
