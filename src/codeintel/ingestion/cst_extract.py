@@ -7,13 +7,15 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from pathlib import Path
 
 import libcst as cst
 from libcst import metadata
 
 from codeintel.ingestion.common import (
+    ChangeRequest,
+    ChangeSet,
     ModuleRecord,
+    compute_changes,
     iter_modules,
     load_module_map,
     read_module_source,
@@ -21,7 +23,6 @@ from codeintel.ingestion.common import (
     should_skip_empty,
 )
 from codeintel.ingestion.cst_utils import CstCaptureConfig, CstCaptureVisitor
-from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -79,6 +80,7 @@ def _flush_batch(
 ) -> list[Row]:
     if not rows:
         return []
+    row_count = len(rows)
     normalized_rows = [
         [
             rel_path,
@@ -97,6 +99,7 @@ def _flush_batch(
         normalized_rows,
         delete_params=None,
     )
+    log.debug("Flushed %d CST rows", row_count)
     return []
 
 
@@ -125,10 +128,8 @@ def _resolve_worker_count() -> int:
 
 def ingest_cst(
     gateway: StorageGateway,
-    repo_root: Path,
-    repo: str,
-    commit: str,
-    scan_config: ScanConfig | None = None,
+    target: ChangeRequest,
+    change_set: ChangeSet | None = None,
 ) -> None:
     """
     Parse modules listed in core.modules using LibCST and populate cst_nodes.
@@ -137,61 +138,105 @@ def ingest_cst(
     ----------
     gateway:
         StorageGateway providing access to the DuckDB database.
-    repo_root:
-        Repository root containing source files.
-    repo:
-        Repository slug.
-    commit:
-        Commit hash for the current run.
-    scan_config:
-        Optional scan configuration to tune logging cadence.
+    target:
+        Change request describing repo, commit, and scan configuration.
+    change_set:
+        Optional precomputed change set; when provided, only touched modules are
+        re-indexed and deletions are applied per file.
     """
-    repo_root = repo_root.resolve()
-    module_map = load_module_map(gateway, repo, commit, language="python", logger=log)
+    repo_root = target.repo_root.resolve()
+    module_map = load_module_map(
+        gateway, target.repo, target.commit, language=target.language, logger=log
+    )
     if should_skip_empty(module_map, logger=log):
         return
-    total_modules = len(module_map)
-    log.info("Parsing CST for %d modules in %s@%s", total_modules, repo, commit)
+    active_change_set = change_set or compute_changes(
+        gateway,
+        ChangeRequest(
+            repo=target.repo,
+            commit=target.commit,
+            repo_root=repo_root,
+            scan_config=target.scan_config,
+            language=target.language,
+            logger=log,
+        ),
+    )
+    to_reparse = list(active_change_set.added + active_change_set.modified)
+    deleted_paths = [record.rel_path for record in active_change_set.deleted]
+    if not to_reparse and not deleted_paths:
+        log.info("No CST changes detected for %s@%s", target.repo, target.commit)
+        return
+
+    total_modules = len(to_reparse) if to_reparse else (0 if deleted_paths else len(module_map))
+    log.info("Parsing CST for %d modules in %s@%s", total_modules, target.repo, target.commit)
 
     cst_values: list[Row] = []
-    records: list[ModuleRecord] = []
     start_ts = time.perf_counter()
+    inserted_rows = 0
 
-    # Clear existing data first if we are starting a new ingestion
-    # We can do this by running an empty batch with delete_params, or just relying on the first flush.
-    # Relying on first flush is safer if we yield at least one row, but if no rows are found,
-    # we still want to clear old data.
-    run_batch(gateway, "core.cst_nodes", [], delete_params=[repo, commit])
+    rel_paths = [record.rel_path for record in to_reparse + active_change_set.deleted]
+    _delete_existing_rows(gateway, target, rel_paths)
 
-    records = list(
-        iter_modules(
-            module_map,
-            repo_root,
-            logger=log,
-            scan_config=scan_config,
+    records: list[ModuleRecord]
+    if to_reparse:
+        records = to_reparse
+    elif deleted_paths:
+        records = []
+    else:
+        records = list(
+            iter_modules(
+                module_map,
+                repo_root,
+                logger=log,
+                scan_config=target.scan_config,
+            )
         )
-    )
 
-    worker_count = _resolve_worker_count()
-    with ThreadPoolExecutor(max_workers=worker_count) as pool:
-        for result in pool.map(_process_module, records):
-            if result.error is not None:
-                log.warning("Failed to parse %s: %s", result.rel_path, result.error)
-            if result.rows:
-                cst_values.extend(result.rows)
-            if len(cst_values) >= FLUSH_EVERY:
-                cst_values = _flush_batch(gateway, cst_values)
+    if records:
+        worker_count = _resolve_worker_count()
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            for result in pool.map(_process_module, records):
+                if result.error is not None:
+                    log.warning("Failed to parse %s: %s", result.rel_path, result.error)
+                if result.rows:
+                    cst_values.extend(result.rows)
+                if len(cst_values) >= FLUSH_EVERY:
+                    inserted_rows += len(cst_values)
+                    cst_values = _flush_batch(gateway, cst_values)
 
-    _flush_batch(gateway, cst_values)
+        inserted_rows += len(cst_values)
+        cst_values = _flush_batch(gateway, cst_values)
     duration = time.perf_counter() - start_ts
     log.info(
         "CST extraction complete for %s@%s (%d modules, %d rows, %.2fs)",
-        repo,
-        commit,
+        target.repo,
+        target.commit,
         total_modules,
-        len(cst_values),
+        inserted_rows,
         duration,
     )
+
+
+def _delete_existing_rows(
+    gateway: StorageGateway, target: ChangeRequest, rel_paths: list[str]
+) -> None:
+    """Remove stale CST rows prior to incremental inserts."""
+    if rel_paths:
+        gateway.con.execute(
+            """
+            DELETE FROM core.cst_nodes
+            WHERE path IN (
+                SELECT path FROM core.modules WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
+            )
+            """,
+            [
+                target.repo,
+                target.commit,
+                rel_paths,
+            ],
+        )
+        return
+    run_batch(gateway, "core.cst_nodes", [], delete_params=[target.repo, target.commit])
 
 
 def _process_module(record: ModuleRecord) -> ModuleResult:

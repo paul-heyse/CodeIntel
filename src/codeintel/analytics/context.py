@@ -379,9 +379,7 @@ def build_analytics_context(
         missing_function_goids=missing,
         call_graph=cast("nx.DiGraph", graphs["call_graph"]),
         import_graph=(
-            graphs["import_graph"]
-            if isinstance(graphs["import_graph"], nx.DiGraph)
-            else None
+            graphs["import_graph"] if isinstance(graphs["import_graph"], nx.DiGraph) else None
         ),
         symbol_module_graph=graphs["symbol_module_graph"],
         symbol_function_graph=graphs["symbol_function_graph"],

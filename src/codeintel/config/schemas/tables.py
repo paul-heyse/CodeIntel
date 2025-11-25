@@ -163,6 +163,25 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         ),
         description="Discovered modules per repo/commit",
     ),
+    "core.file_state": TableSchema(
+        schema="core",
+        name="file_state",
+        columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("language", "VARCHAR", nullable=False),
+            Column("size_bytes", "BIGINT", nullable=False),
+            Column("mtime_ns", "BIGINT", nullable=False),
+            Column("content_hash", "VARCHAR", nullable=False),
+        ],
+        primary_key=("repo", "commit", "rel_path", "language"),
+        indexes=(
+            Index("idx_core_file_state_path", ("rel_path",)),
+            Index("idx_core_file_state_repo_commit", ("repo", "commit")),
+        ),
+        description="Per-commit file digests used for incremental ingestion",
+    ),
     "core.repo_map": TableSchema(
         schema="core",
         name="repo_map",

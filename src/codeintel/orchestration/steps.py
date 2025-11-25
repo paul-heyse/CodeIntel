@@ -14,7 +14,7 @@ import duckdb
 from coverage import Coverage
 
 from codeintel.analytics.ast_metrics import build_hotspots
-from codeintel.analytics.cfg_dfg_metrics import compute_cfg_metrics, compute_dfg_metrics
+from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.config_data_flow import compute_config_data_flow
 from codeintel.analytics.config_graph_metrics import compute_config_graph_metrics
 from codeintel.analytics.context import (
@@ -56,9 +56,12 @@ from codeintel.analytics.symbol_graph_metrics import (
     compute_symbol_graph_metrics_functions,
     compute_symbol_graph_metrics_modules,
 )
-from codeintel.analytics.test_graph_metrics import compute_test_graph_metrics
-from codeintel.analytics.test_profiles import build_behavioral_coverage, build_test_profile
-from codeintel.analytics.tests_analytics import compute_test_coverage_edges
+from codeintel.analytics.tests import (
+    build_behavioral_coverage,
+    build_test_profile,
+    compute_test_coverage_edges,
+    compute_test_graph_metrics,
+)
 from codeintel.config.models import (
     BehavioralCoverageConfig,
     CallGraphConfig,

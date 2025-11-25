@@ -8,7 +8,7 @@ from typing import Final
 
 from coverage import Coverage
 
-from codeintel.analytics.tests_analytics import compute_test_coverage_edges
+from codeintel.analytics.tests import compute_test_coverage_edges
 from codeintel.config.models import (
     CallGraphConfig,
     CFGBuilderConfig,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
 
@@ -12,28 +12,17 @@ import networkx as nx
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.graph_service import (
     GraphContext,
-    centrality_undirected,
-    community_ids,
+    ProjectionMetrics,
+    build_projection_graph,
     log_empty_graph,
     log_projection_skipped,
+    projection_metrics,
 )
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import load_config_module_bipartite
 from codeintel.storage.gateway import StorageGateway
 
 MAX_BETWEENNESS_NODES = 1000
-MAX_COMMUNITY_NODES = 5000
-
-
-@dataclass(frozen=True)
-class ProjectionMetrics:
-    """Centrality bundle for a projected bipartite graph."""
-
-    deg: dict[tuple[str, str], int]
-    wdeg: dict[tuple[str, str], float]
-    bet: dict[tuple[str, str], float]
-    clo: dict[tuple[str, str], float]
-    comm_map: dict[tuple[str, str], int]
 
 
 def _clear_config_tables(gateway: StorageGateway, repo: str, commit: str) -> None:
@@ -56,46 +45,6 @@ def _clear_config_tables(gateway: StorageGateway, repo: str, commit: str) -> Non
     )
 
 
-def _build_projection(graph: nx.Graph, nodes: set[tuple[str, str]]) -> nx.Graph:
-    if not nodes:
-        log_projection_skipped(
-            "config_projection",
-            "empty partition",
-            nodes=0,
-            graph_nodes=graph.number_of_nodes(),
-        )
-        return nx.Graph()
-    proj = nx.Graph()
-    proj.add_nodes_from(nodes)
-    if len(nodes) <= 1:
-        log_projection_skipped(
-            "config_projection",
-            "partition too small",
-            nodes=len(nodes),
-            graph_nodes=graph.number_of_nodes(),
-        )
-        return proj
-    return nx.bipartite.weighted_projected_graph(graph, nodes)
-
-
-def _projection_metrics(proj: nx.Graph, ctx: GraphContext) -> ProjectionMetrics:
-    if proj.number_of_nodes() == 0:
-        return ProjectionMetrics(deg={}, wdeg={}, bet={}, clo={}, comm_map={})
-    centrality = centrality_undirected(proj, ctx, weight=ctx.pagerank_weight)
-    deg = {node: int(sum(1 for _ in proj.neighbors(node))) for node in proj.nodes}
-    wdeg = {
-        node: float(sum(data.get("weight", 1.0) for _, _, data in proj.edges(node, data=True)))
-        for node in proj.nodes
-    }
-    return ProjectionMetrics(
-        deg=deg,
-        wdeg=wdeg,
-        bet=centrality.betweenness,
-        clo=centrality.closeness,
-        comm_map=community_ids(proj, weight=ctx.pagerank_weight),
-    )
-
-
 def _projection_rows(
     *,
     proj: nx.Graph,
@@ -109,11 +58,11 @@ def _projection_rows(
             repo,
             commit,
             node[1],
-            metrics.deg.get(node, 0),
-            metrics.wdeg.get(node, 0.0),
-            metrics.bet.get(node, 0.0),
-            metrics.clo.get(node, 0.0),
-            metrics.comm_map.get(node),
+            metrics.degree.get(node, 0),
+            metrics.weighted_degree.get(node, 0.0),
+            metrics.betweenness.get(node, 0.0),
+            metrics.closeness.get(node, 0.0),
+            metrics.community_id.get(node),
             now,
         )
         for node in proj.nodes
@@ -136,13 +85,23 @@ def _projection_payload(
     *,
     graph: nx.Graph,
     nodes: set[tuple[str, str]],
-    snapshot: tuple[str, str],
     created_at: datetime,
     ctx: GraphContext,
+    label: str,
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
-    repo, commit = snapshot
-    proj = _build_projection(graph, nodes)
-    metrics = _projection_metrics(proj, ctx)
+    repo, commit = ctx.repo, ctx.commit
+    proj = build_projection_graph(
+        graph,
+        nodes,
+        label=label,
+    )
+    metrics = projection_metrics(
+        graph,
+        nodes,
+        ctx,
+        projection=proj,
+        label=label,
+    )
     return _projection_rows(
         proj=proj,
         repo=repo,
@@ -206,16 +165,16 @@ def compute_config_graph_metrics(
     key_rows, key_edges = _projection_payload(
         graph=graph,
         nodes=keys,
-        snapshot=(repo, commit),
         created_at=created_at,
         ctx=ctx,
+        label="config_keys",
     )
     module_rows, module_edges = _projection_payload(
         graph=graph,
         nodes=modules,
-        snapshot=(repo, commit),
         created_at=created_at,
         ctx=ctx,
+        label="config_modules",
     )
 
     _clear_config_tables(gateway, repo, commit)

@@ -43,6 +43,16 @@ CST_NODES_COLUMNS = [
     "qnames",
 ]
 
+FILE_STATE_COLUMNS = [
+    "repo",
+    "commit",
+    "rel_path",
+    "language",
+    "size_bytes",
+    "mtime_ns",
+    "content_hash",
+]
+
 COVERAGE_LINES_COLUMNS = [
     "repo",
     "commit",
@@ -115,6 +125,7 @@ def _assert_columns(table_key: str, columns: list[str]) -> None:
 _assert_columns("core.ast_nodes", AST_NODES_COLUMNS)
 _assert_columns("core.ast_metrics", AST_METRICS_COLUMNS)
 _assert_columns("core.cst_nodes", CST_NODES_COLUMNS)
+_assert_columns("core.file_state", FILE_STATE_COLUMNS)
 _assert_columns("analytics.coverage_lines", COVERAGE_LINES_COLUMNS)
 _assert_columns("analytics.test_catalog", TEST_CATALOG_COLUMNS)
 _assert_columns("analytics.config_values", CONFIG_VALUES_COLUMNS)
@@ -142,6 +153,13 @@ CST_NODES_DELETE = "DELETE FROM core.cst_nodes WHERE path IN (SELECT path FROM c
 CST_NODES_INSERT = (
     "INSERT INTO core.cst_nodes ("
     "path, node_id, kind, span, text_preview, parents, qnames"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?)"
+)
+
+FILE_STATE_DELETE = "DELETE FROM core.file_state WHERE repo = ? AND commit = ? AND language = ?"
+FILE_STATE_INSERT = (
+    "INSERT INTO core.file_state ("
+    "repo, commit, rel_path, language, size_bytes, mtime_ns, content_hash"
     ") VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 
@@ -179,6 +197,9 @@ __all__ = [
     "CST_NODES_COLUMNS",
     "CST_NODES_DELETE",
     "CST_NODES_INSERT",
+    "FILE_STATE_COLUMNS",
+    "FILE_STATE_DELETE",
+    "FILE_STATE_INSERT",
     "TEST_CATALOG_COLUMNS",
     "TEST_CATALOG_DELETE",
     "TEST_CATALOG_INSERT",

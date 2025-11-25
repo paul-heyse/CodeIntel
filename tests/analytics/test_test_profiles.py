@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.test_profiles import (
+from codeintel.analytics.tests.profiles import (
     ImportanceInputs,
     IoFlags,
     TestAstInfo,

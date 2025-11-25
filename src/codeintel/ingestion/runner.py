@@ -31,6 +31,12 @@ from codeintel.ingestion import (
     tests_ingest,
     typing_ingest,
 )
+from codeintel.ingestion.common import (
+    ChangeRequest,
+    ChangeSet,
+    compute_changes,
+    get_cached_change_set,
+)
 from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.ingestion.tool_runner import ToolRunner
@@ -113,6 +119,29 @@ def _log_step_done(step: str, start_ts: float, ctx: IngestionContext) -> None:
     log.info("ingest done: %s repo=%s commit=%s (%.2fs)", step, ctx.repo, ctx.commit, duration)
 
 
+def _resolve_change_set(ctx: IngestionContext) -> ChangeSet:
+    """
+    Return a cached change set or compute a fresh snapshot for the repo.
+
+    Returns
+    -------
+    ChangeSet
+        Cached change set when available; otherwise a freshly computed one.
+    """
+    cached = get_cached_change_set(ctx.repo, ctx.commit)
+    if cached is not None:
+        return cached
+    return compute_changes(
+        ctx.gateway,
+        ChangeRequest(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            scan_config=ctx.scan_config,
+        ),
+    )
+
+
 def run_repo_scan(ctx: IngestionContext) -> None:
     """Ingest repository structure and modules using the provided storage gateway."""
     start = _log_step_start("repo_scan", ctx)
@@ -148,7 +177,8 @@ def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
         scip_runner=ctx.scip_runner,
         artifact_writer=ctx.artifact_writer,
     )
-    result = scip_ingest.ingest_scip(ctx.gateway, cfg=cfg)
+    change_set = _resolve_change_set(ctx)
+    result = scip_ingest.ingest_scip(ctx.gateway, cfg=cfg, change_set=change_set)
     _log_step_done("scip_ingest", start, ctx)
     return result
 
@@ -156,12 +186,16 @@ def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
 def run_cst_extract(ctx: IngestionContext) -> None:
     """Extract LibCST nodes for the repository using the gateway connection."""
     start = _log_step_start("cst_extract", ctx)
+    change_set = _resolve_change_set(ctx)
     cst_extract.ingest_cst(
         ctx.gateway,
-        repo_root=ctx.repo_root,
-        repo=ctx.repo,
-        commit=ctx.commit,
-        scan_config=ctx.scan_config,
+        ChangeRequest(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            scan_config=ctx.scan_config,
+        ),
+        change_set=change_set,
     )
     _log_step_done("cst_extract", start, ctx)
 
@@ -169,12 +203,15 @@ def run_cst_extract(ctx: IngestionContext) -> None:
 def run_ast_extract(ctx: IngestionContext) -> None:
     """Extract stdlib AST nodes and metrics using the gateway connection."""
     start = _log_step_start("ast_extract", ctx)
+    change_set = _resolve_change_set(ctx)
     cfg = PyAstIngestConfig.from_paths(
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
     )
-    py_ast_extract.ingest_python_ast(ctx.gateway, cfg=cfg, scan_config=ctx.scan_config)
+    py_ast_extract.ingest_python_ast(
+        ctx.gateway, cfg=cfg, scan_config=ctx.scan_config, change_set=change_set
+    )
     _log_step_done("ast_extract", start, ctx)
 
 

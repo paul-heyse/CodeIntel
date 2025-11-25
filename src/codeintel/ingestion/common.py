@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import logging
 import time
 from collections.abc import Iterator, Sequence
@@ -21,6 +22,7 @@ log = logging.getLogger(__name__)
 # Progress logging cadence defaults
 PROGRESS_LOG_INTERVAL = 5.0
 PROGRESS_LOG_EVERY = 50
+_CHANGESET_CACHE: dict[tuple[str, str], ChangeSet] = {}
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,28 @@ class BatchResult:
     duration_s: float
 
 
+@dataclass(frozen=True)
+class ChangeSet:
+    """Added/modified/deleted modules detected for an ingest cycle."""
+
+    added: list[ModuleRecord]
+    modified: list[ModuleRecord]
+    deleted: list[ModuleRecord]
+
+
+@dataclass(frozen=True)
+class ChangeRequest:
+    """Inputs required to compute a change set."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    language: str = "python"
+    scan_config: ScanConfig | None = None
+    modules: Sequence[ModuleRecord] | None = None
+    logger: logging.Logger | None = None
+
+
 def log_progress(op: str, *, scope: str, table: str, rows: int, duration_s: float) -> None:
     """Structured ingest log entry."""
     log.info(
@@ -53,6 +77,144 @@ def log_progress(op: str, *, scope: str, table: str, rows: int, duration_s: floa
         rows,
         duration_s,
     )
+
+
+def _file_digest(path: Path) -> tuple[int, int, str]:
+    """
+    Compute a stable digest for a file.
+
+    Returns
+    -------
+    tuple[int, int, str]
+        Size in bytes, mtime in nanoseconds, and a blake2b hex digest.
+    """
+    stat_result = path.stat()
+    digest = hashlib.blake2b(path.read_bytes(), digest_size=16).hexdigest()
+    return stat_result.st_size, stat_result.st_mtime_ns, digest
+
+
+def _cache_change_set(repo: str, commit: str, change_set: ChangeSet) -> None:
+    """Cache a change set for reuse within the current process."""
+    _CHANGESET_CACHE[repo, commit] = change_set
+
+
+def get_cached_change_set(repo: str, commit: str) -> ChangeSet | None:
+    """
+    Return a previously computed change set for a repo/commit.
+
+    Returns
+    -------
+    ChangeSet | None
+        Cached change set when present; otherwise None.
+    """
+    return _CHANGESET_CACHE.get((repo, commit))
+
+
+def compute_changes(
+    gateway: StorageGateway,
+    request: ChangeRequest,
+) -> ChangeSet:
+    """
+    Detect added/modified/deleted modules and refresh core.file_state.
+
+    This function always updates the file_state snapshot for the provided
+    repo/commit/language so subsequent runs compare against the latest state.
+
+    Returns
+    -------
+    ChangeSet
+        Detected additions, modifications, and deletions.
+    """
+    active_log = request.logger or log
+    repo_root = request.repo_root.resolve()
+    module_map = (
+        {record.rel_path: record.module_name for record in request.modules}
+        if request.modules is not None
+        else load_module_map(
+            gateway,
+            request.repo,
+            request.commit,
+            language=request.language,
+            logger=active_log,
+        )
+    )
+    if should_skip_empty(module_map, logger=active_log):
+        change_set = ChangeSet(added=[], modified=[], deleted=[])
+        _cache_change_set(request.repo, request.commit, change_set)
+        return change_set
+
+    records: Sequence[ModuleRecord]
+    if request.modules is not None:
+        records = request.modules
+    else:
+        repo_root = repo_root.resolve()
+        records = tuple(
+            iter_modules(
+                module_map,
+                repo_root,
+                logger=active_log,
+                scan_config=request.scan_config,
+            )
+        )
+
+    current: dict[str, tuple[ModuleRecord, int, int, str]] = {}
+    for record in records:
+        try:
+            size, mtime_ns, digest = _file_digest(record.file_path)
+        except OSError as exc:
+            active_log.warning("Failed to stat %s: %s", record.file_path, exc)
+            continue
+        normalized_rel = normalize_rel_path(record.rel_path)
+        current[normalized_rel] = (record, size, mtime_ns, digest)
+
+    ensure_schema(gateway.con, "core.file_state")
+    previous_rows = gateway.con.execute(
+        """
+        SELECT rel_path, size_bytes, mtime_ns, content_hash
+        FROM core.file_state
+        WHERE repo = ? AND commit = ? AND language = ?
+        """,
+        [request.repo, request.commit, request.language],
+    ).fetchall()
+    previous = {
+        normalize_rel_path(str(rel_path)): (int(size), int(mtime_ns), str(content_hash))
+        for rel_path, size, mtime_ns, content_hash in previous_rows
+    }
+
+    added: list[ModuleRecord] = []
+    modified: list[ModuleRecord] = []
+    for rel_path, (record, size, mtime_ns, digest) in current.items():
+        old = previous.get(rel_path)
+        if old is None:
+            added.append(record)
+        elif old != (size, mtime_ns, digest):
+            modified.append(record)
+
+    deleted: list[ModuleRecord] = [
+        ModuleRecord(
+            rel_path=rel_path,
+            module_name=module_map.get(rel_path, "<deleted>"),
+            file_path=repo_root / rel_path,
+            index=0,
+            total=0,
+        )
+        for rel_path in previous.keys() - current.keys()
+    ]
+
+    file_state_rows = [
+        [request.repo, request.commit, rel_path, request.language, size, mtime_ns, digest]
+        for rel_path, (_, size, mtime_ns, digest) in sorted(current.items())
+    ]
+    run_batch(
+        gateway,
+        "core.file_state",
+        file_state_rows,
+        delete_params=[request.repo, request.commit, request.language],
+        scope=f"{request.repo}@{request.commit}",
+    )
+    change_set = ChangeSet(added=added, modified=modified, deleted=deleted)
+    _cache_change_set(request.repo, request.commit, change_set)
+    return change_set
 
 
 def load_module_map(
