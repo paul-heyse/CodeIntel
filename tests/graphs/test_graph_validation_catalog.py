@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.validation import run_graph_validations
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.schemas import apply_all_schemas
+from tests._helpers.fixtures import seed_graph_validation_gaps
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -20,12 +22,22 @@ class _CatalogProvider:
     def catalog(self) -> FunctionCatalog:
         return self._catalog
 
+    def urn_for_goid(self, goid: int) -> str | None:  # noqa: ARG002
+        return None
 
-def test_graph_validation_orphan_uses_catalog_map() -> None:
+    def lookup_goid(
+        self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
+    ) -> int | None:
+        return None
+
+
+def test_graph_validation_orphan_uses_catalog_map(fresh_gateway: StorageGateway) -> None:
     """Graph validation should fall back to catalog module map when modules are absent."""
-    gateway = open_memory_gateway(apply_schema=True)
+    gateway = fresh_gateway
     con = gateway.con
+    apply_all_schemas(con)
     provider = _CatalogProvider({"pkg/a.py": "pkg.a"})
+    seed_graph_validation_gaps(gateway, repo="r", commit="c")
     run_graph_validations(
         gateway,
         repo="r",

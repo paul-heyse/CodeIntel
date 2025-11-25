@@ -16,32 +16,48 @@ from codeintel.services.factory import (
     build_backend_resource,
 )
 from codeintel.services.query_service import HttpQueryService, LocalQueryService
-from codeintel.storage.gateway import StorageConfig, open_gateway, open_memory_gateway
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from tests._helpers.builders import RepoMapRow, insert_repo_map
+from tests._helpers.fixtures import GatewayOptions, provision_gateway_with_repo
 
 
-def _seed_repo_identity(db_path: Path, repo: str, commit: str) -> None:
+def _seed_repo_identity(repo_root: Path, db_path: Path, repo: str, commit: str) -> None:
     """Create the core.repo_map table with a single identity row."""
-    cfg = StorageConfig(
-        db_path=db_path,
-        read_only=False,
-        apply_schema=True,
-        ensure_views=False,
-        validate_schema=True,
-    )
-    gateway = open_gateway(cfg)
-    now = datetime.now(tz=UTC).isoformat()
-    gateway.core.insert_repo_map([(repo, commit, "{}", "{}", now)])
-    gateway.close()
+    with provision_gateway_with_repo(
+        repo_root,
+        repo=repo,
+        commit=commit,
+        options=GatewayOptions(
+            db_path=db_path,
+            apply_schema=True,
+            ensure_views=True,
+            validate_schema=True,
+            file_backed=True,
+        ),
+    ) as ctx:
+        insert_repo_map(
+            ctx.gateway,
+            [
+                RepoMapRow(
+                    repo=repo,
+                    commit=commit,
+                    modules={},
+                    overlays={},
+                    generated_at=datetime.now(tz=UTC),
+                )
+            ],
+        )
 
 
 def test_build_backend_resource_local(tmp_path: Path) -> None:
     """Local wiring produces a DuckDB backend and service with identity verification."""
     db_path = tmp_path / "codeintel.duckdb"
-    _seed_repo_identity(db_path, "r", "c")
+    repo_root = tmp_path / "repo"
+    _seed_repo_identity(repo_root, db_path, "r", "c")
 
     cfg = ServingConfig(
         mode="local_db",
-        repo_root=tmp_path,
+        repo_root=repo_root,
         repo="r",
         commit="c",
         db_path=db_path,
@@ -98,11 +114,21 @@ def test_build_backend_resource_remote() -> None:
     resource.close()
 
 
-def test_build_backend_resource_gateway_path() -> None:
+def test_build_backend_resource_gateway_path(fresh_gateway: StorageGateway) -> None:
     """Gateway-provided connection and registry are honored."""
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True)
-    now_iso = datetime.now(tz=UTC).isoformat()
-    gateway.core.insert_repo_map([("r", "c", "{}", "{}", now_iso)])
+    gateway = fresh_gateway
+    insert_repo_map(
+        gateway,
+        [
+            RepoMapRow(
+                repo="r",
+                commit="c",
+                modules={},
+                overlays={},
+                generated_at=datetime.now(tz=UTC),
+            )
+        ],
+    )
 
     cfg = ServingConfig(
         mode="local_db",

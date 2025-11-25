@@ -18,7 +18,7 @@ from codeintel.config.models import (
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.fakes import FakeCoverage
 
 
@@ -35,7 +35,7 @@ def _write_repo(repo_root: Path) -> tuple[int, int]:
     return 3, 4
 
 
-def test_span_alignment_across_components(tmp_path: Path) -> None:
+def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: StorageGateway) -> None:
     """
     Ensure call graph, CFG/DFG, and test coverage edges agree on function GOIDs.
 
@@ -50,7 +50,7 @@ def test_span_alignment_across_components(tmp_path: Path) -> None:
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
 
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     con = gateway.con
 
     # Seed modules for module mapping.

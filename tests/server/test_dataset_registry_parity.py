@@ -12,10 +12,25 @@ from codeintel.server.datasets import build_dataset_registry
 from codeintel.services.factory import DatasetRegistryOptions, build_service_from_config
 from codeintel.services.query_service import LocalQueryService
 from codeintel.services.wiring import build_backend_resource
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.builders import RepoMapRow, insert_repo_map
 
 
-def test_dataset_registry_parity_across_factory_defaults() -> None:
+def _seed_repo_identity(gateway: StorageGateway, repo: str, commit: str) -> None:
+    insert_repo_map(
+        gateway,
+        [
+            RepoMapRow(
+                repo=repo,
+                commit=commit,
+                modules={},
+                overlays={},
+            )
+        ],
+    )
+
+
+def test_dataset_registry_parity_across_factory_defaults(fresh_gateway: StorageGateway) -> None:
     """Local factory should expose the canonical dataset registry by default."""
     base_registry = build_dataset_registry()
     cfg = ServingConfig(
@@ -28,9 +43,8 @@ def test_dataset_registry_parity_across_factory_defaults() -> None:
         default_limit=50,
         max_rows_per_call=500,
     )
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    now = "2024-01-01T00:00:00Z"
-    gateway.core.insert_repo_map([(cfg.repo, cfg.commit, "{}", "{}", now)])
+    gateway = fresh_gateway
+    _seed_repo_identity(gateway, cfg.repo, cfg.commit)
     svc = build_service_from_config(
         cfg,
         gateway=gateway,
@@ -42,7 +56,7 @@ def test_dataset_registry_parity_across_factory_defaults() -> None:
         pytest.fail("Dataset registry mismatch")
 
 
-def test_backend_resource_limits_and_registry_align() -> None:
+def test_backend_resource_limits_and_registry_align(fresh_gateway: StorageGateway) -> None:
     """BackendResource should carry registry and limits derived from config."""
     base_registry = build_dataset_registry()
     cfg = ServingConfig(
@@ -55,9 +69,8 @@ def test_backend_resource_limits_and_registry_align() -> None:
         default_limit=50,
         max_rows_per_call=500,
     )
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    now = "2024-01-01T00:00:00Z"
-    gateway.core.insert_repo_map([(cfg.repo, cfg.commit, "{}", "{}", now)])
+    gateway = fresh_gateway
+    _seed_repo_identity(gateway, cfg.repo, cfg.commit)
     resource = build_backend_resource(
         cfg,
         gateway=gateway,

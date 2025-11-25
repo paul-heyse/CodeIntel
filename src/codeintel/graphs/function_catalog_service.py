@@ -28,6 +28,30 @@ class FunctionCatalogProvider(Protocol):
         """
         raise NotImplementedError
 
+    def urn_for_goid(self, goid: int) -> str | None:
+        """
+        Return a URN for a GOID when available.
+
+        Returns
+        -------
+        str | None
+            URN string if present in the catalog.
+        """
+        raise NotImplementedError
+
+    def lookup_goid(
+        self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
+    ) -> int | None:
+        """
+        Resolve a GOID for a span and optional qualname.
+
+        Returns
+        -------
+        int | None
+            GOID when found, otherwise None.
+        """
+        raise NotImplementedError
+
 
 @dataclass
 class FunctionCatalogService(FunctionCatalogProvider):

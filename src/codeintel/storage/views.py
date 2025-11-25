@@ -140,6 +140,26 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
             fp.slow_tests,
             fp.risk_score,
             fp.risk_level,
+            fp.is_pure,
+            fp.uses_io,
+            fp.touches_db,
+            fp.uses_time,
+            fp.uses_randomness,
+            fp.modifies_globals,
+            fp.modifies_closure,
+            fp.spawns_threads_or_tasks,
+            fp.has_transitive_effects,
+            fp.purity_confidence,
+            fp.param_nullability_json,
+            fp.return_nullability,
+            fp.has_preconditions,
+            fp.has_postconditions,
+            fp.has_raises,
+            fp.contract_confidence,
+            fp.role,
+            fp.framework,
+            fp.role_confidence,
+            fp.role_sources_json,
             fp.tags,
             fp.owners,
             gm.call_fan_in,
@@ -279,6 +299,9 @@ def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
             mp.module_coverage_ratio,
             mp.tested_function_count,
             mp.untested_function_count,
+            mp.role,
+            mp.role_confidence,
+            mp.role_sources_json,
             gmx.import_betweenness AS import_betweenness_ext,
             gmx.import_closeness AS import_closeness_ext,
             gmx.import_eigenvector,
@@ -732,6 +755,85 @@ CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
 
     con.execute(
         """
+        CREATE OR REPLACE VIEW docs.v_entrypoints AS
+        SELECT
+            repo,
+            commit,
+            entrypoint_id,
+            kind,
+            handler_goid_h128,
+            handler_urn,
+            handler_rel_path,
+            handler_module,
+            handler_qualname,
+            http_method,
+            route_path,
+            status_codes,
+            auth_required,
+            command_name,
+            arguments_schema,
+            schedule,
+            trigger,
+            subsystem_id,
+            subsystem_name,
+            tags,
+            owners,
+            tests_touching,
+            failing_tests,
+            slow_tests,
+            flaky_tests,
+            entrypoint_coverage_ratio,
+            last_test_status,
+            created_at
+        FROM analytics.entrypoints;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_external_dependencies AS
+        SELECT
+            repo,
+            commit,
+            dep_id,
+            library,
+            service_name,
+            category,
+            function_count,
+            callsite_count,
+            modules_json,
+            usage_modes,
+            config_keys,
+            risk_level,
+            created_at
+        FROM analytics.external_dependencies;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_external_dependency_calls AS
+        SELECT
+            repo,
+            commit,
+            dep_id,
+            library,
+            service_name,
+            function_goid_h128,
+            function_urn,
+            rel_path,
+            module,
+            qualname,
+            callsite_count,
+            modes,
+            evidence_json,
+            created_at
+        FROM analytics.external_dependency_calls;
+        """
+    )
+
+    con.execute(
+        """
         CREATE OR REPLACE VIEW docs.v_function_profile AS
         SELECT *
         FROM analytics.function_profile;
@@ -751,5 +853,82 @@ CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
         CREATE OR REPLACE VIEW docs.v_module_profile AS
         SELECT *
         FROM analytics.module_profile;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_data_models AS
+        SELECT
+            dm.repo,
+            dm.commit,
+            dm.model_id,
+            dm.goid_h128,
+            dm.model_name,
+            dm.module,
+            dm.rel_path,
+            dm.model_kind,
+            dm.fields_json,
+            dm.relationships_json,
+            dm.doc_short,
+            dm.doc_long,
+            dm.created_at
+        FROM analytics.data_models dm;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_data_model_usage AS
+        SELECT
+            u.repo,
+            u.commit,
+            u.model_id,
+            dm.model_name,
+            dm.model_kind,
+            u.function_goid_h128,
+            fp.qualname        AS function_qualname,
+            fp.rel_path        AS function_rel_path,
+            fp.risk_score,
+            fp.coverage_ratio,
+            u.usage_kinds_json,
+            u.context_json,
+            u.evidence_json,
+            u.created_at
+        FROM analytics.data_model_usage u
+        LEFT JOIN analytics.data_models dm
+          ON dm.repo = u.repo
+         AND dm.commit = u.commit
+         AND dm.model_id = u.model_id
+        LEFT JOIN analytics.function_profile fp
+          ON fp.repo = u.repo
+         AND fp.commit = u.commit
+         AND fp.function_goid_h128 = u.function_goid_h128;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_config_data_flow AS
+        SELECT
+            c.repo,
+            c.commit,
+            c.config_key,
+            c.config_path,
+            c.function_goid_h128,
+            fp.qualname        AS function_qualname,
+            fp.rel_path        AS function_rel_path,
+            fp.risk_score,
+            fp.coverage_ratio,
+            c.usage_kind,
+            c.evidence_json,
+            c.call_chain_id,
+            c.call_chain_json,
+            c.created_at
+        FROM analytics.config_data_flow c
+        LEFT JOIN analytics.function_profile fp
+          ON fp.repo = c.repo
+         AND fp.commit = c.commit
+         AND fp.function_goid_h128 = c.function_goid_h128;
         """
     )

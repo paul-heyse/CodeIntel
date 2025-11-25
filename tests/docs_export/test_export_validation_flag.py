@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from codeintel.cli import main as cli_main
+from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_function_types, insert_goids
 from tests._helpers.fixtures import GatewayOptions, provision_gateway_with_repo
 
 
@@ -32,6 +34,23 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
         VALUES ('demo/repo', 'deadbeef', '{}', '{}', CURRENT_TIMESTAMP)
         """
     )
+    now = datetime.now(tz=UTC)
+    insert_goids(
+        ctx.gateway,
+        [
+            GoidRow(
+                goid_h128=1,
+                urn="urn:demo",
+                repo="demo/repo",
+                commit="deadbeef",
+                rel_path="src/file.py",
+                kind="function",
+                qualname="demo.fn",
+                start_line=1,
+                end_line=2,
+            )
+        ],
+    )
     con.execute(
         """
         INSERT INTO analytics.function_profile (
@@ -43,6 +62,38 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
         ) VALUES
             (1, 'urn:demo', 'demo/repo', NULL, 'src/file.py')
         """
+    )
+    insert_function_types(
+        ctx.gateway,
+        [
+            FunctionTypesRow(
+                function_goid_h128=1,
+                urn="urn:demo",
+                repo="demo/repo",
+                commit="deadbeef",
+                rel_path="src/file.py",
+                language="python",
+                kind="function",
+                qualname="demo.fn",
+                start_line=1,
+                end_line=2,
+                total_params=0,
+                annotated_params=0,
+                unannotated_params=0,
+                param_typed_ratio=0.0,
+                has_return_annotation=False,
+                return_type="",
+                return_type_source="annotation",
+                type_comment=None,
+                param_types_json="{}",
+                fully_typed=False,
+                partial_typed=False,
+                untyped=True,
+                typedness_bucket="untyped",
+                typedness_source="manual",
+                created_at=now,
+            )
+        ],
     )
     ctx.close()
 

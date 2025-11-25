@@ -6,7 +6,7 @@ import duckdb
 import pytest
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 
 def _table_exists(con: duckdb.DuckDBPyConnection, schema_name: str, table_name: str) -> bool:
@@ -35,10 +35,12 @@ def _columns_for(con: duckdb.DuckDBPyConnection, schema_name: str, table_name: s
 
 
 @pytest.mark.parametrize("fq_name", sorted(TABLE_SCHEMAS.keys()))
-def test_ingestion_sql_tables_match_schema(fq_name: str) -> None:
+def test_ingestion_sql_tables_match_schema(
+    fq_name: str, fresh_gateway: StorageGateway
+) -> None:
     """Ensure registry tables exist with expected columns."""
     schema = TABLE_SCHEMAS[fq_name]
-    con = open_memory_gateway(apply_schema=True).con
+    con = fresh_gateway.con
     schema_name = schema.schema
     table_name = schema.name
     cols = schema.column_names()

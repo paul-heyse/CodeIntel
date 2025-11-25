@@ -42,6 +42,9 @@ JSONL_DATASETS: dict[str, str] = {
     # Modules / config / diagnostics
     "core.modules": "modules.jsonl",
     "analytics.config_values": "config_values.jsonl",
+    "analytics.data_models": "data_models.jsonl",
+    "analytics.data_model_usage": "data_model_usage.jsonl",
+    "analytics.config_data_flow": "config_data_flow.jsonl",
     "analytics.static_diagnostics": "static_diagnostics.jsonl",
     # AST analytics / typing
     "analytics.hotspots": "hotspots.jsonl",
@@ -49,11 +52,19 @@ JSONL_DATASETS: dict[str, str] = {
     # Function analytics
     "analytics.function_metrics": "function_metrics.jsonl",
     "analytics.function_types": "function_types.jsonl",
+    "analytics.function_effects": "function_effects.jsonl",
+    "analytics.function_contracts": "function_contracts.jsonl",
+    "analytics.semantic_roles_functions": "semantic_roles_functions.jsonl",
+    "analytics.semantic_roles_modules": "semantic_roles_modules.jsonl",
     # Coverage + tests
     "analytics.coverage_lines": "coverage_lines.jsonl",
     "analytics.coverage_functions": "coverage_functions.jsonl",
     "analytics.test_catalog": "test_catalog.jsonl",
     "analytics.test_coverage_edges": "test_coverage_edges.jsonl",
+    "analytics.entrypoints": "entrypoints.jsonl",
+    "analytics.entrypoint_tests": "entrypoint_tests.jsonl",
+    "analytics.external_dependencies": "external_dependencies.jsonl",
+    "analytics.external_dependency_calls": "external_dependency_calls.jsonl",
     "analytics.graph_validation": "graph_validation.jsonl",
     "analytics.function_validation": "function_validation.jsonl",
     # Risk factors

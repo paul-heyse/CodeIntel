@@ -706,8 +706,12 @@ def _log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggi
         return int(value) if value is not None else 0
 
     counts = {
-        "modules": _count("SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?", use_params=True),
-        "goids": _count("SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ?", use_params=True),
+        "modules": _count(
+            "SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?", use_params=True
+        ),
+        "goids": _count(
+            "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ?", use_params=True
+        ),
         "module_goids": _count(
             "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'module'",
             use_params=True,

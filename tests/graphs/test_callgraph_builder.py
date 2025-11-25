@@ -112,11 +112,7 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
         """
     ).fetchall()
     for rowid, evidence in rows:
-        parsed: dict[str, object]
-        if evidence:
-            parsed = json.loads(evidence)
-        else:
-            parsed = {}
+        parsed: dict[str, object] = json.loads(evidence) if evidence else {}
         if "scip_candidates" not in parsed:
             parsed["scip_candidates"] = ["pkg/a.py"]
         if "callee_name" not in parsed:

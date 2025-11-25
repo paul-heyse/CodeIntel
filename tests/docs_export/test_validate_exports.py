@@ -11,8 +11,7 @@ from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.docs_export.validate_exports import main
 from codeintel.services.errors import ExportError
-from codeintel.storage.gateway import open_memory_gateway
-from tests._helpers.fixtures import seed_docs_export_invalid_profile
+from tests._helpers.fixtures import ProvisionedGateway, seed_docs_export_invalid_profile
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
@@ -62,20 +61,22 @@ def test_validate_jsonl_failure(tmp_path: Path) -> None:
         pytest.fail(message)
 
 
-def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
+def test_export_raises_on_validation_failure(
+    ingestion_only_gateway: ProvisionedGateway, tmp_path: Path
+) -> None:
     """Export functions should raise ExportError when schema validation fails."""
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    ctx = ingestion_only_gateway
     seed_docs_export_invalid_profile(
-        gateway,
-        repo="r",
-        commit="c",
+        ctx.gateway,
+        repo=ctx.repo,
+        commit=ctx.commit,
         null_commit=True,
     )
 
     output_dir = tmp_path / "out"
     with pytest.raises(ExportError):
         export_all_parquet(
-            gateway,
+            ctx.gateway,
             output_dir,
             validate_exports=True,
             schemas=["function_profile"],
@@ -83,14 +84,16 @@ def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
 
 
 def test_export_logs_problem_detail_on_validation_failure(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ingestion_only_gateway: ProvisionedGateway,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Validation failures should log ProblemDetails and raise ExportError."""
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+    ctx = ingestion_only_gateway
     seed_docs_export_invalid_profile(
-        gateway,
-        repo="r",
-        commit="c",
+        ctx.gateway,
+        repo=ctx.repo,
+        commit=ctx.commit,
         null_commit=True,
         drop_commit_column=True,
     )
@@ -99,7 +102,7 @@ def test_export_logs_problem_detail_on_validation_failure(
     caplog.set_level("ERROR")
     with pytest.raises(ExportError):
         export_all_jsonl(
-            gateway,
+            ctx.gateway,
             output_dir,
             validate_exports=True,
             schemas=["function_profile"],

@@ -38,6 +38,9 @@ PARQUET_DATASETS: dict[str, str] = {
     # Modules / config / diagnostics
     "core.modules": "modules.parquet",
     "analytics.config_values": "config_values.parquet",
+    "analytics.data_models": "data_models.parquet",
+    "analytics.data_model_usage": "data_model_usage.parquet",
+    "analytics.config_data_flow": "config_data_flow.parquet",
     "analytics.static_diagnostics": "static_diagnostics.parquet",
     # AST analytics / typing
     "analytics.hotspots": "hotspots.parquet",
@@ -45,11 +48,19 @@ PARQUET_DATASETS: dict[str, str] = {
     # Function analytics
     "analytics.function_metrics": "function_metrics.parquet",
     "analytics.function_types": "function_types.parquet",
+    "analytics.function_effects": "function_effects.parquet",
+    "analytics.function_contracts": "function_contracts.parquet",
+    "analytics.semantic_roles_functions": "semantic_roles_functions.parquet",
+    "analytics.semantic_roles_modules": "semantic_roles_modules.parquet",
     # Coverage + tests
     "analytics.coverage_lines": "coverage_lines.parquet",
     "analytics.coverage_functions": "coverage_functions.parquet",
     "analytics.test_catalog": "test_catalog.parquet",
     "analytics.test_coverage_edges": "test_coverage_edges.parquet",
+    "analytics.entrypoints": "entrypoints.parquet",
+    "analytics.entrypoint_tests": "entrypoint_tests.parquet",
+    "analytics.external_dependencies": "external_dependencies.parquet",
+    "analytics.external_dependency_calls": "external_dependency_calls.parquet",
     "analytics.graph_validation": "graph_validation.parquet",
     "analytics.function_validation": "function_validation.parquet",
     # Risk factors

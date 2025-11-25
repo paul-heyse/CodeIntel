@@ -12,8 +12,18 @@ from coverage import Coverage
 
 from codeintel.analytics.ast_metrics import build_hotspots
 from codeintel.analytics.cfg_dfg_metrics import compute_cfg_metrics, compute_dfg_metrics
+from codeintel.analytics.config_data_flow import compute_config_data_flow
 from codeintel.analytics.config_graph_metrics import compute_config_graph_metrics
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
+from codeintel.analytics.data_model_usage import compute_data_model_usage
+from codeintel.analytics.data_models import compute_data_models
+from codeintel.analytics.dependencies import (
+    build_external_dependencies,
+    build_external_dependency_calls,
+)
+from codeintel.analytics.entrypoints import build_entrypoints
+from codeintel.analytics.function_contracts import compute_function_contracts
+from codeintel.analytics.function_effects import compute_function_effects
 from codeintel.analytics.functions import compute_function_metrics_and_types
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
@@ -24,6 +34,7 @@ from codeintel.analytics.profiles import (
     build_function_profile,
     build_module_profile,
 )
+from codeintel.analytics.semantic_roles import compute_semantic_roles
 from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
 from codeintel.analytics.subsystem_graph_metrics import compute_subsystem_graph_metrics
 from codeintel.analytics.subsystems import build_subsystems
@@ -36,14 +47,22 @@ from codeintel.analytics.tests_analytics import compute_test_coverage_edges
 from codeintel.config.models import (
     CallGraphConfig,
     CFGBuilderConfig,
+    ConfigDataFlowConfig,
     CoverageAnalyticsConfig,
+    DataModelsConfig,
+    DataModelUsageConfig,
+    EntryPointsConfig,
+    ExternalDependenciesConfig,
     FunctionAnalyticsConfig,
     FunctionAnalyticsOverrides,
+    FunctionContractsConfig,
+    FunctionEffectsConfig,
     GoidBuilderConfig,
     GraphMetricsConfig,
     HotspotsConfig,
     ImportGraphConfig,
     ProfilesAnalyticsConfig,
+    SemanticRolesConfig,
     SubsystemsConfig,
     SymbolUsesConfig,
     TestCoverageConfig,
@@ -510,6 +529,24 @@ class HotspotsStep:
 
 
 @dataclass
+class FunctionHistoryStep:
+    """Aggregate per-function git history."""
+
+    name: str = "function_history"
+    deps: Sequence[str] = ("function_metrics", "hotspots")
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Compute git churn and history for each function GOID."""
+        _log_step(self.name)
+        cfg = FunctionHistoryConfig.from_paths(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+        )
+        compute_function_history(ctx.gateway.con, cfg, runner=ctx.tool_runner)
+
+
+@dataclass
 class FunctionAnalyticsStep:
     """Build analytics.function_metrics and analytics.function_types."""
 
@@ -535,6 +572,89 @@ class FunctionAnalyticsStep:
             summary["validation_parse_failed"],
             summary["validation_span_not_found"],
         )
+
+
+@dataclass
+class FunctionEffectsStep:
+    """Classify side effects and purity for functions."""
+
+    name: str = "function_effects"
+    deps: Sequence[str] = ("goids", "callgraph")
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Compute function_effects flags and evidence."""
+        _log_step(self.name)
+        cfg = FunctionEffectsConfig.from_paths(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+        )
+        compute_function_effects(ctx.gateway, cfg, catalog_provider=_function_catalog(ctx))
+
+
+@dataclass
+class FunctionContractsStep:
+    """Infer pre/postconditions and nullability."""
+
+    name: str = "function_contracts"
+    deps: Sequence[str] = ("function_metrics", "docstrings_ingest")
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Compute inferred contracts for functions."""
+        _log_step(self.name)
+        cfg = FunctionContractsConfig.from_paths(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+        )
+        compute_function_contracts(ctx.gateway, cfg, catalog_provider=_function_catalog(ctx))
+
+
+@dataclass
+class DataModelsStep:
+    """Extract structured data models from class definitions."""
+
+    name: str = "data_models"
+    deps: Sequence[str] = ("ast_extract", "goids", "docstrings_ingest")
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Populate analytics.data_models."""
+        _log_step(self.name)
+        cfg = DataModelsConfig.from_paths(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
+        compute_data_models(ctx.gateway.con, cfg)
+
+
+@dataclass
+class DataModelUsageStep:
+    """Classify per-function data model usage."""
+
+    name: str = "data_model_usage"
+    deps: Sequence[str] = ("data_models", "callgraph", "cfg", "function_metrics")
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Populate analytics.data_model_usage."""
+        _log_step(self.name)
+        cfg = DataModelUsageConfig.from_paths(
+            repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
+        )
+        catalog = _function_catalog(ctx)
+        compute_data_model_usage(ctx.gateway, cfg, catalog_provider=catalog)
+
+
+@dataclass
+class ConfigDataFlowStep:
+    """Track config key usage at the function level."""
+
+    name: str = "config_data_flow"
+    deps: Sequence[str] = ("config_ingest", "callgraph", "function_metrics", "entrypoints")
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Populate analytics.config_data_flow."""
+        _log_step(self.name)
+        cfg = ConfigDataFlowConfig.from_paths(
+            repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
+        )
+        compute_config_data_flow(ctx.gateway, cfg)
 
 
 @dataclass
@@ -746,6 +866,29 @@ class GraphMetricsStep:
 
 
 @dataclass
+class SemanticRolesStep:
+    """Classify functions and modules into semantic roles."""
+
+    name: str = "semantic_roles"
+    deps: Sequence[str] = (
+        "function_effects",
+        "function_contracts",
+        "graph_metrics",
+        "function_metrics",
+    )
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Compute semantic role tables."""
+        _log_step(self.name)
+        cfg = SemanticRolesConfig.from_paths(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+        )
+        compute_semantic_roles(ctx.gateway, cfg, catalog_provider=_function_catalog(ctx))
+
+
+@dataclass
 class SubsystemsStep:
     """Infer subsystems from module coupling and risk signals."""
 
@@ -761,11 +904,65 @@ class SubsystemsStep:
 
 
 @dataclass
+class EntryPointsStep:
+    """Detect HTTP/CLI/job entrypoints and map them to handlers and tests."""
+
+    name: str = "entrypoints"
+    deps: Sequence[str] = (
+        "subsystems",
+        "coverage_functions",
+        "test_coverage_edges",
+        "goids",
+    )
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Populate analytics.entrypoints and analytics.entrypoint_tests."""
+        _log_step(self.name)
+        catalog = _function_catalog(ctx)
+        cfg = EntryPointsConfig.from_paths(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            scan_config=ctx.scan_config,
+        )
+        build_entrypoints(ctx.gateway, cfg, catalog_provider=catalog)
+
+
+@dataclass
+class ExternalDependenciesStep:
+    """Identify external dependency usage across functions."""
+
+    name: str = "external_dependencies"
+    deps: Sequence[str] = ("goids", "config_ingest")
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Populate dependency call edges and aggregated usage."""
+        _log_step(self.name)
+        catalog = _function_catalog(ctx)
+        cfg = ExternalDependenciesConfig.from_paths(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            scan_config=ctx.scan_config,
+        )
+        build_external_dependency_calls(ctx.gateway, cfg, catalog_provider=catalog)
+        build_external_dependencies(ctx.gateway, cfg)
+
+
+@dataclass
 class ProfilesStep:
     """Build function, file, and module profiles."""
 
     name: str = "profiles"
-    deps: Sequence[str] = ("risk_factors", "callgraph", "import_graph")
+    deps: Sequence[str] = (
+        "risk_factors",
+        "callgraph",
+        "import_graph",
+        "function_effects",
+        "function_contracts",
+        "semantic_roles",
+        "function_history",
+    )
 
     def run(self, ctx: PipelineContext) -> None:
         """Aggregate profile tables for functions, files, and modules."""
@@ -799,12 +996,21 @@ class ExportDocsStep:
         "docstrings_ingest",
         "config_ingest",
         "function_metrics",
+        "function_effects",
+        "function_contracts",
+        "data_models",
+        "data_model_usage",
+        "config_data_flow",
         "coverage_functions",
         "test_coverage_edges",
         "hotspots",
+        "function_history",
         "risk_factors",
         "graph_metrics",
         "subsystems",
+        "semantic_roles",
+        "entrypoints",
+        "external_dependencies",
         "profiles",
         "callgraph",
         "cfg",
@@ -848,12 +1054,21 @@ PIPELINE_STEPS: dict[str, PipelineStep] = {
     "graph_validation": GraphValidationStep(),
     # analytics
     "hotspots": HotspotsStep(),
+    "function_history": FunctionHistoryStep(),
     "function_metrics": FunctionAnalyticsStep(),
+    "function_effects": FunctionEffectsStep(),
+    "function_contracts": FunctionContractsStep(),
+    "data_models": DataModelsStep(),
+    "data_model_usage": DataModelUsageStep(),
+    "config_data_flow": ConfigDataFlowStep(),
     "coverage_functions": CoverageAnalyticsStep(),
     "test_coverage_edges": TestCoverageEdgesStep(),
     "risk_factors": RiskFactorsStep(),
     "graph_metrics": GraphMetricsStep(),
     "subsystems": SubsystemsStep(),
+    "semantic_roles": SemanticRolesStep(),
+    "entrypoints": EntryPointsStep(),
+    "external_dependencies": ExternalDependenciesStep(),
     "profiles": ProfilesStep(),
     # export
     "export_docs": ExportDocsStep(),
