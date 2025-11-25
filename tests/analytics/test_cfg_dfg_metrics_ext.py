@@ -8,7 +8,7 @@ import pytest
 
 from codeintel.analytics.cfg_dfg_metrics import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.ingestion.common import run_batch
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -26,7 +26,8 @@ def _seed_function(gateway: StorageGateway) -> None:
     gateway.con.execute(
         """
         INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at
+            goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
+            start_line, end_line, created_at
         )
         VALUES (?, ?, ?, ?, ?, 'python', 'function', ?, 1, 20, CURRENT_TIMESTAMP)
         """,
@@ -62,15 +63,16 @@ def _seed_dfg(gateway: StorageGateway) -> None:
     run_batch(gateway, "graph.dfg_edges", dfg_edges, delete_params=[], scope="dfg_edges")
 
 
-def test_cfg_metrics_ext_populates_loop_and_unreachable_counts() -> None:
+def test_cfg_metrics_ext_populates_loop_and_unreachable_counts(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Extended CFG metrics capture loop headers, unreachable blocks, and edge kinds."""
-    gateway = open_memory_gateway()
-    _seed_function(gateway)
-    _seed_cfg(gateway)
+    _seed_function(fresh_gateway)
+    _seed_cfg(fresh_gateway)
 
-    compute_cfg_metrics(gateway, repo=REPO, commit=COMMIT)
+    compute_cfg_metrics(fresh_gateway, repo=REPO, commit=COMMIT)
 
-    row = gateway.con.execute(
+    row = fresh_gateway.con.execute(
         """
         SELECT unreachable_block_count, loop_header_count,
                true_edge_count, false_edge_count, back_edge_count,
@@ -80,7 +82,7 @@ def test_cfg_metrics_ext_populates_loop_and_unreachable_counts() -> None:
         """,
         [Decimal(1)],
     ).fetchone()
-    base_row = gateway.con.execute(
+    base_row = fresh_gateway.con.execute(
         """
         SELECT cfg_block_count, cfg_edge_count
         FROM analytics.cfg_function_metrics
@@ -94,15 +96,16 @@ def test_cfg_metrics_ext_populates_loop_and_unreachable_counts() -> None:
         pytest.fail(f"Unexpected CFG ext metrics: {row}")
 
 
-def test_dfg_metrics_ext_counts_use_kinds_and_paths() -> None:
+def test_dfg_metrics_ext_counts_use_kinds_and_paths(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Extended DFG metrics capture use-kind counts and simple path totals."""
-    gateway = open_memory_gateway()
-    _seed_function(gateway)
-    _seed_dfg(gateway)
+    _seed_function(fresh_gateway)
+    _seed_dfg(fresh_gateway)
 
-    compute_dfg_metrics(gateway, repo=REPO, commit=COMMIT)
+    compute_dfg_metrics(fresh_gateway, repo=REPO, commit=COMMIT)
 
-    row = gateway.con.execute(
+    row = fresh_gateway.con.execute(
         """
         SELECT data_flow_edge_count, intra_block_edge_count,
                use_kind_phi_count, use_kind_data_flow_count, use_kind_intra_block_count,

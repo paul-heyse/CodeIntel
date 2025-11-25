@@ -9,7 +9,7 @@ import duckdb
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.docs_export.export_jsonl import export_jsonl_for_table
-from codeintel.storage.gateway import open_memory_gateway
+from tests._helpers.fixtures import provision_graph_ready_repo
 
 
 def _setup_edge_table(con: duckdb.DuckDBPyConnection, table: str) -> None:
@@ -29,7 +29,8 @@ def test_call_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
     AssertionError
         If repo/commit columns are missing or keys drift.
     """
-    gateway = open_memory_gateway()
+    ctx = provision_graph_ready_repo(tmp_path, repo="r1", commit="c1")
+    gateway = ctx.gateway
     con = gateway.con
     table = "graph.call_graph_edges"
     _setup_edge_table(con, table)
@@ -67,7 +68,8 @@ def test_import_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
     AssertionError
         If repo/commit columns are missing or keys drift.
     """
-    gateway = open_memory_gateway()
+    ctx = provision_graph_ready_repo(tmp_path, repo="r1", commit="c1")
+    gateway = ctx.gateway
     con = gateway.con
     table = "graph.import_graph_edges"
     _setup_edge_table(con, table)

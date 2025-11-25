@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -18,8 +19,8 @@ from codeintel.analytics.tests_analytics import (
     build_edges_for_file_for_tests,
     compute_test_coverage_edges,
 )
-from tests._helpers.db import make_memory_gateway
 from tests._helpers.fakes import FakeCoverage
+from tests._helpers.fixtures import ProvisionOptions, provision_graph_ready_repo
 
 cast("Any", TestCoverageConfig).__test__ = False  # prevent pytest from collecting the dataclass
 
@@ -42,13 +43,20 @@ def _insert_goids(con: duckdb.DuckDBPyConnection, cfg: TestCoverageConfig) -> No
 
 def test_backfill_test_goids_updates_catalog() -> None:
     """Ensure test_catalog entries receive GOIDs and URNs when matched to GOIDs."""
-    gateway = make_memory_gateway()
+    repo_root = Path(tempfile.mkdtemp())
+    ctx = provision_graph_ready_repo(
+        repo_root,
+        repo="demo/repo",
+        commit="deadbeef",
+        options=ProvisionOptions(include_seed_goid=False, build_graph_metrics=True),
+    )
+    gateway = ctx.gateway
     con = gateway.con
 
     cfg = TestCoverageConfig(
-        repo="demo/repo",
-        commit="deadbeef",
-        repo_root=Path.cwd(),
+        repo=ctx.repo,
+        commit=ctx.commit,
+        repo_root=repo_root,
     )
 
     _insert_goids(con, cfg)
@@ -102,7 +110,11 @@ def test_edges_for_file_uses_test_meta() -> None:
     contexts_by_lineno = {1: {"tests/test_mod.py::test_func"}, 2: {"tests/test_mod.py::test_func"}}
     ctx = EdgeContext(
         status_by_test={"tests/test_mod.py::test_func": "passed"},
-        cfg=TestCoverageConfig(repo="demo/repo", commit="deadbeef", repo_root=Path.cwd()),
+        cfg=TestCoverageConfig(
+            repo="demo/repo",
+            commit="deadbeef",
+            repo_root=Path(tempfile.mkdtemp()),
+        ),
         now=datetime(2024, 1, 1, tzinfo=UTC),
         test_meta_by_id={
             "tests/test_mod.py::test_func": (456, "goid:demo/repo#python:function:test")
@@ -140,7 +152,12 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
     target_file = pkg_dir / "mod.py"
     target_file.write_text("def func():\n    return 1\n", encoding="utf-8")
 
-    gateway = make_memory_gateway()
+    gateway = provision_graph_ready_repo(
+        repo_root,
+        repo="demo/repo",
+        commit="deadbeef",
+        options=ProvisionOptions(include_seed_goid=False, build_graph_metrics=True),
+    ).gateway
     con = gateway.con
 
     cfg = TestCoverageConfig(
@@ -222,7 +239,12 @@ def test_compute_test_coverage_edges_respects_injected_loader(tmp_path: Path) ->
     target_file = pkg_dir / "mod.py"
     target_file.write_text("def func():\n    return 1\n", encoding="utf-8")
 
-    gateway = make_memory_gateway()
+    gateway = provision_graph_ready_repo(
+        repo_root,
+        repo="demo/repo",
+        commit="deadbeef",
+        options=ProvisionOptions(include_seed_goid=False, build_graph_metrics=True),
+    ).gateway
     con = gateway.con
 
     cfg = TestCoverageConfig(

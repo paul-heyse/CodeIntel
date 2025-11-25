@@ -330,7 +330,6 @@ def ingest_typing_signals(
       * Pyrefly drives static error counts; annotation_ratio is computed from Python AST
         (params & returns).
     """
-    con = gateway.con
     repo_root = cfg.repo_root
     scan_cfg = scan_config or ScanConfig(
         repo_root=repo_root, ignore_dirs=tuple(sorted(IGNORE_DIRS))

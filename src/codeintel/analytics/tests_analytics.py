@@ -327,7 +327,6 @@ def compute_test_coverage_edges(
     if cov is None:
         return
 
-    con = gateway.con
     funcs_by_path = _functions_by_path(gateway, cfg, catalog_provider=catalog_provider)
     if not funcs_by_path:
         log.info("No functions found; skipping test coverage edges")

@@ -73,8 +73,8 @@ def _add_common_repo_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--db-path",
         type=Path,
-        default=Path("build/db/codeintel.duckdb"),
-        help="Path to the DuckDB database (default: build/db/codeintel.duckdb)",
+        default=Path("build/db/codeintel_prefect.duckdb"),
+        help="Path to the DuckDB database (default: build/db/codeintel_prefect.duckdb)",
     )
     p.add_argument(
         "--build-dir",

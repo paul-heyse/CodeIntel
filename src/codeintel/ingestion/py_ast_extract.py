@@ -296,7 +296,6 @@ def ingest_python_ast(
     scan_config:
         Optional scan configuration controlling iteration logging cadence.
     """
-    con = gateway.con
     repo_root = cfg.repo_root
     module_map = load_module_map(gateway, cfg.repo, cfg.commit, language="python", logger=log)
     if should_skip_empty(module_map, logger=log):

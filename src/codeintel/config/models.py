@@ -45,7 +45,7 @@ class PathsConfig(BaseModel):
         src/
         Document Output/
         build/
-          db/codeintel.duckdb
+          db/codeintel_prefect.duckdb
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -56,7 +56,7 @@ class PathsConfig(BaseModel):
         description="Build directory (holds db/, logs/, etc.)",
     )
     db_path: Path = Field(
-        default=Path("build/db/codeintel.duckdb"),
+        default=Path("build/db/codeintel_prefect.duckdb"),
         description="DuckDB database path",
     )
     document_output_dir: Path | None = Field(

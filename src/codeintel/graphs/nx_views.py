@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterable
 from decimal import Decimal
 
@@ -10,6 +11,24 @@ import duckdb
 import networkx as nx
 
 from codeintel.storage.gateway import StorageGateway
+
+log = logging.getLogger(__name__)
+
+
+def _as_int(value: int | Decimal | str | bytes | bytearray | None) -> int | None:
+    """Best-effort conversion to int for DuckDB numeric fields.
+
+    Returns
+    -------
+    int | None
+        Parsed integer or None when conversion fails.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _normalize_decimal(value: object) -> int | None:
@@ -48,10 +67,10 @@ def _normalize_decimal(value: object) -> int | None:
 
 def _module_attrs_from_row(
     module: object,
-    scc_id: object,
-    component_size: object,
-    layer: object,
-    cycle_group: object,
+    scc_id: int | Decimal | str | bytes | bytearray | None,
+    component_size: int | Decimal | str | bytes | bytearray | None,
+    layer: int | Decimal | str | bytes | bytearray | None,
+    cycle_group: int | Decimal | str | bytes | bytearray | None,
 ) -> tuple[str, dict[str, int]]:
     """
     Build a normalized node attribute mapping for an import module row.
@@ -76,14 +95,18 @@ def _module_attrs_from_row(
     """
     module_name = str(module)
     attrs: dict[str, int] = {}
-    if scc_id is not None:
-        attrs["scc_id"] = int(scc_id)
-    if component_size is not None:
-        attrs["component_size"] = int(component_size)
-    if layer is not None:
-        attrs["layer"] = int(layer)
-    if cycle_group is not None:
-        attrs["cycle_group"] = int(cycle_group)
+    scc_value = _as_int(scc_id)
+    if scc_value is not None:
+        attrs["scc_id"] = scc_value
+    comp_size_value = _as_int(component_size)
+    if comp_size_value is not None:
+        attrs["component_size"] = comp_size_value
+    layer_value = _as_int(layer)
+    if layer_value is not None:
+        attrs["layer"] = layer_value
+    cycle_group_value = _as_int(cycle_group)
+    if cycle_group_value is not None:
+        attrs["cycle_group"] = cycle_group_value
     return module_name, attrs
 
 
@@ -144,14 +167,20 @@ def load_call_graph(
     # Ensure isolated nodes are present
     node_rows = con.execute(
         """
-        SELECT goid_h128
+        SELECT goid_h128, kind
         FROM graph.call_graph_nodes
         """
     ).fetchall()
-    for (node_raw,) in node_rows:
+    for node_raw, kind in node_rows:
         node = _normalize_decimal(node_raw)
-        if node is not None and node not in graph:
-            graph.add_node(node)
+        if node is None:
+            continue
+        if node in graph:
+            continue
+        attrs: dict[str, object] = {}
+        if kind is not None:
+            attrs["kind"] = str(kind)
+        graph.add_node(node, **attrs)
 
     return graph
 
@@ -203,7 +232,8 @@ def load_import_graph(
         target = str(dst)
         if layer is not None:
             fallback_layer_by_module[source] = int(layer)
-        weight = graph.get_edge_data(source, target, {}).get("weight", 0) + 1
+        edge_data = graph.get_edge_data(source, target)
+        weight = int(edge_data.get("weight", 0)) + 1 if edge_data is not None else 1
         graph.add_edge(source, target, weight=weight)
 
     try:
@@ -339,15 +369,35 @@ def load_config_module_bipartite(
     ).fetchall()
 
     graph = nx.Graph()
+    total_rows = 0
+    empty_refs = 0
+    parsed_modules = 0
+    kept_modules = 0
+    dropped_modules = 0
     for key, ref_modules in rows:
+        total_rows += 1
         if key is None or ref_modules is None:
+            empty_refs += 1
             continue
         key_node = ("c", str(key))
         if not graph.has_node(key_node):
             graph.add_node(key_node, bipartite=0)
 
-        modules = _parse_reference_modules(ref_modules, allowed_modules)
-        for module_name in modules:
+        raw_modules = _parse_reference_modules(ref_modules, set())
+        parsed_modules += len(raw_modules)
+        filtered_modules = (
+            [module for module in raw_modules if module in allowed_modules]
+            if allowed_modules
+            else raw_modules
+        )
+        if allowed_modules and raw_modules and not filtered_modules:
+            # If filtering would drop everything, keep the raw modules so we do not
+            # silently erase config edges when names are slightly misaligned.
+            filtered_modules = raw_modules
+        kept_modules += len(filtered_modules)
+        dropped_modules += len(raw_modules) - len(filtered_modules)
+
+        for module_name in filtered_modules:
             module_node = ("m", module_name)
             if not graph.has_node(module_node):
                 graph.add_node(module_node, bipartite=1)
@@ -355,6 +405,17 @@ def load_config_module_bipartite(
                 graph[key_node][module_node]["weight"] += 1
             else:
                 graph.add_edge(key_node, module_node, weight=1)
+    log.info(
+        "Config bipartite built: rows=%d empty_refs=%d allowed_modules=%d parsed_modules=%d kept_modules=%d dropped_modules=%d graph_nodes=%d edges=%d",
+        total_rows,
+        empty_refs,
+        len(allowed_modules),
+        parsed_modules,
+        kept_modules,
+        dropped_modules,
+        graph.number_of_nodes(),
+        graph.number_of_edges(),
+    )
     return graph
 
 

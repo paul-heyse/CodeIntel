@@ -5,11 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.storage.gateway import StorageConfig, open_gateway
+from tests._helpers.fixtures import provision_docs_export_ready
 
 
+@pytest.mark.usefixtures("fresh_gateway")
 def test_graph_validation_export(tmp_path: Path) -> None:
     """
     Graph validation rows should be exported to JSONL and Parquet.
@@ -19,10 +22,10 @@ def test_graph_validation_export(tmp_path: Path) -> None:
     AssertionError
         If expected export artifacts or content are missing.
     """
-    db_path = tmp_path / "db.duckdb"
-    gateway = open_gateway(
-        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=False, validate_schema=True)
+    ctx = provision_docs_export_ready(
+        tmp_path, repo="demo/repo", commit="deadbeef", file_backed=False
     )
+    gateway = ctx.gateway
     con = gateway.con
     con.execute(
         """

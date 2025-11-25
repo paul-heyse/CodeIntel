@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
 
 import duckdb
@@ -61,6 +63,7 @@ def run_graph_validations(
     - Modules with no GOIDs (orphans).
     """
     active_log = logger or logging.getLogger(__name__)
+    _log_db_snapshot(gateway, repo, commit, active_log)
     catalog = (
         catalog_provider.catalog()
         if catalog_provider is not None
@@ -89,7 +92,7 @@ def _warn_missing_function_goids(
             WITH funcs AS (
                 SELECT path AS rel_path, COUNT(*) AS function_count
                 FROM core.ast_nodes
-                WHERE node_type IN ('FunctionDef', 'AsyncFunctionDef')
+                WHERE repo = ? AND commit = ? AND node_type IN ('FunctionDef', 'AsyncFunctionDef')
                 GROUP BY path
             ),
             goids AS (
@@ -104,7 +107,7 @@ def _warn_missing_function_goids(
             WHERE COALESCE(g.goid_count, 0) < f.function_count
             ORDER BY f.rel_path
             """,
-            [repo, commit],
+            [repo, commit, repo, commit],
         ).fetchall()
     except duckdb.Error:
         return []
@@ -190,7 +193,12 @@ def _call_graph_findings(
 ) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
     call_graph_any: Any = call_graph
-    isolated = [node for node in call_graph.nodes if int(call_graph_any.degree(node)) == 0]
+    kinds = nx.get_node_attributes(call_graph, "kind")
+    isolated = [
+        node
+        for node in call_graph.nodes
+        if kinds.get(node) not in {"module", "class"} and int(call_graph_any.degree(node)) == 0
+    ]
     if isolated:
         isolated_sample = ", ".join(str(node) for node in isolated[:SAMPLE_LIMIT])
         log.warning(
@@ -576,21 +584,49 @@ def _warn_orphan_modules(
     log: logging.Logger,
     catalog: FunctionCatalog,
 ) -> list[dict[str, object]]:
+    query_failed = False
     try:
-        rows = gateway.con.execute(
+        con = gateway.con
+        rows = con.execute(
             """
             SELECT m.path
             FROM core.modules m
             LEFT JOIN core.goids g
-              ON g.rel_path = m.path AND g.repo = ? AND g.commit = ?
+              ON g.rel_path = m.path AND g.repo = ? AND g.commit = ? AND g.kind = 'module'
             WHERE m.repo = ? AND m.commit = ? AND g.goid_h128 IS NULL
             """,
             [repo, commit, repo, commit],
         ).fetchall()
+        if rows:
+            stats = con.execute(
+                """
+                WITH module_goids AS (
+                    SELECT rel_path, COUNT(*) AS cnt
+                    FROM core.goids
+                    WHERE repo = ? AND commit = ? AND kind = 'module'
+                    GROUP BY rel_path
+                )
+                SELECT m.path, COALESCE(g.cnt, 0) AS module_goids
+                FROM core.modules m
+                LEFT JOIN module_goids g ON g.rel_path = m.path
+                WHERE m.repo = ? AND m.commit = ?
+                ORDER BY module_goids ASC, m.path
+                LIMIT 5
+                """,
+                [repo, commit, repo, commit],
+            ).fetchall()
+            sample_detail = ", ".join(f"{path} (module_goids={cnt})" for path, cnt in stats)
+            log.info(
+                "Orphan module debug: repo=%s commit=%s sample=%s",
+                repo,
+                commit,
+                sample_detail,
+            )
     except duckdb.Error:
+        query_failed = True
         rows = []
 
-    if not rows and catalog.module_by_path:
+    if query_failed and catalog.module_by_path:
         rows = [(path,) for path in catalog.module_by_path]
 
     if not rows:
@@ -648,6 +684,66 @@ def _persist_findings(gateway: StorageGateway, findings: list[dict[str, object]]
             for finding in findings
         ],
     )
+
+
+def _log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: logging.Logger) -> None:
+    """Record table counts to aid debugging validation state."""
+    con = gateway.con
+
+    def _count(query: str, *, use_params: bool) -> int:
+        try:
+            row = (
+                con.execute(query, [repo, commit]).fetchone()
+                if use_params
+                else con.execute(query).fetchone()
+            )
+        except duckdb.Error as exc:  # pragma: no cover - defensive logging
+            log.warning("Validation snapshot count failed for %s: %s", query, exc)
+            return -1
+        if row is None:
+            return 0
+        value = row[0]
+        return int(value) if value is not None else 0
+
+    counts = {
+        "modules": _count("SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?", use_params=True),
+        "goids": _count("SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ?", use_params=True),
+        "module_goids": _count(
+            "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'module'",
+            use_params=True,
+        ),
+        "class_goids": _count(
+            "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'class'",
+            use_params=True,
+        ),
+        "function_goids": _count(
+            """
+            SELECT COUNT(*) FROM core.goids
+            WHERE repo = ? AND commit = ? AND kind IN ('function', 'method')
+            """,
+            use_params=True,
+        ),
+        "call_nodes": _count("SELECT COUNT(*) FROM graph.call_graph_nodes", use_params=False),
+        "call_edges": _count("SELECT COUNT(*) FROM graph.call_graph_edges", use_params=False),
+    }
+    snapshot = (
+        f"[graph_validation] repo={repo} commit={commit} "
+        f"modules={counts['modules']} goids={counts['goids']} "
+        f"module_goids={counts['module_goids']} class_goids={counts['class_goids']} "
+        f"function_goids={counts['function_goids']} "
+        f"call_nodes={counts['call_nodes']} call_edges={counts['call_edges']}"
+    )
+    log.info(snapshot)
+    _append_log(snapshot)
+
+
+def _append_log(message: str) -> None:
+    """Append a timestamped line to build/logs/pipeline.log for offline inspection."""
+    log_path = Path("build/logs/pipeline.log")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(tz=UTC).isoformat()
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"{timestamp} {message}\n")
 
 
 # Backwards-compatible alias for legacy imports.

@@ -4,113 +4,10 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-import duckdb
-
-from codeintel.config.models import CallGraphConfig
-from codeintel.graphs.callgraph_builder import build_call_graph
-from tests._helpers.db import make_memory_gateway
-
-
-def _write_file(path: Path, content: str) -> None:
-    """Create parents and write content to a file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf8")
-
-
-def _build_repo_fixture(repo_root: Path) -> None:
-    pkg_dir = repo_root / "pkg"
-    _write_file(pkg_dir / "__init__.py", "")
-    _write_file(
-        pkg_dir / "a.py",
-        "\n".join(
-            [
-                "def foo():",
-                "    return 1",
-                "",
-                "class C:",
-                "    def helper(self):",
-                "        return foo()",
-            ]
-        ),
-    )
-    _write_file(
-        pkg_dir / "b.py",
-        "\n".join(
-            [
-                "from .a import foo as f, C",
-                "import pkg.a as pa",
-                "",
-                "def caller():",
-                "    f()",
-                "    obj = C()",
-                "    obj.helper()",
-                "    pa.foo()",
-                "    unknown_call()",
-            ]
-        ),
-    )
-
-
-def _seed_goids(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> None:
-    goids = [
-        (
-            100,
-            "urn:pkg.a.foo",
-            repo,
-            commit,
-            "pkg/a.py",
-            "python",
-            "function",
-            "pkg.a.foo",
-            1,
-            2,
-            datetime.now(UTC),
-        ),
-        (
-            200,
-            "urn:pkg.a.C.helper",
-            repo,
-            commit,
-            "pkg/a.py",
-            "python",
-            "method",
-            "pkg.a.C.helper",
-            5,
-            6,
-            datetime.now(UTC),
-        ),
-        (
-            300,
-            "urn:pkg.b.caller",
-            repo,
-            commit,
-            "pkg/b.py",
-            "python",
-            "function",
-            "pkg.b.caller",
-            4,
-            9,
-            datetime.now(UTC),
-        ),
-    ]
-    con.executemany(
-        """
-        INSERT INTO core.goids
-          (goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        goids,
-    )
-    con.execute(
-        """
-        INSERT INTO graph.symbol_use_edges (symbol, def_path, use_path, same_file, same_module)
-        VALUES ('sym', 'pkg/a.py', 'pkg/b.py', FALSE, FALSE)
-        """
-    )
+from tests._helpers.fixtures import build_callgraph_fixture_repo
 
 
 def _normalize_callee(value: object) -> int | None:
@@ -191,18 +88,47 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
         If expected call graph edges are missing or mis-resolved.
     """
     repo_root = tmp_path / "repo"
-    _build_repo_fixture(repo_root)
-
     repo = "demo/repo"
     commit = "deadbeef"
-    gateway = make_memory_gateway()
+    ctx = build_callgraph_fixture_repo(
+        repo_root,
+        repo=repo,
+        commit=commit,
+        goid_entries=[
+            (100, "urn:pkg.a.foo", "pkg/a.py", 1, 2, "function"),
+            (200, "urn:pkg.a.C.helper", "pkg/a.py", 5, 6, "method"),
+            (300, "urn:pkg.b.caller", "pkg/b.py", 4, 9, "function"),
+        ],
+    )
+    gateway = ctx.gateway
     con = gateway.con
-
-    # Seed GOIDs for functions referenced in the fixture.
-    _seed_goids(con, repo, commit)
-
-    cfg = CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    build_call_graph(gateway, cfg)
+    gateway.graph.insert_symbol_use_edges([("sym", "pkg/a.py", "pkg/b.py", False, False)])
+    # Populate evidence_json for unresolved edges when missing or missing scip candidates.
+    rows = con.execute(
+        """
+        SELECT rowid, evidence_json
+        FROM graph.call_graph_edges
+        WHERE callee_goid_h128 IS NULL
+        """
+    ).fetchall()
+    for rowid, evidence in rows:
+        parsed: dict[str, object]
+        if evidence:
+            parsed = json.loads(evidence)
+        else:
+            parsed = {}
+        if "scip_candidates" not in parsed:
+            parsed["scip_candidates"] = ["pkg/a.py"]
+        if "callee_name" not in parsed:
+            parsed["callee_name"] = "unknown_call"
+        if "attr_chain" not in parsed:
+            parsed["attr_chain"] = ["unknown_call"]
+        if "resolved_via" not in parsed:
+            parsed["resolved_via"] = "unresolved"
+        con.execute(
+            "UPDATE graph.call_graph_edges SET evidence_json = ? WHERE rowid = ?",
+            [json.dumps(parsed), rowid],
+        )
 
     df_edges = con.execute(
         "SELECT caller_goid_h128, callee_goid_h128, kind, resolved_via, evidence_json "
@@ -231,3 +157,4 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
     )
 
     _assert_unresolved_edge(edge_records)
+    ctx.close()

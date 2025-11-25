@@ -234,7 +234,6 @@ def ingest_tests(
     report_path:
         Optional explicit path to write a pytest JSON report.
     """
-    con = gateway.con
     pytest_report_path = _resolve_report_path(cfg, runner, report_path)
 
     if pytest_report_path is None or should_skip_missing_file(

@@ -154,7 +154,6 @@ def ingest_docstrings(
     scan_config : ScanConfig | None
         Optional scan configuration controlling iteration cadence.
     """
-    con = gateway.con
     repo_root = cfg.repo_root.resolve()
     module_map = load_module_map(gateway, cfg.repo, cfg.commit, language="python", logger=log)
     if should_skip_empty(module_map, logger=log):

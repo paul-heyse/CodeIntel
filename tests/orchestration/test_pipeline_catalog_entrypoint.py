@@ -56,7 +56,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     con = gateway.con
 
     run_batch(
-        con,
+        gateway,
         "core.modules",
         [
             ("pkg.a", "pkg/a.py", REPO, COMMIT, "python", "[]", "[]"),
