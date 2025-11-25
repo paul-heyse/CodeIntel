@@ -354,10 +354,9 @@ class FunctionValidationRow(TypedDict):
 
     repo: str
     commit: str
-    rel_path: str
-    qualname: str
-    issue: str
-    detail: str | None
+    function_goid_h128: int
+    kind: str
+    message: str
     created_at: datetime
 
 
@@ -373,10 +372,41 @@ def function_validation_row_to_tuple(row: FunctionValidationRow) -> tuple[object
     return (
         row["repo"],
         row["commit"],
-        row["rel_path"],
-        row["qualname"],
-        row["issue"],
-        row["detail"],
+        row["function_goid_h128"],
+        row["kind"],
+        row["message"],
+        row["created_at"],
+    )
+
+
+class GraphValidationRow(TypedDict):
+    """Row shape for analytics.graph_validation inserts."""
+
+    repo: str
+    commit: str
+    graph_name: str
+    entity_id: str
+    kind: str
+    message: str
+    created_at: datetime
+
+
+def graph_validation_row_to_tuple(row: GraphValidationRow) -> tuple[object, ...]:
+    """
+    Serialize a GraphValidationRow into the INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by graph_validation INSERTs.
+    """
+    return (
+        row["repo"],
+        row["commit"],
+        row["graph_name"],
+        row["entity_id"],
+        row["kind"],
+        row["message"],
         row["created_at"],
     )
 

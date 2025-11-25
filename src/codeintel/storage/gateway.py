@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -134,6 +134,10 @@ class StorageGateway(Protocol):
     def close(self) -> None:
         """Close the underlying DuckDB connection."""
         ...
+
+
+SnapshotGatewayResolver = Callable[[str], StorageGateway]
+"""Callable returning a StorageGateway for a given commit."""
 
 
 def build_dataset_registry(*, include_views: bool = True) -> DatasetRegistry:
@@ -1183,6 +1187,56 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
     datasets = build_dataset_registry()
     con = _connect(config)
     return _DuckDBGateway(config=config, datasets=datasets, con=con)
+
+
+def build_snapshot_gateway_resolver(
+    *,
+    db_dir: Path,
+    repo: str | None = None,
+    primary_gateway: StorageGateway | None = None,
+) -> SnapshotGatewayResolver:
+    """
+    Build a resolver that opens per-commit snapshot databases as StorageGateways.
+
+    Parameters
+    ----------
+    db_dir:
+        Directory containing per-commit DuckDB snapshots, named
+        ``codeintel-<commit>.duckdb``.
+    repo:
+        Optional repository slug to record in the StorageConfig for observability.
+    primary_gateway:
+        Optional gateway to reuse when the requested commit resolves to the same
+        database path, avoiding duplicate connections with conflicting settings.
+
+    Returns
+    -------
+    SnapshotGatewayResolver
+        Callable that returns a read-only StorageGateway for the given commit.
+    """
+
+    def _resolve(commit: str) -> StorageGateway:
+        db_path = db_dir / f"codeintel-{commit}.duckdb"
+        if (
+            primary_gateway is not None
+            and db_path.resolve() == primary_gateway.config.db_path.resolve()
+        ):
+            return primary_gateway
+        if not db_path.is_file():
+            message = f"Missing snapshot database for commit {commit}: {db_path}"
+            raise FileNotFoundError(message)
+        cfg = StorageConfig(
+            db_path=db_path,
+            read_only=True,
+            apply_schema=False,
+            ensure_views=False,
+            validate_schema=False,
+            repo=repo,
+            commit=commit,
+        )
+        return open_gateway(cfg)
+
+    return _resolve
 
 
 def open_memory_gateway(

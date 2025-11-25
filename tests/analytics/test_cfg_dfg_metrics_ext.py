@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.cfg_dfg_metrics import compute_cfg_metrics, compute_dfg_metrics
+from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     CFGBlockRow,

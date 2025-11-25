@@ -17,7 +17,7 @@ import duckdb
 from codeintel.analytics.context import (
     AnalyticsContext,
     AnalyticsContextConfig,
-    build_analytics_context,
+    ensure_analytics_context,
 )
 from codeintel.analytics.entrypoint_detectors import (
     DetectorSettings,
@@ -127,14 +127,15 @@ def build_entrypoints(
         [cfg.repo, cfg.commit],
     )
 
-    shared_context = context or build_analytics_context(
+    shared_context = ensure_analytics_context(
         gateway,
-        AnalyticsContextConfig(
+        cfg=AnalyticsContextConfig(
             repo=cfg.repo,
             commit=cfg.commit,
             repo_root=cfg.repo_root,
             catalog_provider=catalog_provider,
         ),
+        context=context,
     )
     catalog = shared_context.catalog
     entrypoint_context = _build_entrypoint_context(

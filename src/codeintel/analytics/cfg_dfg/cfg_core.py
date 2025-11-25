@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import duckdb
 
@@ -99,7 +99,7 @@ def _degree_dict(
     raw_pairs = (
         graph.in_degree(weight=weight) if direction == "in" else graph.out_degree(weight=weight)
     )
-    pairs = list(raw_pairs)
+    pairs = cast("Iterable[tuple[int, int | float]]", raw_pairs)
     return {int(node): int(deg) for node, deg in pairs}
 
 
@@ -271,7 +271,9 @@ def cfg_fn_rows(
         else 0.0
     )
     dom_frontier_max = (
-        max(centrality_data.dom_frontier_sizes.values()) if centrality_data.dom_frontier_sizes else 0
+        max(centrality_data.dom_frontier_sizes.values())
+        if centrality_data.dom_frontier_sizes
+        else 0
     )
 
     fn_row = (
@@ -296,9 +298,7 @@ def cfg_fn_rows(
         loops[0],
         loops[1],
         max(centrality_data.bc.values()) if centrality_data.bc else 0.0,
-        (sum(centrality_data.bc.values()) / len(centrality_data.bc))
-        if centrality_data.bc
-        else 0.0,
+        (sum(centrality_data.bc.values()) / len(centrality_data.bc)) if centrality_data.bc else 0.0,
         (sum(centrality_data.closeness.values()) / len(centrality_data.closeness))
         if centrality_data.closeness
         else 0.0,

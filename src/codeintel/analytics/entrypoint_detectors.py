@@ -720,26 +720,26 @@ class _EntryPointVisitor(ast.NodeVisitor):
                 kind = "event"
             else:
                 continue
-                self.candidates.append(
-                    EntryPointCandidate(
-                        kind=kind,
-                        framework="scheduler",
+            self.candidates.append(
+                EntryPointCandidate(
+                    kind=kind,
+                    framework="scheduler",
+                    rel_path=self.rel_path,
+                    module=self.module,
+                    qualname=qualname,
+                    lineno=int(getattr(node, "lineno", 0) or 0),
+                    end_lineno=getattr(node, "end_lineno", None),
+                    schedule=schedule,
+                    trigger=trigger,
+                    evidence=_node_evidence(
                         rel_path=self.rel_path,
-                        module=self.module,
-                        qualname=qualname,
-                        lineno=int(getattr(node, "lineno", 0) or 0),
-                        end_lineno=getattr(node, "end_lineno", None),
-                        schedule=schedule,
-                        trigger=trigger,
-                        evidence=_node_evidence(
-                            rel_path=self.rel_path,
-                            lines=self._lines,
-                            node=decorator,
-                            details={"decorator": _decorator_to_str(decorator)},
-                            tags=("decorator", "scheduler"),
-                        ),
-                    )
+                        lines=self._lines,
+                        node=decorator,
+                        details={"decorator": _decorator_to_str(decorator)},
+                        tags=("decorator", "scheduler"),
+                    ),
                 )
+            )
 
     def _collect_celery_candidates(
         self, node: ast.FunctionDef | ast.AsyncFunctionDef, qualname: str

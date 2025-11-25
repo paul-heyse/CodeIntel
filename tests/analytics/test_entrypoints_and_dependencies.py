@@ -27,9 +27,11 @@ from codeintel.ingestion.py_ast_extract import ingest_python_ast
 from codeintel.ingestion.repo_scan import ingest_repo
 from tests._helpers.builders import (
     CoverageFunctionRow,
+    ModuleRow,
     TestCatalogRow,
     TestCoverageEdgeRow,
     insert_coverage_functions,
+    insert_modules,
     insert_test_catalog,
     insert_test_coverage_edges,
 )
@@ -295,6 +297,17 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
             cfg=RepoScanConfig.from_paths(
                 repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit
             ),
+        )
+        insert_modules(
+            ctx.gateway,
+            [
+                ModuleRow(
+                    module="pkg.app",
+                    path="pkg/app.py",
+                    repo=ctx.repo,
+                    commit=ctx.commit,
+                )
+            ],
         )
         ingest_python_ast(
             ctx.gateway,

@@ -16,7 +16,7 @@ from codeintel.analytics.ast_utils import call_name, snippet_from_lines
 from codeintel.analytics.context import (
     AnalyticsContext,
     AnalyticsContextConfig,
-    build_analytics_context,
+    ensure_analytics_context,
 )
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
@@ -476,14 +476,15 @@ def compute_data_model_usage(
         return
     model_index = _build_model_index(models)
 
-    shared_context = context or build_analytics_context(
+    shared_context = ensure_analytics_context(
         gateway,
-        AnalyticsContextConfig(
+        cfg=AnalyticsContextConfig(
             repo=cfg.repo,
             commit=cfg.commit,
             repo_root=cfg.repo_root,
             catalog_provider=catalog_provider,
         ),
+        context=context,
     )
 
     module_map = shared_context.module_map

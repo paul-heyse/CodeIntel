@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-import duckdb
 from coverage import Coverage
 
 from codeintel.analytics.ast_metrics import build_hotspots
@@ -41,7 +40,7 @@ from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
 from codeintel.analytics.graph_service import build_graph_context
 from codeintel.analytics.graph_stats import compute_graph_stats
-from codeintel.analytics.history_timeseries import compute_history_timeseries
+from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
 from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
 from codeintel.analytics.profiles import (
     build_file_profile,
@@ -118,7 +117,10 @@ from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import (
+    StorageGateway,
+    build_snapshot_gateway_resolver,
+)
 from codeintel.storage.views import create_all_views
 
 log = logging.getLogger(__name__)
@@ -614,7 +616,7 @@ class FunctionHistoryStep:
             repo_root=ctx.repo_root,
         )
         acx = _analytics_context(ctx)
-        compute_function_history(ctx.gateway.con, cfg, runner=ctx.tool_runner, context=acx)
+        compute_function_history(ctx.gateway, cfg, runner=ctx.tool_runner, context=acx)
 
 
 @dataclass
@@ -639,21 +641,22 @@ class HistoryTimeseriesStep:
         history_db_dir = Path(db_dir_env) if db_dir_env else ctx.build_dir / "db"
         history_db_dir.mkdir(parents=True, exist_ok=True)
 
-        def _resolve_db(commit: str) -> duckdb.DuckDBPyConnection:
-            target_path = history_db_dir / f"codeintel-{commit}.duckdb"
-            if target_path.resolve() == ctx.db_path.resolve():
-                return ctx.gateway.con
-            if not target_path.is_file():
-                message = f"Missing snapshot database for commit {commit}: {target_path}"
-                raise FileNotFoundError(message)
-            return duckdb.connect(str(target_path), read_only=True)
-
         cfg = HistoryTimeseriesConfig.from_args(
             repo=ctx.repo,
             repo_root=ctx.repo_root,
             commits=commits,
         )
-        compute_history_timeseries(ctx.gateway.con, cfg, _resolve_db, runner=ctx.tool_runner)
+        snapshot_resolver = build_snapshot_gateway_resolver(
+            db_dir=history_db_dir,
+            repo=ctx.repo,
+            primary_gateway=ctx.gateway,
+        )
+        compute_history_timeseries_gateways(
+            ctx.gateway,
+            cfg,
+            snapshot_resolver,
+            runner=ctx.tool_runner,
+        )
 
 
 @dataclass
@@ -1051,7 +1054,8 @@ class SubsystemsStep:
         _log_step(self.name)
         gateway = ctx.gateway
         cfg = SubsystemsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        build_subsystems(gateway, cfg)
+        acx = _analytics_context(ctx)
+        build_subsystems(gateway, cfg, context=acx)
 
 
 @dataclass

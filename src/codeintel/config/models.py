@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Literal, Self
 
 from coverage import Coverage
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
@@ -187,6 +187,26 @@ class ToolsConfig(BaseModel):
         return Path(str(v)).expanduser()
 
 
+@dataclass(frozen=True)
+class GraphBackendConfig:
+    """
+    Configuration for selecting the NetworkX execution backend.
+
+    Attributes
+    ----------
+    use_gpu : bool
+        Whether to prefer a GPU-capable backend such as nx-cugraph when available.
+    backend : Literal["auto", "cpu", "nx-cugraph"]
+        Identifier for the preferred backend; "auto" defers to helper defaults.
+    strict : bool
+        If True, raise when the requested backend cannot be enabled instead of falling back.
+    """
+
+    use_gpu: bool = False
+    backend: Literal["auto", "cpu", "nx-cugraph"] = "auto"
+    strict: bool = False
+
+
 class CodeIntelConfig(BaseModel):
     """
     Top-level configuration used by the CLI.
@@ -213,6 +233,7 @@ class CodeIntelConfig(BaseModel):
         default_factory=lambda: ["export_docs"],
         description="Default pipeline target(s) when none are specified",
     )
+    graph_backend: GraphBackendConfig = Field(default_factory=GraphBackendConfig)
 
     @property
     def document_output_dir(self) -> Path:
@@ -238,6 +259,7 @@ class CodeIntelConfig(BaseModel):
         paths_cfg: PathsConfig,
         tools_cfg: ToolsConfig | None = None,
         default_targets: list[str] | None = None,
+        graph_backend: GraphBackendConfig | None = None,
     ) -> CodeIntelConfig:
         """
         Build a CodeIntelConfig from pre-parsed CLI models.
@@ -252,6 +274,8 @@ class CodeIntelConfig(BaseModel):
             Optional external tool configuration; defaults to ToolsConfig().
         default_targets : list[str] | None
             Optional override for default pipeline targets.
+        graph_backend : GraphBackendConfig | None
+            Optional NetworkX backend selection.
 
         Returns
         -------
@@ -268,6 +292,7 @@ class CodeIntelConfig(BaseModel):
                 pyright_bin="pyright",
             ),
             default_targets=default_targets or ["export_docs"],
+            graph_backend=graph_backend or GraphBackendConfig(),
         )
 
 

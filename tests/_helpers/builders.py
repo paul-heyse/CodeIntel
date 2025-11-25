@@ -1232,8 +1232,9 @@ def insert_modules(gateway: StorageGateway, rows: Iterable[ModuleRow]) -> None:
     """Insert modules via gateway helper."""
     gateway.con.executemany(
         """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO core.modules (
+            module, path, repo, commit, language, tags, owners
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         [row.to_tuple() for row in rows],
     )

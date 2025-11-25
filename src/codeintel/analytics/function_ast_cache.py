@@ -7,12 +7,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.analytics.function_parsing import (
-    FunctionParserRegistry,
-    ParsedFile,
-    get_parsed_file,
-)
-from codeintel.analytics.span_resolver import resolve_span
+from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -73,9 +68,6 @@ def load_function_asts(
     catalog = provider.catalog()
     functions_by_path = catalog.functions_by_path
 
-    parser = FunctionParserRegistry().get(None)
-    parsed_cache: dict[str, ParsedFile | None] = {}
-
     ast_by_goid: dict[int, FunctionAst] = {}
     missing: set[int] = set()
 
@@ -101,15 +93,15 @@ def load_function_asts(
         if allowed_goids is not None and not metas_for_path:
             missing.update(meta.goid for meta in metas)
             continue
-        parsed = get_parsed_file(normalized_path, abs_path, parsed_cache, parser)
-        if parsed is None:
+        try:
+            parsed = parse_python_file(abs_path)
+        except (OSError, ValueError):
             log.debug("Skipping %s; failed to parse file", abs_path)
             missing.update(meta.goid for meta in metas_for_path)
             continue
 
         for meta in metas_for_path:
-            resolution = resolve_span(parsed.index, meta.start_line, meta.end_line)
-            node = resolution.node
+            node = parsed.span_index.lookup(meta.start_line, meta.end_line)
             if node is None or not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 missing.add(meta.goid)
                 continue

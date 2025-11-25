@@ -1,4 +1,4 @@
-"""Unit tests for analytics.tests_analytics helpers."""
+"""Unit tests for analytics.tests.coverage_edges helpers."""
 
 from __future__ import annotations
 

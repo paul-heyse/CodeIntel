@@ -11,6 +11,7 @@ import ast
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TypedDict
 
 from codeintel.analytics.context import AnalyticsContext
@@ -19,22 +20,15 @@ from codeintel.analytics.functions.config import (
     ProcessContext,
     ProcessState,
 )
-from codeintel.analytics.functions.parsing import (
-    FunctionParserRegistry,
-    ParsedFile,
-    get_parsed_file,
-    resolve_span,
-)
+from codeintel.analytics.functions.parsing import parse_python_file
+from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
+from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
+from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.analytics.functions.typedness import (
     ParamStats,
     TypednessFlags,
     compute_param_stats,
     compute_typedness_flags,
-)
-from codeintel.analytics.functions.validation import (
-    ValidationIssue,
-    ValidationReporter,
-    persist_validation,
 )
 from codeintel.config.models import FunctionAnalyticsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
@@ -53,7 +47,7 @@ class FunctionAnalyticsResult:
 
     metrics_rows: list[tuple]
     types_rows: list[tuple]
-    validation: list[ValidationIssue]
+    reporter: FunctionValidationReporter
 
     @property
     def metrics_count(self) -> int:
@@ -68,17 +62,17 @@ class FunctionAnalyticsResult:
     @property
     def validation_total(self) -> int:
         """Total validation findings recorded."""
-        return len(self.validation)
+        return self.reporter.total
 
     @property
     def parse_failed_count(self) -> int:
         """Count of parse_failed validation issues."""
-        return sum(1 for issue in self.validation if issue.issue == "parse_failed")
+        return self.reporter.parse_failed
 
     @property
     def span_not_found_count(self) -> int:
         """Count of span_not_found validation issues."""
-        return sum(1 for issue in self.validation if issue.issue == "span_not_found")
+        return self.reporter.span_not_found
 
 
 @dataclass(frozen=True)
@@ -330,7 +324,7 @@ def _function_rows_from_node(
 
 def analyze_function(
     meta: FunctionMeta,
-    parsed: ParsedFile,
+    parsed: ParsedModule,
     ctx: ProcessContext,
 ) -> tuple[tuple, tuple] | None:
     """
@@ -342,66 +336,88 @@ def analyze_function(
         Metrics row and types row when a matching AST node is found; otherwise
         None when the span cannot be resolved.
     """
-    resolution = resolve_span(parsed.index, meta.start_line, meta.end_line)
-    if resolution.node is None:
+    node = parsed.span_index.lookup(meta.start_line, meta.end_line)
+    if node is None:
         return None
-    return _function_rows_from_node(meta, resolution.node, parsed.lines, ctx)
+    return _function_rows_from_node(meta, node, parsed.lines, ctx)
+
+
+def _get_parsed_module(rel_path: str, *, state: ProcessState) -> ParsedModule | None:
+    if rel_path in state.cache:
+        return state.cache[rel_path]
+    abs_path = (state.cfg.repo_root / rel_path).resolve()
+    try:
+        parsed = parse_python_file(abs_path)
+    except (OSError, ValueError):
+        state.cache[rel_path] = None
+        return None
+    state.cache[rel_path] = parsed
+    return parsed
 
 
 def _process_file_functions(
     rel_path: str,
     fun_rows: list[GoidRow],
     state: ProcessState,
-) -> tuple[list[tuple], list[tuple], list[ValidationIssue]]:
+) -> tuple[list[tuple], list[tuple]]:
     metrics_rows: list[tuple] = []
     types_rows: list[tuple] = []
-    validation: list[ValidationIssue] = []
 
     abs_path = (state.cfg.repo_root / rel_path).resolve()
-    parsed = get_parsed_file(rel_path, abs_path, state.cache, state.parser)
+    parsed = _get_parsed_module(rel_path, state=state)
     if parsed is None:
         detail = f"File missing or unparsable: {abs_path}"
-        validation.extend(
-            ValidationIssue(
-                rel_path=rel_path,
-                qualname=str(row["qualname"]),
-                issue="parse_failed",
-                detail=detail,
+        for row in fun_rows:
+            state.reporter.record(
+                function_goid_h128=int(row["goid_h128"]),
+                kind="parse_failed",
+                message=detail,
             )
-            for row in fun_rows
-        )
         log.warning("Skipping file for function analytics: %s", abs_path)
-        return metrics_rows, types_rows, validation
+        return metrics_rows, types_rows
 
     for info in fun_rows:
         meta = _meta_from_goid_row(info)
-        resolution = resolve_span(parsed.index, meta.start_line, meta.end_line)
-        if resolution.node is None:
-            validation.append(
-                ValidationIssue(
-                    rel_path=meta.rel_path,
-                    qualname=meta.qualname,
-                    issue="span_not_found",
-                    detail=resolution.detail,
-                )
+        try:
+            span_result = resolve_span(
+                function_goid_h128=meta.goid,
+                span_index=state.span_index,
+            )
+        except SpanResolutionError as exc:
+            state.reporter.record(
+                function_goid_h128=meta.goid,
+                kind="span_not_found",
+                message=str(exc),
             )
             continue
-        rows = _function_rows_from_node(meta, resolution.node, parsed.lines, state.ctx)
+
+        node = parsed.span_index.lookup(
+            span_result.span.start_line,
+            span_result.span.end_line,
+        )
+        if node is None or not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            state.reporter.record(
+                function_goid_h128=meta.goid,
+                kind="span_not_found",
+                message=(
+                    f"AST node not found for span "
+                    f"{span_result.span.start_line}-{span_result.span.end_line}"
+                ),
+            )
+            continue
+        rows = _function_rows_from_node(meta, node, parsed.lines, state.ctx)
         if rows is None:
-            validation.append(
-                ValidationIssue(
-                    rel_path=meta.rel_path,
-                    qualname=meta.qualname,
-                    issue="span_not_found",
-                    detail=resolution.detail,
-                )
+            state.reporter.record(
+                function_goid_h128=meta.goid,
+                kind="span_not_found",
+                message="Span matched a non-function node",
             )
             continue
         metrics_row, types_row = rows
         metrics_rows.append(metrics_row)
         types_rows.append(types_row)
 
-    return metrics_rows, types_rows, validation
+    return metrics_rows, types_rows
 
 
 def build_function_analytics(
@@ -426,22 +442,20 @@ def build_function_analytics(
     """
     metrics_rows: list[tuple] = []
     types_rows: list[tuple] = []
-    validation: list[ValidationIssue] = []
 
     for rel_path, fun_rows in goids_by_file.items():
-        file_metrics, file_types, file_validation = _process_file_functions(
+        file_metrics, file_types = _process_file_functions(
             rel_path=rel_path,
             fun_rows=fun_rows,
             state=state,
         )
         metrics_rows.extend(file_metrics)
         types_rows.extend(file_types)
-        validation.extend(file_validation)
 
     return FunctionAnalyticsResult(
         metrics_rows=metrics_rows,
         types_rows=types_rows,
-        validation=validation,
+        reporter=state.reporter,
     )
 
 
@@ -504,42 +518,65 @@ def _meta_from_goid_row(info: GoidRow) -> FunctionMeta:
     )
 
 
+def _build_span_index(goids_by_file: dict[str, list[GoidRow]], repo_root: Path) -> dict[int, SourceSpan]:
+    span_index: dict[int, SourceSpan] = {}
+    for rel_path, rows in goids_by_file.items():
+        abs_path = (repo_root / rel_path).resolve()
+        for row in rows:
+            end_line_raw = row["end_line"]
+            end_line = int(end_line_raw) if end_line_raw is not None else int(row["start_line"])
+            span_index[int(row["goid_h128"])] = SourceSpan(
+                path=abs_path,
+                start_line=int(row["start_line"]),
+                start_col=0,
+                end_line=end_line,
+                end_col=0,
+            )
+    return span_index
+
+
 def _build_function_analytics_from_context(
     *,
     goids_by_file: dict[str, list[GoidRow]],
     process_ctx: ProcessContext,
     context: AnalyticsContext,
+    span_index: dict[int, SourceSpan],
+    reporter: FunctionValidationReporter,
 ) -> FunctionAnalyticsResult:
     metrics_rows: list[tuple] = []
     types_rows: list[tuple] = []
-    validation: list[ValidationIssue] = []
     ast_map = context.function_ast_map
     missing_goids = context.missing_function_goids
 
     for fun_rows in goids_by_file.values():
         for info in fun_rows:
             meta = _meta_from_goid_row(info)
+            try:
+                resolve_span(function_goid_h128=meta.goid, span_index=span_index)
+            except SpanResolutionError as exc:
+                reporter.record(
+                    function_goid_h128=meta.goid,
+                    kind="span_not_found",
+                    message=str(exc),
+                )
+                continue
             ast_info = ast_map.get(meta.goid)
             if ast_info is None:
-                detail = "missing AST in shared context" if meta.goid in missing_goids else None
-                validation.append(
-                    ValidationIssue(
-                        rel_path=meta.rel_path,
-                        qualname=meta.qualname,
-                        issue="span_not_found",
-                        detail=detail,
-                    )
+                detail = (
+                    "missing AST in shared context" if meta.goid in missing_goids else "missing AST"
+                )
+                reporter.record(
+                    function_goid_h128=meta.goid,
+                    kind="span_not_found",
+                    message=detail,
                 )
                 continue
             rows = _function_rows_from_node(meta, ast_info.node, ast_info.lines, process_ctx)
             if rows is None:
-                validation.append(
-                    ValidationIssue(
-                        rel_path=meta.rel_path,
-                        qualname=meta.qualname,
-                        issue="span_not_found",
-                        detail="context AST resolution failed",
-                    )
+                reporter.record(
+                    function_goid_h128=meta.goid,
+                    kind="span_not_found",
+                    message="context AST resolution failed",
                 )
                 continue
             metrics_row, types_row = rows
@@ -549,7 +586,7 @@ def _build_function_analytics_from_context(
     return FunctionAnalyticsResult(
         metrics_rows=metrics_rows,
         types_rows=types_rows,
-        validation=validation,
+        reporter=reporter,
     )
 
 
@@ -596,7 +633,7 @@ def persist_function_analytics(
         delete_params=[cfg.repo, cfg.commit],
         scope=scope,
     )
-    persist_validation(gateway, cfg, result.validation, created_at=created_at)
+    result.reporter.flush(gateway)
 
     log.info(
         ("Function metrics/types build complete for repo=%s commit=%s: %d functions (missing=%d)"),
@@ -680,35 +717,37 @@ def compute_function_metrics_and_types(
     ctx = ProcessContext(cfg=cfg, now=now)
 
     opts = options or FunctionAnalyticsOptions()
+    reporter = opts.validation_reporter or FunctionValidationReporter(cfg.repo, cfg.commit)
+    span_index = _build_span_index(goids_by_file, cfg.repo_root)
 
     if opts.context is not None:
         result = _build_function_analytics_from_context(
             goids_by_file=goids_by_file,
             process_ctx=ctx,
             context=opts.context,
+            span_index=span_index,
+            reporter=reporter,
         )
     else:
-        registry = opts.parser_registry or FunctionParserRegistry()
-        if opts.parser is not None:
-            log.warning(
-                "parser override is deprecated; prefer FunctionParserKind via config or registry",
-            )
-        selected_parser = opts.parser or registry.get(cfg.parser)
-        parsed_cache: dict[str, ParsedFile | None] = {}
-        state = ProcessState(cfg=cfg, cache=parsed_cache, parser=selected_parser, ctx=ctx)
+        parsed_cache: dict[str, ParsedModule | None] = {}
+        state = ProcessState(
+            cfg=cfg,
+            cache=parsed_cache,
+            span_index=span_index,
+            reporter=reporter,
+            ctx=ctx,
+        )
         result = build_function_analytics(goids_by_file=goids_by_file, state=state)
 
     summary = persist_function_analytics(gateway, cfg, result, created_at=now)
-    reporter = opts.validation_reporter or ValidationReporter(logger=log)
-    reporter.report(result, scope=f"{cfg.repo}@{cfg.commit}")
-    if cfg.fail_on_missing_spans and result.validation:
+    if cfg.fail_on_missing_spans and result.validation_total:
         message = (
             f"Missing analytics for {result.validation_total} functions; "
             "see analytics.function_validation"
         )
         raise ValueError(message)
 
-    if result.validation:
+    if result.validation_total:
         log.warning(
             "Function validation gaps: parse_failed=%d span_not_found=%d",
             result.parse_failed_count,

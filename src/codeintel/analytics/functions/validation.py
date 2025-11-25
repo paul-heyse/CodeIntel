@@ -7,15 +7,26 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from logging import Logger, LoggerAdapter
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 from codeintel.config.models import FunctionAnalyticsConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import FunctionValidationRow, function_validation_row_to_tuple
 from codeintel.storage.gateway import StorageGateway
 
-if TYPE_CHECKING:
-    from codeintel.analytics.functions.metrics import FunctionAnalyticsResult
+
+class FunctionAnalyticsResultProtocol(Protocol):
+    """Protocol describing the minimal shape of a function analytics result."""
+
+    @property
+    def validation_total(self) -> int: ...
+
+    @property
+    def parse_failed_count(self) -> int: ...
+
+    @property
+    def span_not_found_count(self) -> int: ...
+
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +48,7 @@ class ValidationReporter:
     emit_counter: Callable[[str, int], None] | None = None
     logger: Logger | LoggerAdapter = log
 
-    def report(self, result: FunctionAnalyticsResult, *, scope: str) -> None:
+    def report(self, result: FunctionAnalyticsResultProtocol, *, scope: str) -> None:
         """
         Emit validation counters for observability.
 

@@ -430,3 +430,42 @@ def build_analytics_context(
         stats.truncated_import_graph,
     )
     return context
+
+
+def ensure_analytics_context(
+    gateway: StorageGateway,
+    *,
+    cfg: AnalyticsContextConfig,
+    context: AnalyticsContext | None = None,
+) -> AnalyticsContext:
+    """
+    Return an existing `AnalyticsContext` or build one from the provided config.
+
+    Parameters
+    ----------
+    gateway:
+        Storage gateway exposing the DuckDB connection.
+    cfg:
+        AnalyticsContextConfig specifying repo, commit, and budgets.
+    context:
+        Optional pre-built context to reuse.
+
+    Returns
+    -------
+    AnalyticsContext
+        Shared analytics artifacts scoped to the provided repository snapshot.
+
+    Raises
+    ------
+    ValueError
+        If the provided context targets a different repo or commit than `cfg`.
+    """
+    if context is not None:
+        if context.repo != cfg.repo or context.commit != cfg.commit:
+            message = (
+                "AnalyticsContext mismatch: "
+                f"{context.repo}@{context.commit} vs {cfg.repo}@{cfg.commit}"
+            )
+            raise ValueError(message)
+        return context
+    return build_analytics_context(gateway, cfg)

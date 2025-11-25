@@ -18,7 +18,7 @@ from codeintel.analytics.ast_utils import call_name, snippet_from_lines
 from codeintel.analytics.context import (
     AnalyticsContext,
     AnalyticsContextConfig,
-    build_analytics_context,
+    ensure_analytics_context,
 )
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.config.models import ConfigDataFlowConfig
@@ -329,13 +329,14 @@ def compute_config_data_flow(
         )
         return
 
-    shared_context = context or build_analytics_context(
+    shared_context = ensure_analytics_context(
         gateway,
-        AnalyticsContextConfig(
+        cfg=AnalyticsContextConfig(
             repo=cfg.repo,
             commit=cfg.commit,
             repo_root=cfg.repo_root,
         ),
+        context=context,
     )
 
     entrypoints = _entrypoints(con, cfg.repo, cfg.commit)
