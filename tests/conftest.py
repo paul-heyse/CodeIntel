@@ -9,7 +9,15 @@ from pathlib import Path
 import pytest
 
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
-from tests._helpers.fixtures import ProvisionedGateway, provision_ingested_repo
+from tests._helpers.architecture import open_seeded_architecture_gateway
+from tests._helpers.fixtures import (
+    ProvisionedGateway,
+    ProvisioningConfig,
+    provision_docs_export_ready,
+    provision_graph_ready_repo,
+    provision_ingested_repo,
+    provisioned_gateway,
+)
 
 
 @pytest.fixture
@@ -37,11 +45,71 @@ def provisioned_repo(tmp_path: Path) -> Iterator[ProvisionedGateway]:
     ProvisionedGateway
         Gateway plus repo root populated with baseline ingestion data.
     """
-    ctx = provision_ingested_repo(tmp_path / "repo")
+    with provision_ingested_repo(tmp_path / "repo") as ctx:
+        yield ctx
+
+
+@pytest.fixture
+def graph_ready_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
+    """Provision a repo with graph metrics seeds for graph-centric tests.
+
+    Yields
+    ------
+    ProvisionedGateway
+        Gateway plus repo context seeded with graph metrics data.
+    """
+    with provision_graph_ready_repo(tmp_path / "repo") as ctx:
+        yield ctx
+
+
+@pytest.fixture
+def docs_export_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
+    """Provision a gateway ready for docs export scenarios.
+
+    Yields
+    ------
+    ProvisionedGateway
+        Gateway populated with docs export seeds.
+    """
+    ctx = provision_docs_export_ready(tmp_path, repo="demo/repo", commit="deadbeef")
     try:
         yield ctx
     finally:
         ctx.close()
+
+
+@pytest.fixture
+def ingestion_only_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
+    """Provision a gateway without ingestion for custom seeding.
+
+    Yields
+    ------
+    ProvisionedGateway
+        Gateway prepared with schemas but without ingestion.
+    """
+    with provisioned_gateway(
+        tmp_path / "repo",
+        config=ProvisioningConfig(run_ingestion=False),
+    ) as ctx:
+        yield ctx
+
+
+@pytest.fixture
+def architecture_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
+    """Provide a gateway seeded with architecture data (subsystems, call/import graphs).
+
+    Yields
+    ------
+    StorageGateway
+        Gateway configured with architecture dataset seeds.
+    """
+    gateway = open_seeded_architecture_gateway(
+        repo="demo/repo", commit="deadbeef", db_path=tmp_path / "arch.duckdb"
+    )
+    try:
+        yield gateway
+    finally:
+        gateway.close()
 
 
 @pytest.fixture

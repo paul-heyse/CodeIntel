@@ -2,15 +2,35 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
 
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fixtures import seed_docs_export_minimal
+from tests._helpers.fixtures import ProvisionedGateway, provision_docs_export_ready
 
 
-def test_export_all_writes_expected_files(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
+@pytest.fixture
+def docs_export_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
+    """Provision docs-export-ready gateway and ensure cleanup.
+
+    Yields
+    ------
+    ProvisionedGateway
+        Provisioned gateway seeded for docs export.
+    """
+    ctx = provision_docs_export_ready(tmp_path, repo="r", commit="c", file_backed=False)
+    try:
+        yield ctx
+    finally:
+        ctx.close()
+
+
+def test_export_all_writes_expected_files(
+    docs_export_gateway: ProvisionedGateway, tmp_path: Path
+) -> None:
     """
     Seed a minimal DB and verify Parquet/JSONL exports are produced.
 
@@ -21,11 +41,9 @@ def test_export_all_writes_expected_files(fresh_gateway: StorageGateway, tmp_pat
     AssertionError
         If any expected export is missing after running both exporters.
     """
-    seed_docs_export_minimal(fresh_gateway, repo="r", commit="c")
-
     output_dir = tmp_path / "Document Output"
-    export_all_parquet(fresh_gateway, output_dir)
-    export_all_jsonl(fresh_gateway, output_dir)
+    export_all_parquet(docs_export_gateway.gateway, output_dir)
+    export_all_jsonl(docs_export_gateway.gateway, output_dir)
 
     expected_basenames = {
         "goids.parquet",
@@ -67,20 +85,18 @@ def test_export_all_writes_expected_files(fresh_gateway: StorageGateway, tmp_pat
 
 
 def test_export_validation_passes_on_minimal_data(
-    fresh_gateway: StorageGateway, tmp_path: Path
+    docs_export_gateway: ProvisionedGateway, tmp_path: Path
 ) -> None:
     """Ensure validation succeeds when provided with conforming exports."""
-    seed_docs_export_minimal(fresh_gateway, repo="r", commit="c")
-
     output_dir = tmp_path / "Document Output"
     export_all_parquet(
-        fresh_gateway,
+        docs_export_gateway.gateway,
         output_dir,
         validate_exports=True,
         schemas=["function_profile"],
     )
     export_all_jsonl(
-        fresh_gateway,
+        docs_export_gateway.gateway,
         output_dir,
         validate_exports=True,
         schemas=["function_profile"],

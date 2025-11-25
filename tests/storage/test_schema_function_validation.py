@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 
-def test_apply_all_schemas_creates_function_validation() -> None:
+def test_apply_all_schemas_creates_function_validation(fresh_gateway: StorageGateway) -> None:
     """Schema application should create analytics.function_validation."""
-    con = open_memory_gateway(apply_schema=True).con
+    con = fresh_gateway.con
     rows = con.execute("PRAGMA table_info(analytics.function_validation)").fetchall()
     if not rows:
         pytest.fail("analytics.function_validation should exist after apply_all_schemas")

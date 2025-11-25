@@ -20,6 +20,14 @@ from tests._helpers.architecture import open_seeded_architecture_gateway
 
 
 def _seed_db(db_path: Path, *, repo: str, commit: str) -> StorageGateway:
+    """
+    Open a DuckDB seeded with architecture data for FastAPI tests.
+
+    Returns
+    -------
+    StorageGateway
+        Gateway seeded with architecture data.
+    """
     return open_seeded_architecture_gateway(repo=repo, commit=commit, db_path=db_path)
 
 
@@ -58,13 +66,12 @@ def test_backend_registry_matches_gateway(tmp_path: Path) -> None:
     gateway.close()
 
 
-def test_fastapi_endpoints_smoke(tmp_path: Path) -> None:
+def test_fastapi_endpoints_smoke(architecture_gateway: StorageGateway, tmp_path: Path) -> None:
     """Seed a DuckDB and verify key FastAPI endpoints return data."""
     repo = "demo/repo"
     commit = "deadbeef"
     db_path = tmp_path / "codeintel.duckdb"
-    gateway = _seed_db(db_path, repo=repo, commit=commit)
-    app = _build_app(gateway, db_path, repo=repo, commit=commit)
+    app = _build_app(architecture_gateway, db_path, repo=repo, commit=commit)
     with TestClient(app) as client:
         _assert_function_summary(client)
         _assert_callgraph(client)

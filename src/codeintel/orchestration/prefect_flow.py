@@ -24,8 +24,19 @@ from prefect.logging.handlers import PrefectConsoleHandler
 
 from codeintel.analytics.ast_metrics import build_hotspots
 from codeintel.analytics.cfg_dfg_metrics import compute_cfg_metrics, compute_dfg_metrics
+from codeintel.analytics.config_data_flow import compute_config_data_flow
 from codeintel.analytics.config_graph_metrics import compute_config_graph_metrics
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
+from codeintel.analytics.data_model_usage import compute_data_model_usage
+from codeintel.analytics.data_models import compute_data_models
+from codeintel.analytics.dependencies import (
+    build_external_dependencies,
+    build_external_dependency_calls,
+)
+from codeintel.analytics.entrypoints import build_entrypoints
+from codeintel.analytics.function_history import compute_function_history
+from codeintel.analytics.function_contracts import compute_function_contracts
+from codeintel.analytics.function_effects import compute_function_effects
 from codeintel.analytics.functions import (
     ValidationReporter,
     compute_function_metrics_and_types,
@@ -34,6 +45,7 @@ from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
 from codeintel.analytics.graph_stats import compute_graph_stats
 from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
+from codeintel.analytics.semantic_roles import compute_semantic_roles
 from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
 from codeintel.analytics.subsystem_graph_metrics import compute_subsystem_graph_metrics
 from codeintel.analytics.subsystems import build_subsystems
@@ -46,13 +58,22 @@ from codeintel.analytics.tests_analytics import compute_test_coverage_edges
 from codeintel.config.models import (
     CallGraphConfig,
     CFGBuilderConfig,
+    ConfigDataFlowConfig,
     CoverageAnalyticsConfig,
+    DataModelsConfig,
+    DataModelUsageConfig,
+    EntryPointsConfig,
+    ExternalDependenciesConfig,
+    FunctionHistoryConfig,
     FunctionAnalyticsConfig,
     FunctionAnalyticsOverrides,
+    FunctionContractsConfig,
+    FunctionEffectsConfig,
     GoidBuilderConfig,
     GraphMetricsConfig,
     HotspotsConfig,
     ImportGraphConfig,
+    SemanticRolesConfig,
     SubsystemsConfig,
     SymbolUsesConfig,
     TestCoverageConfig,
@@ -324,9 +345,7 @@ def _resolve_log_db_path(path_arg: Path | None, build_dir: Path) -> Path:
         Resolved log database path.
     """
     return (
-        path_arg.resolve()
-        if path_arg is not None
-        else (build_dir / "db" / "codeintel_logs.duckdb")
+        path_arg.resolve() if path_arg is not None else (build_dir / "db" / "codeintel_logs.duckdb")
     )
 
 
@@ -357,12 +376,10 @@ def _snapshot_db_state(
             "core.modules": "SELECT COUNT(*) FROM core.modules WHERE repo = ? AND commit = ?",
             "core.goids": "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ?",
             "core.goids.module": (
-                "SELECT COUNT(*) FROM core.goids "
-                "WHERE repo = ? AND commit = ? AND kind = 'module'"
+                "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'module'"
             ),
             "core.goids.class": (
-                "SELECT COUNT(*) FROM core.goids "
-                "WHERE repo = ? AND commit = ? AND kind = 'class'"
+                "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind = 'class'"
             ),
             "core.goids.func": (
                 "SELECT COUNT(*) FROM core.goids WHERE repo = ? AND commit = ? AND kind IN "
@@ -659,6 +676,16 @@ def t_hotspots(
     build_hotspots(gateway, cfg, runner=runner)
 
 
+@task(name="function_history", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_function_history(
+    repo_root: Path, repo: str, commit: str, db_path: Path, runner: ToolRunner | None = None
+) -> None:
+    """Aggregate per-function git history."""
+    gateway = _get_gateway(db_path)
+    cfg = FunctionHistoryConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    compute_function_history(gateway.con, cfg, runner=runner)
+
+
 @task(name="function_metrics", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_function_metrics(
     repo_root: Path,
@@ -690,6 +717,39 @@ def t_function_metrics(
         summary["validation_parse_failed"],
         summary["validation_span_not_found"],
     )
+
+
+@task(name="function_effects", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_function_effects(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+    """Classify side effects and purity."""
+    gateway = _get_gateway(db_path)
+    cfg = FunctionEffectsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    compute_function_effects(gateway, cfg)
+
+
+@task(name="function_contracts", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_function_contracts(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+    """Infer contracts and nullability."""
+    gateway = _get_gateway(db_path)
+    cfg = FunctionContractsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    compute_function_contracts(gateway, cfg)
+
+
+@task(name="data_models", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_data_models(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+    """Extract structured data models."""
+    gateway = _get_gateway(db_path)
+    cfg = DataModelsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    compute_data_models(gateway.con, cfg)
+
+
+@task(name="data_model_usage", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_data_model_usage(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+    """Classify model usage per function."""
+    gateway = _get_gateway(db_path)
+    cfg = DataModelUsageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
+    compute_data_model_usage(gateway, cfg, catalog_provider=catalog)
 
 
 @task(name="coverage_functions", retries=1, retry_delay_seconds=2)
@@ -725,6 +785,59 @@ def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
     compute_test_graph_metrics(gateway, repo=repo, commit=commit)
     compute_cfg_metrics(gateway, repo=repo, commit=commit)
     compute_dfg_metrics(gateway, repo=repo, commit=commit)
+
+
+@task(name="semantic_roles", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_semantic_roles(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+    """Classify semantic roles for functions and modules."""
+    gateway = _get_gateway(db_path)
+    cfg = SemanticRolesConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    compute_semantic_roles(gateway, cfg)
+
+
+@task(name="entrypoints", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_entrypoints(
+    repo_root: Path,
+    repo: str,
+    commit: str,
+    db_path: Path,
+    scan_config: ScanConfig | None,
+) -> None:
+    """Detect entrypoints across supported frameworks."""
+    gateway = _get_gateway(db_path)
+    cfg = EntryPointsConfig.from_paths(
+        repo=repo,
+        commit=commit,
+        repo_root=repo_root,
+        scan_config=scan_config,
+    )
+    catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
+    build_entrypoints(gateway, cfg, catalog_provider=catalog)
+
+
+@task(name="external_dependencies", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_external_dependencies(
+    repo_root: Path, repo: str, commit: str, db_path: Path, scan_config: ScanConfig | None
+) -> None:
+    """Capture external dependency usage."""
+    gateway = _get_gateway(db_path)
+    cfg = ExternalDependenciesConfig.from_paths(
+        repo=repo,
+        commit=commit,
+        repo_root=repo_root,
+        scan_config=scan_config,
+    )
+    catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
+    build_external_dependency_calls(gateway, cfg, catalog_provider=catalog)
+    build_external_dependencies(gateway, cfg)
+
+
+@task(name="config_data_flow", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+def t_config_data_flow(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
+    """Track config key usage and call chains."""
+    gateway = _get_gateway(db_path)
+    cfg = ConfigDataFlowConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    compute_config_data_flow(gateway, cfg)
 
 
 @task(name="risk_factors", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -841,7 +954,12 @@ def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
             catalog_provider=catalog,
             logger=cast("Logger", run_logger),
         )
-    except (duckdb.Error, nx.NetworkXException, ValueError, RuntimeError) as exc:  # pragma: no cover - error path
+    except (
+        duckdb.Error,
+        nx.NetworkXException,
+        ValueError,
+        RuntimeError,
+    ) as exc:  # pragma: no cover - error path
         pd = problem(
             code="pipeline.task_failed",
             title="graph_validation task failed",
@@ -1119,6 +1237,58 @@ def export_docs_flow(
             ),
         ),
         (
+            "function_effects",
+            lambda: _run_task(
+                "function_effects",
+                t_function_effects,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                snapshot=snapshot_args,
+            ),
+        ),
+        (
+            "function_contracts",
+            lambda: _run_task(
+                "function_contracts",
+                t_function_contracts,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                snapshot=snapshot_args,
+            ),
+        ),
+        (
+            "data_models",
+            lambda: _run_task(
+                "data_models",
+                t_data_models,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                snapshot=snapshot_args,
+            ),
+        ),
+        (
+            "data_model_usage",
+            lambda: _run_task(
+                "data_model_usage",
+                t_data_model_usage,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                snapshot=snapshot_args,
+            ),
+        ),
+        (
             "coverage_functions",
             lambda: _run_task(
                 "coverage_functions",
@@ -1148,6 +1318,60 @@ def export_docs_flow(
                 "graph_metrics",
                 t_graph_metrics,
                 run_logger,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                snapshot=snapshot_args,
+            ),
+        ),
+        (
+            "semantic_roles",
+            lambda: _run_task(
+                "semantic_roles",
+                t_semantic_roles,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                snapshot=snapshot_args,
+            ),
+        ),
+        (
+            "entrypoints",
+            lambda: _run_task(
+                "entrypoints",
+                t_entrypoints,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                ctx.scan_config,
+                snapshot=snapshot_args,
+            ),
+        ),
+        (
+            "external_dependencies",
+            lambda: _run_task(
+                "external_dependencies",
+                t_external_dependencies,
+                run_logger,
+                ctx.repo_root,
+                ctx.repo,
+                ctx.commit,
+                ctx.db_path,
+                ctx.scan_config,
+                snapshot=snapshot_args,
+            ),
+        ),
+        (
+            "config_data_flow",
+            lambda: _run_task(
+                "config_data_flow",
+                t_config_data_flow,
+                run_logger,
+                ctx.repo_root,
                 ctx.repo,
                 ctx.commit,
                 ctx.db_path,

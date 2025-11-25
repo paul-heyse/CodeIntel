@@ -6,14 +6,14 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 EXPECTED_FUNCTION_METRICS_LEN = 29
 
 
-def test_insert_helpers_write_expected_rows() -> None:
+def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> None:
     """Insert helpers should populate tables without manual SQL."""
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     con = gateway.con
     now = datetime.now(tz=UTC)
     now_str = now.isoformat()

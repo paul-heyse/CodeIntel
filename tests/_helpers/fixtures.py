@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Final
+from typing import Final, Self
 
 from codeintel.analytics.cfg_dfg_metrics import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graph_metrics import compute_graph_metrics
@@ -16,7 +19,6 @@ from codeintel.config.models import (
     TypingIngestConfig,
 )
 from codeintel.graphs.callgraph_builder import build_call_graph
-from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 from codeintel.ingestion.repo_scan import ingest_repo
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
@@ -27,6 +29,54 @@ from codeintel.storage.gateway import (
     open_memory_gateway,
 )
 from codeintel.storage.schemas import apply_all_schemas
+from tests._helpers.builders import (
+    AstMetricsRow,
+    CallGraphEdgeRow,
+    CallGraphNodeRow,
+    CFGBlockRow,
+    CFGEdgeRow,
+    CoverageFunctionRow,
+    DFGEdgeRow,
+    DocstringRow,
+    FunctionMetricsRow,
+    FunctionTypesRow,
+    FunctionValidationRow,
+    GoidCrosswalkRow,
+    GoidRow,
+    HotspotRow,
+    ImportGraphEdgeRow,
+    ModuleRow,
+    RepoMapRow,
+    RiskFactorRow,
+    StaticDiagnosticsRow,
+    SymbolUseEdgeRow,
+    TestCatalogRow,
+    TestCoverageEdgeRow,
+    TypednessRow,
+    insert_ast_metrics,
+    insert_call_graph_edges,
+    insert_call_graph_nodes,
+    insert_cfg_blocks,
+    insert_cfg_edges,
+    insert_coverage_functions,
+    insert_dfg_edges,
+    insert_docstrings,
+    insert_function_metrics,
+    insert_function_types,
+    insert_function_validation,
+    insert_goid_crosswalk,
+    insert_goids,
+    insert_hotspots,
+    insert_import_graph_edges,
+    insert_modules,
+    insert_repo_map,
+    insert_risk_factors,
+    insert_static_diagnostics,
+    insert_symbol_use_edges,
+    insert_test_catalog,
+    insert_test_coverage_edges,
+    insert_typedness,
+)
 from tests._helpers.fakes import FakeToolRunner, utcnow
 
 DEFAULT_REPO: Final = "demo/repo"
@@ -50,6 +100,21 @@ class ProvisionedGateway:
     def close(self) -> None:
         """Close the underlying gateway connection."""
         self.gateway.close()
+
+    def __enter__(self) -> Self:
+        """
+        Enter context manager scope.
+
+        Returns
+        -------
+        ProvisionedGateway
+            Self reference for use within a context block.
+        """
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        """Close gateway on context exit."""
+        self.close()
 
 
 @dataclass(frozen=True)
@@ -85,6 +150,58 @@ class GatewayOptions:
     ensure_views: bool = True
     validate_schema: bool = True
     file_backed: bool = True
+
+
+@dataclass(frozen=True)
+class ProvisioningConfig:
+    """Configuration for context-managed gateway provisioning."""
+
+    repo: str = DEFAULT_REPO
+    commit: str = DEFAULT_COMMIT
+    provision_options: ProvisionOptions | None = None
+    gateway_options: GatewayOptions | None = None
+    run_ingestion: bool = True
+
+
+@contextmanager
+def provisioned_gateway(
+    repo_root: Path,
+    config: ProvisioningConfig | None = None,
+) -> Iterator[ProvisionedGateway]:
+    """
+    Context manager wrapping gateway provisioning and cleanup.
+
+    Parameters
+    ----------
+    repo_root
+        Root directory for the repository under test.
+    config
+        Provisioning configuration; defaults mirror ProvisioningConfig.
+
+    Yields
+    ------
+    ProvisionedGateway
+        Provisioned gateway scoped to the repo root.
+    """
+    cfg = config or ProvisioningConfig()
+    if cfg.run_ingestion:
+        ctx = provision_ingested_repo(
+            repo_root,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            options=cfg.provision_options,
+        )
+    else:
+        ctx = provision_gateway_with_repo(
+            repo_root,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            options=cfg.gateway_options,
+        )
+    try:
+        yield ctx
+    finally:
+        ctx.close()
 
 
 def _write_sample_repo(repo_root: Path) -> list[Path]:
@@ -647,170 +764,344 @@ def seed_profile_data(
         [rel_path, repo, commit],
     )
     con.execute("DELETE FROM core.modules WHERE repo = ? AND commit = ?", [repo, commit])
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, 'python', '["server"]', '["team@example.com"]')
-        """,
-        [module, rel_path, repo, commit],
+    insert_modules(
+        gateway,
+        [
+            ModuleRow(
+                module=module,
+                path=rel_path,
+                repo=repo,
+                commit=commit,
+                tags='["server"]',
+                owners='["team@example.com"]',
+            )
+        ],
     )
 
-    con.execute(
-        """
-        INSERT INTO core.ast_metrics (rel_path, node_count, function_count, class_count,
-                                      avg_depth, max_depth, complexity, generated_at)
-        VALUES (?, 10, 1, 0, 1.0, 1, 2.0, ?)
-        """,
-        [rel_path, now],
+    insert_ast_metrics(
+        gateway,
+        [
+            AstMetricsRow(
+                rel_path=rel_path,
+                node_count=10,
+                function_count=1,
+                class_count=0,
+                avg_depth=1.0,
+                max_depth=1,
+                complexity=2.0,
+                generated_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.hotspots (rel_path, commit_count, author_count, lines_added,
-                                        lines_deleted, complexity, score)
-        VALUES (?, 1, 1, 5, 1, 2.0, 0.5)
-        """,
-        [rel_path],
+    insert_hotspots(
+        gateway,
+        [
+            HotspotRow(
+                rel_path=rel_path,
+                commit_count=1,
+                author_count=1,
+                lines_added=5,
+                lines_deleted=1,
+                complexity=2.0,
+                score=0.5,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.typedness (path, type_error_count, annotation_ratio,
-                                         untyped_defs, overlay_needed, repo, commit)
-        VALUES (?, 1, '{"params": 0.5}', 0, FALSE, ?, ?)
-        """,
-        [rel_path, repo, commit],
+    insert_typedness(
+        gateway,
+        [
+            TypednessRow(
+                repo=repo,
+                commit=commit,
+                path=rel_path,
+                type_error_count=1,
+                annotation_ratio='{"params": 0.5}',
+                untyped_defs=0,
+                overlay_needed=False,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.static_diagnostics (
-            rel_path, pyrefly_errors, pyright_errors, ruff_errors,
-            total_errors, has_errors, repo, commit
-        )
-        VALUES (?, 1, 0, 0, 1, TRUE, ?, ?)
-        """,
-        [rel_path, repo, commit],
+    insert_static_diagnostics(
+        gateway,
+        [
+            StaticDiagnosticsRow(
+                repo=repo,
+                commit=commit,
+                rel_path=rel_path,
+                pyrefly_errors=1,
+                pyright_errors=0,
+                ruff_errors=0,
+                total_errors=1,
+                has_errors=True,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO core.docstrings (
-            repo, commit, rel_path, module, qualname, kind, lineno, end_lineno, raw_docstring,
-            style, short_desc, long_desc, params, returns, raises, examples, created_at
-        )
-        VALUES (?, ?, ?, ?, 'pkg.mod.func', 'function', 1, 2, 'Doc', 'auto',
-                'Short doc', 'Longer doc', '[]', '{"return": "int"}', '[]', '[]', ?)
-        """,
-        [repo, commit, rel_path, module, now],
+    insert_docstrings(
+        gateway,
+        [
+            DocstringRow(
+                repo=repo,
+                commit=commit,
+                rel_path=rel_path,
+                module=module,
+                qualname="pkg.mod.func",
+                kind="function",
+                lineno=1,
+                end_lineno=2,
+                raw_docstring="Doc",
+                style="auto",
+                short_desc="Short doc",
+                long_desc="Longer doc",
+                params_json="[]",
+                returns_json='{"return": "int"}',
+                raises_json="[]",
+                examples_json="[]",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.goid_risk_factors (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname, loc,
-            logical_loc, cyclomatic_complexity, complexity_bucket, typedness_bucket,
-            typedness_source, hotspot_score, file_typed_ratio, static_error_count,
-            has_static_errors, executable_lines, covered_lines, coverage_ratio, tested,
-            test_count, failing_test_count, last_test_status, risk_score, risk_level, tags,
-            owners, created_at
-        )
-        VALUES (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, ?, 'python',
-                'function', 'pkg.mod.func', 4, 3, 2, 'medium', 'typed', 'analysis',
-                0.5, 0.5, 1, TRUE, 4, 2, 0.5, TRUE, 1, 1, 'some_failing', 0.9, 'high',
-                '["server"]', '["team@example.com"]', ?)
-        """,
-        [repo, commit, rel_path, now],
+    insert_risk_factors(
+        gateway,
+        [
+            RiskFactorRow(
+                function_goid_h128=1,
+                urn="goid:demo/repo#python:function:pkg.mod.func",
+                repo=repo,
+                commit=commit,
+                rel_path=rel_path,
+                language="python",
+                kind="function",
+                qualname="pkg.mod.func",
+                loc=4,
+                logical_loc=3,
+                cyclomatic_complexity=2,
+                complexity_bucket="medium",
+                typedness_bucket="typed",
+                typedness_source="analysis",
+                hotspot_score=0.5,
+                file_typed_ratio=0.5,
+                static_error_count=1,
+                has_static_errors=True,
+                executable_lines=4,
+                covered_lines=2,
+                coverage_ratio=0.5,
+                tested=True,
+                test_count=1,
+                failing_test_count=1,
+                last_test_status="some_failing",
+                risk_score=0.9,
+                risk_level="high",
+                tags='["server"]',
+                owners='["team@example.com"]',
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.function_metrics (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, loc, logical_loc, param_count, positional_params,
-            keyword_only_params, has_varargs, has_varkw, is_async, is_generator,
-            return_count, yield_count, raise_count, cyclomatic_complexity, max_nesting_depth,
-            stmt_count, decorator_count, has_docstring, complexity_bucket, created_at
-        )
-        VALUES (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, ?, 'python', 'function',
-                'pkg.mod.func', 1, 2, 4, 3, 2, 1, 1, TRUE, FALSE, FALSE, FALSE, 1, 0, 0, 2, 1,
-                2, 0, TRUE, 'medium', ?)
-        """,
-        [repo, commit, rel_path, now],
+    insert_function_metrics(
+        gateway,
+        [
+            FunctionMetricsRow(
+                function_goid_h128=1,
+                urn="goid:demo/repo#python:function:pkg.mod.func",
+                repo=repo,
+                commit=commit,
+                rel_path=rel_path,
+                language="python",
+                kind="function",
+                qualname="pkg.mod.func",
+                start_line=1,
+                end_line=2,
+                loc=4,
+                logical_loc=3,
+                param_count=2,
+                positional_params=1,
+                keyword_only_params=1,
+                has_varargs=True,
+                has_varkw=False,
+                is_async=False,
+                is_generator=False,
+                return_count=1,
+                yield_count=0,
+                raise_count=0,
+                cyclomatic_complexity=2,
+                max_nesting_depth=1,
+                stmt_count=2,
+                decorator_count=0,
+                has_docstring=True,
+                complexity_bucket="medium",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.function_types (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, total_params, annotated_params, unannotated_params,
-            param_typed_ratio, has_return_annotation, return_type, return_type_source,
-            type_comment, param_types, fully_typed, partial_typed, untyped, typedness_bucket,
-            typedness_source, created_at
-        )
-        VALUES (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, ?, 'python', 'function',
-                'pkg.mod.func', 1, 2, 2, 2, 0, 1.0, TRUE, 'int', 'annotation', NULL, '[]', TRUE,
-                FALSE, FALSE, 'typed', 'analysis', ?)
-        """,
-        [repo, commit, rel_path, now],
+    insert_function_types(
+        gateway,
+        [
+            FunctionTypesRow(
+                function_goid_h128=1,
+                urn="goid:demo/repo#python:function:pkg.mod.func",
+                repo=repo,
+                commit=commit,
+                rel_path=rel_path,
+                language="python",
+                kind="function",
+                qualname="pkg.mod.func",
+                start_line=1,
+                end_line=2,
+                total_params=2,
+                annotated_params=2,
+                unannotated_params=0,
+                param_typed_ratio=1.0,
+                has_return_annotation=True,
+                return_type="int",
+                return_type_source="annotation",
+                type_comment=None,
+                param_types_json="[]",
+                fully_typed=True,
+                partial_typed=False,
+                untyped=False,
+                typedness_bucket="typed",
+                typedness_source="analysis",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.coverage_functions (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, executable_lines, covered_lines, coverage_ratio, tested,
-            untested_reason, created_at
-        )
-        VALUES (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, ?, 'python', 'function',
-                'pkg.mod.func', 1, 2, 4, 2, 0.5, TRUE, '', ?)
-        """,
-        [repo, commit, rel_path, now],
+    insert_coverage_functions(
+        gateway,
+        [
+            CoverageFunctionRow(
+                function_goid_h128=1,
+                urn="goid:demo/repo#python:function:pkg.mod.func",
+                repo=repo,
+                commit=commit,
+                rel_path=rel_path,
+                language="python",
+                kind="function",
+                qualname="pkg.mod.func",
+                start_line=1,
+                end_line=2,
+                executable_lines=4,
+                covered_lines=2,
+                coverage_ratio=0.5,
+                tested=True,
+                untested_reason="",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (
-            test_id, test_goid_h128, urn, repo, commit, rel_path, qualname, kind, status,
-            duration_ms, markers, parametrized, flaky, created_at
-        )
-        VALUES ('pkg/mod.py::test_func', 2, 'goid:demo/repo#python:function:pkg.mod.test_func',
-                ?, ?, ?, 'pkg.mod.test_func', 'function', 'failed', 1500, '[]', FALSE, TRUE, ?)
-        """,
-        [repo, commit, rel_path, now],
+    insert_test_catalog(
+        gateway,
+        [
+            TestCatalogRow(
+                test_id="pkg/mod.py::test_func",
+                test_goid_h128=2,
+                urn="goid:demo/repo#python:function:pkg.mod.test_func",
+                repo=repo,
+                commit=commit,
+                rel_path=rel_path,
+                qualname="pkg.mod.test_func",
+                kind="function",
+                status="failed",
+                duration_ms=1500,
+                markers="[]",
+                parametrized=False,
+                flaky=True,
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.test_coverage_edges (
-            test_id, test_goid_h128, function_goid_h128, urn, repo, commit, rel_path, qualname,
-            covered_lines, executable_lines, coverage_ratio, last_status, created_at
-        )
-        VALUES ('pkg/mod.py::test_func', 2, 1, 'goid:demo/repo#python:function:pkg.mod.func',
-                ?, ?, ?, 'pkg.mod.func', 2, 4, 0.5, 'failed', ?)
-        """,
-        [repo, commit, rel_path, now],
+    insert_test_coverage_edges(
+        gateway,
+        [
+            TestCoverageEdgeRow(
+                test_id="pkg/mod.py::test_func",
+                test_goid_h128=2,
+                function_goid_h128=1,
+                urn="goid:demo/repo#python:function:pkg.mod.func",
+                repo=repo,
+                commit=commit,
+                rel_path=rel_path,
+                qualname="pkg.mod.func",
+                covered_lines=2,
+                executable_lines=4,
+                coverage_ratio=0.5,
+                last_status="failed",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_edges (
-            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
-            callsite_col, language, kind, resolved_via, confidence, evidence_json
-        )
-        VALUES
-            (?, ?, 1, 2, ?, 1, 1, 'python', 'direct', 'local_name', 1.0, '{}'),
-            (?, ?, 3, 1, ?, 2, 2, 'python', 'direct', 'global_name', 1.0, '{}')
-        """,
-        [repo, commit, rel_path, repo, commit, rel_path],
+    insert_call_graph_edges(
+        gateway,
+        [
+            CallGraphEdgeRow(
+                repo,
+                commit,
+                1,
+                2,
+                rel_path,
+                1,
+                1,
+                "python",
+                "direct",
+                "local_name",
+                1.0,
+            ),
+            CallGraphEdgeRow(
+                repo,
+                commit,
+                3,
+                1,
+                rel_path,
+                2,
+                2,
+                "python",
+                "direct",
+                "global_name",
+                1.0,
+            ),
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_nodes (goid_h128, language, kind, arity, is_public, rel_path)
-        VALUES
-            (1, 'python', 'function', 0, TRUE, ?),
-            (2, 'python', 'function', 0, FALSE, ?),
-            (3, 'python', 'function', 0, FALSE, ?)
-        """,
-        [rel_path, rel_path, rel_path],
+    insert_call_graph_nodes(
+        gateway,
+        [
+            CallGraphNodeRow(
+                1,
+                "python",
+                "function",
+                0,
+                is_public=True,
+                rel_path=rel_path,
+            ),
+            CallGraphNodeRow(
+                2,
+                "python",
+                "function",
+                0,
+                is_public=False,
+                rel_path=rel_path,
+            ),
+            CallGraphNodeRow(
+                3,
+                "python",
+                "function",
+                0,
+                is_public=False,
+                rel_path=rel_path,
+            ),
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.import_graph_edges (
-            repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group
-        )
-        VALUES (?, ?, ?, ?, 1, 1, 1)
-        """,
-        [repo, commit, module, module],
+    insert_import_graph_edges(
+        gateway,
+        [
+            ImportGraphEdgeRow(
+                repo=repo,
+                commit=commit,
+                src_module=module,
+                dst_module=module,
+                src_fan_out=1,
+                dst_fan_in=1,
+                cycle_group=1,
+            )
+        ],
     )
 
 
@@ -821,33 +1112,54 @@ def _seed_cfg_dfg_for_metrics(
 ) -> None:
     """Seed minimal CFG/DFG rows so compute_cfg/dfg_metrics can run."""
     cfg_blocks = [
-        (1, 0, "1:block0", "entry", rel_path, 1, 1, "entry", "[]", 0, 1),
-        (1, 1, "1:block1", "body", rel_path, 2, 3, "body", "[]", 1, 1),
-        (1, 2, "1:block2", "loop_head", rel_path, 4, 4, "loop_head", "[]", 1, 2),
-        (1, 3, "1:block3", "unreachable", rel_path, 10, 10, "body", "[]", 0, 0),
-        (1, 4, "1:block4", "exit", rel_path, 11, 11, "exit", "[]", 1, 0),
+        CFGBlockRow(1, 0, "1:block0", "entry", rel_path, 1, 1, "entry", "[]", 0, 1),
+        CFGBlockRow(1, 1, "1:block1", "body", rel_path, 2, 3, "body", "[]", 1, 1),
+        CFGBlockRow(1, 2, "1:block2", "loop_head", rel_path, 4, 4, "loop_head", "[]", 1, 2),
+        CFGBlockRow(1, 3, "1:block3", "unreachable", rel_path, 10, 10, "body", "[]", 0, 0),
+        CFGBlockRow(1, 4, "1:block4", "exit", rel_path, 11, 11, "exit", "[]", 1, 0),
     ]
-    run_batch(
-        gateway.con,
-        "graph.cfg_blocks",
-        cfg_blocks,
-        delete_params=[],
-        scope="cfg_blocks",
-    )
+    insert_cfg_blocks(gateway, cfg_blocks)
     cfg_edges = [
-        (1, "1:block0", "1:block1", "fallthrough"),
-        (1, "1:block1", "1:block2", "loop"),
-        (1, "1:block2", "1:block1", "back"),
-        (1, "1:block2", "1:block4", "fallthrough"),
+        CFGEdgeRow(1, "1:block0", "1:block1", "fallthrough"),
+        CFGEdgeRow(1, "1:block1", "1:block2", "loop"),
+        CFGEdgeRow(1, "1:block2", "1:block1", "back"),
+        CFGEdgeRow(1, "1:block2", "1:block4", "fallthrough"),
     ]
-    run_batch(gateway.con, "graph.cfg_edges", cfg_edges, delete_params=[], scope="cfg_edges")
+    insert_cfg_edges(gateway, cfg_edges)
 
     dfg_edges = [
-        (1, "1:block0", "1:block1", "a", "a", "data-flow", False, "data-flow"),
-        (1, "1:block1", "1:block2", "a", "a", "phi", True, "phi"),
-        (1, "1:block1", "1:block1", "a", "a", "intra-block", False, "intra-block"),
+        DFGEdgeRow(
+            1,
+            "1:block0",
+            "1:block1",
+            "a",
+            "a",
+            "data-flow",
+            via_phi=False,
+            use_kind="data-flow",
+        ),
+        DFGEdgeRow(
+            1,
+            "1:block1",
+            "1:block2",
+            "a",
+            "a",
+            "phi",
+            via_phi=True,
+            use_kind="phi",
+        ),
+        DFGEdgeRow(
+            1,
+            "1:block1",
+            "1:block1",
+            "a",
+            "a",
+            "intra-block",
+            via_phi=False,
+            use_kind="intra-block",
+        ),
     ]
-    run_batch(gateway.con, "graph.dfg_edges", dfg_edges, delete_params=[], scope="dfg_edges")
+    insert_dfg_edges(gateway, dfg_edges)
 
 
 def provision_graph_ready_repo(
@@ -889,7 +1201,10 @@ def provision_graph_ready_repo(
                 goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
                 start_line, end_line, created_at
             )
-            VALUES (1, 'urn:pkg.mod:func', ?, ?, 'pkg/mod.py', 'python', 'function', 'pkg.mod.func', 1, 2, CURRENT_TIMESTAMP)
+            VALUES (
+                1, 'urn:pkg.mod:func', ?, ?, 'pkg/mod.py', 'python', 'function',
+                'pkg.mod.func', 1, 2, CURRENT_TIMESTAMP
+            )
             """,
             [repo, commit],
         )
@@ -904,25 +1219,23 @@ def seed_callgraph_goids(
     entries: list[tuple[int, str, str, int, int, str]],
 ) -> None:
     """Insert GOIDs for callgraph tests using gateway helpers."""
-    now_iso = utcnow().isoformat()
+    now = utcnow()
     rows = [
-        (
-            goid,
-            urn,
-            repo,
-            commit,
-            rel_path,
-            "python",
-            kind_value,
-            qualname,
-            start_line,
-            end_line,
-            now_iso,
+        GoidRow(
+            goid_h128=goid,
+            urn=urn,
+            repo=repo,
+            commit=commit,
+            rel_path=rel_path,
+            kind=kind_value,
+            qualname=urn.split(":", maxsplit=1)[-1],
+            start_line=start_line,
+            end_line=end_line,
+            created_at=now,
         )
         for goid, urn, rel_path, start_line, end_line, kind_value in entries
-        for qualname in [urn.split(":", maxsplit=1)[-1]]
     ]
-    gateway.core.insert_goids(rows)
+    insert_goids(gateway, rows)
 
 
 def seed_function_graph_cycle(
@@ -934,24 +1247,77 @@ def seed_function_graph_cycle(
 ) -> None:
     """Seed minimal callgraph nodes/edges to exercise cycle detection."""
     gateway.con.execute(
-        "DELETE FROM graph.call_graph_edges WHERE repo = ? AND commit = ? AND caller_goid_h128 IN (1,2)",
+        """
+        DELETE FROM graph.call_graph_edges
+        WHERE repo = ? AND commit = ? AND caller_goid_h128 IN (1,2)
+        """,
         [repo, commit],
     )
-    gateway.con.execute(
-        "DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1, 2)"
-    )
-    gateway.graph.insert_call_graph_nodes(
+    gateway.con.execute("DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1, 2)")
+    insert_call_graph_nodes(
+        gateway,
         [
-            (1, "python", "function", 0, True, rel_path),
-            (2, "python", "function", 0, False, rel_path),
-        ]
+            CallGraphNodeRow(
+                1,
+                "python",
+                "function",
+                0,
+                is_public=True,
+                rel_path=rel_path,
+            ),
+            CallGraphNodeRow(
+                2,
+                "python",
+                "function",
+                0,
+                is_public=False,
+                rel_path=rel_path,
+            ),
+        ],
     )
-    gateway.graph.insert_call_graph_edges(
+    insert_call_graph_edges(
+        gateway,
         [
-            (repo, commit, 1, 2, rel_path, 1, 1, "python", "direct", "local_name", 1.0, "{}"),
-            (repo, commit, 1, 2, rel_path, 2, 2, "python", "direct", "local_name", 1.0, "{}"),
-            (repo, commit, 2, 1, rel_path, 3, 1, "python", "direct", "local_name", 1.0, "{}"),
-        ]
+            CallGraphEdgeRow(
+                repo,
+                commit,
+                1,
+                2,
+                rel_path,
+                1,
+                1,
+                "python",
+                "direct",
+                "local_name",
+                1.0,
+            ),
+            CallGraphEdgeRow(
+                repo,
+                commit,
+                1,
+                2,
+                rel_path,
+                2,
+                2,
+                "python",
+                "direct",
+                "local_name",
+                1.0,
+            ),
+            CallGraphEdgeRow(
+                repo,
+                commit,
+                2,
+                1,
+                rel_path,
+                3,
+                1,
+                "python",
+                "direct",
+                "local_name",
+                1.0,
+            ),
+        ],
     )
 
 
@@ -968,11 +1334,12 @@ def seed_module_graph_inputs(
         "DELETE FROM core.modules WHERE repo = ? AND commit = ? AND module IN (?, ?)",
         [repo, commit, module_a, module_b],
     )
-    gateway.core.insert_modules(
+    insert_modules(
+        gateway,
         [
-            (module_a, "pkg/mod_a.py", repo, commit),
-            (module_b, "pkg/mod_b.py", repo, commit),
-        ]
+            ModuleRow(module=module_a, path="pkg/mod_a.py", repo=repo, commit=commit),
+            ModuleRow(module=module_b, path="pkg/mod_b.py", repo=repo, commit=commit),
+        ],
     )
     gateway.con.execute(
         """
@@ -981,7 +1348,20 @@ def seed_module_graph_inputs(
         """,
         [repo, commit, module_a, module_b],
     )
-    gateway.graph.insert_import_graph_edges([(repo, commit, module_a, module_b, 1, 1, 0)])
+    insert_import_graph_edges(
+        gateway,
+        [
+            ImportGraphEdgeRow(
+                repo=repo,
+                commit=commit,
+                src_module=module_a,
+                dst_module=module_b,
+                src_fan_out=1,
+                dst_fan_in=1,
+                cycle_group=0,
+            )
+        ],
+    )
     gateway.con.execute(
         """
         DELETE FROM graph.symbol_use_edges
@@ -989,7 +1369,18 @@ def seed_module_graph_inputs(
         """,
         ["pkg/mod_b.py", "pkg/mod_a.py"],
     )
-    gateway.graph.insert_symbol_use_edges([("sym", "pkg/mod_b.py", "pkg/mod_a.py", False, False)])
+    insert_symbol_use_edges(
+        gateway,
+        [
+            SymbolUseEdgeRow(
+                symbol="sym",
+                def_path="pkg/mod_b.py",
+                use_path="pkg/mod_a.py",
+                same_file=False,
+                same_module=False,
+            )
+        ],
+    )
 
 
 def seed_docs_export_minimal(
@@ -1021,177 +1412,307 @@ def seed_docs_export_minimal(
         [repo, commit],
     )
 
-    con.execute(
-        """
-        INSERT INTO core.repo_map VALUES
-        (?, ?, '{"pkg.foo": "foo.py"}', '{}', CURRENT_TIMESTAMP)
-        """,
-        [repo, commit],
+    insert_repo_map(
+        gateway, [RepoMapRow(repo=repo, commit=commit, modules={"pkg.foo": "foo.py"}, overlays={})]
     )
-    con.execute(
-        "INSERT INTO core.modules VALUES (?, ?, 'foo.py', 'pkg.foo', 'python', '[]', '[]')",
-        [repo, commit],
+    insert_modules(
+        gateway,
+        [
+            ModuleRow(
+                module="pkg.foo",
+                path="foo.py",
+                repo=repo,
+                commit=commit,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, created_at
-        ) VALUES (?, 'urn:foo', ?, ?, 'foo.py', 'python', 'function', 'pkg.foo:func', 1, 10, ?)
-        """,
-        [goid, repo, commit, now],
+    insert_goids(
+        gateway,
+        [
+            GoidRow(
+                goid_h128=goid,
+                urn="urn:foo",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                kind="function",
+                qualname="pkg.foo:func",
+                start_line=1,
+                end_line=10,
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO core.goid_crosswalk (
-            repo, commit, goid, lang, module_path, file_path, start_line, end_line,
-            scip_symbol, ast_qualname, cst_node_id, chunk_id, symbol_id, updated_at
-        ) VALUES (?, ?, 'urn:foo', 'python', 'pkg.foo', 'foo.py', 1, 10,
-                  'scip-python foo', 'pkg.foo:func', NULL, NULL, NULL, ?)
-        """,
-        [repo, commit, now],
+    insert_goid_crosswalk(
+        gateway,
+        [
+            GoidCrosswalkRow(
+                repo=repo,
+                commit=commit,
+                goid="urn:foo",
+                lang="python",
+                module_path="pkg.foo",
+                file_path="foo.py",
+                start_line=1,
+                end_line=10,
+                scip_symbol="scip-python foo",
+                ast_qualname="pkg.foo:func",
+                cst_node_id=None,
+                chunk_id=None,
+                symbol_id=None,
+                updated_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_nodes (
-            goid_h128, language, kind, arity, is_public, rel_path
-        ) VALUES (?, 'python', 'function', 0, TRUE, 'foo.py')
-        """,
-        [goid],
+    insert_call_graph_nodes(
+        gateway,
+        [
+            CallGraphNodeRow(
+                goid,
+                "python",
+                "function",
+                0,
+                is_public=True,
+                rel_path="foo.py",
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_edges (
-            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path,
-            callsite_line, callsite_col, language, kind, resolved_via, confidence, evidence_json
-        ) VALUES (?, ?, ?, ?, 'foo.py', 1, 0, 'python', 'direct', 'local_name', 1.0, '{}')
-        """,
-        [repo, commit, goid, goid],
+    insert_call_graph_edges(
+        gateway,
+        [
+            CallGraphEdgeRow(
+                repo,
+                commit,
+                goid,
+                goid,
+                "foo.py",
+                1,
+                0,
+                "python",
+                "direct",
+                "local_name",
+                1.0,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.cfg_blocks (
-            function_goid_h128, block_idx, block_id, label, file_path, start_line, end_line,
-            kind, stmts_json, in_degree, out_degree
-        ) VALUES (?, 0, ?, 'entry', 'foo.py', 1, 1, 'entry', '[]', 0, 0)
-        """,
-        [goid, f"{goid}:block0"],
+    insert_cfg_blocks(
+        gateway,
+        [CFGBlockRow(goid, 0, f"{goid}:block0", "entry", "foo.py", 1, 1, "entry", "[]", 0, 0)],
     )
-    con.execute(
-        """
-        INSERT INTO graph.import_graph_edges (
-            repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group, module_layer
-        ) VALUES (?, ?, 'pkg.foo', 'pkg.bar', 1, 1, 1, 0)
-        """,
-        [repo, commit],
+    insert_import_graph_edges(
+        gateway,
+        [
+            ImportGraphEdgeRow(
+                repo=repo,
+                commit=commit,
+                src_module="pkg.foo",
+                dst_module="pkg.bar",
+                src_fan_out=1,
+                dst_fan_in=1,
+                cycle_group=1,
+                module_layer=0,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.symbol_use_edges (
-            symbol, def_path, use_path, same_file, same_module, def_goid_h128, use_goid_h128
-        ) VALUES ('sym', 'foo.py', 'foo.py', TRUE, TRUE, ?, ?)
-        """,
-        [goid, goid],
+    insert_symbol_use_edges(
+        gateway,
+        [
+            SymbolUseEdgeRow(
+                symbol="sym",
+                def_path="foo.py",
+                use_path="foo.py",
+                same_file=True,
+                same_module=True,
+                def_goid_h128=goid,
+                use_goid_h128=goid,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO core.docstrings (
-            repo, commit, rel_path, module, qualname, kind, lineno, end_lineno,
-            raw_docstring, style, short_desc, long_desc, params, returns, raises,
-            examples, created_at
-        )
-        VALUES (
-            ?, ?, 'foo.py', 'pkg.foo', 'pkg.foo:func', 'function', 1, 1,
-            'demo', 'auto', 'demo', '', '[]', '{"type": "str"}', '[]', '[]', ?
-        )
-        """,
-        [repo, commit, now],
+    insert_docstrings(
+        gateway,
+        [
+            DocstringRow(
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                module="pkg.foo",
+                qualname="pkg.foo:func",
+                kind="function",
+                lineno=1,
+                end_lineno=1,
+                raw_docstring="demo",
+                style="auto",
+                short_desc="demo",
+                long_desc="",
+                params_json="[]",
+                returns_json='{"type": "str"}',
+                raises_json="[]",
+                examples_json="[]",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.function_metrics (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, loc, logical_loc, param_count, positional_params,
-            keyword_only_params, has_varargs, has_varkw, is_async, is_generator,
-            return_count, yield_count, raise_count, cyclomatic_complexity, max_nesting_depth,
-            stmt_count, decorator_count, has_docstring, complexity_bucket, created_at
-        ) VALUES (
-            ?, 'urn:foo', ?, ?, 'foo.py', 'python', 'function', 'pkg.foo:func',
-            1, 10, 10, 10, 1, 1, 0, FALSE, FALSE, FALSE, FALSE, 1, 0, 0, 1, 1,
-            1, 0, TRUE, 'low', ?
-        )
-        """,
-        [goid, repo, commit, now],
+    insert_function_metrics(
+        gateway,
+        [
+            FunctionMetricsRow(
+                function_goid_h128=goid,
+                urn="urn:foo",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                language="python",
+                kind="function",
+                qualname="pkg.foo:func",
+                start_line=1,
+                end_line=10,
+                loc=10,
+                logical_loc=10,
+                param_count=1,
+                positional_params=1,
+                keyword_only_params=0,
+                has_varargs=False,
+                has_varkw=False,
+                is_async=False,
+                is_generator=False,
+                return_count=1,
+                yield_count=0,
+                raise_count=0,
+                cyclomatic_complexity=1,
+                max_nesting_depth=1,
+                stmt_count=1,
+                decorator_count=0,
+                has_docstring=True,
+                complexity_bucket="low",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.function_types (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, total_params, annotated_params, unannotated_params,
-            param_typed_ratio, has_return_annotation, return_type, return_type_source,
-            type_comment, param_types, fully_typed, partial_typed, untyped,
-            typedness_bucket, typedness_source, created_at
-        ) VALUES (
-            ?, 'urn:foo', ?, ?, 'foo.py', 'python', 'function', 'pkg.foo:func',
-            1, 10, 1, 1, 0, 1.0, TRUE, 'str', 'annotation', NULL, '{}',
-            TRUE, FALSE, FALSE, 'typed', 'pyright', ?
-        )
-        """,
-        [goid, repo, commit, now],
+    insert_function_types(
+        gateway,
+        [
+            FunctionTypesRow(
+                function_goid_h128=goid,
+                urn="urn:foo",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                language="python",
+                kind="function",
+                qualname="pkg.foo:func",
+                start_line=1,
+                end_line=10,
+                total_params=1,
+                annotated_params=1,
+                unannotated_params=0,
+                param_typed_ratio=1.0,
+                has_return_annotation=True,
+                return_type="str",
+                return_type_source="annotation",
+                type_comment=None,
+                param_types_json="{}",
+                fully_typed=True,
+                partial_typed=False,
+                untyped=False,
+                typedness_bucket="typed",
+                typedness_source="pyright",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.coverage_functions (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, executable_lines, covered_lines, coverage_ratio,
-            tested, untested_reason, created_at
-        ) VALUES (
-            ?, 'urn:foo', ?, ?, 'foo.py', 'python', 'function', 'pkg.foo:func',
-            1, 10, 1, 1, 1.0, TRUE, NULL, ?
-        )
-        """,
-        [goid, repo, commit, now],
+    insert_coverage_functions(
+        gateway,
+        [
+            CoverageFunctionRow(
+                function_goid_h128=goid,
+                urn="urn:foo",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                language="python",
+                kind="function",
+                qualname="pkg.foo:func",
+                start_line=1,
+                end_line=10,
+                executable_lines=1,
+                covered_lines=1,
+                coverage_ratio=1.0,
+                tested=True,
+                untested_reason=None,
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.goid_risk_factors (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            loc, logical_loc, cyclomatic_complexity, complexity_bucket, typedness_bucket,
-            typedness_source, hotspot_score, file_typed_ratio, static_error_count,
-            has_static_errors, executable_lines, covered_lines, coverage_ratio, tested,
-            test_count, failing_test_count, last_test_status, risk_score, risk_level,
-            tags, owners, created_at
-        ) VALUES (
-            ?, 'urn:foo', ?, ?, 'foo.py', 'python', 'function', 'pkg.foo:func',
-            10, 10, 1, 'low', 'typed', 'pyright', 0.0, 1.0, 0, FALSE, 1, 1, 1.0,
-            TRUE, 1, 0, 'passed', 0.1, 'low', '[]', '[]', ?
-        )
-        """,
-        [goid, repo, commit, now],
+    insert_risk_factors(
+        gateway,
+        [
+            RiskFactorRow(
+                function_goid_h128=goid,
+                urn="urn:foo",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                language="python",
+                kind="function",
+                qualname="pkg.foo:func",
+                loc=10,
+                logical_loc=10,
+                cyclomatic_complexity=1,
+                complexity_bucket="low",
+                typedness_bucket="typed",
+                typedness_source="pyright",
+                hotspot_score=0.0,
+                file_typed_ratio=1.0,
+                static_error_count=0,
+                has_static_errors=False,
+                executable_lines=1,
+                covered_lines=1,
+                coverage_ratio=1.0,
+                tested=True,
+                test_count=1,
+                failing_test_count=0,
+                last_test_status="passed",
+                risk_score=0.1,
+                risk_level="low",
+                tags="[]",
+                owners="[]",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (
-            test_id, test_goid_h128, urn, repo, commit, rel_path, qualname, kind,
-            status, duration_ms, markers, parametrized, flaky, created_at
-        ) VALUES (
-            't1', NULL, NULL, ?, ?, 'foo.py', 'pkg.foo::test_func', 'unit',
-            'passed', 0.0, '[]', FALSE, FALSE, ?
-        )
-        """,
-        [repo, commit, now],
+    insert_test_catalog(
+        gateway,
+        [
+            TestCatalogRow(
+                test_id="t1",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                qualname="pkg.foo::test_func",
+                status="passed",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.test_coverage_edges (
-            test_id, test_goid_h128, function_goid_h128, urn, repo, commit, rel_path,
-            qualname, covered_lines, executable_lines, coverage_ratio, last_status, created_at
-        ) VALUES (
-            't1', NULL, ?, 'urn:foo', ?, ?, 'foo.py', 'pkg.foo:func',
-            1, 1, 1.0, 'passed', ?
-        )
-        """,
-        [goid, repo, commit, now],
+    insert_test_coverage_edges(
+        gateway,
+        [
+            TestCoverageEdgeRow(
+                test_id="t1",
+                function_goid_h128=goid,
+                urn="urn:foo",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                qualname="pkg.foo:func",
+                covered_lines=1,
+                executable_lines=1,
+                coverage_ratio=1.0,
+                last_status="passed",
+                created_at=now,
+                test_goid_h128=None,
+            )
+        ],
     )
 
 
@@ -1248,6 +1769,7 @@ def seed_call_graph_scoping(
     now_iso: str,
 ) -> None:
     """Seed call graph edges across repos/commits for scoping tests."""
+    now = datetime.fromisoformat(now_iso)
     con = gateway.con
     con.execute("DELETE FROM graph.call_graph_edges WHERE repo IN ('r1', 'r2')")
     con.execute("DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1, 2)")
@@ -1255,38 +1777,134 @@ def seed_call_graph_scoping(
         "DELETE FROM analytics.goid_risk_factors WHERE (repo, commit) IN (('r1','c1'),('r2','c2'))"
     )
     con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1, 2)")
-    con.execute(
-        """
-        INSERT INTO core.goids VALUES
-        (1, 'urn:1', 'r1', 'c1', 'a.py', 'python', 'function', 'a.f', 1, 2, ?),
-        (2, 'urn:2', 'r2', 'c2', 'b.py', 'python', 'function', 'b.f', 1, 2, ?)
-        """,
-        [now_iso, now_iso],
+    insert_goids(
+        gateway,
+        [
+            GoidRow(
+                goid_h128=1,
+                urn="urn:1",
+                repo="r1",
+                commit="c1",
+                rel_path="a.py",
+                kind="function",
+                qualname="a.f",
+                start_line=1,
+                end_line=2,
+                created_at=now,
+            ),
+            GoidRow(
+                goid_h128=2,
+                urn="urn:2",
+                repo="r2",
+                commit="c2",
+                rel_path="b.py",
+                kind="function",
+                qualname="b.f",
+                start_line=1,
+                end_line=2,
+                created_at=now,
+            ),
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.goid_risk_factors (
-            function_goid_h128,
-            urn,
-            repo,
-            commit,
-            rel_path,
-            language,
-            kind,
-            qualname,
-            risk_level,
-            risk_score
-        ) VALUES
-        (1, 'urn:1', 'r1', 'c1', 'a.py', 'python', 'function', 'a.f', 'low', 0.1),
-        (2, 'urn:2', 'r2', 'c2', 'b.py', 'python', 'function', 'b.f', 'high', 0.9)
-        """
+    insert_risk_factors(
+        gateway,
+        [
+            RiskFactorRow(
+                function_goid_h128=1,
+                urn="urn:1",
+                repo="r1",
+                commit="c1",
+                rel_path="a.py",
+                language="python",
+                kind="function",
+                qualname="a.f",
+                loc=0,
+                logical_loc=0,
+                cyclomatic_complexity=0,
+                complexity_bucket="low",
+                typedness_bucket="typed",
+                typedness_source="analysis",
+                hotspot_score=0.0,
+                file_typed_ratio=0.0,
+                static_error_count=0,
+                has_static_errors=False,
+                executable_lines=0,
+                covered_lines=0,
+                coverage_ratio=0.0,
+                tested=False,
+                test_count=0,
+                failing_test_count=0,
+                last_test_status="",
+                risk_score=0.1,
+                risk_level="low",
+                tags="[]",
+                owners="[]",
+                created_at=now,
+            ),
+            RiskFactorRow(
+                function_goid_h128=2,
+                urn="urn:2",
+                repo="r2",
+                commit="c2",
+                rel_path="b.py",
+                language="python",
+                kind="function",
+                qualname="b.f",
+                loc=0,
+                logical_loc=0,
+                cyclomatic_complexity=0,
+                complexity_bucket="low",
+                typedness_bucket="typed",
+                typedness_source="analysis",
+                hotspot_score=0.0,
+                file_typed_ratio=0.0,
+                static_error_count=0,
+                has_static_errors=False,
+                executable_lines=0,
+                covered_lines=0,
+                coverage_ratio=0.0,
+                tested=False,
+                test_count=0,
+                failing_test_count=0,
+                last_test_status="",
+                risk_score=0.9,
+                risk_level="high",
+                tags="[]",
+                owners="[]",
+                created_at=now,
+            ),
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_edges VALUES
-        ('r1','c1',1,NULL,'a.py',1,0,'python','direct','local',1.0,'{}'),
-        ('r2','c2',2,NULL,'b.py',2,0,'python','direct','local',1.0,'{}')
-        """
+    insert_call_graph_edges(
+        gateway,
+        [
+            CallGraphEdgeRow(
+                "r1",
+                "c1",
+                1,
+                None,
+                "a.py",
+                1,
+                0,
+                "python",
+                "direct",
+                "local",
+                1.0,
+            ),
+            CallGraphEdgeRow(
+                "r2",
+                "c2",
+                2,
+                None,
+                "b.py",
+                2,
+                0,
+                "python",
+                "direct",
+                "local",
+                1.0,
+            ),
+        ],
     )
 
 
@@ -1330,45 +1948,60 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
             "DELETE FROM core.goids WHERE repo = ? AND commit = ? AND goid_h128 IN (1, 2)",
             [repo, commit],
         )
-        gateway.core.insert_goids(
+        insert_goids(
+            gateway,
             [
-                (
+                GoidRow(
+                    goid_h128=1,
+                    urn="urn:pkg.mod_a.a",
+                    repo=repo,
+                    commit=commit,
+                    rel_path="pkg/mod_a.py",
+                    kind="function",
+                    qualname="pkg.mod_a.a",
+                    start_line=1,
+                    end_line=4,
+                    created_at=utcnow(),
+                ),
+                GoidRow(
+                    goid_h128=2,
+                    urn="urn:pkg.mod_b.b",
+                    repo=repo,
+                    commit=commit,
+                    rel_path="pkg/mod_b.py",
+                    kind="function",
+                    qualname="pkg.mod_b.b",
+                    start_line=1,
+                    end_line=3,
+                    created_at=utcnow(),
+                ),
+            ],
+        )
+        insert_call_graph_nodes(
+            gateway,
+            [
+                CallGraphNodeRow(
                     1,
-                    "urn:pkg.mod_a.a",
-                    repo,
-                    commit,
-                    "pkg/mod_a.py",
                     "python",
                     "function",
-                    "pkg.mod_a.a",
-                    1,
-                    4,
-                    utcnow().isoformat(),
+                    0,
+                    is_public=True,
+                    rel_path="pkg/mod_a.py",
                 ),
-                (
+                CallGraphNodeRow(
                     2,
-                    "urn:pkg.mod_b.b",
-                    repo,
-                    commit,
-                    "pkg/mod_b.py",
                     "python",
                     "function",
-                    "pkg.mod_b.b",
-                    1,
-                    3,
-                    utcnow().isoformat(),
+                    0,
+                    is_public=True,
+                    rel_path="pkg/mod_b.py",
                 ),
-            ]
+            ],
         )
-        gateway.graph.insert_call_graph_nodes(
+        insert_call_graph_edges(
+            gateway,
             [
-                (1, "python", "function", 0, True, "pkg/mod_a.py"),
-                (2, "python", "function", 0, True, "pkg/mod_b.py"),
-            ]
-        )
-        gateway.graph.insert_call_graph_edges(
-            [
-                (
+                CallGraphEdgeRow(
                     repo,
                     commit,
                     1,
@@ -1380,16 +2013,24 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
                     "direct",
                     "local_name",
                     1.0,
-                    "{}",
                 )
-            ]
+            ],
         )
     if build_callgraph_enabled:
         cfg = CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
         build_call_graph(gateway, cfg)
     if include_symbol_edges:
-        gateway.graph.insert_symbol_use_edges(
-            [("sym", "pkg/mod_b.py", "pkg/mod_a.py", False, False)]
+        insert_symbol_use_edges(
+            gateway,
+            [
+                SymbolUseEdgeRow(
+                    symbol="sym",
+                    def_path="pkg/mod_b.py",
+                    use_path="pkg/mod_a.py",
+                    same_file=False,
+                    same_module=False,
+                )
+            ],
         )
     if run_metrics:
         graph_cfg = GraphMetricsConfig.from_paths(repo=repo, commit=commit)
@@ -1477,6 +2118,7 @@ def seed_mcp_backend(
 ) -> None:
     """Seed minimal data for MCP backend tests."""
     con = gateway.con
+    now = utcnow()
     con.execute(
         "DELETE FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?",
         [repo, commit],
@@ -1502,77 +2144,154 @@ def seed_mcp_backend(
         [repo, commit],
     )
 
-    con.execute(
-        """
-        INSERT INTO analytics.goid_risk_factors (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            loc, logical_loc, cyclomatic_complexity, complexity_bucket, typedness_bucket,
-            typedness_source, hotspot_score, file_typed_ratio, static_error_count,
-            has_static_errors, executable_lines, covered_lines, coverage_ratio, tested,
-            test_count, failing_test_count, last_test_status, risk_score, risk_level,
-            tags, owners, created_at
-        )
-        VALUES
-        (1, 'urn:foo', ?, ?, 'foo.py', 'python', 'function', 'foo', 1, 1, 1, 'low',
-         'typed', 'analysis', 0.0, 1.0, 0, FALSE, 1, 1, 1.0, TRUE, 1, 0, 'passed', 0.1,
-         'low', '[]', '[]', CURRENT_TIMESTAMP)
-        """,
-        [repo, commit],
+    insert_risk_factors(
+        gateway,
+        [
+            RiskFactorRow(
+                function_goid_h128=1,
+                urn="urn:foo",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                language="python",
+                kind="function",
+                qualname="foo",
+                loc=1,
+                logical_loc=1,
+                cyclomatic_complexity=1,
+                complexity_bucket="low",
+                typedness_bucket="typed",
+                typedness_source="analysis",
+                hotspot_score=0.0,
+                file_typed_ratio=1.0,
+                static_error_count=0,
+                has_static_errors=False,
+                executable_lines=1,
+                covered_lines=1,
+                coverage_ratio=1.0,
+                tested=True,
+                test_count=1,
+                failing_test_count=0,
+                last_test_status="passed",
+                risk_score=0.1,
+                risk_level="low",
+                tags="[]",
+                owners="[]",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.function_metrics (
-            function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, loc, logical_loc, param_count, positional_params,
-            keyword_only_params, has_varargs, has_varkw, is_async, is_generator,
-            return_count, yield_count, raise_count, cyclomatic_complexity,
-            max_nesting_depth, stmt_count, decorator_count, has_docstring,
-            complexity_bucket, created_at
-        )
-        VALUES
-        (1, 'urn:foo', ?, ?, 'foo.py', 'python', 'function', 'foo', 1, 1, 1, 1, 0,
-         0, 0, FALSE, FALSE, FALSE, FALSE, 1, 0, 0, 1, 1, 1, 0, TRUE, 'low',
-         CURRENT_TIMESTAMP)
-        """,
-        [repo, commit],
+    insert_function_metrics(
+        gateway,
+        [
+            FunctionMetricsRow(
+                function_goid_h128=1,
+                urn="urn:foo",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                language="python",
+                kind="function",
+                qualname="foo",
+                start_line=1,
+                end_line=1,
+                loc=1,
+                logical_loc=1,
+                param_count=0,
+                positional_params=0,
+                keyword_only_params=0,
+                has_varargs=False,
+                has_varkw=False,
+                is_async=False,
+                is_generator=False,
+                return_count=1,
+                yield_count=0,
+                raise_count=0,
+                cyclomatic_complexity=1,
+                max_nesting_depth=1,
+                stmt_count=1,
+                decorator_count=0,
+                has_docstring=True,
+                complexity_bucket="low",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.function_validation (
-            repo, commit, rel_path, qualname, issue, detail, created_at
-        )
-        VALUES (?, ?, 'foo.py', 'foo', 'span_not_found', 'Span 1-2', CURRENT_TIMESTAMP)
-        """,
-        [repo, commit],
+    insert_function_validation(
+        gateway,
+        [
+            FunctionValidationRow(
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                qualname="foo",
+                issue="span_not_found",
+                detail="Span 1-2",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.call_graph_edges (
-            repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
-            callsite_col, language, kind, resolved_via, confidence, evidence_json
-        )
-        VALUES (?, ?, 1, 2, 'foo.py', 1, 0, 'python', 'direct', 'local_name', 1.0, '{}'),
-               (?, ?, 3, 1, 'bar.py', 1, 0, 'python', 'direct', 'local_name', 1.0, '{}')
-        """,
-        [repo, commit, repo, commit],
+    insert_call_graph_edges(
+        gateway,
+        [
+            CallGraphEdgeRow(
+                repo,
+                commit,
+                1,
+                2,
+                "foo.py",
+                1,
+                0,
+                "python",
+                "direct",
+                "local_name",
+                1.0,
+            ),
+            CallGraphEdgeRow(
+                repo,
+                commit,
+                3,
+                1,
+                "bar.py",
+                1,
+                0,
+                "python",
+                "direct",
+                "local_name",
+                1.0,
+            ),
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (
-            test_id, repo, commit, rel_path, qualname, status, created_at
-        )
-        VALUES ('t1', ?, ?, 'tests/t.py', 'tests.t', 'passed', CURRENT_TIMESTAMP)
-        """,
-        [repo, commit],
+    insert_test_catalog(
+        gateway,
+        [
+            TestCatalogRow(
+                test_id="t1",
+                repo=repo,
+                commit=commit,
+                rel_path="tests/t.py",
+                qualname="tests.t",
+                status="passed",
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.test_coverage_edges (
-            test_id, function_goid_h128, urn, repo, commit, rel_path, qualname,
-            covered_lines, executable_lines, coverage_ratio, last_status, created_at
-        )
-        VALUES
-        ('t1', 1, 'urn:foo', ?, ?, 'foo.py', 'foo', 1, 1, 1.0, 'passed', CURRENT_TIMESTAMP)
-        """,
-        [repo, commit],
+    insert_test_coverage_edges(
+        gateway,
+        [
+            TestCoverageEdgeRow(
+                test_id="t1",
+                function_goid_h128=1,
+                urn="urn:foo",
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                qualname="foo",
+                covered_lines=1,
+                executable_lines=1,
+                coverage_ratio=1.0,
+                last_status="passed",
+                created_at=now,
+            )
+        ],
     )

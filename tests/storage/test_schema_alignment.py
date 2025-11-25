@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import assert_schema_alignment
 
 
-def test_apply_and_validate_schema_alignment() -> None:
+def test_apply_and_validate_schema_alignment(fresh_gateway: StorageGateway) -> None:
     """
     Schema application should create expected columns (incl. decorator spans).
 
@@ -15,8 +15,7 @@ def test_apply_and_validate_schema_alignment() -> None:
     AssertionError
         If schema drift is detected or decorator columns are missing.
     """
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=False, validate_schema=True)
-    con = gateway.con
+    con = fresh_gateway.con
     issues = assert_schema_alignment(con, strict=False)
     if issues:
         message = f"Schema drift detected: {issues}"
@@ -35,4 +34,3 @@ def test_apply_and_validate_schema_alignment() -> None:
     if not expected_columns.issubset(set(col_names)):
         message = f"Missing decorator columns in core.ast_nodes: {col_names}"
         raise AssertionError(message)
-    gateway.close()

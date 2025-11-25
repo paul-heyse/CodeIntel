@@ -157,6 +157,17 @@ def build_function_profile(
             last_test_status,
             dominant_test_status,
             slow_test_threshold_ms,
+            created_in_commit,
+            created_at_history,
+            last_modified_commit,
+            last_modified_at,
+            age_days,
+            commit_count,
+            author_count,
+            lines_added,
+            lines_deleted,
+            churn_score,
+            stability_bucket,
             call_fan_in,
             call_fan_out,
             call_edge_in_count,
@@ -170,6 +181,26 @@ def build_function_profile(
             risk_component_complexity,
             risk_component_static,
             risk_component_hotspot,
+            is_pure,
+            uses_io,
+            touches_db,
+            uses_time,
+            uses_randomness,
+            modifies_globals,
+            modifies_closure,
+            spawns_threads_or_tasks,
+            has_transitive_effects,
+            purity_confidence,
+            param_nullability_json,
+            return_nullability,
+            has_preconditions,
+            has_postconditions,
+            has_raises,
+            contract_confidence,
+            role,
+            framework,
+            role_confidence,
+            role_sources_json,
             tags,
             owners,
             doc_short,
@@ -188,6 +219,40 @@ def build_function_profile(
         ),
         ft AS (
             SELECT * FROM analytics.function_types
+        ),
+        effects AS (
+            SELECT *
+            FROM analytics.function_effects
+            WHERE repo = ? AND commit = ?
+        ),
+        contracts AS (
+            SELECT
+                repo,
+                commit,
+                function_goid_h128,
+                preconditions_json,
+                postconditions_json,
+                raises_json,
+                param_nullability_json,
+                return_nullability,
+                contract_confidence,
+                COALESCE(json_array_length(preconditions_json), 0) > 0 AS has_preconditions,
+                COALESCE(json_array_length(postconditions_json), 0) > 0 AS has_postconditions,
+                COALESCE(json_array_length(raises_json), 0) > 0 AS has_raises
+            FROM analytics.function_contracts
+            WHERE repo = ? AND commit = ?
+        ),
+        roles AS (
+            SELECT
+                repo,
+                commit,
+                function_goid_h128,
+                role,
+                framework,
+                role_confidence,
+                role_sources_json
+            FROM analytics.semantic_roles_functions
+            WHERE repo = ? AND commit = ?
         ),
         doc AS (
             SELECT
@@ -258,6 +323,25 @@ def build_function_profile(
             FROM cg_out AS co
             FULL OUTER JOIN cg_in AS ci USING (function_goid_h128)
             FULL OUTER JOIN cg_nodes AS cn USING (function_goid_h128)
+        ),
+        fh AS (
+            SELECT
+                repo,
+                commit,
+                function_goid_h128,
+                created_in_commit,
+                created_at,
+                last_modified_commit,
+                last_modified_at,
+                age_days,
+                commit_count,
+                author_count,
+                lines_added,
+                lines_deleted,
+                churn_score,
+                stability_bucket
+            FROM analytics.function_history
+            WHERE repo = ? AND commit = ?
         )
         SELECT
             rf.function_goid_h128,
@@ -308,6 +392,17 @@ def build_function_profile(
             rf.last_test_status,
             COALESCE(t_stats.dominant_test_status, rf.last_test_status),
             ?,
+            fh.created_in_commit,
+            fh.created_at,
+            fh.last_modified_commit,
+            fh.last_modified_at,
+            fh.age_days,
+            COALESCE(fh.commit_count, 0),
+            COALESCE(fh.author_count, 0),
+            COALESCE(fh.lines_added, 0),
+            COALESCE(fh.lines_deleted, 0),
+            COALESCE(fh.churn_score, 0.0),
+            COALESCE(fh.stability_bucket, 'unknown'),
             COALESCE(cg.call_fan_in, 0),
             COALESCE(cg.call_fan_out, 0),
             COALESCE(cg.call_edge_in_count, 0),
@@ -325,6 +420,26 @@ def build_function_profile(
             END AS risk_component_complexity,
             CASE WHEN rf.has_static_errors THEN 0.2 ELSE 0.0 END AS risk_component_static,
             CASE WHEN rf.hotspot_score > 0 THEN 0.1 ELSE 0.0 END AS risk_component_hotspot,
+            COALESCE(fe.is_pure, FALSE),
+            COALESCE(fe.uses_io, FALSE),
+            COALESCE(fe.touches_db, FALSE),
+            COALESCE(fe.uses_time, FALSE),
+            COALESCE(fe.uses_randomness, FALSE),
+            COALESCE(fe.modifies_globals, FALSE),
+            COALESCE(fe.modifies_closure, FALSE),
+            COALESCE(fe.spawns_threads_or_tasks, FALSE),
+            COALESCE(fe.has_transitive_effects, FALSE),
+            fe.purity_confidence,
+            fc.param_nullability_json,
+            fc.return_nullability,
+            COALESCE(fc.has_preconditions, FALSE),
+            COALESCE(fc.has_postconditions, FALSE),
+            COALESCE(fc.has_raises, FALSE),
+            fc.contract_confidence,
+            fr.role,
+            fr.framework,
+            fr.role_confidence,
+            fr.role_sources_json,
             rf.tags,
             rf.owners,
             doc.doc_short,
@@ -349,6 +464,22 @@ def build_function_profile(
           ON rf.function_goid_h128 = t_stats.function_goid_h128
         LEFT JOIN cg_degrees AS cg
           ON rf.function_goid_h128 = cg.function_goid_h128
+        LEFT JOIN effects AS fe
+          ON rf.function_goid_h128 = fe.function_goid_h128
+         AND rf.repo = fe.repo
+         AND rf.commit = fe.commit
+        LEFT JOIN contracts AS fc
+          ON rf.function_goid_h128 = fc.function_goid_h128
+         AND rf.repo = fc.repo
+         AND rf.commit = fc.commit
+        LEFT JOIN roles AS fr
+          ON rf.function_goid_h128 = fr.function_goid_h128
+         AND rf.repo = fr.repo
+         AND rf.commit = fr.commit
+        LEFT JOIN fh
+          ON fh.function_goid_h128 = rf.function_goid_h128
+         AND fh.repo = rf.repo
+         AND fh.commit = rf.commit
         LEFT JOIN core.modules AS m
           ON m.path = rf.rel_path
          AND (m.repo IS NULL OR m.repo = rf.repo)
@@ -366,7 +497,15 @@ def build_function_profile(
         [
             cfg.repo,
             cfg.commit,
+            cfg.repo,
+            cfg.commit,
+            cfg.repo,
+            cfg.commit,
+            cfg.repo,
+            cfg.commit,
             SLOW_TEST_THRESHOLD_MS,
+            cfg.repo,
+            cfg.commit,
             cfg.repo,
             cfg.commit,
             cfg.repo,
@@ -604,6 +743,9 @@ def build_module_profile(
             import_fan_out,
             cycle_group,
             in_cycle,
+            role,
+            role_confidence,
+            role_sources_json,
             tags,
             owners,
             created_at
@@ -657,6 +799,11 @@ def build_module_profile(
             FROM graph.import_graph_edges
             WHERE repo = ? AND commit = ?
             GROUP BY repo, commit, src_module
+        ),
+        roles AS (
+            SELECT repo, commit, module, role, role_confidence, role_sources_json
+            FROM analytics.semantic_roles_modules
+            WHERE repo = ? AND commit = ?
         )
         SELECT
             mod.repo,
@@ -690,6 +837,9 @@ def build_module_profile(
             COALESCE(imports.import_fan_out, 0),
             imports.cycle_group,
             imports.in_cycle_flag > 0 AS in_cycle,
+            roles.role,
+            roles.role_confidence,
+            roles.role_sources_json,
             mod.tags,
             mod.owners,
             ?
@@ -706,6 +856,10 @@ def build_module_profile(
           ON imports.module = mod.module
          AND imports.repo = mod.repo
          AND imports.commit = mod.commit
+        LEFT JOIN roles
+          ON roles.module = mod.module
+         AND roles.repo = mod.repo
+         AND roles.commit = mod.commit
         WHERE mod.repo = ?
           AND mod.commit = ?;
         """
@@ -713,6 +867,8 @@ def build_module_profile(
     con.execute(
         sql_temp if use_catalog_modules else sql_core,
         [
+            cfg.repo,
+            cfg.commit,
             cfg.repo,
             cfg.commit,
             cfg.repo,

@@ -1,0 +1,25 @@
+libs:
+  boto3:
+    service_name: "aws"
+    category: "cloud"
+    patterns:
+      - match: "client('s3')"
+        mode: ["read", "write"]
+      - match: "resource('dynamodb')"
+        mode: ["read", "write"]
+  redis:
+    service_name: "redis"
+    category: "cache"
+    patterns:
+      - method: "get"
+        mode: ["read"]
+      - method: "set"
+        mode: ["write"]
+      - method: "delete"
+        mode: ["write"]
+  stripe:
+    service_name: "stripe"
+    category: "payment"
+    patterns:
+      - method_prefix: "Charge"
+        mode: ["write"]

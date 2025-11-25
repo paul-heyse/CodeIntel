@@ -122,6 +122,37 @@ FUNCTION_TYPES_COLUMNS = [
     "created_at",
 ]
 
+FUNCTION_EFFECTS_COLUMNS = [
+    "repo",
+    "commit",
+    "function_goid_h128",
+    "is_pure",
+    "uses_io",
+    "touches_db",
+    "uses_time",
+    "uses_randomness",
+    "modifies_globals",
+    "modifies_closure",
+    "spawns_threads_or_tasks",
+    "has_transitive_effects",
+    "purity_confidence",
+    "effects_json",
+    "created_at",
+]
+
+FUNCTION_CONTRACTS_COLUMNS = [
+    "repo",
+    "commit",
+    "function_goid_h128",
+    "preconditions_json",
+    "postconditions_json",
+    "raises_json",
+    "param_nullability_json",
+    "return_nullability",
+    "contract_confidence",
+    "created_at",
+]
+
 TEST_CATALOG_COLUMNS = [
     "test_id",
     "test_goid_h128",
@@ -203,6 +234,16 @@ MODULES_COLUMNS = [
     "owners",
 ]
 
+SEMANTIC_ROLES_MODULES_COLUMNS = [
+    "repo",
+    "commit",
+    "module",
+    "role",
+    "role_confidence",
+    "role_sources_json",
+    "created_at",
+]
+
 REPO_MAP_COLUMNS = [
     "repo",
     "commit",
@@ -266,6 +307,17 @@ GOID_CROSSWALK_COLUMNS = [
     "chunk_id",
     "symbol_id",
     "updated_at",
+]
+
+SEMANTIC_ROLES_FUNCTIONS_COLUMNS = [
+    "repo",
+    "commit",
+    "function_goid_h128",
+    "role",
+    "framework",
+    "role_confidence",
+    "role_sources_json",
+    "created_at",
 ]
 
 CALL_GRAPH_NODE_COLUMNS = [
@@ -432,6 +484,8 @@ _assert_columns("core.goid_crosswalk", GOID_CROSSWALK_COLUMNS)
 _assert_columns("analytics.coverage_lines", COVERAGE_LINES_COLUMNS)
 _assert_columns("analytics.function_metrics", FUNCTION_METRICS_COLUMNS)
 _assert_columns("analytics.function_types", FUNCTION_TYPES_COLUMNS)
+_assert_columns("analytics.function_effects", FUNCTION_EFFECTS_COLUMNS)
+_assert_columns("analytics.function_contracts", FUNCTION_CONTRACTS_COLUMNS)
 _assert_columns("analytics.test_catalog", TEST_CATALOG_COLUMNS)
 _assert_columns("analytics.config_values", CONFIG_VALUES_COLUMNS)
 _assert_columns("analytics.typedness", TYPEDNESS_COLUMNS)
@@ -451,6 +505,8 @@ _assert_columns("graph.cfg_edges", CFG_EDGE_COLUMNS)
 _assert_columns("graph.dfg_edges", DFG_EDGE_COLUMNS)
 _assert_columns("analytics.cfg_function_metrics_ext", CFG_FUNCTION_METRICS_EXT_COLUMNS)
 _assert_columns("analytics.dfg_function_metrics_ext", DFG_FUNCTION_METRICS_EXT_COLUMNS)
+_assert_columns("analytics.semantic_roles_functions", SEMANTIC_ROLES_FUNCTIONS_COLUMNS)
+_assert_columns("analytics.semantic_roles_modules", SEMANTIC_ROLES_MODULES_COLUMNS)
 
 # ---------------------------------------------------------------------------
 # Prepared SQL literals (static, coupled to column lists)
@@ -512,6 +568,41 @@ FUNCTION_TYPES_INSERT = (
     "return_type, return_type_source, type_comment, param_types, fully_typed, partial_typed, untyped, "
     "typedness_bucket, typedness_source, created_at"
     ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+FUNCTION_EFFECTS_DELETE = "DELETE FROM analytics.function_effects WHERE repo = ? AND commit = ?"
+FUNCTION_EFFECTS_INSERT = (
+    "INSERT INTO analytics.function_effects ("
+    "repo, commit, function_goid_h128, is_pure, uses_io, touches_db, uses_time, uses_randomness, "
+    "modifies_globals, modifies_closure, spawns_threads_or_tasks, has_transitive_effects, "
+    "purity_confidence, effects_json, created_at"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+FUNCTION_CONTRACTS_DELETE = "DELETE FROM analytics.function_contracts WHERE repo = ? AND commit = ?"
+FUNCTION_CONTRACTS_INSERT = (
+    "INSERT INTO analytics.function_contracts ("
+    "repo, commit, function_goid_h128, preconditions_json, postconditions_json, raises_json, "
+    "param_nullability_json, return_nullability, contract_confidence, created_at"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+SEMANTIC_ROLES_FUNCTIONS_DELETE = (
+    "DELETE FROM analytics.semantic_roles_functions WHERE repo = ? AND commit = ?"
+)
+SEMANTIC_ROLES_FUNCTIONS_INSERT = (
+    "INSERT INTO analytics.semantic_roles_functions ("
+    "repo, commit, function_goid_h128, role, framework, role_confidence, role_sources_json, created_at"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+SEMANTIC_ROLES_MODULES_DELETE = (
+    "DELETE FROM analytics.semantic_roles_modules WHERE repo = ? AND commit = ?"
+)
+SEMANTIC_ROLES_MODULES_INSERT = (
+    "INSERT INTO analytics.semantic_roles_modules ("
+    "repo, commit, module, role, role_confidence, role_sources_json, created_at"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 
 DOCSTRINGS_DELETE = "DELETE FROM core.docstrings WHERE repo = ? AND commit = ?"
@@ -710,6 +801,22 @@ PREPARED: dict[str, PreparedStatements] = {
         insert_sql=FUNCTION_TYPES_INSERT,
         delete_sql=FUNCTION_TYPES_DELETE,
     ),
+    "analytics.function_effects": PreparedStatements(
+        insert_sql=FUNCTION_EFFECTS_INSERT,
+        delete_sql=FUNCTION_EFFECTS_DELETE,
+    ),
+    "analytics.function_contracts": PreparedStatements(
+        insert_sql=FUNCTION_CONTRACTS_INSERT,
+        delete_sql=FUNCTION_CONTRACTS_DELETE,
+    ),
+    "analytics.semantic_roles_functions": PreparedStatements(
+        insert_sql=SEMANTIC_ROLES_FUNCTIONS_INSERT,
+        delete_sql=SEMANTIC_ROLES_FUNCTIONS_DELETE,
+    ),
+    "analytics.semantic_roles_modules": PreparedStatements(
+        insert_sql=SEMANTIC_ROLES_MODULES_INSERT,
+        delete_sql=SEMANTIC_ROLES_MODULES_DELETE,
+    ),
     "analytics.test_catalog": PreparedStatements(
         insert_sql=TEST_CATALOG_INSERT,
         delete_sql=TEST_CATALOG_DELETE,
@@ -847,6 +954,12 @@ __all__ = [
     "DOCSTRINGS_COLUMNS",
     "DOCSTRINGS_DELETE",
     "DOCSTRINGS_INSERT",
+    "FUNCTION_CONTRACTS_COLUMNS",
+    "FUNCTION_CONTRACTS_DELETE",
+    "FUNCTION_CONTRACTS_INSERT",
+    "FUNCTION_EFFECTS_COLUMNS",
+    "FUNCTION_EFFECTS_DELETE",
+    "FUNCTION_EFFECTS_INSERT",
     "FUNCTION_METRICS_COLUMNS",
     "FUNCTION_METRICS_DELETE",
     "FUNCTION_METRICS_INSERT",
@@ -865,6 +978,12 @@ __all__ = [
     "REPO_MAP_COLUMNS",
     "REPO_MAP_DELETE",
     "REPO_MAP_INSERT",
+    "SEMANTIC_ROLES_FUNCTIONS_COLUMNS",
+    "SEMANTIC_ROLES_FUNCTIONS_DELETE",
+    "SEMANTIC_ROLES_FUNCTIONS_INSERT",
+    "SEMANTIC_ROLES_MODULES_COLUMNS",
+    "SEMANTIC_ROLES_MODULES_DELETE",
+    "SEMANTIC_ROLES_MODULES_INSERT",
     "STATIC_DIAGNOSTICS_COLUMNS",
     "STATIC_DIAGNOSTICS_DELETE",
     "STATIC_DIAGNOSTICS_INSERT",

@@ -8,8 +8,8 @@ settings.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
@@ -21,6 +21,7 @@ from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFG
 
 if TYPE_CHECKING:
     from codeintel.ingestion.scip_ingest import ScipIngestResult
+    from codeintel.ingestion.source_scanner import ScanConfig
 
 
 class RepoConfig(BaseModel):
@@ -729,6 +730,109 @@ class HotspotsConfig:
 
 
 @dataclass(frozen=True)
+class FunctionHistoryConfig:
+    """Configuration for per-function git history aggregation."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    max_history_days: int | None = 365
+    min_lines_threshold: int = 1
+    default_branch: str = "HEAD"
+
+    @dataclass(frozen=True)
+    class Overrides:
+        """Optional overrides for function history analytics."""
+
+        max_history_days: int | None = None
+        min_lines_threshold: int | None = None
+        default_branch: str | None = None
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        overrides: Overrides | None = None,
+    ) -> Self:
+        """
+        Build function history settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized function history configuration.
+        """
+        applied = overrides or cls.Overrides()
+        max_history_days = (
+            applied.max_history_days if applied.max_history_days is not None else cls.max_history_days
+        )
+        min_lines_threshold = (
+            applied.min_lines_threshold
+            if applied.min_lines_threshold is not None
+            else cls.min_lines_threshold
+        )
+        default_branch = applied.default_branch or cls.default_branch
+        return cls(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root,
+            max_history_days=max_history_days,
+            min_lines_threshold=min_lines_threshold,
+            default_branch=default_branch,
+        )
+
+
+@dataclass(frozen=True)
+class HistoryTimeseriesConfig:
+    """Configuration for cross-commit history aggregation."""
+
+    repo: str
+    repo_root: Path
+    commits: tuple[str, ...]
+    entity_kind: str = "function"
+    max_entities: int = 500
+    selection_strategy: str = "risk_score"
+
+    @dataclass(frozen=True)
+    class Overrides:
+        """Optional overrides for history timeseries analytics."""
+
+        entity_kind: str | None = None
+        max_entities: int | None = None
+        selection_strategy: str | None = None
+
+    @classmethod
+    def from_args(
+        cls,
+        *,
+        repo: str,
+        repo_root: Path,
+        commits: Sequence[str],
+        overrides: Overrides | None = None,
+    ) -> Self:
+        """
+        Build history timeseries settings from CLI arguments.
+
+        Returns
+        -------
+        Self
+            Normalized history timeseries configuration.
+        """
+        applied = overrides or cls.Overrides()
+        return cls(
+            repo=repo,
+            repo_root=repo_root,
+            commits=tuple(commits),
+            entity_kind=applied.entity_kind or cls.entity_kind,
+            max_entities=applied.max_entities or cls.max_entities,
+            selection_strategy=applied.selection_strategy or cls.selection_strategy,
+        )
+
+
+@dataclass(frozen=True)
 class CoverageAnalyticsConfig:
     """Configuration for aggregating coverage into functions."""
 
@@ -827,6 +931,304 @@ class GraphMetricsConfig:
             repo=repo,
             commit=commit,
             max_betweenness_sample=max_betweenness_sample,
+        )
+
+
+@dataclass(frozen=True)
+class DataModelsConfig:
+    """Configuration for extracting data models."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
+        """
+        Build data model extraction settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized data model configuration.
+        """
+        return cls(repo=repo, commit=commit, repo_root=repo_root.resolve())
+
+
+@dataclass(frozen=True)
+class DataModelUsageConfig:
+    """Configuration for data model usage analytics."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    max_examples_per_usage: int = 5
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        max_examples_per_usage: int = 5,
+    ) -> Self:
+        """
+        Build data model usage settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized data model usage configuration.
+        """
+        return cls(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root.resolve(),
+            max_examples_per_usage=max_examples_per_usage,
+        )
+
+
+@dataclass(frozen=True)
+class ConfigDataFlowConfig:
+    """Configuration for config data flow analytics."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    max_paths_per_usage: int = 3
+    max_path_length: int = 10
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        max_paths_per_usage: int = 3,
+        max_path_length: int = 10,
+    ) -> Self:
+        """
+        Build config data flow settings from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized config data flow configuration.
+        """
+        return cls(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root.resolve(),
+            max_paths_per_usage=max_paths_per_usage,
+            max_path_length=max_path_length,
+        )
+
+
+@dataclass(frozen=True)
+class EntryPointsConfig:
+    """Configuration for entrypoint detection analytics."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    scan_config: ScanConfig | None = None
+    detect_fastapi: bool = True
+    detect_flask: bool = True
+    detect_click: bool = True
+    detect_typer: bool = True
+    detect_cron: bool = True
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        scan_config: ScanConfig | None = None,
+    ) -> Self:
+        """
+        Build entrypoint detection configuration from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized entrypoint configuration.
+        """
+        return cls(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root.resolve(),
+            scan_config=scan_config,
+        )
+
+
+@dataclass(frozen=True)
+class ExternalDependenciesConfig:
+    """Configuration for external dependency analytics."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    dependency_patterns_path: Path | None = None
+    scan_config: ScanConfig | None = None
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        dependency_patterns_path: Path | None = None,
+        scan_config: ScanConfig | None = None,
+    ) -> Self:
+        """
+        Build dependency analytics configuration from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized dependency configuration.
+        """
+        patterns = dependency_patterns_path.resolve() if dependency_patterns_path else None
+        return cls(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root.resolve(),
+            dependency_patterns_path=patterns,
+            scan_config=scan_config,
+        )
+
+
+def _default_io_apis() -> dict[str, list[str]]:
+    return {
+        "builtins": ["open", "print"],
+        "pathlib": ["Path.open", "Path.write_text", "Path.write_bytes"],
+        "logging": ["debug", "info", "warning", "error", "exception", "critical", "log"],
+        "requests": ["get", "post", "put", "delete", "patch", "head", "options"],
+        "httpx": ["get", "post", "put", "delete", "patch", "head", "options"],
+    }
+
+
+def _default_db_apis() -> dict[str, list[str]]:
+    return {
+        "sqlite3": ["connect"],
+        "psycopg": ["connect"],
+        "psycopg2": ["connect"],
+        "asyncpg": ["connect", "create_pool"],
+        "sqlalchemy": ["create_engine", "Session"],
+    }
+
+
+def _default_time_apis() -> dict[str, list[str]]:
+    return {
+        "time": ["sleep", "time"],
+        "asyncio": ["sleep"],
+        "datetime": ["datetime.now", "datetime.utcnow", "date.today"],
+    }
+
+
+def _default_random_apis() -> dict[str, list[str]]:
+    return {
+        "random": ["random", "randint", "choice", "randrange", "shuffle"],
+        "secrets": ["token_hex", "token_urlsafe"],
+        "uuid": ["uuid4", "uuid1"],
+    }
+
+
+def _default_threading_apis() -> dict[str, list[str]]:
+    return {
+        "threading": ["Thread", "Timer"],
+        "multiprocessing": ["Process", "Pool"],
+        "asyncio": ["create_task", "ensure_future", "gather"],
+        "concurrent.futures": ["ThreadPoolExecutor", "ProcessPoolExecutor"],
+    }
+
+
+@dataclass(frozen=True)
+class FunctionEffectsConfig:
+    """Configuration for side-effect and purity detection."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    max_call_depth: int = 3
+    require_all_callees_pure: bool = True
+    io_apis: dict[str, list[str]] = field(default_factory=_default_io_apis)
+    db_apis: dict[str, list[str]] = field(default_factory=_default_db_apis)
+    time_apis: dict[str, list[str]] = field(default_factory=_default_time_apis)
+    random_apis: dict[str, list[str]] = field(default_factory=_default_random_apis)
+    threading_apis: dict[str, list[str]] = field(default_factory=_default_threading_apis)
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
+        """
+        Build effects configuration from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized configuration.
+        """
+        return cls(repo=repo, commit=commit, repo_root=repo_root)
+
+
+@dataclass(frozen=True)
+class FunctionContractsConfig:
+    """Configuration for inferred contracts and nullability."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    max_conditions_per_func: int = 64
+
+    @classmethod
+    def from_paths(cls, *, repo: str, commit: str, repo_root: Path) -> Self:
+        """
+        Build contracts configuration from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized configuration.
+        """
+        return cls(repo=repo, commit=commit, repo_root=repo_root)
+
+
+@dataclass(frozen=True)
+class SemanticRolesConfig:
+    """Configuration for semantic role classification."""
+
+    repo: str
+    commit: str
+    repo_root: Path
+    enable_llm_refinement: bool = False
+
+    @classmethod
+    def from_paths(
+        cls,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        enable_llm_refinement: bool = False,
+    ) -> Self:
+        """
+        Build semantic roles configuration from repository context.
+
+        Returns
+        -------
+        Self
+            Normalized roles configuration.
+        """
+        return cls(
+            repo=repo,
+            commit=commit,
+            repo_root=repo_root,
+            enable_llm_refinement=enable_llm_refinement,
         )
 
 

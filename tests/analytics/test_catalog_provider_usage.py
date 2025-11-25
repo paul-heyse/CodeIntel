@@ -26,6 +26,14 @@ class _FakeProvider:
     def catalog(self) -> FunctionCatalog:
         return self._catalog
 
+    def urn_for_goid(self, goid: int) -> str | None:  # noqa: ARG002
+        return None
+
+    def lookup_goid(
+        self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
+    ) -> int | None:
+        return None
+
 
 def test_symbol_uses_respects_catalog_module_map(tmp_path: Path) -> None:
     """Catalog module map toggles same_module when modules table is empty."""

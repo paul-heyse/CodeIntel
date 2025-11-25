@@ -13,7 +13,7 @@ from codeintel.models.rows import (
     import_edge_to_tuple,
     import_module_to_tuple,
 )
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -86,9 +86,9 @@ def _expected_import_metadata(
     return expected_scc, comp_sizes_expected, expected_layers
 
 
-def test_import_modules_matches_condensation_layers() -> None:
+def test_import_modules_matches_condensation_layers(fresh_gateway: StorageGateway) -> None:
     """Persist import module metadata and ensure it matches NetworkX condensation output."""
-    gateway = open_memory_gateway()
+    gateway = fresh_gateway
     modules = {"pkg.a", "pkg.b", "pkg.c", "pkg.leaf"}
     raw_edges = {("pkg.a", "pkg.b"), ("pkg.b", "pkg.a"), ("pkg.b", "pkg.c")}
 
