@@ -12,7 +12,14 @@ from datetime import UTC, datetime
 import duckdb
 import networkx as nx
 
-from codeintel.analytics.function_ast_cache import FunctionAst, load_function_asts
+from codeintel.analytics.ast_utils import call_name, snippet_from_lines
+from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.evidence import EvidenceCollector
+from codeintel.analytics.function_ast_cache import (
+    FunctionAst,
+    FunctionAstLoadRequest,
+    load_function_asts,
+)
 from codeintel.config.models import FunctionEffectsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import (
@@ -55,11 +62,46 @@ class EffectAnalysis:
         )
 
 
+def _effects_payload(
+    analysis: EffectAnalysis, transitive_targets: set[int] | None
+) -> dict[str, list[dict[str, object]]]:
+    """
+    Build evidence payload including transitive effect lineage when present.
+
+    Parameters
+    ----------
+    analysis :
+        Effect analysis for a function.
+    transitive_targets : set[int] | None
+        Optional downstream functions carrying effects.
+
+    Returns
+    -------
+    dict[str, object]
+        Evidence payload augmented with transitive lineage when available.
+    """
+    payload = dict(analysis.evidence)
+    if transitive_targets:
+        payload["transitive_effects_via"] = [
+            {
+                "path": "",
+                "lineno": None,
+                "end_lineno": None,
+                "snippet": "",
+                "details": {"goid": target},
+                "tags": ["transitive_effect"],
+            }
+            for target in sorted(transitive_targets)
+        ]
+    return payload
+
+
 def compute_function_effects(
     gateway: StorageGateway,
     cfg: FunctionEffectsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate `analytics.function_effects` for the target repo/commit.
@@ -72,16 +114,22 @@ def compute_function_effects(
         Function effects configuration.
     catalog_provider:
         Optional function catalog to reuse across steps.
+    context:
+        Optional shared analytics context to reuse catalog, ASTs, and call graph.
     """
     ensure_schema(gateway.con, "analytics.function_effects")
 
-    catalog = catalog_provider or FunctionCatalogService.from_db(
-        gateway, repo=cfg.repo, commit=cfg.commit
+    catalog = (
+        context.catalog
+        if context is not None
+        else catalog_provider
+        or FunctionCatalogService.from_db(gateway, repo=cfg.repo, commit=cfg.commit)
     )
     rows = _build_effect_rows(
         gateway=gateway,
         cfg=cfg,
         catalog=catalog,
+        context=context,
         now=datetime.now(tz=UTC),
     )
 
@@ -100,26 +148,37 @@ def _build_effect_rows(
     gateway: StorageGateway,
     cfg: FunctionEffectsConfig,
     catalog: FunctionCatalogProvider,
+    context: AnalyticsContext | None,
     now: datetime,
 ) -> list[tuple[object, ...]]:
-    ast_by_goid, missing = load_function_asts(
-        gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        repo_root=cfg.repo_root,
-        catalog_provider=catalog,
-    )
+    if context is not None:
+        ast_by_goid = context.function_ast_map
+        missing = context.missing_function_goids
+    else:
+        ast_by_goid, missing = load_function_asts(
+            gateway,
+            FunctionAstLoadRequest(
+                repo=cfg.repo,
+                commit=cfg.commit,
+                repo_root=cfg.repo_root,
+                catalog_provider=catalog,
+            ),
+        )
     all_goids = {span.goid for span in catalog.catalog().function_spans}
-    direct_flags: dict[int, bool] = dict.fromkeys(all_goids, False)
-    analyses: dict[int, EffectAnalysis] = {}
+    analyses: dict[int, EffectAnalysis] = {
+        goid: _analyze_function(info, cfg) for goid, info in ast_by_goid.items()
+    }
+    direct_flags: dict[int, bool] = {
+        goid: analysis.direct_effectful for goid, analysis in analyses.items()
+    }
 
-    for goid, info in ast_by_goid.items():
-        analysis = _analyze_function(info, cfg)
-        analyses[goid] = analysis
-        direct_flags[goid] = analysis.direct_effectful
-
+    call_graph = (
+        context.call_graph
+        if context is not None
+        else load_call_graph(gateway, cfg.repo, cfg.commit)
+    )
     transitive_hits = _compute_transitive_effects(
-        load_call_graph(gateway, cfg.repo, cfg.commit),
+        call_graph,
         direct_flags,
         max_depth=cfg.max_call_depth,
     )
@@ -127,7 +186,6 @@ def _build_effect_rows(
 
     rows: list[tuple[object, ...]] = []
     for goid in all_goids:
-        unknown = goid in missing
         analysis = analyses.get(
             goid,
             EffectAnalysis(
@@ -138,22 +196,28 @@ def _build_effect_rows(
                 modifies_globals=False,
                 modifies_closure=False,
                 spawns_threads_or_tasks=False,
-                evidence={"errors": [{"kind": "missing_ast"}]} if unknown else {},
+                evidence={
+                    "errors": [
+                        {
+                            "path": "",
+                            "lineno": None,
+                            "end_lineno": None,
+                            "snippet": "",
+                            "details": {"kind": "missing_ast"},
+                            "tags": ["error"],
+                        }
+                    ]
+                }
+                if goid in missing
+                else {},
             ),
         )
-        direct_effectful = direct_flags.get(goid, False)
-        transitive = bool(transitive_hits.get(goid))
-        is_pure = not direct_effectful and not transitive and not unknown
+        transitive_targets = transitive_hits.get(goid)
+        is_pure = not direct_flags.get(goid) and not transitive_targets and goid not in missing
         purity_confidence = _purity_confidence(
             parsed=goid not in missing,
             unresolved_call_count=unresolved_calls.get(goid, 0),
         )
-
-        effects_json = dict(analysis.evidence)
-        if transitive_hits.get(goid):
-            effects_json["transitive_effects_via"] = [
-                {"goid": target} for target in sorted(transitive_hits[goid])
-            ]
 
         rows.append(
             (
@@ -168,9 +232,9 @@ def _build_effect_rows(
                 analysis.modifies_globals,
                 analysis.modifies_closure,
                 analysis.spawns_threads_or_tasks,
-                transitive,
+                bool(transitive_targets),
                 purity_confidence,
-                effects_json,
+                _effects_payload(analysis, transitive_targets),
                 now,
             )
         )
@@ -238,13 +302,12 @@ def _purity_confidence(*, parsed: bool, unresolved_call_count: int) -> float:
 
 
 def _analyze_function(func: FunctionAst, cfg: FunctionEffectsConfig) -> EffectAnalysis:
-    visitor = _EffectVisitor(cfg)
+    visitor = _EffectVisitor(cfg, rel_path=func.rel_path, lines=func.lines)
     visitor.visit(func.node)
-    evidence = visitor.evidence
     if visitor.modifies_globals:
-        evidence.setdefault("globals", []).append({"line": func.start_line})
+        visitor.record_scope_change("globals", func.start_line)
     if visitor.modifies_closure:
-        evidence.setdefault("nonlocals", []).append({"line": func.start_line})
+        visitor.record_scope_change("nonlocals", func.start_line)
     return EffectAnalysis(
         uses_io=visitor.uses_io,
         touches_db=visitor.touches_db,
@@ -253,14 +316,14 @@ def _analyze_function(func: FunctionAst, cfg: FunctionEffectsConfig) -> EffectAn
         modifies_globals=visitor.modifies_globals,
         modifies_closure=visitor.modifies_closure,
         spawns_threads_or_tasks=visitor.spawns_threads_or_tasks,
-        evidence=evidence,
+        evidence=visitor.evidence_payload,
     )
 
 
 class _EffectVisitor(ast.NodeVisitor):
     """Lightweight AST visitor to spot side-effectful operations."""
 
-    def __init__(self, cfg: FunctionEffectsConfig) -> None:
+    def __init__(self, cfg: FunctionEffectsConfig, *, rel_path: str, lines: list[str]) -> None:
         self.cfg = cfg
         self.uses_io = False
         self.touches_db = False
@@ -269,7 +332,9 @@ class _EffectVisitor(ast.NodeVisitor):
         self.modifies_globals = False
         self.modifies_closure = False
         self.spawns_threads_or_tasks = False
-        self.evidence: dict[str, list[dict[str, object]]] = {}
+        self._rel_path = rel_path
+        self._lines = lines
+        self._evidence: dict[str, EvidenceCollector] = {}
 
     def visit_Global(self, node: ast.Global) -> None:
         self.modifies_globals = True
@@ -280,49 +345,70 @@ class _EffectVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
-        name = _dotted_name(node.func)
+        name = call_name(node.func)
         if name is None:
             self.generic_visit(node)
             return
         lineno = getattr(node, "lineno", None)
+        end_lineno = getattr(node, "end_lineno", lineno)
 
         if _matches_api(name, self.cfg.io_apis):
             self.uses_io = True
-            self.evidence.setdefault("io_calls", []).append({"name": name, "line": lineno})
+            self._record_call("io_calls", name, lineno, end_lineno)
         if _matches_api(name, self.cfg.db_apis):
             self.touches_db = True
-            self.evidence.setdefault("db_calls", []).append({"name": name, "line": lineno})
+            self._record_call("db_calls", name, lineno, end_lineno)
         if _matches_api(name, self.cfg.time_apis):
             self.uses_time = True
-            self.evidence.setdefault("time_calls", []).append({"name": name, "line": lineno})
+            self._record_call("time_calls", name, lineno, end_lineno)
         if _matches_api(name, self.cfg.random_apis):
             self.uses_randomness = True
-            self.evidence.setdefault("random_calls", []).append({"name": name, "line": lineno})
+            self._record_call("random_calls", name, lineno, end_lineno)
         if _matches_api(name, self.cfg.threading_apis):
             self.spawns_threads_or_tasks = True
-            self.evidence.setdefault("thread_calls", []).append({"name": name, "line": lineno})
+            self._record_call("thread_calls", name, lineno, end_lineno)
 
         self.generic_visit(node)
 
+    @property
+    def evidence_payload(self) -> dict[str, list[dict[str, object]]]:
+        """Return JSON-serializable evidence grouped by category."""
+        return {
+            kind: collector.to_dicts()
+            for kind, collector in self._evidence.items()
+            if collector.samples
+        }
 
-def _dotted_name(expr: ast.AST) -> str | None:
-    if isinstance(expr, ast.Name):
-        return expr.id
-    if isinstance(expr, ast.Attribute):
-        base = _dotted_name(expr.value)
-        if base:
-            return f"{base}.{expr.attr}"
-        return expr.attr
-    if isinstance(expr, ast.Call):
-        return _dotted_name(expr.func)
-    return None
+    def _record_call(
+        self, kind: str, name: str, lineno: int | None, end_lineno: int | None
+    ) -> None:
+        collector = self._evidence.setdefault(kind, EvidenceCollector())
+        snippet = snippet_from_lines(self._lines, lineno, end_lineno)
+        collector.add_sample(
+            path=self._rel_path,
+            line_span=(lineno, end_lineno),
+            snippet=snippet,
+            details={"call": name, "category": kind},
+            tags=(kind,),
+        )
+
+    def record_scope_change(self, kind: str, lineno: int | None) -> None:
+        collector = self._evidence.setdefault(kind, EvidenceCollector())
+        snippet = snippet_from_lines(self._lines, lineno, lineno)
+        collector.add_sample(
+            path=self._rel_path,
+            line_span=(lineno, lineno),
+            snippet=snippet,
+            details={"category": kind},
+            tags=(kind,),
+        )
 
 
-def _matches_api(call_name: str, patterns: dict[str, list[str]]) -> bool:
-    simple = call_name.rsplit(".", maxsplit=1)[-1]
+def _matches_api(target: str, patterns: dict[str, list[str]]) -> bool:
+    simple = target.rsplit(".", maxsplit=1)[-1]
     for module, funcs in patterns.items():
-        if (call_name == module or call_name.startswith(f"{module}.")) and (
-            not funcs or simple in funcs or call_name in funcs
+        if (target == module or target.startswith(f"{module}.")) and (
+            not funcs or simple in funcs or target in funcs
         ):
             return True
         if simple in funcs:

@@ -9,6 +9,8 @@ import networkx as nx
 from networkx.algorithms import approximation
 from networkx.exception import NetworkXAlgorithmError, NetworkXError
 
+from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_service import GraphContext
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import (
     load_call_graph,
@@ -20,34 +22,6 @@ from codeintel.graphs.nx_views import (
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
-
-
-def _component_counts(graph: nx.Graph | nx.DiGraph) -> tuple[int, int]:
-    """
-    Return weak component count and SCC/connected component count.
-
-    Parameters
-    ----------
-    graph : nx.Graph | nx.DiGraph
-        Graph to analyze; directed graphs compute weak and strongly connected components.
-
-    Returns
-    -------
-    tuple[int, int]
-        Weak component count and SCC/connected component count.
-    """
-    if isinstance(graph, nx.DiGraph):
-        weak_count = nx.number_weakly_connected_components(graph)
-        scc_count = sum(1 for _ in nx.strongly_connected_components(graph))
-    else:
-        weak_count = nx.number_connected_components(graph)
-        scc_count = weak_count
-    return weak_count, scc_count
-
-
-def _avg_clustering(graph: nx.Graph | nx.DiGraph) -> float:
-    undirected = graph.to_undirected()
-    return nx.average_clustering(undirected) if undirected.number_of_nodes() > 0 else 0.0
 
 
 def _diameter_and_spl(graph: nx.Graph | nx.DiGraph) -> tuple[float | None, float | None]:
@@ -116,9 +90,39 @@ def _safe_project(graph: nx.Graph, nodes: set[object], *, partition_label: str) 
         return nx.Graph()
 
 
-def compute_graph_stats(gateway: StorageGateway, *, repo: str, commit: str) -> None:
+def _component_layers(graph: nx.Graph | nx.DiGraph) -> int | None:
     """
-    Populate analytics.graph_stats for call/import graphs.
+    Return the number of condensation layers for directed graphs.
+
+    Returns
+    -------
+    int | None
+        Layer count when the graph is directed; otherwise None.
+    """
+    if graph.number_of_nodes() == 0 or not isinstance(graph, nx.DiGraph):
+        return None
+    condensation = nx.condensation(graph)
+    if condensation.number_of_nodes() == 0:
+        return 0
+    layers: dict[int, int] = {
+        node: 0 for node in condensation.nodes if condensation.in_degree(node) == 0
+    }
+    for node in nx.topological_sort(condensation):
+        base = layers.get(node, 0)
+        for succ in condensation.successors(node):
+            layers[succ] = max(layers.get(succ, 0), base + 1)
+    return max(layers.values(), default=0) + 1
+
+
+def compute_graph_stats(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    context: AnalyticsContext | None = None,
+) -> None:
+    """
+    Populate analytics.graph_stats for call/import and related graphs.
 
     Parameters
     ----------
@@ -128,43 +132,59 @@ def compute_graph_stats(gateway: StorageGateway, *, repo: str, commit: str) -> N
         Repository identifier anchoring the metrics.
     commit : str
         Commit hash anchoring the metrics snapshot.
+    context : AnalyticsContext | None
+        Optional shared context to reuse cached call/import graphs.
     """
     con = gateway.con
     ensure_schema(con, "analytics.graph_stats")
-    graphs = {
-        "call_graph": load_call_graph(gateway, repo, commit),
-        "import_graph": load_import_graph(gateway, repo, commit),
+    ctx = GraphContext(repo=repo, commit=commit, now=datetime.now(UTC))
+
+    call_graph = (
+        context.call_graph
+        if context is not None and context.call_graph is not None
+        else load_call_graph(gateway, repo, commit)
+    )
+    import_graph = (
+        context.import_graph
+        if context is not None and context.import_graph is not None
+        else load_import_graph(gateway, repo, commit)
+    )
+    graphs: dict[str, nx.Graph | nx.DiGraph] = {
+        "call_graph": call_graph,
+        "import_graph": import_graph,
         "symbol_module_graph": load_symbol_module_graph(gateway, repo, commit),
         "symbol_function_graph": load_symbol_function_graph(gateway, repo, commit),
     }
+
     config_bipartite = load_config_module_bipartite(gateway, repo, commit)
     if config_bipartite.number_of_nodes() > 0:
         keys = {n for n, d in config_bipartite.nodes(data=True) if d.get("bipartite") == 0}
         modules = set(config_bipartite) - keys
         if keys and modules:
-            graphs["config_key_projection"] = (
-                _safe_project(config_bipartite, keys, partition_label="config_keys")
-                if len(keys) > 1
-                else nx.Graph()
+            graphs["config_key_projection"] = _safe_project(
+                config_bipartite, keys, partition_label="config_keys"
             )
-            graphs["config_module_projection"] = (
-                _safe_project(config_bipartite, modules, partition_label="config_modules")
-                if len(modules) > 1
-                else nx.Graph()
+        if keys and modules and len(modules) > 1:
+            graphs["config_module_projection"] = _safe_project(
+                config_bipartite, modules, partition_label="config_modules"
             )
-        else:
-            log.warning(
-                "Skipping config projections: keys=%d modules=%d graph_nodes=%d",
-                len(keys),
-                len(modules),
-                config_bipartite.number_of_nodes(),
-            )
-    now = datetime.now(UTC)
+
+    now = ctx.resolved_now()
     rows: list[tuple[object, ...]] = []
 
     for name, graph in graphs.items():
-        weak_count, scc_count = _component_counts(graph)
+        weak_count = (
+            nx.number_weakly_connected_components(graph)
+            if isinstance(graph, nx.DiGraph)
+            else nx.number_connected_components(graph)
+        )
+        scc_count = (
+            sum(1 for _ in nx.strongly_connected_components(graph))
+            if isinstance(graph, nx.DiGraph)
+            else weak_count
+        )
         diameter, avg_spl = _diameter_and_spl(graph)
+        layers = _component_layers(graph)
         rows.append(
             (
                 name,
@@ -174,7 +194,10 @@ def compute_graph_stats(gateway: StorageGateway, *, repo: str, commit: str) -> N
                 graph.number_of_edges(),
                 weak_count,
                 scc_count,
-                _avg_clustering(graph),
+                layers,
+                nx.average_clustering(graph.to_undirected())
+                if graph.number_of_nodes() > 0
+                else 0.0,
                 diameter,
                 avg_spl,
                 now,
@@ -190,9 +213,9 @@ def compute_graph_stats(gateway: StorageGateway, *, repo: str, commit: str) -> N
             """
             INSERT INTO analytics.graph_stats (
                 graph_name, repo, commit, node_count, edge_count,
-                weak_component_count, scc_count, avg_clustering,
+                weak_component_count, scc_count, component_layers, avg_clustering,
                 diameter_estimate, avg_shortest_path_estimate, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )

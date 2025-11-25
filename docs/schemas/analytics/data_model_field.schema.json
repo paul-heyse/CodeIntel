@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DataModelField",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string" },
+    "field_name": { "type": ["string", "null"] },
+    "field_type": { "type": ["string", "null"] },
+    "required": { "type": "boolean" },
+    "has_default": { "type": "boolean" },
+    "default_expr": { "type": ["string", "null"] },
+    "constraints": { "type": "object" },
+    "source": { "type": "string" },
+    "lineno": { "type": ["integer", "null"] },
+    "rel_path": { "type": ["string", "null"] },
+    "model_id": { "type": ["string", "null"] }
+  },
+  "required": ["required", "has_default", "constraints", "source"]
+}

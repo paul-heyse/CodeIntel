@@ -68,7 +68,9 @@ def test_validate_jsonl_failure(tmp_path: Path) -> None:
 
 def test_docs_export_views_exist(tmp_path: Path) -> None:
     """Docs export strict provisioning should expose canonical views."""
-    with provisioned_gateway(tmp_path / "repo", config=ProvisioningConfig(run_ingestion=False)) as ctx:
+    with provisioned_gateway(
+        tmp_path / "repo", config=ProvisioningConfig(run_ingestion=False)
+    ) as ctx:
         ctx.gateway.con.execute("SELECT * FROM docs.v_symbol_module_graph LIMIT 0")
 
 

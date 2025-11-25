@@ -8,6 +8,8 @@ from typing import cast
 
 import networkx as nx
 
+from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_service import GraphContext, centrality_directed
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import load_import_graph
 from codeintel.storage.gateway import StorageGateway
@@ -24,13 +26,12 @@ def _dag_layers(graph: nx.DiGraph) -> dict[str, int]:
 
 def _subsystem_centralities(
     graph: nx.DiGraph,
+    ctx: GraphContext,
 ) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
     if graph.number_of_nodes() == 0:
         return {}, {}, {}
-    pagerank = nx.pagerank(graph, weight="weight")
-    betweenness = nx.betweenness_centrality(graph, weight="weight")
-    closeness = nx.closeness_centrality(graph)
-    return pagerank, betweenness, closeness
+    centrality = centrality_directed(graph, ctx)
+    return centrality.pagerank, centrality.betweenness, centrality.closeness
 
 
 def _layer_by_subsystem(subsystem_graph: nx.DiGraph) -> dict[str, int]:
@@ -44,12 +45,12 @@ def _layer_by_subsystem(subsystem_graph: nx.DiGraph) -> dict[str, int]:
     return layer_map
 
 
-def _degree_maps(subsystem_graph: nx.DiGraph) -> tuple[dict[str, float], dict[str, float]]:
-    in_degree_pairs = cast(
-        "Iterable[tuple[str, float]]", subsystem_graph.in_degree(weight="weight")
-    )
+def _degree_maps(
+    subsystem_graph: nx.DiGraph, *, weight: str | None
+) -> tuple[dict[str, float], dict[str, float]]:
+    in_degree_pairs = cast("Iterable[tuple[str, float]]", subsystem_graph.in_degree(weight=weight))
     out_degree_pairs = cast(
-        "Iterable[tuple[str, float]]", subsystem_graph.out_degree(weight="weight")
+        "Iterable[tuple[str, float]]", subsystem_graph.out_degree(weight=weight)
     )
     return (
         {str(node): float(deg) for node, deg in in_degree_pairs},
@@ -57,10 +58,25 @@ def _degree_maps(subsystem_graph: nx.DiGraph) -> tuple[dict[str, float], dict[st
     )
 
 
-def compute_subsystem_graph_metrics(gateway: StorageGateway, *, repo: str, commit: str) -> None:
+def compute_subsystem_graph_metrics(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    context: AnalyticsContext | None = None,
+    graph_ctx: GraphContext | None = None,
+) -> None:
     """Build subsystem-level condensed import graph metrics."""
     con = gateway.con
     ensure_schema(con, "analytics.subsystem_graph_metrics")
+    ctx = graph_ctx or GraphContext(
+        repo=repo,
+        commit=commit,
+        now=datetime.now(UTC),
+    )
+
+    if context is not None and (context.repo != repo or context.commit != commit):
+        return
 
     membership_rows = con.execute(
         """
@@ -83,12 +99,21 @@ def compute_subsystem_graph_metrics(gateway: StorageGateway, *, repo: str, commi
     subsystem_graph = nx.DiGraph()
     subsystem_graph.add_nodes_from({subsystem_id for subsystem_id, _ in membership_rows})
 
-    for src, dst, data in load_import_graph(gateway, repo, commit).edges(data=True):
+    import_graph = (
+        context.import_graph if context is not None else load_import_graph(gateway, repo, commit)
+    )
+    if import_graph is None:
+        con.execute(
+            "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        )
+        return
+    for src, dst, data in import_graph.edges(data=True):
         src_sub = module_to_subsystem.get(src)
         dst_sub = module_to_subsystem.get(dst)
         if src_sub is None or dst_sub is None or src_sub == dst_sub:
             continue
-        weight = float(data.get("weight", 1.0))
+        weight = float(data.get(ctx.betweenness_weight or "weight", 1.0))
         if subsystem_graph.has_edge(src_sub, dst_sub):
             subsystem_graph[src_sub][dst_sub]["weight"] += weight
         else:
@@ -101,11 +126,11 @@ def compute_subsystem_graph_metrics(gateway: StorageGateway, *, repo: str, commi
         )
         return
 
-    centralities = _subsystem_centralities(subsystem_graph)
+    centralities = _subsystem_centralities(subsystem_graph, ctx)
     layer_by_subsystem = _layer_by_subsystem(subsystem_graph)
-    in_degree, out_degree = _degree_maps(subsystem_graph)
+    in_degree, out_degree = _degree_maps(subsystem_graph, weight=ctx.betweenness_weight)
 
-    now = datetime.now(UTC)
+    now = ctx.resolved_now()
     rows = [
         (
             repo,

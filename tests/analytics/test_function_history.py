@@ -164,7 +164,9 @@ def test_function_history_respects_min_threshold(
         overrides=FunctionHistoryConfig.Overrides(min_lines_threshold=10),
     )
     compute_function_history(con, cfg, runner=runner)
-    rows = con.execute("SELECT commit_count, lines_added FROM analytics.function_history").fetchall()
+    rows = con.execute(
+        "SELECT commit_count, lines_added FROM analytics.function_history"
+    ).fetchall()
     expect_equal(len(rows), 1)
     commit_count, lines_added = rows[0]
     expect_equal(commit_count, 0)

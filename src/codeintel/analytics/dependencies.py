@@ -11,20 +11,27 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
 import yaml
 
-from codeintel.analytics.function_ast_cache import FunctionAst, load_function_asts
+from codeintel.analytics.ast_utils import resolve_call_target, safe_unparse, snippet_from_lines
+from codeintel.analytics.context import (
+    AnalyticsContext,
+    AnalyticsContextConfig,
+    build_analytics_context,
+)
+from codeintel.analytics.evidence import EvidenceCollector
+from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config.models import ExternalDependenciesConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.function_catalog_service import (
-    FunctionCatalogProvider,
-    FunctionCatalogService,
-)
-from codeintel.ingestion.common import load_module_map
+from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +82,9 @@ class DependencyCall:
     criticality: float | None
     matched_pattern: str | None = None
     risk_score: float | None = None
+    lineno: int | None = None
+    end_lineno: int | None = None
+    snippet: str = ""
 
 
 @dataclass
@@ -113,32 +123,44 @@ class DependencyCallVisitor(ast.NodeVisitor):
         self,
         alias_map: dict[str, str],
         patterns: dict[str, LibraryPattern],
+        rel_path: str,
+        lines: Sequence[str],
     ) -> None:
         self.alias_map = alias_map
         self.patterns = patterns
+        self._rel_path = rel_path
+        self._lines = lines
         self.calls: list[DependencyCall] = []
 
     def visit_Call(self, node: ast.Call) -> None:
-        library, method = _resolve_library(node.func, self.alias_map)
+        target = resolve_call_target(node.func, self.alias_map)
+        library = target.library
+        method = target.attribute or target.base
         if library is None or library not in self.patterns:
             self.generic_visit(node)
             return
         pattern = self.patterns[library]
-        target = _safe_unparse(node)
-        modes, matcher = _classify_modes(pattern, method, target)
+        target_text = safe_unparse(node) or ""
+        modes, matcher = _classify_modes(pattern, method, target_text)
         severity = (matcher.severity if matcher else None) or pattern.severity
         criticality = (matcher.criticality if matcher else None) or pattern.criticality
         risk_score = _risk_score(severity, criticality)
         matched_pattern = matcher.name if matcher is not None else method
+        lineno = getattr(node, "lineno", None)
+        end_lineno = getattr(node, "end_lineno", lineno)
+        snippet = snippet_from_lines(self._lines, lineno, end_lineno)
         self.calls.append(
             DependencyCall(
                 library=library,
-                target=target,
+                target=target_text or (method or ""),
                 modes=modes,
                 severity=severity,
                 criticality=criticality,
                 matched_pattern=matched_pattern,
                 risk_score=risk_score,
+                lineno=lineno,
+                end_lineno=end_lineno,
+                snippet=snippet,
             )
         )
         self.generic_visit(node)
@@ -149,6 +171,7 @@ def build_external_dependency_calls(
     cfg: ExternalDependenciesConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate analytics.external_dependency_calls from AST traversal.
@@ -161,6 +184,8 @@ def build_external_dependency_calls(
         External dependency configuration (repo context, patterns).
     catalog_provider
         Optional function catalog to reuse across steps.
+    context
+        Optional shared analytics context to reuse catalog, module map, and ASTs.
     """
     patterns = _load_dependency_patterns(cfg)
     if not patterns:
@@ -174,24 +199,26 @@ def build_external_dependency_calls(
         [cfg.repo, cfg.commit],
     )
 
-    catalog = catalog_provider or FunctionCatalogService.from_db(
-        gateway, repo=cfg.repo, commit=cfg.commit
-    )
-    module_map = load_module_map(gateway, cfg.repo, cfg.commit)
-    ast_by_goid, missing = load_function_asts(
+    shared_context = context or build_analytics_context(
         gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        repo_root=cfg.repo_root,
-        catalog_provider=catalog,
+        AnalyticsContextConfig(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=cfg.repo_root,
+            catalog_provider=catalog_provider,
+        ),
     )
+    catalog = shared_context.catalog
+    module_map = shared_context.module_map
+    ast_by_goid = shared_context.function_ast_map
+    missing = shared_context.missing_function_goids
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during dependency analysis", len(missing)
         )
     alias_maps = _build_alias_maps(cfg.repo_root, module_map)
     now = datetime.now(tz=UTC)
-    context = DependencyContext(
+    dep_context = DependencyContext(
         repo=cfg.repo,
         commit=cfg.commit,
         alias_maps=alias_maps,
@@ -208,7 +235,7 @@ def build_external_dependency_calls(
             _function_call_rows(
                 goid=goid,
                 func_ast=func_ast,
-                context=context,
+                context=dep_context,
             )
         )
 
@@ -238,7 +265,12 @@ def _function_call_rows(
     context: DependencyContext,
 ) -> list[tuple[object, ...]]:
     alias_map = context.alias_maps.get(func_ast.rel_path, {})
-    visitor = DependencyCallVisitor(alias_map, context.patterns)
+    visitor = DependencyCallVisitor(
+        alias_map,
+        context.patterns,
+        func_ast.rel_path,
+        func_ast.lines,
+    )
     visitor.visit(func_ast.node)
     grouped = _group_calls(visitor.calls)
     if not grouped:
@@ -253,7 +285,22 @@ def _function_call_rows(
         pattern = context.patterns[library]
         dep_id = _dep_id(context.repo, context.commit, library)
         modes = sorted({mode for call in calls for mode in call.modes})
-        evidence = {"examples": [call.target for call in calls[:3]]}
+        collector = EvidenceCollector()
+        for call in calls:
+            collector.add_sample(
+                path=func_ast.rel_path,
+                line_span=(call.lineno, call.end_lineno),
+                snippet=call.snippet,
+                details={
+                    "target": call.target,
+                    "modes": call.modes,
+                    "matched_pattern": call.matched_pattern,
+                    "severity": call.severity,
+                    "criticality": call.criticality,
+                },
+                tags=(library,),
+            )
+        evidence = collector.to_dicts()
         rows.append(
             (
                 context.repo,
@@ -310,7 +357,7 @@ def build_external_dependencies(
                 severity, criticality, risk_score,
                 function_count, callsite_count, modules_json, usage_modes,
                 config_keys, risk_level, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             dep_rows,
         )
@@ -322,7 +369,9 @@ def build_external_dependencies(
     )
 
 
-def _prepare_external_dependencies(con: duckdb.DuckDBPyConnection, cfg: ExternalDependenciesConfig) -> None:
+def _prepare_external_dependencies(
+    con: duckdb.DuckDBPyConnection, cfg: ExternalDependenciesConfig
+) -> None:
     ensure_schema(con, "analytics.external_dependencies")
     con.execute(
         "DELETE FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
@@ -363,32 +412,43 @@ def _aggregate_dependency_calls(
             continue
         lib_key = str(library)
         pattern = patterns.get(lib_key)
+        severity_value = _as_str(severity) or (pattern.severity if pattern else None)
+        criticality_value = _as_float(criticality) if criticality is not None else None
         aggregate = aggregates.setdefault(
             str(dep_id),
             DependencyAggregate(
                 library=lib_key,
                 service_name=(pattern.service_name if pattern else None) or lib_key,
                 category=pattern.category if pattern else None,
-                severity=pattern.severity if pattern else None,
-                criticality=pattern.criticality if pattern else None,
+                severity=severity_value,
+                criticality=(
+                    criticality_value
+                    if criticality_value is not None
+                    else (pattern.criticality if pattern else None)
+                ),
                 risk_score=None,
             ),
         )
         if module:
             aggregate.modules.add(str(module))
-        if function_goid is not None:
-            aggregate.functions.add(int(function_goid))
-        aggregate.callsite_count += int(callsite_count or 0)
+        function_goid_value = _as_int(function_goid)
+        if function_goid_value is not None:
+            aggregate.functions.add(function_goid_value)
+        aggregate.callsite_count += _as_int(callsite_count) or 0
         aggregate.modes.update(_ensure_str_list(modes_obj))
-        agg_score = risk_score if risk_score is not None else _risk_score(severity, criticality)
+        agg_score = (
+            _as_float(risk_score)
+            if risk_score is not None
+            else _risk_score(severity_value, criticality_value)
+        )
         if agg_score is not None:
             prev_score = aggregate.risk_score or 0.0
             if agg_score > prev_score:
                 aggregate.risk_score = agg_score
-        if severity and aggregate.severity is None:
-            aggregate.severity = severity
-        if criticality is not None and aggregate.criticality is None:
-            aggregate.criticality = float(criticality)
+        if severity_value and aggregate.severity is None:
+            aggregate.severity = severity_value
+        if criticality_value is not None and aggregate.criticality is None:
+            aggregate.criticality = criticality_value
     return aggregates
 
 
@@ -426,6 +486,36 @@ def _serialize_dependency_rows(
             )
         )
     return dep_rows
+
+
+def _as_int(value: object | None) -> int | None:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, (float, Decimal)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _as_float(value: object | None) -> float | None:
+    if isinstance(value, (int, float, Decimal)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _as_str(value: object | None) -> str | None:
+    return str(value) if isinstance(value, str) else None
 
 
 def _load_dependency_patterns(cfg: ExternalDependenciesConfig) -> dict[str, LibraryPattern]:
@@ -531,27 +621,6 @@ def _classify_modes(
     return (["unknown"], None)
 
 
-def _resolve_library(func: ast.AST, alias_map: dict[str, str]) -> tuple[str | None, str | None]:
-    base_name = _base_name(func)
-    library = alias_map.get(base_name) if base_name is not None else None
-    method = None
-    if isinstance(func, ast.Attribute):
-        method = func.attr
-    elif isinstance(func, ast.Name):
-        method = func.id
-    return library, method
-
-
-def _base_name(node: ast.AST) -> str | None:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return _base_name(node.value)
-    if isinstance(node, ast.Call):
-        return _base_name(node.func)
-    return None
-
-
 def _load_config_keys(
     con: duckdb.DuckDBPyConnection, repo: str, commit: str
 ) -> dict[str, set[str]]:
@@ -622,13 +691,6 @@ def _ensure_str_list(value: object) -> list[str]:
     if isinstance(value, (list, tuple)):
         return [str(item) for item in value]
     return []
-
-
-def _safe_unparse(node: ast.AST) -> str:
-    try:
-        return ast.unparse(node)
-    except (AttributeError, ValueError, TypeError):
-        return node.__class__.__name__
 
 
 def _dep_id(repo: str, commit: str, library: str) -> str:

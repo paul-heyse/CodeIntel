@@ -5,6 +5,10 @@ This document describes the consolidated artifacts emitted by `generate_document
 
 In addition to these physical datasets, the pipeline defines several **DuckDB views** under the `docs.*` schema (for example `docs.v_function_architecture`, `docs.v_module_architecture`). Those views denormalize multiple tables from this document into architecture‑oriented profiles that are consumed by the CodeIntel server and MCP tools. They are not exported as stand‑alone JSONL files but are important parts of the overall data model.
 
+## Data models (normalized)
+
+Data models are written to `analytics.data_models` (identity + docs), `analytics.data_model_fields`, and `analytics.data_model_relationships`, and exposed via `docs.v_data_models_normalized`. Prefer the normalized tables/view (or the `codeintel.storage.data_models` accessors) when building exports and APIs; the legacy `fields_json` / `relationships_json` columns are deprecated and retained only for compatibility during rollout.
+
 ## New architecture datasets
 
 The enrichment pipeline computes several architecture-level tables on top of the core graphs and analytics:

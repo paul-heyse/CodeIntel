@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 import duckdb
 
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.config.models import ProfilesAnalyticsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import (
@@ -31,6 +32,8 @@ def _seed_catalog_modules(
     catalog_provider: FunctionCatalogProvider | None,
     repo: str,
     commit: str,
+    *,
+    module_map_override: dict[str, str] | None = None,
 ) -> bool:
     """
     Create or refresh a temp module mapping table from a catalog provider.
@@ -41,9 +44,11 @@ def _seed_catalog_modules(
         True when a catalog provided a module map and the temp table exists.
     """
     if catalog_provider is None:
-        return False
-
-    module_by_path = catalog_provider.catalog().module_by_path
+        if module_map_override is None:
+            return False
+        module_by_path = module_map_override
+    else:
+        module_by_path = catalog_provider.catalog().module_by_path
     if not module_by_path:
         return False
 
@@ -83,6 +88,7 @@ def build_function_profile(
     cfg: ProfilesAnalyticsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate `analytics.function_profile` for a repo/commit snapshot.
@@ -98,11 +104,20 @@ def build_function_profile(
     con = gateway.con
     ensure_schema(con, "analytics.function_profile")
     ensure_schema(con, "analytics.goid_risk_factors")
-    use_catalog_modules = _seed_catalog_modules(con, catalog_provider, cfg.repo, cfg.commit)
-    _ = catalog_provider or FunctionCatalogService.from_db(
-        gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
+    effective_catalog = context.catalog if context is not None else catalog_provider
+    if effective_catalog is None:
+        effective_catalog = FunctionCatalogService.from_db(
+            gateway,
+            repo=cfg.repo,
+            commit=cfg.commit,
+        )
+    module_map_override = context.module_map if context is not None else None
+    use_catalog_modules = _seed_catalog_modules(
+        con,
+        effective_catalog,
+        cfg.repo,
+        cfg.commit,
+        module_map_override=module_map_override,
     )
 
     con.execute(
@@ -536,6 +551,7 @@ def build_file_profile(
     cfg: ProfilesAnalyticsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate `analytics.file_profile` by aggregating function_profile rows.
@@ -545,7 +561,15 @@ def build_file_profile(
     """
     con = gateway.con
     ensure_schema(con, "analytics.file_profile")
-    use_catalog_modules = _seed_catalog_modules(con, catalog_provider, cfg.repo, cfg.commit)
+    effective_catalog = context.catalog if context is not None else catalog_provider
+    module_map_override = context.module_map if context is not None else None
+    use_catalog_modules = _seed_catalog_modules(
+        con,
+        effective_catalog,
+        cfg.repo,
+        cfg.commit,
+        module_map_override=module_map_override,
+    )
 
     con.execute(
         "DELETE FROM analytics.file_profile WHERE repo = ? AND commit = ?",
@@ -712,11 +736,20 @@ def build_module_profile(
     cfg: ProfilesAnalyticsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """Populate `analytics.module_profile` by aggregating file and function profiles."""
     con = gateway.con
     ensure_schema(con, "analytics.module_profile")
-    use_catalog_modules = _seed_catalog_modules(con, catalog_provider, cfg.repo, cfg.commit)
+    effective_catalog = context.catalog if context is not None else catalog_provider
+    module_map_override = context.module_map if context is not None else None
+    use_catalog_modules = _seed_catalog_modules(
+        con,
+        effective_catalog,
+        cfg.repo,
+        cfg.commit,
+        module_map_override=module_map_override,
+    )
 
     con.execute(
         "DELETE FROM analytics.module_profile WHERE repo = ? AND commit = ?",

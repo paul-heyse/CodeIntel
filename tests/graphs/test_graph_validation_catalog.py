@@ -22,15 +22,13 @@ class _CatalogProvider:
     def catalog(self) -> FunctionCatalog:
         return self._catalog
 
-    @staticmethod
-    def urn_for_goid(_goid: int) -> str | None:
-        return None
+    def urn_for_goid(self, goid: int) -> str | None:
+        return self._catalog.urn_for_goid(goid)
 
-    @staticmethod
     def lookup_goid(
-        _rel_path: str, _start_line: int, _end_line: int | None, _qualname: str | None
+        self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
     ) -> int | None:
-        return None
+        return self._catalog.lookup_goid(rel_path, start_line, end_line, qualname)
 
 
 def test_graph_validation_orphan_uses_catalog_map(fresh_gateway: StorageGateway) -> None:

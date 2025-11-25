@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.config.models import CoverageAnalyticsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.storage.gateway import StorageGateway
@@ -19,6 +20,8 @@ log = logging.getLogger(__name__)
 def compute_coverage_functions(
     gateway: StorageGateway,
     cfg: CoverageAnalyticsConfig,
+    *,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate `analytics.coverage_functions` by aggregating line coverage per GOID.
@@ -36,6 +39,8 @@ def compute_coverage_functions(
         Gateway providing access to the DuckDB connection.
     cfg : CoverageAnalyticsConfig
         Repository and commit identifiers that scope the aggregation.
+    context : AnalyticsContext | None
+        Optional shared context for snapshot consistency.
 
     Notes
     -----
@@ -87,6 +92,15 @@ def compute_coverage_functions(
     ... ).fetchall()
     [(2, 1, 0.5, True)]
     """
+    if context is not None and (context.repo != cfg.repo or context.commit != cfg.commit):
+        log.warning(
+            "coverage_functions context mismatch: context=%s@%s cfg=%s@%s",
+            context.repo,
+            context.commit,
+            cfg.repo,
+            cfg.commit,
+        )
+
     log.info(
         "Computing coverage_functions for repo=%s commit=%s",
         cfg.repo,

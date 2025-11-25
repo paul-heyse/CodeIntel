@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import replace
 from datetime import UTC, datetime
-from decimal import Decimal
-from typing import Any, cast
+from typing import cast
 
 import networkx as nx
 
+from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_service import (
+    GraphContext,
+    centrality_directed,
+    component_metadata,
+    structural_metrics,
+    to_decimal_id,
+)
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import load_call_graph
 from codeintel.storage.gateway import StorageGateway
@@ -18,121 +24,13 @@ CENTRALITY_SAMPLE_LIMIT = 500
 EIGEN_MAX_ITER = 200
 
 
-@dataclass(frozen=True)
-class FunctionCentralities:
-    """Centrality metrics computed on the call graph."""
-
-    betweenness: Mapping[Any, float]
-    closeness: Mapping[Any, float]
-    harmonic: Mapping[Any, float]
-    eigen: Mapping[Any, float]
-    core_number: Mapping[Any, int]
-    clustering: Mapping[Any, float]
-    triangles: Mapping[Any, int]
-
-
-@dataclass(frozen=True)
-class ComponentData:
-    """Connected component and articulation metadata for the call graph."""
-
-    comp_id: dict[Any, int]
-    comp_size: dict[Any, int]
-    scc_id: dict[Any, int]
-    scc_size: dict[Any, int]
-    articulations: set[Any]
-    bridge_incident: dict[Any, int]
-
-
-def _to_decimal(value: int) -> Decimal:
-    """
-    Coerce integer GOIDs into DECIMAL for DuckDB writes.
-
-    Parameters
-    ----------
-    value : int
-        Integer GOID to convert.
-
-    Returns
-    -------
-    Decimal
-        Decimal representation for DuckDB storage.
-    """
-    return Decimal(value)
-
-
-def _centralities(graph: nx.DiGraph, undirected: nx.Graph) -> FunctionCentralities:
-    betweenness: Mapping[Any, float] = nx.betweenness_centrality(
-        graph,
-        k=min(CENTRALITY_SAMPLE_LIMIT, graph.number_of_nodes())
-        if graph.number_of_nodes() > CENTRALITY_SAMPLE_LIMIT
-        else None,
-    )
-    if graph.number_of_nodes() > 0:
-        closeness: Mapping[Any, float] = nx.closeness_centrality(graph)
-        harmonic: Mapping[Any, float] = nx.harmonic_centrality(graph)
-    else:
-        closeness = cast("Mapping[Any, float]", {})
-        harmonic = cast("Mapping[Any, float]", {})
-
-    if undirected.number_of_nodes() > 0:
-        eigen: Mapping[Any, float] = nx.eigenvector_centrality(undirected, max_iter=EIGEN_MAX_ITER)
-        core_number: Mapping[Any, int] = nx.core_number(undirected)
-        clustering_val = nx.clustering(undirected)
-        clustering: Mapping[Any, float] = cast(
-            "Mapping[Any, float]", clustering_val if isinstance(clustering_val, dict) else {}
-        )
-        triangles_val = nx.triangles(undirected)
-        triangles: Mapping[Any, int] = cast(
-            "Mapping[Any, int]", triangles_val if isinstance(triangles_val, dict) else {}
-        )
-    else:
-        eigen = cast("Mapping[Any, float]", {})
-        core_number = cast("Mapping[Any, int]", {})
-        clustering = cast("Mapping[Any, float]", {})
-        triangles = cast("Mapping[Any, int]", {})
-
-    return FunctionCentralities(
-        betweenness=betweenness,
-        closeness=closeness,
-        harmonic=harmonic,
-        eigen=eigen,
-        core_number=core_number,
-        clustering=clustering,
-        triangles=triangles,
-    )
-
-
-def _component_data(graph: nx.DiGraph, undirected: nx.Graph) -> ComponentData:
-    weak_components = list(nx.weakly_connected_components(graph))
-    comp_id: dict[Any, int] = {
-        node: idx for idx, component in enumerate(weak_components) for node in component
-    }
-    comp_size: dict[Any, int] = {
-        node: len(component) for component in weak_components for node in component
-    }
-    sccs = list(nx.strongly_connected_components(graph))
-    scc_id: dict[Any, int] = {node: idx for idx, comp in enumerate(sccs) for node in comp}
-    scc_size: dict[Any, int] = {node: len(comp) for idx, comp in enumerate(sccs) for node in comp}
-    articulations = set(nx.articulation_points(undirected))
-    bridge_incident: dict[Any, int] = dict.fromkeys(undirected.nodes, 0)
-    for left, right in nx.bridges(undirected):
-        bridge_incident[left] += 1
-        bridge_incident[right] += 1
-    return ComponentData(
-        comp_id=comp_id,
-        comp_size=comp_size,
-        scc_id=scc_id,
-        scc_size=scc_size,
-        articulations=articulations,
-        bridge_incident=bridge_incident,
-    )
-
-
 def compute_graph_metrics_functions_ext(
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
+    context: AnalyticsContext | None = None,
+    graph_ctx: GraphContext | None = None,
 ) -> None:
     """
     Populate analytics.graph_metrics_functions_ext with additional centralities.
@@ -145,29 +43,49 @@ def compute_graph_metrics_functions_ext(
         Repository identifier anchoring the metrics.
     commit : str
         Commit hash anchoring the metrics snapshot.
+    context : AnalyticsContext | None
+        Optional shared context to reuse cached call graphs.
+    graph_ctx : GraphContext | None
+        Optional graph context to control weights, seeds, and sampling limits.
     """
     con = gateway.con
     ensure_schema(con, "analytics.graph_metrics_functions_ext")
-    graph: nx.DiGraph = load_call_graph(gateway, repo, commit)
+    ctx = graph_ctx or GraphContext(
+        repo=repo,
+        commit=commit,
+        now=datetime.now(UTC),
+        betweenness_sample=CENTRALITY_SAMPLE_LIMIT,
+        eigen_max_iter=EIGEN_MAX_ITER,
+        pagerank_weight="weight",
+        betweenness_weight="weight",
+    )
+    if ctx.betweenness_sample > CENTRALITY_SAMPLE_LIMIT or ctx.eigen_max_iter > EIGEN_MAX_ITER:
+        ctx = replace(
+            ctx,
+            betweenness_sample=min(ctx.betweenness_sample, CENTRALITY_SAMPLE_LIMIT),
+            eigen_max_iter=min(ctx.eigen_max_iter, EIGEN_MAX_ITER),
+        )
+    graph: nx.DiGraph = (
+        context.call_graph if context is not None else load_call_graph(gateway, repo, commit)
+    )
     simple_graph: nx.DiGraph = cast("nx.DiGraph", graph.copy())
     simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
     undirected = simple_graph.to_undirected()
-    now = datetime.now(UTC)
 
-    centralities = _centralities(simple_graph, undirected)
-    components = _component_data(simple_graph, undirected)
-    community_id: dict[Any, int] = {}
-    if undirected.number_of_nodes() > 0:
-        communities = list(
-            nx.algorithms.community.asyn_lpa_communities(undirected, weight="weight")
-        )
-        for idx, community in enumerate(communities):
-            for member in community:
-                community_id[member] = idx
+    centralities = centrality_directed(simple_graph, ctx, include_eigen=True)
+    structure = structural_metrics(undirected, weight=ctx.pagerank_weight)
+    components = component_metadata(simple_graph)
+    articulations = (
+        set(nx.articulation_points(undirected)) if undirected.number_of_nodes() > 0 else set()
+    )
+    bridge_incident: dict[int, int] = dict.fromkeys(undirected.nodes, 0)
+    for left, right in nx.bridges(undirected):
+        bridge_incident[left] += 1
+        bridge_incident[right] += 1
 
     rows: list[tuple[object, ...]] = []
     for node in simple_graph.nodes:
-        goid = _to_decimal(node)
+        goid = to_decimal_id(node)
         ancestor_count = len(nx.ancestors(graph, node)) if graph.number_of_nodes() else 0
         descendant_count = len(nx.descendants(graph, node)) if graph.number_of_nodes() else 0
         rows.append(
@@ -177,22 +95,22 @@ def compute_graph_metrics_functions_ext(
                 goid,
                 centralities.betweenness.get(node, 0.0),
                 centralities.closeness.get(node, 0.0),
-                centralities.eigen.get(node, 0.0),
+                centralities.eigenvector.get(node, 0.0),
                 centralities.harmonic.get(node, 0.0),
-                centralities.core_number.get(node),
-                centralities.clustering.get(node, 0.0),
-                int(centralities.triangles.get(node, 0)),
-                node in components.articulations,
+                structure.core_number.get(node),
+                structure.clustering.get(node, 0.0),
+                int(structure.triangles.get(node, 0)),
+                node in articulations,
                 None,  # placeholder for articulation impact
-                components.bridge_incident.get(node, 0) > 0,
-                components.comp_id.get(node),
-                components.comp_size.get(node),
+                bridge_incident.get(node, 0) > 0,
+                components.component_id.get(node),
+                components.component_size.get(node),
                 components.scc_id.get(node),
                 components.scc_size.get(node),
                 ancestor_count,
                 descendant_count,
-                community_id.get(node),
-                now,
+                structure.community_id.get(node),
+                ctx.resolved_now(),
             )
         )
 

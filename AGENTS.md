@@ -887,6 +887,7 @@ This pattern keeps `python -c "import CodeIntel"` working on minimal hosts while
 - **Boundary rule:** whenever data crosses a boundary (API, file, queue), define a **JSON Schema 2020‑12**. For HTTP, use **OpenAPI 3.2** (embeds 2020‑12).
 - **Source of truth:** the schema is canonical; models may be generated from it (or emit it) but do not replace it.
 - **Validation:** validate inputs/outputs in tests; version schemas with SemVer and document breaking changes.
+- **Data models:** consume the normalized tables/views (`analytics.data_model_fields`, `analytics.data_model_relationships`, `docs.v_data_models_normalized`) via `codeintel.storage.data_models`; do **not** parse `fields_json`/`relationships_json`. Legacy JSON reads are gated by `CODEINTEL_DATA_MODELS_USE_LEGACY_JSON` and should only be used for rollback.
 
 ---
 

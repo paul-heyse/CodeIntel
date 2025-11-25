@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import cast
 
 import networkx as nx
-from networkx.algorithms import structuralholes
 
+from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_service import (
+    GraphBundle,
+    GraphContext,
+    centrality_directed,
+    component_metadata,
+    structural_metrics,
+)
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import load_import_graph
 from codeintel.storage.gateway import StorageGateway
@@ -17,98 +24,12 @@ CENTRALITY_SAMPLE_LIMIT = 500
 RICH_CLUB_PERCENTILE = 0.1
 
 
-@dataclass(frozen=True)
-class ModuleCentralities:
-    """Centrality metrics computed on the import graph."""
-
-    betweenness: dict[Any, float]
-    closeness: dict[Any, float]
-    harmonic: dict[Any, float]
-    eigen: dict[Any, float]
-    k_core: dict[Any, int]
-    constraint_vals: dict[Any, float]
-    eff_size: dict[Any, float]
-
-
-@dataclass(frozen=True)
-class ModuleComponentData:
-    """Component and community metadata for modules."""
-
-    community_id: dict[Any, int]
-    comp_id: dict[Any, int]
-    comp_size: dict[Any, int]
-    scc_id: dict[Any, int]
-    scc_size: dict[Any, int]
-
-
-def _centralities(graph: nx.DiGraph, undirected: nx.Graph) -> ModuleCentralities:
-    betweenness = nx.betweenness_centrality(
-        graph,
-        weight="weight",
-        k=min(CENTRALITY_SAMPLE_LIMIT, graph.number_of_nodes())
-        if graph.number_of_nodes() > CENTRALITY_SAMPLE_LIMIT
-        else None,
-    )
-    closeness = (
-        cast("dict[Any, float]", nx.closeness_centrality(graph))
-        if graph.number_of_nodes() > 0
-        else {}
-    )
-    harmonic = (
-        cast("dict[Any, float]", nx.harmonic_centrality(graph))
-        if graph.number_of_nodes() > 0
-        else {}
-    )
-    eigen = (
-        nx.eigenvector_centrality(undirected, max_iter=200, weight="weight")
-        if undirected.number_of_nodes() > 0
-        else {}
-    )
-    k_core = nx.core_number(undirected) if undirected.number_of_nodes() > 0 else {}
-    constraint_vals = (
-        structuralholes.constraint(undirected, weight="weight")
-        if undirected.number_of_nodes() > 0
-        else {}
-    )
-    eff_size = (
-        structuralholes.effective_size(undirected, weight="weight")
-        if undirected.number_of_nodes() > 0
-        else {}
-    )
-    return ModuleCentralities(
-        betweenness=betweenness,
-        closeness=closeness,
-        harmonic=harmonic,
-        eigen=eigen,
-        k_core=k_core,
-        constraint_vals=constraint_vals,
-        eff_size=eff_size,
-    )
-
-
-def _component_and_community(graph: nx.DiGraph, undirected: nx.Graph) -> ModuleComponentData:
-    community_id: dict[Any, int] = {}
-    if undirected.number_of_nodes() > 0:
-        communities = list(
-            nx.algorithms.community.asyn_lpa_communities(undirected, weight="weight")
-        )
-        for idx, community in enumerate(communities):
-            for node in community:
-                community_id[node] = idx
-
-    weak_components = list(nx.weakly_connected_components(graph))
-    comp_id = {node: idx for idx, comp in enumerate(weak_components) for node in comp}
-    comp_size = {node: len(comp) for comp in weak_components for node in comp}
-    sccs = list(nx.strongly_connected_components(graph))
-    scc_id = {node: idx for idx, comp in enumerate(sccs) for node in comp}
-    scc_size = {node: len(comp) for comp in sccs for node in comp}
-    return ModuleComponentData(
-        community_id=community_id,
-        comp_id=comp_id,
-        comp_size=comp_size,
-        scc_id=scc_id,
-        scc_size=scc_size,
-    )
+def _rich_club_cutoff(degree_map: dict[object, int]) -> int:
+    if not degree_map:
+        return 0
+    sorted_degrees = sorted(degree_map.values(), reverse=True)
+    idx = max(0, int(len(sorted_degrees) * RICH_CLUB_PERCENTILE) - 1)
+    return sorted_degrees[idx] if idx < len(sorted_degrees) else sorted_degrees[-1]
 
 
 def compute_graph_metrics_modules_ext(
@@ -116,26 +37,48 @@ def compute_graph_metrics_modules_ext(
     *,
     repo: str,
     commit: str,
+    context: AnalyticsContext | None = None,
+    graph_ctx: GraphContext | None = None,
 ) -> None:
     """Populate analytics.graph_metrics_modules_ext with richer import metrics."""
     con = gateway.con
     ensure_schema(con, "analytics.graph_metrics_modules_ext")
-    graph: nx.DiGraph = load_import_graph(gateway, repo, commit)
+
+    ctx = graph_ctx or GraphContext(
+        repo=repo,
+        commit=commit,
+        now=datetime.now(UTC),
+        betweenness_sample=CENTRALITY_SAMPLE_LIMIT,
+        pagerank_weight="weight",
+        betweenness_weight="weight",
+    )
+    if ctx.betweenness_sample > CENTRALITY_SAMPLE_LIMIT:
+        ctx = replace(ctx, betweenness_sample=CENTRALITY_SAMPLE_LIMIT)
+    import_graph_cached = context.import_graph if context is not None else None
+
+    def _import_graph_loader() -> nx.DiGraph:
+        return (
+            import_graph_cached
+            if import_graph_cached is not None
+            else load_import_graph(gateway, repo, commit)
+        )
+
+    bundle: GraphBundle[nx.DiGraph] = GraphBundle(
+        ctx=ctx,
+        loaders={"import_graph": _import_graph_loader},
+    )
+    graph: nx.DiGraph = bundle.get("import_graph")
     simple_graph: nx.DiGraph = cast("nx.DiGraph", graph.copy())
     simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
     undirected = simple_graph.to_undirected()
-    now = datetime.now(UTC)
 
-    centralities = _centralities(simple_graph, undirected)
-    components = _component_and_community(simple_graph, undirected)
+    centralities = centrality_directed(simple_graph, ctx, include_eigen=True)
+    structure = structural_metrics(undirected, weight=ctx.pagerank_weight)
+    components = component_metadata(simple_graph)
+
     degree_view = cast("nx.classes.reportviews.DegreeView", simple_graph.degree)
     degree_map = {node: int(degree_view[node]) for node in simple_graph.nodes}
-    degree_cutoff = 0
-    if degree_map:
-        sorted_nodes = sorted(degree_map.values(), reverse=True)
-        idx = max(0, int(len(sorted_nodes) * RICH_CLUB_PERCENTILE) - 1)
-        if sorted_nodes:
-            degree_cutoff = sorted_nodes[idx] if idx < len(sorted_nodes) else sorted_nodes[-1]
+    degree_cutoff = _rich_club_cutoff(degree_map)
 
     rows: list[tuple[object, ...]] = [
         (
@@ -144,19 +87,19 @@ def compute_graph_metrics_modules_ext(
             module,
             centralities.betweenness.get(module, 0.0),
             centralities.closeness.get(module, 0.0),
-            centralities.eigen.get(module, 0.0),
+            centralities.eigenvector.get(module, 0.0),
             centralities.harmonic.get(module, 0.0),
-            centralities.k_core.get(module),
-            centralities.constraint_vals.get(module),
-            centralities.eff_size.get(module),
+            structure.core_number.get(module),
+            structure.constraint.get(module),
+            structure.effective_size.get(module),
             degree_map.get(module, 0) >= degree_cutoff if degree_cutoff > 0 else False,
-            centralities.k_core.get(module),
-            components.community_id.get(module),
-            components.comp_id.get(module),
-            components.comp_size.get(module),
+            structure.core_number.get(module),
+            structure.community_id.get(module),
+            components.component_id.get(module),
+            components.component_size.get(module),
             components.scc_id.get(module),
             components.scc_size.get(module),
-            now,
+            ctx.resolved_now(),
         )
         for module in simple_graph.nodes
     ]

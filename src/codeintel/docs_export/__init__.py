@@ -9,4 +9,6 @@ DEFAULT_VALIDATION_SCHEMAS: list[str] = [
     "test_coverage_edges",
     "test_profile",
     "behavioral_coverage",
+    "data_model_fields",
+    "data_model_relationships",
 ]

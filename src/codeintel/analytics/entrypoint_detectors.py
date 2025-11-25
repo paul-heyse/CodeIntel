@@ -3,8 +3,20 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+
+from codeintel.analytics.ast_utils import (
+    literal_bool,
+    literal_int,
+    literal_int_sequence,
+    literal_str,
+    literal_value,
+    resolve_call_target,
+    safe_unparse,
+    snippet_from_lines,
+)
+from codeintel.analytics.evidence import EvidenceCollector
 
 
 @dataclass(frozen=True)
@@ -27,7 +39,7 @@ class EntryPointCandidate:
     schedule: str | None = None
     trigger: str | None = None
     extra: dict[str, object] | None = None
-    evidence: dict[str, object] = field(default_factory=dict)
+    evidence: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -59,6 +71,17 @@ class ImportContext:
     celery_apps: set[str]
 
 
+@dataclass
+class _ImportTargets:
+    fastapi_targets: set[str] = field(default_factory=set)
+    flask_targets: set[str] = field(default_factory=set)
+    flask_blueprints: set[str] = field(default_factory=set)
+    typer_targets: set[str] = field(default_factory=set)
+    click_groups: set[str] = field(default_factory=set)
+    django_url_helpers: set[str] = field(default_factory=set)
+    celery_apps: set[str] = field(default_factory=set)
+
+
 def detect_entrypoints(
     source: str,
     *,
@@ -85,88 +108,81 @@ def detect_entrypoints(
     list[EntryPointCandidate]
         Entrypoint candidates detected in the module, or an empty list when parsing fails.
     """
+    lines = source.splitlines()
     try:
         tree = ast.parse(source, filename=rel_path)
     except SyntaxError:
         return []
 
     ctx = _build_import_context(tree)
-    visitor = _EntryPointVisitor(settings, rel_path, module, ctx)
+    visitor = _EntryPointVisitor(settings, rel_path, module, ctx, lines)
     visitor.visit(tree)
     candidates = list(visitor.candidates)
     if settings.detect_django:
         candidates.extend(
-            _detect_django_urlpatterns(tree, rel_path=rel_path, module=module, ctx=ctx)
+            _detect_django_urlpatterns(tree, rel_path=rel_path, module=module, ctx=ctx, lines=lines)
         )
     return candidates
 
 
 def _literal_str(node: ast.AST) -> str | None:
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    return None
-
-
-def _literal_int(node: ast.AST) -> int | None:
-    if isinstance(node, ast.Constant) and isinstance(node.value, int):
-        return int(node.value)
-    return None
-
-
-def _literal_int_list(node: ast.AST) -> list[int] | None:
-    if isinstance(node, (ast.List, ast.Tuple)):
-        ints: list[int] = []
-        for elt in node.elts:
-            value = _literal_int(elt)
-            if value is None:
-                return None
-            ints.append(value)
-        return ints
-    return None
+    return literal_str(node)
 
 
 def _literal_bool(node: ast.AST) -> bool | None:
-    if isinstance(node, ast.Constant) and isinstance(node.value, bool):
-        return bool(node.value)
-    return None
+    return literal_bool(node)
+
+
+def _literal_int(node: ast.AST) -> int | None:
+    return literal_int(node)
+
+
+def _literal_int_list(node: ast.AST) -> list[int] | None:
+    return literal_int_sequence(node)
 
 
 def _literal_value(node: ast.AST | None) -> object | None:
-    if node is None:
-        return None
-    if isinstance(node, ast.Constant):
-        return node.value
-    if isinstance(node, ast.NameConstant):
-        return node.value
-    return None
+    return literal_value(node)
 
 
 def _annotation_to_str(node: ast.AST | None) -> str | None:
     if node is None:
         return None
-    try:
-        return ast.unparse(node)
-    except (AttributeError, ValueError, TypeError):
-        return None
+    text = safe_unparse(node)
+    return text if text else None
 
 
 def _decorator_to_str(node: ast.AST) -> str:
-    try:
-        return ast.unparse(node)
-    except (AttributeError, ValueError, TypeError):
-        return node.__class__.__name__
+    text = safe_unparse(node)
+    return text or node.__class__.__name__
+
+
+def _node_evidence(
+    *,
+    rel_path: str,
+    lines: Sequence[str],
+    node: ast.AST,
+    details: dict[str, object],
+    tags: Iterable[str] | None = None,
+) -> list[dict[str, object]]:
+    collector = EvidenceCollector()
+    lineno = getattr(node, "lineno", None)
+    end_lineno = getattr(node, "end_lineno", lineno)
+    collector.add_sample(
+        path=rel_path,
+        line_span=(lineno, end_lineno),
+        snippet=snippet_from_lines(lines, lineno, end_lineno),
+        details=details,
+        tags=tuple(tags or ("decorator",)),
+    )
+    return collector.to_dicts()
 
 
 def _resolve_call_target(
     func: ast.AST, alias_to_lib: dict[str, str]
 ) -> tuple[str | None, str | None, str | None]:
-    if isinstance(func, ast.Name):
-        name = func.id
-        return alias_to_lib.get(name), name, name
-    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-        base = func.value.id
-        return alias_to_lib.get(base), func.attr, base
-    return None, None, None
+    target = resolve_call_target(func, alias_to_lib)
+    return target.library, target.attribute, target.base
 
 
 def _has_auth_decorator(decorators: Iterable[ast.AST]) -> bool | None:
@@ -207,10 +223,10 @@ def _extract_status_codes(call: ast.Call) -> list[int] | None:
     for kw in call.keywords:
         if kw.arg != "status_code":
             continue
-        value = _literal_int(kw.value)
+        value = literal_int(kw.value)
         if value is not None:
             return [value]
-        list_value = _literal_int_list(kw.value)
+        list_value = literal_int_sequence(kw.value)
         if list_value is not None:
             return list_value
     return None
@@ -299,7 +315,7 @@ def _click_keyword_values(
         elif kw.arg == "required":
             required = _literal_bool(kw.value)
         elif kw.arg == "default":
-            default = _literal_value(kw.value)
+            default = literal_value(kw.value)
     return option_type, required, default
 
 
@@ -317,7 +333,7 @@ def _typer_arguments_schema(
             {
                 "name": arg.arg,
                 "annotation": _annotation_to_str(arg.annotation),
-                "default": _literal_value(default),
+                "default": literal_value(default),
             }
         )
     for kwarg, default in zip(node.args.kwonlyargs, list(node.args.kw_defaults), strict=False):
@@ -325,7 +341,7 @@ def _typer_arguments_schema(
             {
                 "name": kwarg.arg,
                 "annotation": _annotation_to_str(kwarg.annotation),
-                "default": _literal_value(default),
+                "default": literal_value(default),
             }
         )
     if not params:
@@ -335,14 +351,21 @@ def _typer_arguments_schema(
 
 def _build_import_context(tree: ast.AST) -> ImportContext:
     alias_to_lib = _collect_import_aliases(tree)
-    fastapi_targets: set[str] = set()
-    flask_targets: set[str] = set()
-    flask_blueprints: set[str] = set()
-    typer_targets: set[str] = set()
-    click_groups: set[str] = set()
-    django_url_helpers: set[str] = set()
-    celery_apps: set[str] = set()
+    targets = _scan_assignment_targets(tree, alias_to_lib)
+    return ImportContext(
+        alias_to_lib=alias_to_lib,
+        fastapi_targets=targets.fastapi_targets,
+        flask_targets=targets.flask_targets,
+        flask_blueprints=targets.flask_blueprints,
+        typer_targets=targets.typer_targets,
+        click_groups=targets.click_groups,
+        django_url_helpers=targets.django_url_helpers,
+        celery_apps=targets.celery_apps,
+    )
 
+
+def _scan_assignment_targets(tree: ast.AST, alias_to_lib: dict[str, str]) -> _ImportTargets:
+    targets = _ImportTargets()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign):
             continue
@@ -350,32 +373,33 @@ def _build_import_context(tree: ast.AST) -> ImportContext:
         if target is None or not isinstance(node.value, ast.Call):
             continue
         lib, callee, _ = _resolve_call_target(node.value.func, alias_to_lib)
-        if lib == "fastapi" and callee in {"FastAPI", "APIRouter"}:
-            fastapi_targets.add(target)
-        elif lib == "flask" and callee in {"Flask", "Blueprint"}:
-            if callee == "Flask":
-                flask_targets.add(target)
-            else:
-                flask_blueprints.add(target)
-        elif lib == "typer" and callee == "Typer":
-            typer_targets.add(target)
-        elif lib == "click" and callee in {"Group", "group"}:
-            click_groups.add(target)
-        elif lib == "django" and callee in {"path", "re_path", "url"}:
-            django_url_helpers.add(target)
-        elif lib == "celery" and callee == "Celery":
-            celery_apps.add(target)
+        _update_assignment_targets(lib, callee, target, targets)
+    return targets
 
-    return ImportContext(
-        alias_to_lib=alias_to_lib,
-        fastapi_targets=fastapi_targets,
-        flask_targets=flask_targets,
-        flask_blueprints=flask_blueprints,
-        typer_targets=typer_targets,
-        click_groups=click_groups,
-        django_url_helpers=django_url_helpers,
-        celery_apps=celery_apps,
-    )
+
+def _update_assignment_targets(
+    lib: str | None, callee: str | None, target: str, targets: _ImportTargets
+) -> None:
+    if lib == "fastapi" and callee in {"FastAPI", "APIRouter"}:
+        targets.fastapi_targets.add(target)
+        return
+    if lib == "flask" and callee in {"Flask", "Blueprint"}:
+        if callee == "Flask":
+            targets.flask_targets.add(target)
+        else:
+            targets.flask_blueprints.add(target)
+        return
+    if lib == "typer" and callee == "Typer":
+        targets.typer_targets.add(target)
+        return
+    if lib == "click" and callee in {"Group", "group"}:
+        targets.click_groups.add(target)
+        return
+    if lib == "django" and callee in {"path", "re_path", "url"}:
+        targets.django_url_helpers.add(target)
+        return
+    if lib == "celery" and callee == "Celery":
+        targets.celery_apps.add(target)
 
 
 def _collect_import_aliases(tree: ast.AST) -> dict[str, str]:
@@ -422,6 +446,7 @@ def _detect_django_urlpatterns(
     rel_path: str,
     module: str,
     ctx: ImportContext,
+    lines: Sequence[str],
 ) -> list[EntryPointCandidate]:
     candidates: list[EntryPointCandidate] = []
     for node in ast.walk(tree):
@@ -435,11 +460,16 @@ def _detect_django_urlpatterns(
             if not isinstance(elt, ast.Call):
                 continue
             lib, attr, base = _resolve_call_target(elt.func, ctx.alias_to_lib)
-            if lib != "django" and base not in ctx.django_url_helpers and attr not in {
-                "path",
-                "re_path",
-                "url",
-            }:
+            if (
+                lib != "django"
+                and base not in ctx.django_url_helpers
+                and attr
+                not in {
+                    "path",
+                    "re_path",
+                    "url",
+                }
+            ):
                 continue
             route_path = _literal_str(elt.args[0]) if elt.args else None
             view_node = elt.args[1] if len(elt.args) > 1 else None
@@ -456,7 +486,13 @@ def _detect_django_urlpatterns(
                     lineno=int(getattr(elt, "lineno", 0) or 0),
                     end_lineno=getattr(elt, "end_lineno", None),
                     route_path=route_path,
-                    evidence={"urlpatterns": True},
+                    evidence=_node_evidence(
+                        rel_path=rel_path,
+                        lines=lines,
+                        node=elt,
+                        details={"decorator": _decorator_to_str(elt.func), "kind": "urlpatterns"},
+                        tags=("urlpatterns",),
+                    ),
                 )
             )
     return candidates
@@ -469,11 +505,13 @@ class _EntryPointVisitor(ast.NodeVisitor):
         rel_path: str,
         module: str,
         ctx: ImportContext,
+        lines: Sequence[str],
     ) -> None:
         self.settings = settings
         self.rel_path = rel_path
         self.module = module
         self.ctx = ctx
+        self._lines = lines
         self.scope: list[str] = []
         self.candidates: list[EntryPointCandidate] = []
 
@@ -544,7 +582,13 @@ class _EntryPointVisitor(ast.NodeVisitor):
                         route_path=_extract_route_path(decorator),
                         status_codes=_extract_status_codes(decorator),
                         auth_required=auth_required,
-                        evidence={"decorator": _decorator_to_str(decorator)},
+                        evidence=_node_evidence(
+                            rel_path=self.rel_path,
+                            lines=self._lines,
+                            node=decorator,
+                            details={"decorator": _decorator_to_str(decorator)},
+                            tags=("decorator", "fastapi"),
+                        ),
                     )
                 )
             elif (
@@ -571,7 +615,13 @@ class _EntryPointVisitor(ast.NodeVisitor):
                         route_path=_extract_route_path(decorator),
                         status_codes=_extract_status_codes(decorator),
                         auth_required=auth_required,
-                        evidence={"decorator": _decorator_to_str(decorator)},
+                        evidence=_node_evidence(
+                            rel_path=self.rel_path,
+                            lines=self._lines,
+                            node=decorator,
+                            details={"decorator": _decorator_to_str(decorator)},
+                            tags=("decorator", "flask"),
+                        ),
                     )
                 )
 
@@ -609,7 +659,13 @@ class _EntryPointVisitor(ast.NodeVisitor):
                         end_lineno=getattr(node, "end_lineno", None),
                         command_name=explicit_name or command_name,
                         arguments_schema=click_args,
-                        evidence={"decorator": _decorator_to_str(decorator)},
+                        evidence=_node_evidence(
+                            rel_path=self.rel_path,
+                            lines=self._lines,
+                            node=decorator,
+                            details={"decorator": _decorator_to_str(decorator)},
+                            tags=("decorator", "click"),
+                        ),
                     )
                 )
             elif (
@@ -629,7 +685,13 @@ class _EntryPointVisitor(ast.NodeVisitor):
                         end_lineno=getattr(node, "end_lineno", None),
                         command_name=explicit_name or command_name,
                         arguments_schema=typer_schema,
-                        evidence={"decorator": _decorator_to_str(decorator)},
+                        evidence=_node_evidence(
+                            rel_path=self.rel_path,
+                            lines=self._lines,
+                            node=decorator,
+                            details={"decorator": _decorator_to_str(decorator)},
+                            tags=("decorator", "typer"),
+                        ),
                     )
                 )
 
@@ -658,28 +720,34 @@ class _EntryPointVisitor(ast.NodeVisitor):
                 kind = "event"
             else:
                 continue
-            self.candidates.append(
-                EntryPointCandidate(
-                    kind=kind,
-                    framework="scheduler",
-                    rel_path=self.rel_path,
-                    module=self.module,
-                    qualname=qualname,
-                    lineno=int(getattr(node, "lineno", 0) or 0),
-                    end_lineno=getattr(node, "end_lineno", None),
-                    schedule=schedule,
-                    trigger=trigger,
-                    evidence={"decorator": _decorator_to_str(decorator)},
+                self.candidates.append(
+                    EntryPointCandidate(
+                        kind=kind,
+                        framework="scheduler",
+                        rel_path=self.rel_path,
+                        module=self.module,
+                        qualname=qualname,
+                        lineno=int(getattr(node, "lineno", 0) or 0),
+                        end_lineno=getattr(node, "end_lineno", None),
+                        schedule=schedule,
+                        trigger=trigger,
+                        evidence=_node_evidence(
+                            rel_path=self.rel_path,
+                            lines=self._lines,
+                            node=decorator,
+                            details={"decorator": _decorator_to_str(decorator)},
+                            tags=("decorator", "scheduler"),
+                        ),
+                    )
                 )
-            )
 
     def _collect_celery_candidates(
         self, node: ast.FunctionDef | ast.AsyncFunctionDef, qualname: str
     ) -> None:
         if not self.settings.detect_celery:
             return
-        task_name = node.name
-        queue = None
+        task_name: str = node.name
+        queue: str | None = None
         for decorator in node.decorator_list:
             if not isinstance(decorator, ast.Call):
                 continue
@@ -707,7 +775,13 @@ class _EntryPointVisitor(ast.NodeVisitor):
                     end_lineno=getattr(node, "end_lineno", None),
                     command_name=task_name,
                     extra=extra or None,
-                    evidence={"decorator": _decorator_to_str(decorator)},
+                    evidence=_node_evidence(
+                        rel_path=self.rel_path,
+                        lines=self._lines,
+                        node=decorator,
+                        details={"decorator": _decorator_to_str(decorator)},
+                        tags=("decorator", "celery"),
+                    ),
                 )
             )
 
@@ -735,7 +809,13 @@ class _EntryPointVisitor(ast.NodeVisitor):
                         end_lineno=getattr(node, "end_lineno", None),
                         command_name=task_id or node.name,
                         extra={"task_id": task_id} if task_id else None,
-                        evidence={"decorator": _decorator_to_str(decorator)},
+                        evidence=_node_evidence(
+                            rel_path=self.rel_path,
+                            lines=self._lines,
+                            node=decorator,
+                            details={"decorator": _decorator_to_str(decorator)},
+                            tags=("decorator", "airflow"),
+                        ),
                     )
                 )
             if attr == "dag":
@@ -751,7 +831,13 @@ class _EntryPointVisitor(ast.NodeVisitor):
                         end_lineno=getattr(node, "end_lineno", None),
                         command_name=dag_id or node.name,
                         extra={"dag_id": dag_id} if dag_id else None,
-                        evidence={"decorator": _decorator_to_str(decorator)},
+                        evidence=_node_evidence(
+                            rel_path=self.rel_path,
+                            lines=self._lines,
+                            node=decorator,
+                            details={"decorator": _decorator_to_str(decorator)},
+                            tags=("decorator", "airflow"),
+                        ),
                     )
                 )
 
@@ -777,6 +863,12 @@ class _EntryPointVisitor(ast.NodeVisitor):
                     lineno=int(getattr(node, "lineno", 0) or 0),
                     end_lineno=getattr(node, "end_lineno", None),
                     route_path=route_path,
-                    evidence={"decorator": _decorator_to_str(decorator)},
+                    evidence=_node_evidence(
+                        rel_path=self.rel_path,
+                        lines=self._lines,
+                        node=decorator,
+                        details={"decorator": _decorator_to_str(decorator)},
+                        tags=("decorator", "generic_route"),
+                    ),
                 )
             )

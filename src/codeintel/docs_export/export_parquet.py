@@ -39,6 +39,8 @@ PARQUET_DATASETS: dict[str, str] = {
     "core.modules": "modules.parquet",
     "analytics.config_values": "config_values.parquet",
     "analytics.data_models": "data_models.parquet",
+    "analytics.data_model_fields": "data_model_fields.parquet",
+    "analytics.data_model_relationships": "data_model_relationships.parquet",
     "analytics.data_model_usage": "data_model_usage.parquet",
     "analytics.config_data_flow": "config_data_flow.parquet",
     "analytics.static_diagnostics": "static_diagnostics.parquet",
@@ -96,6 +98,69 @@ PARQUET_DATASETS: dict[str, str] = {
 }
 
 
+def _default_repo_commit(con: duckdb.DuckDBPyConnection) -> tuple[str, str]:
+    row = con.execute("SELECT repo, commit FROM core.repo_map LIMIT 1").fetchone()
+    if row is None:
+        return "", ""
+    repo, commit = row
+    return str(repo), str(commit)
+
+
+def _normalized_relation(con: duckdb.DuckDBPyConnection, table_name: str) -> duckdb.DuckDBPyRelation:
+    if table_name == "graph.call_graph_edges":
+        return con.sql(
+            """
+            SELECT
+              repo,
+              commit,
+              CAST(caller_goid_h128 AS BIGINT) AS caller_goid_h128,
+              CAST(callee_goid_h128 AS BIGINT) AS callee_goid_h128,
+              * EXCLUDE (repo, commit, caller_goid_h128, callee_goid_h128)
+            FROM graph.call_graph_edges
+            """
+        )
+    if table_name == "graph.symbol_use_edges":
+        repo_default, commit_default = _default_repo_commit(con)
+        df = con.execute(
+            """
+            SELECT
+              ? AS repo,
+              ? AS commit,
+              symbol,
+              def_path,
+              use_path,
+              same_file,
+              same_module,
+              CAST(def_goid_h128 AS BIGINT) AS def_goid_h128,
+              CAST(use_goid_h128 AS BIGINT) AS use_goid_h128
+            FROM graph.symbol_use_edges
+            """,
+            [repo_default, commit_default],
+        ).fetch_df()
+        return con.from_df(df)
+    if table_name == "analytics.test_coverage_edges":
+        return con.sql(
+            """
+            SELECT
+              repo,
+              commit,
+              test_id,
+              CAST(test_goid_h128 AS BIGINT) AS test_goid_h128,
+              CAST(function_goid_h128 AS BIGINT) AS function_goid_h128,
+              urn,
+              rel_path,
+              qualname,
+              covered_lines,
+              executable_lines,
+              coverage_ratio,
+              last_status,
+              CAST(created_at AS VARCHAR) AS created_at
+            FROM analytics.test_coverage_edges
+            """
+        )
+    return con.table(table_name)
+
+
 def export_parquet_for_table(
     gateway: StorageGateway,
     table_name: str,
@@ -129,7 +194,7 @@ def export_parquet_for_table(
         message = f"Refusing to export unknown table: {table_name}"
         raise ValueError(message)
     log.info("Exporting %s -> %s", table_name, output_path)
-    rel = gateway.con.table(table_name)
+    rel = _normalized_relation(gateway.con, table_name)
     rel.write_parquet(str(output_path))
 
 
@@ -137,7 +202,7 @@ def export_all_parquet(
     gateway: StorageGateway,
     document_output_dir: Path,
     *,
-    validate_exports: bool = False,
+    validate_exports: bool = True,
     schemas: list[str] | None = None,
 ) -> None:
     """

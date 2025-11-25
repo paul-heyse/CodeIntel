@@ -10,6 +10,8 @@ from typing import cast
 import networkx as nx
 from networkx.algorithms import bipartite
 
+from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_service import GraphContext, projection_metrics
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import load_test_function_bipartite
 from codeintel.storage.gateway import StorageGateway
@@ -17,16 +19,6 @@ from codeintel.storage.gateway import StorageGateway
 
 def _to_decimal(value: int) -> Decimal:
     return Decimal(value)
-
-
-@dataclass(frozen=True)
-class ProjectionBundle:
-    """Projected graph metrics for one bipartite side."""
-
-    degree: dict[tuple[str, object], int]
-    weighted_degree: dict[tuple[str, object], float]
-    clustering: dict[tuple[str, object], float]
-    betweenness: dict[tuple[str, object], float]
 
 
 @dataclass(frozen=True)
@@ -48,28 +40,7 @@ class TestMetricsContext:
     now: datetime
     degrees: BipartiteDegrees
     risk_by_goid: dict[int, float]
-
-
-def _projection_bundle(graph: nx.Graph, nodes: set[tuple[str, object]]) -> ProjectionBundle:
-    proj = bipartite.weighted_projected_graph(graph, nodes)
-    proj_deg = {node: int(deg) for node, deg in proj.degree(weight=None)}
-    proj_wdeg = {node: float(deg) for node, deg in proj.degree(weight="weight")}
-    if proj.number_of_nodes() > 0:
-        clustering_val = nx.clustering(proj, weight="weight")
-        proj_clustering = clustering_val if isinstance(clustering_val, dict) else {}
-    else:
-        proj_clustering = {}
-    proj_bet = (
-        nx.betweenness_centrality(proj, weight="weight", k=min(200, proj.number_of_nodes()))
-        if proj.number_of_nodes() > 0
-        else {}
-    )
-    return ProjectionBundle(
-        degree=proj_deg,
-        weighted_degree=proj_wdeg,
-        clustering=proj_clustering,
-        betweenness=proj_bet,
-    )
+    graph_ctx: GraphContext
 
 
 def _bipartite_degrees(
@@ -93,7 +64,12 @@ def _build_test_rows(
 ) -> list[tuple[object, ...]]:
     if not tests:
         return []
-    test_proj = _projection_bundle(graph, tests)
+    test_proj = projection_metrics(
+        graph,
+        tests,
+        ctx.graph_ctx,
+        weight=ctx.graph_ctx.pagerank_weight,
+    )
     rows: list[tuple[object, ...]] = []
     for node in tests:
         _, test_id = node
@@ -128,7 +104,12 @@ def _build_function_rows(
 ) -> list[tuple[object, ...]]:
     if not funcs:
         return []
-    func_proj = _projection_bundle(graph, funcs)
+    func_proj = projection_metrics(
+        graph,
+        funcs,
+        ctx.graph_ctx,
+        weight=ctx.graph_ctx.pagerank_weight,
+    )
     rows: list[tuple[object, ...]] = []
     for node in funcs:
         _, goid = node
@@ -159,14 +140,26 @@ def compute_test_graph_metrics(
     *,
     repo: str,
     commit: str,
+    context: AnalyticsContext | None = None,
+    graph_ctx: GraphContext | None = None,
 ) -> None:
     """Populate test and function-side metrics derived from test coverage graphs."""
     con = gateway.con
     ensure_schema(con, "analytics.test_graph_metrics_tests")
     ensure_schema(con, "analytics.test_graph_metrics_functions")
 
+    if context is not None and (context.repo != repo or context.commit != commit):
+        return
+
     graph: nx.Graph = load_test_function_bipartite(gateway, repo, commit)
-    now = datetime.now(UTC)
+    graph_ctx = graph_ctx or GraphContext(
+        repo=repo,
+        commit=commit,
+        now=datetime.now(UTC),
+        pagerank_weight="weight",
+        betweenness_weight="weight",
+    )
+    now = graph_ctx.resolved_now()
 
     tests = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}
     funcs = set(graph) - tests
@@ -188,6 +181,7 @@ def compute_test_graph_metrics(
         now=now,
         degrees=degrees,
         risk_by_goid=risk_by_goid,
+        graph_ctx=graph_ctx,
     )
 
     test_rows = _build_test_rows(graph, tests, ctx)

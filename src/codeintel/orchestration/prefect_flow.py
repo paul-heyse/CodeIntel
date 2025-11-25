@@ -38,11 +38,13 @@ from codeintel.analytics.function_contracts import compute_function_contracts
 from codeintel.analytics.function_effects import compute_function_effects
 from codeintel.analytics.function_history import compute_function_history
 from codeintel.analytics.functions import (
+    FunctionAnalyticsOptions,
     ValidationReporter,
     compute_function_metrics_and_types,
 )
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
+from codeintel.analytics.graph_service import build_graph_context
 from codeintel.analytics.graph_stats import compute_graph_stats
 from codeintel.analytics.history_timeseries import compute_history_timeseries
 from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
@@ -714,7 +716,7 @@ def t_function_metrics(
     summary = compute_function_metrics_and_types(
         gateway,
         cfg,
-        validation_reporter=reporter,
+        options=FunctionAnalyticsOptions(validation_reporter=reporter),
     )
     run_logger.info(
         "function_metrics summary rows=%d types=%d validation=%d parse_failed=%d span_not_found=%d",
@@ -796,18 +798,19 @@ def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
     """Compute graph metrics for functions and modules."""
     gateway = _get_gateway(db_path)
     cfg = GraphMetricsConfig.from_paths(repo=repo, commit=commit)
-    compute_graph_metrics(gateway, cfg)
-    compute_graph_metrics_functions_ext(gateway, repo=repo, commit=commit)
-    compute_graph_metrics_modules_ext(gateway, repo=repo, commit=commit)
-    compute_symbol_graph_metrics_modules(gateway, repo=repo, commit=commit)
-    compute_symbol_graph_metrics_functions(gateway, repo=repo, commit=commit)
-    compute_config_graph_metrics(gateway, repo=repo, commit=commit)
-    compute_subsystem_graph_metrics(gateway, repo=repo, commit=commit)
+    graph_ctx = build_graph_context(cfg, now=datetime.now(tz=UTC))
+    compute_graph_metrics(gateway, cfg, graph_ctx=graph_ctx)
+    compute_graph_metrics_functions_ext(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
+    compute_graph_metrics_modules_ext(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
+    compute_symbol_graph_metrics_modules(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
+    compute_symbol_graph_metrics_functions(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
+    compute_config_graph_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
+    compute_subsystem_graph_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
     compute_subsystem_agreement(gateway, repo=repo, commit=commit)
     compute_graph_stats(gateway, repo=repo, commit=commit)
-    compute_test_graph_metrics(gateway, repo=repo, commit=commit)
-    compute_cfg_metrics(gateway, repo=repo, commit=commit)
-    compute_dfg_metrics(gateway, repo=repo, commit=commit)
+    compute_test_graph_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
+    compute_cfg_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
+    compute_dfg_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
 
 
 @task(name="semantic_roles", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)

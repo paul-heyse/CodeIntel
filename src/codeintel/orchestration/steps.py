@@ -6,6 +6,7 @@ import logging
 import os
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -16,6 +17,11 @@ from codeintel.analytics.ast_metrics import build_hotspots
 from codeintel.analytics.cfg_dfg_metrics import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.config_data_flow import compute_config_data_flow
 from codeintel.analytics.config_graph_metrics import compute_config_graph_metrics
+from codeintel.analytics.context import (
+    AnalyticsContext,
+    AnalyticsContextConfig,
+    build_analytics_context,
+)
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
 from codeintel.analytics.data_model_usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
@@ -27,9 +33,13 @@ from codeintel.analytics.entrypoints import build_entrypoints
 from codeintel.analytics.function_contracts import compute_function_contracts
 from codeintel.analytics.function_effects import compute_function_effects
 from codeintel.analytics.function_history import compute_function_history
-from codeintel.analytics.functions import compute_function_metrics_and_types
+from codeintel.analytics.functions import (
+    FunctionAnalyticsOptions,
+    compute_function_metrics_and_types,
+)
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
+from codeintel.analytics.graph_service import build_graph_context
 from codeintel.analytics.graph_stats import compute_graph_stats
 from codeintel.analytics.history_timeseries import compute_history_timeseries
 from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
@@ -81,7 +91,10 @@ from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
-from codeintel.graphs.function_catalog_service import FunctionCatalogService
+from codeintel.graphs.function_catalog_service import (
+    FunctionCatalogProvider,
+    FunctionCatalogService,
+)
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.graphs.import_graph import build_import_graph
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
@@ -109,7 +122,14 @@ log = logging.getLogger(__name__)
 
 
 def _parse_commits(commits_extra: object, commits_env: str) -> tuple[str, ...]:
-    """Normalize commit configuration from env vars and pipeline extras."""
+    """
+    Normalize commit configuration from env vars and pipeline extras.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Ordered commit identifiers with duplicates removed.
+    """
     commits_from_env = tuple(commit for commit in commits_env.split(",") if commit)
     if isinstance(commits_extra, str):
         commits_from_extra = tuple(commit for commit in commits_extra.split(",") if commit)
@@ -154,9 +174,10 @@ class PipelineContext:
         Callable[..., tuple[list[CFGBlockRow], list[CFGEdgeRow], list[DFGEdgeRow]]] | None
     ) = None
     artifact_writer: Callable[[Path, Path, Path], None] | None = None
-    function_catalog: FunctionCatalogService | None = None
+    function_catalog: FunctionCatalogProvider | None = None
     extra: dict[str, object] = field(default_factory=dict)
     function_overrides: FunctionAnalyticsOverrides | None = None
+    analytics_context: AnalyticsContext | None = None
 
     @property
     def document_output_dir(self) -> Path:
@@ -188,7 +209,7 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
     )
 
 
-def _function_catalog(ctx: PipelineContext) -> FunctionCatalogService:
+def _function_catalog(ctx: PipelineContext) -> FunctionCatalogProvider:
     """
     Return a cached FunctionCatalogService, constructing it on first access.
 
@@ -202,6 +223,9 @@ def _function_catalog(ctx: PipelineContext) -> FunctionCatalogService:
     FunctionCatalogService
         Catalog service for the current repo and commit.
     """
+    if ctx.analytics_context is not None:
+        ctx.function_catalog = ctx.analytics_context.catalog
+        return ctx.analytics_context.catalog
     if ctx.function_catalog is None:
         ctx.function_catalog = FunctionCatalogService.from_db(
             ctx.gateway, repo=ctx.repo, commit=ctx.commit
@@ -209,9 +233,31 @@ def _function_catalog(ctx: PipelineContext) -> FunctionCatalogService:
     return ctx.function_catalog
 
 
+def _analytics_context(ctx: PipelineContext) -> AnalyticsContext:
+    """
+    Return a cached AnalyticsContext built for the current snapshot.
+
+    Returns
+    -------
+    AnalyticsContext
+        Shared analytics artifacts (catalog, module map, graphs, ASTs).
+    """
+    if ctx.analytics_context is None:
+        ctx.analytics_context = build_analytics_context(
+            ctx.gateway,
+            AnalyticsContextConfig(
+                repo=ctx.repo,
+                commit=ctx.commit,
+                repo_root=ctx.repo_root,
+            ),
+        )
+        ctx.function_catalog = ctx.analytics_context.catalog
+    return ctx.analytics_context
+
+
 def _seed_catalog_modules(
     gateway: StorageGateway,
-    catalog: FunctionCatalogService | None,
+    catalog: FunctionCatalogProvider | None,
     *,
     repo: str,
     commit: str,
@@ -564,7 +610,8 @@ class FunctionHistoryStep:
             commit=ctx.commit,
             repo_root=ctx.repo_root,
         )
-        compute_function_history(ctx.gateway.con, cfg, runner=ctx.tool_runner)
+        acx = _analytics_context(ctx)
+        compute_function_history(ctx.gateway.con, cfg, runner=ctx.tool_runner, context=acx)
 
 
 @dataclass
@@ -623,7 +670,12 @@ class FunctionAnalyticsStep:
             repo_root=ctx.repo_root,
             overrides=ctx.function_overrides,
         )
-        summary = compute_function_metrics_and_types(gateway, cfg)
+        acx = _analytics_context(ctx)
+        summary = compute_function_metrics_and_types(
+            gateway,
+            cfg,
+            options=FunctionAnalyticsOptions(context=acx),
+        )
         log.info(
             "function_metrics summary rows=%d types=%d validation=%d "
             "parse_failed=%d span_not_found=%d",
@@ -650,7 +702,13 @@ class FunctionEffectsStep:
             commit=ctx.commit,
             repo_root=ctx.repo_root,
         )
-        compute_function_effects(ctx.gateway, cfg, catalog_provider=_function_catalog(ctx))
+        acx = _analytics_context(ctx)
+        compute_function_effects(
+            ctx.gateway,
+            cfg,
+            catalog_provider=acx.catalog,
+            context=acx,
+        )
 
 
 @dataclass
@@ -668,7 +726,8 @@ class FunctionContractsStep:
             commit=ctx.commit,
             repo_root=ctx.repo_root,
         )
-        compute_function_contracts(ctx.gateway, cfg, catalog_provider=_function_catalog(ctx))
+        acx = _analytics_context(ctx)
+        compute_function_contracts(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
 
 
 @dataclass
@@ -698,8 +757,8 @@ class DataModelUsageStep:
         cfg = DataModelUsageConfig.from_paths(
             repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
         )
-        catalog = _function_catalog(ctx)
-        compute_data_model_usage(ctx.gateway, cfg, catalog_provider=catalog)
+        acx = _analytics_context(ctx)
+        compute_data_model_usage(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
 
 
 @dataclass
@@ -715,7 +774,8 @@ class ConfigDataFlowStep:
         cfg = ConfigDataFlowConfig.from_paths(
             repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
         )
-        compute_config_data_flow(ctx.gateway, cfg)
+        acx = _analytics_context(ctx)
+        compute_config_data_flow(ctx.gateway, cfg, context=acx)
 
 
 @dataclass
@@ -730,7 +790,8 @@ class CoverageAnalyticsStep:
         _log_step(self.name)
         gateway = ctx.gateway
         cfg = CoverageAnalyticsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        compute_coverage_functions(gateway, cfg)
+        acx = _analytics_context(ctx)
+        compute_coverage_functions(gateway, cfg, context=acx)
 
 
 @dataclass
@@ -915,19 +976,40 @@ class GraphMetricsStep:
         _log_step(self.name)
         gateway = ctx.gateway
         cfg = GraphMetricsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        catalog = _function_catalog(ctx)
-        compute_graph_metrics(gateway, cfg, catalog_provider=catalog)
-        compute_graph_metrics_functions_ext(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_test_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_cfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_dfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_graph_metrics_modules_ext(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_symbol_graph_metrics_modules(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_symbol_graph_metrics_functions(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_config_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_subsystem_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
+        graph_ctx = build_graph_context(cfg, now=datetime.now(tz=UTC))
+        acx = _analytics_context(ctx)
+        compute_graph_metrics(
+            gateway, cfg, catalog_provider=acx.catalog, context=acx, graph_ctx=graph_ctx
+        )
+        compute_graph_metrics_functions_ext(
+            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+        )
+        compute_test_graph_metrics(
+            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+        )
+        compute_cfg_metrics(
+            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+        )
+        compute_dfg_metrics(
+            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+        )
+        compute_graph_metrics_modules_ext(
+            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+        )
+        compute_symbol_graph_metrics_modules(
+            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+        )
+        compute_symbol_graph_metrics_functions(
+            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+        )
+        compute_config_graph_metrics(
+            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+        )
+        compute_subsystem_graph_metrics(
+            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+        )
         compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_graph_stats(gateway, repo=ctx.repo, commit=ctx.commit)
+        compute_graph_stats(gateway, repo=ctx.repo, commit=ctx.commit, context=acx)
 
 
 @dataclass
@@ -950,7 +1032,8 @@ class SemanticRolesStep:
             commit=ctx.commit,
             repo_root=ctx.repo_root,
         )
-        compute_semantic_roles(ctx.gateway, cfg, catalog_provider=_function_catalog(ctx))
+        acx = _analytics_context(ctx)
+        compute_semantic_roles(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
 
 
 @dataclass
@@ -1006,7 +1089,8 @@ class BehavioralCoverageStep:
             ctx.extra.get("enable_behavioral_llm")
             or os.getenv("CODEINTEL_BEHAVIORAL_LLM", "").lower() in {"1", "true", "yes"}
         )
-        llm_model = ctx.extra.get("behavioral_llm_model")
+        llm_model_raw = ctx.extra.get("behavioral_llm_model")
+        llm_model = llm_model_raw if isinstance(llm_model_raw, str) else None
         llm_runner = ctx.extra.get("behavioral_llm_runner")
         cfg = BehavioralCoverageConfig.from_paths(
             repo=ctx.repo,
@@ -1033,14 +1117,14 @@ class EntryPointsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.entrypoints and analytics.entrypoint_tests."""
         _log_step(self.name)
-        catalog = _function_catalog(ctx)
+        acx = _analytics_context(ctx)
         cfg = EntryPointsConfig.from_paths(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
             scan_config=ctx.scan_config,
         )
-        build_entrypoints(ctx.gateway, cfg, catalog_provider=catalog)
+        build_entrypoints(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
 
 
 @dataclass
@@ -1053,14 +1137,19 @@ class ExternalDependenciesStep:
     def run(self, ctx: PipelineContext) -> None:
         """Populate dependency call edges and aggregated usage."""
         _log_step(self.name)
-        catalog = _function_catalog(ctx)
+        acx = _analytics_context(ctx)
         cfg = ExternalDependenciesConfig.from_paths(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
             scan_config=ctx.scan_config,
         )
-        build_external_dependency_calls(ctx.gateway, cfg, catalog_provider=catalog)
+        build_external_dependency_calls(
+            ctx.gateway,
+            cfg,
+            catalog_provider=acx.catalog,
+            context=acx,
+        )
         build_external_dependencies(ctx.gateway, cfg)
 
 
@@ -1083,11 +1172,11 @@ class ProfilesStep:
         """Aggregate profile tables for functions, files, and modules."""
         _log_step(self.name)
         gateway = ctx.gateway
-        catalog = _function_catalog(ctx)
+        acx = _analytics_context(ctx)
         cfg = ProfilesAnalyticsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        build_function_profile(gateway, cfg, catalog_provider=catalog)
-        build_file_profile(gateway, cfg, catalog_provider=catalog)
-        build_module_profile(gateway, cfg, catalog_provider=catalog)
+        build_function_profile(gateway, cfg, catalog_provider=acx.catalog, context=acx)
+        build_file_profile(gateway, cfg, catalog_provider=acx.catalog, context=acx)
+        build_module_profile(gateway, cfg, catalog_provider=acx.catalog, context=acx)
 
 
 # ---------------------------------------------------------------------------

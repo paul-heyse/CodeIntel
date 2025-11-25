@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from logging import Logger, LoggerAdapter
 from typing import TypedDict
 
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.function_parsing import (
     FunctionParserRegistry,
     ParsedFile,
@@ -118,6 +119,16 @@ class ProcessContext:
 
     cfg: FunctionAnalyticsConfig
     now: datetime
+
+
+@dataclass(frozen=True)
+class FunctionAnalyticsOptions:
+    """Optional hooks and cached context for function analytics."""
+
+    parser: ParsedFileLoader | None = None
+    parser_registry: FunctionParserRegistry | None = None
+    validation_reporter: ValidationReporter | None = None
+    context: AnalyticsContext | None = None
 
 
 @dataclass(frozen=True)
@@ -691,9 +702,7 @@ def compute_function_metrics_and_types(
     gateway: StorageGateway,
     cfg: FunctionAnalyticsConfig,
     *,
-    parser: ParsedFileLoader | None = None,
-    parser_registry: FunctionParserRegistry | None = None,
-    validation_reporter: ValidationReporter | None = None,
+    options: FunctionAnalyticsOptions | None = None,
 ) -> dict[str, int]:
     """
     Populate function metrics and type coverage tables from GOID spans.
@@ -714,13 +723,8 @@ def compute_function_metrics_and_types(
         `analytics.function_metrics`, and `analytics.function_types` tables available.
     cfg : FunctionAnalyticsConfig
         Repository metadata and file-system root used to locate source files.
-    parser : ParsedFileLoader | None
-        Optional parser hook primarily for testing; registry-based selection
-        should be preferred for production.
-    parser_registry : FunctionParserRegistry | None
-        Parser registry used to resolve the parser when a hook is not provided.
-    validation_reporter : ValidationReporter | None
-        Reporter used to emit structured validation counters.
+    options : FunctionAnalyticsOptions | None
+        Optional hooks and cached context for parser selection, validation, and reuse.
 
     Notes
     -----
@@ -755,20 +759,30 @@ def compute_function_metrics_and_types(
             "validation_span_not_found": 0,
         }
 
-    registry = parser_registry or FunctionParserRegistry()
-    if parser is not None:
-        log.warning(
-            "parser override is deprecated; prefer FunctionParserKind via config or registry",
-        )
-    selected_parser = parser or registry.get(cfg.parser)
     now = datetime.now(UTC)
     ctx = ProcessContext(cfg=cfg, now=now)
-    parsed_cache: dict[str, ParsedFile | None] = {}
-    state = ProcessState(cfg=cfg, cache=parsed_cache, parser=selected_parser, ctx=ctx)
 
-    result = build_function_analytics(goids_by_file=goids_by_file, state=state)
+    opts = options or FunctionAnalyticsOptions()
+
+    if opts.context is not None:
+        result = _build_function_analytics_from_context(
+            goids_by_file=goids_by_file,
+            process_ctx=ctx,
+            context=opts.context,
+        )
+    else:
+        registry = opts.parser_registry or FunctionParserRegistry()
+        if opts.parser is not None:
+            log.warning(
+                "parser override is deprecated; prefer FunctionParserKind via config or registry",
+            )
+        selected_parser = opts.parser or registry.get(cfg.parser)
+        parsed_cache: dict[str, ParsedFile | None] = {}
+        state = ProcessState(cfg=cfg, cache=parsed_cache, parser=selected_parser, ctx=ctx)
+        result = build_function_analytics(goids_by_file=goids_by_file, state=state)
+
     summary = persist_function_analytics(gateway, cfg, result, created_at=now)
-    reporter = validation_reporter or ValidationReporter(logger=log)
+    reporter = opts.validation_reporter or ValidationReporter(logger=log)
     reporter.report(result, scope=f"{cfg.repo}@{cfg.commit}")
     if cfg.fail_on_missing_spans and result.validation:
         message = (
@@ -872,4 +886,53 @@ def _persist_validation(
         rows,
         delete_params=[cfg.repo, cfg.commit],
         scope=f"{cfg.repo}@{cfg.commit}",
+    )
+
+
+def _build_function_analytics_from_context(
+    *,
+    goids_by_file: dict[str, list[GoidRow]],
+    process_ctx: ProcessContext,
+    context: AnalyticsContext,
+) -> FunctionAnalyticsResult:
+    metrics_rows: list[tuple] = []
+    types_rows: list[tuple] = []
+    validation: list[ValidationIssue] = []
+    ast_map = context.function_ast_map
+    missing_goids = context.missing_function_goids
+
+    for fun_rows in goids_by_file.values():
+        for info in fun_rows:
+            meta = _meta_from_goid_row(info)
+            ast_info = ast_map.get(meta.goid)
+            if ast_info is None:
+                detail = "missing AST in shared context" if meta.goid in missing_goids else None
+                validation.append(
+                    ValidationIssue(
+                        rel_path=meta.rel_path,
+                        qualname=meta.qualname,
+                        issue="span_not_found",
+                        detail=detail,
+                    )
+                )
+                continue
+            rows = _function_rows_from_node(meta, ast_info.node, ast_info.lines, process_ctx)
+            if rows is None:
+                validation.append(
+                    ValidationIssue(
+                        rel_path=meta.rel_path,
+                        qualname=meta.qualname,
+                        issue="span_not_found",
+                        detail="context AST resolution failed",
+                    )
+                )
+                continue
+            metrics_row, types_row = rows
+            metrics_rows.append(metrics_row)
+            types_rows.append(types_row)
+
+    return FunctionAnalyticsResult(
+        metrics_rows=metrics_rows,
+        types_rows=types_rows,
+        validation=validation,
     )

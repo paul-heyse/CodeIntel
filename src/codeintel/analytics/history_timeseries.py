@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import SupportsFloat, SupportsIndex, TypeAlias
+from typing import SupportsFloat, SupportsIndex
 
 import duckdb
 
@@ -20,7 +20,7 @@ from codeintel.ingestion.tool_runner import ToolRunner
 log = logging.getLogger(__name__)
 
 DBResolver = Callable[[str], duckdb.DuckDBPyConnection]
-NumericLike: TypeAlias = SupportsFloat | SupportsIndex | str | bytes | bytearray | int | float | Decimal
+type NumericLike = SupportsFloat | SupportsIndex | str | bytes | bytearray | int | float | Decimal
 
 
 @dataclass(frozen=True)

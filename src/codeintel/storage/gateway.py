@@ -39,6 +39,9 @@ DOCS_VIEWS: tuple[str, ...] = (
     "docs.v_external_dependencies",
     "docs.v_external_dependency_calls",
     "docs.v_data_models",
+    "docs.v_data_model_fields",
+    "docs.v_data_model_relationships",
+    "docs.v_data_models_normalized",
     "docs.v_data_model_usage",
     "docs.v_test_to_function",
     "docs.v_file_summary",
@@ -891,9 +894,7 @@ class AnalyticsTables:
 
     def insert_config_values(
         self,
-        rows: Iterable[
-            tuple[str, str, str, str, str | None, str | None, str | None, int]
-        ],
+        rows: Iterable[tuple[str, str, str, str, str | None, str | None, str | None, int]],
     ) -> None:
         """
         Insert rows into analytics.config_values.

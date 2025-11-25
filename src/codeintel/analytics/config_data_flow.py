@@ -14,10 +14,15 @@ from typing import TYPE_CHECKING
 import duckdb
 import networkx as nx
 
-from codeintel.analytics.function_ast_cache import load_function_asts
+from codeintel.analytics.ast_utils import call_name, snippet_from_lines
+from codeintel.analytics.context import (
+    AnalyticsContext,
+    AnalyticsContextConfig,
+    build_analytics_context,
+)
+from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.config.models import ConfigDataFlowConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.nx_views import load_call_graph
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
@@ -43,7 +48,7 @@ class ConfigUsageResult:
     """Accumulated usage kinds and evidence for a config key."""
 
     kinds: set[str] = field(default_factory=set)
-    evidence: dict[str, list[dict[str, object]]] = field(default_factory=dict)
+    evidence: dict[str, EvidenceCollector] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -59,12 +64,22 @@ class ConfigFlowArtifacts:
 class ConfigUsageVisitor(ast.NodeVisitor):
     """Detect how a specific config key is used inside a function."""
 
-    def __init__(self, *, config_key: str, lines: list[str], max_examples: int) -> None:
+    def __init__(
+        self,
+        *,
+        config_key: str,
+        config_path: str,
+        rel_path: str,
+        lines: list[str],
+        max_examples: int,
+    ) -> None:
         self.config_key = config_key
+        self.config_path = config_path
         self.lines = lines
         self.max_examples = max_examples
         self.result = ConfigUsageResult()
         self._in_condition = False
+        self._rel_path = rel_path
 
     def visit_If(self, node: ast.If) -> None:
         """Track conditional branches involving config keys."""
@@ -102,7 +117,7 @@ class ConfigUsageVisitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         """Record config reads and logging that mention the tracked key."""
-        target_name = self._call_name(node.func) or ""
+        target_name = call_name(node.func) or ""
         if (
             target_name.endswith(("getenv", "environ.get", "get_env")) or target_name in ENV_HELPERS
         ) and self._first_arg_matches(node.args):
@@ -136,16 +151,6 @@ class ConfigUsageVisitor(ast.NodeVisitor):
 
     def _kind_for_context(self, default: str) -> str:
         return "conditional_branch" if self._in_condition else default
-
-    def _call_name(self, node: ast.AST | None) -> str | None:
-        if node is None:
-            return None
-        if isinstance(node, ast.Name):
-            return node.id
-        if isinstance(node, ast.Attribute):
-            parent = self._call_name(node.value)
-            return f"{parent}.{node.attr}" if parent else node.attr
-        return None
 
     def _matches_key(self, node: ast.AST | None) -> bool:
         if isinstance(node, ast.Constant):
@@ -196,13 +201,20 @@ class ConfigUsageVisitor(ast.NodeVisitor):
         if lineno is None:
             lineno = 0
         self.result.kinds.add(kind)
-        samples = self.result.evidence.setdefault(kind, [])
-        if len(samples) >= self.max_examples:
-            return
-        snippet = ""
-        if 1 <= lineno <= len(self.lines):
-            snippet = self.lines[lineno - 1].strip()
-        samples.append({"line": lineno, "snippet": snippet})
+        collector = self.result.evidence.setdefault(
+            kind, EvidenceCollector(max_samples=self.max_examples)
+        )
+        snippet = snippet_from_lines(self.lines, lineno, lineno)
+        collector.add_sample(
+            path=self._rel_path,
+            line_span=(lineno, lineno),
+            snippet=snippet,
+            details={
+                "config_key": self.config_key,
+                "config_path": self.config_path,
+                "usage_kind": kind,
+            },
+        )
 
 
 def _coerce_paths(raw: str | list[str] | tuple[str, ...] | None) -> list[str]:
@@ -286,6 +298,8 @@ def _call_chain_id(
 def compute_config_data_flow(
     gateway: StorageGateway,
     cfg: ConfigDataFlowConfig,
+    *,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate analytics.config_data_flow with config usage per function.
@@ -296,6 +310,8 @@ def compute_config_data_flow(
         Storage gateway providing DuckDB access.
     cfg
         Config data flow analytics configuration.
+    context
+        Optional shared analytics context to reuse catalog, call graph, and ASTs.
     """
     con = gateway.con
     ensure_schema(con, "analytics.config_data_flow")
@@ -313,16 +329,19 @@ def compute_config_data_flow(
         )
         return
 
-    entrypoints = _entrypoints(con, cfg.repo, cfg.commit)
-    call_graph = load_call_graph(gateway, cfg.repo, cfg.commit)
-
-    ast_by_goid, missing = load_function_asts(
+    shared_context = context or build_analytics_context(
         gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        repo_root=cfg.repo_root,
-        catalog_provider=None,
+        AnalyticsContextConfig(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=cfg.repo_root,
+        ),
     )
+
+    entrypoints = _entrypoints(con, cfg.repo, cfg.commit)
+    call_graph = shared_context.call_graph
+    ast_by_goid = shared_context.function_ast_map
+    missing = shared_context.missing_function_goids
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during config data flow analysis",
@@ -377,6 +396,8 @@ def _build_config_flow_rows(
         for config_key, config_path in config_refs:
             visitor = ConfigUsageVisitor(
                 config_key=config_key,
+                config_path=config_path,
+                rel_path=rel_path,
                 lines=lines,
                 max_examples=cfg.max_paths_per_usage,
             )
@@ -391,7 +412,8 @@ def _build_config_flow_rows(
                 max_length=cfg.max_path_length,
             )
             for usage_kind in sorted(visitor.result.kinds):
-                evidence = visitor.result.evidence.get(usage_kind, [])
+                collector = visitor.result.evidence.get(usage_kind)
+                evidence = collector.to_dicts() if collector is not None else []
                 for chain in chains:
                     chain_id = _call_chain_id(cfg.repo, cfg.commit, config_key, usage_kind, chain)
                     rows_to_insert.append(
