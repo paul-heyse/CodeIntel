@@ -16,13 +16,16 @@ from codeintel.analytics.function_parsing import (
     ParsedFile,
 )
 from codeintel.analytics.functions import (
-    GoidRow as AnalyticsGoidRow,
+    FunctionAnalyticsOptions,
     ProcessContext,
     ProcessState,
     ValidationReporter,
     build_function_analytics,
     compute_function_metrics_and_types,
     persist_function_analytics,
+)
+from codeintel.analytics.functions import (
+    GoidRow as AnalyticsGoidRow,
 )
 from codeintel.config.models import FunctionAnalyticsConfig, FunctionAnalyticsOverrides
 from codeintel.ingestion.ast_utils import AstSpanIndex
@@ -78,7 +81,11 @@ def test_records_validation_when_parser_returns_none(
         repo_root=tmp_path,
         overrides=FunctionAnalyticsOverrides(fail_on_missing_spans=False),
     )
-    compute_function_metrics_and_types(gateway, cfg, parser_registry=registry)
+    compute_function_metrics_and_types(
+        gateway,
+        cfg,
+        options=FunctionAnalyticsOptions(parser_registry=registry),
+    )
 
     metrics_rows = con.execute("SELECT * FROM analytics.function_metrics").fetchall()
     validation_rows = con.execute(
@@ -128,7 +135,11 @@ def test_custom_parser_hook_is_used(fresh_gateway: StorageGateway, tmp_path: Pat
         commit="deadbeef",
         repo_root=tmp_path,
     )
-    summary = compute_function_metrics_and_types(gateway, cfg, parser_registry=registry)
+    summary = compute_function_metrics_and_types(
+        gateway,
+        cfg,
+        options=FunctionAnalyticsOptions(parser_registry=registry),
+    )
 
     metrics_rows = con.execute(
         "SELECT qualname FROM analytics.function_metrics WHERE repo = ? AND commit = ?",
@@ -203,7 +214,7 @@ def test_build_and_persist_paths_are_separate(
         "start_line": 1,
         "end_line": 2,
     }
-    goids_by_file: dict[str, list[GoidRow]] = {rel_path: [goid_row]}
+    goids_by_file: dict[str, list[AnalyticsGoidRow]] = {rel_path: [goid_row]}
 
     parsed = ParsedFile(
         lines=["def foo():", "    return 1"],
@@ -273,8 +284,10 @@ def test_validation_reporter_emits_counts(
     compute_function_metrics_and_types(
         gateway,
         cfg,
-        parser_registry=registry,
-        validation_reporter=reporter,
+        options=FunctionAnalyticsOptions(
+            parser_registry=registry,
+            validation_reporter=reporter,
+        ),
     )
 
     log_levels = {(rec.name, rec.levelno) for rec in caplog.records}

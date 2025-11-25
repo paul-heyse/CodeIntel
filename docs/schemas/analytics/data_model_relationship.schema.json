@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DataModelRelationship",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "field": { "type": ["string", "null"] },
+    "field_name": { "type": ["string", "null"] },
+    "target_model_id": { "type": ["string", "null"] },
+    "target_model_name": { "type": ["string", "null"] },
+    "target_module": { "type": ["string", "null"] },
+    "multiplicity": { "type": ["string", "null"] },
+    "kind": { "type": "string" },
+    "relationship_kind": { "type": ["string", "null"] },
+    "via": { "type": ["string", "null"] },
+    "evidence": { "type": "object" },
+    "rel_path": { "type": ["string", "null"] },
+    "lineno": { "type": ["integer", "null"] }
+  },
+  "required": ["kind"]
+}

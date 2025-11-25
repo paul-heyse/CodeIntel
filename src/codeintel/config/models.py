@@ -910,6 +910,10 @@ class GraphMetricsConfig:
     repo: str
     commit: str
     max_betweenness_sample: int | None = 200
+    eigen_max_iter: int = 200
+    pagerank_weight: str | None = "weight"
+    betweenness_weight: str | None = "weight"
+    seed: int = 0
 
     @classmethod
     def from_paths(
@@ -917,7 +921,6 @@ class GraphMetricsConfig:
         *,
         repo: str,
         commit: str,
-        max_betweenness_sample: int | None = 200,
     ) -> Self:
         """
         Build graph metrics configuration from repository context.
@@ -927,11 +930,7 @@ class GraphMetricsConfig:
         Self
             Normalized graph metrics configuration.
         """
-        return cls(
-            repo=repo,
-            commit=commit,
-            max_betweenness_sample=max_betweenness_sample,
-        )
+        return cls(repo=repo, commit=commit)
 
 
 @dataclass(frozen=True)
@@ -1096,6 +1095,14 @@ class EntryPointsConfig:
 
 
 @dataclass(frozen=True)
+class DependencyPatternOptions:
+    """Options for dependency pattern scanning."""
+
+    language: str = "python"
+    dependency_patterns_path: Path | None = None
+
+
+@dataclass(frozen=True)
 class ExternalDependenciesConfig:
     """Configuration for external dependency analytics."""
 
@@ -1105,15 +1112,6 @@ class ExternalDependenciesConfig:
     language: str = "python"
     dependency_patterns_path: Path | None = None
     scan_config: ScanConfig | None = None
-
-
-@dataclass(frozen=True)
-class DependencyPatternOptions:
-    """Options for dependency pattern scanning."""
-
-    language: str = "python"
-    dependency_patterns_path: Path | None = None
-
 
     @classmethod
     def from_paths(
@@ -1500,6 +1498,10 @@ class BehavioralCoverageConfig:
             Commit identifier.
         repo_root :
             Repository root on disk for AST parsing.
+        enable_llm :
+            Whether to call the behavioral LLM to augment heuristic tags.
+        llm_model :
+            Optional model identifier forwarded to the LLM runner.
 
         Returns
         -------

@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 
 MAX_STDERR_CHARS = 500
 META_PARTS_REQUIRED = 3
+_MIN_HUNK_PARTS = 2
 
 
 @dataclass(frozen=True)
@@ -94,7 +95,7 @@ def _parse_hunk_header(header: str) -> tuple[tuple[int, int], tuple[int, int]] |
         return None
     body = header.strip().removeprefix("@@").removesuffix("@@").strip()
     parts = body.split()
-    if len(parts) < 2:
+    if len(parts) < _MIN_HUNK_PARTS:
         return None
     old_range = _parse_range(parts[0].lstrip("-"))
     new_range = _parse_range(parts[1].lstrip("+"))

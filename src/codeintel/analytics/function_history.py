@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import duckdb
 
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.git_history import FileCommitDelta, iter_file_history
 from codeintel.config.models import FunctionHistoryConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
@@ -57,6 +58,7 @@ def compute_function_history(
     cfg: FunctionHistoryConfig,
     *,
     runner: ToolRunner | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate `analytics.function_history` for the given repo/commit snapshot.
@@ -69,7 +71,18 @@ def compute_function_history(
         Function history configuration.
     runner:
         Optional shared ToolRunner for git invocations.
+    context:
+        Optional shared analytics context to enforce snapshot consistency.
     """
+    if context is not None and (context.repo != cfg.repo or context.commit != cfg.commit):
+        log.warning(
+            "function_history context mismatch: context=%s@%s cfg=%s@%s",
+            context.repo,
+            context.commit,
+            cfg.repo,
+            cfg.commit,
+        )
+
     ensure_schema(con, "analytics.function_history")
     con.execute(
         "DELETE FROM analytics.function_history WHERE repo = ? AND commit = ?",

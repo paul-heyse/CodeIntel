@@ -56,6 +56,10 @@ These views are thin helpers that:
 2. Construct a `Graph`/`DiGraph`/bipartite graph with attributes such as `weight`, `kind`, or `source`.
 3. Hand that `G` to NetworkX algorithms to compute metrics, which are then written to `analytics.*`.
 
+### 2.4 Data models (normalized access)
+
+Data models are stored across `analytics.data_models` (identity + docs), `analytics.data_model_fields`, and `analytics.data_model_relationships`, and exposed for consumers via `docs.v_data_models_normalized`. Downstream code should read through the normalized tables/view (or the `codeintel.storage.data_models` accessors) instead of parsing the legacy `fields_json` / `relationships_json` blobs; the legacy columns remain only for rollback and export compatibility.
+
 ---
 
 ## 3. Ingestion & indexing
@@ -122,6 +126,8 @@ This is the big change: instead of ad‑hoc degree counts or simple SQL, graph u
 ### 5.1 Call‑graph metrics (functions & modules)
 
 From the function call graph:
+
+See `docs/tech/graph_metrics_platform.md` for shared GraphContext defaults (weights, seeds, sampling caps, logging hooks) that all graph metrics tables use.
 
 * Build a `DiGraph` whose nodes are function GOIDs and edges are calls.
 
@@ -2169,8 +2175,6 @@ Putting it in one mental picture:
   * Docs views (`docs.v_*`).
 
 Everything above in sections 1–8 is the “raw evidence ingestion” side: given a repo and external tools, these are the exact mechanisms that turn that into **structured rows in DuckDB** that your later analytics and LLM‑facing layers build on top of.
-
-
 
 
 

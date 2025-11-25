@@ -657,7 +657,9 @@ def seed_docs_export_invalid_profile(
         If invoked against a strict gateway; use ``loose_gateway`` instead.
     """
     if getattr(gateway, "config", None) is not None and gateway.config.validate_schema:
-        message = "seed_docs_export_invalid_profile requires a non-strict gateway (use loose_gateway)."
+        message = (
+            "seed_docs_export_invalid_profile requires a non-strict gateway (use loose_gateway)."
+        )
         raise ValueError(message)
     seed_docs_export_minimal(gateway, repo=repo, commit=commit)
     con = gateway.con
@@ -1901,6 +1903,7 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
     *,
     repo: str = DEFAULT_REPO,
     commit: str = DEFAULT_COMMIT,
+    graph_cfg: GraphMetricsConfig | None = None,
     include_symbol_edges: bool = True,
     file_backed: bool = False,
     db_path: Path | None = None,
@@ -2021,8 +2024,8 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
             ],
         )
     if run_metrics:
-        graph_cfg = GraphMetricsConfig.from_paths(repo=repo, commit=commit)
-        compute_graph_metrics(gateway, graph_cfg)
+        cfg = graph_cfg or GraphMetricsConfig.from_paths(repo=repo, commit=commit)
+        compute_graph_metrics(gateway, cfg)
     return ctx
 
 

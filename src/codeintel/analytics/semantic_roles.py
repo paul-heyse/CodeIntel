@@ -12,13 +12,16 @@ from datetime import UTC, datetime
 
 import duckdb
 
-from codeintel.analytics.function_ast_cache import FunctionAst, load_function_asts
+from codeintel.analytics.ast_utils import safe_unparse
+from codeintel.analytics.context import (
+    AnalyticsContext,
+    AnalyticsContextConfig,
+    build_analytics_context,
+)
+from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config.models import SemanticRolesConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.function_catalog_service import (
-    FunctionCatalogProvider,
-    FunctionCatalogService,
-)
+from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
@@ -170,6 +173,7 @@ def compute_semantic_roles(
     cfg: SemanticRolesConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate semantic role tables for functions and modules.
@@ -182,23 +186,24 @@ def compute_semantic_roles(
         Semantic role configuration.
     catalog_provider:
         Optional pre-loaded function catalog to reuse across steps.
+    context:
+        Optional shared analytics context to reuse catalog, module map, and ASTs.
     """
     con = gateway.con
     ensure_schema(con, "analytics.semantic_roles_functions")
     ensure_schema(con, "analytics.semantic_roles_modules")
 
-    catalog = catalog_provider or FunctionCatalogService.from_db(
-        gateway, repo=cfg.repo, commit=cfg.commit
-    )
-    module_by_path = catalog.catalog().module_by_path
-
-    ast_map, _missing = load_function_asts(
+    shared_context = context or build_analytics_context(
         gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        repo_root=cfg.repo_root,
-        catalog_provider=catalog,
+        AnalyticsContextConfig(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=cfg.repo_root,
+            catalog_provider=catalog_provider,
+        ),
     )
+    module_by_path = shared_context.module_map
+    ast_map = shared_context.function_ast_map
 
     module_meta = _load_module_meta(con, repo=cfg.repo, commit=cfg.commit)
     function_rows = _load_function_rows(con, repo=cfg.repo, commit=cfg.commit)
@@ -621,13 +626,13 @@ def _classify_modules(
 def _decorator_names(decorators: list[ast.expr]) -> list[str]:
     names: list[str] = []
     for dec in decorators:
-        try:
-            names.append(ast.unparse(dec))
-        except (TypeError, ValueError, AttributeError):
-            if isinstance(dec, ast.Name):
-                names.append(dec.id)
-            elif isinstance(dec, ast.Attribute):
-                names.append(dec.attr)
+        text = safe_unparse(dec)
+        if text:
+            names.append(text)
+        elif isinstance(dec, ast.Name):
+            names.append(dec.id)
+        elif isinstance(dec, ast.Attribute):
+            names.append(dec.attr)
     return names
 
 

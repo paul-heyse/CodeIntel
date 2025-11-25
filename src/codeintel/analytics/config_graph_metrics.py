@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import cast
 
+import duckdb
 import networkx as nx
-from networkx.algorithms import community
 
+from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_service import (
+    GraphContext,
+    centrality_undirected,
+    community_ids,
+    log_empty_graph,
+    log_projection_skipped,
+)
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import load_config_module_bipartite
 from codeintel.storage.gateway import StorageGateway
@@ -50,33 +58,42 @@ def _clear_config_tables(gateway: StorageGateway, repo: str, commit: str) -> Non
 
 def _build_projection(graph: nx.Graph, nodes: set[tuple[str, str]]) -> nx.Graph:
     if not nodes:
+        log_projection_skipped(
+            "config_projection",
+            "empty partition",
+            nodes=0,
+            graph_nodes=graph.number_of_nodes(),
+        )
         return nx.Graph()
     proj = nx.Graph()
     proj.add_nodes_from(nodes)
-    if len(nodes) > 1:
-        return nx.bipartite.weighted_projected_graph(graph, nodes)
-    return proj
-
-
-def _projection_metrics(proj: nx.Graph) -> ProjectionMetrics:
-    communities = []
-    if 0 < proj.number_of_nodes() <= MAX_COMMUNITY_NODES:
-        communities = list(community.asyn_lpa_communities(proj, weight="weight"))
-    comm_map = {node: idx for idx, comm in enumerate(communities) for node in comm}
-
-    bet = {}
-    if proj.number_of_nodes() > 0:
-        k = min(proj.number_of_nodes(), MAX_BETWEENNESS_NODES)
-        bet = nx.betweenness_centrality(
-            proj, weight="weight", k=k if k < proj.number_of_nodes() else None
+    if len(nodes) <= 1:
+        log_projection_skipped(
+            "config_projection",
+            "partition too small",
+            nodes=len(nodes),
+            graph_nodes=graph.number_of_nodes(),
         )
-    clo = nx.closeness_centrality(proj) if proj.number_of_nodes() > 0 else {}
+        return proj
+    return nx.bipartite.weighted_projected_graph(graph, nodes)
+
+
+def _projection_metrics(proj: nx.Graph, ctx: GraphContext) -> ProjectionMetrics:
+    if proj.number_of_nodes() == 0:
+        return ProjectionMetrics(deg={}, wdeg={}, bet={}, clo={}, comm_map={})
+    centrality = centrality_undirected(proj, ctx, weight=ctx.pagerank_weight)
     deg = {node: int(sum(1 for _ in proj.neighbors(node))) for node in proj.nodes}
     wdeg = {
         node: float(sum(data.get("weight", 1.0) for _, _, data in proj.edges(node, data=True)))
         for node in proj.nodes
     }
-    return ProjectionMetrics(deg=deg, wdeg=wdeg, bet=bet, clo=clo, comm_map=comm_map)
+    return ProjectionMetrics(
+        deg=deg,
+        wdeg=wdeg,
+        bet=centrality.betweenness,
+        clo=centrality.closeness,
+        comm_map=community_ids(proj, weight=ctx.pagerank_weight),
+    )
 
 
 def _projection_rows(
@@ -115,7 +132,39 @@ def _projection_rows(
     return cast("list[tuple[object, ...]]", node_rows), cast("list[tuple[object, ...]]", edge_rows)
 
 
-def compute_config_graph_metrics(gateway: StorageGateway, *, repo: str, commit: str) -> None:
+def _projection_payload(
+    *,
+    graph: nx.Graph,
+    nodes: set[tuple[str, str]],
+    snapshot: tuple[str, str],
+    created_at: datetime,
+    ctx: GraphContext,
+) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
+    repo, commit = snapshot
+    proj = _build_projection(graph, nodes)
+    metrics = _projection_metrics(proj, ctx)
+    return _projection_rows(
+        proj=proj,
+        repo=repo,
+        commit=commit,
+        now=created_at,
+        metrics=metrics,
+    )
+
+
+def _persist_rows(con: duckdb.DuckDBPyConnection, sql: str, rows: list[tuple[object, ...]]) -> None:
+    if rows:
+        con.executemany(sql, rows)
+
+
+def compute_config_graph_metrics(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    context: AnalyticsContext | None = None,
+    graph_ctx: GraphContext | None = None,
+) -> None:
     """Compute metrics for config keys/modules and their projections."""
     con = gateway.con
     ensure_schema(con, "analytics.config_graph_metrics_keys")
@@ -123,82 +172,89 @@ def compute_config_graph_metrics(gateway: StorageGateway, *, repo: str, commit: 
     ensure_schema(con, "analytics.config_projection_key_edges")
     ensure_schema(con, "analytics.config_projection_module_edges")
 
+    if context is not None and (context.repo != repo or context.commit != commit):
+        return
+
     graph = load_config_module_bipartite(gateway, repo, commit)
     if graph.number_of_nodes() == 0:
+        log_empty_graph("config_module_bipartite", graph)
         _clear_config_tables(gateway, repo, commit)
         return
-    now = datetime.now(UTC)
+    created_at = graph_ctx.resolved_now() if graph_ctx is not None else datetime.now(UTC)
+    ctx = graph_ctx or GraphContext(
+        repo=repo,
+        commit=commit,
+        now=created_at,
+        pagerank_weight="weight",
+        betweenness_weight="weight",
+    )
+    if ctx.betweenness_sample > MAX_BETWEENNESS_NODES:
+        ctx = replace(ctx, betweenness_sample=MAX_BETWEENNESS_NODES)
 
     keys = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}
     modules = set(graph) - keys
     if len(keys) == 0 or len(modules) == 0:
+        log_projection_skipped(
+            "config_projection",
+            "missing partition",
+            nodes=0,
+            graph_nodes=graph.number_of_nodes(),
+        )
         _clear_config_tables(gateway, repo, commit)
         return
 
-    key_rows: list[tuple[object, ...]] = []
-    module_rows: list[tuple[object, ...]] = []
-    key_edges: list[tuple[object, ...]] = []
-    module_edges: list[tuple[object, ...]] = []
-
-    if keys:
-        key_proj = _build_projection(graph, keys)
-        key_metrics = _projection_metrics(key_proj)
-        key_rows, key_edges = _projection_rows(
-            proj=key_proj,
-            repo=repo,
-            commit=commit,
-            now=now,
-            metrics=key_metrics,
-        )
-
-    if modules:
-        module_proj = _build_projection(graph, modules)
-        module_metrics = _projection_metrics(module_proj)
-        module_rows, module_edges = _projection_rows(
-            proj=module_proj,
-            repo=repo,
-            commit=commit,
-            now=now,
-            metrics=module_metrics,
-        )
+    key_rows, key_edges = _projection_payload(
+        graph=graph,
+        nodes=keys,
+        snapshot=(repo, commit),
+        created_at=created_at,
+        ctx=ctx,
+    )
+    module_rows, module_edges = _projection_payload(
+        graph=graph,
+        nodes=modules,
+        snapshot=(repo, commit),
+        created_at=created_at,
+        ctx=ctx,
+    )
 
     _clear_config_tables(gateway, repo, commit)
 
-    if key_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.config_graph_metrics_keys (
-                repo, commit, config_key, degree, weighted_degree,
-                betweenness, closeness, community_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            key_rows,
-        )
-    if module_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.config_graph_metrics_modules (
-                repo, commit, module, degree, weighted_degree,
-                betweenness, closeness, community_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            module_rows,
-        )
-    if key_edges:
-        con.executemany(
-            """
-            INSERT INTO analytics.config_projection_key_edges (
-                repo, commit, src_key, dst_key, weight, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            key_edges,
-        )
-    if module_edges:
-        con.executemany(
-            """
-            INSERT INTO analytics.config_projection_module_edges (
-                repo, commit, src_module, dst_module, weight, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            module_edges,
-        )
+    _persist_rows(
+        con,
+        """
+        INSERT INTO analytics.config_graph_metrics_keys (
+            repo, commit, config_key, degree, weighted_degree,
+            betweenness, closeness, community_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        key_rows,
+    )
+    _persist_rows(
+        con,
+        """
+        INSERT INTO analytics.config_graph_metrics_modules (
+            repo, commit, module, degree, weighted_degree,
+            betweenness, closeness, community_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        module_rows,
+    )
+    _persist_rows(
+        con,
+        """
+        INSERT INTO analytics.config_projection_key_edges (
+            repo, commit, src_key, dst_key, weight, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        key_edges,
+    )
+    _persist_rows(
+        con,
+        """
+        INSERT INTO analytics.config_projection_module_edges (
+            repo, commit, src_module, dst_module, weight, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        module_edges,
+    )

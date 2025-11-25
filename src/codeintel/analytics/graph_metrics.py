@@ -9,13 +9,22 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
 import duckdb
 import networkx as nx
 
+from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_service import (
+    GraphBundle,
+    GraphContext,
+    centrality_directed,
+    component_metadata,
+    neighbor_stats,
+)
 from codeintel.config.models import GraphMetricsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
@@ -25,81 +34,133 @@ from codeintel.storage.gateway import StorageGateway
 log = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class ImportNeighborStats:
-    """Neighbor and edge count summaries for import graph edges."""
-
-    in_neighbors: dict[str, set[str]]
-    out_neighbors: dict[str, set[str]]
-    in_counts: dict[str, int]
-    out_counts: dict[str, int]
-
-
-@dataclass(frozen=True)
-class CentralityMetrics:
-    """Computed centrality metrics for a directed graph."""
-
-    pagerank: dict[Any, float]
-    betweenness: dict[Any, float]
-    closeness: dict[Any, float]
-
-
-@dataclass(frozen=True)
-class ComponentMetadata:
-    """Component membership and layering information for a directed graph."""
-
-    ids: dict[Any, int]
-    in_cycle: dict[Any, bool]
-    layer: dict[Any, int]
-
-
 def compute_graph_metrics(
     gateway: StorageGateway,
     cfg: GraphMetricsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
+    graph_ctx: GraphContext | None = None,
 ) -> None:
     """Populate analytics graph metrics tables for the provided repo/commit."""
     con = gateway.con
     ensure_schema(con, "analytics.graph_metrics_functions")
     ensure_schema(con, "analytics.graph_metrics_modules")
-    _compute_function_graph_metrics(gateway, cfg)
+    ctx = graph_ctx or GraphContext(
+        repo=cfg.repo,
+        commit=cfg.commit,
+        now=datetime.now(UTC),
+        betweenness_sample=cfg.max_betweenness_sample or 500,
+        eigen_max_iter=cfg.eigen_max_iter,
+        pagerank_weight=cfg.pagerank_weight,
+        betweenness_weight=cfg.betweenness_weight,
+        seed=cfg.seed,
+    )
+    if ctx.repo != cfg.repo or ctx.commit != cfg.commit:
+        ctx = replace(ctx, repo=cfg.repo, commit=cfg.commit)
+    call_graph_cached = context.call_graph if context is not None else None
+    import_graph_cached = context.import_graph if context is not None else None
+
+    def _call_graph_loader() -> nx.DiGraph:
+        return (
+            call_graph_cached
+            if call_graph_cached is not None
+            else load_call_graph(gateway, cfg.repo, cfg.commit)
+        )
+
+    def _import_graph_loader() -> nx.DiGraph:
+        return (
+            import_graph_cached
+            if import_graph_cached is not None
+            else load_import_graph(gateway, cfg.repo, cfg.commit)
+        )
+
+    bundle: GraphBundle[nx.DiGraph] = GraphBundle(
+        ctx=ctx,
+        loaders={
+            "call_graph": _call_graph_loader,
+            "import_graph": _import_graph_loader,
+        },
+    )
+    _compute_function_graph_metrics(gateway, cfg, ctx=ctx, bundle=bundle)
     module_by_path = None
-    if catalog_provider is not None:
+    if context is not None:
+        module_by_path = context.module_map
+    elif catalog_provider is not None:
         module_by_path = catalog_provider.catalog().module_by_path
-    _compute_module_graph_metrics(gateway, cfg, module_by_path=module_by_path)
+    _compute_module_graph_metrics(
+        gateway,
+        cfg,
+        ctx=ctx,
+        bundle=bundle,
+        module_by_path=module_by_path,
+    )
 
 
-def _dag_layers(graph: nx.DiGraph) -> dict[Any, int]:
-    layers: dict[Any, int] = {node: 0 for node in graph.nodes if graph.in_degree(node) == 0}
-    for node in nx.topological_sort(graph):
-        base = layers.get(node, 0)
-        for succ in graph.successors(node):
-            layers[succ] = max(layers.get(succ, 0), base + 1)
-    return layers
+def _compute_function_graph_metrics(
+    gateway: StorageGateway,
+    cfg: GraphMetricsConfig,
+    *,
+    ctx: GraphContext,
+    bundle: GraphBundle[nx.DiGraph],
+) -> None:
+    con = gateway.con
+    graph = bundle.get("call_graph")
+    stats = neighbor_stats(graph, weight=ctx.betweenness_weight)
+    centrality = centrality_directed(graph, ctx)
+    components = component_metadata(graph)
+    created_at = ctx.resolved_now()
 
+    con.execute(
+        "DELETE FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
+        [cfg.repo, cfg.commit],
+    )
 
-def _component_metadata(
-    graph: nx.DiGraph,
-) -> ComponentMetadata:
-    if graph.number_of_nodes() == 0:
-        return ComponentMetadata(ids={}, in_cycle={}, layer={})
+    rows: list[tuple[object, ...]] = [
+        (
+            cfg.repo,
+            cfg.commit,
+            node,
+            len(stats.in_neighbors.get(node, ())),
+            len(stats.out_neighbors.get(node, ())),
+            stats.in_counts.get(node, 0),
+            stats.out_counts.get(node, 0),
+            centrality.pagerank.get(node),
+            centrality.betweenness.get(node),
+            centrality.closeness.get(node),
+            components.in_cycle.get(node, False),
+            components.scc_id.get(node),
+            components.layer.get(node),
+            created_at,
+        )
+        for node in sorted(graph.nodes)
+    ]
 
-    components = list(nx.strongly_connected_components(graph))
-    comp_index = {node: idx for idx, comp in enumerate(components) for node in comp}
-    cycle_member = {node: len(components[comp_index[node]]) > 1 for node in graph.nodes}
-
-    condensation = nx.condensation(graph, components)
-    comp_layers = _dag_layers(condensation)
-    layer_by_node = {node: comp_layers.get(comp_index[node], 0) for node in graph.nodes}
-    return ComponentMetadata(ids=comp_index, in_cycle=cycle_member, layer=layer_by_node)
+    if rows:
+        con.executemany(
+            """
+            INSERT INTO analytics.graph_metrics_functions (
+                repo, commit, function_goid_h128,
+                call_fan_in, call_fan_out, call_in_degree, call_out_degree,
+                call_pagerank, call_betweenness, call_closeness,
+                call_cycle_member, call_cycle_id, call_layer, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+        log.info(
+            "graph_metrics_functions populated: %d rows for %s@%s",
+            len(rows),
+            cfg.repo,
+            cfg.commit,
+        )
 
 
 def _component_metadata_from_import_table(
     gateway: StorageGateway,
     repo: str,
     commit: str,
-) -> ComponentMetadata | None:
+) -> dict[str, dict[str, int | bool]] | None:
     try:
         rows = gateway.con.execute(
             """
@@ -124,112 +185,36 @@ def _component_metadata_from_import_table(
         in_cycle[name] = size > 1
         if layer is not None:
             layer_by_module[name] = int(layer)
-    return ComponentMetadata(ids=comp_id, in_cycle=in_cycle, layer=layer_by_module)
+    in_cycle_cast: dict[str, int | bool] = {node: bool(flag) for node, flag in in_cycle.items()}
+    component_id_cast: dict[str, int | bool] = {node: int(val) for node, val in comp_id.items()}
+    layer_cast: dict[str, int | bool] = {node: int(val) for node, val in layer_by_module.items()}
+    return {
+        "component_id": component_id_cast,
+        "in_cycle": in_cycle_cast,
+        "layer": layer_cast,
+    }
 
 
 def _merge_component_metadata(
     graph_nodes: set[Any],
-    computed: ComponentMetadata,
-    cached: ComponentMetadata | None,
-) -> ComponentMetadata:
+    computed: Mapping[str, Mapping[Any, int | bool]],
+    cached: Mapping[str, Mapping[Any, int | bool]] | None,
+) -> dict[str, dict[Any, int | bool]]:
     if cached is None:
-        return computed
-    ids = computed.ids.copy()
-    in_cycle = computed.in_cycle.copy()
-    layer = computed.layer.copy()
+        return {
+            "component_id": dict(computed["component_id"]),
+            "in_cycle": dict(computed["in_cycle"]),
+            "layer": dict(computed["layer"]),
+        }
+    ids = dict(computed["component_id"])
+    in_cycle = dict(computed["in_cycle"])
+    layer = dict(computed["layer"])
     for node in graph_nodes:
-        if node in cached.ids:
-            ids[node] = cached.ids[node]
-            in_cycle[node] = cached.in_cycle.get(node, False)
-            layer[node] = cached.layer.get(node, layer.get(node, 0))
-    return ComponentMetadata(ids=ids, in_cycle=in_cycle, layer=layer)
-
-
-def _centrality(graph: nx.DiGraph, max_betweenness_sample: int | None) -> CentralityMetrics:
-    if graph.number_of_nodes() == 0:
-        return CentralityMetrics(pagerank={}, betweenness={}, closeness={})
-
-    try:
-        pagerank = nx.pagerank(graph, weight="weight")
-    except (ImportError, ModuleNotFoundError, AttributeError):
-        log.warning("SciPy unavailable; using zeroed PageRank scores")
-        pagerank = dict.fromkeys(graph.nodes, 0.0)
-    closeness = nx.closeness_centrality(graph)
-    betweenness = (
-        nx.betweenness_centrality(
-            graph,
-            k=max_betweenness_sample,
-            seed=0,
-            weight=None,
-        )
-        if max_betweenness_sample is not None and max_betweenness_sample < graph.number_of_nodes()
-        else nx.betweenness_centrality(graph, weight=None)
-    )
-    return CentralityMetrics(pagerank=pagerank, betweenness=betweenness, closeness=closeness)
-
-
-def _compute_function_graph_metrics(gateway: StorageGateway, cfg: GraphMetricsConfig) -> None:
-    con = gateway.con
-    graph = load_call_graph(gateway, cfg.repo, cfg.commit)
-
-    neighbor_in: dict[int, set[int]] = defaultdict(set)
-    neighbor_out: dict[int, set[int]] = defaultdict(set)
-    in_edge_count: dict[int, int] = defaultdict(int)
-    out_edge_count: dict[int, int] = defaultdict(int)
-    for src, dst, data in graph.edges(data=True):
-        weight = int(data.get("weight", 1))
-        neighbor_out[int(src)].add(int(dst))
-        neighbor_in[int(dst)].add(int(src))
-        out_edge_count[int(src)] += weight
-        in_edge_count[int(dst)] += weight
-
-    centrality = _centrality(graph, cfg.max_betweenness_sample)
-    component_meta = _component_metadata(graph)
-
-    con.execute(
-        "DELETE FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-
-    now = datetime.now(UTC)
-    rows_to_insert: list[tuple[object, ...]] = [
-        (
-            cfg.repo,
-            cfg.commit,
-            node,
-            len(neighbor_in.get(node, ())),
-            len(neighbor_out.get(node, ())),
-            in_edge_count.get(node, 0),
-            out_edge_count.get(node, 0),
-            centrality.pagerank.get(node),
-            centrality.betweenness.get(node),
-            centrality.closeness.get(node),
-            component_meta.in_cycle.get(node, False),
-            component_meta.ids.get(node),
-            component_meta.layer.get(node),
-            now,
-        )
-        for node in sorted(graph.nodes)
-    ]
-
-    if rows_to_insert:
-        con.executemany(
-            """
-            INSERT INTO analytics.graph_metrics_functions (
-                repo, commit, function_goid_h128,
-                call_fan_in, call_fan_out, call_in_degree, call_out_degree,
-                call_pagerank, call_betweenness, call_closeness,
-                call_cycle_member, call_cycle_id, call_layer, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows_to_insert,
-        )
-        log.info(
-            "graph_metrics_functions populated: %d rows for %s@%s",
-            len(rows_to_insert),
-            cfg.repo,
-            cfg.commit,
-        )
+        if node in cached.get("component_id", {}):
+            ids[node] = cached["component_id"][node]
+            in_cycle[node] = bool(cached["in_cycle"].get(node, False))
+            layer[node] = int(cached["layer"].get(node, layer.get(node, 0)))
+    return {"component_id": ids, "in_cycle": in_cycle, "layer": layer}
 
 
 def _load_symbol_module_edges(
@@ -274,32 +259,16 @@ def _load_symbol_module_edges(
     return modules, inbound, outbound
 
 
-def _import_stats_from_graph(graph: nx.DiGraph) -> ImportNeighborStats:
-    in_neighbors: dict[str, set[str]] = defaultdict(set)
-    out_neighbors: dict[str, set[str]] = defaultdict(set)
-    in_counts: dict[str, int] = defaultdict(int)
-    out_counts: dict[str, int] = defaultdict(int)
-    for src, dst, data in graph.edges(data=True):
-        weight = int(data.get("weight", 1))
-        out_neighbors[src].add(dst)
-        in_neighbors[dst].add(src)
-        out_counts[src] += weight
-        in_counts[dst] += weight
-    return ImportNeighborStats(
-        in_neighbors=in_neighbors,
-        out_neighbors=out_neighbors,
-        in_counts=in_counts,
-        out_counts=out_counts,
-    )
-
-
 def _compute_module_graph_metrics(
     gateway: StorageGateway,
     cfg: GraphMetricsConfig,
+    *,
+    ctx: GraphContext,
+    bundle: GraphBundle[nx.DiGraph],
     module_by_path: dict[str, str] | None,
 ) -> None:
     con = gateway.con
-    graph = load_import_graph(gateway, cfg.repo, cfg.commit)
+    graph = bundle.get("import_graph")
     symbol_modules, symbol_inbound, symbol_outbound = _load_symbol_module_edges(
         gateway, module_by_path
     )
@@ -314,18 +283,26 @@ def _compute_module_graph_metrics(
     if modules:
         graph.add_nodes_from(modules)
 
-    import_stats = _import_stats_from_graph(graph)
-    centrality = _centrality(graph, cfg.max_betweenness_sample)
-    component_meta = _component_metadata(graph)
+    import_stats = neighbor_stats(graph, weight=ctx.betweenness_weight)
+    centrality = centrality_directed(graph, ctx)
+    component_raw = component_metadata(graph)
     cached_component_meta = _component_metadata_from_import_table(gateway, cfg.repo, cfg.commit)
-    component_meta = _merge_component_metadata(modules, component_meta, cached_component_meta)
+    component_meta = _merge_component_metadata(
+        modules,
+        {
+            "component_id": component_raw.component_id,
+            "in_cycle": component_raw.in_cycle,
+            "layer": component_raw.layer,
+        },
+        cached_component_meta,
+    )
 
     con.execute(
         "DELETE FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
         [cfg.repo, cfg.commit],
     )
 
-    now = datetime.now(UTC)
+    now = ctx.resolved_now()
     rows_to_insert: list[tuple[object, ...]] = [
         (
             cfg.repo,
@@ -338,9 +315,9 @@ def _compute_module_graph_metrics(
             centrality.pagerank.get(module),
             centrality.betweenness.get(module),
             centrality.closeness.get(module),
-            component_meta.in_cycle.get(module, False),
-            component_meta.ids.get(module),
-            component_meta.layer.get(module),
+            component_meta["in_cycle"].get(module, False),
+            component_meta["component_id"].get(module),
+            component_meta["layer"].get(module),
             len(symbol_inbound.get(module, ())),
             len(symbol_outbound.get(module, ())),
             now,

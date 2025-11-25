@@ -11,13 +11,16 @@ from datetime import UTC, datetime
 
 import duckdb
 
-from codeintel.analytics.function_ast_cache import FunctionAst, load_function_asts
+from codeintel.analytics.ast_utils import literal_int, literal_value, safe_unparse
+from codeintel.analytics.context import (
+    AnalyticsContext,
+    AnalyticsContextConfig,
+    build_analytics_context,
+)
+from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config.models import FunctionContractsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.function_catalog_service import (
-    FunctionCatalogProvider,
-    FunctionCatalogService,
-)
+from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
 
@@ -43,6 +46,7 @@ def compute_function_contracts(
     cfg: FunctionContractsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate `analytics.function_contracts` for a repo/commit snapshot.
@@ -55,22 +59,24 @@ def compute_function_contracts(
         Contracts configuration (repo, commit, repo_root).
     catalog_provider:
         Optional function catalog to reuse across steps.
+    context:
+        Optional shared analytics context to reuse catalog and AST caches.
     """
     con = gateway.con
     ensure_schema(con, "analytics.function_contracts")
 
-    catalog = catalog_provider or FunctionCatalogService.from_db(
-        gateway, repo=cfg.repo, commit=cfg.commit
+    shared_context = context or build_analytics_context(
+        gateway,
+        AnalyticsContextConfig(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=cfg.repo_root,
+            catalog_provider=catalog_provider,
+        ),
     )
 
-    ast_by_goid, _missing = load_function_asts(
-        gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        repo_root=cfg.repo_root,
-        catalog_provider=catalog,
-    )
-    all_goids = {span.goid for span in catalog.catalog().function_spans}
+    ast_by_goid = shared_context.function_ast_map
+    all_goids = {span.goid for span in shared_context.catalog.catalog().function_spans}
 
     doc_map = _load_docstrings(con, repo=cfg.repo, commit=cfg.commit)
     type_map = _load_function_types(con, repo=cfg.repo, commit=cfg.commit)
@@ -599,16 +605,11 @@ def _is_len_call(node: ast.AST) -> bool:
 
 
 def _annotation_str(node: ast.AST) -> str | None:
-    try:
-        return ast.unparse(node)
-    except (ValueError, TypeError, AttributeError):
-        return None
+    return safe_unparse(node) or None
 
 
 def _constant_int(node: ast.AST) -> int | None:
-    if isinstance(node, ast.Constant) and isinstance(node.value, int):
-        return node.value
-    return None
+    return literal_int(node)
 
 
 def _len_condition(
@@ -625,7 +626,7 @@ def _len_condition(
 
 
 def _is_none(node: ast.AST) -> bool:
-    return isinstance(node, ast.Constant) and node.value is None
+    return literal_value(node) is None
 
 
 def _extract_exception_name(exc: ast.AST | None) -> str | None:

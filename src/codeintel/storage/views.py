@@ -1037,8 +1037,159 @@ CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
             dm.module,
             dm.rel_path,
             dm.model_kind,
-            dm.fields_json,
-            dm.relationships_json,
+            coalesce(dm.base_classes_json, '[]') AS base_classes_json,
+            (
+                SELECT to_json(
+                           coalesce(
+                               list(
+                                   struct_pack(
+                                       name := f.field_name,
+                                       type := f.field_type,
+                                       required := f.required,
+                                       has_default := f.has_default,
+                                       default_expr := f.default_expr,
+                                       constraints := f.constraints_json,
+                                       source := f.source,
+                                       lineno := f.lineno
+                                   )
+                                   ORDER BY f.field_name
+                               ),
+                               []
+                           )
+                       )
+                FROM analytics.data_model_fields f
+                WHERE f.repo = dm.repo AND f.commit = dm.commit AND f.model_id = dm.model_id
+            ) AS fields_json,
+            (
+                SELECT to_json(
+                           coalesce(
+                               list(
+                                   struct_pack(
+                                       field := r.field_name,
+                                       target_model_id := r.target_model_id,
+                                       target_model_name := r.target_model_name,
+                                       target_module := r.target_module,
+                                       multiplicity := r.multiplicity,
+                                       kind := r.relationship_kind,
+                                       via := r.via,
+                                       rel_path := r.rel_path,
+                                       lineno := r.lineno,
+                                       evidence := r.evidence_json
+                                   )
+                                   ORDER BY r.field_name
+                               ),
+                               []
+                           )
+                       )
+                FROM analytics.data_model_relationships r
+                WHERE r.repo = dm.repo
+                  AND r.commit = dm.commit
+                  AND r.source_model_id = dm.model_id
+            ) AS relationships_json,
+            dm.doc_short,
+            dm.doc_long,
+            dm.created_at
+        FROM analytics.data_models dm;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_data_model_fields AS
+        SELECT
+            repo,
+            commit,
+            model_id,
+            field_name,
+            field_type,
+            required,
+            has_default,
+            default_expr,
+            constraints_json,
+            source,
+            rel_path,
+            lineno,
+            created_at
+        FROM analytics.data_model_fields;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_data_model_relationships AS
+        SELECT
+            repo,
+            commit,
+            source_model_id,
+            target_model_id,
+            target_module,
+            target_model_name,
+            field_name,
+            relationship_kind,
+            multiplicity,
+            via,
+            evidence_json,
+            rel_path,
+            lineno,
+            created_at
+        FROM analytics.data_model_relationships;
+        """
+    )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_data_models_normalized AS
+        SELECT
+            dm.repo,
+            dm.commit,
+            dm.model_id,
+            dm.goid_h128,
+            dm.model_name,
+            dm.module,
+            dm.rel_path,
+            dm.model_kind,
+            coalesce(dm.base_classes_json, '[]') AS base_classes_json,
+            (SELECT coalesce(list(
+                        struct_pack(
+                            field_name := f.field_name,
+                            field_type := f.field_type,
+                            required := f.required,
+                            has_default := f.has_default,
+                            default_expr := f.default_expr,
+                            constraints := f.constraints_json,
+                            source := f.source,
+                            rel_path := f.rel_path,
+                            lineno := f.lineno,
+                            created_at := f.created_at
+                        )
+                        ORDER BY f.field_name
+                    )
+                    , []
+                    )
+             FROM analytics.data_model_fields f
+             WHERE f.repo = dm.repo AND f.commit = dm.commit AND f.model_id = dm.model_id
+            ) AS fields,
+            (SELECT coalesce(list(
+                        struct_pack(
+                            field_name := r.field_name,
+                            target_model_id := r.target_model_id,
+                            target_module := r.target_module,
+                            target_model_name := r.target_model_name,
+                            relationship_kind := r.relationship_kind,
+                            multiplicity := r.multiplicity,
+                            via := r.via,
+                            evidence := r.evidence_json,
+                            rel_path := r.rel_path,
+                            lineno := r.lineno,
+                            created_at := r.created_at
+                        )
+                        ORDER BY r.field_name
+                    )
+                    , []
+                    )
+             FROM analytics.data_model_relationships r
+             WHERE r.repo = dm.repo AND r.commit = dm.commit AND r.source_model_id = dm.model_id
+            ) AS relationships,
             dm.doc_short,
             dm.doc_long,
             dm.created_at

@@ -12,14 +12,18 @@ from datetime import UTC, datetime
 
 import duckdb
 
-from codeintel.analytics.function_ast_cache import FunctionAst, load_function_asts
+from codeintel.analytics.ast_utils import call_name, snippet_from_lines
+from codeintel.analytics.context import (
+    AnalyticsContext,
+    AnalyticsContextConfig,
+    build_analytics_context,
+)
+from codeintel.analytics.evidence import EvidenceCollector
+from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config.models import DataModelUsageConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.function_catalog_service import (
-    FunctionCatalogProvider,
-    FunctionCatalogService,
-)
-from codeintel.ingestion.common import load_module_map
+from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.storage.data_models import DataModelRow, fetch_models
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
@@ -40,7 +44,7 @@ class ModelUsageResult:
     """Usage kinds and evidence collected for a single function."""
 
     usage_kinds: dict[str, set[str]] = field(default_factory=dict)
-    evidence: dict[tuple[str, str], list[dict[str, object]]] = field(default_factory=dict)
+    evidence: dict[tuple[str, str], EvidenceCollector] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -178,19 +182,6 @@ def _resolve_model_from_hint(type_hint: str | None, index: ModelIndex) -> ModelI
     return None
 
 
-def _call_target_name(node: ast.AST | None) -> str | None:
-    if node is None:
-        return None
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        parent = _call_target_name(node.value)
-        if parent:
-            return f"{parent}.{node.attr}"
-        return node.attr
-    return None
-
-
 class ModelUsageVisitor(ast.NodeVisitor):
     """Collect per-model usage kinds and evidence from a function AST."""
 
@@ -198,10 +189,12 @@ class ModelUsageVisitor(ast.NodeVisitor):
         self,
         *,
         index: ModelIndex,
+        rel_path: str,
         lines: list[str],
         max_examples: int,
     ) -> None:
         self._index = index
+        self._rel_path = rel_path
         self._lines = lines
         self._max_examples = max_examples
         self._model_vars: dict[str, ModelInfo] = {}
@@ -214,7 +207,7 @@ class ModelUsageVisitor(ast.NodeVisitor):
         self._record_usage(model.model_id, kind, lineno)
 
     def _handle_constructor_call(self, node: ast.Call) -> None:
-        target_name = _call_target_name(node.func)
+        target_name = call_name(node.func)
         resolved_class = self._resolve_model_name(target_name or "")
         if resolved_class is not None:
             self._record_model_usage(resolved_class, "create", node.lineno)
@@ -242,7 +235,7 @@ class ModelUsageVisitor(ast.NodeVisitor):
     ) -> None:
         if not (isinstance(base, ast.Attribute) and base.attr == "objects"):
             return
-        owner_name = _call_target_name(base.value) or ""
+        owner_name = call_name(base.value) or ""
         owner_model = self._resolve_model_name(owner_name)
         manager_usage = usage or _usage_for_attr(attr_name)
         if owner_model is not None and manager_usage is not None:
@@ -253,7 +246,7 @@ class ModelUsageVisitor(ast.NodeVisitor):
             return
         for arg in node.args:
             if isinstance(arg, ast.Call):
-                call_model = self._resolve_model_name(_call_target_name(arg.func) or "")
+                call_model = self._resolve_model_name(call_name(arg.func) or "")
                 if call_model is not None:
                     self._record_model_usage(call_model, "create", node.lineno)
             if isinstance(arg, ast.Name):
@@ -265,7 +258,7 @@ class ModelUsageVisitor(ast.NodeVisitor):
         if not (isinstance(base, ast.Name) and attr_name in {"query", "select", "join"}):
             return
         for arg in node.args:
-            query_model = self._resolve_model_name(_call_target_name(arg) or "")
+            query_model = self._resolve_model_name(call_name(arg) or "")
             if query_model is not None:
                 self._record_model_usage(query_model, "read", node.lineno)
 
@@ -285,7 +278,7 @@ class ModelUsageVisitor(ast.NodeVisitor):
             if isinstance(arg, ast.Name) and arg.id in self._model_vars:
                 self._record_usage(self._model_vars[arg.id].model_id, "serialize", arg.lineno)
             if isinstance(arg, ast.Call):
-                call_model = self._resolve_model_name(_call_target_name(arg.func) or "")
+                call_model = self._resolve_model_name(call_name(arg.func) or "")
                 if call_model is not None:
                     self._record_model_usage(call_model, "create", arg.lineno)
 
@@ -350,7 +343,7 @@ class ModelUsageVisitor(ast.NodeVisitor):
         self.generic_visit(value)
 
     def _resolve_assignment_call(self, value: ast.Call) -> tuple[ModelInfo | None, str]:
-        call_target = _call_target_name(value.func) or ""
+        call_target = call_name(value.func) or ""
         resolved = self._resolve_model_name(call_target)
         usage_kind = "create"
         if isinstance(value.func, ast.Attribute):
@@ -358,7 +351,7 @@ class ModelUsageVisitor(ast.NodeVisitor):
             if usage_hint is not None:
                 usage_kind = usage_hint
             if isinstance(value.func.value, ast.Attribute) and value.func.value.attr == "objects":
-                owner_name = _call_target_name(value.func.value.value) or ""
+                owner_name = call_name(value.func.value.value) or ""
                 resolved = self._resolve_model_name(owner_name)
         return resolved, usage_kind
 
@@ -376,7 +369,7 @@ class ModelUsageVisitor(ast.NodeVisitor):
         if not self._is_query_result_accessor(value.func.attr, base_call.func):
             return
         for arg in base_call.args:
-            query_model = self._resolve_model_name(_call_target_name(arg) or "")
+            query_model = self._resolve_model_name(call_name(arg) or "")
             if query_model is None:
                 continue
             self._bind_targets_to_model(targets, query_model)
@@ -395,25 +388,24 @@ class ModelUsageVisitor(ast.NodeVisitor):
         usage = self.result.usage_kinds.setdefault(model_id, set())
         usage.add(kind)
         evidence_key = (model_id, kind)
-        samples = self.result.evidence.setdefault(evidence_key, [])
-        if len(samples) >= self._max_examples:
-            return
-        snippet = ""
-        if 1 <= lineno <= len(self._lines):
-            snippet = self._lines[lineno - 1].strip()
-        samples.append({"line": lineno, "snippet": snippet})
+        collector = self.result.evidence.setdefault(
+            evidence_key, EvidenceCollector(max_samples=self._max_examples)
+        )
+        snippet = snippet_from_lines(self._lines, lineno, lineno)
+        collector.add_sample(
+            path=self._rel_path,
+            line_span=(lineno, lineno),
+            snippet=snippet,
+            details={"model_id": model_id, "usage": kind},
+        )
 
 
-def _load_models(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> list[ModelInfo]:
-    rows = con.execute(
-        """
-        SELECT model_id, model_name, module, rel_path
-        FROM analytics.data_models
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
-    return [ModelInfo(model_id=row[0], name=row[1], module=row[2]) for row in rows]
+def _load_models(gateway: StorageGateway, repo: str, commit: str) -> list[ModelInfo]:
+    models: list[DataModelRow] = fetch_models(gateway, repo, commit)
+    return [
+        ModelInfo(model_id=model.model_id, name=model.model_name, module=model.module)
+        for model in models
+    ]
 
 
 def _subsystem_by_module(
@@ -455,6 +447,7 @@ def compute_data_model_usage(
     cfg: DataModelUsageConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate analytics.data_model_usage with per-function model usage classifications.
@@ -467,6 +460,8 @@ def compute_data_model_usage(
         Data model usage configuration.
     catalog_provider
         Optional function catalog to reuse across analytics steps.
+    context
+        Optional shared analytics context to reuse catalog, module map, and ASTs.
     """
     con = gateway.con
     ensure_schema(con, "analytics.data_model_usage")
@@ -475,24 +470,26 @@ def compute_data_model_usage(
         [cfg.repo, cfg.commit],
     )
 
-    models = _load_models(con, cfg.repo, cfg.commit)
+    models = _load_models(gateway, cfg.repo, cfg.commit)
     if not models:
         log.info("No data models found for %s@%s; skipping usage analysis", cfg.repo, cfg.commit)
         return
     model_index = _build_model_index(models)
 
-    module_map = load_module_map(gateway, cfg.repo, cfg.commit)
-    subsystem_map = _subsystem_by_module(con, cfg.repo, cfg.commit)
-    ast_by_goid, missing = load_function_asts(
+    shared_context = context or build_analytics_context(
         gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        repo_root=cfg.repo_root,
-        catalog_provider=(
-            catalog_provider
-            or FunctionCatalogService.from_db(gateway, repo=cfg.repo, commit=cfg.commit)
+        AnalyticsContextConfig(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=cfg.repo_root,
+            catalog_provider=catalog_provider,
         ),
     )
+
+    module_map = shared_context.module_map
+    subsystem_map = _subsystem_by_module(con, cfg.repo, cfg.commit)
+    ast_by_goid = shared_context.function_ast_map
+    missing = shared_context.missing_function_goids
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during model usage analysis",
@@ -550,15 +547,17 @@ def _build_usage_rows(
         module = artifacts.module_map.get(rel_path)
         visitor = ModelUsageVisitor(
             index=artifacts.model_index,
+            rel_path=rel_path,
             lines=func_ast.lines,
             max_examples=cfg.max_examples_per_usage,
         )
         visitor.seed_parameters(artifacts.param_types.get(goid, {}))
         visitor.visit(func_ast.node)
         for model_id, kinds in visitor.result.usage_kinds.items():
-            evidence_map = {
-                usage: visitor.result.evidence.get((model_id, usage), []) for usage in kinds
-            }
+            evidence_map: dict[str, list[dict[str, object]]] = {}
+            for usage in kinds:
+                collector = visitor.result.evidence.get((model_id, usage))
+                evidence_map[usage] = collector.to_dicts() if collector is not None else []
             context = _context_for_module(module, artifacts.subsystem_map)
             rows_to_insert.append(
                 (

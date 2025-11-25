@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "data_model_relationships",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "repo": { "type": "string" },
+    "commit": { "type": "string" },
+    "source_model_id": { "type": "string" },
+    "target_model_id": { "type": "string" },
+    "target_module": { "type": ["string", "null"] },
+    "target_model_name": { "type": ["string", "null"] },
+    "field_name": { "type": "string" },
+    "relationship_kind": { "type": "string" },
+    "multiplicity": { "type": ["string", "null"] },
+    "via": { "type": ["string", "null"] },
+    "evidence_json": { "type": ["object", "null"] },
+    "rel_path": { "type": "string" },
+    "lineno": { "type": ["integer", "null"] },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "required": [
+    "repo",
+    "commit",
+    "source_model_id",
+    "target_model_id",
+    "field_name",
+    "relationship_kind",
+    "rel_path",
+    "created_at"
+  ]
+}

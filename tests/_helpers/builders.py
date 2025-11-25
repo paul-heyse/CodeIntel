@@ -1013,7 +1013,7 @@ class ConfigValueRow:
     reference_modules: list[str]
     reference_count: int
 
-    def to_tuple(self) -> tuple[str, str, str, str, str, str, int]:
+    def to_tuple(self) -> tuple[str, str, str, str, str, str, str, int]:
         return (
             self.repo,
             self.commit,

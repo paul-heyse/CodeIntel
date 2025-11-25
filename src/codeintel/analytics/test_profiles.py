@@ -314,7 +314,9 @@ def _build_profile_context(
     now = datetime.now(tz=UTC)
     io_spec_raw = cfg.io_spec if isinstance(cfg.io_spec, dict) else None
     io_spec: dict[str, dict[str, list[str]]] = (
-        cast("dict[str, dict[str, list[str]]]", io_spec_raw) if io_spec_raw is not None else DEFAULT_IO_SPEC
+        cast("dict[str, dict[str, list[str]]]", io_spec_raw)
+        if io_spec_raw is not None
+        else DEFAULT_IO_SPEC
     )
     functions_covered = _load_functions_covered(con, cfg.repo, cfg.commit)
     subsystems_covered = _load_subsystems_covered(con, cfg.repo, cfg.commit)
@@ -475,16 +477,10 @@ def build_behavioral_coverage(
 
 def _build_behavior_row(test: TestRecord, ctx: BehavioralContext) -> tuple[object, ...]:
     profile = ctx.profile_ctx.get(test.test_id, {})
-    markers_raw = profile.get("markers")
-    markers = _normalize_markers(markers_raw if isinstance(markers_raw, list) else test.markers)
-    functions_covered_raw = profile.get("functions_covered")
-    functions_covered: list[dict[str, object]] = (
-        list(functions_covered_raw) if isinstance(functions_covered_raw, list) else []
-    )
-    subsystems_covered_raw = profile.get("subsystems_covered")
-    subsystems_covered: list[dict[str, object]] = (
-        list(subsystems_covered_raw) if isinstance(subsystems_covered_raw, list) else []
-    )
+    markers_value = profile.get("markers")
+    markers = _normalize_markers(markers_value if isinstance(markers_value, list) else test.markers)
+    functions_covered = _as_dict_list(profile.get("functions_covered"))
+    subsystems_covered = _as_dict_list(profile.get("subsystems_covered"))
     assert_count = _coerce_int(profile.get("assert_count"))
     raise_count = _coerce_int(profile.get("raise_count"))
     ast_details = ctx.ast_info.get(test.test_id, TestAstInfo())
@@ -505,12 +501,7 @@ def _build_behavior_row(test: TestRecord, ctx: BehavioralContext) -> tuple[objec
             raise_count=raise_count if raise_count is not None else ast_details.raise_count,
             markers=markers,
         )
-        request = _build_llm_request(
-            ctx.cfg,
-            test,
-            profile_inputs,
-        )
-        llm_result = ctx.llm_runner(request)
+        llm_result = ctx.llm_runner(_build_llm_request(ctx.cfg, test, profile_inputs))
         llm_tags = set(llm_result.tags)
         if llm_tags:
             tag_source = "mixed" if tags else "llm"
@@ -739,6 +730,12 @@ def _coerce_int(value: object | None) -> int | None:
     if isinstance(value, float):
         return int(value)
     return None
+
+
+def _as_dict_list(value: object | None) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [entry for entry in value if isinstance(entry, dict)]
 
 
 def _uses_parametrize(test: TestRecord, markers: Iterable[str]) -> bool:

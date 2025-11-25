@@ -10,6 +10,8 @@ from codeintel.cli.main import main
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.history import SnapshotSpec, create_snapshot_db
 
+EXPECTED_HISTORY_ROW_COUNT = 2
+
 
 def test_history_timeseries_cli_happy_path(tmp_path: Path) -> None:
     """Run CLI end-to-end when both commits have snapshots and expect success."""
@@ -60,7 +62,7 @@ def test_history_timeseries_cli_happy_path(tmp_path: Path) -> None:
 
     con = duckdb.connect(str(output_db), read_only=True)
     rows = con.execute("SELECT COUNT(*) FROM analytics.history_timeseries").fetchone()
-    expect_true(rows is not None and rows[0] == 2)
+    expect_true(rows is not None and rows[0] == EXPECTED_HISTORY_ROW_COUNT)
 
 
 def test_history_timeseries_cli_missing_snapshot(tmp_path: Path) -> None:

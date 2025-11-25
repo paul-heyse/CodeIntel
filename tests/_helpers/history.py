@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.storage.schemas import apply_all_schemas
@@ -27,6 +28,11 @@ class SnapshotSpec:
     risk_level: str = "medium"
     cyclomatic_complexity: int = 1
     loc: int = 10
+
+
+_FP_COLUMNS = TABLE_SCHEMAS["analytics.function_profile"].column_names()
+_MP_COLUMNS = TABLE_SCHEMAS["analytics.module_profile"].column_names()
+_FUNCTION_HISTORY_COLUMNS = TABLE_SCHEMAS["analytics.function_history"].column_names()
 
 
 def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
@@ -95,20 +101,12 @@ def create_snapshot_db(base_dir: Path, spec: SnapshotSpec) -> Path:
     db_path = base_dir / f"codeintel-{spec.commit}.duckdb"
     con = duckdb.connect(str(db_path))
     apply_all_schemas(con)
-    fp_columns = TABLE_SCHEMAS["analytics.function_profile"].column_names()
-    mp_columns = TABLE_SCHEMAS["analytics.module_profile"].column_names()
-    fp_cols = ", ".join(fp_columns)
-    mp_cols = ", ".join(mp_columns)
-    fp_placeholders = ", ".join("?" for _ in fp_columns)
-    mp_placeholders = ", ".join("?" for _ in mp_columns)
-    con.execute(
-        "INSERT INTO analytics.function_profile (" + fp_cols + ") VALUES (" + fp_placeholders + ")",
-        _function_profile_row(spec),
-    )
-    con.execute(
-        "INSERT INTO analytics.module_profile (" + mp_cols + ") VALUES (" + mp_placeholders + ")",
-        _module_profile_row(spec),
-    )
+    fp_df = pd.DataFrame([_function_profile_row(spec)], columns=pd.Index(_FP_COLUMNS))
+    mp_df = pd.DataFrame([_module_profile_row(spec)], columns=pd.Index(_MP_COLUMNS))
+    con.register("fp_df", fp_df)
+    con.register("mp_df", mp_df)
+    con.execute("INSERT INTO analytics.function_profile BY NAME SELECT * FROM fp_df")
+    con.execute("INSERT INTO analytics.module_profile BY NAME SELECT * FROM mp_df")
     con.close()
     return db_path
 
@@ -118,8 +116,7 @@ def insert_function_history_row(
     spec: SnapshotSpec,
 ) -> None:
     """Insert a minimal function_history row for validation helpers."""
-    columns = TABLE_SCHEMAS["analytics.function_history"].column_names()
-    defaults: dict[str, object | None] = dict.fromkeys(columns, None)
+    defaults: dict[str, object | None] = dict.fromkeys(_FUNCTION_HISTORY_COLUMNS, None)
     now = datetime.now(tz=UTC)
     defaults.update(
         {
@@ -144,8 +141,9 @@ def insert_function_history_row(
             "created_at_row": now,
         }
     )
-    con.execute(
-        f"INSERT INTO analytics.function_history ({', '.join(columns)}) "
-        f"VALUES ({', '.join('?' for _ in columns)})",
-        [tuple(defaults[col] for col in columns)],
+    fh_df = pd.DataFrame(
+        [tuple(defaults[col] for col in _FUNCTION_HISTORY_COLUMNS)],
+        columns=pd.Index(_FUNCTION_HISTORY_COLUMNS),
     )
+    con.register("fh_df", fh_df)
+    con.execute("INSERT INTO analytics.function_history BY NAME SELECT * FROM fh_df")

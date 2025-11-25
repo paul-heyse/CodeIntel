@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "data_model_fields",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "repo": { "type": "string" },
+    "commit": { "type": "string" },
+    "model_id": { "type": "string" },
+    "field_name": { "type": "string" },
+    "field_type": { "type": ["string", "null"] },
+    "required": { "type": "boolean" },
+    "has_default": { "type": "boolean" },
+    "default_expr": { "type": ["string", "null"] },
+    "constraints_json": { "type": ["object", "null"] },
+    "source": { "type": "string" },
+    "rel_path": { "type": "string" },
+    "lineno": { "type": ["integer", "null"] },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "required": [
+    "repo",
+    "commit",
+    "model_id",
+    "field_name",
+    "required",
+    "has_default",
+    "constraints_json",
+    "source",
+    "rel_path",
+    "created_at"
+  ]
+}

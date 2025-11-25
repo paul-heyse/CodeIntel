@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, cast
 
 import duckdb
 import networkx as nx
-from networkx.exception import NetworkXError, NetworkXNoPath, PowerIterationFailedConvergence
+from networkx.exception import NetworkXError, NetworkXNoPath
 
+from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_service import GraphContext, centrality_directed
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import _normalize_decimal
 from codeintel.storage.gateway import StorageGateway
@@ -80,6 +82,7 @@ class CfgFnContext:
     exit_idx: int
     sccs: list[set[int]]
     now: datetime
+    graph_ctx: GraphContext
 
 
 @dataclass(frozen=True)
@@ -91,6 +94,7 @@ class CfgInputs:
     blocks_by_fn: dict[int, list[tuple[int, str, int, int]]]
     edges_by_fn: dict[int, list[tuple[int, int, str]]]
     now: datetime
+    graph_ctx: GraphContext
 
 
 @dataclass(frozen=True)
@@ -140,6 +144,7 @@ class DfgInputs:
     repo: str
     commit: str
     now: datetime
+    graph_ctx: GraphContext
 
 
 def _degree_dict(
@@ -301,7 +306,10 @@ def _loop_stats(sccs: list[set[int]]) -> tuple[int, int]:
 
 
 def _compute_cfg_centralities(
-    graph: nx.DiGraph, entry_idx: int
+    graph: nx.DiGraph,
+    entry_idx: int,
+    *,
+    ctx: GraphContext | None = None,
 ) -> tuple[dict[int, float], dict[int, float], dict[int, float], dict[int, int], dict[int, int]]:
     dom_depth: dict[int, int] = {}
     dom_frontier_sizes: dict[int, int] = {}
@@ -323,26 +331,23 @@ def _compute_cfg_centralities(
         dom_frontier_sizes = {}
         dom_tree_height["height"] = None
 
-    try:
-        bc = nx.betweenness_centrality(
-            graph,
-            k=min(MAX_CFG_CENTRALITY_SAMPLE, graph.number_of_nodes())
-            if graph.number_of_nodes() > MAX_CFG_CENTRALITY_SAMPLE
-            else None,
+    if ctx is None:
+        ctx = GraphContext(
+            repo="cfg",
+            commit="cfg",
+            now=datetime.now(UTC),
+            betweenness_sample=MAX_CFG_CENTRALITY_SAMPLE,
+            eigen_max_iter=MAX_CFG_EIGEN_SAMPLE,
         )
-    except NetworkXError:
-        bc = dict.fromkeys(graph.nodes, 0.0)
-
-    closeness = nx.closeness_centrality(graph) if graph.number_of_nodes() > 0 else {}
-    try:
-        eig = (
-            nx.eigenvector_centrality(graph.to_undirected(), max_iter=MAX_CFG_EIGEN_SAMPLE)
-            if graph.number_of_nodes() > 0
-            else {}
-        )
-    except (NetworkXError, PowerIterationFailedConvergence):
-        eig = dict.fromkeys(graph.nodes, 0.0)
-
+    centrality = centrality_directed(
+        graph,
+        ctx,
+        weight=None,
+        include_eigen=True,
+    )
+    bc = centrality.betweenness
+    closeness = centrality.closeness
+    eig = centrality.eigenvector
     return bc, closeness, eig, dom_depth, dom_frontier_sizes
 
 
@@ -410,23 +415,28 @@ def _dfg_path_lengths(graph: nx.DiGraph) -> tuple[int, float]:
     return longest_chain, avg_spl
 
 
-def _dfg_centralities(graph: nx.DiGraph) -> tuple[dict[int, float], dict[int, float]]:
+def _dfg_centralities(
+    graph: nx.DiGraph,
+    *,
+    ctx: GraphContext | None = None,
+) -> tuple[dict[int, float], dict[int, float]]:
+    if ctx is None:
+        ctx = GraphContext(
+            repo="dfg",
+            commit="dfg",
+            now=datetime.now(UTC),
+            betweenness_sample=MAX_DFG_CENTRALITY_SAMPLE,
+            eigen_max_iter=MAX_CFG_EIGEN_SAMPLE,
+        )
     if graph.number_of_nodes() == 0:
         return {}, {}
-    try:
-        bc = nx.betweenness_centrality(
-            graph,
-            k=min(MAX_DFG_CENTRALITY_SAMPLE, graph.number_of_nodes())
-            if graph.number_of_nodes() > MAX_DFG_CENTRALITY_SAMPLE
-            else None,
-        )
-    except NetworkXError:
-        bc = dict.fromkeys(graph.nodes, 0.0)
-    try:
-        eig = nx.eigenvector_centrality(graph.to_undirected(), max_iter=MAX_CFG_EIGEN_SAMPLE)
-    except (NetworkXError, PowerIterationFailedConvergence):
-        eig = dict.fromkeys(graph.nodes, 0.0)
-    return bc, eig
+    centrality = centrality_directed(
+        graph,
+        ctx,
+        weight=None,
+        include_eigen=True,
+    )
+    return centrality.betweenness, centrality.eigenvector
 
 
 def _build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
@@ -448,7 +458,12 @@ def _build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
     sccs = list(nx.strongly_connected_components(graph))
     has_cycles = any(len(comp) > 1 for comp in sccs)
     path_lengths = _dfg_path_lengths(graph)
-    centralities = _dfg_centralities(graph)
+    centrality_ctx = replace(
+        inputs.graph_ctx,
+        betweenness_sample=min(inputs.graph_ctx.betweenness_sample, MAX_DFG_CENTRALITY_SAMPLE),
+        eigen_max_iter=min(inputs.graph_ctx.eigen_max_iter, MAX_CFG_EIGEN_SAMPLE),
+    )
+    centralities = _dfg_centralities(graph, ctx=centrality_ctx)
 
     return DfgFnContext(
         repo=inputs.repo,
@@ -604,7 +619,9 @@ def _cfg_fn_rows(
     avg_spl = _cfg_avg_shortest_path(ctx.graph, ctx.entry_idx)
     branching = _branching_stats(ctx.graph)
     bc, closeness, eig, dom_depth, dom_frontier_sizes = _compute_cfg_centralities(
-        ctx.graph, ctx.entry_idx
+        ctx.graph,
+        ctx.entry_idx,
+        ctx=ctx.graph_ctx,
     )
     loop_nodes = _loop_nodes(ctx.sccs)
     out_deg_map = _degree_dict(ctx.graph, direction="out")
@@ -694,6 +711,7 @@ def _cfg_rows_for_fn(
         exit_idx=exit_idx,
         sccs=sccs,
         now=inputs.now,
+        graph_ctx=inputs.graph_ctx,
     )
     fn_row, block_rows = _cfg_fn_rows(ctx)
     ext_row = _cfg_ext_row(ctx, edges)
@@ -729,8 +747,17 @@ def _cfg_ext_row(
     )
 
 
-def compute_cfg_metrics(gateway: StorageGateway, *, repo: str, commit: str) -> None:
+def compute_cfg_metrics(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    context: AnalyticsContext | None = None,
+    graph_ctx: GraphContext | None = None,
+) -> None:
     """Populate cfg_function_metrics and cfg_block_metrics tables."""
+    if context is not None and (context.repo != repo or context.commit != commit):
+        return
     con = gateway.con
     ensure_schema(con, "analytics.cfg_function_metrics")
     ensure_schema(con, "analytics.cfg_block_metrics")
@@ -738,7 +765,18 @@ def compute_cfg_metrics(gateway: StorageGateway, *, repo: str, commit: str) -> N
 
     blocks_by_fn, edges_by_fn = _load_cfg_blocks(gateway, repo, commit)
     metadata = _function_metadata(gateway, repo, commit)
-    now = datetime.now(UTC)
+    ctx_base = graph_ctx or GraphContext(
+        repo=repo,
+        commit=commit,
+        now=datetime.now(UTC),
+    )
+    resolved_now = ctx_base.resolved_now()
+    metrics_ctx = replace(
+        ctx_base,
+        now=resolved_now,
+        betweenness_sample=min(ctx_base.betweenness_sample, MAX_CFG_CENTRALITY_SAMPLE),
+        eigen_max_iter=min(ctx_base.eigen_max_iter, MAX_CFG_EIGEN_SAMPLE),
+    )
 
     fn_rows: list[tuple[object, ...]] = []
     fn_ext_rows: list[tuple[object, ...]] = []
@@ -748,7 +786,8 @@ def compute_cfg_metrics(gateway: StorageGateway, *, repo: str, commit: str) -> N
         commit=commit,
         blocks_by_fn=blocks_by_fn,
         edges_by_fn=edges_by_fn,
-        now=now,
+        now=resolved_now,
+        graph_ctx=metrics_ctx,
     )
 
     for fn_goid, meta in metadata.items():
@@ -819,8 +858,17 @@ def compute_cfg_metrics(gateway: StorageGateway, *, repo: str, commit: str) -> N
         )
 
 
-def compute_dfg_metrics(gateway: StorageGateway, *, repo: str, commit: str) -> None:
+def compute_dfg_metrics(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    context: AnalyticsContext | None = None,
+    graph_ctx: GraphContext | None = None,
+) -> None:
     """Populate dfg_function_metrics and dfg_block_metrics tables."""
+    if context is not None and (context.repo != repo or context.commit != commit):
+        return
     con = gateway.con
     ensure_schema(con, "analytics.dfg_function_metrics")
     ensure_schema(con, "analytics.dfg_block_metrics")
@@ -828,7 +876,18 @@ def compute_dfg_metrics(gateway: StorageGateway, *, repo: str, commit: str) -> N
 
     edges_by_fn = _load_dfg_edges(gateway, repo, commit)
     metadata = _function_metadata(gateway, repo, commit)
-    now = datetime.now(UTC)
+    ctx_base = graph_ctx or GraphContext(
+        repo=repo,
+        commit=commit,
+        now=datetime.now(UTC),
+    )
+    resolved_now = ctx_base.resolved_now()
+    metrics_ctx = replace(
+        ctx_base,
+        now=resolved_now,
+        betweenness_sample=min(ctx_base.betweenness_sample, MAX_DFG_CENTRALITY_SAMPLE),
+        eigen_max_iter=min(ctx_base.eigen_max_iter, MAX_CFG_EIGEN_SAMPLE),
+    )
 
     fn_rows: list[tuple[object, ...]] = []
     fn_ext_rows: list[tuple[object, ...]] = []
@@ -842,7 +901,8 @@ def compute_dfg_metrics(gateway: StorageGateway, *, repo: str, commit: str) -> N
                 edges=edges_by_fn.get(fn_goid, []),
                 repo=repo,
                 commit=commit,
-                now=now,
+                now=resolved_now,
+                graph_ctx=metrics_ctx,
             )
         )
         if ctx is None:

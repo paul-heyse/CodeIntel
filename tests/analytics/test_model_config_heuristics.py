@@ -16,6 +16,7 @@ from codeintel.analytics.config_data_flow import compute_config_data_flow
 from codeintel.analytics.data_model_usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
 from codeintel.config.models import ConfigDataFlowConfig, DataModelsConfig, DataModelUsageConfig
+from codeintel.storage.data_models import NormalizedDataModel, fetch_models_normalized
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     CallGraphNodeRow,
@@ -243,6 +244,88 @@ def _prepare_repo(
     return goid_rows, module_rows, goid_index, "tests/fixtures/heuristics/config_usage.py"
 
 
+def _assert_models(gateway: StorageGateway) -> dict[str, str]:
+    models: list[NormalizedDataModel] = fetch_models_normalized(
+        gateway,
+        REPO,
+        COMMIT,
+    )
+    if not any(model.model_name == "User" and model.model_kind == "orm_model" for model in models):
+        pytest.fail("Expected User ORM model in analytics.data_models")
+    if not any(
+        model.model_name == "UserPayload" and model.model_kind == "pydantic_model"
+        for model in models
+    ):
+        pytest.fail("Expected UserPayload Pydantic model in analytics.data_models")
+    post_model = next(model for model in models if model.model_name == "Post")
+    if not any(rel.target_model_name == "User" for rel in post_model.relationships):
+        pytest.fail("Expected Post relationship targeting User")
+    user_payload = next(model for model in models if model.model_name == "UserPayload")
+    if not any(
+        field.name == "name" and field.source == "pydantic_field" for field in user_payload.fields
+    ):
+        pytest.fail("Expected UserPayload.name field via normalized view")
+    return {model.model_name: model.model_id for model in models}
+
+
+def _assert_field_relationship_tables(
+    con: duckdb.DuckDBPyConnection, model_ids: dict[str, str]
+) -> None:
+    fields_rows = con.execute(
+        """
+        SELECT field_name, field_type, source
+        FROM analytics.data_model_fields
+        WHERE repo = ? AND commit = ? AND model_id = ?
+        """,
+        [REPO, COMMIT, model_ids["UserPayload"]],
+    ).fetchall()
+    if not any(field == "name" and source == "pydantic_field" for field, _, source in fields_rows):
+        pytest.fail("Expected UserPayload.name field in data_model_fields")
+
+    relationships_rows = con.execute(
+        """
+        SELECT target_model_name, relationship_kind, multiplicity
+        FROM analytics.data_model_relationships
+        WHERE repo = ? AND commit = ? AND source_model_id = ?
+        """,
+        [REPO, COMMIT, model_ids["Post"]],
+    ).fetchall()
+    if not any(target == "User" for target, _, _ in relationships_rows):
+        pytest.fail("Expected Post->User relationship in data_model_relationships")
+
+
+def _assert_model_usage(con: duckdb.DuckDBPyConnection, goid_index: dict[str, int]) -> None:
+    usage_rows = con.execute(
+        """
+        SELECT model_id, function_goid_h128, usage_kinds_json
+        FROM analytics.data_model_usage
+        WHERE repo = ? AND commit = ?
+        """,
+        [REPO, COMMIT],
+    ).fetchall()
+    usage_by_func = {row[1]: json.loads(row[2]) for row in usage_rows}
+    if "create" not in usage_by_func.get(goid_index["create_user"], []):
+        pytest.fail("Expected create usage for create_user")
+    if "read" not in usage_by_func.get(goid_index["fetch_user"], []):
+        pytest.fail("Expected read usage for fetch_user")
+    if "serialize" not in usage_by_func.get(goid_index["serialize_payload"], []):
+        pytest.fail("Expected serialize usage for serialize_payload")
+
+
+def _assert_config_usage(con: duckdb.DuckDBPyConnection) -> None:
+    config_rows = con.execute(
+        """
+        SELECT usage_kind, evidence_json
+        FROM analytics.config_data_flow
+        WHERE repo = ? AND commit = ? AND config_key = 'feature.flag'
+        """,
+        [REPO, COMMIT],
+    ).fetchall()
+    kinds = {row[0] for row in config_rows}
+    if {"read", "write", "conditional_branch"} - kinds:
+        pytest.fail(f"Missing config usage kinds in config_data_flow: {kinds}")
+
+
 def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
     """Validate heuristics pipeline across SQLAlchemy, Pydantic, usage, and config fixtures."""
     repo_root = tmp_path / "repo"
@@ -268,49 +351,7 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
             cfg=ConfigDataFlowConfig(repo=REPO, commit=COMMIT, repo_root=repo_root),
         )
 
-        models_rows = con.execute(
-            """
-            SELECT model_name, model_kind, relationships_json
-            FROM analytics.data_models
-            WHERE repo = ? AND commit = ?
-            """,
-            [REPO, COMMIT],
-        ).fetchall()
-        if not any(name == "User" and kind == "orm_model" for name, kind, _ in models_rows):
-            pytest.fail("Expected User ORM model in analytics.data_models")
-        if not any(
-            name == "UserPayload" and kind == "pydantic_model" for name, kind, _ in models_rows
-        ):
-            pytest.fail("Expected UserPayload Pydantic model in analytics.data_models")
-        post_rel_json = next(rel for name, _, rel in models_rows if name == "Post")
-        relationships = json.loads(post_rel_json)
-        if not any(r.get("target_model_name") == "User" for r in relationships):
-            pytest.fail("Expected Post relationship targeting User")
-
-        usage_rows = con.execute(
-            """
-            SELECT model_id, function_goid_h128, usage_kinds_json
-            FROM analytics.data_model_usage
-            WHERE repo = ? AND commit = ?
-            """,
-            [REPO, COMMIT],
-        ).fetchall()
-        usage_by_func = {row[1]: json.loads(row[2]) for row in usage_rows}
-        if "create" not in usage_by_func.get(goid_index["create_user"], []):
-            pytest.fail("Expected create usage for create_user")
-        if "read" not in usage_by_func.get(goid_index["fetch_user"], []):
-            pytest.fail("Expected read usage for fetch_user")
-        if "serialize" not in usage_by_func.get(goid_index["serialize_payload"], []):
-            pytest.fail("Expected serialize usage for serialize_payload")
-
-        config_rows = con.execute(
-            """
-            SELECT usage_kind, evidence_json
-            FROM analytics.config_data_flow
-            WHERE repo = ? AND commit = ? AND config_key = 'feature.flag'
-            """,
-            [REPO, COMMIT],
-        ).fetchall()
-        kinds = {row[0] for row in config_rows}
-        if {"read", "write", "conditional_branch"} - kinds:
-            pytest.fail(f"Missing config usage kinds in config_data_flow: {kinds}")
+        model_ids = _assert_models(gateway)
+        _assert_field_relationship_tables(con, model_ids)
+        _assert_model_usage(con, goid_index)
+        _assert_config_usage(con)

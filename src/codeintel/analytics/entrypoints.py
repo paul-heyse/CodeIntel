@@ -14,6 +14,11 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.analytics.context import (
+    AnalyticsContext,
+    AnalyticsContextConfig,
+    build_analytics_context,
+)
 from codeintel.analytics.entrypoint_detectors import (
     DetectorSettings,
     EntryPointCandidate,
@@ -22,10 +27,7 @@ from codeintel.analytics.entrypoint_detectors import (
 from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
 from codeintel.config.models import EntryPointsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.function_catalog_service import (
-    FunctionCatalogProvider,
-    FunctionCatalogService,
-)
+from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.common import iter_modules, read_module_source
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
@@ -96,6 +98,7 @@ def build_entrypoints(
     cfg: EntryPointsConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
+    context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate analytics.entrypoints and analytics.entrypoint_tests.
@@ -108,6 +111,8 @@ def build_entrypoints(
         EntryPointsConfig specifying repo context and detection toggles.
     catalog_provider
         Optional function catalog to reuse across steps.
+    context
+        Optional shared analytics context to reuse catalog and module maps.
     """
     con = gateway.con
     ensure_schema(con, "analytics.entrypoints")
@@ -122,11 +127,20 @@ def build_entrypoints(
         [cfg.repo, cfg.commit],
     )
 
-    catalog = catalog_provider or FunctionCatalogService.from_db(
-        gateway, repo=cfg.repo, commit=cfg.commit
+    shared_context = context or build_analytics_context(
+        gateway,
+        AnalyticsContextConfig(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=cfg.repo_root,
+            catalog_provider=catalog_provider,
+        ),
     )
-    context = _build_entrypoint_context(con, cfg, catalog)
-    if context is None:
+    catalog = shared_context.catalog
+    entrypoint_context = _build_entrypoint_context(
+        con, cfg, catalog, module_map_override=shared_context.module_map
+    )
+    if entrypoint_context is None:
         log.warning("No modules available to scan for entrypoints in %s@%s", cfg.repo, cfg.commit)
         return
 
@@ -142,7 +156,10 @@ def build_entrypoints(
         detect_generic_routes=cfg.detect_generic_routes,
     )
     entrypoint_rows, test_rows = _collect_entrypoint_rows(
-        context=context, repo_root=cfg.repo_root, settings=settings, scan_config=cfg.scan_config
+        context=entrypoint_context,
+        repo_root=cfg.repo_root,
+        settings=settings,
+        scan_config=cfg.scan_config,
     )
 
     if entrypoint_rows:
@@ -214,10 +231,11 @@ def _build_entrypoint_context(
     con: duckdb.DuckDBPyConnection,
     cfg: EntryPointsConfig,
     catalog: FunctionCatalogProvider,
+    module_map_override: dict[str, str] | None = None,
 ) -> EntryPointContext | None:
     module_ctx = _load_module_context(con, cfg.repo, cfg.commit)
     if not module_ctx:
-        catalog_modules = catalog.catalog().module_by_path
+        catalog_modules = module_map_override or catalog.catalog().module_by_path
         module_ctx = {
             normalize_rel_path(path): ModuleContext(module=module, tags=[], owners=[])
             for path, module in catalog_modules.items()

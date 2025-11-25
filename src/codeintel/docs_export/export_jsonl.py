@@ -43,6 +43,8 @@ JSONL_DATASETS: dict[str, str] = {
     "core.modules": "modules.jsonl",
     "analytics.config_values": "config_values.jsonl",
     "analytics.data_models": "data_models.jsonl",
+    "analytics.data_model_fields": "data_model_fields.jsonl",
+    "analytics.data_model_relationships": "data_model_relationships.jsonl",
     "analytics.data_model_usage": "data_model_usage.jsonl",
     "analytics.config_data_flow": "config_data_flow.jsonl",
     "analytics.static_diagnostics": "static_diagnostics.jsonl",
@@ -100,6 +102,69 @@ JSONL_DATASETS: dict[str, str] = {
 }
 
 
+def _default_repo_commit(con: duckdb.DuckDBPyConnection) -> tuple[str, str]:
+    row = con.execute("SELECT repo, commit FROM core.repo_map LIMIT 1").fetchone()
+    if row is None:
+        return "", ""
+    repo, commit = row
+    return str(repo), str(commit)
+
+
+def _normalized_relation(con: duckdb.DuckDBPyConnection, table_name: str) -> duckdb.DuckDBPyRelation:
+    if table_name == "graph.call_graph_edges":
+        return con.sql(
+            """
+            SELECT
+              repo,
+              commit,
+              CAST(caller_goid_h128 AS BIGINT) AS caller_goid_h128,
+              CAST(callee_goid_h128 AS BIGINT) AS callee_goid_h128,
+              * EXCLUDE (repo, commit, caller_goid_h128, callee_goid_h128)
+            FROM graph.call_graph_edges
+            """
+        )
+    if table_name == "graph.symbol_use_edges":
+        repo_default, commit_default = _default_repo_commit(con)
+        df = con.execute(
+            """
+            SELECT
+              ? AS repo,
+              ? AS commit,
+              symbol,
+              def_path,
+              use_path,
+              same_file,
+              same_module,
+              CAST(def_goid_h128 AS BIGINT) AS def_goid_h128,
+              CAST(use_goid_h128 AS BIGINT) AS use_goid_h128
+            FROM graph.symbol_use_edges
+            """,
+            [repo_default, commit_default],
+        ).fetch_df()
+        return con.from_df(df)
+    if table_name == "analytics.test_coverage_edges":
+        return con.sql(
+            """
+            SELECT
+              repo,
+              commit,
+              test_id,
+              CAST(test_goid_h128 AS BIGINT) AS test_goid_h128,
+              CAST(function_goid_h128 AS BIGINT) AS function_goid_h128,
+              urn,
+              rel_path,
+              qualname,
+              covered_lines,
+              executable_lines,
+              coverage_ratio,
+              last_status,
+              CAST(created_at AS VARCHAR) AS created_at
+            FROM analytics.test_coverage_edges
+            """
+        )
+    return con.table(table_name)
+
+
 def export_jsonl_for_table(
     gateway: StorageGateway,
     table_name: str,
@@ -147,7 +212,7 @@ def export_jsonl_for_table(
             output_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
             return
 
-    rel = con.table(table_name)
+    rel = _normalized_relation(con, table_name)
     write_json = getattr(rel, "write_json", None)
     if write_json is not None:
         callable_write_json = cast("Callable[..., object]", write_json)
@@ -162,7 +227,7 @@ def export_all_jsonl(
     gateway: StorageGateway,
     document_output_dir: Path,
     *,
-    validate_exports: bool = False,
+    validate_exports: bool = True,
     schemas: list[str] | None = None,
 ) -> list[Path]:
     """
