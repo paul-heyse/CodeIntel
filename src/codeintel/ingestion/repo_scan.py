@@ -12,7 +12,13 @@ from typing import TypedDict
 import yaml
 
 from codeintel.config.models import RepoScanConfig
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.common import (
+    ChangeRequest,
+    ChangeSet,
+    ModuleRecord,
+    compute_changes,
+    run_batch,
+)
 from codeintel.ingestion.source_scanner import ScanConfig, SourceScanner
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
@@ -142,27 +148,21 @@ def ingest_repo(
     if tags_entries:
         _write_tags_index_table(gateway, tags_entries)
 
-    modules: dict[str, ModuleRow] = {}
-
-    scanner = SourceScanner(scan_cfg)
-
-    for record in scanner.iter_files(log):
-        path = record.path
-        rel_path = repo_relpath(repo_root, path)
-        module = relpath_to_module(rel_path)
-        tags = _tags_for_path(rel_path, tags_entries)
-
-        modules[module] = ModuleRow(
-            module=module,
-            path=rel_path,
-            repo=cfg.repo,
-            commit=cfg.commit,
-            language="python",
-            tags=tags,
-            owners=[],  # owner inference can be added later
-        )
+    modules, module_records = _discover_modules(repo_root, scan_cfg, cfg, tags_entries)
 
     log.info("Discovered %d Python modules", len(modules))
+    if module_records:
+        total_modules = len(module_records)
+        module_records = [
+            ModuleRecord(
+                rel_path=record.rel_path,
+                module_name=record.module_name,
+                file_path=record.file_path,
+                index=record.index,
+                total=total_modules,
+            )
+            for record in module_records
+        ]
 
     module_values = [
         [
@@ -194,4 +194,64 @@ def ingest_repo(
         scope=f"{cfg.repo}@{cfg.commit}",
     )
 
+    if module_records:
+        change_set: ChangeSet = compute_changes(
+            gateway,
+            ChangeRequest(
+                repo=cfg.repo,
+                commit=cfg.commit,
+                repo_root=repo_root,
+                language="python",
+                scan_config=scan_cfg,
+                modules=module_records,
+                logger=log,
+            ),
+        )
+        log.info(
+            "Module digest snapshot updated for %s@%s (added=%d modified=%d deleted=%d)",
+            cfg.repo,
+            cfg.commit,
+            len(change_set.added),
+            len(change_set.modified),
+            len(change_set.deleted),
+        )
+
     log.info("repo_map and modules written for %s@%s", cfg.repo, cfg.commit)
+
+
+def _discover_modules(
+    repo_root: Path,
+    scan_cfg: ScanConfig,
+    cfg: RepoScanConfig,
+    tags_entries: list[TagEntry],
+) -> tuple[dict[str, ModuleRow], list[ModuleRecord]]:
+    modules: dict[str, ModuleRow] = {}
+    module_records: list[ModuleRecord] = []
+    scanner = SourceScanner(scan_cfg)
+
+    for idx, record in enumerate(scanner.iter_files(log), start=1):
+        path = record.path
+        rel_path = repo_relpath(repo_root, path)
+        module = relpath_to_module(rel_path)
+        tags = _tags_for_path(rel_path, tags_entries)
+
+        modules[module] = ModuleRow(
+            module=module,
+            path=rel_path,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            language="python",
+            tags=tags,
+            owners=[],
+        )
+        module_records.append(
+            ModuleRecord(
+                rel_path=rel_path,
+                module_name=module,
+                file_path=repo_root / rel_path,
+                index=idx,
+                total=0,
+            )
+        )
+
+    return modules, module_records

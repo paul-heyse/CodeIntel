@@ -33,11 +33,9 @@ def compute_subsystem_agreement(gateway: StorageGateway, *, repo: str, commit: s
     now = datetime.now(UTC)
     inserts = []
     for module, subsystem_id, community_id in rows:
-        agrees = (
-            subsystem_id is not None
-            and community_id is not None
-            and str(subsystem_id) == str(community_id)
-        )
+        agrees = True
+        if subsystem_id is not None and community_id is not None:
+            agrees = str(subsystem_id) == str(community_id)
         inserts.append((repo, commit, str(module), subsystem_id, community_id, agrees, now))
 
     con.execute(

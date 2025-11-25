@@ -11,14 +11,14 @@ import duckdb
 import pytest
 from coverage import Coverage
 
-from codeintel.analytics.tests_analytics import (
+from codeintel.analytics.tests.coverage_edges import (
     EdgeContext,
     FunctionRow,
-    TestCoverageConfig,
     backfill_test_goids_for_catalog,
     build_edges_for_file_for_tests,
     compute_test_coverage_edges,
 )
+from codeintel.config.models import TestCoverageConfig
 from tests._helpers.fakes import FakeCoverage
 from tests._helpers.fixtures import ProvisionOptions, provision_graph_ready_repo
 

@@ -8,10 +8,14 @@ import networkx as nx
 import pytest
 
 from codeintel.analytics.graph_service import (
+    BipartiteDegrees,
     GraphContext,
+    bipartite_degrees,
+    bounded_simple_path_count,
     centrality_directed,
     centrality_undirected,
     component_metadata,
+    global_graph_stats,
     neighbor_stats,
     projection_metrics,
     structural_metrics,
@@ -75,6 +79,11 @@ def test_projection_metrics_basic() -> None:
     weighted_degree = metrics.weighted_degree.get(("x", 1), 0.0)
     if weighted_degree <= 0.0:
         pytest.fail(f"Expected projected weighted degree to be positive, got {weighted_degree}")
+    closeness = metrics.closeness.get(("x", 1), 0.0)
+    if closeness <= 0.0:
+        pytest.fail(f"Expected closeness to be computed, got {closeness}")
+    if metrics.community_id.get(("x", 1)) is None:
+        pytest.fail("Expected community assignment for projected node")
 
 
 def test_structural_metrics_triangle_and_core() -> None:
@@ -87,3 +96,65 @@ def test_structural_metrics_triangle_and_core() -> None:
         pytest.fail(f"Unexpected triangle count: {metrics.triangles.get(1)}")
     if metrics.core_number.get(1, 0) < 1:
         pytest.fail("Expected node 1 to be part of core >= 1")
+
+
+def test_global_graph_stats_triangle() -> None:
+    """Global stats summarize undirected graphs."""
+    graph = nx.Graph()
+    graph.add_edges_from([(1, 2), (2, 3), (3, 1)])
+    expected_nodes = 3
+    expected_edges = 3
+    expected_components = 1
+    expected_distance = 1.0
+    stats = global_graph_stats(graph)
+    if stats.node_count != expected_nodes or stats.edge_count != expected_edges:
+        pytest.fail("Unexpected node or edge counts in global stats")
+    if stats.weak_component_count != expected_components or stats.scc_count != expected_components:
+        pytest.fail("Expected single component for triangle graph")
+    if stats.component_layers is not None:
+        pytest.fail("Undirected graphs should not report component layers")
+    if stats.diameter_estimate != pytest.approx(expected_distance):
+        pytest.fail("Unexpected diameter or average shortest path for triangle")
+    if stats.avg_shortest_path_estimate != pytest.approx(expected_distance):
+        pytest.fail("Unexpected average shortest path for triangle graph")
+    if stats.avg_clustering != pytest.approx(1.0):
+        pytest.fail("Expected full clustering for triangle graph")
+
+
+def test_bipartite_degrees_weight_and_centrality() -> None:
+    """Bipartite degrees include weighted counts and partition-specific centralities."""
+    graph = nx.Graph()
+    test_node = ("t", 1)
+    func_node = ("f", 1)
+    graph.add_edge(test_node, func_node, weight=2.0)
+    metrics: BipartiteDegrees = bipartite_degrees(graph, {test_node}, {func_node}, weight="weight")
+    if metrics.weighted_degree.get(test_node) != pytest.approx(2.0):
+        pytest.fail("Weighted degree did not reflect edge weight")
+    if metrics.primary_degree_centrality.get(test_node, 0.0) <= 0.0:
+        pytest.fail("Expected non-zero degree centrality for populated bipartite graph")
+
+
+def test_bounded_simple_path_count_caps_results() -> None:
+    """Simple path counting respects the maximum path limit."""
+    graph = nx.DiGraph()
+    graph.add_edges_from([(1, 2), (1, 3), (2, 4), (3, 4)])
+    cap = 1
+    expected_paths = 2
+    capped = bounded_simple_path_count(
+        graph,
+        {1},
+        {4},
+        max_paths=cap,
+        cutoff=5,
+    )
+    if capped != cap:
+        pytest.fail(f"Expected capped count of {cap}, got {capped}")
+    uncapped = bounded_simple_path_count(
+        graph,
+        {1},
+        {4},
+        max_paths=10,
+        cutoff=5,
+    )
+    if uncapped != expected_paths:
+        pytest.fail(f"Expected to discover both simple paths, got {uncapped}")

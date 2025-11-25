@@ -236,6 +236,16 @@ MODULES_COLUMNS = [
     "owners",
 ]
 
+FILE_STATE_COLUMNS = [
+    "repo",
+    "commit",
+    "rel_path",
+    "language",
+    "size_bytes",
+    "mtime_ns",
+    "content_hash",
+]
+
 SEMANTIC_ROLES_MODULES_COLUMNS = [
     "repo",
     "commit",
@@ -480,6 +490,7 @@ _assert_columns("core.ast_metrics", AST_METRICS_COLUMNS)
 _assert_columns("core.cst_nodes", CST_NODES_COLUMNS)
 _assert_columns("core.docstrings", DOCSTRINGS_COLUMNS)
 _assert_columns("core.modules", MODULES_COLUMNS)
+_assert_columns("core.file_state", FILE_STATE_COLUMNS)
 _assert_columns("core.repo_map", REPO_MAP_COLUMNS)
 _assert_columns("core.goids", GOIDS_COLUMNS)
 _assert_columns("core.goid_crosswalk", GOID_CROSSWALK_COLUMNS)
@@ -653,6 +664,13 @@ HOTSPOTS_INSERT = (
 MODULES_DELETE = "DELETE FROM core.modules WHERE repo = ? AND commit = ?"
 MODULES_INSERT = "INSERT INTO core.modules (module, path, repo, commit, language, tags, owners) VALUES (?, ?, ?, ?, ?, ?, ?)"
 
+FILE_STATE_DELETE = "DELETE FROM core.file_state WHERE repo = ? AND commit = ? AND language = ?"
+FILE_STATE_INSERT = (
+    "INSERT INTO core.file_state ("
+    "repo, commit, rel_path, language, size_bytes, mtime_ns, content_hash"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?)"
+)
+
 REPO_MAP_DELETE = "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?"
 REPO_MAP_INSERT = "INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at) VALUES (?, ?, ?, ?, ?)"
 
@@ -784,6 +802,10 @@ PREPARED: dict[str, PreparedStatements] = {
     "core.cst_nodes": PreparedStatements(insert_sql=CST_NODES_INSERT, delete_sql=CST_NODES_DELETE),
     "core.docstrings": PreparedStatements(
         insert_sql=DOCSTRINGS_INSERT, delete_sql=DOCSTRINGS_DELETE
+    ),
+    "core.file_state": PreparedStatements(
+        insert_sql=FILE_STATE_INSERT,
+        delete_sql=FILE_STATE_DELETE,
     ),
     "core.modules": PreparedStatements(insert_sql=MODULES_INSERT, delete_sql=MODULES_DELETE),
     "core.repo_map": PreparedStatements(insert_sql=REPO_MAP_INSERT, delete_sql=REPO_MAP_DELETE),
@@ -957,6 +979,9 @@ __all__ = [
     "DOCSTRINGS_COLUMNS",
     "DOCSTRINGS_DELETE",
     "DOCSTRINGS_INSERT",
+    "FILE_STATE_COLUMNS",
+    "FILE_STATE_DELETE",
+    "FILE_STATE_INSERT",
     "FUNCTION_CONTRACTS_COLUMNS",
     "FUNCTION_CONTRACTS_DELETE",
     "FUNCTION_CONTRACTS_INSERT",

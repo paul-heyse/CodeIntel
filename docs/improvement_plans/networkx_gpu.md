@@ -1,3 +1,162 @@
+
+
+# NetworkX gpu overview #
+
+Short version: NetworkX itself is CPU-only; GPU comes in *via backends*, most notably `nx-cugraph` (RAPIDS cuGraph). You configure GPU usage by telling NetworkX to dispatch supported algorithms to that backend. Only the algorithms that `nx-cugraph` implements run on the GPU; everything else stays on the regular NetworkX CPU implementation.
+
+---
+
+## 1. How GPU execution is configured for NetworkX
+
+### a) Install a GPU backend (nx-cugraph)
+
+NetworkX doesn’t talk to CUDA directly. Instead, you install a backend that implements parts of the NetworkX API on the GPU. For NVIDIA GPUs that’s:
+
+```bash
+# Example: CUDA 12 wheels
+pip install nx-cugraph-cu12 --extra-index-url https://pypi.nvidia.com
+```
+
+`nx-cugraph` plugs into the NetworkX backend system and uses RAPIDS cuGraph + CuPy under the hood. ([RAPIDS Docs][1])
+
+### b) Zero-code-change mode with `NX_CUGRAPH_AUTOCONFIG`
+
+The simplest way to make NetworkX use the GPU is an env var:
+
+```bash
+NX_CUGRAPH_AUTOCONFIG=True python my_networkx_script.py
+```
+
+When this is set:
+
+* NetworkX checks whether `nx-cugraph` supports the algorithm you called.
+* If yes, it routes that call to the GPU backend.
+* If not, it falls back to other backends (if any) or to the default pure-Python NetworkX implementation. ([RAPIDS Docs][2])
+
+This is the “zero code change acceleration” mode NVIDIA advertises: you keep your existing `import networkx as nx` code, and supported functions silently run on the GPU. ([NVIDIA Developer][3])
+
+Under the hood this is using NetworkX’s general backend configuration (`NETWORKX_BACKEND_PRIORITY*` env vars and `nx.config.backend_priority` etc.). ([NetworkX][4])
+
+### c) Per-call explicit backend
+
+Every dispatchable NetworkX algorithm can also take a `backend=` kwarg:
+
+```python
+import networkx as nx
+
+# Run this call on the GPU (if nx-cugraph is installed)
+nx.betweenness_centrality(G, k=100, backend="cugraph")
+```
+
+The `backend=` kwarg overrides the auto-config environment variable and forces that call to use the specified backend (if available). ([RAPIDS Docs][2])
+
+### d) Type-based dispatch (pre-converted GPU graph)
+
+You can also convert once and then keep everything “GPU-native”:
+
+```python
+import networkx as nx
+import nx_cugraph as nxcg
+
+G_nx = nx.Graph()
+# ... populate G_nx on CPU ...
+
+G_gpu = nxcg.from_networkx(G_nx)  # one-time conversion to a cuGraph-backed graph
+
+# Because graph type is an nxcg graph, NetworkX dispatch chooses the GPU backend:
+nx.pagerank(G_gpu)               # runs on GPU if supported
+```
+
+Here, the graph type itself carries a `__networkx_backend__` marker, so dispatch knows to call the cuGraph implementation without extra conversions. ([RAPIDS Docs][2])
+
+### e) General NetworkX backend knobs
+
+NetworkX 3.4+ has a fairly rich backend system:
+
+* `NETWORKX_BACKEND_PRIORITY` / `nx.config.backend_priority` – which backends to try for algorithms.
+* `NETWORKX_BACKEND_PRIORITY_ALGOS`, `NETWORKX_BACKEND_PRIORITY_GENERATORS`, `NETWORKX_BACKEND_PRIORITY_CLASSES` – finer control for algos vs generators vs graph classes.
+* `NETWORKX_FALLBACK_TO_NX` – whether to fall back to CPU NetworkX if a backend can’t handle a call. ([NetworkX][4])
+
+`NX_CUGRAPH_AUTOCONFIG` is basically a convenience wrapper that sets these appropriately for the cuGraph backend. ([RAPIDS Docs][2])
+
+---
+
+## 2. Does GPU apply to all NetworkX functionality?
+
+No. It only applies to **dispatchable functions that the backend actually implements**.
+
+### a) Dispatchable functions only
+
+Most “algorithm” functions in NetworkX are decorated with `@nx._dispatchable`. When you call one of those, NetworkX’s dispatcher:
+
+1. Checks the graphs’ backend types.
+2. Checks any requested backend (`backend="cugraph"`).
+3. Tries backends in `backend_priority`.
+4. If none apply, falls back to pure NetworkX. ([NetworkX][4])
+
+Non-dispatchable functions (certain low-level helpers, some mutations, niche APIs) never go through this path and thus never use GPU.
+
+### b) Only the algorithms that nx-cugraph implements
+
+`nx-cugraph` itself only implements a subset of NetworkX’s API – currently a long but finite list: centralities, connected components, a big suite of shortest-path routines (Dijkstra/Bellman-Ford variants, all-pairs + single-source/target), BFS traversal helpers, Louvain/Leiden communities, clustering coefficients, PageRank/HITS, some layout and generator functions, and a handful of utilities. ([RAPIDS Docs][5])
+
+Anything not on that list:
+
+* Still works, but runs on CPU with the standard NetworkX implementation (assuming `fallback_to_nx` semantics via `NX_CUGRAPH_AUTOCONFIG` / config). ([RAPIDS Docs][2])
+* Or, if you explicitly created a backend graph *and* disabled fallback, may raise if the backend can’t handle it.
+
+So GPU coverage is **broad for core graph algorithms** (centralities, shortest paths, components, clustering, communities, etc.) but it is **not total coverage of NetworkX**.
+
+### c) Mutating operations and graph building
+
+Things like:
+
+* `G.add_node`, `G.add_edge`, attribute writes
+* Many convenience functions that just manipulate Python objects
+
+are either:
+
+* Run as normal Python operations on a NetworkX graph and then converted to a backend graph when you first call a GPU-accelerated algorithm, or
+* Performed on a backend-specific graph type (`nxcg.from_networkx`, backend generators) but still use Python-level logic for some operations.
+
+The heavy work that benefits from the GPU is the *algorithmic kernels* (PageRank, centralities, etc.), not arbitrary Python operations.
+
+---
+
+## 3. How this plays with your use case
+
+In your CodeIntel pipeline you’re already using NetworkX-style graph metrics (PageRank, fan-in/out, centrality, connectivity, communities) over call graphs and import graphs to produce `graph_metrics_functions.*` and `graph_metrics_modules.*`. 
+
+Those are exactly the kinds of operations that `nx-cugraph` accelerates:
+
+* PageRank, degree/edge betweenness, eigenvector centrality, etc. → **GPU-accelerated** if you enable the backend and stick to the supported functions. ([RAPIDS Docs][5])
+* Any custom, Python-only analytics you’ve built on top of NetworkX (e.g., bespoke subsystem scoring logic) will still be CPU-bound unless you port that logic to a GPU-aware library directly.
+
+---
+
+### Practical TL;DR
+
+* **To enable GPU** for NetworkX:
+
+  1. Install `nx-cugraph` appropriate for your CUDA version.
+  2. Set `NX_CUGRAPH_AUTOCONFIG=True` (or configure `NETWORKX_BACKEND_PRIORITY*_` to include `cugraph`).
+* **What runs on GPU?**
+
+  * Only algorithms that `nx-cugraph` implements *and* that go through the dispatch system (most of the standard algorithm APIs).
+  * Everything else stays as regular NetworkX on CPU.
+
+If you tell me which specific NetworkX calls you’re using in your graph-metrics step, I can mark exactly which ones will flip to GPU and which you’d still need to keep on CPU or re-implement.
+
+[1]: https://docs.rapids.ai/api/cugraph/stable/nx_cugraph/ "nx-cugraph — cugraph-docs 25.10.00 documentation"
+[2]: https://docs.rapids.ai/api/cugraph/stable/nx_cugraph/how-it-works/ "How it Works — cugraph-docs 25.10.00 documentation"
+[3]: https://developer.nvidia.com/blog/networkx-introduces-zero-code-change-acceleration-using-nvidia-cugraph/?utm_source=chatgpt.com "NetworkX Introduces Zero Code Change Acceleration ..."
+[4]: https://networkx.org/documentation/stable/reference/backends.html "Backends — NetworkX 3.6 documentation"
+[5]: https://docs.rapids.ai/api/cugraph/stable/nx_cugraph/supported-algorithms/ "Supported Algorithms — cugraph-docs 25.10.00 documentation"
+
+
+
+# NetworkX gpu implementation #
+
 Short version:
 Yes, you can safely “turn GPU on everywhere” for NetworkX by enabling the `nx-cugraph` backend; unsupported algorithms just fall back to normal NetworkX.([GitHub][1]) Below is a concrete implementation plan tied to your actual code (the zips) and to the architecture doc.
 

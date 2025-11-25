@@ -6,11 +6,13 @@ import logging
 from datetime import UTC, datetime
 
 import networkx as nx
-from networkx.algorithms import approximation
-from networkx.exception import NetworkXAlgorithmError, NetworkXError
 
 from codeintel.analytics.context import AnalyticsContext
-from codeintel.analytics.graph_service import GraphContext
+from codeintel.analytics.graph_service import (
+    GraphContext,
+    build_projection_graph,
+    global_graph_stats,
+)
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.nx_views import (
     load_call_graph,
@@ -22,96 +24,6 @@ from codeintel.graphs.nx_views import (
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
-
-
-def _diameter_and_spl(graph: nx.Graph | nx.DiGraph) -> tuple[float | None, float | None]:
-    if graph.number_of_nodes() == 0:
-        return None, None
-    undirected = graph.to_undirected()
-    components = list(nx.connected_components(undirected))
-    if not components:
-        return None, None
-    largest = undirected.subgraph(max(components, key=len)).copy()
-    try:
-        diameter = float(approximation.diameter(largest))
-    except NetworkXError:
-        diameter = None
-    try:
-        avg_spl = float(nx.average_shortest_path_length(largest))
-    except NetworkXError:
-        avg_spl = None
-    return diameter, avg_spl
-
-
-def _safe_project(graph: nx.Graph, nodes: set[object], *, partition_label: str) -> nx.Graph:
-    """
-    Project a bipartite graph onto a node set, warning instead of raising on errors.
-
-    Returns
-    -------
-    nx.Graph
-        Projected graph when successful, otherwise an empty graph.
-    """
-    if not nodes:
-        log.warning(
-            "Skipping %s projection: empty partition (graph_nodes=%d)",
-            partition_label,
-            graph.number_of_nodes(),
-        )
-        return nx.Graph()
-    graph_nodes = set(graph)
-    if not nodes.issubset(graph_nodes):
-        missing = nodes - graph_nodes
-        log.warning(
-            "Skipping %s projection: nodes not in graph (missing=%d of %d)",
-            partition_label,
-            len(missing),
-            len(nodes),
-        )
-        return nx.Graph()
-    if len(nodes) >= graph.number_of_nodes():
-        log.warning(
-            "Skipping %s projection: partition size %d >= graph size %d",
-            partition_label,
-            len(nodes),
-            graph.number_of_nodes(),
-        )
-        return nx.Graph()
-    try:
-        return nx.bipartite.weighted_projected_graph(graph, nodes)
-    except NetworkXAlgorithmError as exc:
-        log.warning(
-            "Bipartite projection failed for %s: %s (nodes=%d graph_nodes=%d)",
-            partition_label,
-            exc,
-            len(nodes),
-            graph.number_of_nodes(),
-        )
-        return nx.Graph()
-
-
-def _component_layers(graph: nx.Graph | nx.DiGraph) -> int | None:
-    """
-    Return the number of condensation layers for directed graphs.
-
-    Returns
-    -------
-    int | None
-        Layer count when the graph is directed; otherwise None.
-    """
-    if graph.number_of_nodes() == 0 or not isinstance(graph, nx.DiGraph):
-        return None
-    condensation = nx.condensation(graph)
-    if condensation.number_of_nodes() == 0:
-        return 0
-    layers: dict[int, int] = {
-        node: 0 for node in condensation.nodes if condensation.in_degree(node) == 0
-    }
-    for node in nx.topological_sort(condensation):
-        base = layers.get(node, 0)
-        for succ in condensation.successors(node):
-            layers[succ] = max(layers.get(succ, 0), base + 1)
-    return max(layers.values(), default=0) + 1
 
 
 def compute_graph_stats(
@@ -161,45 +73,36 @@ def compute_graph_stats(
         keys = {n for n, d in config_bipartite.nodes(data=True) if d.get("bipartite") == 0}
         modules = set(config_bipartite) - keys
         if keys and modules:
-            graphs["config_key_projection"] = _safe_project(
-                config_bipartite, keys, partition_label="config_keys"
+            graphs["config_key_projection"] = build_projection_graph(
+                config_bipartite,
+                keys,
+                label="config_keys",
             )
         if keys and modules and len(modules) > 1:
-            graphs["config_module_projection"] = _safe_project(
-                config_bipartite, modules, partition_label="config_modules"
+            graphs["config_module_projection"] = build_projection_graph(
+                config_bipartite,
+                modules,
+                label="config_modules",
             )
 
     now = ctx.resolved_now()
     rows: list[tuple[object, ...]] = []
 
     for name, graph in graphs.items():
-        weak_count = (
-            nx.number_weakly_connected_components(graph)
-            if isinstance(graph, nx.DiGraph)
-            else nx.number_connected_components(graph)
-        )
-        scc_count = (
-            sum(1 for _ in nx.strongly_connected_components(graph))
-            if isinstance(graph, nx.DiGraph)
-            else weak_count
-        )
-        diameter, avg_spl = _diameter_and_spl(graph)
-        layers = _component_layers(graph)
+        stats = global_graph_stats(graph)
         rows.append(
             (
                 name,
                 repo,
                 commit,
-                graph.number_of_nodes(),
-                graph.number_of_edges(),
-                weak_count,
-                scc_count,
-                layers,
-                nx.average_clustering(graph.to_undirected())
-                if graph.number_of_nodes() > 0
-                else 0.0,
-                diameter,
-                avg_spl,
+                stats.node_count,
+                stats.edge_count,
+                stats.weak_component_count,
+                stats.scc_count,
+                stats.component_layers,
+                stats.avg_clustering,
+                stats.diameter_estimate,
+                stats.avg_shortest_path_estimate,
                 now,
             )
         )

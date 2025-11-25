@@ -5,14 +5,19 @@ from __future__ import annotations
 import ast
 import hashlib
 import logging
+import os
 import time
 from collections.abc import Sequence
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from codeintel.config.models import PyAstIngestConfig
 from codeintel.ingestion.common import (
+    ChangeRequest,
+    ChangeSet,
     ModuleRecord,
+    compute_changes,
     iter_modules,
     load_module_map,
     read_module_source,
@@ -23,6 +28,7 @@ from codeintel.ingestion.source_scanner import ScanConfig
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+DEFAULT_MAX_WORKERS = 16
 
 
 @dataclass
@@ -279,10 +285,71 @@ def _collect_module_ast(record: ModuleRecord) -> tuple[list[list[object]], AstMe
     return visitor.ast_rows, visitor.metrics
 
 
+def _resolve_worker_count() -> int:
+    """
+    Resolve AST worker pool size.
+
+    Returns
+    -------
+    int
+        Worker count derived from environment or CPU.
+    """
+    env_workers = os.getenv("CODEINTEL_AST_WORKERS")
+    if env_workers:
+        try:
+            value = int(env_workers)
+            if value > 0:
+                return value
+        except ValueError:
+            log.warning("Ignoring invalid CODEINTEL_AST_WORKERS=%s", env_workers)
+
+    cpu_count = os.cpu_count() or 1
+    return min(DEFAULT_MAX_WORKERS, max(2, cpu_count // 2))
+
+
+def _delete_existing_ast_rows(
+    gateway: StorageGateway, cfg: PyAstIngestConfig, rel_paths: list[str]
+) -> None:
+    """Remove stale AST rows prior to incremental inserts."""
+    if rel_paths:
+        gateway.con.execute(
+            """
+            DELETE FROM core.ast_nodes
+            WHERE path IN (
+                SELECT path FROM core.modules WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
+            )
+            """,
+            [cfg.repo, cfg.commit, rel_paths],
+        )
+        gateway.con.execute(
+            """
+            DELETE FROM core.ast_metrics
+            WHERE rel_path IN (
+                SELECT path FROM core.modules WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
+            )
+            """,
+            [cfg.repo, cfg.commit, rel_paths],
+        )
+        return
+    run_batch(
+        gateway,
+        "core.ast_nodes",
+        [],
+        delete_params=[cfg.repo, cfg.commit],
+    )
+    run_batch(
+        gateway,
+        "core.ast_metrics",
+        [],
+        delete_params=[cfg.repo, cfg.commit],
+    )
+
+
 def ingest_python_ast(
     gateway: StorageGateway,
     cfg: PyAstIngestConfig,
     scan_config: ScanConfig | None = None,
+    change_set: ChangeSet | None = None,
 ) -> None:
     """
     Parse modules listed in core.modules using the stdlib ast and populate tables.
@@ -295,55 +362,87 @@ def ingest_python_ast(
         Repository context (root, repo slug, commit).
     scan_config:
         Optional scan configuration controlling iteration logging cadence.
+    change_set:
+        Optional precomputed change set enabling incremental ingestion.
+
     """
-    repo_root = cfg.repo_root
+    repo_root = cfg.repo_root.resolve()
     module_map = load_module_map(gateway, cfg.repo, cfg.commit, language="python", logger=log)
     if should_skip_empty(module_map, logger=log):
         return
-    total_modules = len(module_map)
+    active_change_set = change_set or compute_changes(
+        gateway,
+        ChangeRequest(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=repo_root,
+            scan_config=scan_config,
+            logger=log,
+        ),
+    )
+    to_reparse = list(active_change_set.added + active_change_set.modified)
+    if not to_reparse and not active_change_set.deleted:
+        log.info("No AST changes detected for %s@%s", cfg.repo, cfg.commit)
+        return
+    total_modules = (
+        len(to_reparse) if to_reparse else (0 if active_change_set.deleted else len(module_map))
+    )
     log.info("Parsing Python AST for %d modules in %s@%s", total_modules, cfg.repo, cfg.commit)
     start_ts = time.perf_counter()
 
-    now = datetime.now(UTC)
     ast_values: list[list[object]] = []
     metric_values: list[list[object]] = []
 
-    for record in iter_modules(
-        module_map,
-        repo_root,
-        logger=log,
-        scan_config=scan_config,
-    ):
-        module_data = _collect_module_ast(record)
-        if module_data is None:
-            continue
-
-        ast_rows, metrics = module_data
-        ast_values.extend(ast_rows)
-        metric_values.append(
-            [
-                metrics.rel_path,
-                metrics.node_count,
-                metrics.function_count,
-                metrics.class_count,
-                metrics.avg_depth,
-                metrics.max_depth,
-                metrics.complexity,
-                now,
-            ]
+    records: Sequence[ModuleRecord]
+    if to_reparse:
+        records = to_reparse
+    else:
+        records = tuple(
+            iter_modules(
+                module_map,
+                repo_root,
+                logger=log,
+                scan_config=scan_config,
+            )
         )
+
+    _delete_existing_ast_rows(
+        gateway,
+        cfg,
+        [record.rel_path for record in to_reparse + active_change_set.deleted],
+    )
+
+    if records:
+        with ProcessPoolExecutor(max_workers=_resolve_worker_count()) as pool:
+            for module_data in pool.map(_collect_module_ast, records):
+                if module_data is None:
+                    continue
+                ast_rows, metrics = module_data
+                ast_values.extend(ast_rows)
+                metric_values.append(
+                    [
+                        metrics.rel_path,
+                        metrics.node_count,
+                        metrics.function_count,
+                        metrics.class_count,
+                        metrics.avg_depth,
+                        metrics.max_depth,
+                        metrics.complexity,
+                        datetime.now(UTC),
+                    ]
+                )
 
     run_batch(
         gateway,
         "core.ast_nodes",
         ast_values,
-        delete_params=[cfg.repo, cfg.commit],
+        delete_params=None,
     )
     run_batch(
         gateway,
         "core.ast_metrics",
         metric_values,
-        delete_params=[cfg.repo, cfg.commit],
+        delete_params=None,
     )
 
     duration = time.perf_counter() - start_ts

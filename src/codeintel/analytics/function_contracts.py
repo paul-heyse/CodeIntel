@@ -21,6 +21,7 @@ from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config.models import FunctionContractsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.graphs.nx_views import _normalize_decimal
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
 
@@ -161,9 +162,9 @@ def _load_docstrings(
 def _load_function_types(
     con: duckdb.DuckDBPyConnection, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    rows: Iterable[tuple[int, str | None, dict[str, object] | str | None]] = con.execute(
+    rows: Iterable[tuple[object, str | None, dict[str, object] | str | None]] = con.execute(
         """
-        SELECT function_goid_h128::BIGINT, return_type, param_types
+        SELECT function_goid_h128, return_type, param_types
         FROM analytics.function_types
         WHERE repo = ? AND commit = ?
         """,
@@ -171,7 +172,9 @@ def _load_function_types(
     ).fetchall()
     mapping: dict[int, dict[str, object]] = {}
     for goid_raw, return_type, param_types in rows:
-        goid = int(goid_raw)
+        goid = _normalize_decimal(goid_raw)
+        if goid is None:
+            continue
         mapping[goid] = {
             "return_type": str(return_type) if return_type is not None else None,
             "param_types": _coerce_json(param_types) or {},

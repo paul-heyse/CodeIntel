@@ -106,7 +106,9 @@ def _default_repo_commit(con: duckdb.DuckDBPyConnection) -> tuple[str, str]:
     return str(repo), str(commit)
 
 
-def _normalized_relation(con: duckdb.DuckDBPyConnection, table_name: str) -> duckdb.DuckDBPyRelation:
+def _normalized_relation(
+    con: duckdb.DuckDBPyConnection, table_name: str
+) -> duckdb.DuckDBPyRelation:
     if table_name == "graph.call_graph_edges":
         return con.sql(
             """
