@@ -95,6 +95,7 @@ PARQUET_DATASETS: dict[str, str] = {
     "analytics.dfg_function_metrics": "dfg_function_metrics.parquet",
     "analytics.subsystems": "subsystems.parquet",
     "analytics.subsystem_modules": "subsystem_modules.parquet",
+    "docs.v_validation_summary": "validation_summary.parquet",
 }
 
 

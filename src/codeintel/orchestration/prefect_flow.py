@@ -42,17 +42,16 @@ from codeintel.analytics.entrypoints import build_entrypoints
 from codeintel.analytics.function_contracts import compute_function_contracts
 from codeintel.analytics.function_effects import compute_function_effects
 from codeintel.analytics.function_history import compute_function_history
-from codeintel.analytics.functions import (
-    FunctionAnalyticsOptions,
-    ValidationReporter,
-    compute_function_metrics_and_types,
-)
+from codeintel.analytics.functions.config import FunctionAnalyticsOptions
+from codeintel.analytics.functions.metrics import compute_function_metrics_and_types
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import build_graph_context
 from codeintel.analytics.graph_stats import compute_graph_stats
 from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
 from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
+from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.analytics.semantic_roles import compute_semantic_roles
 from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
 from codeintel.analytics.subsystem_graph_metrics import compute_subsystem_graph_metrics
@@ -67,6 +66,7 @@ from codeintel.analytics.tests import (
     compute_test_coverage_edges,
     compute_test_graph_metrics,
 )
+from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 from codeintel.config.models import (
     BehavioralCoverageConfig,
     CallGraphConfig,
@@ -83,6 +83,7 @@ from codeintel.config.models import (
     FunctionEffectsConfig,
     FunctionHistoryConfig,
     GoidBuilderConfig,
+    GraphBackendConfig,
     GraphMetricsConfig,
     HistoryTimeseriesConfig,
     HotspotsConfig,
@@ -131,6 +132,7 @@ from codeintel.storage.gateway import (
     build_snapshot_gateway_resolver,
     open_gateway,
 )
+from codeintel.storage.schemas import assert_schema_alignment, ensure_schemas_preserve
 from codeintel.storage.views import create_all_views
 
 
@@ -152,6 +154,7 @@ class ExportArgs:
     export_schemas: list[str] | None = None
     history_commits: tuple[str, ...] | None = None
     history_db_dir: Path | None = None
+    graph_backend: GraphBackendConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -179,14 +182,15 @@ _GATEWAY_CACHE: dict[tuple[str, bool, bool, bool, bool], StorageGateway] = {}
 _GATEWAY_STATS: dict[str, int] = {"opens": 0, "hits": 0}
 _PREFECT_LOGGING_SETTINGS_PATH = Path(__file__).with_name("prefect_logging.yml")
 os.environ.setdefault("PREFECT_LOGGING_SETTINGS_PATH", str(_PREFECT_LOGGING_SETTINGS_PATH))
+_GRAPH_BACKEND_STATE: dict[str, GraphBackendConfig] = {"config": GraphBackendConfig()}
 
 
 def _get_gateway(
     db_path: Path,
     *,
     read_only: bool = False,
-    apply_schema: bool = True,
-    ensure_views: bool = True,
+    apply_schema: bool = False,
+    ensure_views: bool = False,
     validate_schema: bool = True,
 ) -> StorageGateway:
     """
@@ -249,8 +253,24 @@ def gateway_cache_stats() -> dict[str, int]:
     }
 
 
+def _graph_backend_config() -> GraphBackendConfig:
+    """
+    Return the active graph backend configuration for the flow.
+
+    Returns
+    -------
+    GraphBackendConfig
+        Backend preferences currently in effect.
+    """
+    return _GRAPH_BACKEND_STATE["config"]
+
+
 def _build_prefect_analytics_context(
-    gateway: StorageGateway, repo_root: Path, repo: str, commit: str
+    gateway: StorageGateway,
+    repo_root: Path,
+    repo: str,
+    commit: str,
+    graph_backend: GraphBackendConfig | None = None,
 ) -> AnalyticsContext:
     """
     Construct an AnalyticsContext for Prefect tasks.
@@ -260,12 +280,14 @@ def _build_prefect_analytics_context(
     AnalyticsContext
         Shared analytics artifacts for the provided repository snapshot.
     """
+    backend = graph_backend or _graph_backend_config()
     return build_analytics_context(
         gateway,
         AnalyticsContextConfig(
             repo=repo,
             commit=commit,
             repo_root=repo_root,
+            use_gpu=backend.use_gpu,
         ),
     )
 
@@ -341,9 +363,10 @@ def _ensure_db_schema(db_path: Path) -> None:
     _ = _get_gateway(
         db_path,
         read_only=False,
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+        ensure_schemas_preserve=True,
     )
 
 
@@ -746,7 +769,7 @@ def t_function_metrics(
         repo_root=repo_root,
         overrides=overrides,
     )
-    reporter = ValidationReporter(logger=run_logger)
+    reporter = FunctionValidationReporter(repo=repo, commit=commit)
     summary = compute_function_metrics_and_types(
         gateway,
         cfg,
@@ -849,17 +872,62 @@ def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
     """Compute graph metrics for functions and modules."""
     gateway = _get_gateway(db_path)
     cfg = GraphMetricsConfig.from_paths(repo=repo, commit=commit)
-    graph_ctx = build_graph_context(cfg, now=datetime.now(tz=UTC))
-    compute_graph_metrics(gateway, cfg, graph_ctx=graph_ctx)
-    compute_graph_metrics_functions_ext(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
-    compute_graph_metrics_modules_ext(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
-    compute_symbol_graph_metrics_modules(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
-    compute_symbol_graph_metrics_functions(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
-    compute_config_graph_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
-    compute_subsystem_graph_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
+    graph_backend = _graph_backend_config()
+    graph_ctx = build_graph_context(
+        cfg,
+        now=datetime.now(tz=UTC),
+        use_gpu=graph_backend.use_gpu,
+    )
+    runtime = GraphRuntimeOptions(
+        context=None,
+        graph_ctx=graph_ctx,
+        graph_backend=graph_backend,
+    )
+    compute_graph_metrics(gateway, cfg, runtime=runtime)
+    compute_graph_metrics_functions_ext(
+        gateway,
+        repo=repo,
+        commit=commit,
+        runtime=runtime,
+    )
+    compute_graph_metrics_modules_ext(
+        gateway,
+        repo=repo,
+        commit=commit,
+        runtime=runtime,
+    )
+    compute_symbol_graph_metrics_modules(
+        gateway,
+        repo=repo,
+        commit=commit,
+        runtime=runtime,
+    )
+    compute_symbol_graph_metrics_functions(
+        gateway,
+        repo=repo,
+        commit=commit,
+        runtime=runtime,
+    )
+    compute_config_graph_metrics(
+        gateway,
+        repo=repo,
+        commit=commit,
+        runtime=runtime,
+    )
+    compute_subsystem_graph_metrics(
+        gateway,
+        repo=repo,
+        commit=commit,
+        runtime=runtime,
+    )
     compute_subsystem_agreement(gateway, repo=repo, commit=commit)
-    compute_graph_stats(gateway, repo=repo, commit=commit)
-    compute_test_graph_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
+    compute_graph_stats(gateway, repo=repo, commit=commit, runtime=runtime)
+    compute_test_graph_metrics(
+        gateway,
+        repo=repo,
+        commit=commit,
+        runtime=runtime,
+    )
     compute_cfg_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
     compute_dfg_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
 
@@ -950,6 +1018,7 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
             commit=commit,
             gateway=gateway,
             function_catalog=catalog,
+            graph_backend=_graph_backend_config(),
         )
         step.run(ctx)
     except Exception as exc:  # pragma: no cover - error path
@@ -984,6 +1053,7 @@ def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir
         repo=repo,
         commit=commit,
         gateway=gateway,
+        graph_backend=_graph_backend_config(),
     )
     step.run(ctx)
 
@@ -1219,14 +1289,16 @@ def export_docs_flow(
     """
     _configure_prefect_logging()
     run_logger = get_run_logger()
+    graph_backend = args.graph_backend or GraphBackendConfig()
+    _GRAPH_BACKEND_STATE["config"] = graph_backend
+    maybe_enable_nx_gpu(graph_backend)
     build_dir = args.build_dir.resolve()
     serve_db_path = args.serve_db_path.resolve() if args.serve_db_path is not None else None
     log_db_path = _resolve_log_db_path(args.log_db_path, build_dir)
     skip_scip = os.getenv("CODEINTEL_SKIP_SCIP", "false").lower() == "true"
-    validate_exports, export_schemas = _resolve_validation_settings(args)
+    validation_settings = _resolve_validation_settings(args)
     history_commits = _resolve_history_commits(args)
     history_db_dir = (args.history_db_dir or build_dir / "db").resolve()
-    run_id = f"{args.repo}:{args.commit}:{int(time.time() * 1000)}"
 
     ctx = IngestionContext(
         repo_root=args.repo_root.resolve(),
@@ -1238,9 +1310,9 @@ def export_docs_flow(
         gateway=_get_gateway(
             args.db_path.resolve(),
             read_only=False,
-            apply_schema=True,
-            ensure_views=True,
-            validate_schema=True,
+            apply_schema=False,  # t_schema_bootstrap handles schema setup non-destructively
+            ensure_views=False,  # t_schema_bootstrap handles view creation
+            validate_schema=False,  # t_schema_bootstrap handles validation
         ),
         tools=_tools_from_env(args.tools),
         scan_config=_scan_from_env(args.repo_root.resolve(), args.scan_config),
@@ -1254,7 +1326,7 @@ def export_docs_flow(
         repo=ctx.repo,
         commit=ctx.commit,
         log_db_path=log_db_path,
-        run_id=run_id,
+        run_id=f"{args.repo}:{args.commit}:{int(time.time() * 1000)}",
     )
 
     step_handlers = [
@@ -1645,8 +1717,8 @@ def export_docs_flow(
                 run_logger,
                 ctx.db_path,
                 ctx.document_output_dir,
-                validate_exports=validate_exports,
-                schemas=export_schemas,
+                validate_exports=validation_settings[0],
+                schemas=validation_settings[1],
             ),
         ),
     ]
@@ -1789,6 +1861,13 @@ def t_schema_bootstrap(db_path: Path) -> None:
 
     This is intentionally a distinct task for visibility and future adjustments.
     """
-    _ = _get_gateway(
-        db_path, read_only=False, apply_schema=True, ensure_views=True, validate_schema=True
+    gateway = _get_gateway(
+        db_path,
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
     )
+    ensure_schemas_preserve(gateway.con)
+    create_all_views(gateway.con)
+    assert_schema_alignment(gateway.con, strict=True, logger=log)

@@ -664,7 +664,7 @@ HOTSPOTS_INSERT = (
 MODULES_DELETE = "DELETE FROM core.modules WHERE repo = ? AND commit = ?"
 MODULES_INSERT = "INSERT INTO core.modules (module, path, repo, commit, language, tags, owners) VALUES (?, ?, ?, ?, ?, ?, ?)"
 
-FILE_STATE_DELETE = "DELETE FROM core.file_state WHERE repo = ? AND commit = ? AND language = ?"
+FILE_STATE_DELETE = "DELETE FROM core.file_state WHERE repo = ? AND rel_path = ? AND language = ?"
 FILE_STATE_INSERT = (
     "INSERT INTO core.file_state ("
     "repo, commit, rel_path, language, size_bytes, mtime_ns, content_hash"
@@ -781,7 +781,14 @@ FUNCTION_VALIDATION_DELETE = (
 )
 FUNCTION_VALIDATION_INSERT = (
     "INSERT INTO analytics.function_validation ("
-    "repo, commit, rel_path, qualname, issue, detail, created_at"
+    "repo, commit, function_goid_h128, kind, message, created_at"
+    ") VALUES (?, ?, ?, ?, ?, ?)"
+)
+
+GRAPH_VALIDATION_DELETE = "DELETE FROM analytics.graph_validation WHERE repo = ? AND commit = ?"
+GRAPH_VALIDATION_INSERT = (
+    "INSERT INTO analytics.graph_validation ("
+    "repo, commit, graph_name, entity_id, kind, message, created_at"
     ") VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 
@@ -862,6 +869,10 @@ PREPARED: dict[str, PreparedStatements] = {
     "analytics.function_validation": PreparedStatements(
         insert_sql=FUNCTION_VALIDATION_INSERT,
         delete_sql=FUNCTION_VALIDATION_DELETE,
+    ),
+    "analytics.graph_validation": PreparedStatements(
+        insert_sql=GRAPH_VALIDATION_INSERT,
+        delete_sql=GRAPH_VALIDATION_DELETE,
     ),
     "analytics.hotspots": PreparedStatements(insert_sql=HOTSPOTS_INSERT),
     "analytics.test_coverage_edges": PreparedStatements(

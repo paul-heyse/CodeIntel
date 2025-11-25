@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Generic, List, TypeVar
+from datetime import UTC, datetime
+from typing import TypeVar
 
 from codeintel.models.rows import (
     FunctionValidationRow,
@@ -18,12 +18,12 @@ RowT = TypeVar("RowT")
 
 
 @dataclass
-class BaseValidationReporter(Generic[RowT]):
+class BaseValidationReporter[RowT]:
     """Collect validation rows and flush them to DuckDB."""
 
     repo: str
     commit: str
-    rows: List[RowT] = field(default_factory=list)
+    rows: list[RowT] = field(default_factory=list)
     total: int = 0
 
     def flush(self, gateway: StorageGateway) -> None:
@@ -46,6 +46,7 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         kind: str,
         message: str,
     ) -> None:
+        """Record a validation finding for a function GOID."""
         self.total += 1
         if kind == "parse_failed":
             self.parse_failed += 1
@@ -65,6 +66,7 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         self.rows.append(row)
 
     def flush(self, gateway: StorageGateway) -> None:
+        """Persist recorded function validation rows."""
         if not self.rows:
             return
         tuples = [function_validation_row_to_tuple(r) for r in self.rows]
@@ -92,6 +94,7 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         kind: str,
         message: str,
     ) -> None:
+        """Record a graph validation finding."""
         self.total += 1
         row: GraphValidationRow = {
             "repo": self.repo,
@@ -105,6 +108,7 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         self.rows.append(row)
 
     def flush(self, gateway: StorageGateway) -> None:
+        """Persist recorded graph validation rows."""
         if not self.rows:
             return
         tuples = [graph_validation_row_to_tuple(r) for r in self.rows]
@@ -121,5 +125,12 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
 
 
 def gateway_timestamp() -> datetime:
-    """Return a timezone-aware timestamp for validation rows."""
-    return datetime.now(timezone.utc)
+    """
+    Return a timezone-aware timestamp for validation rows.
+
+    Returns
+    -------
+    datetime
+        Current UTC timestamp.
+    """
+    return datetime.now(UTC)

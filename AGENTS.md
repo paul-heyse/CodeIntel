@@ -981,6 +981,17 @@ codeintel indexctl publish --version v1
 
 ---
 
+## NetworkX GPU backend
+
+- Use `GraphBackendConfig` plus `codeintel.cli.nx_backend.maybe_enable_nx_gpu`; do not import
+  `nx_cugraph` outside that module.
+- New graph analytics should accept `graph_backend: GraphBackendConfig | None`, compute
+  `use_gpu`, and pass it into NetworkX loaders and `build_graph_context`.
+- Adjust backend wiring in `nx_backend.py` or `_maybe_to_gpu_graph` rather than scattering
+  backend logic across analytics modules.
+
+---
+
 ## Glossary
 
 - **Agent Catalog** — machine‑readable index of packages/modules/symbols with stable anchors and links

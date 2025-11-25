@@ -48,6 +48,7 @@ DOCS_VIEWS: tuple[str, ...] = (
     "docs.v_function_profile",
     "docs.v_file_profile",
     "docs.v_module_profile",
+    "docs.v_validation_summary",
 )
 
 

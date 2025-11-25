@@ -16,6 +16,7 @@ from codeintel.config.models import BehavioralCoverageConfig, TestProfileConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.ast_utils import parse_python_module
 from codeintel.storage.gateway import StorageGateway
+from codeintel.utils.paths import relpath_to_module
 
 log = logging.getLogger(__name__)
 
@@ -764,7 +765,7 @@ def _load_test_records(
             t.test_goid_h128,
             t.urn,
             t.rel_path,
-            g.module,
+            m.module,
             COALESCE(t.qualname, g.qualname),
             COALESCE(g.language, 'python'),
             t.kind,
@@ -779,6 +780,10 @@ def _load_test_records(
           ON g.goid_h128 = t.test_goid_h128
          AND g.repo = t.repo
          AND g.commit = t.commit
+        LEFT JOIN core.modules m
+          ON m.repo = t.repo
+         AND m.commit = t.commit
+         AND m.path = t.rel_path
         WHERE t.repo = ? AND t.commit = ?
         """,
         [repo, commit],
@@ -800,13 +805,14 @@ def _load_test_records(
         start_line,
         end_line,
     ) in rows:
+        module_name = str(module) if module is not None else relpath_to_module(str(rel_path))
         records.append(
             TestRecord(
                 test_id=str(test_id),
                 test_goid_h128=int(goid) if goid is not None else None,
                 urn=str(urn) if urn is not None else None,
                 rel_path=str(rel_path),
-                module=str(module) if module is not None else None,
+                module=module_name,
                 qualname=str(qualname) if qualname is not None else None,
                 language=str(language) if language is not None else None,
                 kind=str(kind) if kind is not None else None,
@@ -851,7 +857,7 @@ def _load_functions_covered(
             pe.covered_lines * 1.0 / NULLIF(pe.executable_lines, 0) AS coverage_ratio,
             pe.covered_lines * 1.0 / NULLIF(pt.total_covered_lines, 0) AS coverage_share,
             g.urn,
-            g.module,
+            m.module,
             g.qualname,
             g.rel_path
         FROM per_edge pe
@@ -860,6 +866,10 @@ def _load_functions_covered(
           ON g.goid_h128 = pe.function_goid_h128
          AND g.repo = ?
          AND g.commit = ?
+        LEFT JOIN core.modules m
+          ON m.repo = g.repo
+         AND m.commit = g.commit
+         AND m.path = g.rel_path
         """,
         [repo, commit, repo, commit],
     ).fetchall()
@@ -875,6 +885,7 @@ def _load_functions_covered(
         qualname,
         rel_path,
     ) in rows:
+        module_name = module if module is not None else relpath_to_module(str(rel_path))
         test_key = str(test_id)
         entry = result.get(test_key)
         if entry is None:
@@ -888,7 +899,7 @@ def _load_functions_covered(
                     int(function_goid_h128) if function_goid_h128 is not None else None
                 ),
                 "urn": urn,
-                "module": module,
+                "module": module_name,
                 "qualname": qualname,
                 "rel_path": rel_path,
                 "coverage_ratio": float(coverage_ratio) if coverage_ratio is not None else None,
@@ -927,8 +938,12 @@ def _load_subsystems_covered(
               ON g.goid_h128 = e.function_goid_h128
              AND g.repo = e.repo
              AND g.commit = e.commit
+            JOIN core.modules m
+              ON m.repo = g.repo
+             AND m.commit = g.commit
+             AND m.path = g.rel_path
             JOIN analytics.subsystem_modules sm
-              ON sm.module = g.module
+              ON sm.module = m.module
              AND sm.repo = e.repo
              AND sm.commit = e.commit
             WHERE e.repo = ? AND e.commit = ?

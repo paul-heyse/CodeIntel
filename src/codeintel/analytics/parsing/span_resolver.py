@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Mapping
 
-from .models import ParsedFunction, SourceSpan
+from codeintel.analytics.parsing.models import ParsedFunction, SourceSpan
 
 
 @dataclass(frozen=True)
@@ -27,8 +27,13 @@ def build_span_index(parsed_functions: Iterable[ParsedFunction]) -> Mapping[int,
     Build a mapping from function_goid_h128 to SourceSpan.
 
     Functions without GOIDs are skipped.
+
+    Returns
+    -------
+    Mapping[int, SourceSpan]
+        Span index keyed by GOID hashes.
     """
-    index: Dict[int, SourceSpan] = {}
+    index: dict[int, SourceSpan] = {}
     for parsed in parsed_functions:
         if parsed.function_goid_h128 is None:
             continue
@@ -54,7 +59,7 @@ def resolve_span(
     Returns
     -------
     SpanResolutionResult
-        Resolved span information.
+        Resolved span information including the source path.
 
     Raises
     ------

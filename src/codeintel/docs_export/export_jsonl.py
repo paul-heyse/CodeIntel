@@ -99,6 +99,7 @@ JSONL_DATASETS: dict[str, str] = {
     "analytics.dfg_function_metrics": "dfg_function_metrics.jsonl",
     "analytics.subsystems": "subsystems.jsonl",
     "analytics.subsystem_modules": "subsystem_modules.jsonl",
+    "docs.v_validation_summary": "validation_summary.jsonl",
 }
 
 
@@ -208,7 +209,7 @@ def export_jsonl_for_table(
         if count == 0:
             payload = {
                 "message": "No function validation issues found.",
-                "error_types": ["parse_failed", "span_not_found"],
+                "error_types": ["parse_failed", "span_not_found", "unknown_function"],
                 "generated_at": datetime.now(UTC).isoformat(),
             }
             output_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")

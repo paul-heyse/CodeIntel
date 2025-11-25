@@ -5,13 +5,12 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
+from codeintel.analytics.parsing.models import ParsedFunction, ParsedModule, SourceSpan
+from codeintel.analytics.parsing.registry import register_parser
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.ingestion.ast_utils import AstSpanIndex
-
-from .models import ParsedFunction, ParsedModule, SourceSpan
-from .registry import register_parser
 
 
 def _qualname(parts: list[str], name: str) -> str:
@@ -42,9 +41,9 @@ def _is_any_annotation(node: ast.AST | None) -> bool:
     return False
 
 
-def _collect_param_annotations(args: ast.arguments) -> tuple[Dict[str, Any], Dict[str, bool]]:
-    annotations: Dict[str, Any] = {}
-    any_flags: Dict[str, bool] = {}
+def _collect_param_annotations(args: ast.arguments) -> tuple[dict[str, Any], dict[str, bool]]:
+    annotations: dict[str, Any] = {}
+    any_flags: dict[str, bool] = {}
 
     def _record(arg: ast.arg | None) -> None:
         if arg is None:
@@ -67,21 +66,21 @@ class _FunctionCollector(ast.NodeVisitor):
     def __init__(self, path: Path) -> None:
         self._path = path
         self._stack: list[str] = []
-        self.functions: List[ParsedFunction] = []
+        self.functions: list[ParsedFunction] = []
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self._stack.append(node.name)
         self.generic_visit(node)
         self._stack.pop()
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: D401
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Capture function definitions."""
         self._record_function(node)
         self._stack.append(node.name)
         self.generic_visit(node)
         self._stack.pop()
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: D401
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Capture async function definitions."""
         self._record_function(node)
         self._stack.append(node.name)

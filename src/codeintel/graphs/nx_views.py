@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 from collections.abc import Iterable
 from decimal import Decimal
+from typing import cast
 
 import duckdb
 import networkx as nx
@@ -13,6 +15,35 @@ import networkx as nx
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
+    """
+    Optionally shift a NetworkX graph toward a GPU backend.
+
+    Parameters
+    ----------
+    graph : nx.Graph
+        Graph instance to optionally prepare for GPU execution.
+    use_gpu : bool
+        Whether GPU execution was requested.
+
+    Returns
+    -------
+    nx.Graph
+        The original graph or a GPU-backed equivalent.
+    """
+    if not use_gpu:
+        return graph
+
+    try:
+        importlib.import_module("nx_cugraph")
+    except ImportError:  # pragma: no cover - environment dependent
+        log.debug("nx_cugraph not installed; leaving graph on CPU backend.")
+        return graph
+
+    log.debug("GPU backend requested; relying on nx_cugraph backend dispatch.")
+    return graph
 
 
 def _as_int(value: int | Decimal | str | bytes | bytearray | None) -> int | None:
@@ -114,6 +145,8 @@ def load_call_graph(
     gateway: StorageGateway,
     repo: str,
     commit: str,
+    *,
+    use_gpu: bool = False,
 ) -> nx.DiGraph:
     """
     Build a call graph `DiGraph` of caller -> callee edges.
@@ -136,6 +169,8 @@ def load_call_graph(
         Repository identifier anchoring the view.
     commit : str
         Commit hash anchoring the view.
+    use_gpu : bool, optional
+        Whether to prefer a GPU-backed graph when supported.
 
     Returns
     -------
@@ -182,13 +217,15 @@ def load_call_graph(
             attrs["kind"] = str(kind)
         graph.add_node(node, **attrs)
 
-    return graph
+    return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
 
 
 def load_import_graph(
     gateway: StorageGateway,
     repo: str,
     commit: str,
+    *,
+    use_gpu: bool = False,
 ) -> nx.DiGraph:
     """
     Build a directed import graph `DiGraph` of module -> module edges.
@@ -207,6 +244,8 @@ def load_import_graph(
         Repository identifier anchoring the view.
     commit : str
         Commit hash anchoring the view.
+    use_gpu : bool, optional
+        Whether to prefer a GPU-backed graph when supported.
 
     Returns
     -------
@@ -255,13 +294,15 @@ def load_import_graph(
         graph.add_nodes_from(
             [(module, {"layer": layer}) for module, layer in fallback_layer_by_module.items()]
         )
-    return graph
+    return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
 
 
 def load_test_function_bipartite(
     gateway: StorageGateway,
     repo: str,
     commit: str,
+    *,
+    use_gpu: bool = False,
 ) -> nx.Graph:
     """
     Build a bipartite graph of tests <-> functions from coverage edges.
@@ -277,6 +318,8 @@ def load_test_function_bipartite(
         Repository identifier anchoring the view.
     commit : str
         Commit hash anchoring the view.
+    use_gpu : bool, optional
+        Whether to prefer a GPU-backed graph when supported.
 
     Returns
     -------
@@ -309,7 +352,7 @@ def load_test_function_bipartite(
             graph[test_node][func_node]["weight"] += weight
         else:
             graph.add_edge(test_node, func_node, weight=weight)
-    return graph
+    return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 
 def _parse_reference_modules(ref_modules: object, allowed_modules: set[str]) -> list[str]:
@@ -332,6 +375,8 @@ def load_config_module_bipartite(
     gateway: StorageGateway,
     repo: str,
     commit: str,
+    *,
+    use_gpu: bool = False,
 ) -> nx.Graph:
     """
     Build a bipartite graph of config keys <-> modules.
@@ -347,6 +392,8 @@ def load_config_module_bipartite(
         Repository identifier anchoring the view.
     commit : str
         Commit hash anchoring the view.
+    use_gpu : bool, optional
+        Whether to prefer a GPU-backed graph when supported.
 
     Returns
     -------
@@ -418,13 +465,15 @@ def load_config_module_bipartite(
         graph.number_of_nodes(),
         graph.number_of_edges(),
     )
-    return graph
+    return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 
 def load_symbol_module_graph(
     gateway: StorageGateway,
     repo: str,
     commit: str,
+    *,
+    use_gpu: bool = False,
 ) -> nx.Graph:
     """
     Build an undirected weighted graph of module-level symbol coupling.
@@ -439,6 +488,8 @@ def load_symbol_module_graph(
         Repository identifier anchoring the view.
     commit : str
         Commit hash anchoring the view.
+    use_gpu : bool, optional
+        Whether to prefer a GPU-backed graph when supported.
 
     Returns
     -------
@@ -473,13 +524,15 @@ def load_symbol_module_graph(
             graph[left][right]["weight"] += 1
         else:
             graph.add_edge(left, right, weight=1)
-    return graph
+    return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 
 def load_symbol_function_graph(
     gateway: StorageGateway,
     _repo: str,
     _commit: str,
+    *,
+    use_gpu: bool = False,
 ) -> nx.Graph:
     """
     Build an undirected weighted graph of function-level symbol coupling (GOIDs).
@@ -490,6 +543,8 @@ def load_symbol_function_graph(
     ----------
     gateway :
         Gateway providing the DuckDB connection scoped to the target repository.
+    use_gpu : bool, optional
+        Whether to prefer a GPU-backed graph when supported.
 
     Returns
     -------
@@ -521,4 +576,4 @@ def load_symbol_function_graph(
             graph[left][right]["weight"] += 1
         else:
             graph.add_edge(left, right, weight=1)
-    return graph
+    return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 from asyncio.subprocess import PIPE
 from collections.abc import Collection, Iterable
@@ -21,6 +22,7 @@ from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 MISSING_BINARY_EXIT_CODE = 127
+DEFAULT_MAX_SHARDS = 50
 
 
 @dataclass(frozen=True)
@@ -82,11 +84,64 @@ def ingest_scip(
 
     incremental_paths, deleted_paths = _gather_changed_paths(change_set, changed_paths)
     if incremental_paths or deleted_paths:
-        return _run_incremental_scip(gateway, cfg, runtime, incremental_paths, deleted_paths)
+        if _should_fallback_to_full(incremental_paths, deleted_paths, change_set):
+            log.info(
+                "Falling back to full SCIP index (shards=%d deletes=%d)",
+                len(incremental_paths),
+                len(deleted_paths),
+            )
+        else:
+            return _run_incremental_scip(
+                gateway, cfg, runtime, incremental_paths, deleted_paths
+            )
+        # fall through to full rebuild
 
     index_scip = scip_dir / "index.scip"
     index_json = scip_dir / "index.scip.json"
     return _run_full_scip(gateway, cfg, runtime, index_scip, index_json)
+
+
+def _should_fallback_to_full(
+    incremental_paths: set[str],
+    deleted_paths: set[str],
+    change_set: ChangeSet | None,
+) -> bool:
+    """
+    Decide whether to skip incremental SCIP and run a full index instead.
+
+    Fallback when:
+      - No prior snapshot (change_set is None)
+      - Total touched paths exceeds configured shard threshold
+
+    Returns
+    -------
+    bool
+        True when a full index should be executed.
+    """
+    if change_set is None:
+        return True
+    max_shards = _max_shards()
+    touched = len(incremental_paths) + len(deleted_paths)
+    should_fallback = touched > max_shards
+    if should_fallback:
+        log.info(
+            "SCIP incremental fallback: touched=%d exceeds max_shards=%d",
+            touched,
+            max_shards,
+        )
+    return should_fallback
+
+
+def _max_shards() -> int:
+    env_value = os.getenv("CODEINTEL_SCIP_MAX_SHARDS")
+    if env_value:
+        try:
+            value = int(env_value)
+            if value > 0:
+                return value
+        except ValueError:
+            log.warning("Ignoring invalid CODEINTEL_SCIP_MAX_SHARDS=%s", env_value)
+    return DEFAULT_MAX_SHARDS
 
 
 def _copy_artifacts(index_scip: Path, index_json: Path, doc_dir: Path) -> None:

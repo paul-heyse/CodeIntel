@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 
@@ -21,17 +22,17 @@ def _enable_nx_cugraph_backend() -> None:
         If nx_cugraph is missing or exposes no backend setter.
     """
     try:
-        import nx_cugraph  # type: ignore[import-not-found]
+        nx_cugraph = importlib.import_module("nx_cugraph")
     except ImportError as exc:  # pragma: no cover - environment dependent
-        raise RuntimeError("Requested GPU backend, but nx_cugraph is not installed.") from exc
+        message = "Requested GPU backend, but nx_cugraph is not installed."
+        raise RuntimeError(message) from exc
 
     try:
         nx_cugraph.set_default_backend()  # type: ignore[attr-defined]
         LOG.info("NetworkX GPU backend enabled via nx_cugraph.")
     except AttributeError as exc:  # pragma: no cover - version dependent
-        raise RuntimeError(
-            "nx_cugraph.set_default_backend is not available for this version."
-        ) from exc
+        message = "nx_cugraph.set_default_backend is not available for this version."
+        raise RuntimeError(message) from exc
 
 
 def maybe_enable_nx_gpu(cfg: GraphBackendConfig) -> None:
@@ -58,7 +59,7 @@ def maybe_enable_nx_gpu(cfg: GraphBackendConfig) -> None:
         LOG.info("Graph backend pinned to CPU.")
         return
 
-    if backend in ("auto", "nx-cugraph"):
+    if backend in {"auto", "nx-cugraph"}:
         os.environ.setdefault(_GPU_AUTOCONFIG_ENV, "True")
         try:
             _enable_nx_cugraph_backend()

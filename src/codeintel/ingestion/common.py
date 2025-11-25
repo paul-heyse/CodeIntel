@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import logging
+import os
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -79,6 +80,33 @@ def log_progress(op: str, *, scope: str, table: str, rows: int, duration_s: floa
     )
 
 
+def _get_change_logger() -> logging.Logger:
+    """
+    Return a logger that also writes to a file when configured.
+
+    Set CODEINTEL_CHANGE_LOG to a file path to enable persistent logging
+    of change detection decisions.
+    """
+    logger = logging.getLogger("codeintel.ingestion.change")
+    logger.setLevel(logging.INFO)
+    log_path = os.getenv("CODEINTEL_CHANGE_LOG")
+    if log_path:
+        existing = any(
+            isinstance(handler, logging.FileHandler)
+            and getattr(handler, "_codeintel_change_log", False)
+            for handler in logger.handlers
+        )
+        if not existing:
+            handler = logging.FileHandler(log_path, encoding="utf-8")
+            handler.setLevel(logging.INFO)
+            formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+            handler.setFormatter(formatter)
+            handler._codeintel_change_log = True
+            logger.addHandler(handler)
+            logger.propagate = True
+    return logger
+
+
 def _file_digest(path: Path) -> tuple[int, int, str]:
     """
     Compute a stable digest for a file.
@@ -93,21 +121,21 @@ def _file_digest(path: Path) -> tuple[int, int, str]:
     return stat_result.st_size, stat_result.st_mtime_ns, digest
 
 
-def _cache_change_set(repo: str, commit: str, change_set: ChangeSet) -> None:
+def _cache_change_set(repo: str, _commit: str, change_set: ChangeSet) -> None:
     """Cache a change set for reuse within the current process."""
-    _CHANGESET_CACHE[repo, commit] = change_set
+    _CHANGESET_CACHE[repo, "python"] = change_set
 
 
-def get_cached_change_set(repo: str, commit: str) -> ChangeSet | None:
+def get_cached_change_set(repo: str, _commit: str) -> ChangeSet | None:
     """
-    Return a previously computed change set for a repo/commit.
+    Return a previously computed change set for a repo.
 
     Returns
     -------
     ChangeSet | None
         Cached change set when present; otherwise None.
     """
-    return _CHANGESET_CACHE.get((repo, commit))
+    return _CHANGESET_CACHE.get((repo, "python"))
 
 
 def compute_changes(
@@ -126,7 +154,6 @@ def compute_changes(
         Detected additions, modifications, and deletions.
     """
     active_log = request.logger or log
-    repo_root = request.repo_root.resolve()
     module_map = (
         {record.rel_path: record.module_name for record in request.modules}
         if request.modules is not None
@@ -139,19 +166,18 @@ def compute_changes(
         )
     )
     if should_skip_empty(module_map, logger=active_log):
-        change_set = ChangeSet(added=[], modified=[], deleted=[])
-        _cache_change_set(request.repo, request.commit, change_set)
-        return change_set
+        empty = ChangeSet(added=[], modified=[], deleted=[])
+        _cache_change_set(request.repo, request.commit, empty)
+        return empty
 
     records: Sequence[ModuleRecord]
     if request.modules is not None:
         records = request.modules
     else:
-        repo_root = repo_root.resolve()
         records = tuple(
             iter_modules(
                 module_map,
-                repo_root,
+                request.repo_root,
                 logger=active_log,
                 scan_config=request.scan_config,
             )
@@ -168,33 +194,44 @@ def compute_changes(
         current[normalized_rel] = (record, size, mtime_ns, digest)
 
     ensure_schema(gateway.con, "core.file_state")
-    previous_rows = gateway.con.execute(
-        """
-        SELECT rel_path, size_bytes, mtime_ns, content_hash
-        FROM core.file_state
-        WHERE repo = ? AND commit = ? AND language = ?
-        """,
-        [request.repo, request.commit, request.language],
-    ).fetchall()
     previous = {
         normalize_rel_path(str(rel_path)): (int(size), int(mtime_ns), str(content_hash))
-        for rel_path, size, mtime_ns, content_hash in previous_rows
+        for rel_path, size, mtime_ns, content_hash in gateway.con.execute(
+        """
+        WITH ranked AS (
+            SELECT
+                rel_path,
+                size_bytes,
+                mtime_ns,
+                content_hash,
+                ROW_NUMBER() OVER (PARTITION BY rel_path ORDER BY mtime_ns DESC) AS rn
+            FROM core.file_state
+            WHERE repo = ? AND language = ?
+        )
+        SELECT rel_path, size_bytes, mtime_ns, content_hash
+        FROM ranked
+        WHERE rn = 1
+        """,
+        [request.repo, request.language],
+        ).fetchall()
     }
 
     added: list[ModuleRecord] = []
     modified: list[ModuleRecord] = []
-    for rel_path, (record, size, mtime_ns, digest) in current.items():
+    modified_details: list[tuple[str, str, str]] = []
+    for rel_path, (record, _size, _mtime_ns, digest) in current.items():
         old = previous.get(rel_path)
         if old is None:
             added.append(record)
-        elif old != (size, mtime_ns, digest):
+        elif old[2] != digest:
             modified.append(record)
+            modified_details.append((rel_path, old[2], digest))
 
     deleted: list[ModuleRecord] = [
         ModuleRecord(
             rel_path=rel_path,
             module_name=module_map.get(rel_path, "<deleted>"),
-            file_path=repo_root / rel_path,
+            file_path=request.repo_root / rel_path,
             index=0,
             total=0,
         )
@@ -205,16 +242,94 @@ def compute_changes(
         [request.repo, request.commit, rel_path, request.language, size, mtime_ns, digest]
         for rel_path, (_, size, mtime_ns, digest) in sorted(current.items())
     ]
-    run_batch(
-        gateway,
-        "core.file_state",
-        file_state_rows,
-        delete_params=[request.repo, request.commit, request.language],
-        scope=f"{request.repo}@{request.commit}",
+    _upsert_file_state(gateway, request, file_state_rows)
+    matched_count = sum(1 for rel in current if rel in previous)
+    active_log.info(
+        "compute_changes repo=%s lang=%s prev_rows=%d matched=%d added=%d modified=%d deleted=%d",
+        request.repo,
+        request.language,
+        len(previous),
+        matched_count,
+        len(added),
+        len(modified),
+        len(deleted),
+    )
+    _log_change_details(
+        request,
+        len(previous),
+        matched_count,
+        added,
+        modified_details,
+        deleted,
     )
     change_set = ChangeSet(added=added, modified=modified, deleted=deleted)
     _cache_change_set(request.repo, request.commit, change_set)
     return change_set
+
+
+def _upsert_file_state(
+    gateway: StorageGateway,
+    request: ChangeRequest,
+    file_state_rows: list[list[object]],
+) -> None:
+    """Replace file_state rows for provided rel_paths."""
+    ensure_schema(gateway.con, "core.file_state")
+    if not file_state_rows:
+        return
+    rel_paths = [row[2] for row in file_state_rows]
+    delete_params = [(request.repo, rel_path, request.language) for rel_path in rel_paths]
+    gateway.con.executemany(
+        "DELETE FROM core.file_state WHERE repo = ? AND rel_path = ? AND language = ?",
+        delete_params,
+    )
+    gateway.con.executemany(PREPARED["core.file_state"].insert_sql, file_state_rows)
+
+
+def _log_change_details(
+    request: ChangeRequest,
+    previous_count: int,
+    matched_count: int,
+    added: Sequence[ModuleRecord],
+    modified_details: Sequence[tuple[str, str, str]],
+    deleted: Sequence[ModuleRecord],
+) -> None:
+    """Persist change detection details to the configured change logger."""
+    logger = _get_change_logger()
+    logger.info(
+        "compute_changes repo=%s lang=%s prev_rows=%d matched=%d added=%d modified=%d deleted=%d",
+        request.repo,
+        request.language,
+        previous_count,
+        matched_count,
+        len(added),
+        len(modified_details),
+        len(deleted),
+    )
+    max_samples = 20
+    if added:
+        logger.info(
+            "added_paths (first %d of %d): %s",
+            max_samples,
+            len(added),
+            [record.rel_path for record in added[:max_samples]],
+        )
+    if modified_details:
+        logger.info(
+            "modified_paths (first %d of %d): %s",
+            max_samples,
+            len(modified_details),
+            [
+                f"{rel} {old_hash}->{new_hash}"
+                for rel, old_hash, new_hash in modified_details[:max_samples]
+            ],
+        )
+    if deleted:
+        logger.info(
+            "deleted_paths (first %d of %d): %s",
+            max_samples,
+            len(deleted),
+            [record.rel_path for record in deleted[:max_samples]],
+        )
 
 
 def load_module_map(

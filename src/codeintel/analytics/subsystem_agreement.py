@@ -6,7 +6,6 @@ import logging
 from datetime import UTC, datetime
 
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.services.errors import log_problem, problem
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -61,17 +60,3 @@ def compute_subsystem_agreement(gateway: StorageGateway, *, repo: str, commit: s
             repo,
             commit,
         )
-        pd = problem(
-            code="subsystem.community_disagreement",
-            title="Subsystem/import community disagreement",
-            detail=(
-                f"{len(disagreeing)} module(s) disagree between subsystem and import community "
-                f"for {repo}@{commit}"
-            ),
-            extras={
-                "modules": [row[2] for row in disagreeing[:20]],
-                "repo": repo,
-                "commit": commit,
-            },
-        )
-        log_problem(log, pd)

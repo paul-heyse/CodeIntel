@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import networkx as nx
 
-from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     GraphContext,
     build_projection_graph,
@@ -31,7 +32,7 @@ def compute_graph_stats(
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate analytics.graph_stats for call/import and related graphs.
@@ -44,22 +45,32 @@ def compute_graph_stats(
         Repository identifier anchoring the metrics.
     commit : str
         Commit hash anchoring the metrics snapshot.
-    context : AnalyticsContext | None
-        Optional shared context to reuse cached call/import graphs.
+    runtime : GraphRuntimeOptions | None
+        Optional runtime options including cached graphs and backend selection.
     """
+    runtime = runtime or GraphRuntimeOptions()
+    context = runtime.context
+    use_gpu = runtime.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.graph_stats")
-    ctx = GraphContext(repo=repo, commit=commit, now=datetime.now(UTC))
+    ctx = runtime.graph_ctx or GraphContext(
+        repo=repo,
+        commit=commit,
+        now=datetime.now(UTC),
+        use_gpu=use_gpu,
+    )
+    if ctx.use_gpu != use_gpu:
+        ctx = replace(ctx, use_gpu=use_gpu)
 
     call_graph = (
         context.call_graph
         if context is not None and context.call_graph is not None
-        else load_call_graph(gateway, repo, commit)
+        else load_call_graph(gateway, repo, commit, use_gpu=use_gpu)
     )
     import_graph = (
         context.import_graph
         if context is not None and context.import_graph is not None
-        else load_import_graph(gateway, repo, commit)
+        else load_import_graph(gateway, repo, commit, use_gpu=use_gpu)
     )
     graphs: dict[str, nx.Graph | nx.DiGraph] = {
         "call_graph": call_graph,

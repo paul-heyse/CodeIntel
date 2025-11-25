@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    from prefect import get_run_logger
+except ImportError:  # pragma: no cover
+    get_run_logger = None
 
 from codeintel.config.models import (
     ConfigIngestConfig,
@@ -119,7 +125,7 @@ def _log_step_done(step: str, start_ts: float, ctx: IngestionContext) -> None:
     log.info("ingest done: %s repo=%s commit=%s (%.2fs)", step, ctx.repo, ctx.commit, duration)
 
 
-def _resolve_change_set(ctx: IngestionContext) -> ChangeSet:
+def _resolve_change_set(ctx: IngestionContext, logger: logging.Logger) -> ChangeSet:
     """
     Return a cached change set or compute a fresh snapshot for the repo.
 
@@ -138,8 +144,24 @@ def _resolve_change_set(ctx: IngestionContext) -> ChangeSet:
             commit=ctx.commit,
             repo_root=ctx.repo_root,
             scan_config=ctx.scan_config,
+            logger=logger,
         ),
     )
+
+
+def _run_logger() -> logging.Logger:
+    """
+    Return a Prefect task logger when available, otherwise module logger.
+
+    Returns
+    -------
+    logging.Logger
+        Active task logger for runtime diagnostics.
+    """
+    if get_run_logger is None:
+        return log
+    logger = get_run_logger()  # type: ignore[return-value]
+    return logger if logger is not None else log
 
 
 def run_repo_scan(ctx: IngestionContext) -> None:
@@ -165,6 +187,7 @@ def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
         Status and artifact paths for the SCIP run.
     """
     start = _log_step_start("scip_ingest", ctx)
+    logger = _run_logger()
     doc_dir = ctx.paths.document_output_dir or (ctx.repo_root / "Document Output")
     cfg = ScipIngestConfig(
         repo_root=ctx.repo_root,
@@ -177,7 +200,13 @@ def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
         scip_runner=ctx.scip_runner,
         artifact_writer=ctx.artifact_writer,
     )
-    change_set = _resolve_change_set(ctx)
+    change_set = _resolve_change_set(ctx, logger)
+    logger.info(
+        "scip_ingest change_set added=%d modified=%d deleted=%d",
+        len(change_set.added),
+        len(change_set.modified),
+        len(change_set.deleted),
+    )
     result = scip_ingest.ingest_scip(ctx.gateway, cfg=cfg, change_set=change_set)
     _log_step_done("scip_ingest", start, ctx)
     return result
@@ -186,7 +215,16 @@ def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
 def run_cst_extract(ctx: IngestionContext) -> None:
     """Extract LibCST nodes for the repository using the gateway connection."""
     start = _log_step_start("cst_extract", ctx)
-    change_set = _resolve_change_set(ctx)
+    logger = _run_logger()
+    change_set = _resolve_change_set(ctx, logger)
+    exec_kind = os.getenv("CODEINTEL_CST_EXECUTOR", "process").lower()
+    logger.info(
+        "cst_extract change_set added=%d modified=%d deleted=%d executor=%s",
+        len(change_set.added),
+        len(change_set.modified),
+        len(change_set.deleted),
+        exec_kind,
+    )
     cst_extract.ingest_cst(
         ctx.gateway,
         ChangeRequest(
@@ -203,7 +241,8 @@ def run_cst_extract(ctx: IngestionContext) -> None:
 def run_ast_extract(ctx: IngestionContext) -> None:
     """Extract stdlib AST nodes and metrics using the gateway connection."""
     start = _log_step_start("ast_extract", ctx)
-    change_set = _resolve_change_set(ctx)
+    logger = _run_logger()
+    change_set = _resolve_change_set(ctx, logger)
     cfg = PyAstIngestConfig.from_paths(
         repo_root=ctx.repo_root,
         repo=ctx.repo,

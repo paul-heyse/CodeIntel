@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     GraphBundle,
     GraphContext,
@@ -37,10 +38,13 @@ def compute_graph_metrics_modules_ext(
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate analytics.graph_metrics_modules_ext with richer import metrics."""
+    runtime = runtime or GraphRuntimeOptions()
+    context = runtime.context
+    graph_ctx = runtime.graph_ctx
+    use_gpu = runtime.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.graph_metrics_modules_ext")
 
@@ -51,16 +55,19 @@ def compute_graph_metrics_modules_ext(
         betweenness_sample=CENTRALITY_SAMPLE_LIMIT,
         pagerank_weight="weight",
         betweenness_weight="weight",
+        use_gpu=use_gpu,
     )
     if ctx.betweenness_sample > CENTRALITY_SAMPLE_LIMIT:
         ctx = replace(ctx, betweenness_sample=CENTRALITY_SAMPLE_LIMIT)
+    if ctx.use_gpu != use_gpu:
+        ctx = replace(ctx, use_gpu=use_gpu)
     import_graph_cached = context.import_graph if context is not None else None
 
     def _import_graph_loader() -> nx.DiGraph:
         return (
             import_graph_cached
             if import_graph_cached is not None
-            else load_import_graph(gateway, repo, commit)
+            else load_import_graph(gateway, repo, commit, use_gpu=use_gpu)
         )
 
     bundle: GraphBundle[nx.DiGraph] = GraphBundle(
@@ -76,8 +83,8 @@ def compute_graph_metrics_modules_ext(
     structure = structural_metrics(undirected, weight=ctx.pagerank_weight)
     components = component_metadata(simple_graph)
 
-    degree_view = cast("nx.classes.reportviews.DegreeView", simple_graph.degree)
-    degree_map = {node: int(degree_view[node]) for node in simple_graph.nodes}
+    degree_view = cast("Iterable[tuple[object, float]]", simple_graph.degree)
+    degree_map: dict[object, int] = {node: int(deg) for node, deg in degree_view}
     degree_cutoff = _rich_club_cutoff(degree_map)
 
     rows: list[tuple[object, ...]] = [

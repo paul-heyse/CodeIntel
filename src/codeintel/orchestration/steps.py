@@ -32,12 +32,11 @@ from codeintel.analytics.entrypoints import build_entrypoints
 from codeintel.analytics.function_contracts import compute_function_contracts
 from codeintel.analytics.function_effects import compute_function_effects
 from codeintel.analytics.function_history import compute_function_history
-from codeintel.analytics.functions import (
-    FunctionAnalyticsOptions,
-    compute_function_metrics_and_types,
-)
+from codeintel.analytics.functions.config import FunctionAnalyticsOptions
+from codeintel.analytics.functions.metrics import compute_function_metrics_and_types
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import build_graph_context
 from codeintel.analytics.graph_stats import compute_graph_stats
 from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
@@ -77,6 +76,7 @@ from codeintel.config.models import (
     FunctionEffectsConfig,
     FunctionHistoryConfig,
     GoidBuilderConfig,
+    GraphBackendConfig,
     GraphMetricsConfig,
     HistoryTimeseriesConfig,
     HotspotsConfig,
@@ -183,6 +183,7 @@ class PipelineContext:
     extra: dict[str, object] = field(default_factory=dict)
     function_overrides: FunctionAnalyticsOverrides | None = None
     analytics_context: AnalyticsContext | None = None
+    graph_backend: GraphBackendConfig = field(default_factory=GraphBackendConfig)
 
     @property
     def document_output_dir(self) -> Path:
@@ -254,6 +255,7 @@ def _analytics_context(ctx: PipelineContext) -> AnalyticsContext:
                 repo=ctx.repo,
                 commit=ctx.commit,
                 repo_root=ctx.repo_root,
+                use_gpu=ctx.graph_backend.use_gpu,
             ),
         )
         ctx.function_catalog = ctx.analytics_context.catalog
@@ -982,16 +984,34 @@ class GraphMetricsStep:
         _log_step(self.name)
         gateway = ctx.gateway
         cfg = GraphMetricsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
-        graph_ctx = build_graph_context(cfg, now=datetime.now(tz=UTC))
+        graph_ctx = build_graph_context(
+            cfg,
+            now=datetime.now(tz=UTC),
+            use_gpu=ctx.graph_backend.use_gpu,
+        )
         acx = _analytics_context(ctx)
+        runtime = GraphRuntimeOptions(
+            context=acx,
+            graph_ctx=graph_ctx,
+            graph_backend=ctx.graph_backend,
+        )
         compute_graph_metrics(
-            gateway, cfg, catalog_provider=acx.catalog, context=acx, graph_ctx=graph_ctx
+            gateway,
+            cfg,
+            catalog_provider=acx.catalog,
+            runtime=runtime,
         )
         compute_graph_metrics_functions_ext(
-            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+            gateway,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            runtime=runtime,
         )
         compute_test_graph_metrics(
-            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+            gateway,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            runtime=runtime,
         )
         compute_cfg_metrics(
             gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
@@ -1000,22 +1020,42 @@ class GraphMetricsStep:
             gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
         )
         compute_graph_metrics_modules_ext(
-            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+            gateway,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            runtime=runtime,
         )
         compute_symbol_graph_metrics_modules(
-            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+            gateway,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            runtime=runtime,
         )
         compute_symbol_graph_metrics_functions(
-            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+            gateway,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            runtime=runtime,
         )
         compute_config_graph_metrics(
-            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+            gateway,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            runtime=runtime,
         )
         compute_subsystem_graph_metrics(
-            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+            gateway,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            runtime=runtime,
         )
         compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_graph_stats(gateway, repo=ctx.repo, commit=ctx.commit, context=acx)
+        compute_graph_stats(
+            gateway,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            runtime=runtime,
+        )
 
 
 @dataclass

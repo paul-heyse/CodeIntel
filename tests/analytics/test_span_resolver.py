@@ -1,58 +1,75 @@
-"""Tests for span resolution helper."""
+"""Tests for span resolution helpers."""
 
 from __future__ import annotations
 
-import ast
+from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.span_resolver import SpanResolution, resolve_span
-from codeintel.ingestion.ast_utils import AstSpanIndex
+from codeintel.analytics.parsing.models import ParsedFunction, SourceSpan
+from codeintel.analytics.parsing.span_resolver import (
+    SpanResolutionError,
+    SpanResolutionResult,
+    build_span_index,
+    resolve_span,
+)
 
 
-def _index_for_source(source: str) -> AstSpanIndex:
-    tree = ast.parse(source)
-    return AstSpanIndex.from_tree(tree, (ast.FunctionDef, ast.AsyncFunctionDef))
+def test_build_span_index_skips_missing_goids(tmp_path: Path) -> None:
+    """Only functions with GOIDs are included in the span index."""
+    path = tmp_path / "mod.py"
+    goid = 123
+    span = SourceSpan(path=path, start_line=1, start_col=0, end_line=2, end_col=1)
+    parsed = ParsedFunction(
+        path=path,
+        qualname="mod.foo",
+        function_goid_h128=goid,
+        span=span,
+        ast=None,
+        docstring=None,
+        param_annotations={},
+        return_annotation=None,
+        param_any_flags={},
+        return_is_any=False,
+    )
+    orphan = ParsedFunction(
+        path=path,
+        qualname="mod.bar",
+        function_goid_h128=None,
+        span=span,
+        ast=None,
+        docstring=None,
+        param_annotations={},
+        return_annotation=None,
+        param_any_flags={},
+        return_is_any=False,
+    )
+
+    index = build_span_index([parsed, orphan])
+
+    if goid not in index:
+        pytest.fail("Expected GOID to be present in span index")
+    if len(index) != 1:
+        pytest.fail(f"Expected only one indexed span, got {len(index)}")
+    if index[goid] != span:
+        pytest.fail("Indexed span did not match expected span")
 
 
-def test_resolve_span_ok() -> None:
-    """Resolve a span successfully when the index contains the function."""
-    index = _index_for_source("""\
-def foo():
-    return 1
-""")
-    resolution = resolve_span(index, 1, 2)
-    if not isinstance(resolution, SpanResolution):
-        pytest.fail("Resolution should return a SpanResolution instance")
-    if resolution.reason != "ok":
-        pytest.fail(f"Expected reason 'ok', got '{resolution.reason}'")
-    if resolution.node is None:
-        pytest.fail("Expected a resolved AST node for the provided span")
-    if resolution.detail is not None:
-        pytest.fail(f"Expected no detail on success, got: {resolution.detail}")
+def test_resolve_span_success(tmp_path: Path) -> None:
+    """Resolve a span successfully when present in the index."""
+    path = tmp_path / "mod.py"
+    span = SourceSpan(path=path, start_line=10, start_col=0, end_line=12, end_col=1)
+    result = resolve_span(function_goid_h128=1, span_index={1: span})
+
+    if not isinstance(result, SpanResolutionResult):
+        pytest.fail("Expected resolve_span to return a SpanResolutionResult")
+    if result.span != span:
+        pytest.fail("Resolved span mismatch")
+    if result.path != path:
+        pytest.fail("Resolved path mismatch")
 
 
-def test_resolve_span_missing_span() -> None:
-    """Return a missing-span result when the range is absent."""
-    index = _index_for_source("""\
-def foo():
-    return 1
-""")
-    resolution = resolve_span(index, 10, 12)
-    if resolution.node is not None:
-        pytest.fail("Expected no node when span is missing")
-    if resolution.reason != "missing_span":
-        pytest.fail(f"Expected reason 'missing_span', got '{resolution.reason}'")
-    if resolution.detail != "Span 10-12":
-        pytest.fail(f"Unexpected detail payload: {resolution.detail}")
-
-
-def test_resolve_span_missing_index() -> None:
-    """Return a missing-index result when no span index is provided."""
-    resolution = resolve_span(None, 1, 1)
-    if resolution.node is not None:
-        pytest.fail("Expected no node when index is missing")
-    if resolution.reason != "missing_index":
-        pytest.fail(f"Expected reason 'missing_index', got '{resolution.reason}'")
-    if resolution.detail != "No span index available":
-        pytest.fail(f"Unexpected detail payload: {resolution.detail}")
+def test_resolve_span_missing() -> None:
+    """Raise SpanResolutionError when span is absent."""
+    with pytest.raises(SpanResolutionError):
+        resolve_span(function_goid_h128=99, span_index={})

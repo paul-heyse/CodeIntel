@@ -1252,3 +1252,26 @@ CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
          AND fp.function_goid_h128 = c.function_goid_h128;
         """
     )
+
+    con.execute(
+        """
+        CREATE OR REPLACE VIEW docs.v_validation_summary AS
+        SELECT
+            'function' AS domain,
+            repo,
+            commit,
+            CAST(function_goid_h128 AS BIGINT) AS entity_id,
+            kind,
+            message
+        FROM analytics.function_validation
+        UNION ALL
+        SELECT
+            'graph' AS domain,
+            repo,
+            commit,
+            NULL AS entity_id,
+            kind,
+            message
+        FROM analytics.graph_validation;
+        """
+    )

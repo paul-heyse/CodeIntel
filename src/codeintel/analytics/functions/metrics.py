@@ -21,15 +21,15 @@ from codeintel.analytics.functions.config import (
     ProcessState,
 )
 from codeintel.analytics.functions.parsing import parse_python_file
-from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
-from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
-from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.analytics.functions.typedness import (
     ParamStats,
     TypednessFlags,
     compute_param_stats,
     compute_typedness_flags,
 )
+from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
+from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
+from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.config.models import FunctionAnalyticsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.common import run_batch
@@ -339,7 +339,7 @@ def analyze_function(
     node = parsed.span_index.lookup(meta.start_line, meta.end_line)
     if node is None:
         return None
-    return _function_rows_from_node(meta, node, parsed.lines, ctx)
+    return _function_rows_from_node(meta, node, list(parsed.lines), ctx)
 
 
 def _get_parsed_module(rel_path: str, *, state: ProcessState) -> ParsedModule | None:
@@ -405,7 +405,7 @@ def _process_file_functions(
                 ),
             )
             continue
-        rows = _function_rows_from_node(meta, node, parsed.lines, state.ctx)
+        rows = _function_rows_from_node(meta, node, list(parsed.lines), state.ctx)
         if rows is None:
             state.reporter.record(
                 function_goid_h128=meta.goid,
@@ -518,7 +518,9 @@ def _meta_from_goid_row(info: GoidRow) -> FunctionMeta:
     )
 
 
-def _build_span_index(goids_by_file: dict[str, list[GoidRow]], repo_root: Path) -> dict[int, SourceSpan]:
+def _build_span_index(
+    goids_by_file: dict[str, list[GoidRow]], repo_root: Path
+) -> dict[int, SourceSpan]:
     span_index: dict[int, SourceSpan] = {}
     for rel_path, rows in goids_by_file.items():
         abs_path = (repo_root / rel_path).resolve()
@@ -594,8 +596,6 @@ def persist_function_analytics(
     gateway: StorageGateway,
     cfg: FunctionAnalyticsConfig,
     result: FunctionAnalyticsResult,
-    *,
-    created_at: datetime,
 ) -> dict[str, int]:
     """
     Persist analytics rows and validation to DuckDB.
@@ -608,8 +608,6 @@ def persist_function_analytics(
         Repository/commit context.
     result : FunctionAnalyticsResult
         Rows and validation to persist.
-    created_at : datetime
-        Timestamp used for validation persistence.
 
     Returns
     -------
@@ -678,7 +676,7 @@ def compute_function_metrics_and_types(
     cfg : FunctionAnalyticsConfig
         Repository metadata and file-system root used to locate source files.
     options : FunctionAnalyticsOptions | None
-        Optional hooks and cached context for parser selection, validation, and reuse.
+        Optional hooks for reusing parsed AST context and overriding the validation reporter.
 
     Notes
     -----
@@ -739,7 +737,7 @@ def compute_function_metrics_and_types(
         )
         result = build_function_analytics(goids_by_file=goids_by_file, state=state)
 
-    summary = persist_function_analytics(gateway, cfg, result, created_at=now)
+    summary = persist_function_analytics(gateway, cfg, result)
     if cfg.fail_on_missing_spans and result.validation_total:
         message = (
             f"Missing analytics for {result.validation_total} functions; "

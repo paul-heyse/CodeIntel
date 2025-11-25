@@ -13,6 +13,7 @@ from pathlib import Path
 import duckdb
 
 from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
+from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 from codeintel.config.models import (
     CodeIntelConfig,
     FunctionAnalyticsOverrides,
@@ -35,7 +36,6 @@ from codeintel.storage.gateway import (
     build_snapshot_gateway_resolver,
     open_gateway,
 )
-from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 
 LOG = logging.getLogger("codeintel.cli")
 CommandHandler = Callable[[argparse.Namespace], int]
@@ -358,9 +358,12 @@ def _build_config_from_args(args: argparse.Namespace) -> CodeIntelConfig:
 
 
 def _build_graph_backend_config(args: argparse.Namespace) -> GraphBackendConfig:
+    backend_value = getattr(args, "nx_backend", "auto")
+    if backend_value not in ("auto", "cpu", "nx-cugraph"):
+        backend_value = "auto"
     return GraphBackendConfig(
         use_gpu=bool(getattr(args, "nx_gpu", False)),
-        backend=str(getattr(args, "nx_backend", "auto")),
+        backend=backend_value,
         strict=bool(getattr(args, "nx_gpu_strict", False)),
     )
 

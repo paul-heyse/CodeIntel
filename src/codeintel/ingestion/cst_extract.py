@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 
 import libcst as cst
@@ -126,6 +126,27 @@ def _resolve_worker_count() -> int:
     return min(DEFAULT_MAX_WORKERS, max(2, cpu_count // 2))
 
 
+def _executor(kind: str, max_workers: int) -> ThreadPoolExecutor | ProcessPoolExecutor:
+    """
+    Return an executor for the requested backend.
+
+    Parameters
+    ----------
+    kind
+        Either "thread" (default) or "process".
+    max_workers
+        Parallelism to use.
+
+    Returns
+    -------
+    ThreadPoolExecutor | ProcessPoolExecutor
+        Executor matching the requested backend.
+    """
+    if kind == "process":
+        return ProcessPoolExecutor(max_workers=max_workers)
+    return ThreadPoolExecutor(max_workers=max_workers)
+
+
 def ingest_cst(
     gateway: StorageGateway,
     target: ChangeRequest,
@@ -168,7 +189,17 @@ def ingest_cst(
         return
 
     total_modules = len(to_reparse) if to_reparse else (0 if deleted_paths else len(module_map))
+    exec_kind = os.getenv("CODEINTEL_CST_EXECUTOR", "process").lower()
+    worker_count = _resolve_worker_count()
     log.info("Parsing CST for %d modules in %s@%s", total_modules, target.repo, target.commit)
+    log.info(
+        "CST ingest executor=%s workers=%d added=%d modified=%d deleted=%d",
+        exec_kind,
+        worker_count,
+        len(active_change_set.added),
+        len(active_change_set.modified),
+        len(active_change_set.deleted),
+    )
 
     cst_values: list[Row] = []
     start_ts = time.perf_counter()
@@ -193,8 +224,7 @@ def ingest_cst(
         )
 
     if records:
-        worker_count = _resolve_worker_count()
-        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        with _executor(exec_kind, worker_count) as pool:
             for result in pool.map(_process_module, records):
                 if result.error is not None:
                     log.warning("Failed to parse %s: %s", result.rel_path, result.error)

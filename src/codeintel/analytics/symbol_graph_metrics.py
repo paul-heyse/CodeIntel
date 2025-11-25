@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import networkx as nx
 
-from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     GraphBundle,
     GraphContext,
@@ -30,10 +30,13 @@ def compute_symbol_graph_metrics_modules(
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate analytics.symbol_graph_metrics_modules from module symbol coupling."""
+    runtime = runtime or GraphRuntimeOptions()
+    context = runtime.context
+    graph_ctx = runtime.graph_ctx
+    use_gpu = runtime.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.symbol_graph_metrics_modules")
     ctx = graph_ctx or GraphContext(
@@ -43,15 +46,25 @@ def compute_symbol_graph_metrics_modules(
         betweenness_sample=MAX_BETWEENNESS_NODES,
         pagerank_weight="weight",
         betweenness_weight="weight",
+        use_gpu=use_gpu,
     )
     if ctx.betweenness_sample > MAX_BETWEENNESS_NODES:
         ctx = replace(ctx, betweenness_sample=MAX_BETWEENNESS_NODES)
+    if ctx.use_gpu != use_gpu:
+        ctx = replace(ctx, use_gpu=use_gpu)
     if context is not None and (context.repo != repo or context.commit != commit):
         return
 
     bundle: GraphBundle[nx.Graph] = GraphBundle(
         ctx=ctx,
-        loaders={"symbol_module_graph": lambda: load_symbol_module_graph(gateway, repo, commit)},
+        loaders={
+            "symbol_module_graph": lambda: load_symbol_module_graph(
+                gateway,
+                repo,
+                commit,
+                use_gpu=use_gpu,
+            )
+        },
     )
     graph = bundle.get("symbol_module_graph")
     if graph.number_of_nodes() == 0:
@@ -110,10 +123,13 @@ def compute_symbol_graph_metrics_functions(
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate analytics.symbol_graph_metrics_functions from function symbol coupling."""
+    runtime = runtime or GraphRuntimeOptions()
+    context = runtime.context
+    graph_ctx = runtime.graph_ctx
+    use_gpu = runtime.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.symbol_graph_metrics_functions")
     ctx = graph_ctx or GraphContext(
@@ -123,16 +139,24 @@ def compute_symbol_graph_metrics_functions(
         betweenness_sample=MAX_BETWEENNESS_NODES,
         pagerank_weight="weight",
         betweenness_weight="weight",
+        use_gpu=use_gpu,
     )
     if ctx.betweenness_sample > MAX_BETWEENNESS_NODES:
         ctx = replace(ctx, betweenness_sample=MAX_BETWEENNESS_NODES)
+    if ctx.use_gpu != use_gpu:
+        ctx = replace(ctx, use_gpu=use_gpu)
     if context is not None and (context.repo != repo or context.commit != commit):
         return
 
     bundle: GraphBundle[nx.Graph] = GraphBundle(
         ctx=ctx,
         loaders={
-            "symbol_function_graph": lambda: load_symbol_function_graph(gateway, repo, commit)
+            "symbol_function_graph": lambda: load_symbol_function_graph(
+                gateway,
+                repo,
+                commit,
+                use_gpu=use_gpu,
+            )
         },
     )
     graph = bundle.get("symbol_function_graph")
