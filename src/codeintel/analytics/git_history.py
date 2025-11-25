@@ -13,6 +13,7 @@ from codeintel.ingestion.tool_runner import ToolRunner
 log = logging.getLogger(__name__)
 
 MAX_STDERR_CHARS = 500
+META_PARTS_REQUIRED = 3
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,51 @@ class FileCommitDelta:
     lines_deleted: int = 0
 
 
+@dataclass
+class GitLogState:
+    """Mutable state while iterating git log output."""
+
+    current_commit: str | None = None
+    current_author: str | None = None
+    current_ts: datetime | None = None
+    added_spans: list[tuple[int, int]] = field(default_factory=list)
+    deleted_spans: list[tuple[int, int]] = field(default_factory=list)
+    lines_added: int = 0
+    lines_deleted: int = 0
+
+    def reset_spans(self) -> None:
+        """Reset accumulated span and line deltas."""
+        self.added_spans = []
+        self.deleted_spans = []
+        self.lines_added = 0
+        self.lines_deleted = 0
+
+    def to_delta(self, rel_path: str) -> FileCommitDelta | None:
+        """
+        Convert the current state into a FileCommitDelta.
+
+        Returns
+        -------
+        FileCommitDelta | None
+            Delta for the active commit when metadata is available; otherwise ``None``.
+        """
+        if self.current_commit is None or self.current_author is None:
+            return None
+        delta = FileCommitDelta(
+            commit_hash=self.current_commit,
+            author_email=self.current_author,
+            author_ts=self.current_ts,
+            old_path=rel_path,
+            new_path=rel_path,
+            added_spans=self.added_spans,
+            deleted_spans=self.deleted_spans,
+            lines_added=self.lines_added,
+            lines_deleted=self.lines_deleted,
+        )
+        self.reset_spans()
+        return delta
+
+
 def _parse_hunk_header(header: str) -> tuple[tuple[int, int], tuple[int, int]] | None:
     """
     Parse a unified diff hunk header.
@@ -44,13 +90,14 @@ def _parse_hunk_header(header: str) -> tuple[tuple[int, int], tuple[int, int]] |
     tuple[tuple[int, int], tuple[int, int]] | None
         Old and new (start, length) ranges if parsing succeeds.
     """
-    try:
-        _, ranges, _ = header.split(" ", 2)
-    except ValueError:
+    if not header.startswith("@@"):
         return None
-    old_part, new_part = ranges.split(" ")
-    old_range = _parse_range(old_part.lstrip("-"))
-    new_range = _parse_range(new_part.lstrip("+"))
+    body = header.strip().removeprefix("@@").removesuffix("@@").strip()
+    parts = body.split()
+    if len(parts) < 2:
+        return None
+    old_range = _parse_range(parts[0].lstrip("-"))
+    new_range = _parse_range(parts[1].lstrip("+"))
     if old_range is None or new_range is None:
         return None
     return old_range, new_range
@@ -144,6 +191,11 @@ def iter_file_history(
         Branch or commit selector to anchor the log (e.g., ``HEAD`` or ``main``).
     runner:
         Optional shared ToolRunner for git invocations.
+
+    Returns
+    -------
+    Iterable[FileCommitDelta]
+        Parsed git deltas for the target file.
     """
     lines = _iter_git_log_lines(
         repo_root,
@@ -159,67 +211,58 @@ def iter_file_history(
 
 
 def _parse_git_log(lines: list[str], rel_path: str) -> Iterator[FileCommitDelta]:
-    current_commit: str | None = None
-    current_author: str | None = None
-    current_ts: datetime | None = None
-    added_spans: list[tuple[int, int]] = []
-    deleted_spans: list[tuple[int, int]] = []
-    lines_added = 0
-    lines_deleted = 0
-
-    def flush() -> Iterator[FileCommitDelta]:
-        nonlocal added_spans, deleted_spans, lines_added, lines_deleted
-        if current_commit is None or current_author is None:
-            return iter(())
-        delta = FileCommitDelta(
-            commit_hash=current_commit,
-            author_email=current_author,
-            author_ts=current_ts,
-            old_path=rel_path,
-            new_path=rel_path,
-            added_spans=added_spans,
-            deleted_spans=deleted_spans,
-            lines_added=lines_added,
-            lines_deleted=lines_deleted,
-        )
-        added_spans = []
-        deleted_spans = []
-        lines_added = 0
-        lines_deleted = 0
-        return iter((delta,))
+    state = GitLogState()
 
     for line in lines:
-        if not line:
+        commit_delta = _commit_delta_from_line(line, state, rel_path)
+        if commit_delta is not None:
+            yield commit_delta
             continue
-        if line.startswith("@@@"):
-            if current_commit is not None:
-                yield from flush()
-            _, meta = line.split("@@@", 1)
-            parts = meta.split("\t")
-            if len(parts) >= 3:
-                current_commit, current_author, ts_raw = parts[:3]
-                current_ts = _parse_timestamp(ts_raw)
-            else:
-                current_commit = parts[0] if parts else None
-                current_author = parts[1] if len(parts) > 1 else None
-                current_ts = None
+        if _update_from_hunk(line, state):
+            continue
+        if _should_skip_diff_line(line):
             continue
 
-        if line.startswith("@@ "):
-            ranges = _parse_hunk_header(line)
-            if ranges is None:
-                continue
-            (old_start, old_len), (new_start, new_len) = ranges
-            if new_len > 0:
-                added_spans.append((new_start, new_start + new_len - 1))
-                lines_added += new_len
-            if old_len > 0:
-                deleted_spans.append((old_start, old_start + old_len - 1))
-                lines_deleted += old_len
-            continue
+    delta = state.to_delta(rel_path)
+    if delta is not None:
+        yield delta
 
-        if line.startswith("Binary files") or line.startswith("diff --git"):
-            continue
 
-    if current_commit is not None:
-        yield from flush()
+def _commit_delta_from_line(line: str, state: GitLogState, rel_path: str) -> FileCommitDelta | None:
+    if not line or not line.startswith("@@@"):
+        return None
+    return _start_commit(line, state, rel_path)
+
+
+def _update_from_hunk(line: str, state: GitLogState) -> bool:
+    if not line or not line.startswith("@@ "):
+        return False
+    ranges = _parse_hunk_header(line)
+    if ranges is None:
+        return True
+    (old_start, old_len), (new_start, new_len) = ranges
+    if new_len > 0:
+        state.added_spans.append((new_start, new_start + new_len - 1))
+        state.lines_added += new_len
+    if old_len > 0:
+        state.deleted_spans.append((old_start, old_start + old_len - 1))
+        state.lines_deleted += old_len
+    return True
+
+
+def _should_skip_diff_line(line: str) -> bool:
+    return not line or line.startswith(("Binary files", "diff --git"))
+
+
+def _start_commit(line: str, state: GitLogState, rel_path: str) -> FileCommitDelta | None:
+    delta = state.to_delta(rel_path)
+    _, meta = line.split("@@@", 1)
+    parts = meta.split("\t")
+    if len(parts) >= META_PARTS_REQUIRED:
+        state.current_commit, state.current_author, ts_raw = parts[:3]
+        state.current_ts = _parse_timestamp(ts_raw)
+    else:
+        state.current_commit = parts[0] if parts else None
+        state.current_author = parts[1] if len(parts) > 1 else None
+        state.current_ts = None
+    return delta

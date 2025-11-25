@@ -16,13 +16,14 @@ from typing import Any
 
 import jsonschema
 import pyarrow.parquet as pq
+from referencing import Registry, Resource
 
 from codeintel.services.errors import log_problem, problem
 
 DEFAULT_SCHEMA_ROOT = Path(__file__).resolve().parent.parent / "config" / "schemas" / "export"
 
 
-def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], Any]:
+def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], Registry]:
     path = root / f"{schema_name}.json"
     if not path.is_file():
         message = f"Schema not found: {path}"
@@ -30,23 +31,18 @@ def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], Any]:
         log_problem(logger=_stderr_logger(), detail=pd)
         raise FileNotFoundError(message)
 
-    store: dict[str, Any] = {}
+    resources: dict[str, Resource] = {}
     for schema_path in root.glob("*.json"):
         with schema_path.open("r", encoding="utf-8") as f:
             doc = json.load(f)
         if "$id" in doc and isinstance(doc["$id"], str):
-            store[doc["$id"]] = doc
-        store[schema_path.as_uri()] = doc
+            resources[doc["$id"]] = Resource.from_contents(doc)
+        resources[schema_path.as_uri()] = Resource.from_contents(doc)
 
     with path.open("r", encoding="utf-8") as f:
         schema = json.load(f)
-    resolver_factory: Any = jsonschema.RefResolver
-    resolver = resolver_factory(
-        base_uri=root.as_uri().rstrip("/") + "/",
-        referrer=schema,
-        store=store,
-    )
-    return schema, resolver
+    registry = Registry().with_resources(resources.items())
+    return schema, registry
 
 
 def _stderr_logger() -> logging.Logger:
@@ -111,11 +107,11 @@ def validate_files(
     """
     logger = _stderr_logger()
     try:
-        schema, resolver = _load_schema(schema_name, schema_root)
+        schema, registry = _load_schema(schema_name, schema_root)
     except FileNotFoundError:
         return 1
 
-    validator = jsonschema.Draft202012Validator(schema, resolver=resolver)
+    validator = jsonschema.Draft202012Validator(schema, registry=registry)
     all_errors: list[str] = []
     for path in paths:
         if not path.exists():

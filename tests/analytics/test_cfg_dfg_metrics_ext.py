@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 import pytest
 
 from codeintel.analytics.cfg_dfg_metrics import compute_cfg_metrics, compute_dfg_metrics
-from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.builders import (
+    CFGBlockRow,
+    CFGEdgeRow,
+    DFGEdgeRow,
+    GoidRow,
+    ModuleRow,
+    insert_cfg_blocks,
+    insert_cfg_edges,
+    insert_dfg_edges,
+    insert_goids,
+    insert_modules,
+)
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -16,51 +25,87 @@ REL_PATH = "pkg/mod.py"
 
 
 def _seed_function(gateway: StorageGateway) -> None:
-    gateway.con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, 'python', '[]', '[]')
-        """,
-        ["pkg.mod", REL_PATH, REPO, COMMIT],
+    insert_modules(
+        gateway,
+        [ModuleRow(module="pkg.mod", path=REL_PATH, repo=REPO, commit=COMMIT)],
     )
-    gateway.con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-            start_line, end_line, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, 'python', 'function', ?, 1, 20, CURRENT_TIMESTAMP)
-        """,
-        [Decimal(1), "urn:pkg.mod:func", REPO, COMMIT, REL_PATH, "pkg.mod:func"],
+    insert_goids(
+        gateway,
+        [
+            GoidRow(
+                goid_h128=1,
+                urn="urn:pkg.mod:func",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path=REL_PATH,
+                kind="function",
+                qualname="pkg.mod:func",
+                start_line=1,
+                end_line=20,
+            )
+        ],
     )
 
 
 def _seed_cfg(gateway: StorageGateway) -> None:
-    cfg_blocks = [
-        (1, 0, "1:block0", "entry", REL_PATH, 1, 1, "entry", "[]", 0, 1),
-        (1, 1, "1:block1", "body", REL_PATH, 2, 3, "body", "[]", 1, 1),
-        (1, 2, "1:block2", "loop_head", REL_PATH, 4, 4, "loop_head", "[]", 1, 2),
-        (1, 3, "1:block3", "unreachable", REL_PATH, 10, 10, "body", "[]", 0, 0),
-        (1, 4, "1:block4", "exit", REL_PATH, 11, 11, "exit", "[]", 1, 0),
-    ]
-    run_batch(gateway, "graph.cfg_blocks", cfg_blocks, delete_params=[], scope="cfg_blocks")
+    insert_cfg_blocks(
+        gateway,
+        [
+            CFGBlockRow(1, 0, "1:block0", "entry", REL_PATH, 1, 1, "entry", "[]", 0, 1),
+            CFGBlockRow(1, 1, "1:block1", "body", REL_PATH, 2, 3, "body", "[]", 1, 1),
+            CFGBlockRow(1, 2, "1:block2", "loop_head", REL_PATH, 4, 4, "loop_head", "[]", 1, 2),
+            CFGBlockRow(1, 3, "1:block3", "unreachable", REL_PATH, 10, 10, "body", "[]", 0, 0),
+            CFGBlockRow(1, 4, "1:block4", "exit", REL_PATH, 11, 11, "exit", "[]", 1, 0),
+        ],
+    )
 
-    cfg_edges = [
-        (1, "1:block0", "1:block1", "fallthrough"),
-        (1, "1:block1", "1:block2", "loop"),
-        (1, "1:block2", "1:block1", "back"),
-        (1, "1:block2", "1:block4", "fallthrough"),
-    ]
-    run_batch(gateway, "graph.cfg_edges", cfg_edges, delete_params=[], scope="cfg_edges")
+    insert_cfg_edges(
+        gateway,
+        [
+            CFGEdgeRow(1, "1:block0", "1:block1", "fallthrough"),
+            CFGEdgeRow(1, "1:block1", "1:block2", "loop"),
+            CFGEdgeRow(1, "1:block2", "1:block1", "back"),
+            CFGEdgeRow(1, "1:block2", "1:block4", "fallthrough"),
+        ],
+    )
 
 
 def _seed_dfg(gateway: StorageGateway) -> None:
-    dfg_edges = [
-        (1, "1:block0", "1:block1", "a", "a", "data-flow", False, "data-flow"),
-        (1, "1:block1", "1:block2", "a", "a", "phi", True, "phi"),
-        (1, "1:block1", "1:block1", "a", "a", "intra-block", False, "intra-block"),
-    ]
-    run_batch(gateway, "graph.dfg_edges", dfg_edges, delete_params=[], scope="dfg_edges")
+    insert_dfg_edges(
+        gateway,
+        [
+            DFGEdgeRow(
+                1,
+                "1:block0",
+                "1:block1",
+                "a",
+                "a",
+                "data-flow",
+                via_phi=False,
+                use_kind="data-flow",
+            ),
+            DFGEdgeRow(
+                1,
+                "1:block1",
+                "1:block2",
+                "a",
+                "a",
+                "phi",
+                via_phi=True,
+                use_kind="phi",
+            ),
+            DFGEdgeRow(
+                1,
+                "1:block1",
+                "1:block1",
+                "a",
+                "a",
+                "intra-block",
+                via_phi=False,
+                use_kind="intra-block",
+            ),
+        ],
+    )
 
 
 def test_cfg_metrics_ext_populates_loop_and_unreachable_counts(
@@ -80,7 +125,7 @@ def test_cfg_metrics_ext_populates_loop_and_unreachable_counts(
         FROM analytics.cfg_function_metrics_ext
         WHERE function_goid_h128 = ?
         """,
-        [Decimal(1)],
+        [1],
     ).fetchone()
     base_row = fresh_gateway.con.execute(
         """
@@ -88,7 +133,7 @@ def test_cfg_metrics_ext_populates_loop_and_unreachable_counts(
         FROM analytics.cfg_function_metrics
         WHERE function_goid_h128 = ?
         """,
-        [Decimal(1)],
+        [1],
     ).fetchone()
     if base_row is None:
         pytest.fail("Base CFG metrics missing; compute_cfg_metrics did not process function")
@@ -113,7 +158,7 @@ def test_dfg_metrics_ext_counts_use_kinds_and_paths(
         FROM analytics.dfg_function_metrics_ext
         WHERE function_goid_h128 = ?
         """,
-        [Decimal(1)],
+        [1],
     ).fetchone()
     if row is None:
         pytest.fail("DFG ext metrics missing")

@@ -193,6 +193,8 @@ def ingest_config_values(
         Optional scan configuration to honor ignore/include rules while walking files.
     """
     repo_root = cfg.repo_root
+    repo = cfg.repo
+    commit = cfg.commit
 
     rows: list[ConfigValueRow] = []
     for path in _iter_config_files(repo_root, scan_cfg=scan_config):
@@ -205,6 +207,8 @@ def ingest_config_values(
         for keypath, _ in _flatten_config(data):
             rows.append(
                 ConfigValueRow(
+                    repo=repo,
+                    commit=commit,
                     config_path=rel_path,
                     format=fmt,
                     key=keypath,
@@ -218,6 +222,6 @@ def ingest_config_values(
         gateway,
         "analytics.config_values",
         [config_value_to_tuple(r) for r in rows],
-        delete_params=None,
+        delete_params=[repo, commit],
     )
     log.info("config_values ingested: %d keys across config files", len(rows))

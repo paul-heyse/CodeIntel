@@ -50,9 +50,65 @@ class ModelUsageArtifacts:
     ast_by_goid: dict[int, FunctionAst]
     module_map: dict[str, str]
     param_types: dict[int, dict[str, str]]
-    model_simple: dict[str, list[ModelInfo]]
-    model_qualified: dict[str, ModelInfo]
+    model_index: ModelIndex
     subsystem_map: dict[str, tuple[str, str]]
+
+
+@dataclass(frozen=True)
+class ModelIndex:
+    """Grouping for model lookup tables."""
+
+    by_name: dict[str, list[ModelInfo]]
+    by_name_lower: dict[str, list[ModelInfo]]
+    by_qualified: dict[str, ModelInfo]
+    by_qualified_lower: dict[str, ModelInfo]
+
+
+ORM_CREATE_METHODS = {"create", "add", "merge", "bulk_create"}
+ORM_READ_METHODS = {
+    "get",
+    "filter",
+    "filter_by",
+    "all",
+    "first",
+    "one",
+    "one_or_none",
+    "scalar_one",
+    "scalar_one_or_none",
+    "query",
+    "select",
+    "join",
+    "where",
+}
+ORM_UPDATE_METHODS = {"update", "save", "commit", "refresh", "refresh_from_db"}
+ORM_DELETE_METHODS = {"delete", "remove"}
+ORM_SERIALIZE_METHODS = {
+    "dict",
+    "json",
+    "model_dump",
+    "model_dump_json",
+    "asdict",
+    "astuple",
+    "values",
+    "values_list",
+    "to_dict",
+}
+ORM_VALIDATE_METHODS = {"validate", "model_validate", "full_clean"}
+
+
+def _usage_for_attr(attr_name: str) -> str | None:
+    buckets = [
+        ("serialize", ORM_SERIALIZE_METHODS),
+        ("update", ORM_UPDATE_METHODS),
+        ("validate", ORM_VALIDATE_METHODS),
+        ("delete", ORM_DELETE_METHODS),
+        ("read", ORM_READ_METHODS),
+        ("create", ORM_CREATE_METHODS),
+    ]
+    for kind, group in buckets:
+        if attr_name in group:
+            return kind
+    return None
 
 
 def _parse_param_types(raw: str | dict[str, object] | None) -> dict[str, str]:
@@ -77,39 +133,46 @@ def _parse_param_types(raw: str | dict[str, object] | None) -> dict[str, str]:
 
 def _build_model_index(
     models: list[ModelInfo],
-) -> tuple[dict[str, list[ModelInfo]], dict[str, ModelInfo]]:
+) -> ModelIndex:
     simple: dict[str, list[ModelInfo]] = {}
+    simple_lower: dict[str, list[ModelInfo]] = {}
     qualified: dict[str, ModelInfo] = {}
+    qualified_lower: dict[str, ModelInfo] = {}
     for model in models:
         simple.setdefault(model.name, []).append(model)
-        qualified[f"{model.module}.{model.name}"] = model
-    return simple, qualified
+        simple_lower.setdefault(model.name.lower(), []).append(model)
+        qualified_name = f"{model.module}.{model.name}"
+        qualified[qualified_name] = model
+        qualified_lower[qualified_name.lower()] = model
+    return ModelIndex(
+        by_name=simple,
+        by_name_lower=simple_lower,
+        by_qualified=qualified,
+        by_qualified_lower=qualified_lower,
+    )
 
 
-def _resolve_model(
-    name: str,
-    simple_index: dict[str, list[ModelInfo]],
-    qualified_index: dict[str, ModelInfo],
-) -> ModelInfo | None:
+def _resolve_model(name: str, index: ModelIndex) -> ModelInfo | None:
     normalized = name
-    if normalized in qualified_index:
-        return qualified_index[normalized]
-    candidate_name = normalized.split(".")[-1]
-    candidates = simple_index.get(candidate_name, [])
+    if normalized in index.by_qualified:
+        return index.by_qualified[normalized]
+    if normalized.lower() in index.by_qualified_lower:
+        return index.by_qualified_lower[normalized.lower()]
+    candidates = index.by_name.get(normalized) or index.by_name.get(normalized.split(".")[-1], [])
+    if not candidates:
+        candidates = index.by_name_lower.get(normalized.lower()) or index.by_name_lower.get(
+            normalized.split(".")[-1].lower()
+        )
     return candidates[0] if candidates else None
 
 
-def _resolve_model_from_hint(
-    type_hint: str | None,
-    simple_index: dict[str, list[ModelInfo]],
-    qualified_index: dict[str, ModelInfo],
-) -> ModelInfo | None:
+def _resolve_model_from_hint(type_hint: str | None, index: ModelIndex) -> ModelInfo | None:
     if not type_hint:
         return None
     normalized = re.sub(r"[^A-Za-z0-9_\.]", " ", type_hint)
     tokens = normalized.split()
     for token in tokens:
-        resolved = _resolve_model(token, simple_index, qualified_index)
+        resolved = _resolve_model(token, index)
         if resolved is not None:
             return resolved
     return None
@@ -134,24 +197,102 @@ class ModelUsageVisitor(ast.NodeVisitor):
     def __init__(
         self,
         *,
-        models_by_name: dict[str, list[ModelInfo]],
-        models_by_qualified: dict[str, ModelInfo],
+        index: ModelIndex,
         lines: list[str],
         max_examples: int,
     ) -> None:
-        self._models_by_name = models_by_name
-        self._models_by_qualified = models_by_qualified
+        self._index = index
         self._lines = lines
         self._max_examples = max_examples
         self._model_vars: dict[str, ModelInfo] = {}
         self.result = ModelUsageResult()
 
+    def _resolve_model_name(self, name: str) -> ModelInfo | None:
+        return _resolve_model(name, self._index)
+
+    def _record_model_usage(self, model: ModelInfo, kind: str, lineno: int) -> None:
+        self._record_usage(model.model_id, kind, lineno)
+
+    def _handle_constructor_call(self, node: ast.Call) -> None:
+        target_name = _call_target_name(node.func)
+        resolved_class = self._resolve_model_name(target_name or "")
+        if resolved_class is not None:
+            self._record_model_usage(resolved_class, "create", node.lineno)
+
+    def _handle_attribute_call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute):
+            return
+        base = node.func.value
+        attr_name = node.func.attr
+        usage = _usage_for_attr(attr_name)
+        if usage is not None:
+            self._record_usage_for_base(base, usage, node.lineno)
+            self._handle_manager_operations(base, attr_name, node, usage)
+        self._handle_collection_mutations(base, attr_name, node)
+        self._handle_query_targets(base, attr_name, node)
+
+    def _record_usage_for_base(self, base: ast.AST, usage: str, lineno: int) -> None:
+        if isinstance(base, ast.Name):
+            model = self._model_vars.get(base.id)
+            if model is not None:
+                self._record_model_usage(model, usage, lineno)
+
+    def _handle_manager_operations(
+        self, base: ast.AST, attr_name: str, node: ast.Call, usage: str
+    ) -> None:
+        if not (isinstance(base, ast.Attribute) and base.attr == "objects"):
+            return
+        owner_name = _call_target_name(base.value) or ""
+        owner_model = self._resolve_model_name(owner_name)
+        manager_usage = usage or _usage_for_attr(attr_name)
+        if owner_model is not None and manager_usage is not None:
+            self._record_model_usage(owner_model, manager_usage, node.lineno)
+
+    def _handle_collection_mutations(self, base: ast.AST, attr_name: str, node: ast.Call) -> None:
+        if not (isinstance(base, ast.Name) and attr_name in {"add", "merge", "delete"}):
+            return
+        for arg in node.args:
+            if isinstance(arg, ast.Call):
+                call_model = self._resolve_model_name(_call_target_name(arg.func) or "")
+                if call_model is not None:
+                    self._record_model_usage(call_model, "create", node.lineno)
+            if isinstance(arg, ast.Name):
+                model = self._model_vars.get(arg.id)
+                if model is not None:
+                    self._record_model_usage(model, "delete", arg.lineno)
+
+    def _handle_query_targets(self, base: ast.AST, attr_name: str, node: ast.Call) -> None:
+        if not (isinstance(base, ast.Name) and attr_name in {"query", "select", "join"}):
+            return
+        for arg in node.args:
+            query_model = self._resolve_model_name(_call_target_name(arg) or "")
+            if query_model is not None:
+                self._record_model_usage(query_model, "read", node.lineno)
+
+    def _handle_function_call(self, node: ast.Call) -> None:
+        if (
+            isinstance(node.func, ast.Name)
+            and node.func.id == "dict"
+            and node.args
+            and isinstance(node.args[0], ast.Name)
+        ):
+            model = self._model_vars.get(node.args[0].id)
+            if model is not None:
+                self._record_model_usage(model, "serialize", node.lineno)
+
+    def _record_arg_models(self, node: ast.Call) -> None:
+        for arg in node.args:
+            if isinstance(arg, ast.Name) and arg.id in self._model_vars:
+                self._record_usage(self._model_vars[arg.id].model_id, "serialize", arg.lineno)
+            if isinstance(arg, ast.Call):
+                call_model = self._resolve_model_name(_call_target_name(arg.func) or "")
+                if call_model is not None:
+                    self._record_model_usage(call_model, "create", arg.lineno)
+
     def seed_parameters(self, param_types: dict[str, str]) -> None:
         """Prime the visitor with models inferred from function parameters."""
         for name, type_hint in param_types.items():
-            resolved = _resolve_model_from_hint(
-                type_hint, self._models_by_name, self._models_by_qualified
-            )
+            resolved = _resolve_model_from_hint(type_hint, self._index)
             if resolved is not None:
                 self._model_vars[name] = resolved
 
@@ -168,36 +309,10 @@ class ModelUsageVisitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         """Track creation, serialization, and validation calls on models."""
-        target_name = _call_target_name(node.func)
-        resolved_class = _resolve_model(
-            target_name or "",
-            self._models_by_name,
-            self._models_by_qualified,
-        )
-        if resolved_class is not None:
-            self._record_usage(resolved_class.model_id, "create", node.lineno)
-        if isinstance(node.func, ast.Attribute):
-            base = node.func.value
-            attr_name = node.func.attr
-            if isinstance(base, ast.Name):
-                model = self._model_vars.get(base.id)
-                if model is not None:
-                    if attr_name in {
-                        "dict",
-                        "json",
-                        "model_dump",
-                        "model_dump_json",
-                        "asdict",
-                        "astuple",
-                    }:
-                        self._record_usage(model.model_id, "serialize", node.lineno)
-                    elif attr_name in {"update", "append", "extend", "setdefault"}:
-                        self._record_usage(model.model_id, "update", node.lineno)
-                    elif attr_name in {"parse_obj", "validate", "model_validate"}:
-                        self._record_usage(model.model_id, "validate", node.lineno)
-        for arg in node.args:
-            if isinstance(arg, ast.Name) and arg.id in self._model_vars:
-                self._record_usage(self._model_vars[arg.id].model_id, "serialize", arg.lineno)
+        self._handle_constructor_call(node)
+        self._handle_attribute_call(node)
+        self._handle_function_call(node)
+        self._record_arg_models(node)
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
@@ -222,19 +337,57 @@ class ModelUsageVisitor(ast.NodeVisitor):
                     self._record_usage(self._model_vars[base].model_id, "delete", target.lineno)
         self.generic_visit(node)
 
-    def _maybe_capture_assignment(
-        self, targets: Sequence[ast.expr], value: ast.AST | None
-    ) -> None:
-        if isinstance(value, ast.Call):
-            call_target = _call_target_name(value.func) or ""
-            resolved = _resolve_model(call_target, self._models_by_name, self._models_by_qualified)
-            if resolved is not None:
-                for target in targets:
-                    if isinstance(target, ast.Name):
-                        self._model_vars[target.id] = resolved
-                self._record_usage(resolved.model_id, "create", getattr(value, "lineno", 0))
-        if isinstance(value, ast.AST):
-            self.generic_visit(value)
+    def _maybe_capture_assignment(self, targets: Sequence[ast.expr], value: ast.AST | None) -> None:
+        if not isinstance(value, ast.Call):
+            if isinstance(value, ast.AST):
+                self.generic_visit(value)
+            return
+        resolved, usage_kind = self._resolve_assignment_call(value)
+        if resolved is not None:
+            self._bind_targets_to_model(targets, resolved)
+            self._record_model_usage(resolved, usage_kind, getattr(value, "lineno", 0))
+        self._capture_query_results(targets, value)
+        self.generic_visit(value)
+
+    def _resolve_assignment_call(self, value: ast.Call) -> tuple[ModelInfo | None, str]:
+        call_target = _call_target_name(value.func) or ""
+        resolved = self._resolve_model_name(call_target)
+        usage_kind = "create"
+        if isinstance(value.func, ast.Attribute):
+            usage_hint = _usage_for_attr(value.func.attr)
+            if usage_hint is not None:
+                usage_kind = usage_hint
+            if isinstance(value.func.value, ast.Attribute) and value.func.value.attr == "objects":
+                owner_name = _call_target_name(value.func.value.value) or ""
+                resolved = self._resolve_model_name(owner_name)
+        return resolved, usage_kind
+
+    def _bind_targets_to_model(self, targets: Sequence[ast.expr], model: ModelInfo) -> None:
+        for target in targets:
+            if isinstance(target, ast.Name):
+                self._model_vars[target.id] = model
+
+    def _capture_query_results(self, targets: Sequence[ast.expr], value: ast.Call) -> None:
+        if not isinstance(value.func, ast.Attribute):
+            return
+        base_call = value.func.value
+        if not isinstance(base_call, ast.Call):
+            return
+        if not self._is_query_result_accessor(value.func.attr, base_call.func):
+            return
+        for arg in base_call.args:
+            query_model = self._resolve_model_name(_call_target_name(arg) or "")
+            if query_model is None:
+                continue
+            self._bind_targets_to_model(targets, query_model)
+            self._record_model_usage(query_model, "read", getattr(value, "lineno", 0))
+
+    @staticmethod
+    def _is_query_result_accessor(attr_name: str, func: ast.AST) -> bool:
+        result_attrs = {"first", "one", "scalar_one", "first_or_none"}
+        is_result_accessor = attr_name in result_attrs
+        is_query_call = isinstance(func, ast.Attribute) and func.attr in {"query", "select"}
+        return is_result_accessor or is_query_call
 
     def _record_usage(self, model_id: str, kind: str, lineno: int | None) -> None:
         if lineno is None:
@@ -326,7 +479,7 @@ def compute_data_model_usage(
     if not models:
         log.info("No data models found for %s@%s; skipping usage analysis", cfg.repo, cfg.commit)
         return
-    model_simple, model_qualified = _build_model_index(models)
+    model_index = _build_model_index(models)
 
     module_map = load_module_map(gateway, cfg.repo, cfg.commit)
     subsystem_map = _subsystem_by_module(con, cfg.repo, cfg.commit)
@@ -362,8 +515,7 @@ def compute_data_model_usage(
         ast_by_goid=ast_by_goid,
         module_map=module_map,
         param_types=param_types,
-        model_simple=model_simple,
-        model_qualified=model_qualified,
+        model_index=model_index,
         subsystem_map=subsystem_map,
     )
     rows_to_insert = _build_usage_rows(artifacts=artifacts, cfg=cfg)
@@ -397,8 +549,7 @@ def _build_usage_rows(
         rel_path = normalize_rel_path(func_ast.rel_path)
         module = artifacts.module_map.get(rel_path)
         visitor = ModelUsageVisitor(
-            models_by_name=artifacts.model_simple,
-            models_by_qualified=artifacts.model_qualified,
+            index=artifacts.model_index,
             lines=func_ast.lines,
             max_examples=cfg.max_examples_per_usage,
         )

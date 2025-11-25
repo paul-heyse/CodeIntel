@@ -1004,6 +1004,8 @@ class FunctionValidationRow:
 class ConfigValueRow:
     """Row for analytics.config_values."""
 
+    repo: str
+    commit: str
     config_path: str
     format: str
     key: str
@@ -1011,8 +1013,10 @@ class ConfigValueRow:
     reference_modules: list[str]
     reference_count: int
 
-    def to_tuple(self) -> tuple[str, str, str, str, str, int]:
+    def to_tuple(self) -> tuple[str, str, str, str, str, str, int]:
         return (
+            self.repo,
+            self.commit,
             self.config_path,
             self.format,
             self.key,
@@ -1043,7 +1047,9 @@ class GraphMetricsModulesExtRow:
     import_scc_size: int
     created_at: datetime
 
-    def to_tuple(self) -> tuple[
+    def to_tuple(
+        self,
+    ) -> tuple[
         str,
         str,
         str,
@@ -1100,7 +1106,9 @@ class SymbolGraphMetricsModulesRow:
     symbol_component_size: int
     created_at: datetime
 
-    def to_tuple(self) -> tuple[
+    def to_tuple(
+        self,
+    ) -> tuple[
         str,
         str,
         str,
@@ -1449,9 +1457,9 @@ def insert_config_values(gateway: StorageGateway, rows: Iterable[ConfigValueRow]
     gateway.con.executemany(
         """
         INSERT INTO analytics.config_values (
-            config_path, format, key, reference_paths, reference_modules, reference_count
+            repo, commit, config_path, format, key, reference_paths, reference_modules, reference_count
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [row.to_tuple() for row in rows],
     )
@@ -1493,9 +1501,7 @@ def insert_symbol_graph_metrics_modules(
     )
 
 
-def insert_subsystem_modules(
-    gateway: StorageGateway, rows: Iterable[SubsystemModuleRow]
-) -> None:
+def insert_subsystem_modules(gateway: StorageGateway, rows: Iterable[SubsystemModuleRow]) -> None:
     """Insert subsystem_modules rows via connection."""
     gateway.con.executemany(
         """

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codeintel.dev/export/behavioral_coverage.json",
+  "title": "Behavioral Coverage Export",
+  "allOf": [
+    { "$ref": "./base.json" },
+    {
+      "type": "object",
+      "properties": {
+        "test_id": { "type": "string" },
+        "rel_path": { "type": "string" },
+        "qualname": { "type": "string" },
+        "behavior_tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "tag_source": { "type": "string" },
+        "heuristic_version": { "type": "string" },
+        "llm_model": { "type": ["string", "null"] },
+        "llm_run_id": { "type": ["string", "null"] }
+      },
+      "required": ["test_id", "rel_path", "behavior_tags", "tag_source"]
+    }
+  ]
+}

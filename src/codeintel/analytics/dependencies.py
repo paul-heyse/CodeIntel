@@ -29,6 +29,13 @@ from codeintel.utils.paths import normalize_rel_path
 log = logging.getLogger(__name__)
 
 CALLSITE_MEDIUM_THRESHOLD = 10
+SEVERITY_SCORES = {
+    "critical": 4.0,
+    "high": 3.0,
+    "medium": 2.0,
+    "low": 1.0,
+    "info": 0.5,
+}
 
 
 @dataclass(frozen=True)
@@ -39,6 +46,9 @@ class DependencyModePattern:
     method: str | None = None
     method_prefix: str | None = None
     match: str | None = None
+    severity: str | None = None
+    criticality: float | None = None
+    name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +59,9 @@ class LibraryPattern:
     service_name: str | None
     category: str | None
     matchers: list[DependencyModePattern]
+    severity: str | None = None
+    criticality: float | None = None
+    language: str = "python"
 
 
 @dataclass(frozen=True)
@@ -58,6 +71,10 @@ class DependencyCall:
     library: str
     target: str
     modes: list[str]
+    severity: str | None
+    criticality: float | None
+    matched_pattern: str | None = None
+    risk_score: float | None = None
 
 
 @dataclass
@@ -67,6 +84,9 @@ class DependencyAggregate:
     library: str
     service_name: str | None
     category: str | None
+    severity: str | None = None
+    criticality: float | None = None
+    risk_score: float | None = None
     modules: set[str] = field(default_factory=set)
     functions: set[int] = field(default_factory=set)
     callsite_count: int = 0
@@ -105,8 +125,22 @@ class DependencyCallVisitor(ast.NodeVisitor):
             return
         pattern = self.patterns[library]
         target = _safe_unparse(node)
-        modes = _classify_modes(pattern, method, target)
-        self.calls.append(DependencyCall(library=library, target=target, modes=modes))
+        modes, matcher = _classify_modes(pattern, method, target)
+        severity = (matcher.severity if matcher else None) or pattern.severity
+        criticality = (matcher.criticality if matcher else None) or pattern.criticality
+        risk_score = _risk_score(severity, criticality)
+        matched_pattern = matcher.name if matcher is not None else method
+        self.calls.append(
+            DependencyCall(
+                library=library,
+                target=target,
+                modes=modes,
+                severity=severity,
+                criticality=criticality,
+                matched_pattern=matched_pattern,
+                risk_score=risk_score,
+            )
+        )
         self.generic_visit(node)
 
 
@@ -261,24 +295,70 @@ def build_external_dependencies(
         return
 
     con = gateway.con
+    _prepare_external_dependencies(con, cfg)
+
+    config_keys_by_module = _load_config_keys(con, cfg.repo, cfg.commit)
+    rows = _fetch_dependency_call_rows(con, cfg)
+    aggregates = _aggregate_dependency_calls(rows, patterns)
+    dep_rows = _serialize_dependency_rows(aggregates, config_keys_by_module, cfg)
+
+    if dep_rows:
+        con.executemany(
+            """
+            INSERT INTO analytics.external_dependencies (
+                repo, commit, dep_id, library, service_name, category, language,
+                severity, criticality, risk_score,
+                function_count, callsite_count, modules_json, usage_modes,
+                config_keys, risk_level, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            dep_rows,
+        )
+    log.info(
+        "external_dependencies populated: %d rows for %s@%s",
+        len(dep_rows),
+        cfg.repo,
+        cfg.commit,
+    )
+
+
+def _prepare_external_dependencies(con: duckdb.DuckDBPyConnection, cfg: ExternalDependenciesConfig) -> None:
     ensure_schema(con, "analytics.external_dependencies")
     con.execute(
         "DELETE FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
         [cfg.repo, cfg.commit],
     )
 
-    config_keys_by_module = _load_config_keys(con, cfg.repo, cfg.commit)
-    aggregates: dict[str, DependencyAggregate] = {}
-    rows = con.execute(
+
+def _fetch_dependency_call_rows(
+    con: duckdb.DuckDBPyConnection, cfg: ExternalDependenciesConfig
+) -> list[tuple[object, ...]]:
+    return con.execute(
         """
-        SELECT dep_id, library, function_goid_h128, module, callsite_count, modes
+        SELECT dep_id, library, function_goid_h128, module,
+               callsite_count, modes, severity, criticality, risk_score
         FROM analytics.external_dependency_calls
         WHERE repo = ? AND commit = ?
         """,
         [cfg.repo, cfg.commit],
     ).fetchall()
 
-    for dep_id, library, function_goid, module, callsite_count, modes_obj in rows:
+
+def _aggregate_dependency_calls(
+    rows: list[tuple[object, ...]], patterns: dict[str, LibraryPattern]
+) -> dict[str, DependencyAggregate]:
+    aggregates: dict[str, DependencyAggregate] = {}
+    for (
+        dep_id,
+        library,
+        function_goid,
+        module,
+        callsite_count,
+        modes_obj,
+        severity,
+        criticality,
+        risk_score,
+    ) in rows:
         if library is None or dep_id is None:
             continue
         lib_key = str(library)
@@ -289,6 +369,9 @@ def build_external_dependencies(
                 library=lib_key,
                 service_name=(pattern.service_name if pattern else None) or lib_key,
                 category=pattern.category if pattern else None,
+                severity=pattern.severity if pattern else None,
+                criticality=pattern.criticality if pattern else None,
+                risk_score=None,
             ),
         )
         if module:
@@ -297,14 +380,30 @@ def build_external_dependencies(
             aggregate.functions.add(int(function_goid))
         aggregate.callsite_count += int(callsite_count or 0)
         aggregate.modes.update(_ensure_str_list(modes_obj))
+        agg_score = risk_score if risk_score is not None else _risk_score(severity, criticality)
+        if agg_score is not None:
+            prev_score = aggregate.risk_score or 0.0
+            if agg_score > prev_score:
+                aggregate.risk_score = agg_score
+        if severity and aggregate.severity is None:
+            aggregate.severity = severity
+        if criticality is not None and aggregate.criticality is None:
+            aggregate.criticality = float(criticality)
+    return aggregates
 
+
+def _serialize_dependency_rows(
+    aggregates: dict[str, DependencyAggregate],
+    config_keys_by_module: dict[str, set[str]],
+    cfg: ExternalDependenciesConfig,
+) -> list[tuple[object, ...]]:
     dep_rows: list[tuple[object, ...]] = []
     now = datetime.now(tz=UTC)
     for dep_id, aggregate in aggregates.items():
         config_keys: set[str] = set()
         for module in aggregate.modules:
             config_keys.update(config_keys_by_module.get(module, set()))
-        risk_level = _risk_level(aggregate.modes, aggregate.callsite_count)
+        risk_level = aggregate.severity or _risk_level(aggregate.modes, aggregate.callsite_count)
         dep_rows.append(
             (
                 cfg.repo,
@@ -313,6 +412,10 @@ def build_external_dependencies(
                 aggregate.library,
                 aggregate.service_name,
                 aggregate.category,
+                cfg.language,
+                aggregate.severity,
+                aggregate.criticality,
+                aggregate.risk_score,
                 len(aggregate.functions),
                 aggregate.callsite_count,
                 sorted(aggregate.modules),
@@ -322,24 +425,7 @@ def build_external_dependencies(
                 now,
             )
         )
-
-    if dep_rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.external_dependencies (
-                repo, commit, dep_id, library, service_name, category,
-                function_count, callsite_count, modules_json, usage_modes,
-                config_keys, risk_level, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            dep_rows,
-        )
-    log.info(
-        "external_dependencies populated: %d rows for %s@%s",
-        len(dep_rows),
-        cfg.repo,
-        cfg.commit,
-    )
+    return dep_rows
 
 
 def _load_dependency_patterns(cfg: ExternalDependenciesConfig) -> dict[str, LibraryPattern]:
@@ -428,18 +514,21 @@ def _group_calls(calls: list[DependencyCall]) -> dict[str, list[DependencyCall]]
     return grouped
 
 
-def _classify_modes(pattern: LibraryPattern, method: str | None, target: str) -> list[str]:
+def _classify_modes(
+    pattern: LibraryPattern, method: str | None, target: str
+) -> tuple[list[str], DependencyModePattern | None]:
     modes: set[str] = set()
     for matcher in pattern.matchers:
         if matcher.method and method == matcher.method:
             modes.update(matcher.modes)
-            continue
+            return sorted(modes), matcher
         if matcher.method_prefix and target.startswith(str(matcher.method_prefix)):
             modes.update(matcher.modes)
-            continue
+            return sorted(modes), matcher
         if matcher.match and matcher.match in target:
             modes.update(matcher.modes)
-    return sorted(modes) if modes else ["unknown"]
+            return sorted(modes), matcher
+    return (["unknown"], None)
 
 
 def _resolve_library(func: ast.AST, alias_map: dict[str, str]) -> tuple[str | None, str | None]:
@@ -467,22 +556,14 @@ def _load_config_keys(
     con: duckdb.DuckDBPyConnection, repo: str, commit: str
 ) -> dict[str, set[str]]:
     mapping: dict[str, set[str]] = defaultdict(set)
-    if _config_values_has_repo(con):
-        rows = con.execute(
-            """
-            SELECT reference_modules, key
-            FROM analytics.config_values
-            WHERE repo = ? AND commit = ?
-            """,
-            [repo, commit],
-        ).fetchall()
-    else:
-        rows = con.execute(
-            """
-            SELECT reference_modules, key
-            FROM analytics.config_values
-            """
-        ).fetchall()
+    rows = con.execute(
+        """
+        SELECT reference_modules, key
+        FROM analytics.config_values
+        WHERE repo = ? AND commit = ?
+        """,
+        [repo, commit],
+    ).fetchall()
     for ref_modules, key in rows:
         if key is None or ref_modules is None:
             continue
@@ -492,12 +573,40 @@ def _load_config_keys(
     return mapping
 
 
+def load_config_key_map(
+    con: duckdb.DuckDBPyConnection, repo: str, commit: str
+) -> dict[str, set[str]]:
+    """
+    Load config keys keyed by module for a repo snapshot.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Mapping of module name to referenced config keys.
+    """
+    return _load_config_keys(con, repo, commit)
+
+
 def _risk_level(modes: set[str], callsite_count: int) -> str:
     if "admin" in modes or "write" in modes:
         return "high"
     if callsite_count > CALLSITE_MEDIUM_THRESHOLD or "read" in modes:
         return "medium"
     return "low"
+
+
+def _severity_score(severity: str | None) -> float | None:
+    if severity is None:
+        return None
+    return SEVERITY_SCORES.get(severity.lower())
+
+
+def _risk_score(severity: str | None, criticality: float | None) -> float | None:
+    base = _severity_score(severity)
+    if base is None:
+        return None
+    multiplier = criticality if criticality is not None else 1.0
+    return base * float(multiplier)
 
 
 def _ensure_str_list(value: object) -> list[str]:
@@ -531,20 +640,8 @@ def _decimal(value: int) -> Decimal:
     return Decimal(value)
 
 
-def _config_values_has_repo(con: duckdb.DuckDBPyConnection) -> bool:
-    columns = con.execute(
-        """
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_schema = 'analytics'
-          AND table_name = 'config_values'
-        """
-    ).fetchall()
-    col_names = {row[0] for row in columns}
-    return "repo" in col_names and "commit" in col_names
-
-
 __all__ = [
     "build_external_dependencies",
     "build_external_dependency_calls",
+    "load_config_key_map",
 ]

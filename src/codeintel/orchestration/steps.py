@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+import os
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+import duckdb
 from coverage import Coverage
 
 from codeintel.analytics.ast_metrics import build_hotspots
@@ -24,10 +26,12 @@ from codeintel.analytics.dependencies import (
 from codeintel.analytics.entrypoints import build_entrypoints
 from codeintel.analytics.function_contracts import compute_function_contracts
 from codeintel.analytics.function_effects import compute_function_effects
+from codeintel.analytics.function_history import compute_function_history
 from codeintel.analytics.functions import compute_function_metrics_and_types
 from codeintel.analytics.graph_metrics import compute_graph_metrics
 from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
 from codeintel.analytics.graph_stats import compute_graph_stats
+from codeintel.analytics.history_timeseries import compute_history_timeseries
 from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
 from codeintel.analytics.profiles import (
     build_file_profile,
@@ -43,8 +47,10 @@ from codeintel.analytics.symbol_graph_metrics import (
     compute_symbol_graph_metrics_modules,
 )
 from codeintel.analytics.test_graph_metrics import compute_test_graph_metrics
+from codeintel.analytics.test_profiles import build_behavioral_coverage, build_test_profile
 from codeintel.analytics.tests_analytics import compute_test_coverage_edges
 from codeintel.config.models import (
+    BehavioralCoverageConfig,
     CallGraphConfig,
     CFGBuilderConfig,
     ConfigDataFlowConfig,
@@ -57,8 +63,10 @@ from codeintel.config.models import (
     FunctionAnalyticsOverrides,
     FunctionContractsConfig,
     FunctionEffectsConfig,
+    FunctionHistoryConfig,
     GoidBuilderConfig,
     GraphMetricsConfig,
+    HistoryTimeseriesConfig,
     HotspotsConfig,
     ImportGraphConfig,
     ProfilesAnalyticsConfig,
@@ -66,6 +74,7 @@ from codeintel.config.models import (
     SubsystemsConfig,
     SymbolUsesConfig,
     TestCoverageConfig,
+    TestProfileConfig,
     ToolsConfig,
 )
 from codeintel.docs_export.export_jsonl import export_all_jsonl
@@ -97,6 +106,18 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
 
 log = logging.getLogger(__name__)
+
+
+def _parse_commits(commits_extra: object, commits_env: str) -> tuple[str, ...]:
+    """Normalize commit configuration from env vars and pipeline extras."""
+    commits_from_env = tuple(commit for commit in commits_env.split(",") if commit)
+    if isinstance(commits_extra, str):
+        commits_from_extra = tuple(commit for commit in commits_extra.split(",") if commit)
+    elif isinstance(commits_extra, Iterable):
+        commits_from_extra = tuple(str(commit) for commit in commits_extra)
+    else:
+        commits_from_extra = ()
+    return tuple(commit for commit in (*commits_from_extra, *commits_from_env) if commit)
 
 
 def _log_step(name: str) -> None:
@@ -547,6 +568,45 @@ class FunctionHistoryStep:
 
 
 @dataclass
+class HistoryTimeseriesStep:
+    """Aggregate cross-commit analytics.history_timeseries."""
+
+    name: str = "history_timeseries"
+    deps: Sequence[str] = ("profiles",)
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Compute history timeseries when commit list is provided."""
+        _log_step(self.name)
+        commits_env = os.getenv("CODEINTEL_HISTORY_COMMITS", "")
+        commits_extra = ctx.extra.get("history_commits")
+        commits_raw = _parse_commits(commits_extra, commits_env)
+        commits = commits_raw if ctx.commit in commits_raw else (ctx.commit, *commits_raw)
+        if not commits:
+            log.info("Skipping history_timeseries: no commits configured.")
+            return
+
+        db_dir_env = os.getenv("CODEINTEL_HISTORY_DB_DIR")
+        history_db_dir = Path(db_dir_env) if db_dir_env else ctx.build_dir / "db"
+        history_db_dir.mkdir(parents=True, exist_ok=True)
+
+        def _resolve_db(commit: str) -> duckdb.DuckDBPyConnection:
+            target_path = history_db_dir / f"codeintel-{commit}.duckdb"
+            if target_path.resolve() == ctx.db_path.resolve():
+                return ctx.gateway.con
+            if not target_path.is_file():
+                message = f"Missing snapshot database for commit {commit}: {target_path}"
+                raise FileNotFoundError(message)
+            return duckdb.connect(str(target_path), read_only=True)
+
+        cfg = HistoryTimeseriesConfig.from_args(
+            repo=ctx.repo,
+            repo_root=ctx.repo_root,
+            commits=commits,
+        )
+        compute_history_timeseries(ctx.gateway.con, cfg, _resolve_db, runner=ctx.tool_runner)
+
+
+@dataclass
 class FunctionAnalyticsStep:
     """Build analytics.function_metrics and analytics.function_types."""
 
@@ -565,7 +625,8 @@ class FunctionAnalyticsStep:
         )
         summary = compute_function_metrics_and_types(gateway, cfg)
         log.info(
-            "function_metrics summary rows=%d types=%d validation=%d parse_failed=%d span_not_found=%d",
+            "function_metrics summary rows=%d types=%d validation=%d "
+            "parse_failed=%d span_not_found=%d",
             summary["metrics_rows"],
             summary["types_rows"],
             summary["validation_total"],
@@ -805,10 +866,14 @@ class RiskFactorsStep:
             SELECT
                 e.function_goid_h128,
                 COUNT(DISTINCT e.test_id) AS test_count,
-                COUNT(DISTINCT CASE WHEN t.status IN ('failed','error') THEN e.test_id END) AS failing_test_count,
+                COUNT(
+                    DISTINCT CASE WHEN t.status IN ('failed','error') THEN e.test_id END
+                ) AS failing_test_count,
                 CASE
                     WHEN COUNT(DISTINCT e.test_id) = 0 THEN 'untested'
-                    WHEN COUNT(DISTINCT CASE WHEN t.status IN ('failed','error') THEN e.test_id END) > 0
+                    WHEN COUNT(
+                        DISTINCT CASE WHEN t.status IN ('failed','error') THEN e.test_id END
+                    ) > 0
                         THEN 'some_failing'
                     WHEN COUNT(DISTINCT CASE WHEN t.status = 'passed' THEN e.test_id END) > 0
                         THEN 'all_passing'
@@ -901,6 +966,56 @@ class SubsystemsStep:
         gateway = ctx.gateway
         cfg = SubsystemsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
         build_subsystems(gateway, cfg)
+
+
+@dataclass
+class TestProfileStep:
+    """Build per-test profiles."""
+
+    name: str = "test_profile"
+    deps: Sequence[str] = (
+        "tests_ingest",
+        "coverage_functions",
+        "test_coverage_edges",
+        "subsystems",
+        "graph_metrics",
+    )
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Populate analytics.test_profile."""
+        _log_step(self.name)
+        cfg = TestProfileConfig.from_paths(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+        )
+        build_test_profile(ctx.gateway, cfg)
+
+
+@dataclass
+class BehavioralCoverageStep:
+    """Assign heuristic behavior tags to tests."""
+
+    name: str = "behavioral_coverage"
+    deps: Sequence[str] = ("test_profile",)
+
+    def run(self, ctx: PipelineContext) -> None:
+        """Populate analytics.behavioral_coverage."""
+        _log_step(self.name)
+        enable_llm = bool(
+            ctx.extra.get("enable_behavioral_llm")
+            or os.getenv("CODEINTEL_BEHAVIORAL_LLM", "").lower() in {"1", "true", "yes"}
+        )
+        llm_model = ctx.extra.get("behavioral_llm_model")
+        llm_runner = ctx.extra.get("behavioral_llm_runner")
+        cfg = BehavioralCoverageConfig.from_paths(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            enable_llm=enable_llm,
+            llm_model=llm_model,
+        )
+        build_behavioral_coverage(ctx.gateway, cfg, llm_runner=llm_runner)  # type: ignore[arg-type]
 
 
 @dataclass
@@ -1011,7 +1126,10 @@ class ExportDocsStep:
         "semantic_roles",
         "entrypoints",
         "external_dependencies",
+        "test_profile",
+        "behavioral_coverage",
         "profiles",
+        "history_timeseries",
         "callgraph",
         "cfg",
         "import_graph",
@@ -1069,7 +1187,10 @@ PIPELINE_STEPS: dict[str, PipelineStep] = {
     "semantic_roles": SemanticRolesStep(),
     "entrypoints": EntryPointsStep(),
     "external_dependencies": ExternalDependenciesStep(),
+    "test_profile": TestProfileStep(),
+    "behavioral_coverage": BehavioralCoverageStep(),
     "profiles": ProfilesStep(),
+    "history_timeseries": HistoryTimeseriesStep(),
     # export
     "export_docs": ExportDocsStep(),
 }

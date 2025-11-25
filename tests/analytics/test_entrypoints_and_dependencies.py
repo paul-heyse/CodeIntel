@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -186,16 +187,16 @@ def _validate_entrypoint_rows(con: duckdb.DuckDBPyConnection, repo: str, commit:
         WHERE handler_qualname = 'pkg.app.hello'
           AND repo = ?
           AND commit = ?
-        """
-        ,
+        """,
         [repo, commit],
     ).fetchone()
     if entry_row is None:
         pytest.fail("entrypoint row missing for FastAPI handler")
     http_method, route_path, status_codes, tests_touching, coverage_ratio, last_status = entry_row
+    status_list = _coerce_status_codes(status_codes)
     _ensure(http_method == "GET", "http_method not captured")
     _ensure(route_path == "/hello", "route_path not captured")
-    _ensure(HTTP_CREATED in (status_codes or []), "status_codes missing HTTP_CREATED")
+    _ensure(HTTP_CREATED in status_list, "status_codes missing HTTP_CREATED")
     _ensure(tests_touching == 1, "tests_touching should count seeded test")
     _ensure(
         abs(float(coverage_ratio) - 1.0) < COVERAGE_TOLERANCE,
@@ -213,9 +214,8 @@ def _validate_entrypoint_rows(con: duckdb.DuckDBPyConnection, repo: str, commit:
               AND repo = ?
               AND commit = ?
         )
-        """
-        ,
-        [repo, commit, repo, commit],
+        """,
+        [repo, commit],
     ).fetchone()
     if test_edge_count is None:
         pytest.fail("entrypoint_tests missing")
@@ -228,8 +228,7 @@ def _validate_entrypoint_rows(con: duckdb.DuckDBPyConnection, repo: str, commit:
         WHERE handler_qualname = 'pkg.app.cli'
           AND repo = ?
           AND commit = ?
-        """
-        ,
+        """,
         [repo, commit],
     ).fetchone()
     if cli_entry is None:
@@ -268,6 +267,21 @@ def _validate_dependency_rows(con: duckdb.DuckDBPyConnection, repo: str, commit:
     _ensure(dep_by_lib["boto3"][3] == "high", "boto3 risk level unexpected")
     _ensure(dep_by_lib["redis"][1] == 1, "redis function_count mismatch")
     _ensure(dep_by_lib["redis"][3] in {"medium", "high"}, "redis risk level unexpected")
+
+
+def _coerce_status_codes(raw: object) -> list[int]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [int(code) for code in raw]
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [int(code) for code in parsed]
+        except json.JSONDecodeError:
+            return []
+    return []
 
 
 def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:

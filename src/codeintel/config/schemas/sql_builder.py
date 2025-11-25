@@ -177,6 +177,8 @@ TEST_CATALOG_UPDATE_GOIDS = (
 )
 
 CONFIG_VALUES_COLUMNS = [
+    "repo",
+    "commit",
     "config_path",
     "format",
     "key",
@@ -623,8 +625,8 @@ TEST_CATALOG_INSERT = (
 
 CONFIG_VALUES_INSERT = (
     "INSERT INTO analytics.config_values ("
-    "config_path, format, key, reference_paths, reference_modules, reference_count"
-    ") VALUES (?, ?, ?, ?, ?, ?)"
+    "repo, commit, config_path, format, key, reference_paths, reference_modules, reference_count"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 TAGS_INDEX_DELETE = "DELETE FROM analytics.tags_index"
@@ -822,7 +824,8 @@ PREPARED: dict[str, PreparedStatements] = {
         delete_sql=TEST_CATALOG_DELETE,
     ),
     "analytics.config_values": PreparedStatements(
-        insert_sql=CONFIG_VALUES_INSERT, delete_sql="DELETE FROM analytics.config_values"
+        insert_sql=CONFIG_VALUES_INSERT,
+        delete_sql="DELETE FROM analytics.config_values WHERE repo = ? AND commit = ?",
     ),
     "analytics.tags_index": PreparedStatements(
         insert_sql=TAGS_INDEX_INSERT, delete_sql=TAGS_INDEX_DELETE

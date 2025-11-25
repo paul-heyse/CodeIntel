@@ -9,53 +9,81 @@ import pytest
 from codeintel.analytics.graph_stats import compute_graph_stats
 from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
 from codeintel.graphs.validation import warn_graph_structure
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
+from tests._helpers.builders import (
+    ConfigValueRow,
+    GraphMetricsModulesExtRow,
+    ModuleRow,
+    SubsystemModuleRow,
+    SubsystemRow,
+    SymbolGraphMetricsModulesRow,
+    SymbolUseEdgeRow,
+    insert_config_values,
+    insert_graph_metrics_modules_ext,
+    insert_modules,
+    insert_subsystem_modules,
+    insert_subsystems,
+    insert_symbol_graph_metrics_modules,
+    insert_symbol_use_edges,
+)
+from tests._helpers.fixtures import ProvisionedGateway
 
 REPO = "demo/repo"
 COMMIT = "abc123"
 
 
-def _gateway() -> StorageGateway:
-    return open_memory_gateway(apply_schema=True)
-
-
 def _seed_modules(gateway: StorageGateway) -> None:
-    gateway.con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES
-            ('pkg.a', 'pkg/a.py', ?, ?, 'python', '[]', '[]'),
-            ('pkg.b', 'pkg/b.py', ?, ?, 'python', '[]', '[]'),
-            ('pkg.c', 'pkg/c.py', ?, ?, 'python', '[]', '[]')
-        """,
-        [REPO, COMMIT, REPO, COMMIT, REPO, COMMIT],
+    insert_modules(
+        gateway,
+        [
+            ModuleRow(module="pkg.a", path="pkg/a.py", repo=REPO, commit=COMMIT),
+            ModuleRow(module="pkg.b", path="pkg/b.py", repo=REPO, commit=COMMIT),
+            ModuleRow(module="pkg.c", path="pkg/c.py", repo=REPO, commit=COMMIT),
+        ],
     )
 
 
-def test_graph_stats_include_symbol_and_config_graphs() -> None:
+def test_graph_views_exist(graph_ready_gateway: ProvisionedGateway) -> None:
+    """Strict graph-ready provisioning should expose graph metric views."""
+    graph_ready_gateway.gateway.con.execute("SELECT * FROM docs.v_config_graph_metrics_keys LIMIT 0")
+
+
+def test_graph_stats_include_symbol_and_config_graphs(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Ensure graph_stats covers symbol, function, and config projections."""
-    gateway = _gateway()
+    gateway = fresh_gateway
     con = gateway.con
     _seed_modules(gateway)
-    # Symbol edges with GOIDs for function graph
-    con.execute(
-        """
-        INSERT INTO graph.symbol_use_edges (
-            symbol, def_path, use_path, same_file, same_module,
-            def_goid_h128, use_goid_h128
-        ) VALUES
-            ('sym1', 'pkg/a.py', 'pkg/b.py', FALSE, FALSE, 1, 2)
-        """
+    insert_symbol_use_edges(
+        gateway,
+        [
+            SymbolUseEdgeRow(
+                symbol="sym1",
+                def_path="pkg/a.py",
+                use_path="pkg/b.py",
+                same_file=False,
+                same_module=False,
+                def_goid_h128=1,
+                use_goid_h128=2,
+            )
+        ],
     )
-    # Config values referencing modules
-    con.execute(
-        """
-        INSERT INTO analytics.config_values (
-            config_path, format, key, reference_paths, reference_modules, reference_count
-        ) VALUES
-            ('cfg/app.yaml', 'yaml', 'feature.flag', '[]', '["pkg.a","pkg.b"]', 2)
-        """
+    insert_config_values(
+        gateway,
+        [
+            ConfigValueRow(
+                repo=REPO,
+                commit=COMMIT,
+                config_path="cfg/app.yaml",
+                format="yaml",
+                key="feature.flag",
+                reference_paths=[],
+                reference_modules=["pkg.a", "pkg.b"],
+                reference_count=2,
+            )
+        ],
     )
 
     compute_graph_stats(gateway, repo=REPO, commit=COMMIT)
@@ -74,45 +102,72 @@ def test_graph_stats_include_symbol_and_config_graphs() -> None:
         pytest.fail(f"Missing expected graphs: {expected - names}")
 
 
-def test_subsystem_agreement_summary_aggregates() -> None:
+def test_subsystem_agreement_summary_aggregates(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Validate subsystem agreement summary aggregates disagreement counts."""
-    gateway = _gateway()
+    gateway = fresh_gateway
     con = gateway.con
     now = datetime.now(UTC)
-    con.execute(
-        """
-        INSERT INTO analytics.subsystem_modules (repo, commit, subsystem_id, module, role)
-        VALUES (?, ?, 'sub1', 'pkg.a', 'core')
-        """,
-        [REPO, COMMIT],
+    insert_subsystem_modules(
+        gateway,
+        [
+            SubsystemModuleRow(
+                repo=REPO,
+                commit=COMMIT,
+                subsystem_id="sub1",
+                module="pkg.a",
+                role="core",
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.graph_metrics_modules_ext (
-            repo, commit, module, import_betweenness, import_closeness, import_eigenvector,
-            import_harmonic, import_k_core, import_constraint, import_effective_size,
-            import_community_id, import_component_id, import_component_size,
-            import_scc_id, import_scc_size, created_at
-        ) VALUES (
-            ?, ?, 'pkg.a', 0.0, 0.0, 0.0, 0.0, 1, 0.0, 0.0,
-            2, 0, 1, 0, 1, ?
-        )
-        """,
-        [REPO, COMMIT, now],
+    insert_graph_metrics_modules_ext(
+        gateway,
+        [
+            GraphMetricsModulesExtRow(
+                repo=REPO,
+                commit=COMMIT,
+                module="pkg.a",
+                import_betweenness=0.0,
+                import_closeness=0.0,
+                import_eigenvector=0.0,
+                import_harmonic=0.0,
+                import_k_core=1,
+                import_constraint=0.0,
+                import_effective_size=0.0,
+                import_community_id=2,
+                import_component_id=0,
+                import_component_size=1,
+                import_scc_id=0,
+                import_scc_size=1,
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.subsystems (
-            repo, commit, subsystem_id, name, description, module_count, modules_json,
-            entrypoints_json, internal_edge_count, external_edge_count, fan_in, fan_out,
-            function_count, avg_risk_score, max_risk_score, high_risk_function_count,
-            risk_level, created_at
-        ) VALUES (
-            ?, ?, 'sub1', 'sub1', 'desc', 1, '["pkg.a"]', '[]', 0, 0, 0, 0,
-            0, NULL, NULL, 0, 'low', ?
-        )
-        """,
-        [REPO, COMMIT, now],
+    insert_subsystems(
+        gateway,
+        [
+            SubsystemRow(
+                repo=REPO,
+                commit=COMMIT,
+                subsystem_id="sub1",
+                name="sub1",
+                description="desc",
+                module_count=1,
+                modules_json='["pkg.a"]',
+                entrypoints_json="[]",
+                internal_edge_count=0,
+                external_edge_count=0,
+                fan_in=0,
+                fan_out=0,
+                function_count=0,
+                avg_risk_score=None,
+                max_risk_score=None,
+                high_risk_function_count=0,
+                risk_level="low",
+                created_at=now,
+            )
+        ],
     )
 
     compute_subsystem_agreement(gateway, repo=REPO, commit=COMMIT)
@@ -133,34 +188,80 @@ def test_subsystem_agreement_summary_aggregates() -> None:
         pytest.fail(f"Expected agreement ratio 0.0, got {ratio}")
 
 
-def test_validation_flags_large_symbol_community_and_config_hubs() -> None:
+def test_validation_flags_large_symbol_community_and_config_hubs(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Surface validation warnings for oversized symbol communities and config hubs."""
-    gateway = _gateway()
-    con = gateway.con
+    gateway = fresh_gateway
     _seed_modules(gateway)
     # Seed symbol metrics table with a large community id
-    con.executemany(
-        """
-        INSERT INTO analytics.symbol_graph_metrics_modules (
-            repo, commit, module, symbol_betweenness, symbol_closeness,
-            symbol_eigenvector, symbol_harmonic, symbol_k_core, symbol_constraint,
-            symbol_effective_size, symbol_community_id, symbol_component_id,
-            symbol_component_size, created_at
-        ) VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 1, 0.0, 0.0, 99, 0, 1, ?)
-        """,
+    insert_symbol_graph_metrics_modules(
+        gateway,
         [
-            (REPO, COMMIT, "pkg.a", datetime.now(UTC)),
-            (REPO, COMMIT, "pkg.b", datetime.now(UTC)),
-            (REPO, COMMIT, "pkg.c", datetime.now(UTC)),
+            SymbolGraphMetricsModulesRow(
+                repo=REPO,
+                commit=COMMIT,
+                module="pkg.a",
+                symbol_betweenness=0.0,
+                symbol_closeness=0.0,
+                symbol_eigenvector=0.0,
+                symbol_harmonic=0.0,
+                symbol_k_core=1,
+                symbol_constraint=0.0,
+                symbol_effective_size=0.0,
+                symbol_community_id=99,
+                symbol_component_id=0,
+                symbol_component_size=1,
+                created_at=datetime.now(UTC),
+            ),
+            SymbolGraphMetricsModulesRow(
+                repo=REPO,
+                commit=COMMIT,
+                module="pkg.b",
+                symbol_betweenness=0.0,
+                symbol_closeness=0.0,
+                symbol_eigenvector=0.0,
+                symbol_harmonic=0.0,
+                symbol_k_core=1,
+                symbol_constraint=0.0,
+                symbol_effective_size=0.0,
+                symbol_community_id=99,
+                symbol_component_id=0,
+                symbol_component_size=1,
+                created_at=datetime.now(UTC),
+            ),
+            SymbolGraphMetricsModulesRow(
+                repo=REPO,
+                commit=COMMIT,
+                module="pkg.c",
+                symbol_betweenness=0.0,
+                symbol_closeness=0.0,
+                symbol_eigenvector=0.0,
+                symbol_harmonic=0.0,
+                symbol_k_core=1,
+                symbol_constraint=0.0,
+                symbol_effective_size=0.0,
+                symbol_community_id=99,
+                symbol_component_id=0,
+                symbol_component_size=1,
+                created_at=datetime.now(UTC),
+            ),
         ],
     )
-    # Config hubs: key referenced by many modules
-    con.execute(
-        """
-        INSERT INTO analytics.config_values (
-            config_path, format, key, reference_paths, reference_modules, reference_count
-        ) VALUES ('cfg/app.yaml', 'yaml', 'wide.key', '[]', '["pkg.a","pkg.b","pkg.c"]', 3)
-        """
+    insert_config_values(
+        gateway,
+        [
+            ConfigValueRow(
+                repo=REPO,
+                commit=COMMIT,
+                config_path="cfg/app.yaml",
+                format="yaml",
+                key="wide.key",
+                reference_paths=[],
+                reference_modules=["pkg.a", "pkg.b", "pkg.c"],
+                reference_count=3,
+            )
+        ],
     )
 
     findings = warn_graph_structure(gateway, REPO, COMMIT, log=None)

@@ -9,43 +9,67 @@ import pytest
 from codeintel.analytics.config_graph_metrics import compute_config_graph_metrics
 from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
 from codeintel.analytics.symbol_graph_metrics import compute_symbol_graph_metrics_modules
-from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
+from tests._helpers.builders import (
+    ConfigValueRow,
+    GraphMetricsModulesExtRow,
+    ModuleRow,
+    SubsystemModuleRow,
+    SubsystemRow,
+    SymbolUseEdgeRow,
+    insert_config_values,
+    insert_graph_metrics_modules_ext,
+    insert_modules,
+    insert_subsystem_modules,
+    insert_subsystems,
+    insert_symbol_use_edges,
+)
 
 REPO = "demo/repo"
 COMMIT = "abc123"
 EXPECTED_SYMBOL_ROW_COUNT = 2
 
 
-def _db() -> StorageGateway:
-    return open_memory_gateway(apply_schema=True)
-
-
-def test_symbol_and_config_metrics_populate_and_views_create() -> None:
+def test_symbol_and_config_metrics_populate_and_views_create(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Compute symbol/config metrics and verify derived views materialize."""
-    gateway = _db()
+    gateway = fresh_gateway
     con = gateway.con
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES
-            ('pkg.a', 'pkg/a.py', ?, ?, 'python', '[]', '[]'),
-            ('pkg.b', 'pkg/b.py', ?, ?, 'python', '[]', '[]')
-        """,
-        [REPO, COMMIT, REPO, COMMIT],
+    insert_modules(
+        gateway,
+        [
+            ModuleRow(module="pkg.a", path="pkg/a.py", repo=REPO, commit=COMMIT),
+            ModuleRow(module="pkg.b", path="pkg/b.py", repo=REPO, commit=COMMIT),
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO graph.symbol_use_edges (symbol, def_path, use_path, same_file, same_module)
-        VALUES ('sym', 'pkg/a.py', 'pkg/b.py', FALSE, FALSE)
-        """
+    insert_symbol_use_edges(
+        gateway,
+        [
+            SymbolUseEdgeRow(
+                symbol="sym",
+                def_path="pkg/a.py",
+                use_path="pkg/b.py",
+                same_file=False,
+                same_module=False,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.config_values (
-            config_path, format, key, reference_paths, reference_modules, reference_count
-        ) VALUES ('cfg/app.yaml', 'yaml', 'feature.flag', '[]', '["pkg.a","pkg.b"]', 2)
-        """
+    insert_config_values(
+        gateway,
+        [
+            ConfigValueRow(
+                repo=REPO,
+                commit=COMMIT,
+                config_path="cfg/app.yaml",
+                format="yaml",
+                key="feature.flag",
+                reference_paths=[],
+                reference_modules=["pkg.a", "pkg.b"],
+                reference_count=2,
+            )
+        ],
     )
 
     compute_symbol_graph_metrics_modules(gateway, repo=REPO, commit=COMMIT)
@@ -75,45 +99,72 @@ def test_symbol_and_config_metrics_populate_and_views_create() -> None:
     con.execute("SELECT * FROM docs.v_config_projection_module_edges")
 
 
-def test_subsystem_agreement_exposed_in_views() -> None:
+def test_subsystem_agreement_exposed_in_views(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Expose subsystem agreement results through docs views."""
-    gateway = _db()
+    gateway = fresh_gateway
     con = gateway.con
     now = datetime.now(UTC)
-    con.execute(
-        """
-        INSERT INTO analytics.subsystem_modules (repo, commit, subsystem_id, module, role)
-        VALUES (?, ?, 'sub1', 'pkg.a', 'core')
-        """,
-        [REPO, COMMIT],
+    insert_subsystem_modules(
+        gateway,
+        [
+            SubsystemModuleRow(
+                repo=REPO,
+                commit=COMMIT,
+                subsystem_id="sub1",
+                module="pkg.a",
+                role="core",
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.graph_metrics_modules_ext (
-            repo, commit, module, import_betweenness, import_closeness, import_eigenvector,
-            import_harmonic, import_k_core, import_constraint, import_effective_size,
-            import_community_id, import_component_id, import_component_size,
-            import_scc_id, import_scc_size, created_at
-        ) VALUES (
-            ?, ?, 'pkg.a', 0.0, 0.0, 0.0, 0.0, 1, 0.0, 0.0,
-            2, 0, 1, 0, 1, ?
-        )
-        """,
-        [REPO, COMMIT, now],
+    insert_graph_metrics_modules_ext(
+        gateway,
+        [
+            GraphMetricsModulesExtRow(
+                repo=REPO,
+                commit=COMMIT,
+                module="pkg.a",
+                import_betweenness=0.0,
+                import_closeness=0.0,
+                import_eigenvector=0.0,
+                import_harmonic=0.0,
+                import_k_core=1,
+                import_constraint=0.0,
+                import_effective_size=0.0,
+                import_community_id=2,
+                import_component_id=0,
+                import_component_size=1,
+                import_scc_id=0,
+                import_scc_size=1,
+                created_at=now,
+            )
+        ],
     )
-    con.execute(
-        """
-        INSERT INTO analytics.subsystems (
-            repo, commit, subsystem_id, name, description, module_count, modules_json,
-            entrypoints_json, internal_edge_count, external_edge_count, fan_in, fan_out,
-            function_count, avg_risk_score, max_risk_score, high_risk_function_count,
-            risk_level, created_at
-        ) VALUES (
-            ?, ?, 'sub1', 'sub1', 'desc', 1, '["pkg.a"]', '[]', 0, 0, 0, 0,
-            0, NULL, NULL, 0, 'low', ?
-        )
-        """,
-        [REPO, COMMIT, now],
+    insert_subsystems(
+        gateway,
+        [
+            SubsystemRow(
+                repo=REPO,
+                commit=COMMIT,
+                subsystem_id="sub1",
+                name="sub1",
+                description="desc",
+                module_count=1,
+                modules_json='["pkg.a"]',
+                entrypoints_json="[]",
+                internal_edge_count=0,
+                external_edge_count=0,
+                fan_in=0,
+                fan_out=0,
+                function_count=0,
+                avg_risk_score=None,
+                max_risk_score=None,
+                high_risk_function_count=0,
+                risk_level="low",
+                created_at=now,
+            )
+        ],
     )
 
     compute_subsystem_agreement(gateway, repo=REPO, commit=COMMIT)

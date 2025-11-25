@@ -66,9 +66,7 @@ def load_function_asts(
         Mapping of GOID to resolved AST details and a set of GOIDs that could
         not be resolved due to parse failures or missing spans.
     """
-    provider = catalog_provider or FunctionCatalogService.from_db(
-        gateway, repo=repo, commit=commit
-    )
+    provider = catalog_provider or FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
     catalog = provider.catalog()
     functions_by_path = catalog.functions_by_path
 

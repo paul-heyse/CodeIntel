@@ -22,11 +22,13 @@ class _CatalogProvider:
     def catalog(self) -> FunctionCatalog:
         return self._catalog
 
-    def urn_for_goid(self, goid: int) -> str | None:  # noqa: ARG002
+    @staticmethod
+    def urn_for_goid(_goid: int) -> str | None:
         return None
 
+    @staticmethod
     def lookup_goid(
-        self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
+        _rel_path: str, _start_line: int, _end_line: int | None, _qualname: str | None
     ) -> int | None:
         return None
 

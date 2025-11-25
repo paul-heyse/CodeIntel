@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from codeintel.mcp.backend import DuckDBBackend
 from codeintel.mcp.models import DatasetRowsResponse, ResponseMeta, ViewRow
 from codeintel.services.query_service import LocalQueryService
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.builders import RepoMapRow, insert_repo_map
 
 
 class DatasetStubService(LocalQueryService):
@@ -42,27 +42,34 @@ class DatasetStubService(LocalQueryService):
         )
 
 
-def _fake_gateway() -> object:
+@pytest.fixture
+def gateway(fresh_gateway: StorageGateway) -> StorageGateway:
     """
-    Minimal gateway stub to satisfy DuckDBBackend signature.
+    Real gateway with repo identity seeded for adapter tests.
 
     Returns
     -------
-    object
-        Stub object with gateway attributes.
+    StorageGateway
+        Gateway configured with repo/commit identity.
     """
-    return SimpleNamespace(
-        con=None,
-        config=SimpleNamespace(repo="r", commit="c", read_only=True),
-        datasets=SimpleNamespace(mapping={}),
-        close=lambda: None,
+    insert_repo_map(
+        fresh_gateway,
+        [
+            RepoMapRow(
+                repo="r",
+                commit="c",
+                modules={},
+                overlays={},
+            )
+        ],
     )
+    return fresh_gateway
 
 
-def test_read_dataset_rows_delegates() -> None:
+def test_read_dataset_rows_delegates(gateway: object) -> None:
     """Adapters should delegate dataset reads directly to the service."""
     backend = DuckDBBackend(
-        gateway=_fake_gateway(),  # type: ignore[arg-type]
+        gateway=gateway,  # type: ignore[arg-type]
         repo="r",
         commit="c",
         service_override=DatasetStubService(),

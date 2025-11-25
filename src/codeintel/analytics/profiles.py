@@ -89,6 +89,11 @@ def build_function_profile(
 
     The profile denormalizes risk factors, coverage, tests, docstrings, and call
     graph degrees into a single row per function GOID.
+
+    Raises
+    ------
+    ValueError
+        When generated parameter list does not match the SQL placeholder count.
     """
     con = gateway.con
     ensure_schema(con, "analytics.function_profile")
@@ -492,28 +497,31 @@ def build_function_profile(
          AND doc.kind = rf.kind;
         """
     sql_temp = sql_core.replace("core.modules", "temp.catalog_modules")
-    con.execute(
-        sql_temp if use_catalog_modules else sql_core,
-        [
-            cfg.repo,
-            cfg.commit,
-            cfg.repo,
-            cfg.commit,
-            cfg.repo,
-            cfg.commit,
-            cfg.repo,
-            cfg.commit,
-            SLOW_TEST_THRESHOLD_MS,
-            cfg.repo,
-            cfg.commit,
-            cfg.repo,
-            cfg.commit,
-            cfg.repo,
-            cfg.commit,
-            SLOW_TEST_THRESHOLD_MS,
-            now,
-        ],
-    )
+    params = [
+        cfg.repo,
+        cfg.commit,
+        cfg.repo,
+        cfg.commit,
+        cfg.repo,
+        cfg.commit,
+        cfg.repo,
+        cfg.commit,
+        SLOW_TEST_THRESHOLD_MS,
+        cfg.repo,
+        cfg.commit,
+        cfg.repo,
+        cfg.commit,
+        cfg.repo,
+        cfg.commit,
+        SLOW_TEST_THRESHOLD_MS,
+        now,
+    ]
+    sql = sql_temp if use_catalog_modules else sql_core
+    expected_params = sql.count("?")
+    if len(params) != expected_params:
+        message = f"function_profile param mismatch: expected {expected_params}, got {len(params)}"
+        raise ValueError(message)
+    con.execute(sql, params)
 
     count_row = con.execute(
         "SELECT COUNT(*) FROM analytics.function_profile WHERE repo = ? AND commit = ?",

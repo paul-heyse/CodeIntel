@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codeintel.dev/export/test_profile.json",
+  "title": "Test Profile Export",
+  "allOf": [
+    { "$ref": "./base.json" },
+    {
+      "type": "object",
+      "properties": {
+        "test_id": { "type": "string" },
+        "rel_path": { "type": "string" },
+        "qualname": { "type": "string" },
+        "status": { "type": ["string", "null"] },
+        "duration_ms": { "type": ["number", "null"] },
+        "markers": { "type": ["array", "null"], "items": { "type": "string" } },
+        "functions_covered": { "type": ["array", "null"] },
+        "subsystems_covered": { "type": ["array", "null"] },
+        "flakiness_score": { "type": ["number", "null"] },
+        "importance_score": { "type": ["number", "null"] }
+      },
+      "required": ["test_id", "rel_path"]
+    }
+  ]
+}

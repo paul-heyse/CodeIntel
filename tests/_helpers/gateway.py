@@ -21,9 +21,9 @@ def open_fresh_duckdb(db_path: Path) -> StorageGateway:
     cfg = StorageConfig(
         db_path=db_path,
         read_only=False,
-        apply_schema=False,
-        ensure_views=False,
-        validate_schema=False,
+        apply_schema=True,
+        ensure_views=True,
+        validate_schema=True,
     )
     return open_gateway(cfg)
 
@@ -35,7 +35,11 @@ def seed_tables(gateway: StorageGateway, ddl: list[str]) -> None:
 
 
 def open_ingestion_gateway(
-    *, apply_schema: bool = True, ensure_views: bool = False, validate_schema: bool = True
+    *,
+    apply_schema: bool = True,
+    ensure_views: bool = False,
+    validate_schema: bool = True,
+    strict_schema: bool = True,
 ) -> StorageGateway:
     """
     Return an in-memory gateway prepped for ingestion runners.
@@ -48,8 +52,10 @@ def open_ingestion_gateway(
     StorageGateway
         Gateway configured for ingestion tests.
     """
+    effective_ensure_views = ensure_views or strict_schema
+    effective_validate_schema = validate_schema or strict_schema
     return _open_memory_gateway(
         apply_schema=apply_schema,
-        ensure_views=ensure_views,
-        validate_schema=validate_schema,
+        ensure_views=effective_ensure_views,
+        validate_schema=effective_validate_schema,
     )

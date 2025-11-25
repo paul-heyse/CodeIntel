@@ -252,6 +252,6 @@ def run_docstrings_ingest(ctx: IngestionContext) -> None:
 def run_config_ingest(ctx: IngestionContext) -> None:
     """Flatten configuration files into analytics.config_values via the gateway connection."""
     start = _log_step_start("config_ingest", ctx)
-    cfg = ConfigIngestConfig.from_paths(repo_root=ctx.repo_root)
+    cfg = ConfigIngestConfig.from_paths(repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit)
     config_ingest.ingest_config_values(ctx.gateway, cfg=cfg, scan_config=ctx.scan_config)
     _log_step_done("config_ingest", start, ctx)

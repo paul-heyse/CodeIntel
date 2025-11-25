@@ -14,19 +14,22 @@ def open_seeded_architecture_gateway(
     repo: str,
     commit: str,
     db_path: Path | None = None,
+    strict_schema: bool = True,
 ) -> StorageGateway:
     """
     Open a gateway (file-backed or in-memory) and seed architecture tables.
 
     Parameters
     ----------
-    repo
+    repo : str
         Repository identifier to seed.
-    commit
+    commit : str
         Commit hash to seed.
-    db_path
+    db_path : Path | None
         Optional on-disk location for the DuckDB file. When omitted, an in-memory
         gateway is created.
+    strict_schema : bool
+        When True, schemas/views/validation are applied before seeding.
 
     Returns
     -------
@@ -34,13 +37,17 @@ def open_seeded_architecture_gateway(
         Gateway with schema, views, and architecture seed data applied.
     """
     if db_path is None:
-        gateway = _open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
+        gateway = _open_memory_gateway(
+            apply_schema=True,
+            ensure_views=strict_schema,
+            validate_schema=strict_schema,
+        )
     else:
         cfg = StorageConfig(
             db_path=db_path,
             apply_schema=True,
-            ensure_views=True,
-            validate_schema=True,
+            ensure_views=strict_schema,
+            validate_schema=strict_schema,
         )
         gateway = open_gateway(cfg)
     return seed_architecture(gateway=gateway, repo=repo, commit=commit)

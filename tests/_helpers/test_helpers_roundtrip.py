@@ -7,19 +7,27 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import assert_columns_not_null, assert_table_has_rows
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
+    ConfigValueRow,
     CoverageFunctionRow,
     GoidRow,
+    GraphMetricsModulesExtRow,
+    SymbolGraphMetricsModulesRow,
     insert_call_graph_edges,
     insert_call_graph_nodes,
+    insert_config_values,
     insert_coverage_functions,
     insert_goids,
+    insert_graph_metrics_modules_ext,
+    insert_symbol_graph_metrics_modules,
 )
 from tests._helpers.fixtures import (
     GatewayOptions,
+    ProvisionedGateway,
     ProvisioningConfig,
     provision_docs_export_ready,
     provisioned_gateway,
@@ -139,3 +147,125 @@ def test_docs_export_ready_has_non_nulls(tmp_path: Path) -> None:
         assert_table_has_rows(ctx.gateway, "analytics.coverage_functions", min_rows=2)
     finally:
         ctx.close()
+
+
+def test_symbol_and_config_metrics_builder_round_trip(tmp_path: Path) -> None:
+    """Symbol/config metrics builders should persist non-null values."""
+    with provisioned_gateway(
+        tmp_path / "repo", config=ProvisioningConfig(run_ingestion=False)
+    ) as ctx:
+        gateway = ctx.gateway
+        now = datetime.now(tz=UTC)
+        insert_symbol_graph_metrics_modules(
+            gateway,
+            [
+                SymbolGraphMetricsModulesRow(
+                    repo=ctx.repo,
+                    commit=ctx.commit,
+                    module="pkg.a",
+                    symbol_betweenness=0.0,
+                    symbol_closeness=0.0,
+                    symbol_eigenvector=0.0,
+                    symbol_harmonic=0.0,
+                    symbol_k_core=1,
+                    symbol_constraint=0.0,
+                    symbol_effective_size=0.0,
+                    symbol_community_id=1,
+                    symbol_component_id=1,
+                    symbol_component_size=1,
+                    created_at=now,
+                )
+            ],
+        )
+        insert_graph_metrics_modules_ext(
+            gateway,
+            [
+                GraphMetricsModulesExtRow(
+                    repo=ctx.repo,
+                    commit=ctx.commit,
+                    module="pkg.a",
+                    import_betweenness=0.0,
+                    import_closeness=0.0,
+                    import_eigenvector=0.0,
+                    import_harmonic=0.0,
+                    import_k_core=1,
+                    import_constraint=0.0,
+                    import_effective_size=0.0,
+                    import_community_id=1,
+                    import_component_id=1,
+                    import_component_size=1,
+                    import_scc_id=1,
+                    import_scc_size=1,
+                    created_at=now,
+                )
+            ],
+        )
+        insert_config_values(
+            gateway,
+            [
+                ConfigValueRow(
+                    repo=ctx.repo,
+                    commit=ctx.commit,
+                    config_path="cfg/app.yaml",
+                    format="yaml",
+                    key="feature.flag",
+                    reference_paths=[],
+                    reference_modules=["pkg.a"],
+                    reference_count=1,
+                )
+            ],
+        )
+        assert_table_has_rows(gateway, "analytics.symbol_graph_metrics_modules")
+        assert_table_has_rows(gateway, "analytics.graph_metrics_modules_ext")
+        assert_table_has_rows(gateway, "analytics.config_values")
+
+
+def test_file_backed_gateway_releases_handles(tmp_path: Path) -> None:
+    """File-backed gateways should be deletable after context exit (cleanup)."""
+    db_path = tmp_path / "repo" / "build" / "db" / "codeintel.duckdb"
+    config = ProvisioningConfig(
+        gateway_options=GatewayOptions(file_backed=True),
+        run_ingestion=False,
+    )
+    with provisioned_gateway(tmp_path / "repo", config=config):
+        if not db_path.exists():
+            pytest.fail("Expected DuckDB file during context")
+    db_path.unlink(missing_ok=False)
+
+
+def test_strict_schema_flag_enforces_views(tmp_path: Path) -> None:
+    """strict_schema should force schema+views even when ensure_views is False."""
+    config = ProvisioningConfig(
+        gateway_options=GatewayOptions(
+            apply_schema=True,
+            ensure_views=False,
+            validate_schema=False,
+            strict_schema=True,
+            file_backed=False,
+        ),
+        run_ingestion=False,
+    )
+    with provisioned_gateway(tmp_path / "repo", config=config) as ctx:
+        # docs view should be queryable because strict_schema turns on views
+        ctx.gateway.con.execute("SELECT * FROM docs.v_symbol_module_graph LIMIT 0")
+
+
+def test_loose_gateway_allows_schema_drift(loose_gateway: ProvisionedGateway) -> None:
+    """loose_gateway exists solely for schema-drift scenarios."""
+    con = loose_gateway.gateway.con
+    con.execute("DROP VIEW IF EXISTS docs.v_symbol_module_graph")
+    con.execute("CREATE VIEW docs.v_symbol_module_graph AS SELECT 1 AS ok")
+    row = con.execute("SELECT ok FROM docs.v_symbol_module_graph").fetchone()
+    if row != (1,):
+        pytest.fail("Loose gateway drift did not persist custom view")
+
+
+def test_strict_fixtures_expose_views(
+    fresh_gateway: StorageGateway,
+    docs_export_gateway: ProvisionedGateway,
+    graph_ready_gateway: ProvisionedGateway,
+) -> None:
+    """Strict fixtures should have canonical docs views available."""
+    fresh_gateway.con.execute("SELECT * FROM docs.v_symbol_module_graph LIMIT 0")
+    docs_export_gateway.gateway.con.execute("SELECT * FROM docs.v_symbol_module_graph LIMIT 0")
+    graph_ready_gateway.gateway.con.execute("SELECT * FROM docs.v_symbol_module_graph LIMIT 0")

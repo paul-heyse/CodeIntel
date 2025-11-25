@@ -10,9 +10,13 @@ import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
+import duckdb
+
+from codeintel.analytics.history_timeseries import compute_history_timeseries
 from codeintel.config.models import (
     CodeIntelConfig,
     FunctionAnalyticsOverrides,
+    HistoryTimeseriesConfig,
     PathsConfig,
     RepoConfig,
 )
@@ -20,6 +24,7 @@ from codeintel.config.parser_types import FunctionParserKind
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.ingestion.source_scanner import ScanConfig
+from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.mcp.backend import DuckDBBackend
 from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
 from codeintel.services.errors import ExportError, log_problem, problem
@@ -174,6 +179,18 @@ def _make_parser() -> argparse.ArgumentParser:
         choices=[kind.value for kind in FunctionParserKind],
         help="Optional parser selector for function analytics (e.g., 'python').",
     )
+    p_run.add_argument(
+        "--history-commit",
+        dest="history_commits",
+        action="append",
+        help="Commit SHA to include in history_timeseries (can be repeated).",
+    )
+    p_run.add_argument(
+        "--history-db-dir",
+        type=Path,
+        default=Path("build/db"),
+        help="Directory containing per-commit DuckDB snapshots for history_timeseries.",
+    )
     p_run.set_defaults(func=_cmd_pipeline_run)
 
     # -----------------------------------------------------------------------
@@ -200,6 +217,61 @@ def _make_parser() -> argparse.ArgumentParser:
         help="Schema name to validate (can be repeated). Defaults to the standard export set.",
     )
     p_export.set_defaults(func=_cmd_docs_export)
+
+    # -----------------------------------------------------------------------
+    # History aggregation
+    # -----------------------------------------------------------------------
+    p_history = subparsers.add_parser(
+        "history-timeseries",
+        help="Aggregate analytics.history_timeseries across commits.",
+    )
+    p_history.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path(),
+        help="Path to the repository root (default: current directory)",
+    )
+    p_history.add_argument(
+        "--repo",
+        required=True,
+        help="Repository slug (e.g., 'my-org/my-repo')",
+    )
+    p_history.add_argument(
+        "--commits",
+        nargs="+",
+        required=True,
+        help="Commits to include in the timeseries (latest first).",
+    )
+    p_history.add_argument(
+        "--db-dir",
+        type=Path,
+        default=Path("build/db"),
+        help="Directory with per-commit DuckDB snapshots (codeintel-<commit>.duckdb).",
+    )
+    p_history.add_argument(
+        "--output-db",
+        type=Path,
+        default=Path("build/db/history.duckdb"),
+        help="Destination DuckDB for history_timeseries (will be created if missing).",
+    )
+    p_history.add_argument(
+        "--entity-kind",
+        choices=["function", "module", "both"],
+        default="function",
+        help="Entity kind to include in the history aggregation.",
+    )
+    p_history.add_argument(
+        "--max-entities",
+        type=int,
+        default=500,
+        help="Maximum entities to track (top-N by selection strategy).",
+    )
+    p_history.add_argument(
+        "--selection-strategy",
+        default="risk_score",
+        help="Selection strategy for picking entities (default: risk_score).",
+    )
+    p_history.set_defaults(func=_cmd_history_timeseries)
 
     # -----------------------------------------------------------------------
     # IDE helpers
@@ -317,6 +389,8 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
             tools=cfg.tools,
             scan_config=ScanConfig(repo_root=repo_root),
             function_overrides=overrides,
+            history_commits=tuple(args.history_commits) if args.history_commits else None,
+            history_db_dir=args.history_db_dir,
         ),
         targets=targets,
     )
@@ -440,6 +514,59 @@ def _cmd_docs_export(args: argparse.Namespace) -> int:
         return 1
 
     LOG.info("Export complete.")
+    return 0
+
+
+def _cmd_history_timeseries(args: argparse.Namespace) -> int:
+    """
+    Compute analytics.history_timeseries across multiple commits.
+
+    Returns
+    -------
+    int
+        Exit code indicating success (0) or failure.
+    """
+    _setup_logging(args.verbose)
+    runner = ToolRunner(cache_dir=args.repo_root / "build" / ".tool_cache")
+    overrides = HistoryTimeseriesConfig.Overrides(
+        entity_kind=args.entity_kind,
+        max_entities=args.max_entities,
+        selection_strategy=args.selection_strategy,
+    )
+    cfg = HistoryTimeseriesConfig.from_args(
+        repo=args.repo,
+        repo_root=args.repo_root,
+        commits=args.commits,
+        overrides=overrides,
+    )
+
+    def _resolve_db(commit: str) -> duckdb.DuckDBPyConnection:
+        db_path = args.db_dir / f"codeintel-{commit}.duckdb"
+        if not db_path.is_file():
+            message = f"Missing snapshot database for commit {commit}: {db_path}"
+            raise FileNotFoundError(message)
+        return duckdb.connect(str(db_path), read_only=True)
+
+    storage_cfg = StorageConfig(
+        db_path=args.output_db,
+        read_only=False,
+        apply_schema=True,
+        ensure_views=True,
+    )
+    gateway = open_gateway(storage_cfg)
+    try:
+        compute_history_timeseries(gateway.con, cfg, _resolve_db, runner=runner)
+    except FileNotFoundError:
+        LOG.exception("Missing snapshot database for history_timeseries")
+        return 1
+    except duckdb.Error:  # pragma: no cover - surfaced to caller
+        LOG.exception("Failed to compute history_timeseries")
+        return 1
+    LOG.info(
+        "history_timeseries written to %s for %d commits",
+        args.output_db,
+        len(args.commits),
+    )
     return 0
 
 

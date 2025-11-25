@@ -49,7 +49,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         StorageConfig(
             db_path=tmp_path / "db.duckdb",
             apply_schema=True,
-            ensure_views=False,
+            ensure_views=True,
             validate_schema=True,
         )
     )
