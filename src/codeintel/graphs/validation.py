@@ -11,14 +11,10 @@ import networkx as nx
 
 from codeintel.analytics.parsing.validation import GraphValidationReporter
 from codeintel.config.schemas.sql_builder import ensure_schema
+from codeintel.graphs.engine import NxGraphEngine
+from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.graphs.function_catalog import FunctionCatalog, load_function_catalog
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
-from codeintel.graphs.nx_views import (
-    load_call_graph,
-    load_config_module_bipartite,
-    load_import_graph,
-    load_symbol_module_graph,
-)
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 SAMPLE_LIMIT = 5
@@ -69,11 +65,12 @@ def run_graph_validations(
         if catalog_provider is not None
         else load_function_catalog(gateway, repo=repo, commit=commit)
     )
+    engine = build_graph_engine(gateway, (repo, commit))
     findings = []
     findings.extend(_warn_missing_function_goids(gateway, repo, commit, active_log))
     findings.extend(_warn_callsite_span_mismatches(gateway, catalog, repo, commit, active_log))
     findings.extend(_warn_orphan_modules(gateway, repo, commit, active_log, catalog))
-    findings.extend(warn_graph_structure(gateway, repo, commit, active_log))
+    findings.extend(warn_graph_structure(engine, repo, commit, active_log))
     _persist_findings(gateway, findings, repo, commit)
     active_log.info(
         "Graph validation completed for %s@%s: %d finding(s)",
@@ -544,7 +541,7 @@ def _subsystem_disagreement_findings(
 
 
 def warn_graph_structure(
-    gateway: StorageGateway,
+    engine: NxGraphEngine,
     repo: str,
     commit: str,
     log: logging.Logger | None = None,
@@ -560,20 +557,20 @@ def warn_graph_structure(
     findings: list[dict[str, object]] = []
     active_log = log or logging.getLogger(__name__)
 
-    call_graph = load_call_graph(gateway, repo, commit)
+    call_graph = engine.call_graph()
     findings.extend(_call_graph_findings(call_graph, repo, commit, active_log))
 
-    import_graph = load_import_graph(gateway, repo, commit)
+    import_graph = engine.import_graph()
     findings.extend(_import_graph_findings(import_graph, repo, commit, active_log))
 
-    symbol_graph = load_symbol_module_graph(gateway, repo, commit)
+    symbol_graph = engine.symbol_module_graph()
     findings.extend(_symbol_graph_findings(symbol_graph, repo, commit, active_log))
-    findings.extend(_symbol_community_findings(gateway, repo, commit, active_log))
+    findings.extend(_symbol_community_findings(engine.gateway, repo, commit, active_log))
 
-    cfg_bipartite = load_config_module_bipartite(gateway, repo, commit)
+    cfg_bipartite = engine.config_module_bipartite()
     findings.extend(_config_key_findings(cfg_bipartite, repo, commit, active_log))
 
-    findings.extend(_subsystem_disagreement_findings(gateway, repo, commit, active_log))
+    findings.extend(_subsystem_disagreement_findings(engine.gateway, repo, commit, active_log))
     return findings
 
 

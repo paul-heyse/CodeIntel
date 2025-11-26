@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.functions.metrics import compute_function_metrics_and_types
+from codeintel.analytics.functions import compute_function_metrics_and_types
 from codeintel.config.models import FunctionAnalyticsConfig, FunctionAnalyticsOverrides
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import GoidRow, insert_goids

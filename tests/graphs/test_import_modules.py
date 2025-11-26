@@ -5,8 +5,8 @@ from __future__ import annotations
 import networkx as nx
 import pytest
 
+from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.graphs.import_graph import build_import_module_rows, components_and_layers
-from codeintel.graphs.nx_views import load_import_graph
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import (
     ImportEdgeRow,
@@ -116,7 +116,8 @@ def test_import_modules_matches_condensation_layers(fresh_gateway: StorageGatewa
         if expected_layers[name] != layer:
             pytest.fail(f"Unexpected layer for {name}: {layer}")
 
-    loaded_graph = load_import_graph(gateway, REPO, COMMIT)
+    engine = build_graph_engine(gateway, (REPO, COMMIT))
+    loaded_graph = engine.import_graph()
     for module in modules:
         if module not in loaded_graph.nodes:
             pytest.fail(f"Module {module} missing from loaded import graph")

@@ -17,6 +17,7 @@ from codeintel.analytics.context import (
     ensure_analytics_context,
 )
 from codeintel.analytics.function_ast_cache import FunctionAst
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config.models import SemanticRolesConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
@@ -173,6 +174,7 @@ def compute_semantic_roles(
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate semantic role tables for functions and modules.
@@ -187,10 +189,13 @@ def compute_semantic_roles(
         Optional pre-loaded function catalog to reuse across steps.
     context:
         Optional shared analytics context to reuse catalog, module map, and ASTs.
+    runtime:
+        Optional shared graph runtime used to reuse an existing engine when available.
     """
     con = gateway.con
     ensure_schema(con, "analytics.semantic_roles_functions")
     ensure_schema(con, "analytics.semantic_roles_modules")
+    runtime = runtime or GraphRuntimeOptions()
 
     shared_context = ensure_analytics_context(
         gateway,
@@ -202,6 +207,7 @@ def compute_semantic_roles(
         ),
         context=context,
     )
+    runtime.build_engine(gateway, cfg.repo, cfg.commit)
     module_by_path = shared_context.module_map
     ast_map = shared_context.function_ast_map
 

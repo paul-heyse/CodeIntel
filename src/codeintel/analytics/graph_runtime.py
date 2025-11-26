@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.graph_service import GraphContext
 from codeintel.config.models import GraphBackendConfig
-from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
+from codeintel.graphs.engine import GraphEngine
+from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
@@ -78,16 +79,9 @@ class GraphRuntimeOptions:
         if self.engine is not None:
             return self.engine
 
-        use_gpu = self.use_gpu
-        engine = NxGraphEngine(
-            gateway=gateway,
-            repo=repo,
-            commit=commit,
-            use_gpu=use_gpu,
+        return build_graph_engine(
+            gateway,
+            (repo, commit),
+            graph_backend=self.graph_backend,
+            context=self.context,
         )
-        if self.context is not None and self.context.repo == repo and self.context.commit == commit:
-            engine.seed(GraphKind.CALL_GRAPH, self.context.call_graph)
-            engine.seed(GraphKind.IMPORT_GRAPH, self.context.import_graph)
-            engine.seed(GraphKind.SYMBOL_MODULE_GRAPH, self.context.symbol_module_graph)
-            engine.seed(GraphKind.SYMBOL_FUNCTION_GRAPH, self.context.symbol_function_graph)
-        return engine

@@ -19,10 +19,11 @@ from codeintel.analytics.function_ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config.models import FunctionEffectsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.engine import GraphKind, NxGraphEngine
+from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -60,6 +61,15 @@ class EffectAnalysis:
                 self.spawns_threads_or_tasks,
             )
         )
+
+
+@dataclass(frozen=True)
+class _EffectInputs:
+    gateway: StorageGateway
+    cfg: FunctionEffectsConfig
+    catalog: FunctionCatalogProvider
+    context: AnalyticsContext | None
+    engine: GraphEngine
 
 
 def _effects_payload(
@@ -102,6 +112,7 @@ def compute_function_effects(
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate `analytics.function_effects` for the target repo/commit.
@@ -116,6 +127,8 @@ def compute_function_effects(
         Optional function catalog to reuse across steps.
     context:
         Optional shared analytics context to reuse catalog, ASTs, and call graph.
+    runtime:
+        Optional shared graph runtime to reuse an existing engine/backend wiring.
     """
     ensure_schema(gateway.con, "analytics.function_effects")
 
@@ -125,13 +138,26 @@ def compute_function_effects(
         else catalog_provider
         or FunctionCatalogService.from_db(gateway, repo=cfg.repo, commit=cfg.commit)
     )
-    rows = _build_effect_rows(
+    if runtime is not None:
+        engine: GraphEngine = runtime.build_engine(gateway, cfg.repo, cfg.commit)
+    else:
+        engine = NxGraphEngine(
+            gateway=gateway,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            use_gpu=context.use_gpu if context is not None else False,
+        )
+        if context is not None:
+            engine.seed(GraphKind.CALL_GRAPH, context.call_graph)
+
+    inputs = _EffectInputs(
         gateway=gateway,
         cfg=cfg,
         catalog=catalog,
         context=context,
-        now=datetime.now(tz=UTC),
+        engine=engine,
     )
+    rows = _build_effect_rows(inputs=inputs, now=datetime.now(tz=UTC))
 
     run_batch(
         gateway,
@@ -144,49 +170,39 @@ def compute_function_effects(
 
 
 def _build_effect_rows(
-    *,
-    gateway: StorageGateway,
-    cfg: FunctionEffectsConfig,
-    catalog: FunctionCatalogProvider,
-    context: AnalyticsContext | None,
+    inputs: _EffectInputs,
     now: datetime,
 ) -> list[tuple[object, ...]]:
-    if context is not None:
-        ast_by_goid = context.function_ast_map
-        missing = context.missing_function_goids
+    if inputs.context is not None:
+        ast_by_goid = inputs.context.function_ast_map
+        missing = inputs.context.missing_function_goids
     else:
         ast_by_goid, missing = load_function_asts(
-            gateway,
+            inputs.gateway,
             FunctionAstLoadRequest(
-                repo=cfg.repo,
-                commit=cfg.commit,
-                repo_root=cfg.repo_root,
-                catalog_provider=catalog,
+                repo=inputs.cfg.repo,
+                commit=inputs.cfg.commit,
+                repo_root=inputs.cfg.repo_root,
+                catalog_provider=inputs.catalog,
             ),
         )
-    all_goids = {span.goid for span in catalog.catalog().function_spans}
+    all_goids = {span.goid for span in inputs.catalog.catalog().function_spans}
     analyses: dict[int, EffectAnalysis] = {
-        goid: _analyze_function(info, cfg) for goid, info in ast_by_goid.items()
+        goid: _analyze_function(info, inputs.cfg) for goid, info in ast_by_goid.items()
     }
     direct_flags: dict[int, bool] = {
         goid: analysis.direct_effectful for goid, analysis in analyses.items()
     }
 
-    engine = NxGraphEngine(
-        gateway=gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        use_gpu=context.use_gpu if context is not None else False,
-    )
-    if context is not None:
-        engine.seed(GraphKind.CALL_GRAPH, context.call_graph)
-    call_graph = engine.call_graph()
+    call_graph = inputs.engine.call_graph()
     transitive_hits = _compute_transitive_effects(
         call_graph,
         direct_flags,
-        max_depth=cfg.max_call_depth,
+        max_depth=inputs.cfg.max_call_depth,
     )
-    unresolved_calls = _unresolved_call_counts(gateway.con, cfg.repo, cfg.commit)
+    unresolved_calls = _unresolved_call_counts(
+        inputs.gateway.con, inputs.cfg.repo, inputs.cfg.commit
+    )
 
     rows: list[tuple[object, ...]] = []
     for goid in all_goids:
@@ -225,8 +241,8 @@ def _build_effect_rows(
 
         rows.append(
             (
-                cfg.repo,
-                cfg.commit,
+                inputs.cfg.repo,
+                inputs.cfg.commit,
                 goid,
                 is_pure,
                 analysis.uses_io,

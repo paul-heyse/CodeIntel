@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import UTC, datetime
+
 import networkx as nx
 import pytest
 
@@ -10,10 +13,18 @@ from codeintel.graphs.engine import NxGraphEngine
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
+    ConfigValueRow,
     ImportGraphEdgeRow,
+    ModuleRow,
+    SymbolUseEdgeRow,
+    TestCoverageEdgeRow,
     insert_call_graph_edges,
     insert_call_graph_nodes,
+    insert_config_values,
     insert_import_graph_edges,
+    insert_modules,
+    insert_symbol_use_edges,
+    insert_test_coverage_edges,
 )
 from tests._helpers.gateway import open_ingestion_gateway
 
@@ -24,6 +35,13 @@ def _node_payload(graph: nx.Graph) -> set[tuple[object, tuple[tuple[str, object]
 
 def _edge_payload(graph: nx.Graph) -> set[tuple[object, object, object]]:
     return {(src, dst, data.get("weight", 1)) for src, dst, data in graph.edges(data=True)}
+
+
+def _assert_graph_match(name: str, expected: nx.Graph, actual: nx.Graph) -> None:
+    if _node_payload(expected) != _node_payload(actual):
+        pytest.fail(f"{name} nodes differ between engine and nx_views")
+    if _edge_payload(expected) != _edge_payload(actual):
+        pytest.fail(f"{name} edges differ between engine and nx_views")
 
 
 def test_engine_matches_nx_views_for_core_graphs() -> None:
@@ -71,24 +89,99 @@ def test_engine_matches_nx_views_for_core_graphs() -> None:
                 )
             ],
         )
+        insert_modules(
+            gateway,
+            [
+                ModuleRow(module="pkg.a", path="pkg/a.py", repo=repo, commit=commit),
+                ModuleRow(module="pkg.b", path="pkg/b.py", repo=repo, commit=commit),
+            ],
+        )
+        insert_symbol_use_edges(
+            gateway,
+            [
+                SymbolUseEdgeRow(
+                    symbol="foo",
+                    def_path="pkg/a.py",
+                    use_path="pkg/b.py",
+                    same_file=False,
+                    same_module=False,
+                    def_goid_h128=1,
+                    use_goid_h128=2,
+                )
+            ],
+        )
+        insert_config_values(
+            gateway,
+            [
+                ConfigValueRow(
+                    repo=repo,
+                    commit=commit,
+                    config_path="config.yml",
+                    format="yaml",
+                    key="service.name",
+                    reference_paths=["pkg/a.py"],
+                    reference_modules=["pkg.a", "pkg.b"],
+                    reference_count=1,
+                )
+            ],
+        )
+        insert_test_coverage_edges(
+            gateway,
+            [
+                TestCoverageEdgeRow(
+                    test_id="test_example",
+                    function_goid_h128=1,
+                    urn="urn:test:example",
+                    repo=repo,
+                    commit=commit,
+                    rel_path="tests/test_example.py",
+                    qualname="test_example",
+                    covered_lines=1,
+                    executable_lines=1,
+                    coverage_ratio=1.0,
+                    last_status="passed",
+                    created_at=datetime.now(tz=UTC),
+                )
+            ],
+        )
         engine = NxGraphEngine(gateway=gateway, repo=repo, commit=commit)
-
-        direct_call = nx_views.load_call_graph(gateway, repo, commit)
-        via_engine_call = engine.call_graph()
-        if _node_payload(direct_call) != _node_payload(via_engine_call):
-            pytest.fail("Call graph nodes differ between engine and nx_views")
-        if _edge_payload(direct_call) != _edge_payload(via_engine_call):
-            pytest.fail("Call graph edges differ between engine and nx_views")
-        if via_engine_call is not engine.call_graph():
-            pytest.fail("Call graph was not cached on subsequent engine calls")
-
-        direct_import = nx_views.load_import_graph(gateway, repo, commit)
-        via_engine_import = engine.import_graph()
-        if _node_payload(direct_import) != _node_payload(via_engine_import):
-            pytest.fail("Import graph nodes differ between engine and nx_views")
-        if _edge_payload(direct_import) != _edge_payload(via_engine_import):
-            pytest.fail("Import graph edges differ between engine and nx_views")
-        if via_engine_import is not engine.import_graph():
-            pytest.fail("Import graph was not cached on subsequent engine calls")
+        comparisons: list[tuple[str, Callable[[], nx.Graph], Callable[[], nx.Graph]]] = [
+            (
+                "call_graph",
+                lambda: nx_views.load_call_graph(gateway, repo, commit),
+                engine.call_graph,
+            ),
+            (
+                "import_graph",
+                lambda: nx_views.load_import_graph(gateway, repo, commit),
+                engine.import_graph,
+            ),
+            (
+                "symbol_module_graph",
+                lambda: nx_views.load_symbol_module_graph(gateway, repo, commit),
+                engine.symbol_module_graph,
+            ),
+            (
+                "symbol_function_graph",
+                lambda: nx_views.load_symbol_function_graph(gateway, repo, commit),
+                engine.symbol_function_graph,
+            ),
+            (
+                "config_module_bipartite",
+                lambda: nx_views.load_config_module_bipartite(gateway, repo, commit),
+                engine.config_module_bipartite,
+            ),
+            (
+                "test_function_bipartite",
+                lambda: nx_views.load_test_function_bipartite(gateway, repo, commit),
+                engine.test_function_bipartite,
+            ),
+        ]
+        for name, direct_loader, engine_loader in comparisons:
+            expected = direct_loader()
+            actual = engine_loader()
+            _assert_graph_match(name, expected, actual)
+            if actual is not engine_loader():
+                pytest.fail(f"{name} was not cached on subsequent engine calls")
     finally:
         gateway.close()

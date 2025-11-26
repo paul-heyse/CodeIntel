@@ -9,6 +9,7 @@ from typing import Protocol
 import anyio
 import httpx
 
+from codeintel.graphs.engine import NxGraphEngine
 from codeintel.mcp import errors
 from codeintel.mcp.config import McpServerConfig
 from codeintel.mcp.models import (
@@ -238,6 +239,7 @@ class DuckDBBackend(QueryBackend):
     service_override: LocalQueryService | None = None
     service: QueryService = field(init=False)
     query: DuckDBQueryService | None = field(init=False, default=None)
+    query_engine: NxGraphEngine | None = None
 
     def __post_init__(self) -> None:
         """
@@ -270,6 +272,7 @@ class DuckDBBackend(QueryBackend):
             repo=self.repo,
             commit=self.commit,
             limits=self.limits,
+            engine=self.query_engine,
         )
         self.service = LocalQueryService(
             query=self.query,

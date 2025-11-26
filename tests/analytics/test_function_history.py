@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.analytics.functions.function_history import compute_function_history
+from codeintel.analytics.functions import compute_function_history
 from codeintel.config.models import FunctionHistoryConfig
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.storage.gateway import StorageGateway

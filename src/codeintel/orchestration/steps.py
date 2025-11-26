@@ -35,7 +35,7 @@ from codeintel.analytics.functions import (
     compute_function_metrics_and_types,
 )
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
-from codeintel.analytics.graph_service import build_graph_context
+from codeintel.analytics.graph_service import GraphContext, build_graph_context
 from codeintel.analytics.graphs import (
     compute_config_data_flow,
     compute_config_graph_metrics,
@@ -96,6 +96,8 @@ from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
+from codeintel.graphs.engine import NxGraphEngine
+from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -122,6 +124,7 @@ from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
+from codeintel.server.datasets import validate_dataset_registry
 from codeintel.storage.gateway import (
     StorageGateway,
     build_snapshot_gateway_resolver,
@@ -187,6 +190,8 @@ class PipelineContext:
     analytics_context: AnalyticsContext | None = None
     change_tracker: ChangeTracker | None = None
     tools: ToolsConfig | None = None
+    graph_engine: NxGraphEngine | None = None
+    export_datasets: tuple[str, ...] | None = None
 
     @property
     def document_output_dir(self) -> Path:
@@ -329,6 +334,95 @@ def _analytics_context(ctx: PipelineContext) -> AnalyticsContext:
         )
         ctx.function_catalog = ctx.analytics_context.catalog
     return ctx.analytics_context
+
+
+def _graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> NxGraphEngine:
+    """
+    Construct or reuse a shared graph engine for the pipeline run.
+
+    Parameters
+    ----------
+    ctx :
+        Pipeline context carrying gateway, backend, and snapshot metadata.
+    acx :
+        Optional analytics context to seed cache data.
+
+    Returns
+    -------
+    NxGraphEngine
+        Cached engine keyed to the pipeline snapshot.
+    """
+    context = acx or ctx.analytics_context
+    if ctx.graph_engine is None:
+        ctx.graph_engine = build_graph_engine(
+            ctx.gateway,
+            (ctx.repo, ctx.commit),
+            graph_backend=ctx.graph_backend,
+            context=context,
+        )
+    return ctx.graph_engine
+
+
+def _graph_runtime(
+    ctx: PipelineContext,
+    *,
+    graph_ctx: GraphContext | None = None,
+    acx: AnalyticsContext | None = None,
+) -> GraphRuntimeOptions:
+    """
+    Build a runtime bundle for graph consumers using the shared engine.
+
+    Parameters
+    ----------
+    ctx :
+        Pipeline context for the current run.
+    graph_ctx :
+        Optional graph context describing edge weights and limits.
+    acx :
+        Optional analytics context used for cache seeding.
+
+    Returns
+    -------
+    GraphRuntimeOptions
+        Runtime configured to reuse the shared engine and backend.
+    """
+    context = acx or _analytics_context(ctx)
+    engine = _graph_engine(ctx, context)
+    return GraphRuntimeOptions(
+        context=context,
+        graph_ctx=graph_ctx,
+        graph_backend=ctx.graph_backend,
+        engine=engine,
+    )
+
+
+def ensure_graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> NxGraphEngine:
+    """
+    Public helper to retrieve the shared graph engine for the pipeline snapshot.
+
+    Returns
+    -------
+    NxGraphEngine
+        Shared engine keyed to the pipeline's repo and commit.
+    """
+    return _graph_engine(ctx, acx)
+
+
+def ensure_graph_runtime(
+    ctx: PipelineContext,
+    *,
+    graph_ctx: GraphContext | None = None,
+    acx: AnalyticsContext | None = None,
+) -> GraphRuntimeOptions:
+    """
+    Public helper to construct a shared graph runtime for the pipeline snapshot.
+
+    Returns
+    -------
+    GraphRuntimeOptions
+        Runtime bound to the shared engine and backend preferences.
+    """
+    return _graph_runtime(ctx, graph_ctx=graph_ctx, acx=acx)
 
 
 def _seed_catalog_modules(
@@ -781,11 +875,13 @@ class FunctionEffectsStep:
             repo_root=ctx.repo_root,
         )
         acx = _analytics_context(ctx)
+        runtime = _graph_runtime(ctx, acx=acx)
         compute_function_effects(
             ctx.gateway,
             cfg,
             catalog_provider=acx.catalog,
             context=acx,
+            runtime=runtime,
         )
 
 
@@ -853,7 +949,8 @@ class ConfigDataFlowStep:
             repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
         )
         acx = _analytics_context(ctx)
-        compute_config_data_flow(ctx.gateway, cfg, context=acx)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
+        compute_config_data_flow(ctx.gateway, cfg, context=acx, runtime=runtime)
 
 
 @dataclass
@@ -1060,11 +1157,7 @@ class GraphMetricsStep:
             use_gpu=ctx.graph_backend.use_gpu,
         )
         acx = _analytics_context(ctx)
-        runtime = GraphRuntimeOptions(
-            context=acx,
-            graph_ctx=graph_ctx,
-            graph_backend=ctx.graph_backend,
-        )
+        runtime = _graph_runtime(ctx, graph_ctx=graph_ctx, acx=acx)
         compute_graph_metrics(
             gateway,
             cfg,
@@ -1149,7 +1242,14 @@ class SemanticRolesStep:
             repo_root=ctx.repo_root,
         )
         acx = _analytics_context(ctx)
-        compute_semantic_roles(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
+        compute_semantic_roles(
+            ctx.gateway,
+            cfg,
+            catalog_provider=acx.catalog,
+            context=acx,
+            runtime=runtime,
+        )
 
 
 @dataclass
@@ -1165,7 +1265,8 @@ class SubsystemsStep:
         gateway = ctx.gateway
         cfg = SubsystemsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
         acx = _analytics_context(ctx)
-        build_subsystems(gateway, cfg, context=acx)
+        engine = _graph_engine(ctx, acx)
+        build_subsystems(gateway, cfg, context=acx, engine=engine)
 
 
 @dataclass
@@ -1348,8 +1449,18 @@ class ExportDocsStep:
         _log_step(self.name)
         con = ctx.gateway.con
         create_all_views(con)
-        export_all_parquet(ctx.gateway, ctx.document_output_dir)
-        export_all_jsonl(ctx.gateway, ctx.document_output_dir)
+        validate_dataset_registry(ctx.gateway)
+        datasets = list(ctx.export_datasets) if ctx.export_datasets is not None else None
+        export_all_parquet(
+            ctx.gateway,
+            ctx.document_output_dir,
+            datasets=datasets,
+        )
+        export_all_jsonl(
+            ctx.gateway,
+            ctx.document_output_dir,
+            datasets=datasets,
+        )
         log.info("Document Output refreshed at %s", ctx.document_output_dir)
 
 

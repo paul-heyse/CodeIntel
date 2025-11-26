@@ -27,7 +27,7 @@ from codeintel.analytics.subsystems.edge_stats import (
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
 from codeintel.config.models import SubsystemsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.engine import GraphKind, NxGraphEngine
+from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -72,6 +72,7 @@ def build_subsystems(
     cfg: SubsystemsConfig,
     *,
     context: AnalyticsContext | None = None,
+    engine: GraphEngine | None = None,
 ) -> None:
     """Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit."""
     con = gateway.con
@@ -106,19 +107,21 @@ def build_subsystems(
             cfg.repo,
             cfg.commit,
         )
-    engine = NxGraphEngine(
-        gateway=gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        use_gpu=context.use_gpu if context is not None else False,
-    )
-    if context is not None and context.repo == cfg.repo and context.commit == cfg.commit:
-        engine.seed(GraphKind.IMPORT_GRAPH, context.import_graph)
+    graph_engine = engine
+    if graph_engine is None:
+        graph_engine = NxGraphEngine(
+            gateway=gateway,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            use_gpu=context.use_gpu if context is not None else False,
+        )
+        if context is not None and context.repo == cfg.repo and context.commit == cfg.commit:
+            graph_engine.seed(GraphKind.IMPORT_GRAPH, context.import_graph)
     ctx = SubsystemBuildContext(
         cfg=cfg,
         labels=labels,
         tags_by_module=tags_by_module,
-        import_graph=engine.import_graph(),
+        import_graph=graph_engine.import_graph(),
         risk_stats=aggregate_risk(gateway, cfg, labels),
         now=datetime.now(UTC),
     )

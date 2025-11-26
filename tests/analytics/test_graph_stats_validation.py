@@ -10,6 +10,7 @@ from codeintel.analytics.graphs import (
     compute_graph_stats,
     compute_subsystem_agreement,
 )
+from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
@@ -268,7 +269,8 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
         ],
     )
 
-    findings = warn_graph_structure(gateway, REPO, COMMIT, log=None)
+    engine = NxGraphEngine(gateway=gateway, repo=REPO, commit=COMMIT)
+    findings = warn_graph_structure(engine, REPO, COMMIT, log=None)
     check_names = {f["check_name"] for f in findings}
     if "symbol_graph_large_community" not in check_names:
         pytest.fail("Expected symbol_graph_large_community finding")
