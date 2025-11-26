@@ -164,7 +164,7 @@ class GraphMetricsConfig:
         return cls(repo=repo, commit=commit)
 ```
 
-Match style of `CoverageAnalyticsConfig` / `FunctionAnalyticsConfig`.
+Match style of `CoverageAnalyticsStepConfig` / `FunctionAnalyticsStepConfig`.
 
 #### 1.2.2 Compute function graph metrics
 

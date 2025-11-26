@@ -21,14 +21,13 @@ from codeintel.analytics.context import (
 )
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
-from codeintel.config import ConfigBuilder, ConfigDataFlowStepConfig
+from codeintel.config import ConfigDataFlowStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import normalize_rel_path
 
 if TYPE_CHECKING:
     from codeintel.analytics.function_ast_cache import FunctionAst
-    from codeintel.config.models import ConfigDataFlowConfig
 
 log = logging.getLogger(__name__)
 
@@ -298,7 +297,7 @@ def _call_chain_id(
 
 def compute_config_data_flow(
     gateway: StorageGateway,
-    cfg: ConfigDataFlowStepConfig | ConfigDataFlowConfig,
+    cfg: ConfigDataFlowStepConfig,
     *,
     context: AnalyticsContext | None = None,
     runtime: GraphRuntimeOptions | None = None,
@@ -317,17 +316,6 @@ def compute_config_data_flow(
     runtime
         Optional shared graph runtime used to build graphs when context is absent.
     """
-    if not isinstance(cfg, ConfigDataFlowStepConfig):
-        builder = ConfigBuilder.from_snapshot(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-        )
-        cfg = builder.config_data_flow(
-            max_paths_per_usage=cfg.max_paths_per_usage,
-            max_path_length=cfg.max_path_length,
-        )
-
     con = gateway.con
     ensure_schema(con, "analytics.config_data_flow")
     con.execute(

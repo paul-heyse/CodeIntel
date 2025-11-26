@@ -14,13 +14,8 @@ from typing import Literal, Protocol
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
-from codeintel.config.models import (
-    CliPathsInput,
-    CodeIntelConfig,
-    FunctionAnalyticsOverrides,
-    HistoryTimeseriesConfig,
-    RepoConfig,
-)
+from codeintel.config import ConfigBuilder
+from codeintel.config.models import CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.docs_export.runner import ExportOptions, ExportRunner, run_validated_exports
@@ -442,12 +437,6 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
     if args.skip_scip:
         os.environ["CODEINTEL_SKIP_SCIP"] = "true"
 
-    parser_kind = FunctionParserKind(args.function_parser) if args.function_parser else None
-    overrides = FunctionAnalyticsOverrides(
-        fail_on_missing_spans=args.function_fail_on_missing_spans,
-        parser=parser_kind,
-    )
-
     targets = list(args.target) if args.target else None
     LOG.info(
         "Running Prefect export_docs_flow for repo=%s commit=%s targets=%s",
@@ -466,7 +455,8 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
             tools=cfg.tools,
             code_profile=profile_from_env(default_code_profile(repo_root)),
             config_profile=profile_from_env(default_config_profile(repo_root)),
-            function_overrides=overrides,
+            function_fail_on_missing_spans=args.function_fail_on_missing_spans,
+            function_parser=FunctionParserKind(args.function_parser) if args.function_parser else None,
             history_commits=tuple(args.history_commits) if args.history_commits else None,
             history_db_dir=args.history_db_dir,
             graph_backend=cfg.graph_backend,
@@ -658,16 +648,16 @@ def _cmd_history_timeseries(args: argparse.Namespace) -> int:
     """
     _setup_logging(args.verbose)
     runner = ToolRunner(cache_dir=args.repo_root / "build" / ".tool_cache")
-    overrides = HistoryTimeseriesConfig.Overrides(
+    builder = ConfigBuilder.from_snapshot(
+        repo=args.repo,
+        commit=args.commits[0] if args.commits else "",
+        repo_root=args.repo_root,
+    )
+    cfg = builder.history_timeseries(
+        commits=tuple(args.commits),
         entity_kind=args.entity_kind,
         max_entities=args.max_entities,
         selection_strategy=args.selection_strategy,
-    )
-    cfg = HistoryTimeseriesConfig.from_args(
-        repo=args.repo,
-        repo_root=args.repo_root,
-        commits=args.commits,
-        overrides=overrides,
     )
 
     storage_cfg = StorageConfig.for_ingest(args.output_db)

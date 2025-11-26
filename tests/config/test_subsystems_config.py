@@ -54,8 +54,8 @@ def test_invalid_overrides_raise(overrides: dict[str, object], message: str) -> 
     builder = ConfigBuilder.from_snapshot(
         repo="demo/repo", commit="abc123", repo_root=Path().resolve()
     )
+    kwargs = cast("dict[str, Any]", overrides)
     with pytest.raises(TypeError) as excinfo:
-        kwargs = cast("dict[str, Any]", overrides)
         builder.subsystems(**kwargs)
     if message not in str(excinfo.value):
         pytest.fail(f"Expected '{message}' in error: {excinfo.value}")

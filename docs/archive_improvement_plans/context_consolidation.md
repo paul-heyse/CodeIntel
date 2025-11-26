@@ -105,8 +105,6 @@ class ExecutionConfig:
     # History / temporal analytics
     history_db_dir: Path | None = None
     history_commits: Tuple[str, ...] = ()
-    # Function override knobs (e.g. toggling heavy analytics) if you have them:
-    function_overrides: Tuple[str, ...] = ()
 ```
 
 You can grow this over time but try to keep it “configuration-only, no behavior”.
@@ -194,7 +192,6 @@ class ExecutionConfig:
         *,
         history_db_dir: Path | None = None,
         history_commits: Sequence[str] | None = None,
-        function_overrides: Sequence[str] | None = None,
     ) -> "ExecutionConfig":
         return cls(
             build_dir=build_dir,
@@ -204,7 +201,6 @@ class ExecutionConfig:
             graph_backend=graph_backend,
             history_db_dir=history_db_dir,
             history_commits=tuple(history_commits or ()),
-            function_overrides=tuple(function_overrides or ()),
         )
 ```
 

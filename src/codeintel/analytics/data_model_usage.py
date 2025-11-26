@@ -9,7 +9,6 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
 from codeintel.analytics.context import (
@@ -19,14 +18,11 @@ from codeintel.analytics.context import (
 )
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
-from codeintel.config import ConfigBuilder, DataModelUsageStepConfig
+from codeintel.config import DataModelUsageStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.data_models import DataModelRow, fetch_models
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-
-if TYPE_CHECKING:
-    from codeintel.config.models import DataModelUsageConfig
 from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
@@ -446,7 +442,7 @@ def _context_for_module(
 
 def compute_data_model_usage(
     gateway: StorageGateway,
-    cfg: DataModelUsageStepConfig | DataModelUsageConfig,
+    cfg: DataModelUsageStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
@@ -465,14 +461,6 @@ def compute_data_model_usage(
     context
         Optional shared analytics context to reuse catalog, module map, and ASTs.
     """
-    if not isinstance(cfg, DataModelUsageStepConfig):
-        builder = ConfigBuilder.from_snapshot(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-        )
-        cfg = builder.data_model_usage(max_examples_per_usage=cfg.max_examples_per_usage)
-
     con = gateway.con
     ensure_schema(con, "analytics.data_model_usage")
     con.execute(

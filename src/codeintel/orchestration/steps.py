@@ -68,10 +68,8 @@ from codeintel.config import (
     SnapshotRef,
     TestCoverageStepConfig,
 )
-from codeintel.config.models import (
-    FunctionAnalyticsOverrides,
-    ToolsConfig,
-)
+from codeintel.config.models import ToolsConfig
+from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
@@ -167,7 +165,8 @@ class PipelineContext:
     artifact_writer: Callable[[Path, Path, Path], None] | None = None
     function_catalog: FunctionCatalogProvider | None = None
     extra: dict[str, object] = field(default_factory=dict)
-    function_overrides: FunctionAnalyticsOverrides | None = None
+    function_fail_on_missing_spans: bool = False
+    function_parser: FunctionParserKind | None = None
     analytics_context: AnalyticsContext | None = None
     change_tracker: ChangeTracker | None = None
     tools: ToolsConfig | None = None
@@ -803,11 +802,9 @@ class FunctionAnalyticsStep:
         """Compute per-function metrics and typedness."""
         _log_step(self.name)
         gateway = ctx.gateway
-        overrides = ctx.function_overrides
         cfg = ctx.config_builder().function_analytics(
-            fail_on_missing_spans=overrides.fail_on_missing_spans if overrides else False,
-            max_workers=overrides.max_workers if overrides else None,
-            parser=overrides.parser if overrides else None,
+            fail_on_missing_spans=ctx.function_fail_on_missing_spans,
+            parser=ctx.function_parser,
         )
         acx = _analytics_context(ctx)
         summary = compute_function_metrics_and_types(

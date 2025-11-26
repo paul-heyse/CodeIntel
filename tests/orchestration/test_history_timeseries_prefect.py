@@ -11,15 +11,15 @@ from codeintel.orchestration.prefect_flow import (
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.views import create_all_views
 from tests._helpers.assertions import expect_equal
-from tests._helpers.fakes import FakeToolRunner
 from tests._helpers.history import SnapshotSpec, create_snapshot_db
+from tests._helpers.tooling import init_git_repo_with_history
 
 
 def test_prefect_history_timeseries_step(tmp_path: Path) -> None:
     """Execute Prefect task end-to-end and verify history rows materialize."""
+    git_ctx = init_git_repo_with_history(tmp_path)
     repo = "demo/repo"
-    commit_new = "c2"
-    commit_old = "c1"
+    commit_new, commit_old = git_ctx.commits
     history_dir = tmp_path / "snapshots"
     db_path = history_dir / f"codeintel-{commit_new}.duckdb"
 
@@ -48,17 +48,13 @@ def test_prefect_history_timeseries_step(tmp_path: Path) -> None:
         ),
     )
 
-    runner = FakeToolRunner(
-        cache_dir=tmp_path / ".tool_cache",
-        payloads={"git": "2024-01-01T00:00:00+00:00"},
-    )
     params = HistoryTimeseriesTaskParams(
-        repo_root=tmp_path,
+        repo_root=git_ctx.repo_root,
         repo=repo,
         commits=(commit_new, commit_old),
         history_db_dir=history_dir,
         db_path=db_path,
-        runner=runner,
+        runner=git_ctx.runner,
     )
     t_history_timeseries.fn(params)
 

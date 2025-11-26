@@ -11,7 +11,8 @@ from pathlib import Path
 from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
-from codeintel.config.models import CoverageIngestConfig, ToolsConfig
+from codeintel.config import CoverageIngestStepConfig
+from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
 from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
 from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
@@ -39,7 +40,7 @@ class CoverageFileInfo:
 
 
 def _rows_from_reports(
-    cfg: CoverageIngestConfig,
+    cfg: CoverageIngestStepConfig,
     reports: list[CoverageFileReport],
     now: datetime,
 ) -> list[CoverageLineRow]:
@@ -69,7 +70,7 @@ log = logging.getLogger(__name__)
 
 def ingest_coverage_lines(
     gateway: StorageGateway,
-    cfg: CoverageIngestConfig,
+    cfg: CoverageIngestStepConfig,
     *,
     tools: ToolsConfig | None = None,
     tool_service: ToolService | None = None,
@@ -153,7 +154,7 @@ def ingest_coverage_lines(
 def _collect_via_api(
     repo_root: Path,
     coverage_file: Path,
-    cfg: CoverageIngestConfig,
+    cfg: CoverageIngestStepConfig,
     now: datetime,
 ) -> list[CoverageLineRow]:
     cov = Coverage(data_file=str(coverage_file))

@@ -8,12 +8,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TypedDict
 
 from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
-from codeintel.config import ConfigBuilder, TestCoverageStepConfig
+from codeintel.config import TestCoverageStepConfig
 from codeintel.config.schemas.sql_builder import TEST_CATALOG_UPDATE_GOIDS, ensure_schema
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
@@ -23,9 +23,6 @@ from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import TestCoverageEdgeRow, test_coverage_edge_to_tuple
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
-
-if TYPE_CHECKING:
-    from codeintel.config.models import TestCoverageConfig
 
 log = logging.getLogger(__name__)
 
@@ -311,7 +308,7 @@ def _test_status_and_meta(
 
 def compute_test_coverage_edges(
     gateway: StorageGateway,
-    cfg: TestCoverageStepConfig | TestCoverageConfig,
+    cfg: TestCoverageStepConfig,
     *,
     coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None,
     catalog_provider: FunctionCatalogProvider | None = None,
@@ -323,20 +320,6 @@ def compute_test_coverage_edges(
     (e.g., dynamic_context = test_function) so contexts_by_lineno returns
     pytest nodeids.
     """
-    if not isinstance(cfg, TestCoverageStepConfig):
-        builder = ConfigBuilder.from_snapshot(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-        )
-        cfg = builder.test_coverage(
-            coverage_file=cfg.coverage_file,
-            coverage_loader=cast(
-                "Callable[[TestCoverageStepConfig], Coverage | None] | None",
-                cfg.coverage_loader,
-            ),
-        )
-
     log.info("Computing test_coverage_edges for repo=%s commit=%s", cfg.repo, cfg.commit)
 
     loader = coverage_loader or cfg.coverage_loader or _load_coverage_data

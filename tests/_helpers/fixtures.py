@@ -11,16 +11,9 @@ from typing import Final, Self
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
-from codeintel.config import (
-    ConfigBuilder,
-    GraphMetricsStepConfig,
-)
-from codeintel.config.models import (
-    CoverageIngestConfig,
-    RepoScanConfig,
-    ToolsConfig,
-    TypingIngestConfig,
-)
+from codeintel.config import ConfigBuilder, GraphMetricsStepConfig
+from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 from codeintel.ingestion.repo_scan import ingest_repo
@@ -444,36 +437,43 @@ def provision_ingested_repo(
     opts = options or ProvisionOptions()
     repo_root.mkdir(parents=True, exist_ok=True)
     ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
-    coverage_file = repo_root / ".coverage"
+    snapshot = SnapshotRef(repo_root=repo_root, repo=repo, commit=commit)
+    build_paths = BuildPaths.from_explicit(
+        build_dir=ctx.build_dir,
+        db_path=ctx.db_path,
+        document_output_dir=ctx.document_output_dir,
+        coverage_json=repo_root / ".coverage",
+        pytest_report=ctx.build_dir / "test-results" / "pytest-report.json",
+        scip_dir=ctx.build_dir / "scip",
+        tool_cache=ctx.build_dir / ".tool_cache",
+        log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
+    )
+    coverage_file = build_paths.coverage_json
     coverage_file.write_text("", encoding="utf8")
 
     files = _write_sample_repo(repo_root)
     runner = _make_runner(repo_root, files)
     tools_cfg = ToolsConfig.model_validate({})
     tool_service = ToolService(runner, tools_cfg)
+    builder = ConfigBuilder.from_primitives(snapshot=snapshot, paths=build_paths)
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
     ingest_repo(
         gateway,
-        cfg=RepoScanConfig(repo_root=repo_root, repo=repo, commit=commit),
+        cfg=builder.repo_scan(tool_runner=runner),
     )
     if opts.include_typing:
         ingest_typing_signals(
             gateway,
-            cfg=TypingIngestConfig(repo_root=repo_root, repo=repo, commit=commit),
+            cfg=builder.typing_ingest(tool_runner=runner),
             tool_service=tool_service,
             tools=tools_cfg,
         )
     if opts.include_coverage:
         ingest_coverage_lines(
             gateway,
-            cfg=CoverageIngestConfig(
-                repo_root=repo_root,
-                repo=repo,
-                commit=commit,
-                coverage_file=coverage_file,
-            ),
+            cfg=builder.coverage_ingest(coverage_file=coverage_file, tool_runner=runner),
             tool_service=tool_service,
             tools=tools_cfg,
         )
@@ -516,36 +516,43 @@ def provision_existing_repo(
     opts = options or ProvisionOptions()
     repo_root.mkdir(parents=True, exist_ok=True)
     ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
-    coverage_file = repo_root / ".coverage"
+    snapshot = SnapshotRef(repo_root=repo_root, repo=repo, commit=commit)
+    build_paths = BuildPaths.from_explicit(
+        build_dir=ctx.build_dir,
+        db_path=ctx.db_path,
+        document_output_dir=ctx.document_output_dir,
+        coverage_json=repo_root / ".coverage",
+        pytest_report=ctx.build_dir / "test-results" / "pytest-report.json",
+        scip_dir=ctx.build_dir / "scip",
+        tool_cache=ctx.build_dir / ".tool_cache",
+        log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
+    )
+    coverage_file = build_paths.coverage_json
     coverage_file.write_text("", encoding="utf8")
 
     files = sorted(path for path in repo_root.rglob("*.py") if path.is_file())
     runner = _make_runner(repo_root, files)
     tools_cfg = ToolsConfig.model_validate({})
     tool_service = ToolService(runner, tools_cfg)
+    builder = ConfigBuilder.from_primitives(snapshot=snapshot, paths=build_paths)
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
     ingest_repo(
         gateway,
-        cfg=RepoScanConfig(repo_root=repo_root, repo=repo, commit=commit),
+        cfg=builder.repo_scan(tool_runner=runner),
     )
     if opts.include_typing:
         ingest_typing_signals(
             gateway,
-            cfg=TypingIngestConfig(repo_root=repo_root, repo=repo, commit=commit),
+            cfg=builder.typing_ingest(tool_runner=runner),
             tool_service=tool_service,
             tools=tools_cfg,
         )
     if opts.include_coverage:
         ingest_coverage_lines(
             gateway,
-            cfg=CoverageIngestConfig(
-                repo_root=repo_root,
-                repo=repo,
-                commit=commit,
-                coverage_file=coverage_file,
-            ),
+            cfg=builder.coverage_ingest(coverage_file=coverage_file, tool_runner=runner),
             tool_service=tool_service,
             tools=tools_cfg,
         )

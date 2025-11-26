@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.config.models import TestsIngestConfig, ToolsConfig
+from codeintel.config import TestsIngestStepConfig
+from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
 from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
 from codeintel.ingestion.tool_service import ToolService
@@ -170,7 +171,7 @@ def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
 
 def ingest_tests(
     gateway: StorageGateway,
-    cfg: TestsIngestConfig,
+    cfg: TestsIngestStepConfig,
     report_path: Path | None = None,
     *,
     tools: ToolsConfig | None = None,

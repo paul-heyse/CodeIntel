@@ -14,7 +14,7 @@ import pytest
 from codeintel.analytics.data_model_usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
 from codeintel.analytics.graphs import compute_config_data_flow
-from codeintel.config.models import ConfigDataFlowConfig, DataModelsConfig, DataModelUsageConfig
+from codeintel.config import ConfigBuilder
 from codeintel.storage.data_models import NormalizedDataModel, fetch_models_normalized
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from tests._helpers.builders import (
@@ -338,16 +338,19 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
         _seed_config_values(con, config_rel_path)
         _seed_entrypoints(con, goid_index["config_checks"])
 
-        compute_data_models(
-            gateway, DataModelsConfig(repo=REPO, commit=COMMIT, repo_root=repo_root)
+        builder = ConfigBuilder.from_snapshot(
+            repo=REPO,
+            commit=COMMIT,
+            repo_root=repo_root,
         )
+        compute_data_models(gateway, builder.data_models())
         compute_data_model_usage(
             gateway=gateway,
-            cfg=DataModelUsageConfig(repo=REPO, commit=COMMIT, repo_root=repo_root),
+            cfg=builder.data_model_usage(),
         )
         compute_config_data_flow(
             gateway=gateway,
-            cfg=ConfigDataFlowConfig(repo=REPO, commit=COMMIT, repo_root=repo_root),
+            cfg=builder.config_data_flow(),
         )
 
         model_ids = _assert_models(gateway)

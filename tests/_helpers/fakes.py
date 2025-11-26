@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from anyio import to_thread
 from coverage import Coverage
 
-from codeintel.config.models import TestCoverageConfig
+from codeintel.config import TestCoverageStepConfig
 from codeintel.ingestion.tool_runner import ToolName, ToolResult, ToolRunner
 
 
@@ -88,7 +88,7 @@ class FakeCoverage:
 class CoverageLoader(Protocol):
     """Protocol for injecting coverage loaders."""
 
-    def __call__(self, cfg: TestCoverageConfig | object) -> Coverage:
+    def __call__(self, cfg: TestCoverageStepConfig | object) -> Coverage:
         """Return a Coverage-compatible object."""
         raise NotImplementedError
 

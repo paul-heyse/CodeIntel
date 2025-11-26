@@ -10,7 +10,7 @@ from typing import TypedDict
 
 from docstring_parser import DocstringStyle, ParseError, parse
 
-from codeintel.config.models import DocstringConfig
+from codeintel.config.builder import DocstringStepConfig
 from codeintel.ingestion.common import (
     iter_modules,
     load_module_map,
@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 class DocstringContext:
     """Shared ingestion context for building docstring rows."""
 
-    cfg: DocstringConfig
+    cfg: DocstringStepConfig
     created_at: datetime
 
 
@@ -139,7 +139,7 @@ class DocstringVisitor(ast.NodeVisitor):
 
 def ingest_docstrings(
     gateway: StorageGateway,
-    cfg: DocstringConfig,
+    cfg: DocstringStepConfig,
     code_profile: ScanProfile | None = None,
 ) -> None:
     """
@@ -149,7 +149,7 @@ def ingest_docstrings(
     ----------
     gateway :
         StorageGateway providing access to the DuckDB database.
-    cfg : DocstringConfig
+    cfg : DocstringStepConfig
         Repository context for this ingestion run.
     code_profile : ScanProfile | None
         Optional scan profile controlling iteration cadence.
