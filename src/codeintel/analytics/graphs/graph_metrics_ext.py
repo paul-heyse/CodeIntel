@@ -20,7 +20,7 @@ from codeintel.analytics.graph_service import (
     to_decimal_id,
 )
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.nx_views import load_call_graph
+from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 
 CENTRALITY_SAMPLE_LIMIT = 500
@@ -78,17 +78,9 @@ def _resolve_function_context(runtime: GraphRuntimeOptions, repo: str, commit: s
 
 
 def _build_function_views(
-    gateway: StorageGateway,
-    *,
-    repo: str,
-    commit: str,
-    runtime: GraphRuntimeOptions,
+    engine: GraphEngine,
 ) -> GraphViews:
-    graph: nx.DiGraph = (
-        runtime.context.call_graph
-        if runtime.context is not None
-        else load_call_graph(gateway, repo, commit, use_gpu=runtime.use_gpu)
-    )
+    graph: nx.DiGraph = engine.call_graph()
     simple_graph: nx.DiGraph = cast("nx.DiGraph", graph.copy())
     simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
     undirected = simple_graph.to_undirected()
@@ -179,7 +171,8 @@ def compute_graph_metrics_functions_ext(
     """
     runtime = runtime or GraphRuntimeOptions()
     ctx = _resolve_function_context(runtime, repo, commit)
-    views = _build_function_views(gateway, repo=repo, commit=commit, runtime=runtime)
+    engine = runtime.build_engine(gateway, repo, commit)
+    views = _build_function_views(engine)
     slices = _function_metric_slices(views, ctx)
     rows = _function_metric_rows(repo, commit, ctx, views, slices)
 

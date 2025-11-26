@@ -17,15 +17,10 @@ from codeintel.analytics.function_ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
+from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
-)
-from codeintel.graphs.nx_views import (
-    load_call_graph,
-    load_import_graph,
-    load_symbol_function_graph,
-    load_symbol_module_graph,
 )
 from codeintel.ingestion.common import load_module_map
 from codeintel.storage.gateway import StorageGateway
@@ -182,16 +177,12 @@ def _trim_graph(
 
 
 def _import_graph_or_none(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
-    *,
-    use_gpu: bool,
+    engine: NxGraphEngine,
 ) -> nx.DiGraph | None:
     try:
-        graph = load_import_graph(gateway, repo, commit, use_gpu=use_gpu)
+        graph = engine.import_graph()
     except Exception:
-        log.exception("Failed to load import graph for %s@%s", repo, commit)
+        log.exception("Failed to load import graph for %s@%s", engine.repo, engine.commit)
         return None
     return graph
 
@@ -266,6 +257,12 @@ def build_analytics_context(
     module_map = load_module_map(gateway, cfg.repo, cfg.commit)
     timers["module_map_ms"] = (monotonic() - start) * 1000.0
 
+    engine = NxGraphEngine(
+        gateway=gateway,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        use_gpu=cfg.use_gpu,
+    )
     graphs: dict[str, nx.Graph | None] = {}
     truncated: dict[str, bool] = {}
 
@@ -291,7 +288,7 @@ def build_analytics_context(
 
     _record_graph(
         "call_graph",
-        lambda: load_call_graph(gateway, cfg.repo, cfg.commit, use_gpu=cfg.use_gpu),
+        engine.call_graph,
         max_nodes=cfg.max_call_graph_nodes,
         max_edges=cfg.max_graph_edges,
         seed=cfg.sample_seed,
@@ -299,12 +296,7 @@ def build_analytics_context(
 
     _record_graph(
         "import_graph",
-        lambda: _import_graph_or_none(
-            gateway,
-            cfg.repo,
-            cfg.commit,
-            use_gpu=cfg.use_gpu,
-        ),
+        lambda: _import_graph_or_none(engine),
         max_nodes=cfg.max_import_graph_nodes,
         max_edges=cfg.max_graph_edges,
         seed=cfg.sample_seed + 1,
@@ -321,24 +313,14 @@ def build_analytics_context(
     if cfg.load_symbol_graphs:
         _record_graph(
             "symbol_module_graph",
-            lambda: load_symbol_module_graph(
-                gateway,
-                cfg.repo,
-                cfg.commit,
-                use_gpu=cfg.use_gpu,
-            ),
+            engine.symbol_module_graph,
             max_nodes=cfg.max_symbol_graph_nodes,
             max_edges=cfg.max_symbol_graph_edges,
             seed=cfg.sample_seed + 2,
         )
         _record_graph(
             "symbol_function_graph",
-            lambda: load_symbol_function_graph(
-                gateway,
-                cfg.repo,
-                cfg.commit,
-                use_gpu=cfg.use_gpu,
-            ),
+            engine.symbol_function_graph,
             max_nodes=cfg.max_symbol_graph_nodes,
             max_edges=cfg.max_symbol_graph_edges,
             seed=cfg.sample_seed + 3,

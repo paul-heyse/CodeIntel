@@ -14,11 +14,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
-import networkx as nx
-
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
-    GraphBundle,
     GraphContext,
     build_graph_context,
     centrality_directed,
@@ -27,8 +24,8 @@ from codeintel.analytics.graph_service import (
 )
 from codeintel.config.models import GraphMetricsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
+from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
-from codeintel.graphs.nx_views import load_call_graph, load_import_graph
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)
@@ -69,31 +66,8 @@ def compute_graph_metrics(
     )
     if ctx.repo != cfg.repo or ctx.commit != cfg.commit or ctx.use_gpu != use_gpu:
         ctx = replace(ctx, repo=cfg.repo, commit=cfg.commit, use_gpu=use_gpu)
-    call_graph_cached = context.call_graph if context is not None else None
-    import_graph_cached = context.import_graph if context is not None else None
-
-    def _call_graph_loader() -> nx.DiGraph:
-        return (
-            call_graph_cached
-            if call_graph_cached is not None
-            else load_call_graph(gateway, cfg.repo, cfg.commit, use_gpu=use_gpu)
-        )
-
-    def _import_graph_loader() -> nx.DiGraph:
-        return (
-            import_graph_cached
-            if import_graph_cached is not None
-            else load_import_graph(gateway, cfg.repo, cfg.commit, use_gpu=use_gpu)
-        )
-
-    bundle: GraphBundle[nx.DiGraph] = GraphBundle(
-        ctx=ctx,
-        loaders={
-            "call_graph": _call_graph_loader,
-            "import_graph": _import_graph_loader,
-        },
-    )
-    _compute_function_graph_metrics(gateway, cfg, ctx=ctx, bundle=bundle)
+    engine: GraphEngine = runtime.build_engine(gateway, cfg.repo, cfg.commit)
+    _compute_function_graph_metrics(gateway, cfg, ctx=ctx, engine=engine)
     module_by_path = None
     if context is not None:
         module_by_path = context.module_map
@@ -103,7 +77,7 @@ def compute_graph_metrics(
         gateway,
         cfg,
         ctx=ctx,
-        bundle=bundle,
+        engine=engine,
         module_by_path=module_by_path,
     )
 
@@ -113,10 +87,10 @@ def _compute_function_graph_metrics(
     cfg: GraphMetricsConfig,
     *,
     ctx: GraphContext,
-    bundle: GraphBundle[nx.DiGraph],
+    engine: GraphEngine,
 ) -> None:
     con = gateway.con
-    graph = bundle.get("call_graph")
+    graph = engine.call_graph()
     stats = neighbor_stats(graph, weight=ctx.betweenness_weight)
     centrality = centrality_directed(graph, ctx)
     components = component_metadata(graph)
@@ -275,11 +249,11 @@ def _compute_module_graph_metrics(
     cfg: GraphMetricsConfig,
     *,
     ctx: GraphContext,
-    bundle: GraphBundle[nx.DiGraph],
+    engine: GraphEngine,
     module_by_path: dict[str, str] | None,
 ) -> None:
     con = gateway.con
-    graph = bundle.get("import_graph")
+    graph = engine.import_graph()
     symbol_modules, symbol_inbound, symbol_outbound = _load_symbol_module_edges(
         gateway, module_by_path
     )

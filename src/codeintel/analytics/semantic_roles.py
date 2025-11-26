@@ -17,10 +17,10 @@ from codeintel.analytics.context import (
     ensure_analytics_context,
 )
 from codeintel.analytics.function_ast_cache import FunctionAst
+from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config.models import SemanticRolesConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
-from codeintel.graphs.nx_views import _normalize_decimal
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import normalize_rel_path
@@ -326,7 +326,7 @@ def _load_function_rows(
     ).fetchall()
     result: list[tuple[int, str, str, int | None]] = []
     for goid_raw, rel_path, qualname, loc in rows:
-        goid = _normalize_decimal(goid_raw)
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
         result.append((goid, str(rel_path), str(qualname), loc))
@@ -361,7 +361,7 @@ def _load_effects(con: DuckDBConnection, *, repo: str, commit: str) -> dict[int,
         modifies_closure,
         spawns_threads_or_tasks,
     ) in rows:
-        goid = _normalize_decimal(goid_raw)
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
         mapping[goid] = {
@@ -389,7 +389,7 @@ def _load_contracts(
     ).fetchall()
     mapping: dict[int, dict[str, object]] = {}
     for goid_raw, preconditions, raises_json, param_nullability in rows:
-        goid = _normalize_decimal(goid_raw)
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
         mapping[goid] = {
@@ -413,7 +413,7 @@ def _load_graph_metrics(
     ).fetchall()
     mapping: dict[int, dict[str, int]] = {}
     for goid_raw, call_fan_in, call_fan_out in rows:
-        goid = _normalize_decimal(goid_raw)
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
         mapping[goid] = {

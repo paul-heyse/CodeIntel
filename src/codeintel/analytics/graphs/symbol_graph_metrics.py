@@ -5,11 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 
-import networkx as nx
-
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
-    GraphBundle,
     GraphContext,
     centrality_undirected,
     component_ids_undirected,
@@ -18,7 +15,7 @@ from codeintel.analytics.graph_service import (
     to_decimal_id,
 )
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.nx_views import load_symbol_function_graph, load_symbol_module_graph
+from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 
 MAX_BETWEENNESS_NODES = 1000
@@ -55,18 +52,8 @@ def compute_symbol_graph_metrics_modules(
     if context is not None and (context.repo != repo or context.commit != commit):
         return
 
-    bundle: GraphBundle[nx.Graph] = GraphBundle(
-        ctx=ctx,
-        loaders={
-            "symbol_module_graph": lambda: load_symbol_module_graph(
-                gateway,
-                repo,
-                commit,
-                use_gpu=use_gpu,
-            )
-        },
-    )
-    graph = bundle.get("symbol_module_graph")
+    engine: GraphEngine = runtime.build_engine(gateway, repo, commit)
+    graph = engine.symbol_module_graph()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_module_graph", graph)
         con.execute(
@@ -148,18 +135,8 @@ def compute_symbol_graph_metrics_functions(
     if context is not None and (context.repo != repo or context.commit != commit):
         return
 
-    bundle: GraphBundle[nx.Graph] = GraphBundle(
-        ctx=ctx,
-        loaders={
-            "symbol_function_graph": lambda: load_symbol_function_graph(
-                gateway,
-                repo,
-                commit,
-                use_gpu=use_gpu,
-            )
-        },
-    )
-    graph = bundle.get("symbol_function_graph")
+    engine: GraphEngine = runtime.build_engine(gateway, repo, commit)
+    graph = engine.symbol_function_graph()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_function_graph", graph)
         con.execute(

@@ -12,7 +12,7 @@ import networkx as nx
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import GraphContext, centrality_directed
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.nx_views import load_import_graph
+from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 
 
@@ -106,18 +106,8 @@ def compute_subsystem_graph_metrics(
     subsystem_graph = nx.DiGraph()
     subsystem_graph.add_nodes_from({subsystem_id for subsystem_id, _ in membership_rows})
 
-    import_graph = (
-        runtime.context.import_graph
-        if runtime.context is not None
-        else load_import_graph(gateway, repo, commit, use_gpu=runtime.use_gpu)
-    )
-    if import_graph is None:
-        con.execute(
-            "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
-            [repo, commit],
-        )
-        return
-    for src, dst, data in import_graph.edges(data=True):
+    engine: GraphEngine = runtime.build_engine(gateway, repo, commit)
+    for src, dst, data in engine.import_graph().edges(data=True):
         src_sub = module_to_subsystem.get(src)
         dst_sub = module_to_subsystem.get(dst)
         if src_sub is None or dst_sub is None or src_sub == dst_sub:
