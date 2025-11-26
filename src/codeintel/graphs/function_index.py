@@ -6,8 +6,8 @@ from collections.abc import Callable as TypingCallable
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
-from codeintel.utils.paths import normalize_rel_path
 
 
 @dataclass(frozen=True)

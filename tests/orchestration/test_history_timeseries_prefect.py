@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.orchestration.prefect_flow import (
+from codeintel.pipeline.orchestration.prefect_flow import (
     HistoryTimeseriesTaskParams,
     t_history_timeseries,
 )

@@ -14,11 +14,11 @@ from coverage.exceptions import CoverageException
 from codeintel.config import CoverageIngestStepConfig
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
 from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
-from codeintel.models.rows import CoverageLineRow, coverage_line_to_tuple
 from codeintel.storage.gateway import StorageGateway
-from codeintel.utils.paths import normalize_rel_path
+from codeintel.storage.rows import CoverageLineRow, coverage_line_to_tuple
 
 
 @dataclass(frozen=True)

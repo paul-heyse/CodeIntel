@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codeintel.mcp.models import ProblemDetail
+from codeintel.serving.mcp.models import ProblemDetail
 
 
 @dataclass

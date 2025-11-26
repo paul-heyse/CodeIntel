@@ -12,8 +12,8 @@ from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
-from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
 

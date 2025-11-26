@@ -11,8 +11,8 @@ import httpx
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.graphs.engine import NxGraphEngine
-from codeintel.mcp import errors
-from codeintel.mcp.models import (
+from codeintel.serving.mcp import errors
+from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
@@ -32,9 +32,12 @@ from codeintel.mcp.models import (
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
-from codeintel.mcp.query_service import BackendLimits, DuckDBQueryService
-from codeintel.services.factory import build_service_from_config, get_observability_from_config
-from codeintel.services.query_service import (
+from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
+from codeintel.serving.services.factory import (
+    build_service_from_config,
+    get_observability_from_config,
+)
+from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,
     QueryService,
@@ -44,7 +47,7 @@ from codeintel.storage.gateway import StorageGateway
 
 MAX_ROWS_LIMIT = BackendLimits().max_rows_per_call
 HTTP_ERROR_STATUS = 400
-LOG = logging.getLogger("codeintel.mcp.backend")
+LOG = logging.getLogger("codeintel.serving.mcp.backend")
 
 
 async def _aclose_client(client: httpx.AsyncClient) -> None:

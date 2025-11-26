@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
+
+import duckdb
 
 from codeintel.analytics.tests import compute_test_coverage_edges
 from codeintel.config import ConfigBuilder
@@ -16,6 +21,16 @@ from tests._helpers.tooling import generate_coverage_for_function
 
 REPO: Final = "demo/repo"
 COMMIT: Final = "deadbeef"
+
+
+@dataclass(frozen=True)
+class SpanSnapshot:
+    """Collected GOID/symbol-use state for alignment assertions."""
+
+    cfg_goids: set[int]
+    callgraph_goids: set[int]
+    coverage_goids: set[int]
+    symbol_use_paths: set[str]
 
 
 def _write_repo(repo_root: Path) -> tuple[int, int]:
@@ -46,49 +61,8 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
     gateway = fresh_gateway
     con = gateway.con
 
-    # Seed modules for module mapping.
-    con.executemany(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, 'python', '[]', '[]')
-        """,
-        [
-            ("pkg.a", "pkg/a.py", REPO, COMMIT),
-            ("pkg.b", "pkg/b.py", REPO, COMMIT),
-        ],
-    )
-
-    # Seed GOIDs for caller; callee coverage is intentionally ignored for alignment.
-    now = datetime.now(UTC)
-    con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            200,
-            "urn:pkg.b.caller",
-            REPO,
-            COMMIT,
-            "pkg/b.py",
-            "python",
-            "function",
-            "pkg.b.caller",
-            caller_start,
-            caller_end,
-            now,
-        ),
-    )
-
-    # Minimal test_catalog row to supply status.
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status)
-        VALUES ('tests/test_sample.py::test_caller', 'pkg/b.py', 'pkg.b.caller', ?, ?, 'passed')
-        """,
-        [REPO, COMMIT],
-    )
+    expected_goid = _seed_modules_and_goids(con, caller_start, caller_end)
+    _seed_test_catalog(con)
 
     builder = ConfigBuilder.from_snapshot(repo=REPO, commit=COMMIT, repo_root=repo_root)
 
@@ -124,6 +98,8 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
         builder.symbol_uses(scip_json_path=scip_json),
     )
 
+    _load_pkg_for_coverage(repo_root)
+
     coverage_artifact = generate_coverage_for_function(
         repo_root=repo_root,
         module_import="pkg.b",
@@ -135,6 +111,84 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
         builder.test_coverage(coverage_file=coverage_artifact.coverage_file),
     )
 
+    snapshot = _collect_span_snapshot(con)
+
+    expected = {expected_goid}
+    if snapshot.cfg_goids != expected:
+        message = f"CFG goids mismatch: expected {expected}, got {snapshot.cfg_goids}"
+        raise AssertionError(message)
+    if snapshot.callgraph_goids != expected:
+        message = f"Call graph goids mismatch: expected {expected}, got {snapshot.callgraph_goids}"
+        raise AssertionError(message)
+    if snapshot.coverage_goids != expected:
+        message = f"Coverage goids mismatch: expected {expected}, got {snapshot.coverage_goids}"
+        raise AssertionError(message)
+    if snapshot.symbol_use_paths != {"pkg/b.py"}:
+        message = f"Symbol use mapping mismatch: expected pkg/b.py, got {snapshot.symbol_use_paths}"
+        raise AssertionError(message)
+
+
+def _seed_modules_and_goids(con: object, caller_start: int, caller_end: int) -> int:
+    con = _as_duckdb(con)
+    now = datetime.now(UTC)
+    con.executemany(
+        """
+        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+        VALUES (?, ?, ?, ?, 'python', '[]', '[]')
+        """,
+        [
+            ("pkg.a", "pkg/a.py", REPO, COMMIT),
+            ("pkg.b", "pkg/b.py", REPO, COMMIT),
+        ],
+    )
+    expected_goid = 200
+    con.execute(
+        """
+        INSERT INTO core.goids (
+            goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            expected_goid,
+            "urn:pkg.b.caller",
+            REPO,
+            COMMIT,
+            "pkg/b.py",
+            "python",
+            "function",
+            "pkg.b.caller",
+            caller_start,
+            caller_end,
+            now,
+        ),
+    )
+    return expected_goid
+
+
+def _seed_test_catalog(con: object) -> None:
+    con = _as_duckdb(con)
+    con.execute(
+        """
+        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status)
+        VALUES ('tests/test_sample.py::test_caller', 'pkg/b.py', 'pkg.b.caller', ?, ?, 'passed')
+        """,
+        [REPO, COMMIT],
+    )
+
+
+def _load_pkg_for_coverage(repo_root: Path) -> None:
+    pkg_init = repo_root / "pkg" / "__init__.py"
+    pkg_spec = importlib.util.spec_from_file_location("pkg", pkg_init)
+    if pkg_spec is None or pkg_spec.loader is None:
+        message = "Unable to load pkg package for coverage"
+        raise RuntimeError(message)
+    pkg_module = importlib.util.module_from_spec(pkg_spec)
+    sys.modules["pkg"] = pkg_module
+    pkg_spec.loader.exec_module(pkg_module)
+
+
+def _collect_span_snapshot(con: object) -> SpanSnapshot:
+    con = _as_duckdb(con)
     cfg_goids = {
         row[0]
         for row in con.execute(
@@ -159,17 +213,16 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
             "SELECT use_path FROM graph.symbol_use_edges WHERE def_path = 'pkg/a.py'"
         ).fetchall()
     }
+    return SpanSnapshot(
+        cfg_goids=cfg_goids,
+        callgraph_goids=callgraph_goids,
+        coverage_goids=coverage_goids,
+        symbol_use_paths=symbol_use_paths,
+    )
 
-    expected = {200}
-    if cfg_goids != expected:
-        message = f"CFG goids mismatch: expected {expected}, got {cfg_goids}"
-        raise AssertionError(message)
-    if callgraph_goids != expected:
-        message = f"Call graph goids mismatch: expected {expected}, got {callgraph_goids}"
-        raise AssertionError(message)
-    if coverage_goids != expected:
-        message = f"Coverage goids mismatch: expected {expected}, got {coverage_goids}"
-        raise AssertionError(message)
-    if symbol_use_paths != {"pkg/b.py"}:
-        message = f"Symbol use mapping mismatch: expected pkg/b.py, got {symbol_use_paths}"
-        raise AssertionError(message)
+
+def _as_duckdb(con: object) -> duckdb.DuckDBPyConnection:
+    if isinstance(con, duckdb.DuckDBPyConnection):
+        return con
+    message = f"Unexpected connection type: {type(con)}"
+    raise TypeError(message)

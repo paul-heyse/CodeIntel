@@ -14,15 +14,15 @@ import yaml
 
 from codeintel.config import ConfigIngestStepConfig
 from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.paths import repo_relpath
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
     SourceScanner,
     default_config_profile,
     profile_from_env,
 )
-from codeintel.models.rows import ConfigValueRow, config_value_to_tuple
 from codeintel.storage.gateway import StorageGateway
-from codeintel.utils.paths import repo_relpath
+from codeintel.storage.rows import ConfigValueRow, config_value_to_tuple
 
 log = logging.getLogger(__name__)
 

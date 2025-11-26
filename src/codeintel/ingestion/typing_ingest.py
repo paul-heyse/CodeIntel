@@ -12,6 +12,7 @@ from pathlib import Path
 from codeintel.config import TypingIngestStepConfig
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.paths import repo_relpath
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
     SourceScanner,
@@ -20,14 +21,13 @@ from codeintel.ingestion.source_scanner import (
 )
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.models.rows import (
+from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.rows import (
     StaticDiagnosticRow,
     TypednessRow,
     static_diagnostic_to_tuple,
     typedness_row_to_tuple,
 )
-from codeintel.storage.gateway import StorageGateway
-from codeintel.utils.paths import repo_relpath
 
 log = logging.getLogger(__name__)
 

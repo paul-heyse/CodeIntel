@@ -12,8 +12,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
-from codeintel.server.fastapi import BackendResource, create_app
+from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.views import create_all_views
 

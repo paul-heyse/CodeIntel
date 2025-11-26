@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.docs_export.export_jsonl import export_all_jsonl
-from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.docs_export.validate_exports import main
-from codeintel.services.errors import ExportError
+from codeintel.pipeline.export.export_jsonl import export_all_jsonl
+from codeintel.pipeline.export.export_parquet import export_all_parquet
+from codeintel.pipeline.export.validate_exports import main
+from codeintel.serving.services.errors import ExportError
 from tests._helpers.fixtures import (
     GatewayOptions,
     ProvisioningConfig,

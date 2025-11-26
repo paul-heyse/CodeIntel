@@ -26,8 +26,8 @@ from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config import ExternalDependenciesStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.utils.paths import normalize_rel_path
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

@@ -9,7 +9,7 @@ import pytest
 
 from codeintel.cli.main import cmd_docs_export
 from codeintel.config.models import CodeIntelConfig
-from codeintel.docs_export.runner import ExportOptions
+from codeintel.pipeline.export.runner import ExportOptions
 from codeintel.storage.gateway import StorageGateway
 
 

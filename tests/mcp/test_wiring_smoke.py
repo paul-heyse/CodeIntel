@@ -2,65 +2,64 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
-
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.mcp.server import create_mcp_server
-from codeintel.services.factory import BackendResource
-from codeintel.services.query_service import QueryService
-
-if TYPE_CHECKING:
-    from codeintel.mcp.backend import QueryBackend
+from codeintel.serving.mcp.server import create_mcp_server
+from codeintel.serving.services.factory import BackendResource, build_backend_resource
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.builders import RepoMapRow, insert_repo_map
 
 
-@dataclass
-class _StubBackend:
-    """Minimal backend placeholder exposing a service attribute."""
-
-    service: object
-
-
-def test_mcp_wiring_smoke() -> None:
+def test_mcp_wiring_smoke(fresh_gateway: StorageGateway) -> None:
     """Server registers tools via shared helper and close hook is invoked."""
     called = False
     closed = False
-    service = cast("QueryService", object())
-    backend = _StubBackend(service)
+    resource: BackendResource | None = None
+    insert_repo_map(
+        fresh_gateway,
+        [
+            RepoMapRow(
+                repo=fresh_gateway.config.repo or "demo/repo",
+                commit=fresh_gateway.config.commit or "deadbeef",
+                modules={},
+                overlays={},
+            )
+        ],
+    )
 
-    def _fake_build_backend_resource(
-        _cfg: ServingConfig, *, _gateway: object | None = None
-    ) -> BackendResource:
-        nonlocal closed
-
-        def _close() -> None:
-            nonlocal closed
-            closed = True
-
-        return BackendResource(
-            backend=cast("QueryBackend", backend),
-            service=service,
-            close=_close,
-        )
-
-    def _fake_register_tools(_server: object, backend_arg: object) -> None:
+    def _register_tools(_server: object, backend_arg: object) -> None:
         nonlocal called
         called = True
-        if backend_arg is not service:
-            pytest.fail("Registry received unexpected backend")
+        if resource is not None and backend_arg is not resource.service:
+            pytest.fail("Registry received unexpected backend service")
 
     cfg = ServingConfig(
-        mode="remote_api",
-        repo="r",
-        commit="c",
-        api_base_url="http://test",
+        mode="local_db",
+        repo=fresh_gateway.config.repo or "demo/repo",
+        commit=fresh_gateway.config.commit or "deadbeef",
+        db_path=fresh_gateway.config.db_path,
     )
+    backend_factory = build_backend_resource
+    resource = backend_factory(cfg, gateway=fresh_gateway)
+
+    def _close_wrapper() -> None:
+        nonlocal closed
+        closed = True
+        resource.close()
+
+    def _backend_factory(_cfg: ServingConfig) -> BackendResource:
+        return BackendResource(
+            backend=resource.backend,
+            service=resource.service,
+            close=_close_wrapper,
+        )
+
     server, close = create_mcp_server(
         cfg,
-        backend_factory=_fake_build_backend_resource,
-        register_tools_fn=_fake_register_tools,
+        backend_factory=_backend_factory,
+        gateway=fresh_gateway,
+        register_tools_fn=_register_tools,
     )
 
     if not called:

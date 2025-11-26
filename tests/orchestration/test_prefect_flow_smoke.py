@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.cli.main import main as cli_main
-from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
+from codeintel.pipeline.orchestration.prefect_flow import ExportArgs, export_docs_flow
 from tests._helpers.fixtures import seed_docs_export_minimal
 from tests._helpers.gateway import open_fresh_duckdb
 

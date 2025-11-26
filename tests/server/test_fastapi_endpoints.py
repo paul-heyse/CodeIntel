@@ -13,8 +13,8 @@ from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.mcp.backend import BackendLimits, DuckDBBackend, HttpBackend
-from codeintel.server.fastapi import BackendResource, create_app
+from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.mcp.backend import BackendLimits, DuckDBBackend, HttpBackend
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codeintel.utils.paths import normalize_rel_path
+from codeintel.ingestion.paths import normalize_rel_path
 
 
 @dataclass(frozen=True)

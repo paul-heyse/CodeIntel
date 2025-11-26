@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import cast
 
-from codeintel.mcp.query_service import BackendLimits, clamp_limit_value
-from codeintel.services.query_service import HttpQueryService
+from codeintel.serving.mcp.query_service import BackendLimits, clamp_limit_value
+from codeintel.serving.services.query_service import HttpQueryService
 
 MAX_LIMIT = 5
 CLAMPED_DEFAULT = 1

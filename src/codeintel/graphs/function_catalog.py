@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 from codeintel.graphs.function_index import FunctionSpan, FunctionSpanIndex
 from codeintel.ingestion.common import load_module_map
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
-from codeintel.utils.paths import normalize_rel_path
 
 
 @dataclass(frozen=True)

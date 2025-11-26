@@ -19,9 +19,9 @@ from pydantic import Field
 from starlette.responses import Response
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.mcp import errors
-from codeintel.mcp.backend import DuckDBBackend, QueryBackend
-from codeintel.mcp.models import (
+from codeintel.serving.mcp import errors
+from codeintel.serving.mcp.backend import DuckDBBackend, QueryBackend
+from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
@@ -42,11 +42,11 @@ from codeintel.mcp.models import (
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
-from codeintel.services.factory import BackendResource, build_backend_resource
-from codeintel.services.query_service import QueryService
+from codeintel.serving.services.factory import BackendResource, build_backend_resource
+from codeintel.serving.services.query_service import QueryService
 from codeintel.storage.gateway import DuckDBError, StorageConfig, StorageGateway, open_gateway
 
-LOG = logging.getLogger("codeintel.server.fastapi")
+LOG = logging.getLogger("codeintel.serving.http.fastapi")
 
 
 def _ensure_readable_db(path: Path) -> None:

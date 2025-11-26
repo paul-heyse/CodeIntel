@@ -19,8 +19,8 @@ from codeintel.ingestion.common import (
     should_skip_empty,
 )
 from codeintel.ingestion.source_scanner import ScanProfile
-from codeintel.models.rows import DocstringRow, docstring_row_to_tuple
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.rows import DocstringRow, docstring_row_to_tuple
 
 log = logging.getLogger(__name__)
 

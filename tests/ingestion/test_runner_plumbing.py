@@ -6,12 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config.models import (
-    CoverageIngestConfig,
-    RepoScanConfig,
-    ToolsConfig,
-    TypingIngestConfig,
-)
+from codeintel.config import ConfigBuilder
+from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 from codeintel.ingestion.repo_scan import ingest_repo
 from codeintel.ingestion.source_scanner import ScanProfile
@@ -36,7 +32,13 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
     (ignore_dir / "b.py").write_text("print('skip')\n", encoding="utf8")
 
     gateway = _setup_gateway()
-    cfg = RepoScanConfig(repo_root=repo_root, repo="r", commit="c")
+    builder = ConfigBuilder.from_snapshot(
+        repo="r",
+        commit="c",
+        repo_root=repo_root,
+        build_dir=repo_root / "build",
+    )
+    cfg = builder.repo_scan()
     profile = ScanProfile(
         repo_root=repo_root,
         source_roots=(repo_root,),
@@ -61,12 +63,13 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
         len(report.executed_lines | report.missing_lines)
         for report in tooling_outputs.coverage_reports
     )
-    cfg = CoverageIngestConfig(
-        repo_root=repo_root,
+    builder = ConfigBuilder.from_snapshot(
         repo="r",
         commit="c",
-        coverage_file=context.coverage_file,
+        repo_root=repo_root,
+        build_dir=repo_root / "build",
     )
+    cfg = builder.coverage_ingest(coverage_file=context.coverage_file)
     ingest_coverage_lines(
         gateway,
         cfg=cfg,
@@ -87,7 +90,13 @@ def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
     tool_service = context.service
 
     gateway = _setup_gateway()
-    cfg = TypingIngestConfig(repo_root=repo_root, repo="r", commit="c")
+    builder = ConfigBuilder.from_snapshot(
+        repo="r",
+        commit="c",
+        repo_root=repo_root,
+        build_dir=repo_root / "build",
+    )
+    cfg = builder.typing_ingest(tool_runner=context.runner)
     ingest_typing_signals(
         gateway,
         cfg=cfg,

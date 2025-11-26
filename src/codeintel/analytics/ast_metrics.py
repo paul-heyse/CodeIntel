@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 from codeintel.config import HotspotsStepConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.tool_runner import ToolRunner
-from codeintel.models.rows import HotspotRow, hotspot_row_to_tuple
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.rows import HotspotRow, hotspot_row_to_tuple
 
 log = logging.getLogger(__name__)
 MAX_STDERR_CHARS = 500

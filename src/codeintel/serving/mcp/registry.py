@@ -6,9 +6,9 @@ from collections.abc import Callable
 
 from mcp.server.fastmcp import FastMCP
 
-from codeintel.mcp import errors
-from codeintel.mcp.backend import QueryBackend
-from codeintel.mcp.models import (
+from codeintel.serving.mcp import errors
+from codeintel.serving.mcp.backend import QueryBackend
+from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetRowsResponse,
     FileHintsResponse,
@@ -24,7 +24,7 @@ from codeintel.mcp.models import (
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
-from codeintel.services.query_service import QueryService
+from codeintel.serving.services.query_service import QueryService
 
 
 def _wrap(tool: Callable[..., object]) -> Callable[..., object]:

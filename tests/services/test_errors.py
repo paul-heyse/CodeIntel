@@ -7,7 +7,7 @@ import logging
 
 import pytest
 
-from codeintel.services.errors import (
+from codeintel.serving.services.errors import (
     ExportError,
     PipelineError,
     SchemaDriftError,

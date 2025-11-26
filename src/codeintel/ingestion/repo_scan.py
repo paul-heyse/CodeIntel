@@ -18,6 +18,7 @@ from codeintel.ingestion.common import (
     ModuleRecord,
     run_batch,
 )
+from codeintel.ingestion.paths import relpath_to_module, repo_relpath
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
     SourceScanner,
@@ -26,7 +27,6 @@ from codeintel.ingestion.source_scanner import (
 )
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
-from codeintel.utils.paths import relpath_to_module, repo_relpath
 
 log = logging.getLogger(__name__)
 

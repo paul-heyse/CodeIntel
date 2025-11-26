@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.docs_export.export_jsonl import export_all_jsonl
-from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.models.rows import GraphValidationRow, graph_validation_row_to_tuple
+from codeintel.pipeline.export.export_jsonl import export_all_jsonl
+from codeintel.pipeline.export.export_parquet import export_all_parquet
+from codeintel.storage.rows import GraphValidationRow, graph_validation_row_to_tuple
 from tests._helpers.fixtures import provision_docs_export_ready
 
 

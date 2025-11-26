@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from codeintel.docs_export.export_jsonl import export_all_jsonl
-from codeintel.docs_export.export_parquet import export_all_parquet
-from codeintel.server.datasets import validate_dataset_registry
+from codeintel.pipeline.export.export_jsonl import export_all_jsonl
+from codeintel.pipeline.export.export_parquet import export_all_parquet
+from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.storage.gateway import StorageGateway
 
 

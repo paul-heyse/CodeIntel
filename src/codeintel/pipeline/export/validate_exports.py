@@ -2,7 +2,7 @@
 Validate exported JSONL/Parquet datasets against JSON Schemas.
 
 Usage:
-    python -m codeintel.docs_export.validate_exports --schema call_graph_edges path1.jsonl path2.parquet
+    python -m codeintel.pipeline.export.validate_exports --schema call_graph_edges path1.jsonl path2.parquet
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ import jsonschema
 import pyarrow.parquet as pq
 from referencing import Registry, Resource
 
-from codeintel.services.errors import log_problem, problem
+from codeintel.serving.services.errors import log_problem, problem
 
-DEFAULT_SCHEMA_ROOT = Path(__file__).resolve().parent.parent / "config" / "schemas" / "export"
+DEFAULT_SCHEMA_ROOT = Path(__file__).resolve().parent.parent.parent / "config" / "schemas" / "export"
 
 
 def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], Registry]:

@@ -24,6 +24,7 @@ def _ensure_ok(result: ToolRunResult, *, action: str) -> None:
 
 
 def _write_tooling_repo(repo_root: Path) -> Path:
+    repo_root.mkdir(parents=True, exist_ok=True)
     (repo_root / "__init__.py").write_text(
         '"""Package marker for tooling fixture repository."""',
         encoding="utf8",

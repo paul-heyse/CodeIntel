@@ -23,8 +23,8 @@ from codeintel.config import SemanticRolesStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
 
