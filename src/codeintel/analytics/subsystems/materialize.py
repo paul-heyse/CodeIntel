@@ -27,7 +27,7 @@ from codeintel.analytics.subsystems.edge_stats import (
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
 from codeintel.config.models import SubsystemsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.nx_views import load_import_graph
+from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -73,14 +73,7 @@ def build_subsystems(
     *,
     context: AnalyticsContext | None = None,
 ) -> None:
-    """
-    Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit.
-
-    Raises
-    ------
-    ValueError
-        If no import graph is available for the target snapshot.
-    """
+    """Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit."""
     con = gateway.con
     ensure_schema(con, "analytics.subsystems")
     ensure_schema(con, "analytics.subsystem_modules")
@@ -101,11 +94,9 @@ def build_subsystems(
 
     affinity_graph = build_weighted_graph(gateway, cfg, modules)
     adjacency = graph_to_adjacency(affinity_graph)
-    seed_labels = seed_labels_from_tags(tags_by_module)
-    labels = label_propagation_nx(affinity_graph, seed_labels)
+    labels = label_propagation_nx(affinity_graph, seed_labels_from_tags(tags_by_module))
     labels = reassign_small_clusters(labels, adjacency, cfg.min_modules)
     labels = limit_clusters(labels, adjacency, cfg.max_subsystems)
-    clusters = clusters_from_labels(labels)
 
     if context is not None and (context.repo != cfg.repo or context.commit != cfg.commit):
         log.warning(
@@ -115,28 +106,23 @@ def build_subsystems(
             cfg.repo,
             cfg.commit,
         )
-    import_graph = (
-        context.import_graph
-        if context is not None and context.repo == cfg.repo and context.commit == cfg.commit
-        else None
+    engine = NxGraphEngine(
+        gateway=gateway,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        use_gpu=context.use_gpu if context is not None else False,
     )
-    if import_graph is None:
-        import_graph = load_import_graph(gateway, cfg.repo, cfg.commit)
-    if import_graph is None:
-        message = "Import graph unavailable for subsystem inference"
-        raise ValueError(message)
-    risk_stats = aggregate_risk(gateway, cfg, labels)
-
-    now = datetime.now(UTC)
+    if context is not None and context.repo == cfg.repo and context.commit == cfg.commit:
+        engine.seed(GraphKind.IMPORT_GRAPH, context.import_graph)
     ctx = SubsystemBuildContext(
         cfg=cfg,
         labels=labels,
         tags_by_module=tags_by_module,
-        import_graph=import_graph,
-        risk_stats=risk_stats,
-        now=now,
+        import_graph=engine.import_graph(),
+        risk_stats=aggregate_risk(gateway, cfg, labels),
+        now=datetime.now(UTC),
     )
-    subsystem_rows, membership_rows = _build_rows(clusters, ctx)
+    subsystem_rows, membership_rows = _build_rows(clusters_from_labels(labels), ctx)
 
     if membership_rows:
         con.executemany(

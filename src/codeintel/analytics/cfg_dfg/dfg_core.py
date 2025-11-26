@@ -16,8 +16,8 @@ from codeintel.analytics.graph_service import (
     dfg_centralities,
     dfg_component_stats,
     dfg_path_lengths,
+    normalize_decimal_id,
 )
-from codeintel.graphs.nx_views import _normalize_decimal
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 MAX_CFG_EIGEN_SAMPLE = 200
@@ -357,7 +357,7 @@ def dfg_function_metadata(
     ).fetchall()
     result: dict[int, tuple[str, str | None, str | None]] = {}
     for goid_raw, rel_path, module, qualname in rows:
-        goid = _normalize_decimal(goid_raw)
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
         result[int(goid)] = (rel_path, module, qualname)

@@ -20,7 +20,7 @@ from codeintel.analytics.graph_service import (
     structural_metrics,
 )
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.nx_views import load_import_graph
+from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 
 CENTRALITY_SAMPLE_LIMIT = 500
@@ -73,18 +73,9 @@ def _resolve_module_context(runtime: GraphRuntimeOptions, repo: str, commit: str
 
 
 def _build_import_views(
-    gateway: StorageGateway,
-    *,
-    repo: str,
-    commit: str,
-    runtime: GraphRuntimeOptions,
+    engine: GraphEngine,
 ) -> ImportGraphViews:
-    cached_graph = runtime.context.import_graph if runtime.context is not None else None
-    graph: nx.DiGraph = (
-        cached_graph
-        if cached_graph is not None
-        else load_import_graph(gateway, repo, commit, use_gpu=runtime.use_gpu)
-    )
+    graph: nx.DiGraph = engine.import_graph()
     simple_graph: nx.DiGraph = cast("nx.DiGraph", graph.copy())
     simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
     undirected = simple_graph.to_undirected()
@@ -151,7 +142,8 @@ def compute_graph_metrics_modules_ext(
     """Populate analytics.graph_metrics_modules_ext with richer import metrics."""
     runtime = runtime or GraphRuntimeOptions()
     ctx = _resolve_module_context(runtime, repo, commit)
-    views = _build_import_views(gateway, repo=repo, commit=commit, runtime=runtime)
+    engine = runtime.build_engine(gateway, repo, commit)
+    views = _build_import_views(engine)
     slices = _module_metric_slices(views, ctx)
     rows = _module_metric_rows(repo, commit, ctx, views, slices)
 

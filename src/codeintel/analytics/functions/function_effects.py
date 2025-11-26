@@ -19,13 +19,14 @@ from codeintel.analytics.function_ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
+from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config.models import FunctionEffectsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
+from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.graphs.nx_views import _normalize_decimal, load_call_graph
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
 
@@ -171,11 +172,15 @@ def _build_effect_rows(
         goid: analysis.direct_effectful for goid, analysis in analyses.items()
     }
 
-    call_graph = (
-        context.call_graph
-        if context is not None
-        else load_call_graph(gateway, cfg.repo, cfg.commit)
+    engine = NxGraphEngine(
+        gateway=gateway,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        use_gpu=context.use_gpu if context is not None else False,
     )
+    if context is not None:
+        engine.seed(GraphKind.CALL_GRAPH, context.call_graph)
+    call_graph = engine.call_graph()
     transitive_hits = _compute_transitive_effects(
         call_graph,
         direct_flags,
@@ -284,7 +289,7 @@ def _unresolved_call_counts(con: DuckDBConnection, repo: str, commit: str) -> di
     except DuckDBError:
         return counts
     for raw_goid, count in rows:
-        goid = _normalize_decimal(raw_goid)
+        goid = normalize_decimal_id(raw_goid)
         if goid is None:
             continue
         counts[goid] = int(count)

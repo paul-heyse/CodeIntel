@@ -18,7 +18,7 @@ from codeintel.analytics.graph_service import (
     projection_metrics,
 )
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.nx_views import load_config_module_bipartite
+from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 MAX_BETWEENNESS_NODES = 1000
@@ -149,7 +149,8 @@ def compute_config_graph_metrics(
     if context is not None and (context.repo != repo or context.commit != commit):
         return
 
-    graph = load_config_module_bipartite(gateway, repo, commit, use_gpu=use_gpu)
+    engine: GraphEngine = runtime.build_engine(gateway, repo, commit)
+    graph = engine.config_module_bipartite()
     if graph.number_of_nodes() == 0:
         log_empty_graph("config_module_bipartite", graph)
         _clear_config_tables(gateway, repo, commit)

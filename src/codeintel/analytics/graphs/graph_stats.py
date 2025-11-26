@@ -15,13 +15,7 @@ from codeintel.analytics.graph_service import (
     global_graph_stats,
 )
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.nx_views import (
-    load_call_graph,
-    load_config_module_bipartite,
-    load_import_graph,
-    load_symbol_function_graph,
-    load_symbol_module_graph,
-)
+from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -49,7 +43,6 @@ def compute_graph_stats(
         Optional runtime options including cached graphs and backend selection.
     """
     runtime = runtime or GraphRuntimeOptions()
-    context = runtime.context
     use_gpu = runtime.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.graph_stats")
@@ -62,24 +55,17 @@ def compute_graph_stats(
     if ctx.use_gpu != use_gpu:
         ctx = replace(ctx, use_gpu=use_gpu)
 
-    call_graph = (
-        context.call_graph
-        if context is not None and context.call_graph is not None
-        else load_call_graph(gateway, repo, commit, use_gpu=use_gpu)
-    )
-    import_graph = (
-        context.import_graph
-        if context is not None and context.import_graph is not None
-        else load_import_graph(gateway, repo, commit, use_gpu=use_gpu)
-    )
+    engine: GraphEngine = runtime.build_engine(gateway, repo, commit)
+    call_graph = engine.call_graph()
+    import_graph = engine.import_graph()
     graphs: dict[str, nx.Graph | nx.DiGraph] = {
         "call_graph": call_graph,
         "import_graph": import_graph,
-        "symbol_module_graph": load_symbol_module_graph(gateway, repo, commit),
-        "symbol_function_graph": load_symbol_function_graph(gateway, repo, commit),
+        "symbol_module_graph": engine.symbol_module_graph(),
+        "symbol_function_graph": engine.symbol_function_graph(),
     }
 
-    config_bipartite = load_config_module_bipartite(gateway, repo, commit)
+    config_bipartite = engine.config_module_bipartite()
     if config_bipartite.number_of_nodes() > 0:
         keys = {n for n, d in config_bipartite.nodes(data=True) if d.get("bipartite") == 0}
         modules = set(config_bipartite) - keys

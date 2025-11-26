@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -95,41 +95,6 @@ def build_graph_context(
         betweenness_weight=cfg.betweenness_weight,
         use_gpu=use_gpu,
     )
-
-
-@dataclass
-class GraphBundle[TGraph: nx.Graph]:
-    """Memoized set of graphs loaded by name."""
-
-    ctx: GraphContext
-    loaders: dict[str, Callable[[], TGraph]]
-    _cache: dict[str, TGraph] = field(default_factory=dict)
-
-    def get(self, name: str) -> TGraph:
-        """
-        Load a graph by name once, caching the result.
-
-        Parameters
-        ----------
-        name : str
-            Key registered in the loaders mapping.
-
-        Returns
-        -------
-        nx.Graph
-            Graph instance loaded from the configured loader or cache.
-
-        Raises
-        ------
-        KeyError
-            If no loader is registered for the provided name.
-        """
-        if name not in self.loaders:
-            message = f"Graph loader not found: {name}"
-            raise KeyError(message)
-        if name not in self._cache:
-            self._cache[name] = self.loaders[name]()
-        return self._cache[name]
 
 
 @dataclass(frozen=True)
@@ -241,6 +206,40 @@ def to_decimal_id(value: int | str | Decimal | None) -> Decimal | None:
     return Decimal(int(value))
 
 
+def normalize_decimal_id(value: object) -> int | None:
+    """
+    Normalize DuckDB DECIMAL identifiers to integers.
+
+    Parameters
+    ----------
+    value : object
+        Raw identifier value sourced from DuckDB.
+
+    Returns
+    -------
+    int | None
+        Parsed integer when coercion succeeds, otherwise None.
+    """
+    result: int | None
+    if value is None:
+        result = None
+    elif isinstance(value, int):
+        result = value
+    elif isinstance(value, Decimal):
+        result = int(value)
+    elif isinstance(value, (bytes, bytearray)):
+        try:
+            result = int(value.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            result = None
+    else:
+        try:
+            result = int(str(value))
+        except (TypeError, ValueError):
+            result = None
+    return result
+
+
 def normalize_node_id(node: Decimal | float | str | None) -> int | str | None:
     """
     Normalize graph node identifiers for consistent dictionary keys.
@@ -251,18 +250,21 @@ def normalize_node_id(node: Decimal | float | str | None) -> int | str | None:
         Integer for numeric nodes (including Decimal or digit-only strings), otherwise
         stringified value; None is preserved.
     """
+    result: int | str | None
     if node is None:
-        return None
-    if isinstance(node, Decimal):
-        return int(node)
-    if isinstance(node, (int, float)):
+        result = None
+    elif isinstance(node, Decimal):
+        result = int(node)
+    elif isinstance(node, (int, float)):
         try:
-            return int(node)
+            result = int(node)
         except (TypeError, ValueError):
-            return None
-    if isinstance(node, str) and node.isdigit():
-        return int(node)
-    return str(node)
+            result = None
+    elif isinstance(node, str) and node.isdigit():
+        result = int(node)
+    else:
+        result = str(node)
+    return result
 
 
 def safe_float(value: float | Decimal | str | None) -> float | None:

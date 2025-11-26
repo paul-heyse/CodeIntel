@@ -17,7 +17,7 @@ from codeintel.analytics.graph_service import (
     projection_metrics,
 )
 from codeintel.config.schemas.sql_builder import ensure_schema
-from codeintel.graphs.nx_views import load_test_function_bipartite
+from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 
 
@@ -132,7 +132,8 @@ def compute_test_graph_metrics(
     if context is not None and (context.repo != repo or context.commit != commit):
         return
 
-    graph: nx.Graph = load_test_function_bipartite(gateway, repo, commit, use_gpu=use_gpu)
+    engine: GraphEngine = runtime.build_engine(gateway, repo, commit)
+    graph: nx.Graph = engine.test_function_bipartite()
     graph_ctx = graph_ctx or GraphContext(
         repo=repo,
         commit=commit,

@@ -16,10 +16,10 @@ from codeintel.analytics.context import (
     ensure_analytics_context,
 )
 from codeintel.analytics.function_ast_cache import FunctionAst
+from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config.models import FunctionContractsConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
-from codeintel.graphs.nx_views import _normalize_decimal
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
@@ -171,7 +171,7 @@ def _load_function_types(
     ).fetchall()
     mapping: dict[int, dict[str, object]] = {}
     for goid_raw, return_type, param_types in rows:
-        goid = _normalize_decimal(goid_raw)
+        goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
         mapping[goid] = {
