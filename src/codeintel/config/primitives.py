@@ -406,18 +406,14 @@ class ExecutionOptions:
         Directory containing historical DuckDB snapshots.
     history_commits : tuple[str, ...]
         Commit identifiers to include in historical analysis.
-    function_overrides : tuple[str, ...]
-        Function identifiers with explicit override settings.
     """
 
     history_db_dir: Path | None = None
     history_commits: tuple[str, ...] = ()
-    function_overrides: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Normalize tuple fields for immutability."""
         object.__setattr__(self, "history_commits", tuple(self.history_commits))
-        object.__setattr__(self, "function_overrides", tuple(self.function_overrides))
 
 
 @dataclass(frozen=True)

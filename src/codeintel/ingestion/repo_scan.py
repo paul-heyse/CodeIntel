@@ -11,8 +11,7 @@ from typing import TypedDict
 
 import yaml
 
-from codeintel.config import SnapshotRef
-from codeintel.config.models import RepoScanConfig
+from codeintel.config import RepoScanStepConfig, SnapshotRef
 from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.ingestion.common import (
     ChangeRequest,
@@ -113,7 +112,7 @@ def _tags_for_path(rel_path: str, tags_entries: list[TagEntry]) -> list[str]:
 
 def ingest_repo(
     gateway: StorageGateway,
-    cfg: RepoScanConfig,
+    cfg: RepoScanStepConfig,
     code_profile: ScanProfile | None = None,
     *,
     apply_schema: bool = False,
@@ -234,7 +233,7 @@ def ingest_repo(
 def _discover_modules(
     repo_root: Path,
     code_profile: ScanProfile,
-    cfg: RepoScanConfig,
+    cfg: RepoScanStepConfig,
     tags_entries: list[TagEntry],
 ) -> tuple[dict[str, ModuleRow], list[ModuleRecord]]:
     modules: dict[str, ModuleRow] = {}

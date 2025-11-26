@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
-from codeintel.config import ConfigBuilder, SymbolUsesStepConfig
+from codeintel.config import SymbolUsesStepConfig
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
@@ -18,15 +18,12 @@ from codeintel.models.rows import SymbolUseRow, symbol_use_to_tuple
 from codeintel.storage.gateway import StorageGateway
 from codeintel.types import ScipDocument
 
-if TYPE_CHECKING:
-    from codeintel.config.models import SymbolUsesConfig
-
 log = logging.getLogger(__name__)
 
 
 def build_symbol_use_edges(
     gateway: StorageGateway,
-    cfg: SymbolUsesStepConfig | SymbolUsesConfig,
+    cfg: SymbolUsesStepConfig,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """
@@ -38,15 +35,7 @@ def build_symbol_use_edges(
     We treat occurrences with symbol_roles bit 1 as definitions,
     and bit 2 as references, producing edges def_path -> use_path.
     """
-    if not isinstance(cfg, SymbolUsesStepConfig):
-        builder = ConfigBuilder.from_snapshot(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-        )
-        cfg = builder.symbol_uses(scip_json_path=cfg.scip_json_path)
-
-    scip_path = cfg.scip_json_path
+    scip_path = cfg.resolved_scip_json_path
 
     docs = load_scip_documents(scip_path)
     if docs is None:

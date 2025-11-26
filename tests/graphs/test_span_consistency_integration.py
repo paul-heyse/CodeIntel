@@ -4,17 +4,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, cast
-
-from coverage import Coverage
+from typing import Final
 
 from codeintel.analytics.tests import compute_test_coverage_edges
-from codeintel.config import ConfigBuilder, TestCoverageStepConfig
+from codeintel.config import ConfigBuilder
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fakes import FakeCoverage
+from tests._helpers.tooling import generate_coverage_for_function
 
 REPO: Final = "demo/repo"
 COMMIT: Final = "deadbeef"
@@ -60,42 +58,27 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
         ],
     )
 
-    # Seed GOIDs for caller and callee.
+    # Seed GOIDs for caller; callee coverage is intentionally ignored for alignment.
     now = datetime.now(UTC)
-    con.executemany(
+    con.execute(
         """
         INSERT INTO core.goids (
             goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        [
-            (
-                100,
-                "urn:pkg.a.callee",
-                REPO,
-                COMMIT,
-                "pkg/a.py",
-                "python",
-                "function",
-                "pkg.a.callee",
-                1,
-                2,
-                now,
-            ),
-            (
-                200,
-                "urn:pkg.b.caller",
-                REPO,
-                COMMIT,
-                "pkg/b.py",
-                "python",
-                "function",
-                "pkg.b.caller",
-                caller_start,
-                caller_end,
-                now,
-            ),
-        ],
+        (
+            200,
+            "urn:pkg.b.caller",
+            REPO,
+            COMMIT,
+            "pkg/b.py",
+            "python",
+            "function",
+            "pkg.b.caller",
+            caller_start,
+            caller_end,
+            now,
+        ),
     )
 
     # Minimal test_catalog row to supply status.
@@ -141,16 +124,15 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
         builder.symbol_uses(scip_json_path=scip_json),
     )
 
-    def _load_fake(_cfg: TestCoverageStepConfig) -> Coverage:
-        abs_b = str((repo_root / "pkg" / "b.py").resolve())
-        statements = {abs_b: [caller_start, caller_end]}
-        contexts = {abs_b: {caller_start: {"tests/test_sample.py::test_caller"}}}
-        return cast("Coverage", FakeCoverage(statements, contexts))
-
+    coverage_artifact = generate_coverage_for_function(
+        repo_root=repo_root,
+        module_import="pkg.b",
+        function_name="caller",
+        test_id="tests/test_sample.py::test_caller",
+    )
     compute_test_coverage_edges(
         gateway,
-        builder.test_coverage(coverage_loader=_load_fake),
-        coverage_loader=_load_fake,
+        builder.test_coverage(coverage_file=coverage_artifact.coverage_file),
     )
 
     cfg_goids = {

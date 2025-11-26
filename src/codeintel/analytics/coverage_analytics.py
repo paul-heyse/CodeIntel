@@ -37,7 +37,7 @@ def compute_coverage_functions(
     ----------
     gateway : StorageGateway
         Gateway providing access to the DuckDB connection.
-    cfg : CoverageAnalyticsConfig
+    cfg : CoverageAnalyticsStepConfig
         Repository and commit identifiers that scope the aggregation.
     context : AnalyticsContext | None
         Optional shared context for snapshot consistency.
@@ -84,7 +84,10 @@ def compute_coverage_functions(
     ...     " ('demo', 'abc', 'foo.py', 2, TRUE, FALSE),"
     ...     " ('demo', 'abc', 'foo.py', 3, FALSE, FALSE)"
     ... )
-    >>> cfg = CoverageAnalyticsConfig(repo="demo", commit="abc")
+    >>> from codeintel.config import ConfigBuilder
+    >>> cfg = ConfigBuilder.from_snapshot(
+    ...     repo="demo", commit="abc", repo_root=Path(".")
+    ... ).coverage_analytics()
     >>> compute_coverage_functions(gateway, cfg)
     >>> con.execute(
     ...     "SELECT executable_lines, covered_lines, coverage_ratio, tested"

@@ -10,7 +10,6 @@ import pytest
 
 EXPECTED_EXPORTS: Mapping[str, set[str]] = {
     "codeintel.analytics.functions": {
-        "FunctionAnalyticsConfig",
         "FunctionAnalyticsOptions",
         "FunctionAnalyticsStepConfig",
         "TypednessFlags",

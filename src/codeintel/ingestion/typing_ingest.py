@@ -9,7 +9,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.config.models import ToolsConfig, TypingIngestConfig
+from codeintel.config import TypingIngestStepConfig
+from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
@@ -130,7 +131,7 @@ async def _collect_error_maps(
 
 def ingest_typing_signals(
     gateway: StorageGateway,
-    cfg: TypingIngestConfig,
+    cfg: TypingIngestStepConfig,
     *,
     code_profile: ScanProfile | None = None,
     tools: ToolsConfig | None = None,

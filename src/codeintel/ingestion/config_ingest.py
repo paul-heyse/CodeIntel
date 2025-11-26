@@ -12,7 +12,7 @@ from typing import cast
 
 import yaml
 
-from codeintel.config.models import ConfigIngestConfig
+from codeintel.config import ConfigIngestStepConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
@@ -163,7 +163,7 @@ def _flatten_config(
 
 def ingest_config_values(
     gateway: StorageGateway,
-    cfg: ConfigIngestConfig,
+    cfg: ConfigIngestStepConfig,
     config_profile: ScanProfile | None = None,
 ) -> None:
     """

@@ -9,8 +9,8 @@ from typing import Protocol
 import anyio
 import httpx
 
-from codeintel.graphs.engine import NxGraphEngine
 from codeintel.config.serving_models import ServingConfig
+from codeintel.graphs.engine import NxGraphEngine
 from codeintel.mcp import errors
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,

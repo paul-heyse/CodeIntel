@@ -73,10 +73,8 @@ from codeintel.config import (
     SnapshotRef,
     SymbolUsesStepConfig,
 )
-from codeintel.config.models import (
-    FunctionAnalyticsOverrides,
-    ToolsConfig,
-)
+from codeintel.config.models import ToolsConfig
+from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig
 from codeintel.docs_export.runner import ExportOptions, ExportRunner, run_validated_exports
 from codeintel.graphs.callgraph_builder import build_call_graph
@@ -141,7 +139,8 @@ class ExportArgs:
     tools: ToolsConfig | None = None
     code_profile: ScanProfile | None = None
     config_profile: ScanProfile | None = None
-    function_overrides: FunctionAnalyticsOverrides | None = None
+    function_fail_on_missing_spans: bool = False
+    function_parser: FunctionParserKind | None = None
     validate_exports: bool = False
     export_schemas: list[str] | None = None
     export_datasets: tuple[str, ...] | None = None
@@ -182,7 +181,6 @@ class ExportArgs:
             options=ExecutionOptions(
                 history_db_dir=self.history_db_dir,
                 history_commits=self.history_commits or (),
-                function_overrides=(),
             ),
         )
 
@@ -224,6 +222,14 @@ os.environ.setdefault("PREFECT_LOGGING_SETTINGS_PATH", str(_PREFECT_LOGGING_SETT
 _GRAPH_BACKEND_STATE: dict[str, GraphBackendConfig] = {"config": GraphBackendConfig()}
 
 
+@dataclass(frozen=True)
+class FunctionMetricsTaskConfig:
+    """Optional configuration for the function_metrics Prefect task."""
+
+    fail_on_missing_spans: bool = False
+    parser: FunctionParserKind | None = None
+
+
 def _build_pipeline_context(args: ExportArgs) -> PipelineContext:
     """
     Construct a PipelineContext from export arguments using consolidated configs.
@@ -256,7 +262,8 @@ def _build_pipeline_context(args: ExportArgs) -> PipelineContext:
         tool_runner=tool_runner,
         tool_service=tool_service,
         tools=execution.tools,
-        function_overrides=args.function_overrides,
+        function_fail_on_missing_spans=args.function_fail_on_missing_spans,
+        function_parser=args.function_parser,
         extra=extra,
         export_datasets=args.export_datasets,
     )
@@ -649,15 +656,15 @@ def t_function_metrics(
     repo: str,
     commit: str,
     db_path: Path,
-    overrides: FunctionAnalyticsOverrides | None = None,
+    task_cfg: FunctionMetricsTaskConfig | None = None,
 ) -> None:
     """Compute per-function metrics and types."""
     run_logger = get_run_logger()
+    params = task_cfg or FunctionMetricsTaskConfig()
     gateway = _ingest_gateway(db_path)
     cfg = _builder(repo, commit, repo_root).function_analytics(
-        fail_on_missing_spans=overrides.fail_on_missing_spans if overrides else False,
-        max_workers=overrides.max_workers if overrides else None,
-        parser=overrides.parser if overrides else None,
+        fail_on_missing_spans=params.fail_on_missing_spans,
+        parser=params.parser,
     )
     reporter = FunctionValidationReporter(repo=repo, commit=commit)
     summary = compute_function_metrics_and_types(

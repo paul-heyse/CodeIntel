@@ -162,6 +162,163 @@ class DocstringStepConfig:
 
 
 @dataclass(frozen=True)
+class RepoScanStepConfig:
+    """Configuration for repository scanning into core.modules."""
+
+    snapshot: SnapshotRef
+    paths: BuildPaths
+    tags_index_path: Path | None = None
+    tool_runner: object | None = None
+
+    @property
+    def repo(self) -> str:
+        """Repository slug."""
+        return self.snapshot.repo
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        return self.snapshot.commit
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root path."""
+        return self.snapshot.repo_root
+
+    @property
+    def resolved_tags_index_path(self) -> Path | None:
+        """Optional tags index path, resolved when provided."""
+        return self.tags_index_path.resolve() if self.tags_index_path is not None else None
+
+
+@dataclass(frozen=True)
+class CoverageIngestStepConfig:
+    """Configuration for ingesting coverage lines."""
+
+    snapshot: SnapshotRef
+    paths: BuildPaths
+    coverage_file: Path | None = None
+    tool_runner: object | None = None
+
+    @property
+    def repo(self) -> str:
+        """Repository slug."""
+        return self.snapshot.repo
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        return self.snapshot.commit
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root path."""
+        return self.snapshot.repo_root
+
+    @property
+    def resolved_coverage_file(self) -> Path:
+        """Coverage JSON path with defaults applied."""
+        return (self.coverage_file or self.paths.coverage_json).resolve()
+
+
+@dataclass(frozen=True)
+class TestsIngestStepConfig:
+    """Configuration for pytest test catalog ingestion."""
+
+    snapshot: SnapshotRef
+    paths: BuildPaths
+    pytest_report_path: Path | None = None
+
+    @property
+    def repo(self) -> str:
+        """Repository slug."""
+        return self.snapshot.repo
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        return self.snapshot.commit
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root path."""
+        return self.snapshot.repo_root
+
+    @property
+    def resolved_pytest_report(self) -> Path:
+        """Pytest report path with defaults applied."""
+        return (self.pytest_report_path or self.paths.pytest_report).resolve()
+
+
+@dataclass(frozen=True)
+class TypingIngestStepConfig:
+    """Configuration for typedness and static diagnostic ingestion."""
+
+    snapshot: SnapshotRef
+    paths: BuildPaths
+    tool_runner: object | None = None
+
+    @property
+    def repo(self) -> str:
+        """Repository slug."""
+        return self.snapshot.repo
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        return self.snapshot.commit
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root path."""
+        return self.snapshot.repo_root
+
+
+@dataclass(frozen=True)
+class ConfigIngestStepConfig:
+    """Configuration for config-values ingestion."""
+
+    snapshot: SnapshotRef
+
+    @property
+    def repo(self) -> str:
+        """Repository slug."""
+        return self.snapshot.repo
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        return self.snapshot.commit
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root path."""
+        return self.snapshot.repo_root
+
+
+@dataclass(frozen=True)
+class PyAstIngestStepConfig:
+    """Configuration for stdlib AST ingestion."""
+
+    snapshot: SnapshotRef
+
+    @property
+    def repo(self) -> str:
+        """Repository slug."""
+        return self.snapshot.repo
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        return self.snapshot.commit
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root path."""
+        return self.snapshot.repo_root
+
+
+@dataclass(frozen=True)
 class CallGraphStepConfig:
     """Configuration for call graph construction step."""
 
@@ -960,6 +1117,110 @@ class ConfigBuilder:
         """
         return DocstringStepConfig(snapshot=self.snapshot)
 
+    def repo_scan(
+        self,
+        *,
+        tags_index_path: Path | None = None,
+        tool_runner: object | None = None,
+    ) -> RepoScanStepConfig:
+        """
+        Build repository scan configuration.
+
+        Returns
+        -------
+        RepoScanStepConfig
+            Configuration for module discovery.
+        """
+        return RepoScanStepConfig(
+            snapshot=self.snapshot,
+            paths=self.paths,
+            tags_index_path=tags_index_path,
+            tool_runner=tool_runner,
+        )
+
+    def coverage_ingest(
+        self,
+        *,
+        coverage_file: Path | None = None,
+        tool_runner: object | None = None,
+    ) -> CoverageIngestStepConfig:
+        """
+        Build coverage ingestion configuration.
+
+        Returns
+        -------
+        CoverageIngestStepConfig
+            Configuration for coverage line ingestion.
+        """
+        resolved = coverage_file or self.paths.coverage_json
+        return CoverageIngestStepConfig(
+            snapshot=self.snapshot,
+            paths=self.paths,
+            coverage_file=resolved,
+            tool_runner=tool_runner,
+        )
+
+    def tests_ingest(
+        self,
+        *,
+        pytest_report_path: Path | None = None,
+    ) -> TestsIngestStepConfig:
+        """
+        Build tests ingestion configuration.
+
+        Returns
+        -------
+        TestsIngestStepConfig
+            Configuration for pytest catalog ingestion.
+        """
+        resolved = pytest_report_path or self.paths.pytest_report
+        return TestsIngestStepConfig(
+            snapshot=self.snapshot,
+            paths=self.paths,
+            pytest_report_path=resolved,
+        )
+
+    def typing_ingest(
+        self,
+        *,
+        tool_runner: object | None = None,
+    ) -> TypingIngestStepConfig:
+        """
+        Build typing ingestion configuration.
+
+        Returns
+        -------
+        TypingIngestStepConfig
+            Configuration for typedness and diagnostics ingestion.
+        """
+        return TypingIngestStepConfig(
+            snapshot=self.snapshot,
+            paths=self.paths,
+            tool_runner=tool_runner,
+        )
+
+    def config_ingest(self) -> ConfigIngestStepConfig:
+        """
+        Build config-values ingestion configuration.
+
+        Returns
+        -------
+        ConfigIngestStepConfig
+            Configuration for config-values ingestion.
+        """
+        return ConfigIngestStepConfig(snapshot=self.snapshot)
+
+    def py_ast_ingest(self) -> PyAstIngestStepConfig:
+        """
+        Build stdlib AST ingestion configuration.
+
+        Returns
+        -------
+        PyAstIngestStepConfig
+            Configuration for AST ingestion.
+        """
+        return PyAstIngestStepConfig(snapshot=self.snapshot)
+
     # -----------------------------------------------------------------------
     # Graph Construction Steps
     # -----------------------------------------------------------------------
@@ -1443,7 +1704,9 @@ __all__ = [
     "CallGraphStepConfig",
     "ConfigBuilder",
     "ConfigDataFlowStepConfig",
+    "ConfigIngestStepConfig",
     "CoverageAnalyticsStepConfig",
+    "CoverageIngestStepConfig",
     "DataModelUsageStepConfig",
     "DataModelsStepConfig",
     "DocstringStepConfig",
@@ -1460,10 +1723,14 @@ __all__ = [
     "HotspotsStepConfig",
     "ImportGraphStepConfig",
     "ProfilesAnalyticsStepConfig",
+    "PyAstIngestStepConfig",
+    "RepoScanStepConfig",
     "ScipIngestStepConfig",
     "SemanticRolesStepConfig",
     "SubsystemsStepConfig",
     "SymbolUsesStepConfig",
     "TestCoverageStepConfig",
     "TestProfileStepConfig",
+    "TestsIngestStepConfig",
+    "TypingIngestStepConfig",
 ]

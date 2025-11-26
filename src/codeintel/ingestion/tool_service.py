@@ -216,7 +216,7 @@ class ToolService:
         """
         target_output = output_path or (self.runner.cache_dir / "coverage.json")
         await to_thread.run_sync(_mkdir_parents, target_output.parent)
-        args = ["json", "--quiet", f"--output={target_output}"]
+        args = ["json", "--quiet", "-o", str(target_output)]
         data_file = coverage_file or self.tools_config.coverage_file
         if data_file is not None:
             args.append(f"--data-file={data_file}")
@@ -448,6 +448,7 @@ def _parse_coverage_payload(
 
 def _safe_relpath(repo_root: Path, file_path: Path) -> str | None:
     try:
-        return normalize_rel_path(repo_relpath(repo_root, file_path))
+        candidate = file_path if file_path.is_absolute() else repo_root / file_path
+        return normalize_rel_path(repo_relpath(repo_root, candidate))
     except ValueError:
         return None

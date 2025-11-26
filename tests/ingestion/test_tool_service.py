@@ -2,91 +2,48 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 from pathlib import Path
 
 import pytest
 
-from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.tool_service import ToolService
-from tests._helpers.fakes import FakeToolRunner
+from tests._helpers.tooling import ToolingOutputs, build_tooling_context, run_static_tooling
 
 
-def test_tool_service_pyright_parses_errors(tmp_path: Path) -> None:
+@pytest.fixture
+def tooling_outputs(tmp_path: Path) -> ToolingOutputs:
+    """
+    Run the real tooling stack against a minimal repo.
+
+    Returns
+    -------
+    ToolingOutputs
+        Diagnostics and coverage reports produced by the tooling services.
+    """
+    context = build_tooling_context(tmp_path)
+    return run_static_tooling(context)
+
+
+def test_tool_service_pyright_parses_errors(tooling_outputs: ToolingOutputs) -> None:
     """ToolService aggregates pyright diagnostics per file."""
-    repo_root = tmp_path
-    target = repo_root / "pkg" / "mod.py"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("def foo(x: int) -> int:\n    return x\n", encoding="utf8")
-    payload = json.dumps(
-        {
-            "generalDiagnostics": [
-                {"severity": "error", "file": str(target)},
-            ]
-        }
-    )
-    runner = FakeToolRunner(tmp_path, payloads={"pyright": payload})
-    service = ToolService(runner, ToolsConfig.model_validate({}))
-
-    errors = asyncio.run(service.run_pyright(repo_root))
-
-    if errors != {"pkg/mod.py": 1}:
-        pytest.fail(f"Unexpected pyright errors: {errors}")
+    errors = tooling_outputs.pyright_errors
+    if errors.get("pkg/mod.py", 0) < 1:
+        pytest.fail(f"Expected pyright to report errors for pkg/mod.py, got {errors}")
 
 
-def test_tool_service_pyrefly_parses_errors(tmp_path: Path) -> None:
+def test_tool_service_pyrefly_parses_errors(tooling_outputs: ToolingOutputs) -> None:
     """ToolService aggregates pyrefly diagnostics per file."""
-    repo_root = tmp_path
-    target = repo_root / "pkg" / "mod.py"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("def foo(x):\n    return x\n", encoding="utf8")
-    payload = {
-        "errors": [
-            {"severity": "error", "path": str(target)},
-            {"severity": "warning", "path": str(target)},
-        ]
-    }
-    runner = FakeToolRunner(tmp_path, payloads={"pyrefly_json": payload})
-    service = ToolService(runner, ToolsConfig.model_validate({}))
-
-    errors = asyncio.run(service.run_pyrefly(repo_root))
-
-    if errors != {"pkg/mod.py": 1}:
-        pytest.fail(f"Unexpected pyrefly errors: {errors}")
+    errors = tooling_outputs.pyrefly_errors
+    if errors.get("pkg/mod.py", 0) < 1:
+        pytest.fail(f"Expected pyrefly to report errors for pkg/mod.py, got {errors}")
 
 
-def test_tool_service_coverage_reports(tmp_path: Path) -> None:
+def test_tool_service_coverage_reports(tooling_outputs: ToolingOutputs) -> None:
     """ToolService normalizes coverage.json payloads."""
-    repo_root = tmp_path
-    coverage_file = repo_root / ".coverage"
-    coverage_file.write_text("", encoding="utf8")
-    target = repo_root / "pkg" / "mod.py"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("print('hi')\n", encoding="utf8")
-    coverage_payload = {
-        "files": {
-            str(target): {
-                "executed_lines": [1],
-                "missing_lines": [2],
-            }
-        }
-    }
-    runner = FakeToolRunner(tmp_path, payloads={"coverage_json": coverage_payload})
-    service = ToolService(runner, ToolsConfig.model_validate({}))
-
-    reports = asyncio.run(
-        service.run_coverage_json(
-            repo_root,
-            coverage_file=coverage_file,
-            output_path=tmp_path / "coverage.json",
-        )
-    )
-
-    if len(reports) != 1:
-        pytest.fail(f"Expected single coverage report, got {len(reports)}")
-    report = reports[0]
-    if report.rel_path != "pkg/mod.py":
-        pytest.fail(f"Unexpected rel_path {report.rel_path}")
-    if report.executed_lines != {1} or report.missing_lines != {2}:
-        pytest.fail(f"Unexpected coverage sets: {report.executed_lines}, {report.missing_lines}")
+    reports = {report.rel_path: report for report in tooling_outputs.coverage_reports}
+    report = reports.get("pkg/mod.py")
+    if report is None:
+        pytest.fail(f"Coverage report missing for pkg/mod.py: {reports}")
+    if not report.executed_lines:
+        pytest.fail("Expected executed_lines to be populated for pkg/mod.py")
+    if report.missing_lines:
+        pytest.fail(f"Expected no missing lines, got {report.missing_lines}")

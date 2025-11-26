@@ -210,10 +210,9 @@ def install_logging_middleware(app: FastAPI) -> None:
         response = await call_next(request)
         duration_ms = (time.perf_counter() - start) * 1000
 
-    config: ServingConfig | None = getattr(request.app.state, "config", None)
-    repo = config.repo if config is not None else "unknown"
-    commit = config.commit if config is not None else "unknown"
-
+        config: ServingConfig | None = getattr(request.app.state, "config", None)
+        repo = config.repo if config is not None else "unknown"
+        commit = config.commit if config is not None else "unknown"
         LOG.info(
             "Handled %s %s status=%s repo=%s commit=%s duration_ms=%.2f params=%s",
             request.method,

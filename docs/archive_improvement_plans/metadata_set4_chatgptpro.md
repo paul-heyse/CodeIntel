@@ -217,7 +217,7 @@ class EntryPointsConfig:
         return cls(repo=repo, commit=commit)
 ```
 
-Align this with other analytics config types (CoverageAnalyticsConfig, GraphMetricsConfig, etc.). 
+Align this with other analytics config types (CoverageAnalyticsStepConfig, GraphMetricsStepConfig, etc.). 
 
 ### 2.3 AST/CST detection helpers
 

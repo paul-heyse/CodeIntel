@@ -9,16 +9,21 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.config import ExecutionConfig, ScipIngestStepConfig, SnapshotRef, ToolBinaries
-from codeintel.config.models import (
-    ConfigIngestConfig,
-    CoverageIngestConfig,
-    DocstringConfig,
-    RepoScanConfig,
-    TestsIngestConfig,
-    ToolsConfig,
-    TypingIngestConfig,
+from codeintel.config import (
+    DocstringStepConfig,
+    ExecutionConfig,
+    ScipIngestStepConfig,
+    SnapshotRef,
+    ToolBinaries,
 )
+from codeintel.config.builder import (
+    ConfigIngestStepConfig,
+    CoverageIngestStepConfig,
+    RepoScanStepConfig,
+    TestsIngestStepConfig,
+    TypingIngestStepConfig,
+)
+from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths
 from codeintel.ingestion import change_tracker as change_tracker_module
 from codeintel.ingestion import (
@@ -151,10 +156,9 @@ def run_repo_scan(ctx: IngestionContext) -> change_tracker_module.ChangeTracker:
         Tracker populated with module changes.
     """
     start = _log_step_start("repo_scan", ctx)
-    cfg = RepoScanConfig(
-        repo_root=ctx.repo_root,
-        repo=ctx.repo,
-        commit=ctx.commit,
+    cfg = RepoScanStepConfig(
+        snapshot=ctx.snapshot,
+        paths=ctx.paths,
         tool_runner=ctx.tool_runner,
     )
     tracker = repo_scan.ingest_repo(
@@ -235,10 +239,9 @@ def run_ast_extract(ctx: IngestionContext) -> None:
 def run_coverage_ingest(ctx: IngestionContext) -> None:
     """Load coverage lines from coverage.json or coverage.py data via the gateway connection."""
     start = _log_step_start("coverage_ingest", ctx)
-    cfg = CoverageIngestConfig(
-        repo_root=ctx.repo_root,
-        repo=ctx.repo,
-        commit=ctx.commit,
+    cfg = CoverageIngestStepConfig(
+        snapshot=ctx.snapshot,
+        paths=ctx.paths,
         coverage_file=ctx.active_tools.coverage_file,  # type: ignore[arg-type]
         tool_runner=ctx.tool_runner,
     )
@@ -260,10 +263,9 @@ def run_coverage_ingest(ctx: IngestionContext) -> None:
 def run_tests_ingest(ctx: IngestionContext) -> None:
     """Ingest pytest catalog rows via the gateway connection."""
     start = _log_step_start("tests_ingest", ctx)
-    cfg = TestsIngestConfig(
-        repo_root=ctx.repo_root,
-        repo=ctx.repo,
-        commit=ctx.commit,
+    cfg = TestsIngestStepConfig(
+        snapshot=ctx.snapshot,
+        paths=ctx.paths,
         pytest_report_path=ctx.paths.pytest_report,
     )
     runner = ctx.tool_runner or ToolRunner(
@@ -284,10 +286,9 @@ def run_tests_ingest(ctx: IngestionContext) -> None:
 def run_typing_ingest(ctx: IngestionContext) -> None:
     """Collect static typing diagnostics and typedness via the gateway connection."""
     start = _log_step_start("typing_ingest", ctx)
-    cfg = TypingIngestConfig(
-        repo_root=ctx.repo_root,
-        repo=ctx.repo,
-        commit=ctx.commit,
+    cfg = TypingIngestStepConfig(
+        snapshot=ctx.snapshot,
+        paths=ctx.paths,
         tool_runner=ctx.tool_runner,
     )
     runner = ctx.tool_runner or ToolRunner(
@@ -308,11 +309,7 @@ def run_typing_ingest(ctx: IngestionContext) -> None:
 def run_docstrings_ingest(ctx: IngestionContext) -> None:
     """Extract docstrings and persist structured rows via the gateway connection."""
     start = _log_step_start("docstrings_ingest", ctx)
-    cfg = DocstringConfig(
-        repo_root=ctx.repo_root,
-        repo=ctx.repo,
-        commit=ctx.commit,
-    )
+    cfg = DocstringStepConfig(snapshot=ctx.snapshot)
     docstrings_ingest.ingest_docstrings(
         ctx.gateway,
         cfg,
@@ -324,6 +321,6 @@ def run_docstrings_ingest(ctx: IngestionContext) -> None:
 def run_config_ingest(ctx: IngestionContext) -> None:
     """Flatten configuration files into analytics.config_values via the gateway connection."""
     start = _log_step_start("config_ingest", ctx)
-    cfg = ConfigIngestConfig(repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit)
+    cfg = ConfigIngestStepConfig(snapshot=ctx.snapshot)
     config_ingest.ingest_config_values(ctx.gateway, cfg=cfg, config_profile=ctx.config_profile)
     _log_step_done("config_ingest", start, ctx)

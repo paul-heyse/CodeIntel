@@ -5,17 +5,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
 
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_history
-from codeintel.config import ConfigBuilder, FunctionHistoryStepConfig
+from codeintel.config import FunctionHistoryStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-
-if TYPE_CHECKING:
-    from codeintel.config.models import FunctionHistoryConfig
 
 log = logging.getLogger(__name__)
 
@@ -58,7 +54,7 @@ class FuncHistoryAgg:
 
 def compute_function_history(
     gateway: StorageGateway,
-    cfg: FunctionHistoryStepConfig | FunctionHistoryConfig,
+    cfg: FunctionHistoryStepConfig,
     *,
     runner: ToolRunner | None = None,
     context: AnalyticsContext | None = None,
@@ -77,18 +73,6 @@ def compute_function_history(
     context:
         Optional shared analytics context to enforce snapshot consistency.
     """
-    if not isinstance(cfg, FunctionHistoryStepConfig):
-        builder = ConfigBuilder.from_snapshot(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-        )
-        cfg = builder.function_history(
-            max_history_days=cfg.max_history_days,
-            min_lines_threshold=cfg.min_lines_threshold,
-            default_branch=cfg.default_branch,
-        )
-
     con = gateway.con
     if context is not None and (context.repo != cfg.repo or context.commit != cfg.commit):
         log.warning(

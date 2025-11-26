@@ -5,7 +5,6 @@ from __future__ import annotations
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
 
 import pytest
 from coverage import Coverage
@@ -19,8 +18,12 @@ from codeintel.analytics.tests.coverage_edges import (
 )
 from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.storage.gateway import DuckDBConnection
-from tests._helpers.fakes import FakeCoverage
-from tests._helpers.fixtures import ProvisionOptions, provision_graph_ready_repo
+from tests._helpers.fixtures import (
+    ProvisionOptions,
+    provision_existing_repo,
+    provision_graph_ready_repo,
+)
+from tests._helpers.tooling import generate_coverage_for_function
 
 
 def _insert_goids(con: DuckDBConnection, cfg: TestCoverageStepConfig) -> None:
@@ -146,7 +149,7 @@ def test_edges_for_file_uses_test_meta() -> None:
         pytest.fail(f"Expected coverage_ratio {expected_cov_ratio}, got {edge['coverage_ratio']}")
 
 
-def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
+def test_compute_test_coverage_edges_with_real_coverage(tmp_path: Path) -> None:
     """compute_test_coverage_edges should join coverage contexts with test GOIDs."""
     repo_root = tmp_path / "repo"
     pkg_dir = repo_root / "pkg"
@@ -154,7 +157,7 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
     target_file = pkg_dir / "mod.py"
     target_file.write_text("def func():\n    return 1\n", encoding="utf-8")
 
-    gateway = provision_graph_ready_repo(
+    gateway = provision_existing_repo(
         repo_root,
         repo="demo/repo",
         commit="deadbeef",
@@ -162,11 +165,18 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
     ).gateway
     con = gateway.con
 
+    coverage_artifact = generate_coverage_for_function(
+        repo_root=repo_root,
+        module_import="pkg.mod",
+        function_name="func",
+        test_id="pkg/mod.py::test_func",
+        coverage_file=tmp_path / ".coverage",
+    )
     cfg = ConfigBuilder.from_snapshot(
         repo="demo/repo",
         commit="deadbeef",
         repo_root=repo_root,
-    ).test_coverage(coverage_file=tmp_path / ".coverage")
+    ).test_coverage(coverage_file=coverage_artifact.coverage_file)
 
     now = datetime.now(UTC)
     con.execute(
@@ -186,33 +196,7 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
         [cfg.repo, cfg.commit, now],
     )
 
-    class _FakeData:
-        def __init__(self, paths: list[str], contexts: dict[int, set[str]]) -> None:
-            self._paths = paths
-            self._contexts = contexts
-
-        def measured_files(self) -> list[str]:
-            return self._paths
-
-        def contexts_by_lineno(self, path: str) -> dict[int, set[str]]:
-            return self._contexts if path in self._paths else {}
-
-    class _FakeCoverage:
-        def __init__(self, path: Path) -> None:
-            self.path = path
-            self._statements = [1, 2]
-            self._contexts = {1: {"pkg/mod.py::test_func"}, 2: {"pkg/mod.py::test_func"}}
-
-        def analysis2(self, path: str) -> tuple[str, list[int], list[int], list[int], list[int]]:
-            return path, self._statements, [], [], self._statements
-
-        def get_data(self) -> _FakeData:
-            return _FakeData([str(target_file)], self._contexts)
-
-    def fake_loader(cfg_arg: TestCoverageStepConfig) -> Coverage:
-        return _FakeCoverage(cfg_arg.repo_root)  # type: ignore[return-value]
-
-    compute_test_coverage_edges(gateway, cfg, coverage_loader=fake_loader)
+    compute_test_coverage_edges(gateway, cfg)
     _assert_single_edge(con)
 
 
@@ -240,7 +224,7 @@ def test_compute_test_coverage_edges_respects_injected_loader(tmp_path: Path) ->
     target_file = pkg_dir / "mod.py"
     target_file.write_text("def func():\n    return 1\n", encoding="utf-8")
 
-    gateway = provision_graph_ready_repo(
+    gateway = provision_existing_repo(
         repo_root,
         repo="demo/repo",
         commit="deadbeef",
@@ -273,11 +257,17 @@ def test_compute_test_coverage_edges_respects_injected_loader(tmp_path: Path) ->
         [cfg.repo, cfg.commit, now],
     )
 
+    artifact = generate_coverage_for_function(
+        repo_root=repo_root,
+        module_import="pkg.mod",
+        function_name="func",
+        test_id="pkg/mod.py::test_func",
+    )
+
     def _coverage_loader(_cfg: TestCoverageStepConfig) -> Coverage:
-        abs_mod = str(target_file.resolve())
-        statements = {abs_mod: [1, 2]}
-        contexts = {abs_mod: {1: {"pkg/mod.py::test_func"}, 2: {"pkg/mod.py::test_func"}}}
-        return cast("Coverage", FakeCoverage(statements, contexts))
+        cov = Coverage(data_file=str(artifact.coverage_file))
+        cov.load()
+        return cov
 
     compute_test_coverage_edges(gateway, cfg, coverage_loader=_coverage_loader)
     _assert_single_edge(con)

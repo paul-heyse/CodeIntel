@@ -374,7 +374,6 @@ def fetch_models_normalized(
     commit: str,
     *,
     model_ids: Sequence[str] | None = None,
-    mode: DataModelReadMode | None = None,
 ) -> list[NormalizedDataModel]:
     """
     Return normalized data models, including fields and relationships.
@@ -389,19 +388,13 @@ def fetch_models_normalized(
         Commit SHA.
     model_ids
         Optional whitelist of model_ids to include.
-    mode
-        Read mode override. Defaults to CODEINTEL_DATA_MODELS_USE_LEGACY_JSON.
 
     Returns
     -------
     list[NormalizedDataModel]
-        Normalized models sourced from docs.v_data_models_normalized or the
-        legacy JSON columns when explicitly requested.
+        Normalized models sourced from docs.v_data_models_normalized.
     """
-    effective_mode = mode or DataModelReadMode.from_env()
     allowed = set(model_ids) if model_ids else None
-    if effective_mode is DataModelReadMode.LEGACY_JSON:
-        return _fetch_models_from_legacy_json(gateway, repo, commit, allowed)
     return _fetch_models_from_view(gateway, repo, commit, allowed)
 
 
@@ -534,76 +527,6 @@ def _fetch_models_from_view(
         )
         relationship_rows = _decode_relationship_structs(
             relationships,
-            repo=str(row_repo),
-            commit=str(row_commit),
-            model_id=str(model_id),
-            default_created_at=created_at,
-        )
-        result.append(
-            NormalizedDataModel(
-                repo=str(row_repo),
-                commit=str(row_commit),
-                model_id=str(model_id),
-                goid_h128=_as_int(goid_h128),
-                model_name=str(model_name),
-                module=str(module),
-                rel_path=str(rel_path),
-                model_kind=str(model_kind),
-                base_classes=_decode_base_classes(base_classes_json),
-                fields=field_rows,
-                relationships=relationship_rows,
-                doc_short=str(doc_short) if doc_short is not None else None,
-                doc_long=str(doc_long) if doc_long is not None else None,
-                created_at=created_at,
-            )
-        )
-    return result
-
-
-def _fetch_models_from_legacy_json(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
-    allowed: set[str] | None,
-) -> list[NormalizedDataModel]:
-    rows = gateway.con.execute(
-        """
-        SELECT
-            repo, commit, model_id, goid_h128, model_name, module, rel_path, model_kind,
-            base_classes_json, fields_json, relationships_json, doc_short, doc_long, created_at
-        FROM analytics.data_models
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
-    result: list[NormalizedDataModel] = []
-    for (
-        row_repo,
-        row_commit,
-        model_id,
-        goid_h128,
-        model_name,
-        module,
-        rel_path,
-        model_kind,
-        base_classes_json,
-        fields_json,
-        relationships_json,
-        doc_short,
-        doc_long,
-        created_at,
-    ) in rows:
-        if allowed is not None and model_id not in allowed:
-            continue
-        field_rows = _decode_field_structs(
-            fields_json,
-            repo=str(row_repo),
-            commit=str(row_commit),
-            model_id=str(model_id),
-            default_created_at=created_at,
-        )
-        relationship_rows = _decode_relationship_structs(
-            relationships_json,
             repo=str(row_repo),
             commit=str(row_commit),
             model_id=str(model_id),

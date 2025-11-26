@@ -161,7 +161,7 @@ def test_engine_reuse_across_semantic_roles(tmp_path: Path) -> None:
     )
 
     try:
-        _seed_semantic_roles_prereqs(gateway, snapshot.repo_slug, snapshot.commit)
+        _seed_semantic_roles_prereqs(gateway, snapshot.repo, snapshot.commit)
         engine = orchestration_steps.ensure_graph_engine(ctx)
         step = SemanticRolesStep()
         step.run(ctx)
@@ -172,7 +172,7 @@ def test_engine_reuse_across_semantic_roles(tmp_path: Path) -> None:
             SELECT COUNT(*) FROM analytics.semantic_roles_functions
             WHERE repo = ? AND commit = ?
             """,
-            [snapshot.repo_slug, snapshot.commit],
+            [snapshot.repo, snapshot.commit],
         ).fetchone()
         count = int(rows[0]) if rows is not None else 0
         if count == 0:
@@ -210,7 +210,7 @@ def test_graph_runtime_reuses_engine(tmp_path: Path) -> None:
         runtime = orchestration_steps.ensure_graph_runtime(ctx, acx=None)
         if runtime.engine is not engine:
             pytest.fail("Runtime did not reuse the shared engine instance")
-        rebuilt = runtime.build_engine(gateway, snapshot.repo_slug, snapshot.commit)
+        rebuilt = runtime.build_engine(gateway, snapshot.repo, snapshot.commit)
         if rebuilt is not engine:
             pytest.fail("Runtime.build_engine did not return the shared engine")
     finally:
@@ -241,7 +241,7 @@ def test_runtime_reuse_with_graph_context(tmp_path: Path) -> None:
         gateway=gateway,
     )
     builder = ConfigBuilder.from_snapshot(
-        repo=snapshot.repo_slug,
+        repo=snapshot.repo,
         commit=snapshot.commit,
         repo_root=snapshot.repo_root,
         build_dir=paths.build_dir,

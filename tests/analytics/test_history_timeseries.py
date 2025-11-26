@@ -5,22 +5,22 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.config.models import HistoryTimeseriesConfig
+from codeintel.config import ConfigBuilder
 from codeintel.storage.gateway import (
     StorageConfig,
     build_snapshot_gateway_resolver,
     open_gateway,
 )
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.fakes import FakeToolRunner
 from tests._helpers.history import SnapshotSpec, create_snapshot_db
+from tests._helpers.tooling import init_git_repo_with_history
 
 
 def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
     """Aggregate history across commits for function-level metrics."""
+    git_ctx = init_git_repo_with_history(tmp_path)
+    commit_new, commit_old = git_ctx.commits
     repo = "demo/repo"
-    commit_new = "c2"
-    commit_old = "c1"
     snapshot_dir = tmp_path / "snapshots"
     create_snapshot_db(
         snapshot_dir,
@@ -60,16 +60,14 @@ def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
         )
     )
 
-    runner = FakeToolRunner(
-        cache_dir=tmp_path / ".tool_cache",
-        payloads={"git": "2024-01-01T00:00:00+00:00"},
-    )
-    overrides = HistoryTimeseriesConfig.Overrides(entity_kind="function")
-    cfg = HistoryTimeseriesConfig.from_args(
+    builder = ConfigBuilder.from_snapshot(
         repo=repo,
-        repo_root=tmp_path,
+        commit=commit_new,
+        repo_root=git_ctx.repo_root,
+    )
+    cfg = builder.history_timeseries(
         commits=(commit_new, commit_old),
-        overrides=overrides,
+        entity_kind="function",
     )
     snapshot_resolver = build_snapshot_gateway_resolver(
         db_dir=snapshot_dir,
@@ -80,7 +78,7 @@ def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
         gateway,
         cfg,
         snapshot_resolver,
-        runner=runner,
+        runner=git_ctx.runner,
     )
 
     rows = gateway.con.execute(
