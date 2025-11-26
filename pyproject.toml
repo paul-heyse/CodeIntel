@@ -156,6 +156,16 @@ strict = true
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
+[tool.ruff.lint.per-file-ignores]
+# ConfigBuilder intentionally has many methods (one per step config type)
+# PLR0904: Too many public methods
+# PLR0913: Too many arguments (entrypoints toggles)
+"src/codeintel/config/builder.py" = ["PLR0904", "PLR0913"]
+# Compat layer has many converter functions with simple patterns
+"src/codeintel/config/compat.py" = ["DOC201"]
+# Primitives has complex constructors
+"src/codeintel/config/primitives.py" = ["PLR0913", "DOC201"]
+
 [tool.vulture]
 # Strict, but still manageable threshold.
 min_confidence = 90
