@@ -9,6 +9,7 @@ import pytest
 
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
+from codeintel.models.rows import GraphValidationRow, graph_validation_row_to_tuple
 from tests._helpers.fixtures import provision_docs_export_ready
 
 
@@ -28,34 +29,28 @@ def test_graph_validation_export(tmp_path: Path) -> None:
     gateway = ctx.gateway
     con = gateway.con
     con.execute(
-        """
-        CREATE TABLE IF NOT EXISTS analytics.graph_validation (
-            repo TEXT,
-            commit TEXT,
-            issue TEXT,
-            severity TEXT,
-            rel_path TEXT,
-            detail TEXT,
-            metadata JSON,
-            created_at TIMESTAMP
-        );
-        """
+        "DELETE FROM analytics.graph_validation WHERE repo = ? AND commit = ?",
+        ["demo/repo", "deadbeef"],
     )
+    row: GraphValidationRow = {
+        "repo": "demo/repo",
+        "commit": "deadbeef",
+        "graph_name": "call_graph",
+        "entity_id": "pkg/a.py",
+        "issue": "missing_function_goids",
+        "severity": "warning",
+        "rel_path": "pkg/a.py",
+        "detail": "1 functions, 0 GOIDs",
+        "metadata": {"function_count": 1, "goid_count": 0},
+        "created_at": datetime.now(UTC),
+    }
     con.execute(
         """
-        INSERT INTO analytics.graph_validation
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO analytics.graph_validation (
+            repo, commit, graph_name, entity_id, issue, severity, rel_path, detail, metadata, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        [
-            "demo/repo",
-            "deadbeef",
-            "missing_function_goids",
-            "warning",
-            "pkg/a.py",
-            "1 functions, 0 GOIDs",
-            {"function_count": 1, "goid_count": 0},
-            datetime.now(UTC),
-        ],
+        graph_validation_row_to_tuple(row),
     )
 
     doc_out = tmp_path / "Document Output"

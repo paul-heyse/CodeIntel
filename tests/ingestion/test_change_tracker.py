@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
 from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.ingestion.common import ChangeRequest, ChangeSet, ModuleRecord
+from codeintel.storage.gateway import StorageGateway
 
 
 def _module(rel_path: str) -> ModuleRecord:
@@ -21,11 +21,11 @@ def _module(rel_path: str) -> ModuleRecord:
     )
 
 
-def test_view_for_dataset_incremental() -> None:
+def test_view_for_dataset_incremental(fresh_gateway: StorageGateway) -> None:
     """Use incremental mode when change ratios remain below thresholds."""
     modules = [_module("a.py"), _module("b.py"), _module("c.py")]
     tracker = ChangeTracker(
-        gateway=Mock(),
+        gateway=fresh_gateway,
         change_request=ChangeRequest(
             repo="repo",
             commit="deadbeef",
@@ -47,11 +47,13 @@ def test_view_for_dataset_incremental() -> None:
         pytest.fail("Expected no deleted paths")
 
 
-def test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy() -> None:
+def test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Trigger full rebuild when change ratio exceeds policy limits."""
     modules = [_module("a.py"), _module("b.py"), _module("c.py")]
     tracker = ChangeTracker(
-        gateway=Mock(),
+        gateway=fresh_gateway,
         change_request=ChangeRequest(
             repo="repo",
             commit="deadbeef",
@@ -74,11 +76,13 @@ def test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy() -> No
         pytest.fail("Deleted paths did not match expected full rebuild set")
 
 
-def test_view_for_dataset_respects_module_filter_and_deleted_paths() -> None:
+def test_view_for_dataset_respects_module_filter_and_deleted_paths(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Apply module filter and ignore deletions outside the filtered set."""
     modules = [_module("src/a.py"), _module("src/b.txt"), _module("tests/c.py")]
     tracker = ChangeTracker(
-        gateway=Mock(),
+        gateway=fresh_gateway,
         change_request=ChangeRequest(
             repo="repo",
             commit="deadbeef",
@@ -104,11 +108,13 @@ def test_view_for_dataset_respects_module_filter_and_deleted_paths() -> None:
         pytest.fail("Deleted paths outside filter should be ignored")
 
 
-def test_view_for_dataset_full_rebuild_flag_forces_rebuild() -> None:
+def test_view_for_dataset_full_rebuild_flag_forces_rebuild(
+    fresh_gateway: StorageGateway,
+) -> None:
     """Force full rebuild when change request flag is set."""
     modules = [_module("a.py"), _module("b.py")]
     tracker = ChangeTracker(
-        gateway=Mock(),
+        gateway=fresh_gateway,
         change_request=ChangeRequest(
             repo="repo",
             commit="deadbeef",

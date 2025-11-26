@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.config_data_flow import compute_config_data_flow
 from codeintel.analytics.data_model_usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
+from codeintel.analytics.graphs import compute_config_data_flow
 from codeintel.config.models import ConfigDataFlowConfig, DataModelsConfig, DataModelUsageConfig
 from codeintel.storage.data_models import NormalizedDataModel, fetch_models_normalized
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway

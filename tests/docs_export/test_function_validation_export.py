@@ -24,6 +24,7 @@ def test_function_validation_export(fresh_gateway: StorageGateway, tmp_path: Pat
             FunctionValidationRow(
                 repo="demo/repo",
                 commit="deadbeef",
+                function_goid_h128=123,
                 rel_path="mod.py",
                 qualname="pkg.mod.func",
                 issue="span_not_found",

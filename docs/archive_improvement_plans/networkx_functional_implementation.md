@@ -1211,7 +1211,7 @@ import duckdb
 from prefect import flow, task
 
 from codeintel.storage import get_connection  # your existing helper
-from codeintel.analytics.graph_metrics_functions_ext import (
+from codeintel.analytics.graphs.graph_metrics_ext import (
     compute_function_graph_metrics_ext_for_repo,
     upsert_graph_metrics_functions_ext,
 )
@@ -2986,6 +2986,5 @@ An MCP agent can now:
 3. Use block‑level centrality, dominance, and data‑flow metrics to decide *where* inside the function to focus edits or inspections.
 
 If you’d like, a small next step would be adding *edge‑level* docs views (e.g., `docs.v_cfg_block_edges_enriched`, `docs.v_dfg_block_edges_enriched`) that join `cfg_edges` / `dfg_edges` with these block views, but the two views above are already enough for a very rich “zoom‑in” story.
-
 
 

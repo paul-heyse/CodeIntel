@@ -780,15 +780,15 @@ FUNCTION_VALIDATION_DELETE = (
 )
 FUNCTION_VALIDATION_INSERT = (
     "INSERT INTO analytics.function_validation ("
-    "repo, commit, function_goid_h128, kind, message, created_at"
-    ") VALUES (?, ?, ?, ?, ?, ?)"
+    "repo, commit, function_goid_h128, rel_path, qualname, issue, detail, created_at"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 GRAPH_VALIDATION_DELETE = "DELETE FROM analytics.graph_validation WHERE repo = ? AND commit = ?"
 GRAPH_VALIDATION_INSERT = (
     "INSERT INTO analytics.graph_validation ("
-    "repo, commit, graph_name, entity_id, kind, message, created_at"
-    ") VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "repo, commit, graph_name, entity_id, issue, severity, rel_path, detail, metadata, created_at"
+    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 

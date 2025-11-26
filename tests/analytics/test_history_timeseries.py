@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
+from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.config.models import HistoryTimeseriesConfig
 from codeintel.storage.gateway import (
     StorageConfig,

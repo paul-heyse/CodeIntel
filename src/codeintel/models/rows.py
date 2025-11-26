@@ -355,8 +355,10 @@ class FunctionValidationRow(TypedDict):
     repo: str
     commit: str
     function_goid_h128: int
-    kind: str
-    message: str
+    rel_path: str
+    qualname: str
+    issue: str
+    detail: str
     created_at: datetime
 
 
@@ -373,8 +375,10 @@ def function_validation_row_to_tuple(row: FunctionValidationRow) -> tuple[object
         row["repo"],
         row["commit"],
         row["function_goid_h128"],
-        row["kind"],
-        row["message"],
+        row["rel_path"],
+        row["qualname"],
+        row["issue"],
+        row["detail"],
         row["created_at"],
     )
 
@@ -386,8 +390,11 @@ class GraphValidationRow(TypedDict):
     commit: str
     graph_name: str
     entity_id: str
-    kind: str
-    message: str
+    issue: str
+    severity: str | None
+    rel_path: str | None
+    detail: str
+    metadata: object | None
     created_at: datetime
 
 
@@ -405,8 +412,11 @@ def graph_validation_row_to_tuple(row: GraphValidationRow) -> tuple[object, ...]
         row["commit"],
         row["graph_name"],
         row["entity_id"],
-        row["kind"],
-        row["message"],
+        row["issue"],
+        row["severity"],
+        row["rel_path"],
+        row["detail"],
+        row["metadata"],
         row["created_at"],
     )
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from codeintel.models.rows import (
     FunctionValidationRow,
@@ -43,24 +44,28 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         self,
         *,
         function_goid_h128: int,
-        kind: str,
-        message: str,
+        rel_path: str,
+        qualname: str,
+        issue: str,
+        detail: str,
     ) -> None:
         """Record a validation finding for a function GOID."""
         self.total += 1
-        if kind == "parse_failed":
+        if issue == "parse_failed":
             self.parse_failed += 1
-        elif kind == "span_not_found":
+        elif issue == "span_not_found":
             self.span_not_found += 1
-        elif kind == "unknown_function":
+        elif issue == "unknown_function":
             self.unknown_functions += 1
 
         row: FunctionValidationRow = {
             "repo": self.repo,
             "commit": self.commit,
             "function_goid_h128": function_goid_h128,
-            "kind": kind,
-            "message": message,
+            "rel_path": rel_path,
+            "qualname": qualname,
+            "issue": issue,
+            "detail": detail,
             "created_at": gateway_timestamp(),
         }
         self.rows.append(row)
@@ -74,8 +79,8 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         con.executemany(
             """
             INSERT INTO analytics.function_validation (
-                repo, commit, function_goid_h128, kind, message, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                repo, commit, function_goid_h128, rel_path, qualname, issue, detail, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             tuples,
         )
@@ -90,19 +95,27 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         self,
         *,
         graph_name: str,
-        entity_id: str,
-        kind: str,
-        message: str,
+        issue: str,
+        detail: str,
+        entity_id: str | None = None,
+        extras: Mapping[str, object | None] | None = None,
     ) -> None:
         """Record a graph validation finding."""
         self.total += 1
+        severity = cast("str | None", extras.get("severity") if extras is not None else None)
+        rel_path = cast("str | None", extras.get("rel_path") if extras is not None else None)
+        metadata = extras.get("metadata") if extras is not None else None
+        entity = entity_id or graph_name
         row: GraphValidationRow = {
             "repo": self.repo,
             "commit": self.commit,
             "graph_name": graph_name,
-            "entity_id": entity_id,
-            "kind": kind,
-            "message": message,
+            "entity_id": entity,
+            "issue": issue,
+            "severity": severity,
+            "rel_path": rel_path,
+            "detail": detail,
+            "metadata": metadata,
             "created_at": gateway_timestamp(),
         }
         self.rows.append(row)
@@ -116,8 +129,8 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         con.executemany(
             """
             INSERT INTO analytics.graph_validation (
-                repo, commit, graph_name, entity_id, kind, message, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                repo, commit, graph_name, entity_id, issue, severity, rel_path, detail, metadata, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             tuples,
         )

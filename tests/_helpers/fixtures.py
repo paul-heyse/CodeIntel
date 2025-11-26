@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Final, Self
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
-from codeintel.analytics.graph_metrics import compute_graph_metrics
+from codeintel.analytics.graphs.graph_metrics import compute_graph_metrics
 from codeintel.config.models import (
     CallGraphConfig,
     CoverageIngestConfig,
@@ -719,14 +719,16 @@ def seed_docs_export_invalid_profile(
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS analytics.graph_validation (
-            repo TEXT,
-            commit TEXT,
-            issue TEXT,
+            repo TEXT NOT NULL,
+            commit TEXT NOT NULL,
+            graph_name TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            issue TEXT NOT NULL,
             severity TEXT,
             rel_path TEXT,
-            detail TEXT,
+            detail TEXT NOT NULL,
             metadata JSON,
-            created_at TIMESTAMP
+            created_at TIMESTAMP NOT NULL
         )
         """
     )
@@ -2224,6 +2226,7 @@ def seed_mcp_backend(
             FunctionValidationRow(
                 repo=repo,
                 commit=commit,
+                function_goid_h128=1,
                 rel_path="foo.py",
                 qualname="foo",
                 issue="span_not_found",

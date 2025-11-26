@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
-from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
+from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 from codeintel.config.models import (
     CodeIntelConfig,

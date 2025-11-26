@@ -1260,18 +1260,18 @@ CREATE OR REPLACE VIEW docs.v_cfg_block_architecture AS
             'function' AS domain,
             repo,
             commit,
-            CAST(function_goid_h128 AS BIGINT) AS entity_id,
-            kind,
-            message
+            CAST(function_goid_h128 AS VARCHAR) AS entity_id,
+            issue,
+            detail
         FROM analytics.function_validation
         UNION ALL
         SELECT
             'graph' AS domain,
             repo,
             commit,
-            NULL AS entity_id,
-            kind,
-            message
+            CAST(entity_id AS VARCHAR) AS entity_id,
+            issue,
+            detail
         FROM analytics.graph_validation;
         """
     )

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.graph_metrics import compute_graph_metrics
+from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config.models import GraphMetricsConfig
 from tests._helpers.fixtures import (
     graph_metrics_ready_gateway,

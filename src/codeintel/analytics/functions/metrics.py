@@ -370,8 +370,10 @@ def _process_file_functions(
         for row in fun_rows:
             state.reporter.record(
                 function_goid_h128=int(row["goid_h128"]),
-                kind="parse_failed",
-                message=detail,
+                rel_path=row["rel_path"],
+                qualname=row["qualname"],
+                issue="parse_failed",
+                detail=detail,
             )
         log.warning("Skipping file for function analytics: %s", abs_path)
         return metrics_rows, types_rows
@@ -386,8 +388,10 @@ def _process_file_functions(
         except SpanResolutionError as exc:
             state.reporter.record(
                 function_goid_h128=meta.goid,
-                kind="span_not_found",
-                message=str(exc),
+                rel_path=meta.rel_path,
+                qualname=meta.qualname,
+                issue="span_not_found",
+                detail=str(exc),
             )
             continue
 
@@ -398,8 +402,10 @@ def _process_file_functions(
         if node is None or not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             state.reporter.record(
                 function_goid_h128=meta.goid,
-                kind="span_not_found",
-                message=(
+                rel_path=meta.rel_path,
+                qualname=meta.qualname,
+                issue="span_not_found",
+                detail=(
                     f"AST node not found for span "
                     f"{span_result.span.start_line}-{span_result.span.end_line}"
                 ),
@@ -409,8 +415,10 @@ def _process_file_functions(
         if rows is None:
             state.reporter.record(
                 function_goid_h128=meta.goid,
-                kind="span_not_found",
-                message="Span matched a non-function node",
+                rel_path=meta.rel_path,
+                qualname=meta.qualname,
+                issue="span_not_found",
+                detail="Span matched a non-function node",
             )
             continue
         metrics_row, types_row = rows
@@ -558,8 +566,10 @@ def _build_function_analytics_from_context(
             except SpanResolutionError as exc:
                 reporter.record(
                     function_goid_h128=meta.goid,
-                    kind="span_not_found",
-                    message=str(exc),
+                    rel_path=meta.rel_path,
+                    qualname=meta.qualname,
+                    issue="span_not_found",
+                    detail=str(exc),
                 )
                 continue
             ast_info = ast_map.get(meta.goid)
@@ -569,16 +579,20 @@ def _build_function_analytics_from_context(
                 )
                 reporter.record(
                     function_goid_h128=meta.goid,
-                    kind="span_not_found",
-                    message=detail,
+                    rel_path=meta.rel_path,
+                    qualname=meta.qualname,
+                    issue="span_not_found",
+                    detail=detail,
                 )
                 continue
             rows = _function_rows_from_node(meta, ast_info.node, ast_info.lines, process_ctx)
             if rows is None:
                 reporter.record(
                     function_goid_h128=meta.goid,
-                    kind="span_not_found",
-                    message="context AST resolution failed",
+                    rel_path=meta.rel_path,
+                    qualname=meta.qualname,
+                    issue="span_not_found",
+                    detail="context AST resolution failed",
                 )
                 continue
             metrics_row, types_row = rows

@@ -6,8 +6,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.analytics.graph_stats import compute_graph_stats
-from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
+from codeintel.analytics.graphs import (
+    compute_graph_stats,
+    compute_subsystem_agreement,
+)
 from codeintel.graphs.validation import warn_graph_structure
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views

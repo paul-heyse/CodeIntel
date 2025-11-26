@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.analytics.graph_metrics import compute_graph_metrics
+from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.analytics.profiles import build_function_profile, build_module_profile
 from codeintel.config.models import GraphMetricsConfig, ProfilesAnalyticsConfig, SymbolUsesConfig
 from codeintel.graphs.function_catalog import FunctionCatalog

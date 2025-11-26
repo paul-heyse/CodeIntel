@@ -44,5 +44,5 @@ def test_graph_validation_orphan_uses_catalog_map(fresh_gateway: StorageGateway)
         commit="c",
         catalog_provider=provider,
     )
-    rows = con.execute("SELECT path FROM analytics.graph_validation").fetchall()
+    rows = con.execute("SELECT rel_path FROM analytics.graph_validation").fetchall()
     _expect(condition=rows == [("pkg/a.py",)], detail=f"unexpected paths {rows}")
