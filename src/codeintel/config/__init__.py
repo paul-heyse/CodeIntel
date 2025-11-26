@@ -18,7 +18,7 @@ For primitives:
     from codeintel.config import SnapshotRef, BuildPaths
 
 For CLI boundary models:
-    from codeintel.config import RepoConfig, PathsConfig, ToolsConfig, CodeIntelConfig
+    from codeintel.config import RepoConfig, CliPathsInput, ToolsConfig, CodeIntelConfig
 
 Legacy step configs have been migrated to use `ConfigBuilder` and the new step config types.
 Use `ConfigBuilder.from_snapshot()` to create step configurations.
@@ -58,18 +58,15 @@ from codeintel.config.builder import (
 from codeintel.config.models import (
     CliPathsInput,
     CodeIntelConfig,
-    PathsConfig,
+    ExecutionConfig,
     RepoConfig,
     ToolsConfig,
 )
 from codeintel.config.primitives import (
     BuildPaths,
-    DerivedPaths,
     ExecutionOptions,
     GraphBackendConfig,
     ScanProfiles,
-    ScanProfilesConfig,
-    SnapshotConfig,
     SnapshotRef,
     StepConfig,
     ToolBinaries,
@@ -87,9 +84,9 @@ __all__ = [
     "CoverageAnalyticsStepConfig",
     "DataModelUsageStepConfig",
     "DataModelsStepConfig",
-    "DerivedPaths",
     "DocstringStepConfig",
     "EntryPointsStepConfig",
+    "ExecutionConfig",
     "ExecutionOptions",
     "ExternalDependenciesStepConfig",
     "FunctionAnalyticsStepConfig",
@@ -102,14 +99,11 @@ __all__ = [
     "HistoryTimeseriesStepConfig",
     "HotspotsStepConfig",
     "ImportGraphStepConfig",
-    "PathsConfig",
     "ProfilesAnalyticsStepConfig",
     "RepoConfig",
     "ScanProfiles",
-    "ScanProfilesConfig",
     "ScipIngestStepConfig",
     "SemanticRolesStepConfig",
-    "SnapshotConfig",
     "SnapshotRef",
     "StepConfig",
     "SubsystemsStepConfig",

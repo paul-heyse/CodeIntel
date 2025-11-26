@@ -62,13 +62,17 @@ from codeintel.analytics.tests import (
     compute_test_coverage_edges,
     compute_test_graph_metrics,
 )
-from codeintel.config import ConfigBuilder, TestCoverageStepConfig
+from codeintel.config import (
+    ConfigBuilder,
+    ExecutionConfig,
+    SnapshotRef,
+    TestCoverageStepConfig,
+)
 from codeintel.config.models import (
     FunctionAnalyticsOverrides,
     ToolsConfig,
 )
-from codeintel.config.primitives import GraphBackendConfig
-from codeintel.core.config import ExecutionConfig, PathsConfig, SnapshotConfig
+from codeintel.config.primitives import BuildPaths, GraphBackendConfig
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.graphs.callgraph_builder import build_call_graph
@@ -147,9 +151,9 @@ class PipelineContext:
         build/
     """
 
-    snapshot: SnapshotConfig
+    snapshot: SnapshotRef
     execution: ExecutionConfig
-    paths: PathsConfig
+    paths: BuildPaths
     gateway: StorageGateway
     tool_runner: ToolRunner | None = None
     tool_service: ToolService | None = None
@@ -183,7 +187,7 @@ class PipelineContext:
     @property
     def repo(self) -> str:
         """Repository slug for the current snapshot."""
-        return self.snapshot.repo_slug
+        return self.snapshot.repo
 
     @property
     def commit(self) -> str:

@@ -11,9 +11,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from codeintel.config.serving_models import ServingConfig
 from codeintel.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
-from codeintel.mcp.config import McpServerConfig
-from codeintel.server.fastapi import ApiAppConfig, BackendResource, create_app
+from codeintel.server.fastapi import BackendResource, create_app
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.views import create_all_views
 
@@ -108,17 +108,17 @@ def gateway(tmp_path: Path) -> Iterator[StorageGateway]:
 
 
 @pytest.fixture
-def api_config(gateway: StorageGateway) -> ApiAppConfig:
+def api_config(gateway: StorageGateway) -> ServingConfig:
     """
-    Build an ApiAppConfig pinned to the gateway database.
+    Build a ServingConfig pinned to the gateway database.
 
     Returns
     -------
-    ApiAppConfig
+    ServingConfig
         Application configuration for the test app.
     """
     db_path = gateway.config.db_path
-    server_cfg = McpServerConfig(
+    return ServingConfig(
         mode="local_db",
         repo_root=db_path.parent,
         repo="r",
@@ -126,7 +126,6 @@ def api_config(gateway: StorageGateway) -> ApiAppConfig:
         db_path=db_path,
         read_only=False,
     )
-    return ApiAppConfig(server=server_cfg, read_only=False)
 
 
 @pytest.fixture
@@ -143,7 +142,7 @@ def backend(gateway: StorageGateway) -> DuckDBBackend:
 
 
 @pytest.fixture
-def app(api_config: ApiAppConfig, backend: DuckDBBackend, gateway: StorageGateway) -> FastAPI:
+def app(api_config: ServingConfig, backend: DuckDBBackend, gateway: StorageGateway) -> FastAPI:
     """
     Construct a FastAPI app using injected configuration, backend, and gateway.
 
@@ -153,10 +152,10 @@ def app(api_config: ApiAppConfig, backend: DuckDBBackend, gateway: StorageGatewa
         Application instance under test.
     """
 
-    def _config_loader() -> ApiAppConfig:
+    def _config_loader() -> ServingConfig:
         return api_config
 
-    def _backend_factory(_: ApiAppConfig, *, _gateway: StorageGateway) -> BackendResource:
+    def _backend_factory(_: ServingConfig, *, _gateway: StorageGateway) -> BackendResource:
         # Use the provided backend/gateway; do not reopen connections.
         return BackendResource(backend=backend, service=backend.service, close=lambda: None)
 

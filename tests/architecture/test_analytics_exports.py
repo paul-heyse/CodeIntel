@@ -12,6 +12,7 @@ EXPECTED_EXPORTS: Mapping[str, set[str]] = {
     "codeintel.analytics.functions": {
         "FunctionAnalyticsConfig",
         "FunctionAnalyticsOptions",
+        "FunctionAnalyticsStepConfig",
         "TypednessFlags",
         "compute_function_contracts",
         "compute_function_effects",

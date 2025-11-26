@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.analytics.functions import compute_function_history
-from codeintel.config.models import FunctionHistoryConfig
+from codeintel.config import ConfigBuilder
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_in
@@ -93,7 +93,8 @@ def test_function_history_populates_rows(
         cache_dir=repo_root / ".tool_cache",
         payloads={"git": _git_log_payload()},
     )
-    cfg = FunctionHistoryConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    builder = ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = builder.function_history()
     compute_function_history(gateway, cfg, runner=runner)
 
     rows = con.execute("SELECT * FROM analytics.function_history").fetchall()
@@ -157,12 +158,8 @@ def test_function_history_respects_min_threshold(
         ],
     )
     runner = FakeToolRunner(cache_dir=repo_root / ".tool_cache", payloads={"git": ""})
-    cfg = FunctionHistoryConfig.from_paths(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-        overrides=FunctionHistoryConfig.Overrides(min_lines_threshold=10),
-    )
+    builder = ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = builder.function_history(min_lines_threshold=10)
     compute_function_history(gateway, cfg, runner=runner)
     rows = con.execute(
         "SELECT commit_count, lines_added FROM analytics.function_history"

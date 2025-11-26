@@ -12,7 +12,6 @@ from typing import Final, Self
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config import (
-    CallGraphStepConfig,
     ConfigBuilder,
     GraphMetricsStepConfig,
 )
@@ -457,19 +456,19 @@ def provision_ingested_repo(
     gateway = _open_gateway_from_context(ctx, gateway_opts)
     ingest_repo(
         gateway,
-        cfg=RepoScanConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit),
+        cfg=RepoScanConfig(repo_root=repo_root, repo=repo, commit=commit),
     )
     if opts.include_typing:
         ingest_typing_signals(
             gateway,
-            cfg=TypingIngestConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit),
+            cfg=TypingIngestConfig(repo_root=repo_root, repo=repo, commit=commit),
             tool_service=tool_service,
             tools=tools_cfg,
         )
     if opts.include_coverage:
         ingest_coverage_lines(
             gateway,
-            cfg=CoverageIngestConfig.from_paths(
+            cfg=CoverageIngestConfig(
                 repo_root=repo_root,
                 repo=repo,
                 commit=commit,
@@ -529,19 +528,19 @@ def provision_existing_repo(
     gateway = _open_gateway_from_context(ctx, gateway_opts)
     ingest_repo(
         gateway,
-        cfg=RepoScanConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit),
+        cfg=RepoScanConfig(repo_root=repo_root, repo=repo, commit=commit),
     )
     if opts.include_typing:
         ingest_typing_signals(
             gateway,
-            cfg=TypingIngestConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit),
+            cfg=TypingIngestConfig(repo_root=repo_root, repo=repo, commit=commit),
             tool_service=tool_service,
             tools=tools_cfg,
         )
     if opts.include_coverage:
         ingest_coverage_lines(
             gateway,
-            cfg=CoverageIngestConfig.from_paths(
+            cfg=CoverageIngestConfig(
                 repo_root=repo_root,
                 repo=repo,
                 commit=commit,
@@ -2023,7 +2022,9 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
             ],
         )
     if build_callgraph_enabled:
-        cfg = ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root).call_graph()
+        cfg = ConfigBuilder.from_snapshot(
+            repo=repo, commit=commit, repo_root=repo_root
+        ).call_graph()
         build_call_graph(gateway, cfg)
     if include_symbol_edges:
         insert_symbol_use_edges(
@@ -2039,7 +2040,12 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
             ],
         )
     if run_metrics:
-        cfg = graph_cfg or ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root).graph_metrics()
+        cfg = (
+            graph_cfg
+            or ConfigBuilder.from_snapshot(
+                repo=repo, commit=commit, repo_root=repo_root
+            ).graph_metrics()
+        )
         compute_graph_metrics(gateway, cfg)
     return ctx
 

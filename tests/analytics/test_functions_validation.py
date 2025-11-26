@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.analytics.functions import compute_function_metrics_and_types
-from codeintel.config import ConfigBuilder, FunctionAnalyticsStepConfig
-from codeintel.config.models import FunctionAnalyticsOverrides
+from codeintel.config import ConfigBuilder
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import GoidRow, insert_goids
 
@@ -53,12 +52,12 @@ def test_records_validation_when_parse_fails(fresh_gateway: StorageGateway, tmp_
     file_path.write_text("def broken(:\n    return 1\n", encoding="utf-8")
     _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.broken")
 
-    cfg = FunctionAnalyticsStepConfig.from_paths(
+    builder = ConfigBuilder.from_snapshot(
         repo="demo/repo",
         commit="deadbeef",
         repo_root=tmp_path,
-        overrides=FunctionAnalyticsOverrides(fail_on_missing_spans=False),
     )
+    cfg = builder.function_analytics(fail_on_missing_spans=False)
     summary = compute_function_metrics_and_types(gateway, cfg)
 
     metrics_rows = con.execute("SELECT * FROM analytics.function_metrics").fetchall()
@@ -90,12 +89,12 @@ def test_span_not_found_is_recorded(fresh_gateway: StorageGateway, tmp_path: Pat
     file_path.write_text("def foo():\n    return 1\n", encoding="utf-8")
     _insert_goid(gateway, rel_path=rel_path, qualname="pkg.mod.foo", start_line=50, end_line=55)
 
-    cfg = FunctionAnalyticsStepConfig.from_paths(
+    builder = ConfigBuilder.from_snapshot(
         repo="demo/repo",
         commit="deadbeef",
         repo_root=tmp_path,
-        overrides=FunctionAnalyticsOverrides(fail_on_missing_spans=False),
     )
+    cfg = builder.function_analytics(fail_on_missing_spans=False)
     summary = compute_function_metrics_and_types(gateway, cfg)
 
     validation_rows = con.execute(

@@ -6,13 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.config import BuildPaths, ExecutionConfig, ScanProfiles, SnapshotRef
 from codeintel.config.models import GraphBackendConfig, ToolsConfig
-from codeintel.core.config import (
-    ExecutionConfig,
-    PathsConfig,
-    ScanProfilesConfig,
-    SnapshotConfig,
-)
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.function_catalog_service import FunctionCatalogService
 from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
@@ -62,8 +57,8 @@ def test_risk_factors_uses_catalog_modules_when_core_modules_empty(tmp_path: Pat
     # Catalog supplies module mapping in lieu of core.modules rows.
     catalog = FunctionCatalog(functions=(), module_by_path={"m.py": "pkg.m"})
     provider = FunctionCatalogService(catalog)
-    snapshot = SnapshotConfig(repo_root=tmp_path, repo_slug="r", commit="c")
-    profiles = ScanProfilesConfig(
+    snapshot = SnapshotRef(repo_root=tmp_path, repo="r", commit="c")
+    profiles = ScanProfiles(
         code=default_code_profile(tmp_path),
         config=default_config_profile(tmp_path),
     )
@@ -73,7 +68,11 @@ def test_risk_factors_uses_catalog_modules_when_core_modules_empty(tmp_path: Pat
         profiles=profiles,
         graph_backend=GraphBackendConfig(),
     )
-    paths = PathsConfig(snapshot=snapshot, execution=execution)
+    paths = BuildPaths.from_layout(
+        repo_root=tmp_path,
+        build_dir=execution.build_dir,
+        db_path=db_path,
+    )
     ctx = PipelineContext(
         snapshot=snapshot,
         execution=execution,

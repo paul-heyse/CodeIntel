@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
 
 import pytest
 from prefect.server.api import server as prefect_server

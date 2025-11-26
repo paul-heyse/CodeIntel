@@ -7,7 +7,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from codeintel.config.models import ScipIngestConfig
+from codeintel.config import BuildPaths, ScipIngestStepConfig, SnapshotRef, ToolBinaries
 from codeintel.ingestion.common import ModuleRecord
 from codeintel.ingestion.scip_ingest import ScipIngestOps, ScipRuntime
 from codeintel.ingestion.tool_runner import ToolRunner
@@ -16,12 +16,16 @@ from codeintel.ingestion.tool_service import ToolService
 
 def test_scip_module_filter_limits_to_src_python_files(tmp_path: Path) -> None:
     """Ensure SCIP module filter only targets source Python files."""
-    cfg = ScipIngestConfig(
+    paths = BuildPaths.from_layout(
         repo_root=tmp_path,
-        repo="repo",
-        commit="deadbeef",
         build_dir=tmp_path,
+        db_path=tmp_path / "db.duckdb",
         document_output_dir=tmp_path,
+    )
+    cfg = ScipIngestStepConfig(
+        snapshot=SnapshotRef(repo="repo", commit="deadbeef", repo_root=tmp_path),
+        paths=paths,
+        binaries=ToolBinaries(),
     )
     con = duckdb.connect(database=":memory:")
     try:

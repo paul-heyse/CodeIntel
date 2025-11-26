@@ -37,7 +37,7 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
     (ignore_dir / "b.py").write_text("print('skip')\n", encoding="utf8")
 
     gateway = _setup_gateway()
-    cfg = RepoScanConfig.from_paths(repo_root=repo_root, repo="r", commit="c")
+    cfg = RepoScanConfig(repo_root=repo_root, repo="r", commit="c")
     profile = ScanProfile(
         repo_root=repo_root,
         source_roots=(repo_root,),
@@ -73,7 +73,7 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
     runner = FakeToolRunner(cache_dir=tmp_path / "cache", payloads=payload)
     tool_service = ToolService(runner, ToolsConfig.model_validate({}))
     gateway = _setup_gateway()
-    cfg = CoverageIngestConfig.from_paths(
+    cfg = CoverageIngestConfig(
         repo_root=repo_root, repo="r", commit="c", coverage_file=coverage_file
     )
     ingest_coverage_lines(
@@ -104,7 +104,7 @@ def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
     tool_service = ToolService(runner, ToolsConfig.model_validate({}))
 
     gateway = _setup_gateway()
-    cfg = TypingIngestConfig.from_paths(repo_root=repo_root, repo="r", commit="c")
+    cfg = TypingIngestConfig(repo_root=repo_root, repo="r", commit="c")
     ingest_typing_signals(
         gateway,
         cfg=cfg,

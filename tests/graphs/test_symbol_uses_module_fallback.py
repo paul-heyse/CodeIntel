@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config.models import SymbolUsesConfig
+from codeintel.config import ConfigBuilder
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.function_catalog_service import FunctionCatalogService
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
@@ -49,12 +49,8 @@ def test_partial_catalog_map_falls_back_to_db(tmp_path: Path) -> None:
         FunctionCatalog(functions=(), module_by_path={"pkg/a.py": "pkg.def"})
     )
     scip_path = _write_scip(tmp_path)
-    cfg = SymbolUsesConfig.from_paths(
-        repo_root=tmp_path,
-        repo="r",
-        commit="c",
-        scip_json_path=scip_path,
-    )
+    builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=tmp_path)
+    cfg = builder.symbol_uses(scip_json_path=scip_path)
     build_symbol_use_edges(gateway, cfg, catalog_provider=provider)
 
     row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
@@ -74,12 +70,8 @@ def test_no_module_mapping_keeps_same_module_false(tmp_path: Path) -> None:
     con = gateway.con
 
     scip_path = _write_scip(tmp_path)
-    cfg = SymbolUsesConfig.from_paths(
-        repo_root=tmp_path,
-        repo="r",
-        commit="c",
-        scip_json_path=scip_path,
-    )
+    builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=tmp_path)
+    cfg = builder.symbol_uses(scip_json_path=scip_path)
     build_symbol_use_edges(gateway, cfg)
 
     row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()

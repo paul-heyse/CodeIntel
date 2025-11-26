@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import SupportsFloat, SupportsIndex
+from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
-from codeintel.config import HistoryTimeseriesStepConfig
+from codeintel.config import ConfigBuilder, HistoryTimeseriesStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.storage.gateway import (
@@ -21,6 +21,9 @@ from codeintel.storage.gateway import (
 )
 
 log = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from codeintel.config.models import HistoryTimeseriesConfig
 
 DBResolver = Callable[[str], DuckDBConnection]
 type NumericLike = SupportsFloat | SupportsIndex | str | bytes | bytearray | int | float | Decimal
@@ -182,7 +185,7 @@ def compute_history_timeseries(
 
 def compute_history_timeseries_gateways(
     history_gateway: StorageGateway,
-    cfg: HistoryTimeseriesStepConfig,
+    cfg: HistoryTimeseriesStepConfig | HistoryTimeseriesConfig,
     snapshot_resolver: SnapshotGatewayResolver,
     *,
     runner: ToolRunner | None = None,
@@ -201,6 +204,19 @@ def compute_history_timeseries_gateways(
     runner:
         Optional ToolRunner for git timestamp lookups.
     """
+    if not isinstance(cfg, HistoryTimeseriesStepConfig):
+        builder = ConfigBuilder.from_snapshot(
+            repo=cfg.repo,
+            commit=cfg.commits[0] if cfg.commits else "",
+            repo_root=cfg.repo_root,
+        )
+        cfg = builder.history_timeseries(
+            commits=cfg.commits,
+            entity_kind=cfg.entity_kind,
+            max_entities=cfg.max_entities,
+            selection_strategy=cfg.selection_strategy,
+        )
+
     snapshot_gateways: dict[str, StorageGateway] = {}
 
     def _db_resolver(commit: str) -> DuckDBConnection:

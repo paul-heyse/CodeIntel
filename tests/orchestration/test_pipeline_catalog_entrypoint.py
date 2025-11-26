@@ -5,24 +5,20 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final, cast
+
 from coverage import Coverage
 
 from codeintel.analytics.tests import compute_test_coverage_edges
 from codeintel.config import (
+    BuildPaths,
     ConfigBuilder,
-    CallGraphStepConfig,
-    CFGBuilderStepConfig,
-    SymbolUsesStepConfig,
+    ExecutionConfig,
+    ScanProfiles,
+    SnapshotRef,
     TestCoverageStepConfig,
 )
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.core.config import (
-    ExecutionConfig,
-    PathsConfig,
-    ScanProfilesConfig,
-    SnapshotConfig,
-)
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.function_catalog import load_function_catalog
@@ -82,34 +78,40 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         [REPO, COMMIT, now],
     )
 
-    snapshot = SnapshotConfig(repo_root=repo_root, repo_slug=REPO, commit=COMMIT)
+    snapshot = SnapshotRef(repo_root=repo_root, repo=REPO, commit=COMMIT)
     execution = ExecutionConfig.for_default_pipeline(
         build_dir=tmp_path / "build",
         tools=ToolsConfig.model_validate({}),
-        profiles=ScanProfilesConfig(
+        profiles=ScanProfiles(
             code=default_code_profile(repo_root),
             config=default_config_profile(repo_root),
         ),
         graph_backend=GraphBackendConfig(),
     )
+    build_paths = BuildPaths.from_layout(
+        repo_root=repo_root,
+        build_dir=execution.build_dir,
+        db_path=gateway.config.db_path,
+    )
     ctx = PipelineContext(
         snapshot=snapshot,
         execution=execution,
-        paths=PathsConfig(snapshot=snapshot, execution=execution),
+        paths=build_paths,
         gateway=gateway,
+    )
+    builder = ConfigBuilder.from_snapshot(
+        repo=REPO,
+        commit=COMMIT,
+        repo_root=repo_root,
+        build_dir=build_paths.build_dir,
     )
 
     RepoScanStep().run(ctx)
     AstStep().run(ctx)
     GoidsStep().run(ctx)
 
-    build_call_graph(
-        gateway, CallGraphStepConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root)
-    )
-    build_cfg_and_dfg(
-        gateway,
-        CFGBuilderStepConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root),
-    )
+    build_call_graph(gateway, builder.call_graph())
+    build_cfg_and_dfg(gateway, builder.cfg_builder())
 
     scip_json = ctx.build_dir / "scip" / "index.scip.json"
     scip_json.parent.mkdir(parents=True, exist_ok=True)
@@ -134,28 +136,18 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     )
     build_symbol_use_edges(
         gateway,
-        SymbolUsesStepConfig.from_paths(
-            repo_root=repo_root,
-            repo=REPO,
-            commit=COMMIT,
-            scip_json_path=scip_json,
-        ),
+        builder.symbol_uses(scip_json_path=scip_json),
     )
 
     def _load_fake(_cfg: TestCoverageStepConfig) -> Coverage:
         abs_b = str((repo_root / "pkg" / "b.py").resolve())
         statements = {abs_b: [caller_lines[0], caller_lines[1]]}
         contexts = {abs_b: {caller_lines[0]: {"tests/test_sample.py::test_caller"}}}
-        return cast(Coverage, FakeCoverage(statements, contexts))
+        return cast("Coverage", FakeCoverage(statements, contexts))
 
     compute_test_coverage_edges(
         gateway,
-        TestCoverageStepConfig.from_paths(
-            repo=REPO,
-            commit=COMMIT,
-            repo_root=repo_root,
-            coverage_file=None,
-        ),
+        builder.test_coverage(coverage_loader=_load_fake),
         coverage_loader=_load_fake,
     )
 

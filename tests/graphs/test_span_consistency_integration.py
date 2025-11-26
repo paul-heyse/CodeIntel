@@ -5,21 +5,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final, cast
+
 from coverage import Coverage
 
 from codeintel.analytics.tests import compute_test_coverage_edges
-from codeintel.config import (
-    ConfigBuilder,
-    CallGraphStepConfig,
-    CFGBuilderStepConfig,
-    SymbolUsesStepConfig,
-    TestCoverageStepConfig,
-)
+from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.fakes import FakeCoverage
+
+REPO: Final = "demo/repo"
+COMMIT: Final = "deadbeef"
 
 
 def _write_repo(repo_root: Path) -> tuple[int, int]:
@@ -47,9 +45,6 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
     repo_root = tmp_path / "repo"
     caller_start, caller_end = _write_repo(repo_root)
 
-    repo: Final = "demo/repo"
-    commit: Final = "deadbeef"
-
     gateway = fresh_gateway
     con = gateway.con
 
@@ -60,8 +55,8 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
         VALUES (?, ?, ?, ?, 'python', '[]', '[]')
         """,
         [
-            ("pkg.a", "pkg/a.py", repo, commit),
-            ("pkg.b", "pkg/b.py", repo, commit),
+            ("pkg.a", "pkg/a.py", REPO, COMMIT),
+            ("pkg.b", "pkg/b.py", REPO, COMMIT),
         ],
     )
 
@@ -77,8 +72,8 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
             (
                 100,
                 "urn:pkg.a.callee",
-                repo,
-                commit,
+                REPO,
+                COMMIT,
                 "pkg/a.py",
                 "python",
                 "function",
@@ -90,8 +85,8 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
             (
                 200,
                 "urn:pkg.b.caller",
-                repo,
-                commit,
+                REPO,
+                COMMIT,
                 "pkg/b.py",
                 "python",
                 "function",
@@ -109,19 +104,16 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
         INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status)
         VALUES ('tests/test_sample.py::test_caller', 'pkg/b.py', 'pkg.b.caller', ?, ?, 'passed')
         """,
-        [repo, commit],
+        [REPO, COMMIT],
     )
 
+    builder = ConfigBuilder.from_snapshot(repo=REPO, commit=COMMIT, repo_root=repo_root)
+
     # Build call graph and CFG using shared spans.
-    build_call_graph(
-        gateway, CallGraphStepConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
-    )
-    build_cfg_and_dfg(
-        gateway,
-        CFGBuilderStepConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root),
-    )
+    build_call_graph(gateway, builder.call_graph())
+    build_cfg_and_dfg(gateway, builder.cfg_builder())
     # Symbol uses from SCIP JSON.
-    scip_json = repo_root / "build" / "scip" / "index.scip.json"
+    scip_json = builder.paths.scip_dir / "index.scip.json"
     scip_json.parent.mkdir(parents=True, exist_ok=True)
     scip_json.write_text(
         (
@@ -146,28 +138,18 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
     )
     build_symbol_use_edges(
         gateway,
-        SymbolUsesStepConfig.from_paths(
-            repo_root=repo_root,
-            repo=repo,
-            commit=commit,
-            scip_json_path=scip_json,
-        ),
+        builder.symbol_uses(scip_json_path=scip_json),
     )
 
     def _load_fake(_cfg: TestCoverageStepConfig) -> Coverage:
         abs_b = str((repo_root / "pkg" / "b.py").resolve())
         statements = {abs_b: [caller_start, caller_end]}
         contexts = {abs_b: {caller_start: {"tests/test_sample.py::test_caller"}}}
-        return cast(Coverage, FakeCoverage(statements, contexts))
+        return cast("Coverage", FakeCoverage(statements, contexts))
 
     compute_test_coverage_edges(
         gateway,
-        TestCoverageStepConfig.from_paths(
-            repo=repo,
-            commit=commit,
-            repo_root=repo_root,
-            coverage_file=None,
-        ),
+        builder.test_coverage(coverage_loader=_load_fake),
         coverage_loader=_load_fake,
     )
 

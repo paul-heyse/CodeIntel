@@ -467,7 +467,9 @@ def build_function_analytics(
     )
 
 
-def _load_goids(gateway: StorageGateway, cfg: FunctionAnalyticsStepConfig) -> dict[str, list[GoidRow]]:
+def _load_goids(
+    gateway: StorageGateway, cfg: FunctionAnalyticsStepConfig
+) -> dict[str, list[GoidRow]]:
     df = gateway.con.execute(
         """
         SELECT

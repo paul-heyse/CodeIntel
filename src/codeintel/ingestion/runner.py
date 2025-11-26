@@ -9,17 +9,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from codeintel.config import ExecutionConfig, ScipIngestStepConfig, SnapshotRef, ToolBinaries
 from codeintel.config.models import (
     ConfigIngestConfig,
     CoverageIngestConfig,
     DocstringConfig,
     RepoScanConfig,
-    ScipIngestConfig,
     TestsIngestConfig,
     ToolsConfig,
     TypingIngestConfig,
 )
-from codeintel.core.config import ExecutionConfig, PathsConfig, SnapshotConfig
+from codeintel.config.primitives import BuildPaths
 from codeintel.ingestion import change_tracker as change_tracker_module
 from codeintel.ingestion import (
     config_ingest,
@@ -45,9 +45,9 @@ log = logging.getLogger(__name__)
 class IngestionContext:
     """Shared parameters required for all ingestion steps."""
 
-    snapshot: SnapshotConfig
+    snapshot: SnapshotRef
     execution: ExecutionConfig
-    paths: PathsConfig
+    paths: BuildPaths
     gateway: StorageGateway
     tools: ToolsConfig | None = None
     tool_runner: ToolRunner | None = None
@@ -64,7 +64,7 @@ class IngestionContext:
     @property
     def repo(self) -> str:
         """Repository slug for the current snapshot."""
-        return self.snapshot.repo_slug
+        return self.snapshot.repo
 
     @property
     def commit(self) -> str:
@@ -151,7 +151,7 @@ def run_repo_scan(ctx: IngestionContext) -> change_tracker_module.ChangeTracker:
         Tracker populated with module changes.
     """
     start = _log_step_start("repo_scan", ctx)
-    cfg = RepoScanConfig.from_paths(
+    cfg = RepoScanConfig(
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
@@ -177,15 +177,21 @@ def run_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
         Status and artifact paths for the SCIP run.
     """
     start = _log_step_start("scip_ingest", ctx)
-    doc_dir = ctx.document_output_dir
-    cfg = ScipIngestConfig(
-        repo_root=ctx.repo_root,
-        repo=ctx.repo,
-        commit=ctx.commit,
-        build_dir=ctx.paths.build_dir,
-        document_output_dir=doc_dir,
+    binaries = ToolBinaries(
         scip_python_bin=ctx.active_tools.scip_python_bin,
         scip_bin=ctx.active_tools.scip_bin,
+        pyright_bin=ctx.active_tools.pyright_bin,
+        pyrefly_bin=ctx.active_tools.pyrefly_bin,
+        ruff_bin=ctx.active_tools.ruff_bin,
+        coverage_bin=ctx.active_tools.coverage_bin,
+        pytest_bin=ctx.active_tools.pytest_bin,
+        git_bin=ctx.active_tools.git_bin,
+        default_timeout_s=ctx.active_tools.default_timeout_s,
+    )
+    cfg = ScipIngestStepConfig(
+        snapshot=ctx.snapshot,
+        paths=ctx.paths,
+        binaries=binaries,
         scip_runner=ctx.scip_runner,
         artifact_writer=ctx.artifact_writer,
     )
@@ -254,11 +260,11 @@ def run_coverage_ingest(ctx: IngestionContext) -> None:
 def run_tests_ingest(ctx: IngestionContext) -> None:
     """Ingest pytest catalog rows via the gateway connection."""
     start = _log_step_start("tests_ingest", ctx)
-    cfg = TestsIngestConfig.from_paths(
+    cfg = TestsIngestConfig(
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
-        tools=ctx.tools,
+        pytest_report_path=ctx.paths.pytest_report,
     )
     runner = ctx.tool_runner or ToolRunner(
         cache_dir=ctx.paths.tool_cache,
@@ -278,7 +284,7 @@ def run_tests_ingest(ctx: IngestionContext) -> None:
 def run_typing_ingest(ctx: IngestionContext) -> None:
     """Collect static typing diagnostics and typedness via the gateway connection."""
     start = _log_step_start("typing_ingest", ctx)
-    cfg = TypingIngestConfig.from_paths(
+    cfg = TypingIngestConfig(
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
@@ -302,7 +308,7 @@ def run_typing_ingest(ctx: IngestionContext) -> None:
 def run_docstrings_ingest(ctx: IngestionContext) -> None:
     """Extract docstrings and persist structured rows via the gateway connection."""
     start = _log_step_start("docstrings_ingest", ctx)
-    cfg = DocstringConfig.from_paths(
+    cfg = DocstringConfig(
         repo_root=ctx.repo_root,
         repo=ctx.repo,
         commit=ctx.commit,
@@ -318,6 +324,6 @@ def run_docstrings_ingest(ctx: IngestionContext) -> None:
 def run_config_ingest(ctx: IngestionContext) -> None:
     """Flatten configuration files into analytics.config_values via the gateway connection."""
     start = _log_step_start("config_ingest", ctx)
-    cfg = ConfigIngestConfig.from_paths(repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit)
+    cfg = ConfigIngestConfig(repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit)
     config_ingest.ingest_config_values(ctx.gateway, cfg=cfg, config_profile=ctx.config_profile)
     _log_step_done("config_ingest", start, ctx)

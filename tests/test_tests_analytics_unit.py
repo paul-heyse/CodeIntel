@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from coverage import Coverage
@@ -17,15 +17,13 @@ from codeintel.analytics.tests.coverage_edges import (
     build_edges_for_file_for_tests,
     compute_test_coverage_edges,
 )
-from codeintel.config.models import TestCoverageConfig
+from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.fakes import FakeCoverage
 from tests._helpers.fixtures import ProvisionOptions, provision_graph_ready_repo
 
-cast("Any", TestCoverageConfig).__test__ = False  # prevent pytest from collecting the dataclass
 
-
-def _insert_goids(con: DuckDBConnection, cfg: TestCoverageConfig) -> None:
+def _insert_goids(con: DuckDBConnection, cfg: TestCoverageStepConfig) -> None:
     now = datetime.now(UTC)
     con.execute(
         """
@@ -53,11 +51,13 @@ def test_backfill_test_goids_updates_catalog() -> None:
     gateway = ctx.gateway
     con = gateway.con
 
-    cfg = TestCoverageConfig(
+    builder = ConfigBuilder.from_snapshot(
         repo=ctx.repo,
         commit=ctx.commit,
         repo_root=repo_root,
+        build_dir=ctx.build_dir,
     )
+    cfg = builder.test_coverage()
 
     _insert_goids(con, cfg)
     con.execute(
@@ -108,13 +108,15 @@ def test_edges_for_file_uses_test_meta() -> None:
     ]
     statements_set = {1, 2}
     contexts_by_lineno = {1: {"tests/test_mod.py::test_func"}, 2: {"tests/test_mod.py::test_func"}}
+    temp_root = Path(tempfile.mkdtemp())
+    cfg = ConfigBuilder.from_snapshot(
+        repo="demo/repo",
+        commit="deadbeef",
+        repo_root=temp_root,
+    ).test_coverage()
     ctx = EdgeContext(
         status_by_test={"tests/test_mod.py::test_func": "passed"},
-        cfg=TestCoverageConfig(
-            repo="demo/repo",
-            commit="deadbeef",
-            repo_root=Path(tempfile.mkdtemp()),
-        ),
+        cfg=cfg,
         now=datetime(2024, 1, 1, tzinfo=UTC),
         test_meta_by_id={
             "tests/test_mod.py::test_func": (456, "goid:demo/repo#python:function:test")
@@ -160,12 +162,11 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
     ).gateway
     con = gateway.con
 
-    cfg = TestCoverageConfig(
+    cfg = ConfigBuilder.from_snapshot(
         repo="demo/repo",
         commit="deadbeef",
         repo_root=repo_root,
-        coverage_file=tmp_path / ".coverage",
-    )
+    ).test_coverage(coverage_file=tmp_path / ".coverage")
 
     now = datetime.now(UTC)
     con.execute(
@@ -208,7 +209,7 @@ def test_compute_test_coverage_edges_with_fake_coverage(tmp_path: Path) -> None:
         def get_data(self) -> _FakeData:
             return _FakeData([str(target_file)], self._contexts)
 
-    def fake_loader(cfg_arg: TestCoverageConfig) -> Coverage:
+    def fake_loader(cfg_arg: TestCoverageStepConfig) -> Coverage:
         return _FakeCoverage(cfg_arg.repo_root)  # type: ignore[return-value]
 
     compute_test_coverage_edges(gateway, cfg, coverage_loader=fake_loader)
@@ -247,11 +248,12 @@ def test_compute_test_coverage_edges_respects_injected_loader(tmp_path: Path) ->
     ).gateway
     con = gateway.con
 
-    cfg = TestCoverageConfig(
+    builder = ConfigBuilder.from_snapshot(
         repo="demo/repo",
         commit="deadbeef",
         repo_root=repo_root,
     )
+    cfg = builder.test_coverage()
 
     now = datetime.now(UTC)
     con.execute(
@@ -271,11 +273,11 @@ def test_compute_test_coverage_edges_respects_injected_loader(tmp_path: Path) ->
         [cfg.repo, cfg.commit, now],
     )
 
-    def _coverage_loader(_cfg: TestCoverageConfig) -> Coverage:
+    def _coverage_loader(_cfg: TestCoverageStepConfig) -> Coverage:
         abs_mod = str(target_file.resolve())
         statements = {abs_mod: [1, 2]}
         contexts = {abs_mod: {1: {"pkg/mod.py::test_func"}, 2: {"pkg/mod.py::test_func"}}}
-        return cast(Coverage, FakeCoverage(statements, contexts))
+        return cast("Coverage", FakeCoverage(statements, contexts))
 
     compute_test_coverage_edges(gateway, cfg, coverage_loader=_coverage_loader)
     _assert_single_edge(con)

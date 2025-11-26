@@ -11,8 +11,8 @@ from typing import TypedDict
 
 import yaml
 
+from codeintel.config import SnapshotRef
 from codeintel.config.models import RepoScanConfig
-from codeintel.core.config import SnapshotConfig
 from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.ingestion.common import (
     ChangeRequest,
@@ -210,7 +210,7 @@ def ingest_repo(
     tracker = ChangeTracker.create(
         gateway,
         ChangeRequest.from_snapshot(
-            snapshot=SnapshotConfig(repo_root=cfg.repo_root, repo_slug=cfg.repo, commit=cfg.commit),
+            snapshot=SnapshotRef(repo_root=cfg.repo_root, repo=cfg.repo, commit=cfg.commit),
             scan_profile=base_profile,
             modules=module_records,
             logger=log,

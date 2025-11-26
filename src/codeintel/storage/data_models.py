@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
 
 from codeintel.storage.gateway import StorageGateway
 
@@ -78,31 +76,6 @@ def _normalize_created_at(value: object, default: datetime) -> datetime:
     if isinstance(value, datetime):
         return value
     return default
-
-
-class DataModelReadMode(Enum):
-    """Control whether normalized or legacy JSON sources are used."""
-
-    NORMALIZED = "normalized"
-    LEGACY_JSON = "legacy_json"
-
-    @classmethod
-    def from_env(cls) -> DataModelReadMode:
-        """
-        Resolve the active read mode from environment defaults.
-
-        Returns
-        -------
-        DataModelReadMode
-            Mode derived from CODEINTEL_DATA_MODELS_USE_LEGACY_JSON.
-        """
-        raw = os.getenv("CODEINTEL_DATA_MODELS_USE_LEGACY_JSON")
-        if raw is None:
-            return cls.NORMALIZED
-        normalized = raw.strip().lower()
-        if normalized in {"1", "true", "yes", "legacy"}:
-            return cls.LEGACY_JSON
-        return cls.NORMALIZED
 
 
 @dataclass(frozen=True)

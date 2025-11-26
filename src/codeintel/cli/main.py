@@ -15,14 +15,14 @@ from typing import Literal, Protocol
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 from codeintel.config.models import (
+    CliPathsInput,
     CodeIntelConfig,
     FunctionAnalyticsOverrides,
     HistoryTimeseriesConfig,
-    PathsConfig,
     RepoConfig,
 )
-from codeintel.config.primitives import GraphBackendConfig
 from codeintel.config.parser_types import FunctionParserKind
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.docs_export.runner import ExportOptions, ExportRunner, run_validated_exports
 from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.ingestion.source_scanner import (
@@ -371,7 +371,7 @@ def make_parser() -> argparse.ArgumentParser:
 
 def _build_config_from_args(args: argparse.Namespace) -> CodeIntelConfig:
     graph_backend = _build_graph_backend_config(args)
-    paths_cfg = PathsConfig(
+    paths_cfg = CliPathsInput(
         repo_root=args.repo_root,
         build_dir=args.build_dir,
         db_path=args.db_path,

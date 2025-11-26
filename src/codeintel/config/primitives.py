@@ -228,6 +228,52 @@ class BuildPaths:
             log_db_path=(log_db_path or resolved_build / "db" / "codeintel_logs.duckdb").resolve(),
         )
 
+    @classmethod
+    def from_layout(
+        cls,
+        *,
+        repo_root: Path,
+        build_dir: Path | None = None,
+        db_path: Path | None = None,
+        document_output_dir: Path | None = None,
+        log_db_path: Path | None = None,
+    ) -> Self:
+        """Construct BuildPaths from a repo-centric layout.
+
+        Parameters
+        ----------
+        repo_root
+            Root directory of the repository.
+        build_dir
+            Optional explicit build directory; defaults to ``repo_root / "build"``.
+        db_path
+            Optional explicit database path; defaults to ``build_dir / "db" / "codeintel.duckdb"``.
+        document_output_dir
+            Optional explicit document output directory; defaults to
+            ``repo_root / "Document Output"``.
+        log_db_path
+            Optional explicit log database path; defaults to ``build_dir / "db" / "codeintel_logs.duckdb"``.
+
+        Returns
+        -------
+        Self
+            Build paths resolved against the repository layout.
+        """
+        resolved_root = repo_root.resolve()
+        resolved_build = (build_dir or resolved_root / "build").resolve()
+        return cls(
+            build_dir=resolved_build,
+            db_path=(db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
+            document_output_dir=(
+                document_output_dir or resolved_root / "Document Output"
+            ).resolve(),
+            scip_dir=(resolved_build / "scip").resolve(),
+            coverage_json=(resolved_build / "coverage" / "coverage.json").resolve(),
+            pytest_report=(resolved_build / "test-results" / "pytest-report.json").resolve(),
+            tool_cache=(resolved_build / ".tool_cache").resolve(),
+            log_db_path=(log_db_path or resolved_build / "db" / "codeintel_logs.duckdb").resolve(),
+        )
+
 
 @dataclass(frozen=True)
 class ToolBinaries:
@@ -393,169 +439,11 @@ class GraphBackendConfig:
     strict: bool = False
 
 
-# ---------------------------------------------------------------------------
-# Aliases for backward compatibility with core.config
-# ---------------------------------------------------------------------------
-
-
-# SnapshotConfig is an alias for SnapshotRef with repo_slug property
-@dataclass(frozen=True)
-class SnapshotConfig:
-    """Immutable description of the code snapshot under analysis.
-
-    This is provided for backward compatibility with `codeintel.core.config`.
-    New code should use `SnapshotRef` directly.
-
-    Attributes
-    ----------
-    repo_root : Path
-        Absolute path to the repository root directory.
-    repo_slug : str
-        Repository slug (e.g., "my-org/my-repo"). Alias for `repo`.
-    commit : str
-        Commit SHA or identifier for this analysis run.
-    branch : str | None
-        Optional branch name associated with the commit.
-    """
-
-    repo_root: Path
-    repo_slug: str
-    commit: str
-    branch: str | None = None
-
-    def __post_init__(self) -> None:
-        """Resolve repo_root to absolute path."""
-        if not self.repo_root.is_absolute():
-            object.__setattr__(self, "repo_root", self.repo_root.resolve())
-
-    @property
-    def repo(self) -> str:
-        """Repository slug (alias for backward compatibility)."""
-        return self.repo_slug
-
-    @classmethod
-    def from_args(
-        cls,
-        repo_root: Path,
-        repo_slug: str,
-        commit: str,
-        branch: str | None = None,
-    ) -> Self:
-        """Construct a snapshot configuration from primitive arguments.
-
-        Parameters
-        ----------
-        repo_root
-            Root directory for the repository.
-        repo_slug
-            Repository identifier (e.g., owner/name).
-        commit
-            Commit hash or identifier for the snapshot.
-        branch
-            Optional branch name associated with the commit.
-
-        Returns
-        -------
-        Self
-            Normalized snapshot configuration.
-        """
-        return cls(
-            repo_root=repo_root.resolve(),
-            repo_slug=repo_slug,
-            commit=commit,
-            branch=branch,
-        )
-
-    def to_snapshot_ref(self) -> SnapshotRef:
-        """Convert to the canonical SnapshotRef type."""
-        return SnapshotRef(
-            repo=self.repo_slug,
-            commit=self.commit,
-            repo_root=self.repo_root,
-            branch=self.branch,
-        )
-
-
-# ScanProfilesConfig is an alias for ScanProfiles
-ScanProfilesConfig = ScanProfiles
-
-
-@dataclass(frozen=True)
-class DerivedPaths:
-    """Derived build paths for a given snapshot and execution context.
-
-    This class composes `SnapshotConfig` and runtime settings to provide
-    computed path properties. It is the canonical replacement for the old
-    `PathsConfig` from `codeintel.core.config`.
-
-    Attributes
-    ----------
-    snapshot : SnapshotConfig
-        The snapshot configuration this paths config derives from.
-    build_dir : Path
-        Root build directory for all generated artifacts.
-    """
-
-    snapshot: SnapshotConfig
-    build_dir: Path
-
-    def __post_init__(self) -> None:
-        """Resolve build_dir to absolute path."""
-        if not self.build_dir.is_absolute():
-            object.__setattr__(self, "build_dir", self.build_dir.resolve())
-
-    @property
-    def document_output_dir(self) -> Path:
-        """Document output directory relative to the repository root."""
-        return (self.snapshot.repo_root / "Document Output").resolve()
-
-    @property
-    def coverage_json(self) -> Path:
-        """Path for coverage JSON output."""
-        return (self.build_dir / "coverage" / "coverage.json").resolve()
-
-    @property
-    def tool_cache(self) -> Path:
-        """Cache directory for external tool artifacts."""
-        return (self.build_dir / ".tool_cache").resolve()
-
-    @property
-    def pytest_report(self) -> Path:
-        """Path for pytest JSON report output."""
-        return (self.build_dir / "pytest" / "report.json").resolve()
-
-    @property
-    def scip_temp_dir(self) -> Path:
-        """Temporary directory for SCIP artifacts."""
-        return (self.build_dir / "scip").resolve()
-
-    @property
-    def log_db_path(self) -> Path:
-        """Path to the pipeline logging DuckDB database."""
-        return (self.build_dir / "db" / "codeintel_logs.duckdb").resolve()
-
-    def to_build_paths(self) -> BuildPaths:
-        """Convert to the canonical BuildPaths type."""
-        return BuildPaths(
-            build_dir=self.build_dir,
-            db_path=self.build_dir / "db" / "codeintel.duckdb",
-            document_output_dir=self.document_output_dir,
-            scip_dir=self.scip_temp_dir,
-            coverage_json=self.coverage_json,
-            pytest_report=self.pytest_report,
-            tool_cache=self.tool_cache,
-            log_db_path=self.log_db_path,
-        )
-
-
 __all__ = [
     "BuildPaths",
-    "DerivedPaths",
     "ExecutionOptions",
     "GraphBackendConfig",
     "ScanProfiles",
-    "ScanProfilesConfig",
-    "SnapshotConfig",
     "SnapshotRef",
     "StepConfig",
     "ToolBinaries",

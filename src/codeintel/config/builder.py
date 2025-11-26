@@ -33,6 +33,8 @@ from codeintel.config.primitives import (
 )
 
 if TYPE_CHECKING:
+    from coverage import Coverage
+
     from codeintel.config.parser_types import FunctionParserKind
     from codeintel.ingestion.scip_ingest import ScipIngestResult
     from codeintel.ingestion.source_scanner import ScanProfile
@@ -641,6 +643,22 @@ class SubsystemsStepConfig:
     symbol_weight: float = 0.5
     config_weight: float = 0.3
 
+    def __post_init__(self) -> None:
+        """Validate numeric fields to prevent silent coercion."""
+        object.__setattr__(self, "min_modules", _require_int(self.min_modules, "min_modules") or 3)
+        object.__setattr__(
+            self, "max_subsystems", _require_int(self.max_subsystems, "max_subsystems")
+        )
+        object.__setattr__(
+            self, "import_weight", _require_float(self.import_weight, "import_weight")
+        )
+        object.__setattr__(
+            self, "symbol_weight", _require_float(self.symbol_weight, "symbol_weight")
+        )
+        object.__setattr__(
+            self, "config_weight", _require_float(self.config_weight, "config_weight")
+        )
+
     @property
     def repo(self) -> str:
         """Repository slug."""
@@ -658,7 +676,7 @@ class TestCoverageStepConfig:
 
     snapshot: SnapshotRef
     coverage_file: Path | None = None
-    coverage_loader: Callable[..., object] | None = None
+    coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None
 
     @property
     def repo(self) -> str:
@@ -773,6 +791,30 @@ def _default_threading_apis() -> dict[str, list[str]]:
         "asyncio": ["create_task", "ensure_future", "gather"],
         "concurrent.futures": ["ThreadPoolExecutor", "ProcessPoolExecutor"],
     }
+
+
+def _require_int(value: int | None, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        message = f"{field_name} must be an integer, not bool"
+        raise TypeError(message)
+    if isinstance(value, int):
+        return value
+    message = f"{field_name} must be an integer, got {value!r}"
+    raise TypeError(message)
+
+
+def _require_float(value: float | None, field_name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        message = f"{field_name} must be a float, not bool"
+        raise TypeError(message)
+    if isinstance(value, (int, float)):
+        return float(value)
+    message = f"{field_name} must be numeric, got {value!r}"
+    raise TypeError(message)
 
 
 # ---------------------------------------------------------------------------
@@ -1080,7 +1122,7 @@ class ConfigBuilder:
         self,
         *,
         coverage_file: Path | None = None,
-        coverage_loader: Callable[..., object] | None = None,
+        coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None,
     ) -> TestCoverageStepConfig:
         """Build test coverage edges configuration.
 

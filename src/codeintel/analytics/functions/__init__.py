@@ -11,10 +11,12 @@ import importlib
 from typing import TYPE_CHECKING
 
 from codeintel.config import FunctionAnalyticsStepConfig
+from codeintel.config.models import FunctionAnalyticsConfig
 
 __all__ = [
-    "FunctionAnalyticsStepConfig",
+    "FunctionAnalyticsConfig",
     "FunctionAnalyticsOptions",
+    "FunctionAnalyticsStepConfig",
     "TypednessFlags",
     "compute_function_contracts",
     "compute_function_effects",

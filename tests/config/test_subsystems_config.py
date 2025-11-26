@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import cast
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-from codeintel.config import ConfigBuilder, SubsystemsStepConfig
-from codeintel.config.models import SubsystemsOverrides
+from codeintel.config import ConfigBuilder
 
 EXPECTED_MIN_MODULES = 5
 EXPECTED_MAX_SUBSYSTEMS = 10
@@ -18,14 +18,16 @@ EXPECTED_CONFIG_WEIGHT = 0.75
 
 def test_overrides_are_applied_and_typed() -> None:
     """Overrides should populate config with validated numeric values."""
-    overrides = SubsystemsOverrides(
+    builder = ConfigBuilder.from_snapshot(
+        repo="demo/repo", commit="abc123", repo_root=Path().resolve()
+    )
+    cfg = builder.subsystems(
         min_modules=EXPECTED_MIN_MODULES,
         max_subsystems=EXPECTED_MAX_SUBSYSTEMS,
         import_weight=EXPECTED_IMPORT_WEIGHT,
         symbol_weight=EXPECTED_SYMBOL_WEIGHT,
         config_weight=EXPECTED_CONFIG_WEIGHT,
     )
-    cfg = SubsystemsStepConfig.from_paths(repo="demo/repo", commit="abc123", overrides=overrides)
 
     if cfg.min_modules != EXPECTED_MIN_MODULES:
         pytest.fail(f"min_modules not applied: {cfg.min_modules}")
@@ -42,14 +44,18 @@ def test_overrides_are_applied_and_typed() -> None:
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        (SubsystemsOverrides(min_modules=True), "integer"),
-        (SubsystemsOverrides(max_subsystems=cast("int | None", 1.5)), "integer"),
-        (SubsystemsOverrides(import_weight=cast("float | None", "heavy")), "numeric"),
+        ({"min_modules": cast("int | None", "invalid")}, "integer"),
+        ({"max_subsystems": cast("int | None", 1.5)}, "integer"),
+        ({"import_weight": cast("float | None", "heavy")}, "numeric"),
     ],
 )
-def test_invalid_overrides_raise(overrides: SubsystemsOverrides, message: str) -> None:
+def test_invalid_overrides_raise(overrides: dict[str, object], message: str) -> None:
     """Invalid override types should raise a TypeError."""
+    builder = ConfigBuilder.from_snapshot(
+        repo="demo/repo", commit="abc123", repo_root=Path().resolve()
+    )
     with pytest.raises(TypeError) as excinfo:
-        SubsystemsStepConfig.from_paths(repo="demo/repo", commit="abc123", overrides=overrides)
+        kwargs = cast("dict[str, Any]", overrides)
+        builder.subsystems(**kwargs)
     if message not in str(excinfo.value):
         pytest.fail(f"Expected '{message}' in error: {excinfo.value}")

@@ -13,15 +13,8 @@ from codeintel.analytics.dependencies import (
     build_external_dependency_calls,
 )
 from codeintel.analytics.entrypoints import build_entrypoints
-from codeintel.config import (
-    ConfigBuilder,
-    EntryPointsStepConfig,
-    ExternalDependenciesStepConfig,
-    GoidBuilderStepConfig,
-)
-from codeintel.config.models import (
-    RepoScanConfig,
-)
+from codeintel.config import ConfigBuilder
+from codeintel.config.models import RepoScanConfig
 from codeintel.graphs.function_catalog_service import FunctionCatalogService
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.ingestion.py_ast_extract import ingest_python_ast
@@ -296,9 +289,13 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
     with provision_gateway_with_repo(repo_root) as ctx:
         tracker = ingest_repo(
             ctx.gateway,
-            cfg=RepoScanConfig.from_paths(
-                repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit
-            ),
+            cfg=RepoScanConfig(repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit),
+        )
+        builder = ConfigBuilder.from_snapshot(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            build_dir=ctx.build_dir,
         )
         insert_modules(
             ctx.gateway,
@@ -312,7 +309,7 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
             ],
         )
         ingest_python_ast(tracker)
-        build_goids(ctx.gateway, GoidBuilderStepConfig.from_paths(repo=ctx.repo, commit=ctx.commit))
+        build_goids(ctx.gateway, builder.goid_builder())
 
         con = ctx.gateway.con
         hello_row = _get_goid_row(con, "pkg.app.hello")
@@ -321,14 +318,10 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
         _seed_coverage_and_tests(ctx, hello_row, now)
 
         catalog = FunctionCatalogService.from_db(ctx.gateway, repo=ctx.repo, commit=ctx.commit)
-        entry_cfg = EntryPointsStepConfig.from_paths(
-            repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
-        )
+        entry_cfg = builder.entrypoints()
         build_entrypoints(ctx.gateway, entry_cfg, catalog_provider=catalog)
 
-        dep_cfg = ExternalDependenciesStepConfig.from_paths(
-            repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
-        )
+        dep_cfg = builder.external_dependencies()
         build_external_dependency_calls(ctx.gateway, dep_cfg, catalog_provider=catalog)
         build_external_dependencies(ctx.gateway, dep_cfg)
 

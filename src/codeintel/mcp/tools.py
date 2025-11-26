@@ -1,7 +1,7 @@
-"""Re-export MCP server configuration for CLI tooling."""
+"""Expose MCP server configuration for CLI tooling."""
 
 from __future__ import annotations
 
-from codeintel.mcp.config import McpMode, McpServerConfig
+from codeintel.config.serving_models import ServingConfig, ServingMode
 
-__all__ = ["McpMode", "McpServerConfig"]
+__all__ = ["ServingConfig", "ServingMode"]

@@ -12,9 +12,9 @@ import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
+from codeintel.config.serving_models import ServingConfig
 from codeintel.mcp.backend import BackendLimits, DuckDBBackend, HttpBackend
-from codeintel.mcp.config import McpServerConfig
-from codeintel.server.fastapi import ApiAppConfig, BackendResource, create_app
+from codeintel.server.fastapi import BackendResource, create_app
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
 
@@ -45,15 +45,18 @@ def _build_app(gateway: StorageGateway, db_path: Path, *, repo: str, commit: str
     FastAPI
         Configured application using the supplied backend.
     """
-    cfg = ApiAppConfig(
-        server=McpServerConfig(repo_root=db_path.parent, repo=repo, commit=commit, read_only=False),
+    cfg = ServingConfig(
+        repo_root=db_path.parent,
+        repo=repo,
+        commit=commit,
+        db_path=db_path,
         read_only=False,
     )
 
-    def _loader() -> ApiAppConfig:
+    def _loader() -> ServingConfig:
         return cfg
 
-    def _backend_factory(_: ApiAppConfig, *, gateway: StorageGateway) -> BackendResource:
+    def _backend_factory(_: ServingConfig, *, gateway: StorageGateway) -> BackendResource:
         backend = DuckDBBackend(gateway=gateway, repo=repo, commit=commit)
         return BackendResource(backend=backend, service=backend.service, close=lambda: None)
 
@@ -293,6 +296,7 @@ def test_http_backend_against_fastapi(tmp_path: Path) -> None:
         try:
             _assert_http_backend_round_trip(backend)
         finally:
+
             async def _close_client() -> None:
                 await client.aclose()
 

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from codeintel.config import SymbolUsesStepConfig
+from codeintel.config import ConfigBuilder, SymbolUsesStepConfig
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
@@ -18,12 +18,15 @@ from codeintel.models.rows import SymbolUseRow, symbol_use_to_tuple
 from codeintel.storage.gateway import StorageGateway
 from codeintel.types import ScipDocument
 
+if TYPE_CHECKING:
+    from codeintel.config.models import SymbolUsesConfig
+
 log = logging.getLogger(__name__)
 
 
 def build_symbol_use_edges(
     gateway: StorageGateway,
-    cfg: SymbolUsesStepConfig,
+    cfg: SymbolUsesStepConfig | SymbolUsesConfig,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """
@@ -35,6 +38,14 @@ def build_symbol_use_edges(
     We treat occurrences with symbol_roles bit 1 as definitions,
     and bit 2 as references, producing edges def_path -> use_path.
     """
+    if not isinstance(cfg, SymbolUsesStepConfig):
+        builder = ConfigBuilder.from_snapshot(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=cfg.repo_root,
+        )
+        cfg = builder.symbol_uses(scip_json_path=cfg.scip_json_path)
+
     scip_path = cfg.scip_json_path
 
     docs = load_scip_documents(scip_path)
@@ -77,7 +88,7 @@ def default_scip_json_path(repo_root: Path, build_dir: Path | None) -> Path | No
     return scip_path if scip_path.exists() else None
 
 
-def load_scip_documents(scip_path: Path) -> list[ScipDocument] | None:
+def load_scip_documents(scip_path: Path | None) -> list[ScipDocument] | None:
     """
     Load SCIP documents from a JSON file path.
 
@@ -86,7 +97,7 @@ def load_scip_documents(scip_path: Path) -> list[ScipDocument] | None:
     list[ScipDocument] | None
         Parsed documents, or None when unreadable.
     """
-    if not scip_path.exists():
+    if scip_path is None or not scip_path.exists():
         log.warning("SCIP JSON not found at %s; skipping symbol_use_edges", scip_path)
         return None
 
