@@ -20,6 +20,7 @@ from codeintel.analytics.context import (
     ensure_analytics_context,
 )
 from codeintel.analytics.evidence import EvidenceCollector
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.config.models import ConfigDataFlowConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -299,6 +300,7 @@ def compute_config_data_flow(
     cfg: ConfigDataFlowConfig,
     *,
     context: AnalyticsContext | None = None,
+    runtime: GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate analytics.config_data_flow with config usage per function.
@@ -311,6 +313,8 @@ def compute_config_data_flow(
         Config data flow analytics configuration.
     context
         Optional shared analytics context to reuse catalog, call graph, and ASTs.
+    runtime
+        Optional shared graph runtime used to build graphs when context is absent.
     """
     con = gateway.con
     ensure_schema(con, "analytics.config_data_flow")
@@ -342,6 +346,14 @@ def compute_config_data_flow(
     call_graph = shared_context.call_graph
     ast_by_goid = shared_context.function_ast_map
     missing = shared_context.missing_function_goids
+    if call_graph is None and runtime is not None:
+        engine = runtime.build_engine(gateway, cfg.repo, cfg.commit)
+        call_graph = engine.call_graph()
+    if call_graph is None:
+        log.warning(
+            "Call graph unavailable for %s@%s; skipping config data flow", cfg.repo, cfg.commit
+        )
+        return
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during config data flow analysis",

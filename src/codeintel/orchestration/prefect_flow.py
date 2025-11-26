@@ -5,12 +5,12 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from logging import Logger
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import networkx as nx
 from prefect import flow, get_run_logger, task
@@ -100,10 +100,10 @@ from codeintel.core.config import (
     ScanProfilesConfig,
     SnapshotConfig,
 )
-from codeintel.docs_export.export_jsonl import export_all_jsonl
-from codeintel.docs_export.export_parquet import export_all_parquet
+from codeintel.docs_export.runner import ExportOptions, ExportRunner, run_validated_exports
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
+from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.graphs.function_catalog_service import FunctionCatalogService
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.graphs.import_graph import build_import_graph
@@ -136,6 +136,7 @@ from codeintel.orchestration.steps import (
     RiskFactorsStep,
     run_pipeline,
 )
+from codeintel.server.datasets import validate_dataset_registry
 from codeintel.services.errors import ExportError, log_problem, problem
 from codeintel.storage.gateway import (
     DuckDBError,
@@ -165,6 +166,7 @@ class ExportArgs:
     function_overrides: FunctionAnalyticsOverrides | None = None
     validate_exports: bool = False
     export_schemas: list[str] | None = None
+    export_datasets: tuple[str, ...] | None = None
     history_commits: tuple[str, ...] | None = None
     history_db_dir: Path | None = None
     graph_backend: GraphBackendConfig | None = None
@@ -278,6 +280,7 @@ def _build_pipeline_context(args: ExportArgs) -> PipelineContext:
         tools=execution.tools,
         function_overrides=args.function_overrides,
         extra=extra,
+        export_datasets=args.export_datasets,
     )
 
 
@@ -690,11 +693,22 @@ def t_function_effects(repo_root: Path, repo: str, commit: str, db_path: Path) -
     gateway = _ingest_gateway(db_path)
     cfg = FunctionEffectsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
+    runtime = GraphRuntimeOptions(
+        context=context,
+        graph_backend=_graph_backend_config(),
+        engine=build_graph_engine(
+            gateway,
+            (repo, commit),
+            graph_backend=_graph_backend_config(),
+            context=context,
+        ),
+    )
     compute_function_effects(
         gateway,
         cfg,
         catalog_provider=context.catalog,
         context=context,
+        runtime=runtime,
     )
 
 
@@ -950,7 +964,13 @@ def t_subsystems(repo_root: Path, repo: str, commit: str, db_path: Path) -> None
     gateway = _ingest_gateway(db_path)
     cfg = SubsystemsConfig.from_paths(repo=repo, commit=commit)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
-    build_subsystems(gateway, cfg, context=context)
+    engine = build_graph_engine(
+        gateway,
+        (repo, commit),
+        graph_backend=_graph_backend_config(),
+        context=context,
+    )
+    build_subsystems(gateway, cfg, context=context, engine=engine)
 
 
 @task(name="profiles", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
@@ -1024,13 +1044,23 @@ def t_history_timeseries(params: HistoryTimeseriesTaskParams) -> None:
     )
 
 
+@dataclass(frozen=True)
+class ExportTaskHooks:
+    """Override hooks for export_docs task wiring."""
+
+    validator: Callable[[StorageGateway], None] = validate_dataset_registry
+    export_runner: ExportRunner = run_validated_exports
+    gateway_factory: Callable[[Path], StorageGateway] = _ingest_gateway
+    create_views: Callable[[Any], None] = create_all_views
+
+
 @task(name="export_docs", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_export_docs(
     db_path: Path,
     document_output_dir: Path,
     *,
-    validate_exports: bool = False,
-    schemas: list[str] | None = None,
+    options: ExportOptions | None = None,
+    hooks: ExportTaskHooks | None = None,
 ) -> None:
     """
     Create views and export Parquet/JSONL artifacts.
@@ -1040,22 +1070,24 @@ def t_export_docs(
     ExportError
         If export validation fails for any selected dataset.
     """
+    resolved_hooks = hooks or ExportTaskHooks()
+    export_options = options or ExportOptions(
+        validate_exports=False,
+        schemas=None,
+        datasets=None,
+        validator=resolved_hooks.validator,
+    )
+    if options is not None and options.validator is not resolved_hooks.validator:
+        export_options = replace(options, validator=resolved_hooks.validator)
     run_logger = get_run_logger()
-    gateway = _ingest_gateway(db_path)
+    gateway = resolved_hooks.gateway_factory(db_path)
     con = gateway.con
     try:
-        create_all_views(con)
-        export_all_parquet(
-            gateway,
-            document_output_dir,
-            validate_exports=validate_exports,
-            schemas=schemas,
-        )
-        export_all_jsonl(
-            gateway,
-            document_output_dir,
-            validate_exports=validate_exports,
-            schemas=schemas,
+        resolved_hooks.create_views(con)
+        resolved_hooks.export_runner(
+            gateway=gateway,
+            output_dir=document_output_dir,
+            options=export_options,
         )
     except ExportError as exc:
         log_problem(run_logger, exc.problem_detail)

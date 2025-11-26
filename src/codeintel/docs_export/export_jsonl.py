@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
 from codeintel.docs_export import DEFAULT_VALIDATION_SCHEMAS
+from codeintel.docs_export.datasets import JSONL_DATASETS, PARQUET_DATASETS
+from codeintel.docs_export.manifest import write_dataset_manifest
 from codeintel.docs_export.validate_exports import validate_files
+from codeintel.server.datasets import validate_dataset_registry
 from codeintel.services.errors import ExportError, problem
 from codeintel.storage.gateway import (
     DuckDBConnection,
@@ -20,90 +23,27 @@ from codeintel.storage.gateway import (
 )
 
 log = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
-# Map DuckDB tables -> Document Output JSONL basenames
-JSONL_DATASETS: dict[str, str] = {
-    # GOIDs / crosswalk
-    "core.goids": "goids.jsonl",
-    "core.goid_crosswalk": "goid_crosswalk.jsonl",
-    # Call graph
-    "graph.call_graph_nodes": "call_graph_nodes.jsonl",
-    "graph.call_graph_edges": "call_graph_edges.jsonl",
-    # CFG / DFG
-    "graph.cfg_blocks": "cfg_blocks.jsonl",
-    "graph.cfg_edges": "cfg_edges.jsonl",
-    "graph.dfg_edges": "dfg_edges.jsonl",
-    # Import / symbol uses
-    "graph.import_graph_edges": "import_graph_edges.jsonl",
-    "graph.symbol_use_edges": "symbol_use_edges.jsonl",
-    # AST / CST
-    "core.ast_nodes": "ast_nodes.jsonl",
-    "core.ast_metrics": "ast_metrics.jsonl",
-    "core.cst_nodes": "cst_nodes.jsonl",
-    "core.docstrings": "docstrings.jsonl",
-    # Modules / config / diagnostics
-    "core.modules": "modules.jsonl",
-    "analytics.config_values": "config_values.jsonl",
-    "analytics.data_models": "data_models.jsonl",
-    "analytics.data_model_fields": "data_model_fields.jsonl",
-    "analytics.data_model_relationships": "data_model_relationships.jsonl",
-    "analytics.data_model_usage": "data_model_usage.jsonl",
-    "analytics.config_data_flow": "config_data_flow.jsonl",
-    "analytics.static_diagnostics": "static_diagnostics.jsonl",
-    # AST analytics / typing
-    "analytics.hotspots": "hotspots.jsonl",
-    "analytics.typedness": "typedness.jsonl",
-    # Function analytics
-    "analytics.function_metrics": "function_metrics.jsonl",
-    "analytics.function_types": "function_types.jsonl",
-    "analytics.function_effects": "function_effects.jsonl",
-    "analytics.function_contracts": "function_contracts.jsonl",
-    "analytics.semantic_roles_functions": "semantic_roles_functions.jsonl",
-    "analytics.semantic_roles_modules": "semantic_roles_modules.jsonl",
-    # Coverage + tests
-    "analytics.coverage_lines": "coverage_lines.jsonl",
-    "analytics.coverage_functions": "coverage_functions.jsonl",
-    "analytics.test_catalog": "test_catalog.jsonl",
-    "analytics.test_coverage_edges": "test_coverage_edges.jsonl",
-    "analytics.entrypoints": "entrypoints.jsonl",
-    "analytics.entrypoint_tests": "entrypoint_tests.jsonl",
-    "analytics.external_dependencies": "external_dependencies.jsonl",
-    "analytics.external_dependency_calls": "external_dependency_calls.jsonl",
-    "analytics.graph_validation": "graph_validation.jsonl",
-    "analytics.function_validation": "function_validation.jsonl",
-    # Risk factors
-    "analytics.goid_risk_factors": "goid_risk_factors.jsonl",
-    "analytics.function_profile": "function_profile.jsonl",
-    "analytics.function_history": "function_history.jsonl",
-    "analytics.history_timeseries": "history_timeseries.jsonl",
-    "analytics.file_profile": "file_profile.jsonl",
-    "analytics.module_profile": "module_profile.jsonl",
-    "analytics.graph_metrics_functions": "graph_metrics_functions.jsonl",
-    "analytics.graph_metrics_functions_ext": "graph_metrics_functions_ext.jsonl",
-    "analytics.graph_metrics_modules": "graph_metrics_modules.jsonl",
-    "analytics.graph_metrics_modules_ext": "graph_metrics_modules_ext.jsonl",
-    "analytics.subsystem_graph_metrics": "subsystem_graph_metrics.jsonl",
-    "analytics.symbol_graph_metrics_modules": "symbol_graph_metrics_modules.jsonl",
-    "analytics.symbol_graph_metrics_functions": "symbol_graph_metrics_functions.jsonl",
-    "analytics.config_graph_metrics_keys": "config_graph_metrics_keys.jsonl",
-    "analytics.config_graph_metrics_modules": "config_graph_metrics_modules.jsonl",
-    "analytics.config_projection_key_edges": "config_projection_key_edges.jsonl",
-    "analytics.config_projection_module_edges": "config_projection_module_edges.jsonl",
-    "analytics.subsystem_agreement": "subsystem_agreement.jsonl",
-    "analytics.graph_stats": "graph_stats.jsonl",
-    "analytics.test_graph_metrics_tests": "test_graph_metrics_tests.jsonl",
-    "analytics.test_graph_metrics_functions": "test_graph_metrics_functions.jsonl",
-    "analytics.test_profile": "test_profile.jsonl",
-    "analytics.behavioral_coverage": "behavioral_coverage.jsonl",
-    "analytics.cfg_block_metrics": "cfg_block_metrics.jsonl",
-    "analytics.cfg_function_metrics": "cfg_function_metrics.jsonl",
-    "analytics.dfg_block_metrics": "dfg_block_metrics.jsonl",
-    "analytics.dfg_function_metrics": "dfg_function_metrics.jsonl",
-    "analytics.subsystems": "subsystems.jsonl",
-    "analytics.subsystem_modules": "subsystem_modules.jsonl",
-    "docs.v_validation_summary": "validation_summary.jsonl",
-}
+def _resolve_dataset_table(dataset_name: str, dataset_mapping: Mapping[str, str]) -> str:
+    table = dataset_mapping.get(dataset_name)
+    if table is None:
+        message = f"Unknown dataset: {dataset_name}"
+        raise ValueError(message)
+    return table
+
+
+def _select_dataset_tables(
+    dataset_mapping: Mapping[str, str],
+    datasets: list[str] | None,
+) -> dict[str, str]:
+    if datasets is None:
+        return {name: table for name, table in dataset_mapping.items() if table in JSONL_DATASETS}
+    selected: dict[str, str] = {}
+    for dataset_name in datasets:
+        selected[dataset_name] = _resolve_dataset_table(dataset_name, dataset_mapping)
+    return selected
 
 
 def _default_repo_commit(con: DuckDBConnection) -> tuple[str, str]:
@@ -195,11 +135,12 @@ def export_jsonl_for_table(
     Raises
     ------
     ValueError
-        If the requested table is not in the allowed export mapping.
+        If the requested table is not registered in the dataset mapping.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    if table_name not in JSONL_DATASETS:
-        message = f"Refusing to export unknown table: {table_name}"
+    dataset_mapping = gateway.datasets.mapping
+    if table_name not in dataset_mapping.values():
+        message = f"Refusing to export unknown dataset table: {table_name}"
         raise ValueError(message)
     log.info("Exporting %s -> %s", table_name, output_path)
     con = gateway.con
@@ -227,15 +168,54 @@ def export_jsonl_for_table(
     df.to_json(output_path, orient="records", lines=True, date_format="iso")
 
 
+def export_dataset_to_jsonl(
+    gateway: StorageGateway,
+    dataset_name: str,
+    output_dir: Path,
+) -> Path:
+    """
+    Export a dataset resolved through the dataset registry to JSONL.
+
+    Parameters
+    ----------
+    gateway :
+        StorageGateway providing the DuckDB connection.
+    dataset_name : str
+        Logical dataset name to export (e.g., ``function_profile``).
+    output_dir : Path
+        Destination directory for the JSONL file.
+
+    Returns
+    -------
+    Path
+        Path to the written JSONL file.
+
+    Raises
+    ------
+    ValueError
+        If the dataset name is unknown.
+    """
+    dataset_mapping = gateway.datasets.mapping
+    if dataset_name not in dataset_mapping:
+        message = f"Unknown dataset: {dataset_name}"
+        raise ValueError(message)
+    table_name = dataset_mapping[dataset_name]
+    filename = JSONL_DATASETS.get(table_name, f"{dataset_name}.jsonl")
+    output_path = output_dir / filename
+    export_jsonl_for_table(gateway, table_name, output_path)
+    return output_path
+
+
 def export_all_jsonl(
     gateway: StorageGateway,
     document_output_dir: Path,
     *,
     validate_exports: bool = True,
     schemas: list[str] | None = None,
+    datasets: list[str] | None = None,
 ) -> list[Path]:
     """
-    Export all configured datasets to JSONL files under `Document Output/`.
+    Export configured datasets to JSONL files under `Document Output/`.
 
     Parameters
     ----------
@@ -247,6 +227,8 @@ def export_all_jsonl(
         Whether to validate selected datasets against JSON Schemas after export.
     schemas : list[str] | None
         Optional subset of schema names to validate; defaults to the standard export set.
+    datasets : list[str] | None
+        Optional list of dataset names to export; defaults to datasets with JSONL filenames.
 
     Returns
     -------
@@ -261,9 +243,17 @@ def export_all_jsonl(
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
 
+    dataset_mapping = gateway.datasets.mapping
+    selected = _select_dataset_tables(dataset_mapping, datasets)
+    validate_dataset_registry(gateway)
+    missing_tables = set(JSONL_DATASETS) - set(dataset_mapping.values())
+    for table_name in sorted(missing_tables):
+        log.warning("Skipping %s; table not present in dataset registry", table_name)
+
     written: list[Path] = []
 
-    for table_name, filename in JSONL_DATASETS.items():
+    for dataset_name, table_name in sorted(selected.items()):
+        filename = JSONL_DATASETS.get(table_name, f"{dataset_name}.jsonl")
         output_path = document_output_dir / filename
         try:
             export_jsonl_for_table(gateway, table_name, output_path)
@@ -271,7 +261,8 @@ def export_all_jsonl(
         except (DuckDBError, OSError, ValueError) as exc:
             # Log and continue: some tables may legitimately be empty or missing
             log.warning(
-                "Failed to export %s to %s: %s",
+                "Failed to export dataset %s (%s) to %s: %s",
+                dataset_name,
                 table_name,
                 output_path,
                 exc,
@@ -290,6 +281,14 @@ def export_all_jsonl(
     }
     index_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     written.append(index_path)
+    manifest_path = write_dataset_manifest(
+        document_output_dir,
+        dataset_mapping,
+        jsonl_mapping=JSONL_DATASETS,
+        parquet_mapping=PARQUET_DATASETS,
+        selected=list(selected.keys()),
+    )
+    written.append(manifest_path)
 
     if validate_exports:
         schema_list = schemas or DEFAULT_VALIDATION_SCHEMAS

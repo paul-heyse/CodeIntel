@@ -1,1 +1,1 @@
-"""Minimal server utilities for presenting CodeIntel query templates to callers."""
+"""Server utilities for QueryService-backed FastAPI and adapter layers."""

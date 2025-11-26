@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Final, Self
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
-from codeintel.analytics.graphs.graph_metrics import compute_graph_metrics
+from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config.models import (
     CallGraphConfig,
     CoverageIngestConfig,

@@ -10,7 +10,7 @@ import sys
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
@@ -23,8 +23,8 @@ from codeintel.config.models import (
     RepoConfig,
 )
 from codeintel.config.parser_types import FunctionParserKind
-from codeintel.docs_export.export_jsonl import export_all_jsonl
-from codeintel.docs_export.export_parquet import export_all_parquet
+from codeintel.docs_export.runner import ExportOptions, ExportRunner, run_validated_exports
+from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.ingestion.source_scanner import (
     default_code_profile,
     default_config_profile,
@@ -33,6 +33,7 @@ from codeintel.ingestion.source_scanner import (
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.mcp.backend import DuckDBBackend
 from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
+from codeintel.server.datasets import validate_dataset_registry
 from codeintel.services.errors import ExportError, log_problem, problem
 from codeintel.storage.gateway import (
     DuckDBError,
@@ -43,7 +44,17 @@ from codeintel.storage.gateway import (
 )
 
 LOG = logging.getLogger("codeintel.cli")
-CommandHandler = Callable[[argparse.Namespace], int]
+
+
+class GatewayFactory(Protocol):
+    """Factory for creating gateways with optional read-only mode."""
+
+    def __call__(self, cfg: CodeIntelConfig, *, read_only: bool) -> StorageGateway:
+        """Create a gateway."""
+        ...
+
+
+CommandHandler = Callable[..., int]
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +233,12 @@ def _make_parser() -> argparse.ArgumentParser:
         default=Path("build/db"),
         help="Directory containing per-commit DuckDB snapshots for history_timeseries.",
     )
+    p_run.add_argument(
+        "--export-dataset",
+        dest="export_datasets",
+        action="append",
+        help="Dataset name to export during docs export step (can be repeated).",
+    )
     _add_graph_backend_args(p_run)
     p_run.set_defaults(func=_cmd_pipeline_run)
 
@@ -247,6 +264,12 @@ def _make_parser() -> argparse.ArgumentParser:
         dest="schemas",
         action="append",
         help="Schema name to validate (can be repeated). Defaults to the standard export set.",
+    )
+    p_export.add_argument(
+        "--dataset",
+        dest="datasets",
+        action="append",
+        help="Dataset name to export (can be repeated). Defaults to all mapped datasets.",
     )
     _add_graph_backend_args(p_export)
     p_export.set_defaults(func=_cmd_docs_export)
@@ -447,6 +470,7 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
             history_commits=tuple(args.history_commits) if args.history_commits else None,
             history_db_dir=args.history_db_dir,
             graph_backend=cfg.graph_backend,
+            export_datasets=tuple(args.export_datasets) if args.export_datasets else None,
         ),
         targets=targets,
     )
@@ -456,7 +480,18 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
 def _cmd_ide_hints(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
-    backend = DuckDBBackend(gateway=gateway, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    engine = build_graph_engine(
+        gateway,
+        (cfg.repo.repo, cfg.repo.commit),
+        graph_backend=cfg.graph_backend,
+        env=os.environ,
+    )
+    backend = DuckDBBackend(
+        gateway=gateway,
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        query_engine=engine,
+    )
     response = backend.get_file_hints(rel_path=args.rel_path)
     if not response.found or not response.hints:
         LOG.error("No IDE hints found for %s", args.rel_path)
@@ -475,7 +510,18 @@ def _cmd_ide_hints(args: argparse.Namespace) -> int:
 def _cmd_subsystem_list(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
-    backend = DuckDBBackend(gateway=gateway, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    engine = build_graph_engine(
+        gateway,
+        (cfg.repo.repo, cfg.repo.commit),
+        graph_backend=cfg.graph_backend,
+        env=os.environ,
+    )
+    backend = DuckDBBackend(
+        gateway=gateway,
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        query_engine=engine,
+    )
     response = backend.list_subsystems(
         limit=args.limit,
         role=args.role,
@@ -493,7 +539,18 @@ def _cmd_subsystem_list(args: argparse.Namespace) -> int:
 def _cmd_subsystem_show(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
-    backend = DuckDBBackend(gateway=gateway, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    engine = build_graph_engine(
+        gateway,
+        (cfg.repo.repo, cfg.repo.commit),
+        graph_backend=cfg.graph_backend,
+        env=os.environ,
+    )
+    backend = DuckDBBackend(
+        gateway=gateway,
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        query_engine=engine,
+    )
     response = backend.get_subsystem_modules(subsystem_id=args.subsystem_id)
     if not response.found or response.subsystem is None:
         LOG.error("Subsystem not found: %s", args.subsystem_id)
@@ -511,7 +568,18 @@ def _cmd_subsystem_show(args: argparse.Namespace) -> int:
 def _cmd_subsystem_modules(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
-    backend = DuckDBBackend(gateway=gateway, repo=cfg.repo.repo, commit=cfg.repo.commit)
+    engine = build_graph_engine(
+        gateway,
+        (cfg.repo.repo, cfg.repo.commit),
+        graph_backend=cfg.graph_backend,
+        env=os.environ,
+    )
+    backend = DuckDBBackend(
+        gateway=gateway,
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        query_engine=engine,
+    )
     response = backend.get_module_subsystems(module=args.module)
     payload = {
         "found": response.found,
@@ -523,7 +591,13 @@ def _cmd_subsystem_modules(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_docs_export(args: argparse.Namespace) -> int:
+def _cmd_docs_export(
+    args: argparse.Namespace,
+    *,
+    validator: Callable[[StorageGateway], None] = validate_dataset_registry,
+    export_runner: ExportRunner = run_validated_exports,
+    gateway_factory: GatewayFactory | None = None,
+) -> int:
     """
     Export only, assuming the pipeline has already populated the DuckDB db.
 
@@ -543,7 +617,7 @@ def _cmd_docs_export(args: argparse.Namespace) -> int:
     """
     cfg = _build_config_from_args(args)
     maybe_enable_nx_gpu(cfg.graph_backend)
-    gateway = _open_gateway(cfg, read_only=True)
+    gateway = (gateway_factory or _open_gateway)(cfg, read_only=True)
 
     out_dir = cfg.paths.document_output_dir
     if out_dir is None:
@@ -553,18 +627,17 @@ def _cmd_docs_export(args: argparse.Namespace) -> int:
 
     LOG.info("Exporting Parquet + JSONL datasets into %s", out_dir)
     schemas = list(args.schemas) if getattr(args, "schemas", None) else None
+    datasets = list(args.datasets) if getattr(args, "datasets", None) else None
     try:
-        export_all_parquet(
-            gateway,
-            out_dir,
-            validate_exports=bool(getattr(args, "validate_exports", False)),
-            schemas=schemas,
-        )
-        export_all_jsonl(
-            gateway,
-            out_dir,
-            validate_exports=bool(getattr(args, "validate_exports", False)),
-            schemas=schemas,
+        export_runner(
+            gateway=gateway,
+            output_dir=out_dir,
+            options=ExportOptions(
+                validate_exports=bool(getattr(args, "validate_exports", False)),
+                schemas=schemas,
+                datasets=datasets,
+                validator=validator,
+            ),
         )
     except ExportError as exc:
         log_problem(LOG, exc.problem_detail)

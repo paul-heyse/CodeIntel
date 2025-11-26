@@ -52,6 +52,7 @@ class ServiceCallMetrics:
     dataset: str | None = None
     messages: int | None = None
     error: str | None = None
+    truncated: bool | None = None
 
 
 @dataclass
@@ -85,6 +86,8 @@ class ServiceObservability:
             payload["messages"] = metrics.messages
         if metrics.error is not None:
             payload["error"] = metrics.error
+        if metrics.truncated is not None:
+            payload["truncated"] = metrics.truncated
         self.logger.info("service_call %s", payload)
 
 
@@ -134,6 +137,22 @@ def _extract_message_count(result: object) -> int | None:
     return len(meta.messages)
 
 
+def _extract_truncated(result: object) -> bool | None:
+    """
+    Return truncation state when available on response metadata.
+
+    Returns
+    -------
+    bool | None
+        Truncation flag if present; otherwise ``None``.
+    """
+    meta = getattr(result, "meta", None)
+    if meta is None:
+        return None
+    truncated = getattr(meta, "truncated", None)
+    return bool(truncated) if truncated is not None else None
+
+
 def _observe_call[T](
     observability: ServiceObservability | None,
     *,
@@ -176,6 +195,7 @@ def _observe_call[T](
                 rows=_extract_row_count(result),
                 dataset=dataset,
                 messages=_extract_message_count(result),
+                truncated=_extract_truncated(result),
             )
         )
     return result
@@ -332,7 +352,16 @@ class QueryService(
     DatasetQueryApi,
     Protocol,
 ):
-    """Composite query service consumed by HTTP and MCP transports."""
+    """
+    Composite query service consumed by HTTP, MCP, and future transports.
+
+    All application surfaces (FastAPI, MCP, CLI) must depend on this interface
+    instead of touching DuckDB or raw SQL directly.
+
+    Implementations:
+        - LocalQueryService: wraps DuckDBQueryService for local DB access.
+        - HttpQueryService: forwards calls to a remote HTTP server.
+    """
 
 
 class _FunctionQueryDelegates:

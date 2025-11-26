@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.docs_export.export_jsonl import JSONL_DATASETS
-from codeintel.docs_export.export_parquet import PARQUET_DATASETS
+from codeintel.docs_export.datasets import JSONL_DATASETS, PARQUET_DATASETS
+from tests._helpers.fixtures import ProvisionedGateway
 
 
 def test_export_mappings_cover_required_tables() -> None:
@@ -56,4 +56,26 @@ def test_export_mappings_cover_required_tables() -> None:
         raise AssertionError(message)
     if missing_jsonl:
         message = f"JSONL mapping missing: {sorted(missing_jsonl)}"
+        raise AssertionError(message)
+
+
+def test_export_mappings_registered_with_dataset_registry(
+    docs_export_gateway: ProvisionedGateway,
+) -> None:
+    """
+    Export mappings should reference tables registered in the dataset registry.
+
+    Raises
+    ------
+    AssertionError
+        If any export mapping references an unregistered table.
+    """
+    mapping_tables = set(docs_export_gateway.gateway.datasets.mapping.values())
+    missing_parquet = set(PARQUET_DATASETS) - mapping_tables
+    missing_jsonl = set(JSONL_DATASETS) - mapping_tables
+    if missing_parquet:
+        message = f"Parquet export tables not registered: {sorted(missing_parquet)}"
+        raise AssertionError(message)
+    if missing_jsonl:
+        message = f"JSONL export tables not registered: {sorted(missing_jsonl)}"
         raise AssertionError(message)

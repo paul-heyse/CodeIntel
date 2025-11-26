@@ -43,7 +43,7 @@ from codeintel.mcp.models import (
     TestsForFunctionResponse,
 )
 from codeintel.services.factory import BackendResource, build_backend_resource
-from codeintel.services.query_service import HttpQueryService, LocalQueryService
+from codeintel.services.query_service import QueryService
 from codeintel.storage.gateway import DuckDBError, StorageConfig, StorageGateway, open_gateway
 
 LOG = logging.getLogger("codeintel.server.fastapi")
@@ -309,7 +309,7 @@ def get_backend(request: Request) -> QueryBackend:
     return backend
 
 
-def get_service(request: Request) -> LocalQueryService | HttpQueryService:
+def get_service(request: Request) -> QueryService:
     """
     Retrieve the shared query service from state.
 
@@ -320,7 +320,7 @@ def get_service(request: Request) -> LocalQueryService | HttpQueryService:
 
     Returns
     -------
-    LocalQueryService | HttpQueryService
+    QueryService
         Service used to satisfy API queries.
 
     Raises
@@ -328,9 +328,7 @@ def get_service(request: Request) -> LocalQueryService | HttpQueryService:
     errors.backend_failure
         If the service is missing.
     """
-    service: LocalQueryService | HttpQueryService | None = getattr(
-        request.app.state, "service", None
-    )
+    service: QueryService | None = getattr(request.app.state, "service", None)
     if service is None:
         backend: QueryBackend | None = getattr(request.app.state, "backend", None)
         service = getattr(backend, "service", None) if backend is not None else None
@@ -342,7 +340,7 @@ def get_service(request: Request) -> LocalQueryService | HttpQueryService:
 
 ConfigDep = Annotated[ApiAppConfig, Depends(get_app_config)]
 BackendDep = Annotated[QueryBackend, Depends(get_backend)]
-ServiceDep = Annotated[LocalQueryService | HttpQueryService, Depends(get_service)]
+ServiceDep = Annotated[QueryService, Depends(get_service)]
 
 
 def build_functions_router() -> APIRouter:
@@ -980,6 +978,18 @@ def build_health_router() -> APIRouter:
         errors.backend_failure
             If the backend connection is unavailable.
         """
+        limits: dict[str, int] | None = None
+        service = getattr(backend, "service", None)
+        service_limits = getattr(service, "limits", None)
+        if service_limits is None and hasattr(service, "query"):
+            query_obj = getattr(service, "query", None)
+            service_limits = getattr(query_obj, "limits", None)
+        if service_limits is not None:
+            limits = {
+                "default_limit": service_limits.default_limit,
+                "max_rows_per_call": service_limits.max_rows_per_call,
+            }
+
         if isinstance(backend, DuckDBBackend):
             con = backend.gateway.con
             try:
@@ -987,12 +997,15 @@ def build_health_router() -> APIRouter:
             except DuckDBError as exc:
                 message = "Backend connection failed health probe."
                 raise errors.backend_failure(message) from exc
-        return {
+        payload: dict[str, object] = {
             "status": "ok",
             "repo": config.repo,
             "commit": config.commit,
             "read_only": config.read_only,
         }
+        if limits is not None:
+            payload["limits"] = limits
+        return payload
 
     return router
 

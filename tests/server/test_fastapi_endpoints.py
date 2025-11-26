@@ -88,6 +88,22 @@ def test_fastapi_endpoints_smoke(architecture_gateway: StorageGateway, tmp_path:
         _assert_dataset_endpoints(client)
 
 
+def test_health_reports_limits(architecture_gateway: StorageGateway, tmp_path: Path) -> None:
+    """Health endpoint should surface backend limits for clients."""
+    repo = "demo/repo"
+    commit = "deadbeef"
+    db_path = tmp_path / "health.duckdb"
+    app = _build_app(architecture_gateway, db_path, repo=repo, commit=commit)
+    with TestClient(app) as client:
+        resp = client.get("/health")
+        payload = _expect_dict(_json_or_fail(resp))
+        limits = cast("dict[str, int] | None", payload.get("limits"))
+        if limits is None:
+            pytest.fail("Health payload missing limits")
+        if limits.get("max_rows_per_call") != BackendLimits().max_rows_per_call:
+            pytest.fail(f"Unexpected limits payload: {limits}")
+
+
 def _assert_function_summary(client: TestClient) -> None:
     resp = client.get(
         "/function/summary",

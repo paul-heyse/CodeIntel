@@ -1,4 +1,10 @@
-"""Shared DuckDB query service used by MCP backends and FastAPI surface."""
+"""
+Shared DuckDB query service used by MCP backends and FastAPI surface.
+
+All SQL queries against docs.* and analytics.* views/tables live here.
+Other modules must call this service (via LocalQueryService/QueryService)
+instead of issuing custom SELECTs.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +12,8 @@ from dataclasses import dataclass, field
 
 import networkx as nx
 
-from codeintel.graphs.nx_views import load_call_graph, load_import_graph
+from codeintel.graphs.engine import NxGraphEngine
+from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.mcp import errors
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
@@ -199,7 +206,7 @@ def _normalize_entrypoints_dict(row: RowDict | None) -> None:
         row["entrypoints_json"] = []
 
 
-@dataclass
+@dataclass  # noqa: PLR0904
 class DuckDBQueryService:
     """Shared query runner for DuckDB-backed MCP and FastAPI surfaces."""
 
@@ -207,11 +214,37 @@ class DuckDBQueryService:
     repo: str
     commit: str
     limits: BackendLimits
+    engine: NxGraphEngine | None = None
+    _engine: NxGraphEngine | None = field(default=None, init=False, repr=False)
 
     @property
     def con(self) -> DuckDBConnection:
         """Underlying DuckDB connection."""
         return self.gateway.con
+
+    def _graph_engine(self) -> NxGraphEngine:
+        """
+        Return a memoized graph engine for this snapshot.
+
+        Returns
+        -------
+        NxGraphEngine
+            Engine configured for the service repo/commit.
+        """
+        if self._engine is None:
+            self._engine = self.engine or build_graph_engine(self.gateway, (self.repo, self.commit))
+        return self._engine
+
+    def graph_engine(self) -> NxGraphEngine:
+        """
+        Public accessor for the graph engine.
+
+        Returns
+        -------
+        NxGraphEngine
+            Cached or newly built graph engine for this service.
+        """
+        return self._graph_engine()
 
     def _resolve_function_goid(
         self,
@@ -637,7 +670,7 @@ class DuckDBQueryService:
             raise errors.invalid_argument(message)
         limit = clamp.applied
         meta_messages = list(clamp.messages)
-        graph = load_call_graph(self.gateway, self.repo, self.commit)
+        graph = self._graph_engine().call_graph()
         if goid_h128 not in graph:
             return GraphNeighborhoodResponse(
                 nodes=[],
@@ -715,7 +748,7 @@ class DuckDBQueryService:
             raise errors.invalid_argument(message)
         limit = clamp.applied
         meta_messages = list(clamp.messages)
-        import_graph = load_import_graph(self.gateway, self.repo, self.commit)
+        import_graph = self._graph_engine().import_graph()
         memberships = dict(
             self.con.execute(
                 """
