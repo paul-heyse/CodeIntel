@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.graph_stats import compute_graph_stats
+from codeintel.analytics.graphs import compute_graph_stats
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,

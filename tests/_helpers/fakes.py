@@ -140,9 +140,7 @@ class FakeToolRunner(ToolRunner):
                 self.payloads.get("json", {}),
             )
             await to_thread.run_sync(_mkdir_parents, output_path.parent)
-            await to_thread.run_sync(
-                _write_text, output_path, json.dumps(json_payload)
-            )
+            await to_thread.run_sync(_write_text, output_path, json.dumps(json_payload))
         return ToolResult(
             tool=tool_enum,
             args=tuple(args_list),

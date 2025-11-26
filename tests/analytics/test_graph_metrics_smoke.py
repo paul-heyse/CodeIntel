@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.graph_metrics import compute_graph_metrics
+from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config.models import GraphMetricsConfig
 from tests._helpers.builders import (
     CallGraphEdgeRow,

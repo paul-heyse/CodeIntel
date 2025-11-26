@@ -6,9 +6,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.analytics.config_graph_metrics import compute_config_graph_metrics
-from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
-from codeintel.analytics.symbol_graph_metrics import compute_symbol_graph_metrics_modules
+from codeintel.analytics.graphs import (
+    compute_config_graph_metrics,
+    compute_subsystem_agreement,
+    compute_symbol_graph_metrics_modules,
+)
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
 from tests._helpers.builders import (

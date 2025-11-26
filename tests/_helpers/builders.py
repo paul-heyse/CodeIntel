@@ -982,16 +982,18 @@ class FunctionValidationRow:
 
     repo: str
     commit: str
+    function_goid_h128: int
     rel_path: str
     qualname: str
     issue: str
     detail: str
     created_at: datetime
 
-    def to_tuple(self) -> tuple[str, str, str, str, str, str, str]:
+    def to_tuple(self) -> tuple[str, str, int, str, str, str, str, str]:
         return (
             self.repo,
             self.commit,
+            self.function_goid_h128,
             self.rel_path,
             self.qualname,
             self.issue,
@@ -1445,9 +1447,8 @@ def insert_function_validation(
     gateway.con.executemany(
         """
         INSERT INTO analytics.function_validation (
-            repo, commit, rel_path, qualname, issue, detail, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            repo, commit, function_goid_h128, rel_path, qualname, issue, detail, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [row.to_tuple() for row in rows],
     )

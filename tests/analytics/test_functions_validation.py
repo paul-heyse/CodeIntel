@@ -63,7 +63,7 @@ def test_records_validation_when_parse_fails(fresh_gateway: StorageGateway, tmp_
     metrics_rows = con.execute("SELECT * FROM analytics.function_metrics").fetchall()
     validation_rows = con.execute(
         """
-        SELECT function_goid_h128, kind
+        SELECT function_goid_h128, issue
         FROM analytics.function_validation
         WHERE repo = ? AND commit = ?
         """,
@@ -99,7 +99,7 @@ def test_span_not_found_is_recorded(fresh_gateway: StorageGateway, tmp_path: Pat
 
     validation_rows = con.execute(
         """
-        SELECT function_goid_h128, kind
+        SELECT function_goid_h128, issue
         FROM analytics.function_validation
         WHERE repo = ? AND commit = ?
         """,

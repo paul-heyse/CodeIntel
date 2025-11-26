@@ -322,9 +322,7 @@ class ToolService:
         target_dir: Path | None,
         target_only: Sequence[str] | None,
     ) -> None:
-        target_base = await to_thread.run_sync(
-            _resolve_target_base, repo_root, target_dir
-        )
+        target_base = await to_thread.run_sync(_resolve_target_base, repo_root, target_dir)
         await to_thread.run_sync(_mkdir_parents, output_scip.parent)
         args: list[str] = ["index", str(target_base), "--output", str(output_scip)]
         for rel_path in target_only or ():

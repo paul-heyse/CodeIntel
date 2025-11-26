@@ -661,19 +661,24 @@ def _persist_findings(
     reporter = GraphValidationReporter(repo=repo, commit=commit)
     for finding in findings:
         graph_name = str(finding.get("check_name") or "graph_validation")
-        entity_id = str(
-            finding.get("path")
-            or finding.get("entity_id")
-            or finding.get("graph_name")
-            or graph_name
-        )
-        kind = str(finding.get("severity") or "info")
-        message = str(finding.get("detail") or "")
+        entity_ref = finding.get("path") or finding.get("entity_id") or finding.get("graph_name")
+        entity_id = str(entity_ref) if entity_ref is not None else graph_name
+        issue = str(finding.get("issue") or finding.get("severity") or graph_name)
+        severity = str(finding.get("severity") or "info")
+        rel_path = finding.get("path")
+        detail = str(finding.get("detail") or "")
+        metadata = finding.get("context")
+        extras = {
+            "severity": severity,
+            "rel_path": str(rel_path) if rel_path is not None else None,
+            "metadata": metadata,
+        }
         reporter.record(
             graph_name=graph_name,
             entity_id=entity_id,
-            kind=kind,
-            message=message,
+            issue=issue,
+            detail=detail,
+            extras=extras,
         )
     reporter.flush(gateway)
 

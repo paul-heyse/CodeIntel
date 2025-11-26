@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from codeintel.analytics.context import AnalyticsContext
-from codeintel.analytics.git_history import FileCommitDelta, iter_file_history
+from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_history
 from codeintel.config.models import FunctionHistoryConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner

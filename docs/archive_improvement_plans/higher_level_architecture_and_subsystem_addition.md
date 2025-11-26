@@ -336,7 +336,7 @@ Still in `analytics/graph_metrics.py`:
 Extend `orchestration/steps.py` with a new **analytics step** (similar to `FunctionAnalyticsStep`, `CoverageAnalyticsStep`).
 
 ```python
-from codeintel.analytics.graph_metrics import compute_graph_metrics
+from codeintel.analytics.graphs.graph_metrics import compute_graph_metrics
 from codeintel.config.models import GraphMetricsConfig
 ```
 

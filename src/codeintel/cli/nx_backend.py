@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import logging
 import os
+from collections.abc import Callable, MutableMapping
 
 from codeintel.config.models import GraphBackendConfig
 
@@ -35,7 +36,12 @@ def _enable_nx_cugraph_backend() -> None:
         raise RuntimeError(message) from exc
 
 
-def maybe_enable_nx_gpu(cfg: GraphBackendConfig) -> None:
+def maybe_enable_nx_gpu(
+    cfg: GraphBackendConfig,
+    *,
+    env: MutableMapping[str, str] | None = None,
+    enabler: Callable[[], None] | None = None,
+) -> None:
     """
     Configure NetworkX backend based on GraphBackendConfig.
 
@@ -43,12 +49,19 @@ def maybe_enable_nx_gpu(cfg: GraphBackendConfig) -> None:
     ----------
     cfg : GraphBackendConfig
         Backend selection options.
+    env : MutableMapping[str, str] | None, optional
+        Environment mapping to mutate; defaults to os.environ.
+    enabler : Callable[[], None] | None, optional
+        Callback that enables the GPU backend; defaults to nx-cugraph enabler.
 
     Raises
     ------
     RuntimeError
         If strict mode is enabled and the GPU backend cannot be configured.
     """
+    env_vars = env if env is not None else os.environ
+    enable_backend = enabler or _enable_nx_cugraph_backend
+
     if not cfg.use_gpu:
         LOG.debug("Graph backend: CPU (use_gpu=False).")
         return
@@ -60,9 +73,9 @@ def maybe_enable_nx_gpu(cfg: GraphBackendConfig) -> None:
         return
 
     if backend in {"auto", "nx-cugraph"}:
-        os.environ.setdefault(_GPU_AUTOCONFIG_ENV, "True")
+        env_vars.setdefault(_GPU_AUTOCONFIG_ENV, "True")
         try:
-            _enable_nx_cugraph_backend()
+            enable_backend()
         except RuntimeError:
             if cfg.strict:
                 LOG.exception("Failed to enable GPU backend (strict=True).")

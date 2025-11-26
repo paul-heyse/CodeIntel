@@ -437,8 +437,19 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
     )
     gateway.con.execute(
         """
-        INSERT INTO analytics.function_validation VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO analytics.function_validation (
+            repo, commit, function_goid_h128, rel_path, qualname, issue, detail, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (repo, commit, "pkg/mod.py", "pkg.mod.func", "span_not_found", "Span 1-2", now),
+        (
+            repo,
+            commit,
+            1,
+            "pkg/mod.py",
+            "pkg.mod.func",
+            "span_not_found",
+            "Span 1-2",
+            now,
+        ),
     )
     return gateway

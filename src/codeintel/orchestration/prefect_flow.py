@@ -20,8 +20,6 @@ from prefect.logging.handlers import PrefectConsoleHandler
 
 from codeintel.analytics.ast_metrics import build_hotspots
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
-from codeintel.analytics.config_data_flow import compute_config_data_flow
-from codeintel.analytics.config_graph_metrics import compute_config_graph_metrics
 from codeintel.analytics.context import (
     AnalyticsContext,
     AnalyticsContextConfig,
@@ -35,27 +33,31 @@ from codeintel.analytics.dependencies import (
     build_external_dependency_calls,
 )
 from codeintel.analytics.entrypoints import build_entrypoints
-from codeintel.analytics.function_contracts import compute_function_contracts
-from codeintel.analytics.function_effects import compute_function_effects
-from codeintel.analytics.function_history import compute_function_history
-from codeintel.analytics.functions.config import FunctionAnalyticsOptions
-from codeintel.analytics.functions.metrics import compute_function_metrics_and_types
-from codeintel.analytics.graph_metrics import compute_graph_metrics
-from codeintel.analytics.graph_metrics_ext import compute_graph_metrics_functions_ext
+from codeintel.analytics.functions import (
+    FunctionAnalyticsOptions,
+    compute_function_contracts,
+    compute_function_effects,
+    compute_function_history,
+    compute_function_metrics_and_types,
+)
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import build_graph_context
-from codeintel.analytics.graph_stats import compute_graph_stats
-from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
-from codeintel.analytics.module_graph_metrics_ext import compute_graph_metrics_modules_ext
-from codeintel.analytics.parsing.validation import FunctionValidationReporter
-from codeintel.analytics.semantic_roles import compute_semantic_roles
-from codeintel.analytics.subsystem_agreement import compute_subsystem_agreement
-from codeintel.analytics.subsystem_graph_metrics import compute_subsystem_graph_metrics
-from codeintel.analytics.subsystems import build_subsystems
-from codeintel.analytics.symbol_graph_metrics import (
+from codeintel.analytics.graphs import (
+    compute_config_data_flow,
+    compute_config_graph_metrics,
+    compute_graph_metrics,
+    compute_graph_metrics_functions_ext,
+    compute_graph_metrics_modules_ext,
+    compute_graph_stats,
+    compute_subsystem_agreement,
+    compute_subsystem_graph_metrics,
     compute_symbol_graph_metrics_functions,
     compute_symbol_graph_metrics_modules,
 )
+from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.analytics.parsing.validation import FunctionValidationReporter
+from codeintel.analytics.semantic_roles import compute_semantic_roles
+from codeintel.analytics.subsystems import build_subsystems
 from codeintel.analytics.tests import (
     build_behavioral_coverage,
     build_test_profile,
