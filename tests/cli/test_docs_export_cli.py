@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.main import _cmd_docs_export  # noqa: PLC2701
+from codeintel.cli.main import cmd_docs_export
 from codeintel.config.models import CodeIntelConfig
 from codeintel.docs_export.runner import ExportOptions
 from codeintel.storage.gateway import StorageGateway
@@ -62,7 +62,7 @@ def test_cmd_docs_export_invokes_validator_before_exports(tmp_path: Path) -> Non
     # Ensure output dir exists for runner invocation.
     args.document_output_dir.mkdir(parents=True, exist_ok=True)
 
-    exit_code = _cmd_docs_export(
+    exit_code = cmd_docs_export(
         args,
         validator=validator,
         export_runner=export_runner,

@@ -293,7 +293,10 @@ def test_http_backend_against_fastapi(tmp_path: Path) -> None:
         try:
             _assert_http_backend_round_trip(backend)
         finally:
-            anyio.run(client.aclose)
+            async def _close_client() -> None:
+                await client.aclose()
+
+            anyio.run(_close_client)
 
 
 def _assert_http_backend_round_trip(backend: HttpBackend) -> None:

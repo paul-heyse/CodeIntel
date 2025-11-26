@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from codeintel.graphs import call_persist, call_resolution
@@ -105,11 +107,11 @@ def test_dedupe_includes_repo_commit_scope() -> None:
         "confidence": 1.0,
         "evidence_json": {},
     }
-    edges = [
+    edges: list[CallGraphEdgeRow] = [
         edge_base,
-        edge_base | {"commit": "c2"},
-        edge_base | {"repo": "r2"},
-        edge_base | {"callsite_line": 2},
+        cast("CallGraphEdgeRow", {**edge_base, "commit": "c2"}),
+        cast("CallGraphEdgeRow", {**edge_base, "repo": "r2"}),
+        cast("CallGraphEdgeRow", {**edge_base, "callsite_line": 2}),
     ]
 
     unique = call_persist.dedupe_edges(edges)

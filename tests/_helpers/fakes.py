@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+import json
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -58,7 +58,7 @@ class FakeCoverageData:
         return self._contexts_by_file.get(filename, {})
 
 
-class FakeCoverage(Coverage):
+class FakeCoverage:
     """Coverage shim providing deterministic statements/contexts."""
 
     def __init__(
@@ -66,7 +66,6 @@ class FakeCoverage(Coverage):
         statements: dict[str, list[int]],
         contexts: dict[str, dict[int, set[str]]],
     ) -> None:
-        super().__init__()
         self._statements = statements
         self._contexts = contexts
 

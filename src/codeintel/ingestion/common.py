@@ -40,10 +40,12 @@ class ChangeLogFileHandler(logging.FileHandler):
     """File handler tagged for change-detection logging."""
 
     codeintel_change_log: bool
+    _codeintel_change_log: bool
 
     def __init__(self, filename: str) -> None:
         super().__init__(filename, encoding="utf-8")
         self.codeintel_change_log = True
+        self._codeintel_change_log = True
 
 
 @dataclass(frozen=True)

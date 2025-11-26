@@ -275,7 +275,7 @@ def test_compute_test_coverage_edges_respects_injected_loader(tmp_path: Path) ->
         abs_mod = str(target_file.resolve())
         statements = {abs_mod: [1, 2]}
         contexts = {abs_mod: {1: {"pkg/mod.py::test_func"}, 2: {"pkg/mod.py::test_func"}}}
-        return FakeCoverage(statements, contexts)
+        return cast(Coverage, FakeCoverage(statements, contexts))
 
     compute_test_coverage_edges(gateway, cfg, coverage_loader=_coverage_loader)
     _assert_single_edge(con)
