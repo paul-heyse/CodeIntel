@@ -7,7 +7,7 @@ import json
 import logging
 import shutil
 from collections.abc import Collection, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
 
@@ -47,28 +47,57 @@ class ScipRuntime:
     con: DuckDBConnection
 
 
+@dataclass(frozen=True)
+class ScipFullBuildContext:
+    """Inputs required for a full SCIP rebuild."""
+
+    gateway: StorageGateway
+    cfg: ScipIngestConfig
+    runtime: ScipRuntime
+    index_scip: Path
+    index_json: Path
+    service: ToolService
+
+
 @dataclass
-class ScipIngestOps(SupportsFullRebuild[Path], IncrementalIngestOps[Path]):
+class ScipIngestOps(SupportsFullRebuild, IncrementalIngestOps[Path]):
     """Incremental ingest operations for SCIP shards and symbol updates."""
 
     cfg: ScipIngestConfig
     runtime: ScipRuntime
     service: ToolService
-    shards_dir: Path | None = None
+    shards_dir: Path = field(init=False)
 
-    dataset_name = "core.scip_symbols"
+    dataset_name: str = "core.scip_symbols"
 
     def __post_init__(self) -> None:
         """Initialize shard output directory."""
         self.shards_dir = self.runtime.scip_dir / "docs"
         self.shards_dir.mkdir(parents=True, exist_ok=True)
 
-    def module_filter(self, module: ModuleRecord) -> bool:
-        """Restrict SCIP shard processing to Python files."""
-        return module.rel_path.endswith(".py")
+    @staticmethod
+    def module_filter(module: ModuleRecord) -> bool:
+        """
+        Restrict SCIP shard processing to Python files under src/ (skip tests/docs).
+
+        Returns
+        -------
+        bool
+            True when the module should be ingested for SCIP.
+        """
+        return module.rel_path.endswith(".py") and module.rel_path.startswith("src/")
 
     def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
-        """Remove shard artifacts and clear symbols for deleted files."""
+        """
+        Remove shard artifacts and clear symbols for deleted files.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway providing DuckDB connection.
+        rel_paths
+            Relative paths scheduled for deletion.
+        """
         if not rel_paths:
             return
         _remove_shards(self.runtime, rel_paths)
@@ -82,8 +111,15 @@ class ScipIngestOps(SupportsFullRebuild[Path], IncrementalIngestOps[Path]):
         )
         _register_scip_view_from_shards(self.runtime.con, self.shards_dir)
 
-    def process_module(self, module: ModuleRecord) -> list[Path]:
-        """Generate SCIP shard for a single module using ToolService."""
+    def process_module(self, module: ModuleRecord) -> Iterable[Path]:
+        """
+        Generate SCIP shard for a single module using ToolService.
+
+        Returns
+        -------
+        list[Path]
+            Paths to generated shard JSON files (empty on failure).
+        """
         target = self.runtime.repo_root / module.rel_path
         if not target.is_file():
             log.warning("SCIP incremental: %s missing; skipping", target)
@@ -106,17 +142,33 @@ class ScipIngestOps(SupportsFullRebuild[Path], IncrementalIngestOps[Path]):
         return [shard_json]
 
     def insert_rows(self, gateway: StorageGateway, rows: Sequence[Path]) -> None:
-        """Update views and symbols from shard results."""
+        """
+        Update views and symbols from shard results.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway providing DuckDB connection.
+        rows
+            Shard JSON paths returned from processing.
+        """
         shard_paths = [path for path in rows if path is not None]
         _register_scip_view_from_shards(self.runtime.con, self.shards_dir)
         if shard_paths:
             _update_scip_symbols_from_docs(gateway, shard_paths)
 
     def run_full_rebuild(self, tracker: ChangeTracker) -> bool:
-        """Execute a full SCIP rebuild when incremental fallback triggers."""
+        """
+        Execute a full SCIP rebuild when incremental fallback triggers.
+
+        Returns
+        -------
+        bool
+            True when the full rebuild path has been executed.
+        """
         index_scip = self.runtime.scip_dir / "index.scip"
         index_json = self.runtime.scip_dir / "index.scip.json"
-        _run_full_scip(
+        context = ScipFullBuildContext(
             gateway=tracker.gateway,
             cfg=self.cfg,
             runtime=self.runtime,
@@ -124,6 +176,7 @@ class ScipIngestOps(SupportsFullRebuild[Path], IncrementalIngestOps[Path]):
             index_json=index_json,
             service=self.service,
         )
+        _run_full_scip(context)
         return True
 
 
@@ -154,7 +207,7 @@ def ingest_scip(
     if cfg.scip_runner is not None and tracker is None:
         return cast("ScipIngestResult", cfg.scip_runner(gateway, cfg))
 
-    tools_config = ToolsConfig(
+    tools_config = ToolsConfig.with_overrides(
         scip_python_bin=cfg.scip_python_bin,
         scip_bin=cfg.scip_bin,
     )
@@ -175,7 +228,15 @@ def ingest_scip(
         index_scip = scip_dir / "index.scip"
         index_json = scip_dir / "index.scip.json"
         try:
-            result = _run_full_scip(gateway, cfg, runtime, index_scip, index_json, service)
+            context = ScipFullBuildContext(
+                gateway=gateway,
+                cfg=cfg,
+                runtime=runtime,
+                index_scip=index_scip,
+                index_json=index_json,
+                service=service,
+            )
+            result = _run_full_scip(context)
         except ToolNotFoundError as exc:
             reason = f"SCIP tools unavailable: {exc}"
             log.warning(reason)
@@ -202,11 +263,14 @@ def ingest_scip(
         except ToolExecutionError as exc:
             reason = str(exc)
             log.warning("Incremental SCIP ingest failed: %s", reason)
-            result = ScipIngestResult(status="failed", index_scip=None, index_json=None, reason=reason)
+            result = ScipIngestResult(
+                status="failed", index_scip=None, index_json=None, reason=reason
+            )
 
     if result is None:
-        message = "SCIP ingest did not produce a result"
-        raise RuntimeError(message)
+        reason = "SCIP ingest did not produce a result"
+        log.warning(reason)
+        return ScipIngestResult(status="failed", index_scip=None, index_json=None, reason=reason)
     return result
 
 
@@ -216,36 +280,31 @@ def _copy_artifacts(index_scip: Path, index_json: Path, doc_dir: Path) -> None:
     shutil.copy2(index_json, doc_dir / "index.scip.json")
 
 
-def _run_full_scip(
-    gateway: StorageGateway,
-    cfg: ScipIngestConfig,
-    runtime: ScipRuntime,
-    index_scip: Path,
-    index_json: Path,
-    service: ToolService,
-) -> ScipIngestResult:
+def _run_full_scip(context: ScipFullBuildContext) -> ScipIngestResult:
     asyncio.run(
-        service.run_scip_full(
-            runtime.repo_root,
-            output_scip=index_scip,
-            output_json=index_json,
+        context.service.run_scip_full(
+            context.runtime.repo_root,
+            output_scip=context.index_scip,
+            output_json=context.index_json,
         )
     )
 
-    writer = cfg.artifact_writer or _copy_artifacts
-    writer(index_scip, index_json, runtime.doc_dir)
+    writer = context.cfg.artifact_writer or _copy_artifacts
+    writer(context.index_scip, context.index_json, context.runtime.doc_dir)
 
-    docs_table = runtime.con.execute(
+    docs_table = context.runtime.con.execute(
         "SELECT unnest(documents, recursive:=true) AS document FROM read_json(?)",
-        [str(index_json)],
+        [str(context.index_json)],
     ).fetch_arrow_table()
-    runtime.con.execute("DROP VIEW IF EXISTS scip_index_view")
-    runtime.con.register("scip_index_view_temp", docs_table)
-    runtime.con.execute("CREATE VIEW scip_index_view AS SELECT * FROM scip_index_view_temp")
+    context.runtime.con.execute("DROP VIEW IF EXISTS scip_index_view")
+    context.runtime.con.register("scip_index_view_temp", docs_table)
+    context.runtime.con.execute("CREATE VIEW scip_index_view AS SELECT * FROM scip_index_view_temp")
 
-    _update_scip_symbols(gateway, index_json)
-    log.info("SCIP index ingested for %s@%s", cfg.repo, cfg.commit)
-    return ScipIngestResult(status="success", index_scip=index_scip, index_json=index_json)
+    _update_scip_symbols(context.gateway, context.index_json)
+    log.info("SCIP index ingested for %s@%s", context.cfg.repo, context.cfg.commit)
+    return ScipIngestResult(
+        status="success", index_scip=context.index_scip, index_json=context.index_json
+    )
 
 
 def _shard_name(rel_path: str) -> str:

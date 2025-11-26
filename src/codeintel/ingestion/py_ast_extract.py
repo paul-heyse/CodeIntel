@@ -6,7 +6,7 @@ import ast
 import hashlib
 import logging
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -366,10 +366,34 @@ class AstIngestOps(IncrementalIngestOps[AstIngestResult]):
         self.repo = repo
         self.commit = commit
 
-    def module_filter(self, module: ModuleRecord) -> bool:
+    @staticmethod
+    def module_filter(module: ModuleRecord) -> bool:
+        """
+        Determine whether AST extraction should process the module.
+
+        Parameters
+        ----------
+        module
+            Module metadata describing the candidate file.
+
+        Returns
+        -------
+        bool
+            True when the module maps to a Python source path.
+        """
         return module.rel_path.endswith(".py")
 
     def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        """
+        Remove AST rows for modules scheduled for deletion.
+
+        Parameters
+        ----------
+        gateway
+            Gateway whose connection executes DELETE statements.
+        rel_paths
+            Relative module paths to remove from AST tables.
+        """
         if not rel_paths:
             return
         _delete_existing_ast_rows(
@@ -379,11 +403,36 @@ class AstIngestOps(IncrementalIngestOps[AstIngestResult]):
             rel_paths=list(rel_paths),
         )
 
-    def process_module(self, module: ModuleRecord) -> list[AstIngestResult]:
+    @staticmethod
+    def process_module(module: ModuleRecord) -> Iterable[AstIngestResult]:
+        """
+        Parse a module and emit AST nodes plus metrics.
+
+        Parameters
+        ----------
+        module
+            Module metadata describing the file to analyze.
+
+        Returns
+        -------
+        list[AstIngestResult]
+            Collected AST rows and optional metrics (empty on failure).
+        """
         result = _collect_module_ast(module)
         return [result] if result is not None else []
 
-    def insert_rows(self, gateway: StorageGateway, rows: Sequence[AstIngestResult]) -> None:
+    @staticmethod
+    def insert_rows(gateway: StorageGateway, rows: Sequence[AstIngestResult]) -> None:
+        """
+        Insert serialized AST rows and metrics into DuckDB.
+
+        Parameters
+        ----------
+        gateway
+            Gateway whose connection receives batched inserts.
+        rows
+            Extraction results yielded from worker processes.
+        """
         ast_values: list[list[object]] = []
         metric_values: list[list[object]] = []
         for row in rows:

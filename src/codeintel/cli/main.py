@@ -10,6 +10,7 @@ import sys
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
+from typing import Literal
 
 from codeintel.analytics.history_timeseries import compute_history_timeseries_gateways
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
@@ -362,12 +363,15 @@ def _build_config_from_args(args: argparse.Namespace) -> CodeIntelConfig:
 
 
 def _build_graph_backend_config(args: argparse.Namespace) -> GraphBackendConfig:
-    backend_value = getattr(args, "nx_backend", "auto")
-    if backend_value not in ("auto", "cpu", "nx-cugraph"):
-        backend_value = "auto"
+    backend_value = str(getattr(args, "nx_backend", "auto"))
+    backend: Literal["auto", "cpu", "nx-cugraph"] = "auto"
+    if backend_value == "cpu":
+        backend = "cpu"
+    elif backend_value == "nx-cugraph":
+        backend = "nx-cugraph"
     return GraphBackendConfig(
         use_gpu=bool(getattr(args, "nx_gpu", False)),
-        backend=backend_value,
+        backend=backend,
         strict=bool(getattr(args, "nx_gpu_strict", False)),
     )
 

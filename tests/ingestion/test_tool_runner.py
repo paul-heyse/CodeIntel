@@ -14,7 +14,7 @@ def test_tool_runner_missing_binary(tmp_path: Path) -> None:
     """Missing binary raises ToolNotFoundError."""
     runner = ToolRunner(
         cache_dir=tmp_path,
-        tools_config=ToolsConfig(pyright_bin="does-not-exist"),
+        tools_config=ToolsConfig.with_overrides(pyright_bin="does-not-exist"),
     )
     with pytest.raises(ToolNotFoundError):
         runner.run(ToolName.PYRIGHT, [], cwd=tmp_path)

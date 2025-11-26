@@ -197,7 +197,7 @@ def ingest_tests(
     """
     repo_root = cfg.repo_root
     pytest_report_path = report_path or cfg.pytest_report_path or _find_default_report(repo_root)
-    active_tools = tools or ToolsConfig()
+    active_tools = tools or ToolsConfig.model_validate({})
     service = tool_service
     if service is None:
         runner = ToolRunner(

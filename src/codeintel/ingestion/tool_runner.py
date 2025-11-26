@@ -82,7 +82,7 @@ class ToolRunner:
         cache_dir: Path | None = None,
         base_env: Mapping[str, str] | None = None,
     ) -> None:
-        self.tools_config = tools_config or ToolsConfig()
+        self.tools_config = tools_config or ToolsConfig.model_validate({})
         self.cache_dir = (cache_dir or Path("build") / ".tool_cache").resolve()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.base_env = dict(base_env or {})
@@ -107,13 +107,19 @@ class ToolRunner:
             raise ToolNotFoundError(tool, configured)
         return discovered
 
-    def _build_command(self, tool: ToolName, args: Sequence[str]) -> list[str]:
-        executable = self._resolve_executable(tool)
-        if args and args[0] in {tool.value, executable, self.tools_config.resolve_path(tool)}:
+    def _build_command(
+        self,
+        tool: ToolName,
+        args: Sequence[str],
+        *,
+        executable: str | None = None,
+    ) -> list[str]:
+        resolved = executable or self._resolve_executable(tool)
+        if args and args[0] in {tool.value, resolved, self.tools_config.resolve_path(tool)}:
             cmd_args = list(args[1:])
         else:
             cmd_args = list(args)
-        return [executable, *cmd_args]
+        return [resolved, *cmd_args]
 
     async def run_async(
         self,
@@ -148,12 +154,16 @@ class ToolRunner:
         Raises
         ------
         ToolNotFoundError
-            When the configured executable cannot be resolved.
+            When the configured tool executable cannot be located.
         ToolExecutionError
             When the subprocess fails unexpectedly (for example, due to timeout).
         """
         tool_enum = self._coerce_tool(tool)
-        cmd = self._build_command(tool_enum, args)
+        try:
+            executable = self._resolve_executable(tool_enum)
+        except ToolNotFoundError as exc:
+            raise ToolNotFoundError(exc.tool, exc.configured_path) from exc
+        cmd = self._build_command(tool_enum, args, executable=executable)
         env = self.tools_config.build_env(tool_enum, base_env=self.base_env)
         start_ts = time.perf_counter()
 

@@ -30,31 +30,7 @@ IGNORES: Final[tuple[str, ...]] = (
     "venv",
 )
 
-DEFAULT_IGNORE_DIRS: Final[tuple[str, ...]] = (
-    *IGNORES,
-)
-
-
-@dataclass(frozen=True)
-class ScanConfig:
-    """Deprecated scan configuration retained for compatibility."""
-
-    repo_root: Path
-    include_patterns: tuple[str, ...] = ("*.py",)
-    ignore_dirs: tuple[str, ...] = DEFAULT_IGNORE_DIRS
-    log_every: int = 250
-    log_interval: float = 5.0
-
-    def to_profile(self) -> "ScanProfile":
-        """Convert to the canonical ScanProfile representation."""
-        return ScanProfile(
-            repo_root=self.repo_root,
-            source_roots=(self.repo_root,),
-            include_globs=self.include_patterns,
-            ignore_dirs=self.ignore_dirs,
-            log_every=self.log_every,
-            log_interval=self.log_interval,
-        )
+DEFAULT_IGNORE_DIRS: Final[tuple[str, ...]] = (*IGNORES,)
 
 
 @dataclass(frozen=True)
@@ -108,7 +84,14 @@ def default_config_profile(repo_root: Path) -> ScanProfile:
 
 
 def _split_env_list(raw: str) -> tuple[str, ...]:
-    """Split comma/semicolon separated env values into a tuple of entries."""
+    """
+    Split comma/semicolon separated env values into a tuple of entries.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Parsed entries with surrounding whitespace removed.
+    """
     separators = (",", ";")
     normalized = raw
     for sep in separators:
@@ -186,9 +169,10 @@ class SourceScanner:
                         continue
                     yielded += 1
                     now_ts = time.perf_counter()
-                    if yielded % self.profile.log_every == 0 or (
-                        now_ts - last_log
-                    ) >= self.profile.log_interval:
+                    if (
+                        yielded % self.profile.log_every == 0
+                        or (now_ts - last_log) >= self.profile.log_interval
+                    ):
                         elapsed = now_ts - start_ts
                         log.info("Source scan %d files (%.2fs elapsed)", yielded, elapsed)
                         last_log = now_ts

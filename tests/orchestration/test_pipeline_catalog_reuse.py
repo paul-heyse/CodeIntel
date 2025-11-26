@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from codeintel.config.models import GraphBackendConfig, ToolsConfig
+from codeintel.core.config import (
+    ExecutionConfig,
+    PathsConfig,
+    ScanProfilesConfig,
+    SnapshotConfig,
+)
+from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
 from codeintel.orchestration.steps import (
     AstStep,
     CallGraphStep,
@@ -42,13 +50,22 @@ def test_steps_share_function_catalog(tmp_path: Path) -> None:
     gateway = open_gateway(
         StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
     )
-
-    ctx = PipelineContext(
-        repo_root=repo_root,
-        db_path=db_path,
+    snapshot = SnapshotConfig(repo_root=repo_root, repo_slug="r", commit="c")
+    profiles = ScanProfilesConfig(
+        code=default_code_profile(repo_root),
+        config=default_config_profile(repo_root),
+    )
+    execution = ExecutionConfig.for_default_pipeline(
         build_dir=tmp_path / "build",
-        repo="r",
-        commit="c",
+        tools=ToolsConfig.model_validate({}),
+        profiles=profiles,
+        graph_backend=GraphBackendConfig(),
+    )
+    paths = PathsConfig(snapshot=snapshot, execution=execution)
+    ctx = PipelineContext(
+        snapshot=snapshot,
+        execution=execution,
+        paths=paths,
         gateway=gateway,
     )
 

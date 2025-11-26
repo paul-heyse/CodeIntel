@@ -16,11 +16,13 @@ from codeintel.config.models import (
     CoverageIngestConfig,
     GraphMetricsConfig,
     RepoScanConfig,
+    ToolsConfig,
     TypingIngestConfig,
 )
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 from codeintel.ingestion.repo_scan import ingest_repo
+from codeintel.ingestion.tool_service import ToolService
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
 from codeintel.storage.gateway import (
     StorageConfig,
@@ -445,6 +447,8 @@ def provision_ingested_repo(
 
     files = _write_sample_repo(repo_root)
     runner = _make_runner(repo_root, files)
+    tools_cfg = ToolsConfig.model_validate({})
+    tool_service = ToolService(runner, tools_cfg)
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
@@ -456,7 +460,8 @@ def provision_ingested_repo(
         ingest_typing_signals(
             gateway,
             cfg=TypingIngestConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit),
-            runner=runner,
+            tool_service=tool_service,
+            tools=tools_cfg,
         )
     if opts.include_coverage:
         ingest_coverage_lines(
@@ -467,7 +472,8 @@ def provision_ingested_repo(
                 commit=commit,
                 coverage_file=coverage_file,
             ),
-            runner=runner,
+            tool_service=tool_service,
+            tools=tools_cfg,
         )
     if opts.build_graph_metrics:
         _seed_cfg_dfg_for_metrics(gateway, rel_path="pkg/mod.py")
@@ -513,6 +519,8 @@ def provision_existing_repo(
 
     files = sorted(path for path in repo_root.rglob("*.py") if path.is_file())
     runner = _make_runner(repo_root, files)
+    tools_cfg = ToolsConfig.model_validate({})
+    tool_service = ToolService(runner, tools_cfg)
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
@@ -524,7 +532,8 @@ def provision_existing_repo(
         ingest_typing_signals(
             gateway,
             cfg=TypingIngestConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit),
-            runner=runner,
+            tool_service=tool_service,
+            tools=tools_cfg,
         )
     if opts.include_coverage:
         ingest_coverage_lines(
@@ -535,7 +544,8 @@ def provision_existing_repo(
                 commit=commit,
                 coverage_file=coverage_file,
             ),
-            runner=runner,
+            tool_service=tool_service,
+            tools=tools_cfg,
         )
     if opts.build_graph_metrics:
         _seed_cfg_dfg_for_metrics(gateway, rel_path="pkg/mod.py")

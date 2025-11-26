@@ -198,7 +198,7 @@ class StorageGateway(Protocol):
         """Close the underlying DuckDB connection."""
         ...
 
-    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBRelation:
+    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBConnection:
         """Execute SQL against the underlying connection."""
         ...
 
@@ -1213,12 +1213,26 @@ class _DuckDBGateway:
         """Close the underlying connection."""
         self.con.close()
 
-    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBRelation:
-        """Execute a SQL statement using the active DuckDB connection."""
+    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBConnection:
+        """
+        Execute a SQL statement using the active DuckDB connection.
+
+        Returns
+        -------
+        DuckDBConnection
+            Connection representing the executed query.
+        """
         return self.con.execute(sql, params)
 
     def table(self, name: str) -> DuckDBRelation:
-        """Return a relation object for the specified table or view."""
+        """
+        Return a relation object for the specified table or view.
+
+        Returns
+        -------
+        DuckDBRelation
+            Relation bound to the requested table/view.
+        """
         return self.con.table(name)
 
 
@@ -1235,6 +1249,13 @@ def _connect(config: StorageConfig) -> DuckDBConnection:
     -------
     DuckDBConnection
         Live DuckDB connection with optional schema/views applied.
+
+    Raises
+    ------
+    ValueError
+        Raised when attach_history is requested without a history path.
+    FileNotFoundError
+        Raised when the configured history database does not exist.
     """
     if not config.read_only and config.db_path != Path(":memory:"):
         config.db_path.parent.mkdir(parents=True, exist_ok=True)

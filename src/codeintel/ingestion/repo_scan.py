@@ -12,6 +12,7 @@ from typing import TypedDict
 import yaml
 
 from codeintel.config.models import RepoScanConfig
+from codeintel.core.config import SnapshotConfig
 from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.ingestion.common import (
     ChangeRequest,
@@ -137,6 +138,13 @@ def ingest_repo(
         Optional shared scan profile; defaults to Python-only scanning with env overrides.
     apply_schema:
         When True, apply all schemas prior to ingestion (destructive). Default False.
+    policy:
+        Optional incremental ingest policy to override default change detection thresholds.
+
+    Returns
+    -------
+    ChangeTracker
+        Tracker populated with the latest change set for downstream ingest steps.
     """
     con = gateway.con
     repo_root = cfg.repo_root
@@ -201,11 +209,8 @@ def ingest_repo(
 
     tracker = ChangeTracker.create(
         gateway,
-        ChangeRequest(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=repo_root,
-            language="python",
+        ChangeRequest.from_snapshot(
+            snapshot=SnapshotConfig(repo_root=cfg.repo_root, repo_slug=cfg.repo, commit=cfg.commit),
             scan_profile=base_profile,
             modules=module_records,
             logger=log,

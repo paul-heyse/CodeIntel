@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable, Mapping, Sequence
-import asyncio
 from dataclasses import dataclass
-import asyncio
 from pathlib import Path
 from typing import Any
+
+from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.tool_runner import (
@@ -21,6 +21,29 @@ from codeintel.ingestion.tool_runner import (
 from codeintel.utils.paths import normalize_rel_path, repo_relpath
 
 log = logging.getLogger(__name__)
+
+
+def _mkdir_parents(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _unlink_missing(path: Path) -> None:
+    path.unlink(missing_ok=True)
+
+
+def _write_text(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf8")
+
+
+def _path_is_file(path: Path) -> bool:
+    return path.is_file()
+
+
+def _resolve_target_base(repo_root: Path, target_dir: Path | None) -> Path:
+    if target_dir is not None:
+        return target_dir
+    src_dir = repo_root / "src"
+    return src_dir if src_dir.is_dir() else repo_root
 
 
 @dataclass(frozen=True)
@@ -40,7 +63,24 @@ class ToolService:
         self.tools_config = tools_config or runner.tools_config
 
     async def run_pyright(self, repo_root: Path) -> Mapping[str, int]:
-        """Run pyright and return error counts keyed by repo-relative path."""
+        """
+        Run pyright and return error counts keyed by repo-relative path.
+
+        Parameters
+        ----------
+        repo_root
+            Repository root supplied to the pyright invocation.
+
+        Returns
+        -------
+        Mapping[str, int]
+            Mapping from relative file paths to error counts.
+
+        Raises
+        ------
+        ToolExecutionError
+            Raised when pyright exits with an unexpected status.
+        """
         try:
             result = await self.runner.run_async(
                 ToolName.PYRIGHT,
@@ -52,13 +92,26 @@ class ToolService:
             log.warning("pyright binary not found; treating all files as 0 errors")
             return {}
 
-        if result.returncode not in (0, 1):
+        if result.returncode not in {0, 1}:
             raise ToolExecutionError(result)
         return _parse_pyright_errors(result.stdout, repo_root)
 
     async def run_pyrefly(self, repo_root: Path) -> Mapping[str, int]:
-        """Run pyrefly and return error counts keyed by repo-relative path."""
+        """
+        Run pyrefly and return error counts keyed by repo-relative path.
+
+        Parameters
+        ----------
+        repo_root
+            Repository root supplied to the pyrefly invocation.
+
+        Returns
+        -------
+        Mapping[str, int]
+            Mapping from relative file paths to error counts.
+        """
         output_path = self.runner.cache_dir / "pyrefly.json"
+        await to_thread.run_sync(_mkdir_parents, output_path.parent)
         args = [
             "check",
             str(repo_root),
@@ -80,25 +133,43 @@ class ToolService:
             )
         except ToolNotFoundError:
             log.warning("pyrefly binary not found; treating all files as 0 errors")
-            output_path.unlink(missing_ok=True)
+            await to_thread.run_sync(_unlink_missing, output_path)
             return {}
 
-        if result.returncode != 0 and not output_path.is_file():
+        output_exists = await to_thread.run_sync(_path_is_file, output_path)
+        if result.returncode != 0 and not output_exists:
             log.warning(
                 "pyrefly exited with code %s and produced no output; stdout=%s stderr=%s",
                 result.returncode,
                 result.stdout.strip(),
                 result.stderr.strip(),
             )
-            output_path.unlink(missing_ok=True)
+            await to_thread.run_sync(_unlink_missing, output_path)
             return {}
 
-        payload = ToolRunner.load_json(output_path) or {}
-        output_path.unlink(missing_ok=True)
+        payload = await to_thread.run_sync(ToolRunner.load_json, output_path) or {}
+        await to_thread.run_sync(_unlink_missing, output_path)
         return _parse_pyrefly_errors(payload, repo_root)
 
     async def run_ruff(self, repo_root: Path) -> Mapping[str, int]:
-        """Run ruff and return lint error counts keyed by repo-relative path."""
+        """
+        Run ruff and return lint error counts keyed by repo-relative path.
+
+        Parameters
+        ----------
+        repo_root
+            Repository root supplied to the ruff invocation.
+
+        Returns
+        -------
+        Mapping[str, int]
+            Mapping from relative file paths to lint error counts.
+
+        Raises
+        ------
+        ToolExecutionError
+            Raised when ruff exits with an unexpected status.
+        """
         try:
             result = await self.runner.run_async(
                 ToolName.RUFF,
@@ -110,7 +181,7 @@ class ToolService:
             log.warning("ruff binary not found; treating all files as 0 errors")
             return {}
 
-        if result.returncode not in (0, 1):
+        if result.returncode not in {0, 1}:
             raise ToolExecutionError(result)
         return _parse_ruff_errors(result.stdout, repo_root)
 
@@ -121,9 +192,30 @@ class ToolService:
         coverage_file: Path | None = None,
         output_path: Path | None = None,
     ) -> list[CoverageFileReport]:
-        """Run coverage json export and return normalized file reports."""
+        """
+        Run coverage json export and return normalized file reports.
+
+        Parameters
+        ----------
+        repo_root
+            Repository root supplied to the coverage invocation.
+        coverage_file
+            Optional explicit .coverage path to read from.
+        output_path
+            Optional path where the JSON output should be written.
+
+        Returns
+        -------
+        list[CoverageFileReport]
+            Normalized coverage summaries grouped per file.
+
+        Raises
+        ------
+        ToolExecutionError
+            Raised when coverage CLI execution fails or produces no output.
+        """
         target_output = output_path or (self.runner.cache_dir / "coverage.json")
-        target_output.parent.mkdir(parents=True, exist_ok=True)
+        await to_thread.run_sync(_mkdir_parents, target_output.parent)
         args = ["json", "--quiet", f"--output={target_output}"]
         data_file = coverage_file or self.tools_config.coverage_file
         if data_file is not None:
@@ -135,10 +227,10 @@ class ToolService:
             output_path=target_output,
             timeout_s=self.tools_config.default_timeout_s,
         )
-        if not result.ok or not target_output.is_file():
+        if not result.ok or not await to_thread.run_sync(_path_is_file, target_output):
             raise ToolExecutionError(result)
-        payload = ToolRunner.load_json(target_output) or {}
-        target_output.unlink(missing_ok=True)
+        payload = await to_thread.run_sync(ToolRunner.load_json, target_output) or {}
+        await to_thread.run_sync(_unlink_missing, target_output)
         return _parse_coverage_payload(payload, repo_root)
 
     async def run_pytest_report(
@@ -147,11 +239,30 @@ class ToolService:
         *,
         json_report_path: Path,
     ) -> bool:
-        """Generate a pytest JSON report when missing. Returns True when executed."""
-        if json_report_path.is_file():
+        """
+        Generate a pytest JSON report when missing.
+
+        Parameters
+        ----------
+        repo_root
+            Repository root passed to the pytest invocation.
+        json_report_path
+            Output path for the pytest JSON report.
+
+        Returns
+        -------
+        bool
+            True when pytest was executed to produce the report, False when reused.
+
+        Raises
+        ------
+        ToolExecutionError
+            Raised when pytest execution fails or does not create a report.
+        """
+        if await to_thread.run_sync(_path_is_file, json_report_path):
             return False
 
-        json_report_path.parent.mkdir(parents=True, exist_ok=True)
+        await to_thread.run_sync(_mkdir_parents, json_report_path.parent)
         result = await self.runner.run_async(
             ToolName.PYTEST,
             [
@@ -164,7 +275,7 @@ class ToolService:
         )
         if not result.ok:
             raise ToolExecutionError(result)
-        if not json_report_path.is_file():
+        if not await to_thread.run_sync(_path_is_file, json_report_path):
             raise ToolExecutionError(result)
         return True
 
@@ -211,10 +322,10 @@ class ToolService:
         target_dir: Path | None,
         target_only: Sequence[str] | None,
     ) -> None:
-        target_base = target_dir or (
-            repo_root / "src" if (repo_root / "src").is_dir() else repo_root
+        target_base = await to_thread.run_sync(
+            _resolve_target_base, repo_root, target_dir
         )
-        output_scip.parent.mkdir(parents=True, exist_ok=True)
+        await to_thread.run_sync(_mkdir_parents, output_scip.parent)
         args: list[str] = ["index", str(target_base), "--output", str(output_scip)]
         for rel_path in target_only or ():
             args.extend(["--target-only", rel_path])
@@ -230,7 +341,7 @@ class ToolService:
 
     async def _run_scip_print(self, scip_path: Path, output_json: Path) -> None:
         args = ["print", "--json", str(scip_path)]
-        output_json.parent.mkdir(parents=True, exist_ok=True)
+        await to_thread.run_sync(_mkdir_parents, output_json.parent)
         result = await self.runner.run_async(
             ToolName.SCIP,
             args,
@@ -240,7 +351,7 @@ class ToolService:
         )
         if not result.ok:
             raise ToolExecutionError(result)
-        output_json.write_text(result.stdout or "", encoding="utf8")
+        await to_thread.run_sync(_write_text, output_json, result.stdout or "")
 
 
 def _parse_pyrefly_errors(payload: Mapping[str, Any], repo_root: Path) -> dict[str, int]:
