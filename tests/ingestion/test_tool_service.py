@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import pytest
 from pathlib import Path
+
+import pytest
 
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.tool_service import ToolService
@@ -26,7 +27,7 @@ def test_tool_service_pyright_parses_errors(tmp_path: Path) -> None:
         }
     )
     runner = FakeToolRunner(tmp_path, payloads={"pyright": payload})
-    service = ToolService(runner, ToolsConfig())
+    service = ToolService(runner, ToolsConfig.model_validate({}))
 
     errors = asyncio.run(service.run_pyright(repo_root))
 
@@ -47,7 +48,7 @@ def test_tool_service_pyrefly_parses_errors(tmp_path: Path) -> None:
         ]
     }
     runner = FakeToolRunner(tmp_path, payloads={"pyrefly_json": payload})
-    service = ToolService(runner, ToolsConfig())
+    service = ToolService(runner, ToolsConfig.model_validate({}))
 
     errors = asyncio.run(service.run_pyrefly(repo_root))
 
@@ -72,7 +73,7 @@ def test_tool_service_coverage_reports(tmp_path: Path) -> None:
         }
     }
     runner = FakeToolRunner(tmp_path, payloads={"coverage_json": coverage_payload})
-    service = ToolService(runner, ToolsConfig())
+    service = ToolService(runner, ToolsConfig.model_validate({}))
 
     reports = asyncio.run(
         service.run_coverage_json(

@@ -12,14 +12,23 @@ from codeintel.analytics.tests import compute_test_coverage_edges
 from codeintel.config.models import (
     CallGraphConfig,
     CFGBuilderConfig,
+    GraphBackendConfig,
     SymbolUsesConfig,
     TestCoverageConfig,
+    ToolsConfig,
+)
+from codeintel.core.config import (
+    ExecutionConfig,
+    PathsConfig,
+    ScanProfilesConfig,
+    SnapshotConfig,
 )
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
 from codeintel.orchestration.steps import AstStep, GoidsStep, PipelineContext, RepoScanStep
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.fakes import FakeCoverage
@@ -53,7 +62,6 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
             validate_schema=True,
         )
     )
-    con = gateway.con
 
     run_batch(
         gateway,
@@ -66,7 +74,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     )
 
     now = datetime.now(UTC)
-    con.execute(
+    gateway.con.execute(
         """
         INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
         VALUES ('tests/test_sample.py::test_caller', 'pkg/b.py', 'pkg.b.caller', ?, ?, 'passed', ?)
@@ -74,12 +82,20 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         [REPO, COMMIT, now],
     )
 
-    ctx = PipelineContext(
-        repo_root=repo_root,
-        db_path=tmp_path / "db.duckdb",
+    snapshot = SnapshotConfig(repo_root=repo_root, repo_slug=REPO, commit=COMMIT)
+    execution = ExecutionConfig.for_default_pipeline(
         build_dir=tmp_path / "build",
-        repo=REPO,
-        commit=COMMIT,
+        tools=ToolsConfig.model_validate({}),
+        profiles=ScanProfilesConfig(
+            code=default_code_profile(repo_root),
+            config=default_config_profile(repo_root),
+        ),
+        graph_backend=GraphBackendConfig(),
+    )
+    ctx = PipelineContext(
+        snapshot=snapshot,
+        execution=execution,
+        paths=PathsConfig(snapshot=snapshot, execution=execution),
         gateway=gateway,
     )
 
@@ -158,38 +174,58 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         detail="Catalog module mapping missing pkg.a",
     )
 
-    edge_goids = {
-        row[0]
-        for row in con.execute("SELECT caller_goid_h128 FROM graph.call_graph_edges").fetchall()
-    }
     _assert(
-        caller_goid in edge_goids,
+        caller_goid
+        in {
+            row[0]
+            for row in gateway.con.execute(
+                "SELECT caller_goid_h128 FROM graph.call_graph_edges"
+            ).fetchall()
+        },
         detail=f"Call graph edges missing caller GOID {caller_goid}",
     )
 
-    cfg_goids = {
-        row[0]
-        for row in con.execute(
-            "SELECT function_goid_h128 FROM graph.cfg_blocks WHERE file_path = 'pkg/b.py'"
-        ).fetchall()
-    }
-    _assert(caller_goid in cfg_goids, detail=f"CFG blocks missing GOID {caller_goid}")
-
-    sym_use_paths = {
-        row[0]
-        for row in con.execute(
-            "SELECT use_path FROM graph.symbol_use_edges WHERE def_path = 'pkg/a.py'"
-        ).fetchall()
-    }
     _assert(
-        sym_use_paths == {"pkg/b.py"},
-        detail=f"Symbol uses not populated as expected: {sym_use_paths}",
+        caller_goid
+        in {
+            row[0]
+            for row in gateway.con.execute(
+                "SELECT function_goid_h128 FROM graph.cfg_blocks WHERE file_path = 'pkg/b.py'"
+            ).fetchall()
+        },
+        detail=f"CFG blocks missing GOID {caller_goid}",
     )
 
-    coverage_goids = {
-        row[0]
-        for row in con.execute(
-            "SELECT function_goid_h128 FROM analytics.test_coverage_edges"
-        ).fetchall()
-    }
-    _assert(coverage_goids == {caller_goid}, detail=f"Coverage GOIDs mismatch: {coverage_goids}")
+    _assert(
+        {
+            row[0]
+            for row in gateway.con.execute(
+                "SELECT use_path FROM graph.symbol_use_edges WHERE def_path = 'pkg/a.py'"
+            ).fetchall()
+        }
+        == {"pkg/b.py"},
+        detail="Symbol uses not populated as expected: %s"
+        % {
+            row[0]
+            for row in gateway.con.execute(
+                "SELECT use_path FROM graph.symbol_use_edges WHERE def_path = 'pkg/a.py'"
+            ).fetchall()
+        },
+    )
+
+    _assert(
+        {
+            row[0]
+            for row in gateway.con.execute(
+                "SELECT function_goid_h128 FROM analytics.test_coverage_edges"
+            ).fetchall()
+        }
+        == {caller_goid},
+        detail="Coverage GOIDs mismatch: %s"
+        % {
+            row[0]
+            for row in gateway.con.execute(
+                "SELECT function_goid_h128 FROM analytics.test_coverage_edges"
+            ).fetchall()
+        },
+    )

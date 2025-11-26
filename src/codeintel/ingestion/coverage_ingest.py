@@ -105,7 +105,7 @@ def ingest_coverage_lines(
         return
 
     now = datetime.now(UTC)
-    active_tools = tools or ToolsConfig()
+    active_tools = tools or ToolsConfig.model_validate({})
     service = tool_service
     if service is None:
         shared_runner = ToolRunner(

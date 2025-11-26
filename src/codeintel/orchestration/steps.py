@@ -89,6 +89,7 @@ from codeintel.config.models import (
     TestProfileConfig,
     ToolsConfig,
 )
+from codeintel.core.config import ExecutionConfig, PathsConfig, SnapshotConfig
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
 from codeintel.graphs.callgraph_builder import build_call_graph
@@ -115,12 +116,7 @@ from codeintel.ingestion.runner import (
     run_typing_ingest,
 )
 from codeintel.ingestion.scip_ingest import ScipIngestResult
-from codeintel.ingestion.source_scanner import (
-    ScanProfile,
-    default_code_profile,
-    default_config_profile,
-    profile_from_env,
-)
+from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
@@ -169,15 +165,10 @@ class PipelineContext:
         build/
     """
 
-    repo_root: Path
-    db_path: Path
-    build_dir: Path
-    repo: str
-    commit: str
+    snapshot: SnapshotConfig
+    execution: ExecutionConfig
+    paths: PathsConfig
     gateway: StorageGateway
-    tools: ToolsConfig | None = None
-    code_profile: ScanProfile | None = None
-    config_profile: ScanProfile | None = None
     tool_runner: ToolRunner | None = None
     tool_service: ToolService | None = None
     coverage_loader: Callable[[TestCoverageConfig], Coverage | None] | None = None
@@ -192,30 +183,79 @@ class PipelineContext:
     extra: dict[str, object] = field(default_factory=dict)
     function_overrides: FunctionAnalyticsOverrides | None = None
     analytics_context: AnalyticsContext | None = None
-    graph_backend: GraphBackendConfig = field(default_factory=GraphBackendConfig)
     change_tracker: ChangeTracker | None = None
+    tools: ToolsConfig | None = None
 
     @property
     def document_output_dir(self) -> Path:
         """Document Output directory resolved under repo root."""
-        return self.repo_root / "Document Output"
+        return self.paths.document_output_dir
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root for the current snapshot."""
+        return self.snapshot.repo_root
+
+    @property
+    def repo(self) -> str:
+        """Repository slug for the current snapshot."""
+        return self.snapshot.repo_slug
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier for the current snapshot."""
+        return self.snapshot.commit
+
+    @property
+    def db_path(self) -> Path:
+        """DuckDB backing database path."""
+        return self.gateway.config.db_path
+
+    @property
+    def build_dir(self) -> Path:
+        """Build directory resolved from execution config."""
+        return self.execution.build_dir
+
+    @property
+    def tools_config(self) -> ToolsConfig:
+        """Resolve the active tools configuration."""
+        return self.tools or self.execution.tools
+
+    @property
+    def code_profile(self) -> ScanProfile:
+        """Code scan profile for this run."""
+        return self.execution.code_profile
+
+    @property
+    def config_profile(self) -> ScanProfile:
+        """Config scan profile for this run."""
+        return self.execution.config_profile
+
+    @property
+    def graph_backend(self) -> GraphBackendConfig:
+        """Graph backend configuration."""
+        return self.execution.graph_backend
 
 
 def _resolve_code_profile(ctx: PipelineContext) -> ScanProfile:
-    """Return a cached code scan profile with env overrides applied."""
-    if ctx.code_profile is not None:
-        return ctx.code_profile
-    base = default_code_profile(ctx.repo_root)
-    ctx.code_profile = profile_from_env(base)
+    """Return the configured code scan profile.
+
+    Returns
+    -------
+    ScanProfile
+        Code scan profile for the current run.
+    """
     return ctx.code_profile
 
 
 def _resolve_config_profile(ctx: PipelineContext) -> ScanProfile:
-    """Return a cached config scan profile with env overrides applied."""
-    if ctx.config_profile is not None:
-        return ctx.config_profile
-    base = default_config_profile(ctx.repo_root)
-    ctx.config_profile = profile_from_env(base)
+    """Return the configured config scan profile.
+
+    Returns
+    -------
+    ScanProfile
+        Config scan profile for the current run.
+    """
     return ctx.config_profile
 
 
@@ -228,22 +268,16 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
     IngestionContext
         Normalized ingestion context for downstream runners.
     """
-    code_profile = _resolve_code_profile(ctx)
-    config_profile = _resolve_config_profile(ctx)
     return IngestionContext(
-        repo_root=ctx.repo_root,
-        repo=ctx.repo,
-        commit=ctx.commit,
-        db_path=ctx.db_path,
-        build_dir=ctx.build_dir,
-        document_output_dir=ctx.document_output_dir,
+        snapshot=ctx.snapshot,
+        execution=ctx.execution,
+        paths=ctx.paths,
         gateway=ctx.gateway,
-        tools=ctx.tools,
-        code_profile=code_profile,
-        config_profile=config_profile,
+        tools=ctx.tools_config,
         tool_runner=ctx.tool_runner,
         tool_service=ctx.tool_service,
         scip_runner=ctx.scip_runner,
+        artifact_writer=ctx.artifact_writer,
         change_tracker=ctx.change_tracker,
     )
 
@@ -1364,3 +1398,86 @@ PIPELINE_STEPS: dict[str, PipelineStep] = {
     # export
     "export_docs": ExportDocsStep(),
 }
+
+PIPELINE_STEPS_BY_NAME: dict[str, PipelineStep] = PIPELINE_STEPS
+PIPELINE_DEPS: dict[str, tuple[str, ...]] = {
+    name: tuple(step.deps) for name, step in PIPELINE_STEPS.items()
+}
+PIPELINE_SEQUENCE: tuple[str, ...] = tuple(PIPELINE_STEPS.keys())
+
+
+def _topological_order(step_names: Sequence[str]) -> list[str]:
+    """Return a topological ordering of the requested pipeline steps.
+
+    Returns
+    -------
+    list[str]
+        Steps ordered to respect declared dependencies.
+
+    Raises
+    ------
+    RuntimeError
+        If a dependency cycle is detected.
+    """
+    deps = {name: set(PIPELINE_DEPS.get(name, ())) for name in step_names}
+    remaining = set(step_names)
+    ordered: list[str] = []
+    no_deps = [name for name in step_names if not deps[name]]
+
+    while no_deps:
+        name = no_deps.pop()
+        ordered.append(name)
+        remaining.discard(name)
+        for other in list(remaining):
+            deps[other].discard(name)
+            if not deps[other]:
+                no_deps.append(other)
+
+    if remaining:
+        message = f"Circular dependencies detected: {sorted(remaining)}"
+        raise RuntimeError(message)
+    return ordered
+
+
+def run_pipeline(ctx: PipelineContext, *, selected_steps: Sequence[str] | None = None) -> None:
+    """
+    Execute pipeline steps in topological order using the shared context.
+
+    Parameters
+    ----------
+    ctx
+        PipelineContext containing configs and runtime services.
+    selected_steps
+        Optional subset of steps to execute; dependencies are included automatically.
+
+    Raises
+    ------
+    KeyError
+        If a requested step name is not registered.
+    RuntimeError
+        If dependency ordering fails due to a cycle.
+    """
+    step_names = tuple(selected_steps) if selected_steps is not None else PIPELINE_SEQUENCE
+
+    def _expand_with_deps(name: str, acc: set[str]) -> None:
+        if name in acc:
+            return
+        for dep in PIPELINE_DEPS.get(name, ()):
+            _expand_with_deps(dep, acc)
+        acc.add(name)
+
+    expanded: set[str] = set()
+    for name in step_names:
+        if name not in PIPELINE_STEPS_BY_NAME:
+            message = f"Unknown pipeline step: {name}"
+            raise KeyError(message)
+        _expand_with_deps(name, expanded)
+
+    ordered_names = [name for name in PIPELINE_SEQUENCE if name in expanded]
+    try:
+        ordered = _topological_order(tuple(ordered_names))
+    except RuntimeError as exc:  # pragma: no cover - defensive guard
+        raise RuntimeError(str(exc)) from exc
+    for name in ordered:
+        step = PIPELINE_STEPS_BY_NAME[name]
+        step.run(ctx)

@@ -9,10 +9,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from anyio import to_thread
 from coverage import Coverage
 
 from codeintel.config.models import TestCoverageConfig
 from codeintel.ingestion.tool_runner import ToolName, ToolResult, ToolRunner
+
+
+def _mkdir_parents(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _write_text(path: Path, payload: str) -> None:
+    path.write_text(payload, encoding="utf8")
 
 
 class FakeCoverageData:
@@ -130,7 +139,10 @@ class FakeToolRunner(ToolRunner):
                 f"{tool_enum.value}_json",
                 self.payloads.get("json", {}),
             )
-            output_path.write_text(json.dumps(json_payload), encoding="utf8")
+            await to_thread.run_sync(_mkdir_parents, output_path.parent)
+            await to_thread.run_sync(
+                _write_text, output_path, json.dumps(json_payload)
+            )
         return ToolResult(
             tool=tool_enum,
             args=tuple(args_list),

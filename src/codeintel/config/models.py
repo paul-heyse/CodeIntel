@@ -25,6 +25,9 @@ if TYPE_CHECKING:
     from codeintel.ingestion.tool_runner import ToolName
 
 
+DEFAULT_TOOL_TIMEOUT_S = 300.0
+
+
 class RepoConfig(BaseModel):
     """
     Repository identity used across the pipeline.
@@ -174,7 +177,8 @@ class ToolsConfig(BaseModel):
     pytest_bin: str = Field("pytest", description="Path to pytest binary")
     git_bin: str = Field("git", description="Path to git binary")
     default_timeout_s: float = Field(
-        300.0, description="Default timeout (seconds) for external tool invocations"
+        DEFAULT_TOOL_TIMEOUT_S,
+        description="Default timeout (seconds) for external tool invocations",
     )
 
     coverage_file: Path | None = Field(
@@ -194,6 +198,35 @@ class ToolsConfig(BaseModel):
         if isinstance(v, Path):
             return v.expanduser()
         return Path(str(v)).expanduser()
+
+    @classmethod
+    def default(cls) -> ToolsConfig:
+        """
+        Return a fully-populated tool configuration with baked-in defaults.
+
+        Returns
+        -------
+        ToolsConfig
+            Configuration populated with built-in binary names.
+        """
+        return cls.model_validate({})
+
+    @classmethod
+    def with_overrides(cls, **overrides: str | float | Path | None) -> ToolsConfig:
+        """
+        Construct a ToolsConfig using defaults merged with provided overrides.
+
+        Parameters
+        ----------
+        **overrides
+            Keyword overrides for binary paths or optional report locations.
+
+        Returns
+        -------
+        ToolsConfig
+            Fully-populated configuration with overrides applied.
+        """
+        return cls.default().model_copy(update=overrides)
 
     def resolve_path(self, tool: ToolName | str) -> str:
         """
@@ -283,13 +316,7 @@ class CodeIntelConfig(BaseModel):
 
     repo: RepoConfig
     paths: PathsConfig
-    tools: ToolsConfig = Field(
-        default_factory=lambda: ToolsConfig(
-            scip_python_bin="scip-python",
-            scip_bin="scip",
-            pyright_bin="pyright",
-        )
-    )
+    tools: ToolsConfig = Field(default_factory=ToolsConfig.default)
 
     default_targets: list[str] = Field(
         default_factory=lambda: ["export_docs"],
@@ -301,6 +328,11 @@ class CodeIntelConfig(BaseModel):
     def document_output_dir(self) -> Path:
         """
         Document Output directory resolved in paths config.
+
+        Returns
+        -------
+        Path
+            Populated document_output_dir from paths configuration.
 
         Raises
         ------
@@ -347,12 +379,7 @@ class CodeIntelConfig(BaseModel):
         return cls(
             repo=repo_cfg,
             paths=paths_cfg,
-            tools=tools_cfg
-            or ToolsConfig(
-                scip_python_bin="scip-python",
-                scip_bin="scip",
-                pyright_bin="pyright",
-            ),
+            tools=tools_cfg or ToolsConfig.default(),
             default_targets=default_targets or ["export_docs"],
             graph_backend=graph_backend or GraphBackendConfig(),
         )

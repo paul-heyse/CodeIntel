@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -212,10 +212,34 @@ class CstIngestOps(IncrementalIngestOps[ModuleResult]):
         self.commit = commit
         self.executor_kind = executor_kind
 
-    def module_filter(self, module: ModuleRecord) -> bool:
+    @staticmethod
+    def module_filter(module: ModuleRecord) -> bool:
+        """
+        Check whether the module should be ingested for CST extraction.
+
+        Parameters
+        ----------
+        module
+            Module metadata describing the candidate file.
+
+        Returns
+        -------
+        bool
+            True when the module points to a Python source file.
+        """
         return module.rel_path.endswith(".py")
 
     def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        """
+        Remove CST rows for modules scheduled for deletion.
+
+        Parameters
+        ----------
+        gateway
+            Gateway used to execute DELETE statements.
+        rel_paths
+            Relative paths whose rows should be removed.
+        """
         if not rel_paths:
             return
         _delete_existing_rows(
@@ -225,10 +249,34 @@ class CstIngestOps(IncrementalIngestOps[ModuleResult]):
             rel_paths=list(rel_paths),
         )
 
-    def process_module(self, module: ModuleRecord) -> list[ModuleResult]:
+    @staticmethod
+    def process_module(module: ModuleRecord) -> Iterable[ModuleResult]:
+        """
+        Parse a module and return serialized CST rows.
+
+        Parameters
+        ----------
+        module
+            Module metadata describing the file to parse.
+
+        Returns
+        -------
+        list[ModuleResult]
+            Extraction result containing rows or parse errors.
+        """
         return [_process_module(module)]
 
     def insert_rows(self, gateway: StorageGateway, rows: Sequence[ModuleResult]) -> None:
+        """
+        Flush CST rows into DuckDB in bounded batches.
+
+        Parameters
+        ----------
+        gateway
+            Gateway whose connection accepts batched inserts.
+        rows
+            Module extraction results yielded from workers.
+        """
         batch: list[Row] = []
         inserted_rows = 0
         for result in rows:

@@ -1,3 +1,5 @@
+"""Guardrails to prevent ad-hoc change detection logic in ingest modules."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,6 +16,14 @@ import pytest
     ],
 )
 def test_no_ad_hoc_change_detection(path: Path) -> None:
+    """
+    Ensure ingestion modules delegate change detection to the shared tracker.
+
+    Parameters
+    ----------
+    path
+        Path to the ingestion module under inspection.
+    """
     repo_root = Path(__file__).resolve().parents[2]
     text = (repo_root / path).read_text(encoding="utf8")
     banned = [

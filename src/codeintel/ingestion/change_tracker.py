@@ -58,6 +58,14 @@ class ChangeTracker:
         modules: Sequence[ModuleRecord],
         policy: IncrementalIngestPolicy | None = None,
     ) -> ChangeTracker:
+        """
+        Build a change tracker with a computed change set.
+
+        Returns
+        -------
+        ChangeTracker
+            Tracker containing the computed change set and policy.
+        """
         effective_policy = policy or IncrementalIngestPolicy()
         request_modules = change_request.modules or tuple(modules)
         request = replace(change_request, modules=request_modules)
@@ -76,7 +84,14 @@ class ChangeTracker:
         dataset_name: str,
         module_filter: ModuleFilter | None = None,
     ) -> ChangeTrackerDatasetView:
-        """Compute dataset-scoped changes with full rebuild policy applied."""
+        """
+        Compute dataset-scoped changes with full rebuild policy applied.
+
+        Returns
+        -------
+        ChangeTrackerDatasetView
+            Resolved reparse list, delete list, and rebuild mode for the dataset.
+        """
         relevant_modules = (
             [module for module in self.modules if module_filter(module)]
             if module_filter is not None
@@ -95,7 +110,7 @@ class ChangeTracker:
         changed_count = len(to_reparse)
         deleted_count = len(deleted)
 
-        use_full = False
+        use_full = self.change_request.full_rebuild
         if total >= self.policy.min_total_modules_for_ratio and total > 0:
             changed_ratio = (changed_count + deleted_count) / total
             deleted_ratio = deleted_count / total
@@ -109,13 +124,15 @@ class ChangeTracker:
             to_reparse = list(relevant_modules)
             deleted_paths = [module.rel_path for module in relevant_modules]
 
+        reason = "flag" if self.change_request.full_rebuild else "policy"
         log.info(
-            "Dataset view computed for %s (total=%d changed=%d deleted=%d full=%s)",
+            "Dataset view computed for %s (total=%d changed=%d deleted=%d full=%s reason=%s)",
             dataset_name,
             total,
             changed_count,
             deleted_count,
             use_full,
+            reason if use_full else "incremental",
         )
 
         return ChangeTrackerDatasetView(
@@ -134,28 +151,35 @@ class IncrementalIngestOps(Protocol[RowT]):
 
     dataset_name: str
 
-    def module_filter(self, module: ModuleRecord) -> bool:
+    @staticmethod
+    def module_filter(module: ModuleRecord) -> bool:
         """Return True when a module should be considered for this dataset."""
+        ...
 
     def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
         """Remove rows corresponding to the provided relative paths."""
+        ...
 
-    def process_module(self, module: ModuleRecord) -> Iterable[RowT]:
+    @staticmethod
+    def process_module(module: ModuleRecord) -> Iterable[RowT]:
         """Generate rows for a single module."""
+        ...
 
     def insert_rows(self, gateway: StorageGateway, rows: Sequence[RowT]) -> None:
         """Persist generated rows to the target dataset."""
+        ...
 
 
 @runtime_checkable
-class SupportsFullRebuild(Protocol[RowT]):
+class SupportsFullRebuild(Protocol):
     """Optional hook for datasets that need a specialized full rebuild path."""
 
     def run_full_rebuild(self, tracker: ChangeTracker) -> bool:
         """Return True when the full rebuild was handled and no further work is needed."""
+        ...
 
 
-def run_incremental_ingest(
+def run_incremental_ingest[RowT](
     tracker: ChangeTracker,
     ops: IncrementalIngestOps[RowT],
     *,

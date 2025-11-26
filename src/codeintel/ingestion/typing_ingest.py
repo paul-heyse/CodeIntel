@@ -133,7 +133,6 @@ def ingest_typing_signals(
     cfg: TypingIngestConfig,
     *,
     code_profile: ScanProfile | None = None,
-    runner: ToolRunner | None = None,
     tools: ToolsConfig | None = None,
     tool_service: ToolService | None = None,
 ) -> None:
@@ -150,10 +149,10 @@ def ingest_typing_signals(
     """
     repo_root = cfg.repo_root
     profile = code_profile or profile_from_env(default_code_profile(repo_root))
-    active_tools = tools or ToolsConfig()
+    active_tools = tools or ToolsConfig.model_validate({})
     active_service = tool_service
     if active_service is None:
-        shared_runner = runner or ToolRunner(
+        shared_runner = ToolRunner(
             tools_config=active_tools, cache_dir=repo_root / "build" / ".tool_cache"
         )
         active_service = ToolService(shared_runner, active_tools)
