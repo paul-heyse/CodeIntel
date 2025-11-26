@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
-
+from typing import Final, cast
 from coverage import Coverage
 
 from codeintel.analytics.tests import compute_test_coverage_edges
@@ -146,7 +145,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         abs_b = str((repo_root / "pkg" / "b.py").resolve())
         statements = {abs_b: [caller_lines[0], caller_lines[1]]}
         contexts = {abs_b: {caller_lines[0]: {"tests/test_sample.py::test_caller"}}}
-        return FakeCoverage(statements, contexts)
+        return cast(Coverage, FakeCoverage(statements, contexts))
 
     compute_test_coverage_edges(
         gateway,

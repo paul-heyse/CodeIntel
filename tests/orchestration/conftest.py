@@ -5,15 +5,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 import pytest
 from prefect.server.api import server as prefect_server
-from prefect.settings import (
-    PREFECT_LOGGING_INTERNAL_LEVEL,
-    PREFECT_LOGGING_LEVEL,
-    PREFECT_SERVER_LOGGING_LEVEL,
-    temporary_settings,
-)
 from prefect.testing.utilities import prefect_test_harness
 
 
@@ -57,13 +52,6 @@ def prefect_quiet_env() -> Iterator[None]:
     """
     with (
         _quiet_prefect_logging(),
-        temporary_settings(
-            {
-                PREFECT_LOGGING_LEVEL: "CRITICAL",
-                PREFECT_LOGGING_INTERNAL_LEVEL: "CRITICAL",
-                PREFECT_SERVER_LOGGING_LEVEL: "CRITICAL",
-            }
-        ),
         prefect_test_harness(),
     ):
         yield

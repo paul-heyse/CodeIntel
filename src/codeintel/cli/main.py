@@ -272,7 +272,7 @@ def _make_parser() -> argparse.ArgumentParser:
         help="Dataset name to export (can be repeated). Defaults to all mapped datasets.",
     )
     _add_graph_backend_args(p_export)
-    p_export.set_defaults(func=_cmd_docs_export)
+    p_export.set_defaults(func=cmd_docs_export)
 
     # -----------------------------------------------------------------------
     # History aggregation
@@ -591,7 +591,7 @@ def _cmd_subsystem_modules(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_docs_export(
+def cmd_docs_export(
     args: argparse.Namespace,
     *,
     validator: Callable[[StorageGateway], None] = validate_dataset_registry,

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
-
+from typing import Final, cast
 from coverage import Coverage
 
 from codeintel.analytics.tests import compute_test_coverage_edges
@@ -158,7 +157,7 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
         abs_b = str((repo_root / "pkg" / "b.py").resolve())
         statements = {abs_b: [caller_start, caller_end]}
         contexts = {abs_b: {caller_start: {"tests/test_sample.py::test_caller"}}}
-        return FakeCoverage(statements, contexts)
+        return cast(Coverage, FakeCoverage(statements, contexts))
 
     compute_test_coverage_edges(
         gateway,

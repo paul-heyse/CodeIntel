@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from codeintel.analytics.ast_utils import snippet_from_lines
@@ -246,7 +246,7 @@ EVIDENCE_COLLECTION_SCHEMA: dict[str, object] = {
 }
 
 
-def validate_evidence_samples(samples: Iterable[dict[str, object]]) -> None:
+def validate_evidence_samples(samples: Iterable[Mapping[str, object]]) -> None:
     """
     Lightweight validation for evidence payloads.
 

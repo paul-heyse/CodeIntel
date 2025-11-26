@@ -14,7 +14,7 @@ from codeintel.docs_export.datasets import JSONL_DATASETS, PARQUET_DATASETS
 from codeintel.docs_export.manifest import write_dataset_manifest
 from codeintel.docs_export.validate_exports import validate_files
 from codeintel.server.datasets import validate_dataset_registry
-from codeintel.services.errors import ExportError, problem
+from codeintel.services.errors import ExportError, log_problem, problem
 from codeintel.storage.gateway import (
     DuckDBConnection,
     DuckDBError,
@@ -23,7 +23,32 @@ from codeintel.storage.gateway import (
 )
 
 log = logging.getLogger(__name__)
-log = logging.getLogger(__name__)
+
+
+def _validate_registry_or_raise(gateway: StorageGateway) -> None:
+    """Validate dataset registry and normalize error type for schema mismatches.
+
+    Raises
+    ------
+    ValueError
+        If required tables or views are missing from the registry.
+    ExportError
+        If tables exist but their schemas do not match expectations.
+    """
+    try:
+        validate_dataset_registry(gateway)
+    except ValueError as exc:
+        detail = str(exc)
+        pd = problem(
+            code="export.validation_failed",
+            title="Export validation failed",
+            detail=detail,
+            extras={"stage": "dataset_registry"},
+        )
+        log_problem(log, pd)
+        if "schema mismatches" in detail:
+            raise ExportError(pd) from exc
+        raise
 
 
 def _resolve_dataset_table(dataset_name: str, dataset_mapping: Mapping[str, str]) -> str:
@@ -238,14 +263,14 @@ def export_all_jsonl(
     Raises
     ------
     ExportError
-        If validation fails for any selected schema.
+        If validation fails for any selected schema after export.
     """
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
 
+    _validate_registry_or_raise(gateway)
     dataset_mapping = gateway.datasets.mapping
     selected = _select_dataset_tables(dataset_mapping, datasets)
-    validate_dataset_registry(gateway)
     missing_tables = set(JSONL_DATASETS) - set(dataset_mapping.values())
     for table_name in sorted(missing_tables):
         log.warning("Skipping %s; table not present in dataset registry", table_name)
@@ -304,6 +329,7 @@ def export_all_jsonl(
                     detail=f"Validation failed for schema {schema_name}",
                     extras={"schema": schema_name, "files": [str(p) for p in matching]},
                 )
+                log_problem(log, pd)
                 raise ExportError(pd)
 
     return written
