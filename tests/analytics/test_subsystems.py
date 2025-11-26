@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 import pytest
 
 from codeintel.analytics.subsystems import build_subsystems
-from codeintel.config.models import SubsystemsConfig, SubsystemsOverrides
+from codeintel.config import ConfigBuilder, SubsystemsStepConfig
+from codeintel.config.models import SubsystemsOverrides
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     ConfigValueRow,
@@ -255,10 +256,10 @@ def test_subsystems_cluster_and_risk_aggregation(fresh_gateway: StorageGateway) 
     con = gateway.con
     _seed_modules(gateway)
 
-    cfg = SubsystemsConfig.from_paths(
-        repo=REPO,
-        commit=COMMIT,
-        overrides=SubsystemsOverrides(max_subsystems=2, min_modules=1),
+    from pathlib import Path
+    cfg = ConfigBuilder.from_snapshot(repo=REPO, commit=COMMIT, repo_root=Path(".")).subsystems(
+        max_subsystems=2,
+        min_modules=1,
     )
     build_subsystems(gateway, cfg)
 

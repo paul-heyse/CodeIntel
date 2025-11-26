@@ -17,7 +17,7 @@ from networkx.exception import (
     PowerIterationFailedConvergence,
 )
 
-from codeintel.config.models import GraphMetricsConfig
+from codeintel.config import GraphMetricsStepConfig
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ DEFAULT_BETWEENNESS_SAMPLE = 500
 
 
 def build_graph_context(
-    cfg: GraphMetricsConfig,
+    cfg: GraphMetricsStepConfig,
     *,
     now: datetime | None = None,
     betweenness_cap: int | None = None,
@@ -60,7 +60,7 @@ def build_graph_context(
     use_gpu: bool = False,
 ) -> GraphContext:
     """
-    Construct a GraphContext from GraphMetricsConfig with optional caps.
+    Construct a GraphContext from GraphMetricsStepConfig with optional caps.
 
     Parameters
     ----------

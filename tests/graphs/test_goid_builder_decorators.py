@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import pandas as pd
 import pytest
 
-from codeintel.config.models import GoidBuilderConfig
+from codeintel.config import ConfigBuilder, GoidBuilderStepConfig
 from codeintel.graphs import goid_builder
 
 
@@ -31,7 +31,7 @@ def test_goid_start_line_includes_decorator_span() -> None:
             "hash": "h1",
         }
     )
-    cfg = GoidBuilderConfig(repo="r", commit="c", language="python")
+    cfg = GoidBuilderStepConfig(repo="r", commit="c", language="python")
     now = datetime.now(UTC)
 
     build_entries = goid_builder._build_goid_entries  # noqa: SLF001

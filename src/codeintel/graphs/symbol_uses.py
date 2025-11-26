@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import cast
 
-from codeintel.config.models import SymbolUsesConfig
+from codeintel.config import SymbolUsesStepConfig
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 def build_symbol_use_edges(
     gateway: StorageGateway,
-    cfg: SymbolUsesConfig,
+    cfg: SymbolUsesStepConfig,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """

@@ -62,35 +62,12 @@ from codeintel.analytics.tests import (
     compute_test_coverage_edges,
     compute_test_graph_metrics,
 )
+from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.config.models import (
-    BehavioralCoverageConfig,
-    CallGraphConfig,
-    CFGBuilderConfig,
-    ConfigDataFlowConfig,
-    CoverageAnalyticsConfig,
-    DataModelsConfig,
-    DataModelUsageConfig,
-    EntryPointsConfig,
-    ExternalDependenciesConfig,
-    FunctionAnalyticsConfig,
     FunctionAnalyticsOverrides,
-    FunctionContractsConfig,
-    FunctionEffectsConfig,
-    FunctionHistoryConfig,
-    GoidBuilderConfig,
-    GraphBackendConfig,
-    GraphMetricsConfig,
-    HistoryTimeseriesConfig,
-    HotspotsConfig,
-    ImportGraphConfig,
-    ProfilesAnalyticsConfig,
-    SemanticRolesConfig,
-    SubsystemsConfig,
-    SymbolUsesConfig,
-    TestCoverageConfig,
-    TestProfileConfig,
     ToolsConfig,
 )
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.config import ExecutionConfig, PathsConfig, SnapshotConfig
 from codeintel.docs_export.export_jsonl import export_all_jsonl
 from codeintel.docs_export.export_parquet import export_all_parquet
@@ -176,7 +153,7 @@ class PipelineContext:
     gateway: StorageGateway
     tool_runner: ToolRunner | None = None
     tool_service: ToolService | None = None
-    coverage_loader: Callable[[TestCoverageConfig], Coverage | None] | None = None
+    coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None
     scip_runner: Callable[..., ScipIngestResult] | None = None
     cst_collector: Callable[..., list[CallGraphEdgeRow]] | None = None
     ast_collector: Callable[..., list[CallGraphEdgeRow]] | None = None
@@ -242,6 +219,21 @@ class PipelineContext:
     def graph_backend(self) -> GraphBackendConfig:
         """Graph backend configuration."""
         return self.execution.graph_backend
+
+    def config_builder(self) -> ConfigBuilder:
+        """Create a ConfigBuilder from this pipeline context.
+
+        Returns
+        -------
+        ConfigBuilder
+            Builder configured with snapshot and paths from this context.
+        """
+        return ConfigBuilder.from_snapshot(
+            repo=self.repo,
+            commit=self.commit,
+            repo_root=self.repo_root,
+            build_dir=self.build_dir,
+        )
 
 
 def _resolve_code_profile(ctx: PipelineContext) -> ScanProfile:
@@ -630,7 +622,7 @@ class GoidsStep:
         """Build GOID registry and crosswalk tables."""
         _log_step(self.name)
         gateway = ctx.gateway
-        cfg = GoidBuilderConfig.from_paths(repo=ctx.repo, commit=ctx.commit, language="python")
+        cfg = ctx.config_builder().goid_builder(language="python")
         build_goids(gateway, cfg)
 
 
@@ -646,10 +638,7 @@ class CallGraphStep:
         _log_step(self.name)
         gateway = ctx.gateway
         catalog = _function_catalog(ctx)
-        cfg = CallGraphConfig(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
+        cfg = ctx.config_builder().call_graph(
             cst_collector=ctx.cst_collector,
             ast_collector=ctx.ast_collector,
         )
@@ -668,12 +657,7 @@ class CFGStep:
         _log_step(self.name)
         gateway = ctx.gateway
         catalog = _function_catalog(ctx)
-        cfg = CFGBuilderConfig(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-            cfg_builder=ctx.cfg_builder,
-        )
+        cfg = ctx.config_builder().cfg_builder(cfg_builder=ctx.cfg_builder)
         build_cfg_and_dfg(gateway, cfg, catalog_provider=catalog)
 
 
@@ -688,11 +672,7 @@ class ImportGraphStep:
         """Construct module import graph edges."""
         _log_step(self.name)
         gateway = ctx.gateway
-        cfg = ImportGraphConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-        )
+        cfg = ctx.config_builder().import_graph()
         build_import_graph(gateway, cfg)
 
 
@@ -712,12 +692,7 @@ class SymbolUsesStep:
         if not scip_json.is_file():
             log.info("Skipping symbol_uses: SCIP JSON missing at %s", scip_json)
             return
-        cfg = SymbolUsesConfig.from_paths(
-            repo_root=ctx.repo_root,
-            scip_json_path=scip_json,
-            repo=ctx.repo,
-            commit=ctx.commit,
-        )
+        cfg = ctx.config_builder().symbol_uses(scip_json_path=scip_json)
         build_symbol_use_edges(gateway, cfg, catalog_provider=catalog)
 
 
@@ -758,11 +733,7 @@ class HotspotsStep:
         """Compute file-level hotspot scores."""
         _log_step(self.name)
         gateway = ctx.gateway
-        cfg = HotspotsConfig.from_paths(
-            repo_root=ctx.repo_root,
-            repo=ctx.repo,
-            commit=ctx.commit,
-        )
+        cfg = ctx.config_builder().hotspots()
         build_hotspots(gateway, cfg, runner=ctx.tool_runner)
 
 
@@ -776,11 +747,7 @@ class FunctionHistoryStep:
     def run(self, ctx: PipelineContext) -> None:
         """Compute git churn and history for each function GOID."""
         _log_step(self.name)
-        cfg = FunctionHistoryConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-        )
+        cfg = ctx.config_builder().function_history()
         acx = _analytics_context(ctx)
         compute_function_history(ctx.gateway, cfg, runner=ctx.tool_runner, context=acx)
 
@@ -807,11 +774,7 @@ class HistoryTimeseriesStep:
         history_db_dir = Path(db_dir_env) if db_dir_env else ctx.build_dir / "db"
         history_db_dir.mkdir(parents=True, exist_ok=True)
 
-        cfg = HistoryTimeseriesConfig.from_args(
-            repo=ctx.repo,
-            repo_root=ctx.repo_root,
-            commits=commits,
-        )
+        cfg = ctx.config_builder().history_timeseries(commits=commits)
         snapshot_resolver = build_snapshot_gateway_resolver(
             db_dir=history_db_dir,
             repo=ctx.repo,
@@ -836,11 +799,11 @@ class FunctionAnalyticsStep:
         """Compute per-function metrics and typedness."""
         _log_step(self.name)
         gateway = ctx.gateway
-        cfg = FunctionAnalyticsConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-            overrides=ctx.function_overrides,
+        overrides = ctx.function_overrides
+        cfg = ctx.config_builder().function_analytics(
+            fail_on_missing_spans=overrides.fail_on_missing_spans if overrides else False,
+            max_workers=overrides.max_workers if overrides else None,
+            parser=overrides.parser if overrides else None,
         )
         acx = _analytics_context(ctx)
         summary = compute_function_metrics_and_types(
@@ -869,11 +832,7 @@ class FunctionEffectsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Compute function_effects flags and evidence."""
         _log_step(self.name)
-        cfg = FunctionEffectsConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-        )
+        cfg = ctx.config_builder().function_effects()
         acx = _analytics_context(ctx)
         runtime = _graph_runtime(ctx, acx=acx)
         compute_function_effects(
@@ -895,11 +854,7 @@ class FunctionContractsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Compute inferred contracts for functions."""
         _log_step(self.name)
-        cfg = FunctionContractsConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-        )
+        cfg = ctx.config_builder().function_contracts()
         acx = _analytics_context(ctx)
         compute_function_contracts(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
 
@@ -914,7 +869,7 @@ class DataModelsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.data_models."""
         _log_step(self.name)
-        cfg = DataModelsConfig.from_paths(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
+        cfg = ctx.config_builder().data_models()
         compute_data_models(ctx.gateway, cfg)
 
 
@@ -928,9 +883,7 @@ class DataModelUsageStep:
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.data_model_usage."""
         _log_step(self.name)
-        cfg = DataModelUsageConfig.from_paths(
-            repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
-        )
+        cfg = ctx.config_builder().data_model_usage()
         acx = _analytics_context(ctx)
         compute_data_model_usage(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
 
@@ -945,9 +898,7 @@ class ConfigDataFlowStep:
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.config_data_flow."""
         _log_step(self.name)
-        cfg = ConfigDataFlowConfig.from_paths(
-            repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
-        )
+        cfg = ctx.config_builder().config_data_flow()
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
         compute_config_data_flow(ctx.gateway, cfg, context=acx, runtime=runtime)
@@ -964,7 +915,7 @@ class CoverageAnalyticsStep:
         """Aggregate line coverage to function spans."""
         _log_step(self.name)
         gateway = ctx.gateway
-        cfg = CoverageAnalyticsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
+        cfg = ctx.config_builder().coverage_analytics()
         acx = _analytics_context(ctx)
         compute_coverage_functions(gateway, cfg, context=acx)
 
@@ -981,12 +932,7 @@ class TestCoverageEdgesStep:
         _log_step(self.name)
         gateway = ctx.gateway
         catalog = _function_catalog(ctx)
-        cfg = TestCoverageConfig(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-            coverage_loader=ctx.coverage_loader,
-        )
+        cfg = ctx.config_builder().test_coverage(coverage_loader=ctx.coverage_loader)
         compute_test_coverage_edges(gateway, cfg, catalog_provider=catalog)
 
 
@@ -1150,7 +1096,7 @@ class GraphMetricsStep:
         """Populate analytics.graph_metrics_* tables."""
         _log_step(self.name)
         gateway = ctx.gateway
-        cfg = GraphMetricsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
+        cfg = ctx.config_builder().graph_metrics()
         graph_ctx = build_graph_context(
             cfg,
             now=datetime.now(tz=UTC),
@@ -1236,11 +1182,7 @@ class SemanticRolesStep:
     def run(self, ctx: PipelineContext) -> None:
         """Compute semantic role tables."""
         _log_step(self.name)
-        cfg = SemanticRolesConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-        )
+        cfg = ctx.config_builder().semantic_roles()
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
         compute_semantic_roles(
@@ -1263,7 +1205,7 @@ class SubsystemsStep:
         """Populate subsystem membership and summaries."""
         _log_step(self.name)
         gateway = ctx.gateway
-        cfg = SubsystemsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
+        cfg = ctx.config_builder().subsystems()
         acx = _analytics_context(ctx)
         engine = _graph_engine(ctx, acx)
         build_subsystems(gateway, cfg, context=acx, engine=engine)
@@ -1285,11 +1227,7 @@ class TestProfileStep:
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.test_profile."""
         _log_step(self.name)
-        cfg = TestProfileConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-        )
+        cfg = ctx.config_builder().test_profile()
         build_test_profile(ctx.gateway, cfg)
 
 
@@ -1310,10 +1248,7 @@ class BehavioralCoverageStep:
         llm_model_raw = ctx.extra.get("behavioral_llm_model")
         llm_model = llm_model_raw if isinstance(llm_model_raw, str) else None
         llm_runner = ctx.extra.get("behavioral_llm_runner")
-        cfg = BehavioralCoverageConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
+        cfg = ctx.config_builder().behavioral_coverage(
             enable_llm=enable_llm,
             llm_model=llm_model,
         )
@@ -1336,12 +1271,7 @@ class EntryPointsStep:
         """Populate analytics.entrypoints and analytics.entrypoint_tests."""
         _log_step(self.name)
         acx = _analytics_context(ctx)
-        cfg = EntryPointsConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
-            scan_profile=_resolve_code_profile(ctx),
-        )
+        cfg = ctx.config_builder().entrypoints(scan_profile=_resolve_code_profile(ctx))
         build_entrypoints(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
 
 
@@ -1356,10 +1286,7 @@ class ExternalDependenciesStep:
         """Populate dependency call edges and aggregated usage."""
         _log_step(self.name)
         acx = _analytics_context(ctx)
-        cfg = ExternalDependenciesConfig.from_paths(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
+        cfg = ctx.config_builder().external_dependencies(
             scan_profile=_resolve_code_profile(ctx),
         )
         build_external_dependency_calls(
@@ -1391,7 +1318,7 @@ class ProfilesStep:
         _log_step(self.name)
         gateway = ctx.gateway
         acx = _analytics_context(ctx)
-        cfg = ProfilesAnalyticsConfig.from_paths(repo=ctx.repo, commit=ctx.commit)
+        cfg = ctx.config_builder().profiles_analytics()
         build_function_profile(gateway, cfg, catalog_provider=acx.catalog, context=acx)
         build_file_profile(gateway, cfg, catalog_provider=acx.catalog, context=acx)
         build_module_profile(gateway, cfg, catalog_provider=acx.catalog, context=acx)

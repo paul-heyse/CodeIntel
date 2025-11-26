@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.context import AnalyticsContext
-from codeintel.config.models import FunctionAnalyticsConfig
+from codeintel.config import FunctionAnalyticsStepConfig
 
 if TYPE_CHECKING:
     from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class ProcessContext:
     """Shared context for building analytics rows."""
 
-    cfg: FunctionAnalyticsConfig
+    cfg: FunctionAnalyticsStepConfig
     now: datetime
 
 
@@ -34,7 +34,7 @@ class FunctionAnalyticsOptions:
 class ProcessState:
     """Mutable state shared across per-file processing."""
 
-    cfg: FunctionAnalyticsConfig
+    cfg: FunctionAnalyticsStepConfig
     cache: dict[str, ParsedModule | None]
     span_index: dict[int, SourceSpan]
     reporter: FunctionValidationReporter

@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config.models import GraphBackendConfig, GraphMetricsConfig, ToolsConfig
+from codeintel.config import ConfigBuilder, GraphMetricsStepConfig
+from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.config import ExecutionConfig, PathsConfig, SnapshotConfig
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.orchestration import steps as orchestration_steps
@@ -221,7 +223,7 @@ def test_runtime_reuse_with_graph_context(tmp_path: Path) -> None:
 
     try:
         graph_ctx = orchestration_steps.build_graph_context(
-            GraphMetricsConfig.from_paths(repo=snapshot.repo_slug, commit=snapshot.commit),
+            GraphMetricsStepConfig.from_paths(repo=snapshot.repo_slug, commit=snapshot.commit),
             now=datetime.now(tz=UTC),
             use_gpu=False,
         )

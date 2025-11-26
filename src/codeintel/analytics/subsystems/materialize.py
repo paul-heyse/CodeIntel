@@ -25,7 +25,7 @@ from codeintel.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
-from codeintel.config.models import SubsystemsConfig
+from codeintel.config import SubsystemsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
 from codeintel.storage.gateway import StorageGateway
@@ -59,7 +59,7 @@ ROLE_TAGS = {
 class SubsystemBuildContext:
     """Reusable context for assembling subsystem rows."""
 
-    cfg: SubsystemsConfig
+    cfg: SubsystemsStepConfig
     labels: dict[str, str]
     tags_by_module: dict[str, list[str]]
     import_graph: nx.DiGraph
@@ -69,7 +69,7 @@ class SubsystemBuildContext:
 
 def build_subsystems(
     gateway: StorageGateway,
-    cfg: SubsystemsConfig,
+    cfg: SubsystemsStepConfig,
     *,
     context: AnalyticsContext | None = None,
     engine: GraphEngine | None = None,

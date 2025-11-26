@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from codeintel.config.models import BehavioralCoverageConfig, TestProfileConfig
+from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.ast_utils import parse_python_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -105,7 +105,7 @@ class TestRecord:
 class TestProfileContext:
     """Shared inputs for building test_profile rows."""
 
-    cfg: TestProfileConfig
+    cfg: TestProfileStepConfig
     now: datetime
     max_function_count: int
     max_weighted_degree: float
@@ -201,7 +201,7 @@ class BehavioralLLMResult:
 class BehavioralContext:
     """Context for behavioral coverage tagging."""
 
-    cfg: BehavioralCoverageConfig
+    cfg: BehavioralCoverageStepConfig
     ast_info: dict[str, TestAstInfo]
     profile_ctx: dict[str, dict[str, object]]
     now: datetime
@@ -225,7 +225,7 @@ EMPTY_TEST_METRICS = TestGraphMetrics(
 )
 
 
-def build_test_profile(gateway: StorageGateway, cfg: TestProfileConfig) -> None:
+def build_test_profile(gateway: StorageGateway, cfg: TestProfileStepConfig) -> None:
     """
     Populate analytics.test_profile for a repo snapshot.
 
@@ -307,7 +307,7 @@ def build_test_profile(gateway: StorageGateway, cfg: TestProfileConfig) -> None:
 def _build_profile_context(
     *,
     con: DuckDBConnection,
-    cfg: TestProfileConfig,
+    cfg: TestProfileStepConfig,
     tests: list[TestRecord],
 ) -> TestProfileContext:
     now = datetime.now(tz=UTC)
@@ -415,7 +415,7 @@ BehavioralLLMRunner = Callable[[BehavioralLLMRequest], BehavioralLLMResult]
 
 def build_behavioral_coverage(
     gateway: StorageGateway,
-    cfg: BehavioralCoverageConfig,
+    cfg: BehavioralCoverageStepConfig,
     llm_runner: BehavioralLLMRunner | None = None,
 ) -> None:
     """
@@ -688,7 +688,7 @@ def _tags_from_ast_info(ast_info: TestAstInfo) -> set[str]:
 
 
 def _build_llm_request(
-    cfg: BehavioralCoverageConfig,
+    cfg: BehavioralCoverageStepConfig,
     test: TestRecord,
     profile: BehavioralProfile,
 ) -> BehavioralLLMRequest:

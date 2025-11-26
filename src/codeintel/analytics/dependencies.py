@@ -23,7 +23,7 @@ from codeintel.analytics.context import (
 )
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
-from codeintel.config.models import ExternalDependenciesConfig
+from codeintel.config import ExternalDependenciesStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -167,7 +167,7 @@ class DependencyCallVisitor(ast.NodeVisitor):
 
 def build_external_dependency_calls(
     gateway: StorageGateway,
-    cfg: ExternalDependenciesConfig,
+    cfg: ExternalDependenciesStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
@@ -324,7 +324,7 @@ def _function_call_rows(
 
 def build_external_dependencies(
     gateway: StorageGateway,
-    cfg: ExternalDependenciesConfig,
+    cfg: ExternalDependenciesStepConfig,
 ) -> None:
     """
     Aggregate dependency usage into analytics.external_dependencies.
@@ -369,7 +369,7 @@ def build_external_dependencies(
     )
 
 
-def _prepare_external_dependencies(con: DuckDBConnection, cfg: ExternalDependenciesConfig) -> None:
+def _prepare_external_dependencies(con: DuckDBConnection, cfg: ExternalDependenciesStepConfig) -> None:
     ensure_schema(con, "analytics.external_dependencies")
     con.execute(
         "DELETE FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",
@@ -378,7 +378,7 @@ def _prepare_external_dependencies(con: DuckDBConnection, cfg: ExternalDependenc
 
 
 def _fetch_dependency_call_rows(
-    con: DuckDBConnection, cfg: ExternalDependenciesConfig
+    con: DuckDBConnection, cfg: ExternalDependenciesStepConfig
 ) -> list[tuple[object, ...]]:
     return con.execute(
         """
@@ -453,7 +453,7 @@ def _aggregate_dependency_calls(
 def _serialize_dependency_rows(
     aggregates: dict[str, DependencyAggregate],
     config_keys_by_module: dict[str, set[str]],
-    cfg: ExternalDependenciesConfig,
+    cfg: ExternalDependenciesStepConfig,
 ) -> list[tuple[object, ...]]:
     dep_rows: list[tuple[object, ...]] = []
     now = datetime.now(tz=UTC)
@@ -516,7 +516,7 @@ def _as_str(value: object | None) -> str | None:
     return str(value) if isinstance(value, str) else None
 
 
-def _load_dependency_patterns(cfg: ExternalDependenciesConfig) -> dict[str, LibraryPattern]:
+def _load_dependency_patterns(cfg: ExternalDependenciesStepConfig) -> dict[str, LibraryPattern]:
     path = cfg.dependency_patterns_path
     if path is None:
         path = cfg.repo_root / "config" / "dependency_patterns.yml"

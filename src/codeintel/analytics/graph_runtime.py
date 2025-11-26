@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.graph_service import GraphContext
-from codeintel.config.models import GraphBackendConfig
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.storage.gateway import StorageGateway

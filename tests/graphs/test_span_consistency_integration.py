@@ -8,11 +8,12 @@ from typing import Final, cast
 from coverage import Coverage
 
 from codeintel.analytics.tests import compute_test_coverage_edges
-from codeintel.config.models import (
-    CallGraphConfig,
-    CFGBuilderConfig,
-    SymbolUsesConfig,
-    TestCoverageConfig,
+from codeintel.config import (
+    ConfigBuilder,
+    CallGraphStepConfig,
+    CFGBuilderStepConfig,
+    SymbolUsesStepConfig,
+    TestCoverageStepConfig,
 )
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
@@ -113,11 +114,11 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
 
     # Build call graph and CFG using shared spans.
     build_call_graph(
-        gateway, CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+        gateway, CallGraphStepConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
     )
     build_cfg_and_dfg(
         gateway,
-        CFGBuilderConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root),
+        CFGBuilderStepConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root),
     )
     # Symbol uses from SCIP JSON.
     scip_json = repo_root / "build" / "scip" / "index.scip.json"
@@ -145,7 +146,7 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
     )
     build_symbol_use_edges(
         gateway,
-        SymbolUsesConfig.from_paths(
+        SymbolUsesStepConfig.from_paths(
             repo_root=repo_root,
             repo=repo,
             commit=commit,
@@ -153,7 +154,7 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
         ),
     )
 
-    def _load_fake(_cfg: TestCoverageConfig) -> Coverage:
+    def _load_fake(_cfg: TestCoverageStepConfig) -> Coverage:
         abs_b = str((repo_root / "pkg" / "b.py").resolve())
         statements = {abs_b: [caller_start, caller_end]}
         contexts = {abs_b: {caller_start: {"tests/test_sample.py::test_caller"}}}
@@ -161,7 +162,7 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
 
     compute_test_coverage_edges(
         gateway,
-        TestCoverageConfig.from_paths(
+        TestCoverageStepConfig.from_paths(
             repo=repo,
             commit=commit,
             repo_root=repo_root,

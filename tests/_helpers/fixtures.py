@@ -11,10 +11,13 @@ from typing import Final, Self
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
+from codeintel.config import (
+    CallGraphStepConfig,
+    ConfigBuilder,
+    GraphMetricsStepConfig,
+)
 from codeintel.config.models import (
-    CallGraphConfig,
     CoverageIngestConfig,
-    GraphMetricsConfig,
     RepoScanConfig,
     ToolsConfig,
     TypingIngestConfig,
@@ -1915,7 +1918,7 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
     *,
     repo: str = DEFAULT_REPO,
     commit: str = DEFAULT_COMMIT,
-    graph_cfg: GraphMetricsConfig | None = None,
+    graph_cfg: GraphMetricsStepConfig | None = None,
     include_symbol_edges: bool = True,
     file_backed: bool = False,
     db_path: Path | None = None,
@@ -2020,7 +2023,7 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
             ],
         )
     if build_callgraph_enabled:
-        cfg = CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+        cfg = ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root).call_graph()
         build_call_graph(gateway, cfg)
     if include_symbol_edges:
         insert_symbol_use_edges(
@@ -2036,7 +2039,7 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
             ],
         )
     if run_metrics:
-        cfg = graph_cfg or GraphMetricsConfig.from_paths(repo=repo, commit=commit)
+        cfg = graph_cfg or ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root).graph_metrics()
         compute_graph_metrics(gateway, cfg)
     return ctx
 
@@ -2108,7 +2111,7 @@ def build_callgraph_fixture_repo(  # noqa: PLR0913
     gateway = ctx.gateway
     if goid_entries:
         seed_callgraph_goids(gateway, repo=repo, commit=commit, entries=goid_entries)
-    cfg = CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root).call_graph()
     build_call_graph(gateway, cfg)
     return ctx
 

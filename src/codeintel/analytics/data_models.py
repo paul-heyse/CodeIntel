@@ -14,7 +14,7 @@ from pathlib import Path
 
 from codeintel.analytics.ast_utils import call_name, literal_value, safe_unparse, snippet_from_lines
 from codeintel.analytics.evidence import EvidenceCollector
-from codeintel.config.models import DataModelsConfig
+from codeintel.config import DataModelsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.ast_utils import parse_python_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -698,7 +698,7 @@ def _gather_models_for_path(
     abs_path: Path,
     metas: list[ClassMeta],
     docstrings: dict[tuple[str, str], tuple[str | None, str | None]],
-    cfg: DataModelsConfig,
+    cfg: DataModelsStepConfig,
 ) -> list[ModelRecord]:
     parsed = parse_python_module(abs_path)
     if parsed is None:
@@ -824,7 +824,7 @@ def _attach_relationships(models: list[ModelRecord]) -> None:
 
 def _persist_models(
     con: DuckDBConnection,
-    cfg: DataModelsConfig,
+    cfg: DataModelsStepConfig,
     models: list[ModelRecord],
     now: datetime,
 ) -> None:
@@ -958,7 +958,7 @@ def _persist_models(
         )
 
 
-def compute_data_models(gateway: StorageGateway, cfg: DataModelsConfig) -> None:
+def compute_data_models(gateway: StorageGateway, cfg: DataModelsStepConfig) -> None:
     """
     Populate analytics.data_models with extracted model definitions.
 

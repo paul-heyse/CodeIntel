@@ -11,7 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import SupportsFloat, SupportsIndex
 
-from codeintel.config.models import HistoryTimeseriesConfig
+from codeintel.config import HistoryTimeseriesStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.storage.gateway import (
@@ -87,7 +87,7 @@ def _safe_number(value: NumericLike | None) -> float | None:
 
 def compute_history_timeseries(
     history_con: DuckDBConnection,
-    cfg: HistoryTimeseriesConfig,
+    cfg: HistoryTimeseriesStepConfig,
     db_resolver: DBResolver,
     *,
     runner: ToolRunner | None = None,
@@ -182,7 +182,7 @@ def compute_history_timeseries(
 
 def compute_history_timeseries_gateways(
     history_gateway: StorageGateway,
-    cfg: HistoryTimeseriesConfig,
+    cfg: HistoryTimeseriesStepConfig,
     snapshot_resolver: SnapshotGatewayResolver,
     *,
     runner: ToolRunner | None = None,
@@ -232,7 +232,7 @@ def compute_history_timeseries_gateways(
             gateway.close()
 
 
-def _select_entities(cfg: HistoryTimeseriesConfig, db_resolver: DBResolver) -> EntitySelection:
+def _select_entities(cfg: HistoryTimeseriesStepConfig, db_resolver: DBResolver) -> EntitySelection:
     base_commit = cfg.commits[0]
     con = db_resolver(base_commit)
     functions = _select_top_functions(con, cfg, base_commit)
@@ -242,7 +242,7 @@ def _select_entities(cfg: HistoryTimeseriesConfig, db_resolver: DBResolver) -> E
 
 def _select_top_functions(
     con: DuckDBConnection,
-    cfg: HistoryTimeseriesConfig,
+    cfg: HistoryTimeseriesStepConfig,
     commit: str,
 ) -> set[str]:
     rows = con.execute(
@@ -272,7 +272,7 @@ def _select_top_functions(
 
 def _select_top_modules(
     con: DuckDBConnection,
-    cfg: HistoryTimeseriesConfig,
+    cfg: HistoryTimeseriesStepConfig,
     commit: str,
 ) -> set[str]:
     rows = con.execute(
@@ -301,7 +301,7 @@ def _select_top_modules(
 
 
 def _collect_function_rows_for_commit(
-    cfg: HistoryTimeseriesConfig,
+    cfg: HistoryTimeseriesStepConfig,
     con_ci: DuckDBConnection,
     *,
     commit_ctx: CommitContext,
@@ -376,7 +376,7 @@ def _collect_function_rows_for_commit(
 
 
 def _collect_module_rows_for_commit(
-    cfg: HistoryTimeseriesConfig,
+    cfg: HistoryTimeseriesStepConfig,
     con_ci: DuckDBConnection,
     *,
     commit_ctx: CommitContext,

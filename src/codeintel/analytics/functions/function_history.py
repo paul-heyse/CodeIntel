@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_history
-from codeintel.config.models import FunctionHistoryConfig
+from codeintel.config import FunctionHistoryStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -54,7 +54,7 @@ class FuncHistoryAgg:
 
 def compute_function_history(
     gateway: StorageGateway,
-    cfg: FunctionHistoryConfig,
+    cfg: FunctionHistoryStepConfig,
     *,
     runner: ToolRunner | None = None,
     context: AnalyticsContext | None = None,

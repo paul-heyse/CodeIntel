@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from codeintel.analytics.context import AnalyticsContext
-from codeintel.config.models import CoverageAnalyticsConfig
+from codeintel.config import CoverageAnalyticsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.storage.gateway import StorageGateway
 
@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 def compute_coverage_functions(
     gateway: StorageGateway,
-    cfg: CoverageAnalyticsConfig,
+    cfg: CoverageAnalyticsStepConfig,
     *,
     context: AnalyticsContext | None = None,
 ) -> None:

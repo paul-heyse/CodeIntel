@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from codeintel.config.models import GoidBuilderConfig
+from codeintel.config import GoidBuilderStepConfig
 from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.ingestion.common import run_batch
 from codeintel.models.rows import GoidCrosswalkRow, GoidRow, goid_crosswalk_to_tuple, goid_to_tuple
@@ -126,7 +126,7 @@ def _build_urn(descriptor: GoidDescriptor) -> str:
 
 
 def _build_goid_entries(
-    row: pd.Series, cfg: GoidBuilderConfig, now: datetime, module_by_path: dict[str, str]
+    row: pd.Series, cfg: GoidBuilderStepConfig, now: datetime, module_by_path: dict[str, str]
 ) -> tuple[GoidRow, GoidCrosswalkRow]:
     rel_path = str(row["path"]).replace("\\", "/")
     node_type = str(row["node_type"])
@@ -198,7 +198,7 @@ def _build_goid_entries(
     return goid_row, xwalk_row
 
 
-def build_goids(gateway: StorageGateway, cfg: GoidBuilderConfig) -> None:
+def build_goids(gateway: StorageGateway, cfg: GoidBuilderStepConfig) -> None:
     """
     Populate core.goids and core.goid_crosswalk from core.ast_nodes.
 

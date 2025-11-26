@@ -12,7 +12,7 @@ import logging
 from datetime import UTC, datetime
 
 from codeintel.analytics.context import AnalyticsContext
-from codeintel.config.models import ProfilesAnalyticsConfig
+from codeintel.config import ProfilesAnalyticsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
@@ -83,7 +83,7 @@ def _seed_catalog_modules(
 
 def build_function_profile(
     gateway: StorageGateway,
-    cfg: ProfilesAnalyticsConfig,
+    cfg: ProfilesAnalyticsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
@@ -546,7 +546,7 @@ def build_function_profile(
 
 def build_file_profile(
     gateway: StorageGateway,
-    cfg: ProfilesAnalyticsConfig,
+    cfg: ProfilesAnalyticsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
@@ -731,7 +731,7 @@ def build_file_profile(
 
 def build_module_profile(
     gateway: StorageGateway,
-    cfg: ProfilesAnalyticsConfig,
+    cfg: ProfilesAnalyticsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,

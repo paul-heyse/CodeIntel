@@ -17,7 +17,7 @@ from codeintel.analytics.context import (
 )
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.graph_service import normalize_decimal_id
-from codeintel.config.models import FunctionContractsConfig
+from codeintel.config import FunctionContractsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.common import run_batch
@@ -42,7 +42,7 @@ class ConditionContext:
 
 def compute_function_contracts(
     gateway: StorageGateway,
-    cfg: FunctionContractsConfig,
+    cfg: FunctionContractsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,

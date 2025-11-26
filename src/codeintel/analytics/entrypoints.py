@@ -23,7 +23,7 @@ from codeintel.analytics.entrypoint_detectors import (
     detect_entrypoints,
 )
 from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
-from codeintel.config.models import EntryPointsConfig
+from codeintel.config import EntryPointsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.common import iter_modules, read_module_source
@@ -93,7 +93,7 @@ class TestSummary:
 
 def build_entrypoints(
     gateway: StorageGateway,
-    cfg: EntryPointsConfig,
+    cfg: EntryPointsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
@@ -106,7 +106,7 @@ def build_entrypoints(
     gateway
         Storage gateway with active DuckDB connection.
     cfg
-        EntryPointsConfig specifying repo context and detection toggles.
+        EntryPointsStepConfig specifying repo context and detection toggles.
     catalog_provider
         Optional function catalog to reuse across steps.
     context
@@ -233,7 +233,7 @@ def _collect_entrypoint_rows(
 
 def _build_entrypoint_context(
     con: DuckDBConnection,
-    cfg: EntryPointsConfig,
+    cfg: EntryPointsStepConfig,
     catalog: FunctionCatalogProvider,
     module_map_override: dict[str, str] | None = None,
 ) -> EntryPointContext | None:

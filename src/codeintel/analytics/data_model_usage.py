@@ -18,7 +18,7 @@ from codeintel.analytics.context import (
 )
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
-from codeintel.config.models import DataModelUsageConfig
+from codeintel.config import DataModelUsageStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.data_models import DataModelRow, fetch_models
@@ -442,7 +442,7 @@ def _context_for_module(
 
 def compute_data_model_usage(
     gateway: StorageGateway,
-    cfg: DataModelUsageConfig,
+    cfg: DataModelUsageStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
@@ -537,7 +537,7 @@ def compute_data_model_usage(
 def _build_usage_rows(
     *,
     artifacts: ModelUsageArtifacts,
-    cfg: DataModelUsageConfig,
+    cfg: DataModelUsageStepConfig,
 ) -> list[tuple[object, ...]]:
     now = datetime.now(tz=UTC)
     rows_to_insert: list[tuple[object, ...]] = []

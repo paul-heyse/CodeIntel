@@ -17,11 +17,11 @@ from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 from codeintel.config.models import (
     CodeIntelConfig,
     FunctionAnalyticsOverrides,
-    GraphBackendConfig,
     HistoryTimeseriesConfig,
     PathsConfig,
     RepoConfig,
 )
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.docs_export.runner import ExportOptions, ExportRunner, run_validated_exports
 from codeintel.graphs.engine_factory import build_graph_engine

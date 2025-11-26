@@ -13,7 +13,7 @@ import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from codeintel.config.models import HotspotsConfig
+from codeintel.config import HotspotsStepConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.models.rows import HotspotRow, hotspot_row_to_tuple
@@ -52,7 +52,7 @@ class FileChurn:
 
 
 def _collect_git_file_stats(
-    cfg: HotspotsConfig,
+    cfg: HotspotsStepConfig,
     runner: ToolRunner | None = None,
 ) -> dict[str, ChurnSummary]:
     """
@@ -65,7 +65,7 @@ def _collect_git_file_stats(
 
     Parameters
     ----------
-    cfg : HotspotsConfig
+    cfg : HotspotsStepConfig
         Repository context including the root directory and log depth limit.
     runner : ToolRunner | None
         Optional shared ToolRunner for git invocations.
@@ -91,7 +91,7 @@ def _collect_git_file_stats(
     return _parse_git_log_lines(git_lines)
 
 
-def _run_git_log(cfg: HotspotsConfig, runner: ToolRunner | None = None) -> list[str] | None:
+def _run_git_log(cfg: HotspotsStepConfig, runner: ToolRunner | None = None) -> list[str] | None:
     repo_root = cfg.repo_root.resolve()
     active_runner = runner or ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
     args = [
@@ -148,7 +148,7 @@ def _parse_git_log_lines(lines: Iterable[str]) -> dict[str, ChurnSummary]:
 
 def build_hotspots(
     gateway: StorageGateway,
-    cfg: HotspotsConfig,
+    cfg: HotspotsStepConfig,
     *,
     runner: ToolRunner | None = None,
 ) -> None:
@@ -167,7 +167,7 @@ def build_hotspots(
     gateway :
         StorageGateway providing access to `core.ast_metrics` and `analytics.hotspots`
         tables.
-    cfg : HotspotsConfig
+    cfg : HotspotsStepConfig
         Repository metadata and git scan configuration used to scope the build.
     runner : ToolRunner | None
         Optional shared ToolRunner for git invocations (defaults to a local cache).
@@ -195,7 +195,7 @@ def build_hotspots(
     ...     " complexity DOUBLE, score DOUBLE)"
     ... )
     >>> _ = con.execute("INSERT INTO core.ast_metrics VALUES ('sample.py', 3.0)")
-    >>> cfg = HotspotsConfig(
+    >>> cfg = HotspotsStepConfig(
     ...     repo="demo",
     ...     commit="abc123",
     ...     repo_root=Path("."),
