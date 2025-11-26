@@ -161,8 +161,6 @@ ban-relative-imports = "all"
 # PLR0904: Too many public methods
 # PLR0913: Too many arguments (entrypoints toggles)
 "src/codeintel/config/builder.py" = ["PLR0904", "PLR0913"]
-# Compat layer has many converter functions with simple patterns
-"src/codeintel/config/compat.py" = ["DOC201"]
 # Primitives has complex constructors
 "src/codeintel/config/primitives.py" = ["PLR0913", "DOC201"]
 

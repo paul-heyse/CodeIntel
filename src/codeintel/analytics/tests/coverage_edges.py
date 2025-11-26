@@ -13,7 +13,7 @@ from typing import TypedDict
 from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
-from codeintel.config.models import TestCoverageConfig
+from codeintel.config import TestCoverageStepConfig
 from codeintel.config.schemas.sql_builder import TEST_CATALOG_UPDATE_GOIDS, ensure_schema
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
@@ -32,7 +32,7 @@ class EdgeContext:
     """Shared context for building test coverage edges."""
 
     status_by_test: dict[str, str]
-    cfg: TestCoverageConfig
+    cfg: TestCoverageStepConfig
     now: datetime
     test_meta_by_id: dict[str, tuple[int | None, str | None]]
 
@@ -48,7 +48,7 @@ class FunctionRow(TypedDict):
     end_line: int | None
 
 
-def _load_coverage_data(cfg: TestCoverageConfig) -> Coverage | None:
+def _load_coverage_data(cfg: TestCoverageStepConfig) -> Coverage | None:
     coverage_path = cfg.coverage_file or (cfg.repo_root / ".coverage")
     if not coverage_path.is_file():
         log.warning("Coverage file %s not found; skipping test coverage edges", coverage_path)
@@ -61,7 +61,7 @@ def _load_coverage_data(cfg: TestCoverageConfig) -> Coverage | None:
 
 def _functions_by_path(
     gateway: StorageGateway,
-    cfg: TestCoverageConfig,
+    cfg: TestCoverageStepConfig,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> dict[str, list[FunctionRow]]:
     provider = catalog_provider or FunctionCatalogService.from_db(
@@ -88,7 +88,7 @@ def _functions_by_path(
 
 def _backfill_test_goids(
     gateway: StorageGateway,
-    cfg: TestCoverageConfig,
+    cfg: TestCoverageStepConfig,
 ) -> tuple[dict[str, int], dict[str, str]]:
     """
     Try to map test_catalog entries to GOIDs and update catalog rows.
@@ -154,7 +154,7 @@ def _backfill_test_goids(
 
 
 def backfill_test_goids_for_catalog(
-    gateway: StorageGateway, cfg: TestCoverageConfig
+    gateway: StorageGateway, cfg: TestCoverageStepConfig
 ) -> tuple[dict[str, int], dict[str, str]]:
     """
     Public wrapper to backfill GOIDs and URNs for tests in test_catalog.
@@ -283,7 +283,7 @@ def _edges_for_file(
 
 
 def _test_status_and_meta(
-    gateway: StorageGateway, cfg: TestCoverageConfig
+    gateway: StorageGateway, cfg: TestCoverageStepConfig
 ) -> tuple[dict[str, str], dict[str, tuple[int | None, str | None]]]:
     status_by_test = {
         row[0]: row[1]
@@ -308,9 +308,9 @@ def _test_status_and_meta(
 
 def compute_test_coverage_edges(
     gateway: StorageGateway,
-    cfg: TestCoverageConfig,
+    cfg: TestCoverageStepConfig,
     *,
-    coverage_loader: Callable[[TestCoverageConfig], Coverage | None] | None = None,
+    coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
     """

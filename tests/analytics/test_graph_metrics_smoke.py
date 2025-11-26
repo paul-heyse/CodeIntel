@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.analytics.graphs import compute_graph_metrics
-from codeintel.config.models import GraphMetricsConfig
+from codeintel.config import ConfigBuilder, GraphMetricsStepConfig
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -64,7 +64,8 @@ def test_compute_graph_metrics_with_small_graph() -> None:
             )
         ],
     )
-    cfg = GraphMetricsConfig.from_paths(repo="demo/repo", commit="deadbeef")
+    from pathlib import Path
+    cfg = ConfigBuilder.from_snapshot(repo="demo/repo", commit="deadbeef", repo_root=Path(".")).graph_metrics()
     compute_graph_metrics(gateway, cfg)
     rows = con.execute(
         "SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",

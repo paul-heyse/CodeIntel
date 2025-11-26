@@ -20,8 +20,8 @@ For primitives:
 For CLI boundary models:
     from codeintel.config import RepoConfig, PathsConfig, ToolsConfig, CodeIntelConfig
 
-Legacy step configs are still available from `codeintel.config.models` but are deprecated.
-Use `ConfigBuilder` instead. See `codeintel.config.compat` for migration helpers.
+Legacy step configs have been migrated to use `ConfigBuilder` and the new step config types.
+Use `ConfigBuilder.from_snapshot()` to create step configurations.
 """
 
 from codeintel.config.builder import (

@@ -10,10 +10,10 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
-from codeintel.config.models import FunctionAnalyticsConfig
+from codeintel.config import FunctionAnalyticsStepConfig
 
 __all__ = [
-    "FunctionAnalyticsConfig",
+    "FunctionAnalyticsStepConfig",
     "FunctionAnalyticsOptions",
     "TypednessFlags",
     "compute_function_contracts",

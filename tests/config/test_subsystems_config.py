@@ -1,4 +1,4 @@
-"""Validation tests for SubsystemsConfig overrides."""
+"""Validation tests for SubsystemsStepConfig overrides."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ from typing import cast
 
 import pytest
 
-from codeintel.config.models import SubsystemsConfig, SubsystemsOverrides
+from codeintel.config import ConfigBuilder, SubsystemsStepConfig
+from codeintel.config.models import SubsystemsOverrides
 
 EXPECTED_MIN_MODULES = 5
 EXPECTED_MAX_SUBSYSTEMS = 10
@@ -24,7 +25,7 @@ def test_overrides_are_applied_and_typed() -> None:
         symbol_weight=EXPECTED_SYMBOL_WEIGHT,
         config_weight=EXPECTED_CONFIG_WEIGHT,
     )
-    cfg = SubsystemsConfig.from_paths(repo="demo/repo", commit="abc123", overrides=overrides)
+    cfg = SubsystemsStepConfig.from_paths(repo="demo/repo", commit="abc123", overrides=overrides)
 
     if cfg.min_modules != EXPECTED_MIN_MODULES:
         pytest.fail(f"min_modules not applied: {cfg.min_modules}")
@@ -49,6 +50,6 @@ def test_overrides_are_applied_and_typed() -> None:
 def test_invalid_overrides_raise(overrides: SubsystemsOverrides, message: str) -> None:
     """Invalid override types should raise a TypeError."""
     with pytest.raises(TypeError) as excinfo:
-        SubsystemsConfig.from_paths(repo="demo/repo", commit="abc123", overrides=overrides)
+        SubsystemsStepConfig.from_paths(repo="demo/repo", commit="abc123", overrides=overrides)
     if message not in str(excinfo.value):
         pytest.fail(f"Expected '{message}' in error: {excinfo.value}")

@@ -21,7 +21,7 @@ from codeintel.analytics.function_ast_cache import (
 )
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import normalize_decimal_id
-from codeintel.config.models import FunctionEffectsConfig
+from codeintel.config import FunctionEffectsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
 from codeintel.graphs.function_catalog_service import (
@@ -66,7 +66,7 @@ class EffectAnalysis:
 @dataclass(frozen=True)
 class _EffectInputs:
     gateway: StorageGateway
-    cfg: FunctionEffectsConfig
+    cfg: FunctionEffectsStepConfig
     catalog: FunctionCatalogProvider
     context: AnalyticsContext | None
     engine: GraphEngine
@@ -108,7 +108,7 @@ def _effects_payload(
 
 def compute_function_effects(
     gateway: StorageGateway,
-    cfg: FunctionEffectsConfig,
+    cfg: FunctionEffectsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
@@ -319,7 +319,7 @@ def _purity_confidence(*, parsed: bool, unresolved_call_count: int) -> float:
     return max(0.0, 1.0 - penalty)
 
 
-def _analyze_function(func: FunctionAst, cfg: FunctionEffectsConfig) -> EffectAnalysis:
+def _analyze_function(func: FunctionAst, cfg: FunctionEffectsStepConfig) -> EffectAnalysis:
     visitor = _EffectVisitor(cfg, rel_path=func.rel_path, lines=func.lines)
     visitor.visit(func.node)
     if visitor.modifies_globals:
@@ -341,7 +341,7 @@ def _analyze_function(func: FunctionAst, cfg: FunctionEffectsConfig) -> EffectAn
 class _EffectVisitor(ast.NodeVisitor):
     """Lightweight AST visitor to spot side-effectful operations."""
 
-    def __init__(self, cfg: FunctionEffectsConfig, *, rel_path: str, lines: list[str]) -> None:
+    def __init__(self, cfg: FunctionEffectsStepConfig, *, rel_path: str, lines: list[str]) -> None:
         self.cfg = cfg
         self.uses_io = False
         self.touches_db = False

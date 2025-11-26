@@ -8,7 +8,7 @@ from collections import defaultdict
 
 import networkx as nx
 
-from codeintel.config.models import SubsystemsConfig
+from codeintel.config import SubsystemsStepConfig
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ MIN_SHARED_MODULES = 2
 
 
 def load_modules(
-    gateway: StorageGateway, cfg: SubsystemsConfig
+    gateway: StorageGateway, cfg: SubsystemsStepConfig
 ) -> tuple[set[str], dict[str, list[str]]]:
     """
     Load modules and tags for subsystem inference.
@@ -73,7 +73,7 @@ def parse_tags(raw: object) -> list[str]:
 
 
 def build_weighted_adjacency(
-    gateway: StorageGateway, cfg: SubsystemsConfig, modules: set[str]
+    gateway: StorageGateway, cfg: SubsystemsStepConfig, modules: set[str]
 ) -> dict[str, dict[str, float]]:
     """
     Return a weighted adjacency mapping for the module affinity graph.
@@ -88,7 +88,7 @@ def build_weighted_adjacency(
 
 
 def build_weighted_graph(
-    gateway: StorageGateway, cfg: SubsystemsConfig, modules: set[str]
+    gateway: StorageGateway, cfg: SubsystemsStepConfig, modules: set[str]
 ) -> nx.Graph:
     """
     Build an undirected weighted graph representing module affinity.

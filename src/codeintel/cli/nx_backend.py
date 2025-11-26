@@ -7,7 +7,7 @@ import logging
 import os
 from collections.abc import Callable, MutableMapping
 
-from codeintel.config.models import GraphBackendConfig
+from codeintel.config.primitives import GraphBackendConfig
 
 LOG = logging.getLogger(__name__)
 _GPU_AUTOCONFIG_ENV = "NX_CUGRAPH_AUTOCONFIG"

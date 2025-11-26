@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 import libcst as cst
 import networkx as nx
 
-from codeintel.config.models import ImportGraphConfig
+from codeintel.config import ImportGraphStepConfig
 from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.graphs.import_resolver import collect_import_edges
 from codeintel.ingestion.common import run_batch
@@ -184,7 +184,7 @@ def _persist_import_edges(
     return len(rows)
 
 
-def build_import_graph(gateway: StorageGateway, cfg: ImportGraphConfig) -> None:
+def build_import_graph(gateway: StorageGateway, cfg: ImportGraphStepConfig) -> None:
     """
     Populate `graph.import_graph_edges` from LibCST import analysis.
 
@@ -192,7 +192,7 @@ def build_import_graph(gateway: StorageGateway, cfg: ImportGraphConfig) -> None:
     ----------
     gateway : StorageGateway
         Gateway providing the DuckDB connection seeded with `core.modules`.
-    cfg : ImportGraphConfig
+    cfg : ImportGraphStepConfig
         Repository context and filesystem root.
 
     Notes

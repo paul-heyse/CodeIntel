@@ -8,14 +8,15 @@ from typing import Final, cast
 from coverage import Coverage
 
 from codeintel.analytics.tests import compute_test_coverage_edges
-from codeintel.config.models import (
-    CallGraphConfig,
-    CFGBuilderConfig,
-    GraphBackendConfig,
-    SymbolUsesConfig,
-    TestCoverageConfig,
-    ToolsConfig,
+from codeintel.config import (
+    ConfigBuilder,
+    CallGraphStepConfig,
+    CFGBuilderStepConfig,
+    SymbolUsesStepConfig,
+    TestCoverageStepConfig,
 )
+from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.config import (
     ExecutionConfig,
     PathsConfig,
@@ -103,11 +104,11 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     GoidsStep().run(ctx)
 
     build_call_graph(
-        gateway, CallGraphConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root)
+        gateway, CallGraphStepConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root)
     )
     build_cfg_and_dfg(
         gateway,
-        CFGBuilderConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root),
+        CFGBuilderStepConfig.from_paths(repo=REPO, commit=COMMIT, repo_root=repo_root),
     )
 
     scip_json = ctx.build_dir / "scip" / "index.scip.json"
@@ -133,7 +134,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     )
     build_symbol_use_edges(
         gateway,
-        SymbolUsesConfig.from_paths(
+        SymbolUsesStepConfig.from_paths(
             repo_root=repo_root,
             repo=REPO,
             commit=COMMIT,
@@ -141,7 +142,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         ),
     )
 
-    def _load_fake(_cfg: TestCoverageConfig) -> Coverage:
+    def _load_fake(_cfg: TestCoverageStepConfig) -> Coverage:
         abs_b = str((repo_root / "pkg" / "b.py").resolve())
         statements = {abs_b: [caller_lines[0], caller_lines[1]]}
         contexts = {abs_b: {caller_lines[0]: {"tests/test_sample.py::test_caller"}}}
@@ -149,7 +150,7 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
 
     compute_test_coverage_edges(
         gateway,
-        TestCoverageConfig.from_paths(
+        TestCoverageStepConfig.from_paths(
             repo=REPO,
             commit=COMMIT,
             repo_root=repo_root,

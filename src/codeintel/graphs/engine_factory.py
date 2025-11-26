@@ -6,7 +6,7 @@ from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
-from codeintel.config.models import GraphBackendConfig
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.storage.gateway import StorageGateway
 

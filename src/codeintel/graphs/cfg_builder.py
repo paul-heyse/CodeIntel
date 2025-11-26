@@ -12,7 +12,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from codeintel.config.models import CFGBuilderConfig
+from codeintel.config import CFGBuilderStepConfig
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -593,7 +593,7 @@ def _flush(
 
 def build_cfg_and_dfg(
     gateway: StorageGateway,
-    cfg: CFGBuilderConfig,
+    cfg: CFGBuilderStepConfig,
     *,
     cfg_builder: Callable[
         [FunctionBuildSpec, dict[str, str]],

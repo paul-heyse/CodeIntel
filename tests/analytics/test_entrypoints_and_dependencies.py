@@ -13,10 +13,13 @@ from codeintel.analytics.dependencies import (
     build_external_dependency_calls,
 )
 from codeintel.analytics.entrypoints import build_entrypoints
+from codeintel.config import (
+    ConfigBuilder,
+    EntryPointsStepConfig,
+    ExternalDependenciesStepConfig,
+    GoidBuilderStepConfig,
+)
 from codeintel.config.models import (
-    EntryPointsConfig,
-    ExternalDependenciesConfig,
-    GoidBuilderConfig,
     RepoScanConfig,
 )
 from codeintel.graphs.function_catalog_service import FunctionCatalogService
@@ -309,7 +312,7 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
             ],
         )
         ingest_python_ast(tracker)
-        build_goids(ctx.gateway, GoidBuilderConfig.from_paths(repo=ctx.repo, commit=ctx.commit))
+        build_goids(ctx.gateway, GoidBuilderStepConfig.from_paths(repo=ctx.repo, commit=ctx.commit))
 
         con = ctx.gateway.con
         hello_row = _get_goid_row(con, "pkg.app.hello")
@@ -318,12 +321,12 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
         _seed_coverage_and_tests(ctx, hello_row, now)
 
         catalog = FunctionCatalogService.from_db(ctx.gateway, repo=ctx.repo, commit=ctx.commit)
-        entry_cfg = EntryPointsConfig.from_paths(
+        entry_cfg = EntryPointsStepConfig.from_paths(
             repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
         )
         build_entrypoints(ctx.gateway, entry_cfg, catalog_provider=catalog)
 
-        dep_cfg = ExternalDependenciesConfig.from_paths(
+        dep_cfg = ExternalDependenciesStepConfig.from_paths(
             repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root
         )
         build_external_dependency_calls(ctx.gateway, dep_cfg, catalog_provider=catalog)

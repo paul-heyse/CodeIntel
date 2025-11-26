@@ -658,6 +658,7 @@ class TestCoverageStepConfig:
 
     snapshot: SnapshotRef
     coverage_file: Path | None = None
+    coverage_loader: Callable[..., object] | None = None
 
     @property
     def repo(self) -> str:
@@ -1079,6 +1080,7 @@ class ConfigBuilder:
         self,
         *,
         coverage_file: Path | None = None,
+        coverage_loader: Callable[..., object] | None = None,
     ) -> TestCoverageStepConfig:
         """Build test coverage edges configuration.
 
@@ -1090,6 +1092,7 @@ class ConfigBuilder:
         return TestCoverageStepConfig(
             snapshot=self.snapshot,
             coverage_file=coverage_file,
+            coverage_loader=coverage_loader,
         )
 
     def test_profile(

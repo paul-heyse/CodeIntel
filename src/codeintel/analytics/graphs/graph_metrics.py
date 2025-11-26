@@ -22,7 +22,7 @@ from codeintel.analytics.graph_service import (
     component_metadata,
     neighbor_stats,
 )
-from codeintel.config.models import GraphMetricsConfig
+from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 
 def compute_graph_metrics(
     gateway: StorageGateway,
-    cfg: GraphMetricsConfig,
+    cfg: GraphMetricsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     runtime: GraphRuntimeOptions | None = None,
@@ -84,7 +84,7 @@ def compute_graph_metrics(
 
 def _compute_function_graph_metrics(
     gateway: StorageGateway,
-    cfg: GraphMetricsConfig,
+    cfg: GraphMetricsStepConfig,
     *,
     ctx: GraphContext,
     engine: GraphEngine,
@@ -246,7 +246,7 @@ def _load_symbol_module_edges(
 
 def _compute_module_graph_metrics(
     gateway: StorageGateway,
-    cfg: GraphMetricsConfig,
+    cfg: GraphMetricsStepConfig,
     *,
     ctx: GraphContext,
     engine: GraphEngine,

@@ -65,34 +65,12 @@ from codeintel.analytics.tests import (
     compute_test_graph_metrics,
 )
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
+from codeintel.config import ConfigBuilder, SymbolUsesStepConfig
 from codeintel.config.models import (
-    BehavioralCoverageConfig,
-    CallGraphConfig,
-    CFGBuilderConfig,
-    ConfigDataFlowConfig,
-    CoverageAnalyticsConfig,
-    DataModelsConfig,
-    DataModelUsageConfig,
-    EntryPointsConfig,
-    ExternalDependenciesConfig,
-    FunctionAnalyticsConfig,
     FunctionAnalyticsOverrides,
-    FunctionContractsConfig,
-    FunctionEffectsConfig,
-    FunctionHistoryConfig,
-    GoidBuilderConfig,
-    GraphBackendConfig,
-    GraphMetricsConfig,
-    HistoryTimeseriesConfig,
-    HotspotsConfig,
-    ImportGraphConfig,
-    SemanticRolesConfig,
-    SubsystemsConfig,
-    SymbolUsesConfig,
-    TestCoverageConfig,
-    TestProfileConfig,
     ToolsConfig,
 )
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.config import (
     ExecutionConfig,
     ExecutionOptions,
@@ -339,6 +317,17 @@ def _ingest_gateway(db_path: Path, *, history_db_path: Path | None = None) -> St
         Cached or newly opened gateway.
     """
     return _get_gateway(_ingest_config(db_path, history_db_path=history_db_path))
+
+
+def _builder(repo: str, commit: str, repo_root: Path) -> ConfigBuilder:
+    """Create a ConfigBuilder for the given snapshot parameters.
+
+    Returns
+    -------
+    ConfigBuilder
+        Builder configured for the snapshot.
+    """
+    return ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root)
 
 
 def _close_gateways() -> None:
@@ -596,7 +585,7 @@ def t_config_ingest(ctx: IngestionContext) -> None:
 def t_goids(repo: str, commit: str, db_path: Path) -> None:
     """Build GOID registry and crosswalk."""
     gateway = _ingest_gateway(db_path)
-    cfg = GoidBuilderConfig.from_paths(repo=repo, commit=commit, language="python")
+    cfg = _builder(repo, commit, Path(".")).goid_builder(language="python")
     build_goids(gateway, cfg)
 
 
@@ -604,7 +593,7 @@ def t_goids(repo: str, commit: str, db_path: Path) -> None:
 def t_callgraph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Construct call graph nodes and edges."""
     gateway = _ingest_gateway(db_path)
-    cfg = CallGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).call_graph()
     build_call_graph(gateway, cfg)
 
 
@@ -612,7 +601,7 @@ def t_callgraph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
 def t_cfg(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Emit minimal CFG/DFG scaffolding."""
     gateway = _ingest_gateway(db_path)
-    cfg = CFGBuilderConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).cfg_builder()
     build_cfg_and_dfg(gateway, cfg)
 
 
@@ -620,13 +609,13 @@ def t_cfg(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
 def t_import_graph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
     """Build import graph edges via LibCST analysis."""
     gateway = _ingest_gateway(db_path)
-    cfg = ImportGraphConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).import_graph()
     build_import_graph(gateway, cfg)
 
 
 @task(name="symbol_uses", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_symbol_uses(
-    cfg: SymbolUsesConfig,
+    cfg: SymbolUsesStepConfig,
     db_path: Path,
 ) -> None:
     """Derive symbol use edges from SCIP JSON."""
@@ -640,7 +629,7 @@ def t_hotspots(
 ) -> None:
     """Compute file-level hotspot scores."""
     gateway = _ingest_gateway(db_path)
-    cfg = HotspotsConfig.from_paths(repo_root=repo_root, repo=repo, commit=commit)
+    cfg = _builder(repo, commit, repo_root).hotspots()
     build_hotspots(gateway, cfg, runner=runner)
 
 
@@ -650,7 +639,7 @@ def t_function_history(
 ) -> None:
     """Aggregate per-function git history."""
     gateway = _ingest_gateway(db_path)
-    cfg = FunctionHistoryConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).function_history()
     compute_function_history(gateway, cfg, runner=runner)
 
 
@@ -665,11 +654,10 @@ def t_function_metrics(
     """Compute per-function metrics and types."""
     run_logger = get_run_logger()
     gateway = _ingest_gateway(db_path)
-    cfg = FunctionAnalyticsConfig.from_paths(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-        overrides=overrides,
+    cfg = _builder(repo, commit, repo_root).function_analytics(
+        fail_on_missing_spans=overrides.fail_on_missing_spans if overrides else False,
+        max_workers=overrides.max_workers if overrides else None,
+        parser=overrides.parser if overrides else None,
     )
     reporter = FunctionValidationReporter(repo=repo, commit=commit)
     summary = compute_function_metrics_and_types(
@@ -691,7 +679,7 @@ def t_function_metrics(
 def t_function_effects(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Classify side effects and purity."""
     gateway = _ingest_gateway(db_path)
-    cfg = FunctionEffectsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).function_effects()
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     runtime = GraphRuntimeOptions(
         context=context,
@@ -716,7 +704,7 @@ def t_function_effects(repo_root: Path, repo: str, commit: str, db_path: Path) -
 def t_function_contracts(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Infer contracts and nullability."""
     gateway = _ingest_gateway(db_path)
-    cfg = FunctionContractsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).function_contracts()
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     compute_function_contracts(
         gateway,
@@ -730,7 +718,7 @@ def t_function_contracts(repo_root: Path, repo: str, commit: str, db_path: Path)
 def t_data_models(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Extract structured data models."""
     gateway = _ingest_gateway(db_path)
-    cfg = DataModelsConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).data_models()
     compute_data_models(gateway, cfg)
 
 
@@ -738,7 +726,7 @@ def t_data_models(repo_root: Path, repo: str, commit: str, db_path: Path) -> Non
 def t_data_model_usage(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Classify model usage per function."""
     gateway = _ingest_gateway(db_path)
-    cfg = DataModelUsageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).data_model_usage()
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     compute_data_model_usage(
         gateway,
@@ -752,7 +740,7 @@ def t_data_model_usage(repo_root: Path, repo: str, commit: str, db_path: Path) -
 def t_coverage_functions(repo: str, commit: str, db_path: Path) -> None:
     """Aggregate coverage lines to function spans."""
     gateway = _ingest_gateway(db_path)
-    cfg = CoverageAnalyticsConfig.from_paths(repo=repo, commit=commit)
+    cfg = _builder(repo, commit, Path(".")).coverage_analytics()
     compute_coverage_functions(gateway, cfg)
 
 
@@ -760,7 +748,7 @@ def t_coverage_functions(repo: str, commit: str, db_path: Path) -> None:
 def t_test_coverage_edges(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Build test-to-function coverage edges."""
     gateway = _ingest_gateway(db_path)
-    cfg = TestCoverageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).test_coverage()
     compute_test_coverage_edges(gateway, cfg)
 
 
@@ -768,7 +756,7 @@ def t_test_coverage_edges(repo_root: Path, repo: str, commit: str, db_path: Path
 def t_test_profile(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Build per-test profiles."""
     gateway = _ingest_gateway(db_path)
-    cfg = TestProfileConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).test_profile()
     build_test_profile(gateway, cfg)
 
 
@@ -776,7 +764,7 @@ def t_test_profile(repo_root: Path, repo: str, commit: str, db_path: Path) -> No
 def t_behavioral_coverage(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Assign behavior tags to tests."""
     gateway = _ingest_gateway(db_path)
-    cfg = BehavioralCoverageConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).behavioral_coverage()
     build_behavioral_coverage(gateway, cfg)
 
 
@@ -784,7 +772,7 @@ def t_behavioral_coverage(repo_root: Path, repo: str, commit: str, db_path: Path
 def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
     """Compute graph metrics for functions and modules."""
     gateway = _ingest_gateway(db_path)
-    cfg = GraphMetricsConfig.from_paths(repo=repo, commit=commit)
+    cfg = _builder(repo, commit, Path(".")).graph_metrics()
     graph_backend = _graph_backend_config()
     graph_ctx = build_graph_context(
         cfg,
@@ -849,7 +837,7 @@ def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
 def t_semantic_roles(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Classify semantic roles for functions and modules."""
     gateway = _ingest_gateway(db_path)
-    cfg = SemanticRolesConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).semantic_roles()
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     compute_semantic_roles(
         gateway,
@@ -869,12 +857,7 @@ def t_entrypoints(
 ) -> None:
     """Detect entrypoints across supported frameworks."""
     gateway = _ingest_gateway(db_path)
-    cfg = EntryPointsConfig.from_paths(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-        scan_profile=code_profile,
-    )
+    cfg = _builder(repo, commit, repo_root).entrypoints(scan_profile=code_profile)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     build_entrypoints(
         gateway,
@@ -894,12 +877,7 @@ def t_external_dependencies(
 ) -> None:
     """Capture external dependency usage."""
     gateway = _ingest_gateway(db_path)
-    cfg = ExternalDependenciesConfig.from_paths(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-        scan_profile=code_profile,
-    )
+    cfg = _builder(repo, commit, repo_root).external_dependencies(scan_profile=code_profile)
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     build_external_dependency_calls(
         gateway,
@@ -914,7 +892,7 @@ def t_external_dependencies(
 def t_config_data_flow(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Track config key usage and call chains."""
     gateway = _ingest_gateway(db_path)
-    cfg = ConfigDataFlowConfig.from_paths(repo=repo, commit=commit, repo_root=repo_root)
+    cfg = _builder(repo, commit, repo_root).config_data_flow()
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     compute_config_data_flow(gateway, cfg, context=context)
 
@@ -962,7 +940,7 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
 def t_subsystems(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
     """Infer subsystem clusters and membership."""
     gateway = _ingest_gateway(db_path)
-    cfg = SubsystemsConfig.from_paths(repo=repo, commit=commit)
+    cfg = _builder(repo, commit, repo_root).subsystems()
     context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
     engine = build_graph_engine(
         gateway,
@@ -1026,10 +1004,10 @@ def t_history_timeseries(params: HistoryTimeseriesTaskParams) -> None:
     gateway = _get_gateway(gateway_cfg)
     params.history_db_dir.mkdir(parents=True, exist_ok=True)
 
-    cfg = HistoryTimeseriesConfig.from_args(
-        repo=params.repo,
-        repo_root=params.repo_root,
-        commits=params.commits,
+    # Use first commit as the primary commit for builder
+    primary_commit = params.commits[0] if params.commits else ""
+    cfg = _builder(params.repo, primary_commit, params.repo_root).history_timeseries(
+        commits=params.commits
     )
     snapshot_resolver = build_snapshot_gateway_resolver(
         db_dir=params.history_db_dir,

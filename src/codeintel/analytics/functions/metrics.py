@@ -30,7 +30,7 @@ from codeintel.analytics.functions.typedness import (
 from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
-from codeintel.config.models import FunctionAnalyticsConfig
+from codeintel.config import FunctionAnalyticsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
@@ -467,7 +467,7 @@ def build_function_analytics(
     )
 
 
-def _load_goids(gateway: StorageGateway, cfg: FunctionAnalyticsConfig) -> dict[str, list[GoidRow]]:
+def _load_goids(gateway: StorageGateway, cfg: FunctionAnalyticsStepConfig) -> dict[str, list[GoidRow]]:
     df = gateway.con.execute(
         """
         SELECT
@@ -608,7 +608,7 @@ def _build_function_analytics_from_context(
 
 def persist_function_analytics(
     gateway: StorageGateway,
-    cfg: FunctionAnalyticsConfig,
+    cfg: FunctionAnalyticsStepConfig,
     result: FunctionAnalyticsResult,
 ) -> dict[str, int]:
     """
@@ -618,7 +618,7 @@ def persist_function_analytics(
     ----------
     gateway : StorageGateway
         Storage gateway exposing the DuckDB connection.
-    cfg : FunctionAnalyticsConfig
+    cfg : FunctionAnalyticsStepConfig
         Repository/commit context.
     result : FunctionAnalyticsResult
         Rows and validation to persist.
@@ -666,7 +666,7 @@ def persist_function_analytics(
 
 def compute_function_metrics_and_types(
     gateway: StorageGateway,
-    cfg: FunctionAnalyticsConfig,
+    cfg: FunctionAnalyticsStepConfig,
     *,
     options: FunctionAnalyticsOptions | None = None,
 ) -> dict[str, int]:
@@ -687,7 +687,7 @@ def compute_function_metrics_and_types(
     gateway :
         StorageGateway providing the DuckDB connection with `core.goids`,
         `analytics.function_metrics`, and `analytics.function_types` tables available.
-    cfg : FunctionAnalyticsConfig
+    cfg : FunctionAnalyticsStepConfig
         Repository metadata and file-system root used to locate source files.
     options : FunctionAnalyticsOptions | None
         Optional hooks for reusing parsed AST context and overriding the validation reporter.

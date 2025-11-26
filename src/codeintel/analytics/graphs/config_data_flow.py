@@ -21,7 +21,7 @@ from codeintel.analytics.context import (
 )
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
-from codeintel.config.models import ConfigDataFlowConfig
+from codeintel.config import ConfigDataFlowStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.utils.paths import normalize_rel_path
@@ -297,7 +297,7 @@ def _call_chain_id(
 
 def compute_config_data_flow(
     gateway: StorageGateway,
-    cfg: ConfigDataFlowConfig,
+    cfg: ConfigDataFlowStepConfig,
     *,
     context: AnalyticsContext | None = None,
     runtime: GraphRuntimeOptions | None = None,
@@ -395,7 +395,7 @@ def compute_config_data_flow(
 def _build_config_flow_rows(
     *,
     artifacts: ConfigFlowArtifacts,
-    cfg: ConfigDataFlowConfig,
+    cfg: ConfigDataFlowStepConfig,
     now: datetime,
 ) -> list[tuple[object, ...]]:
     rows_to_insert: list[tuple[object, ...]] = []

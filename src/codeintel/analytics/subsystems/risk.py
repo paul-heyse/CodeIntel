@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from codeintel.config.models import SubsystemsConfig
+from codeintel.config import SubsystemsStepConfig
 from codeintel.storage.gateway import StorageGateway
 
 MEDIUM_RISK_THRESHOLD = 0.4
@@ -48,7 +48,7 @@ class RiskTally:
 
 
 def aggregate_risk(
-    gateway: StorageGateway, cfg: SubsystemsConfig, labels: dict[str, str]
+    gateway: StorageGateway, cfg: SubsystemsStepConfig, labels: dict[str, str]
 ) -> dict[str, SubsystemRisk]:
     """
     Aggregate risk across subsystems based on function risk factors.

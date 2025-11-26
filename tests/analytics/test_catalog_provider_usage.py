@@ -7,7 +7,12 @@ from pathlib import Path
 
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.analytics.profiles import build_function_profile, build_module_profile
-from codeintel.config.models import GraphMetricsConfig, ProfilesAnalyticsConfig, SymbolUsesConfig
+from codeintel.config import (
+    ConfigBuilder,
+    GraphMetricsStepConfig,
+    ProfilesAnalyticsStepConfig,
+    SymbolUsesStepConfig,
+)
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageGateway
@@ -72,7 +77,7 @@ def test_symbol_uses_respects_catalog_module_map(
     )
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
-    cfg = SymbolUsesConfig.from_paths(
+    cfg = SymbolUsesStepConfig.from_paths(
         repo_root=tmp_path,
         repo="r",
         commit="c",
@@ -124,7 +129,7 @@ def test_symbol_uses_falls_back_to_modules_when_catalog_partial(
 
     # Provide only the defining module via catalog; use module comes from core.modules.
     provider = _FakeProvider({"pkg/a.py": "pkg.def"})
-    cfg = SymbolUsesConfig.from_paths(
+    cfg = SymbolUsesStepConfig.from_paths(
         repo_root=tmp_path,
         repo="r",
         commit="c",
@@ -161,7 +166,7 @@ def test_graph_metrics_uses_catalog_for_symbol_modules(
     )
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
-    cfg = GraphMetricsConfig.from_paths(repo="r", commit="c")
+    cfg = GraphMetricsStepConfig.from_paths(repo="r", commit="c")
     compute_graph_metrics(gateway, cfg, catalog_provider=provider)
 
     modules = {
@@ -222,7 +227,7 @@ def test_profiles_use_catalog_module_map_when_modules_table_empty(
     )
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod"})
-    cfg = ProfilesAnalyticsConfig.from_paths(repo="r", commit="c")
+    cfg = ProfilesAnalyticsStepConfig.from_paths(repo="r", commit="c")
     build_function_profile(gateway, cfg, catalog_provider=provider)
     build_module_profile(gateway, cfg, catalog_provider=provider)
 

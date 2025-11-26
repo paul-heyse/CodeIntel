@@ -10,7 +10,7 @@ from pathlib import Path
 
 import libcst as cst
 
-from codeintel.config.models import CallGraphConfig
+from codeintel.config import CallGraphStepConfig
 from codeintel.graphs import call_ast, call_cst, call_persist, symbol_uses
 from codeintel.graphs.call_context import EdgeResolutionContext
 from codeintel.graphs.call_resolution import resolve_callee
@@ -51,7 +51,7 @@ class CallGraphInputs:
 
 def build_call_graph(
     gateway: StorageGateway,
-    cfg: CallGraphConfig,
+    cfg: CallGraphStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
 ) -> None:
@@ -148,7 +148,7 @@ def _append_log(message: str) -> None:
         f.write(f"{timestamp} {message}\n")
 
 
-def _build_call_graph_nodes(gateway: StorageGateway, cfg: CallGraphConfig) -> list[tuple]:
+def _build_call_graph_nodes(gateway: StorageGateway, cfg: CallGraphStepConfig) -> list[tuple]:
     rows = gateway.con.execute(
         """
         SELECT
