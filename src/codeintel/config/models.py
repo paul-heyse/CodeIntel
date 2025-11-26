@@ -1,9 +1,27 @@
-"""
-Configuration models used by the CodeIntel CLI and pipeline steps.
+"""Configuration models used by the CodeIntel CLI and pipeline steps.
 
-These Pydantic models normalize repository identity, filesystem layout, and tool
-paths so downstream ingestion and analytics stages can rely on consistent
-settings.
+This module contains:
+- **CLI Boundary Models** (Pydantic): `RepoConfig`, `PathsConfig`, `ToolsConfig`,
+  `CodeIntelConfig` - use these for CLI argument parsing and validation.
+- **Ingestion Configs** (Pydantic): `RepoScanConfig`, `CoverageIngestConfig`, etc.
+- **Legacy Step Configs** (frozen dataclasses): These are DEPRECATED and will be
+  removed in a future version.
+
+Migration Guide
+---------------
+For step configurations, prefer the new composition-based system:
+
+Old (deprecated):
+    from codeintel.config.models import GraphMetricsConfig
+    cfg = GraphMetricsConfig.from_paths(repo="r", commit="c")
+
+New (preferred):
+    from codeintel.config import ConfigBuilder
+    builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path("."))
+    cfg = builder.graph_metrics()
+
+See `codeintel.config.builder` for the new ConfigBuilder API.
+See `codeintel.config.compat` for converters between old and new configs.
 """
 
 from __future__ import annotations
@@ -11,12 +29,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Self
 
 from coverage import Coverage
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from codeintel.config.parser_types import FunctionParserKind
+from codeintel.config.primitives import BuildPaths, GraphBackendConfig
 from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
 
 if TYPE_CHECKING:
@@ -40,17 +59,31 @@ class RepoConfig(BaseModel):
     commit: str = Field(..., description="Commit SHA for this analysis run")
 
 
-class PathsConfig(BaseModel):
-    """
-    Filesystem layout for a single CodeIntel run.
+class CliPathsInput(BaseModel):
+    """Filesystem layout for a single CodeIntel run (CLI boundary model).
 
-    We assume the repo layout described in the architecture:
+    This Pydantic model is used for CLI argument parsing and validation. It
+    normalizes paths and expands user home directories. For internal use,
+    convert to `BuildPaths` using the `to_build_paths()` method.
 
-      repo_root/
-        src/
-        Document Output/
-        build/
-          db/codeintel_prefect.duckdb
+    Attributes
+    ----------
+    repo_root : Path
+        Path to repository root.
+    build_dir : Path
+        Build directory (holds db/, logs/, etc.).
+    db_path : Path
+        DuckDB database path.
+    document_output_dir : Path | None
+        Directory for final datasets (defaults to repo_root / 'Document Output').
+
+    Example
+    -------
+        # CLI input parsing
+        paths = CliPathsInput(repo_root=Path("."))
+
+        # Convert to internal type
+        build_paths = paths.to_build_paths()
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -72,8 +105,7 @@ class PathsConfig(BaseModel):
     @field_validator("repo_root", "build_dir", "db_path", "document_output_dir", mode="before")
     @classmethod
     def _expand_user(cls, v: Path | str | None) -> Path | None:
-        """
-        Expand user home markers for any path-like CLI inputs.
+        """Expand user home markers for any path-like CLI inputs.
 
         Parameters
         ----------
@@ -92,13 +124,12 @@ class PathsConfig(BaseModel):
         return Path(str(v)).expanduser()
 
     @model_validator(mode="after")
-    def _resolve_paths(self) -> PathsConfig:
-        """
-        Resolve relative paths against repo_root/build_dir and set defaults.
+    def _resolve_paths(self) -> CliPathsInput:
+        """Resolve relative paths against repo_root/build_dir and set defaults.
 
         Returns
         -------
-        PathsConfig
+        CliPathsInput
             New instance with absolute paths and defaults applied.
         """
         repo_root = self.repo_root.resolve()
@@ -125,8 +156,7 @@ class PathsConfig(BaseModel):
 
     @property
     def db_dir(self) -> Path:
-        """
-        Directory containing the DuckDB database file.
+        """Directory containing the DuckDB database file.
 
         Returns
         -------
@@ -137,8 +167,7 @@ class PathsConfig(BaseModel):
 
     @property
     def logs_dir(self) -> Path:
-        """
-        Directory for pipeline log files under the build directory.
+        """Directory for pipeline log files under the build directory.
 
         Returns
         -------
@@ -149,8 +178,7 @@ class PathsConfig(BaseModel):
 
     @property
     def scip_dir(self) -> Path:
-        """
-        Directory where SCIP index artifacts are stored.
+        """Directory where SCIP index artifacts are stored.
 
         Returns
         -------
@@ -158,6 +186,31 @@ class PathsConfig(BaseModel):
             Absolute path to the SCIP artifacts directory.
         """
         return (self.build_dir / "scip").resolve()
+
+    def to_build_paths(self) -> BuildPaths:
+        """Convert to the canonical BuildPaths type for internal use.
+
+        Returns
+        -------
+        BuildPaths
+            Internal paths configuration.
+        """
+        doc_dir = self.document_output_dir or (self.repo_root / "Document Output")
+        return BuildPaths(
+            build_dir=self.build_dir,
+            db_path=self.db_path,
+            document_output_dir=doc_dir,
+            scip_dir=self.scip_dir,
+            coverage_json=self.build_dir / "coverage" / "coverage.json",
+            pytest_report=self.build_dir / "test-results" / "pytest-report.json",
+            tool_cache=self.build_dir / ".tool_cache",
+            log_db_path=self.build_dir / "db" / "codeintel_logs.duckdb",
+        )
+
+
+# Backward compatibility alias
+PathsConfig = CliPathsInput
+"""Alias for backward compatibility. Use `CliPathsInput` in new code."""
 
 
 class ToolsConfig(BaseModel):
@@ -280,26 +333,6 @@ class ToolsConfig(BaseModel):
         env: dict[str, str] = dict(base_env or {})
         env.setdefault("CODEINTEL_TOOL_TIMEOUT", str(int(self.default_timeout_s)))
         return env
-
-
-@dataclass(frozen=True)
-class GraphBackendConfig:
-    """
-    Configuration for selecting the NetworkX execution backend.
-
-    Attributes
-    ----------
-    use_gpu : bool
-        Whether to prefer a GPU-capable backend such as nx-cugraph when available.
-    backend : Literal["auto", "cpu", "nx-cugraph"]
-        Identifier for the preferred backend; "auto" defers to helper defaults.
-    strict : bool
-        If True, raise when the requested backend cannot be enabled instead of falling back.
-    """
-
-    use_gpu: bool = False
-    backend: Literal["auto", "cpu", "nx-cugraph"] = "auto"
-    strict: bool = False
 
 
 class CodeIntelConfig(BaseModel):
@@ -610,7 +643,11 @@ class PyAstIngestConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Dataclass configs (graphs, analytics, ingestion steps using dataclasses)
+# DEPRECATED: Legacy Dataclass Configs
+# ---------------------------------------------------------------------------
+# These frozen dataclass configs are DEPRECATED.
+# See `codeintel.config.builder.ConfigBuilder` for the preferred alternative.
+# See `codeintel.config.compat` for migration helpers.
 # ---------------------------------------------------------------------------
 
 

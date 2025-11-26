@@ -1,82 +1,75 @@
-"""Core snapshot and execution configuration primitives."""
+"""Core snapshot and execution configuration primitives.
+
+.. deprecated::
+    This module is deprecated. Use `codeintel.config.primitives` for the canonical
+    primitive types:
+
+    Old:
+        from codeintel.core.config import SnapshotConfig, ExecutionOptions
+
+    New:
+        from codeintel.config.primitives import SnapshotConfig, ExecutionOptions
+
+    The `ExecutionConfig` and `PathsConfig` classes are retained here because they
+    depend on `ToolsConfig` (Pydantic) which would create circular imports if moved.
+    New code should prefer `codeintel.config.ConfigBuilder` for configuration.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from codeintel.config.models import GraphBackendConfig, ToolsConfig
-from codeintel.ingestion.source_scanner import ScanProfile
+# Re-export primitive types from the canonical location
+from codeintel.config.primitives import (
+    ExecutionOptions,
+    GraphBackendConfig,
+    ScanProfilesConfig,
+    SnapshotConfig,
+)
 
+if TYPE_CHECKING:
+    from codeintel.config.models import ToolsConfig
+    from codeintel.ingestion.source_scanner import ScanProfile
 
-@dataclass(frozen=True)
-class SnapshotConfig:
-    """Immutable description of the code snapshot under analysis."""
-
-    repo_root: Path
-    repo_slug: str
-    commit: str
-    branch: str | None = None
-
-    @classmethod
-    def from_args(
-        cls,
-        repo_root: Path,
-        repo_slug: str,
-        commit: str,
-        branch: str | None = None,
-    ) -> SnapshotConfig:
-        """Construct a snapshot configuration from primitive arguments.
-
-        Parameters
-        ----------
-        repo_root
-            Root directory for the repository.
-        repo_slug
-            Repository identifier (e.g., owner/name).
-        commit
-            Commit hash or identifier for the snapshot.
-        branch
-            Optional branch name associated with the commit.
-
-        Returns
-        -------
-        SnapshotConfig
-            Normalized snapshot configuration.
-        """
-        return cls(
-            repo_root=repo_root,
-            repo_slug=repo_slug,
-            commit=commit,
-            branch=branch,
-        )
-
-
-@dataclass(frozen=True)
-class ScanProfilesConfig:
-    """Bundle of code and config scan profiles for a pipeline run."""
-
-    code: ScanProfile
-    config: ScanProfile
-
-
-@dataclass(frozen=True)
-class ExecutionOptions:
-    """Optional execution tuning parameters."""
-
-    history_db_dir: Path | None = None
-    history_commits: tuple[str, ...] = ()
-    function_overrides: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        """Normalize tuple fields for immutability."""
-        object.__setattr__(self, "history_commits", tuple(self.history_commits))
-        object.__setattr__(self, "function_overrides", tuple(self.function_overrides))
+__all__ = [
+    "ExecutionConfig",
+    "ExecutionOptions",
+    "PathsConfig",
+    "ScanProfilesConfig",
+    "SnapshotConfig",
+]
 
 
 @dataclass(frozen=True)
 class ExecutionConfig:
-    """Runtime execution configuration for a pipeline run."""
+    """Runtime execution configuration for a pipeline run.
+
+    .. note::
+        This class references `ToolsConfig` (Pydantic) and `ScanProfile` which
+        prevents it from being moved to `codeintel.config.primitives`. For new
+        code, consider using `ConfigBuilder` from `codeintel.config.builder`.
+
+    Attributes
+    ----------
+    build_dir : Path
+        Root build directory for all generated artifacts.
+    tools : ToolsConfig
+        Toolchain configuration for external binaries.
+    code_profile : ScanProfile
+        Profile for scanning Python source files.
+    config_profile : ScanProfile
+        Profile for scanning configuration files.
+    graph_backend : GraphBackendConfig
+        Graph backend preferences (CPU vs GPU).
+    history_db_dir : Path | None
+        Directory containing historical DuckDB snapshots.
+    history_commits : tuple[str, ...]
+        Commit identifiers to include in historical analysis.
+    function_overrides : tuple[str, ...]
+        Function identifiers with explicit override settings.
+    """
 
     build_dir: Path
     tools: ToolsConfig
@@ -138,7 +131,20 @@ class ExecutionConfig:
 
 @dataclass(frozen=True)
 class PathsConfig:
-    """Derived build paths for a given snapshot and execution config."""
+    """Derived build paths for a given snapshot and execution config.
+
+    .. note::
+        This class composes `SnapshotConfig` and `ExecutionConfig`. For new code,
+        consider using `BuildPaths` from `codeintel.config.primitives` or the
+        `DerivedPaths` class for the same computed-property pattern.
+
+    Attributes
+    ----------
+    snapshot : SnapshotConfig
+        The snapshot configuration this paths config derives from.
+    execution : ExecutionConfig
+        The execution configuration providing build_dir and tools.
+    """
 
     snapshot: SnapshotConfig
     execution: ExecutionConfig
