@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
 from codeintel.analytics.subsystems import build_subsystems
-from codeintel.config import ConfigBuilder, SubsystemsStepConfig
-from codeintel.config.models import SubsystemsOverrides
+from codeintel.config import ConfigBuilder
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     ConfigValueRow,
@@ -256,8 +256,7 @@ def test_subsystems_cluster_and_risk_aggregation(fresh_gateway: StorageGateway) 
     con = gateway.con
     _seed_modules(gateway)
 
-    from pathlib import Path
-    cfg = ConfigBuilder.from_snapshot(repo=REPO, commit=COMMIT, repo_root=Path(".")).subsystems(
+    cfg = ConfigBuilder.from_snapshot(repo=REPO, commit=COMMIT, repo_root=Path()).subsystems(
         max_subsystems=2,
         min_modules=1,
     )

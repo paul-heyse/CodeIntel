@@ -10,7 +10,7 @@ from codeintel.analytics.profiles import (
     build_function_profile,
     build_module_profile,
 )
-from codeintel.config.models import ProfilesAnalyticsConfig
+from codeintel.config import ConfigBuilder
 from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.fixtures import ProvisionedGateway, seed_profile_data
 
@@ -97,7 +97,13 @@ def test_profile_builders_aggregate_expected_fields(
         rel_path=REL_PATH,
         module=MODULE,
     )
-    cfg = ProfilesAnalyticsConfig(repo=provisioned_repo.repo, commit=provisioned_repo.commit)
+    builder = ConfigBuilder.from_snapshot(
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        repo_root=provisioned_repo.repo_root,
+        build_dir=provisioned_repo.build_dir,
+    )
+    cfg = builder.profiles_analytics()
     build_function_profile(gateway, cfg)
     build_file_profile(gateway, cfg)
     build_module_profile(gateway, cfg)

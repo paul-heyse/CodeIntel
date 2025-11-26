@@ -15,7 +15,6 @@ from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.mcp.backend import QueryBackend
-from codeintel.mcp.config import McpServerConfig
 from codeintel.mcp.models import (
     DatasetRowsResponse,
     FunctionSummaryResponse,
@@ -24,7 +23,7 @@ from codeintel.mcp.models import (
 )
 from codeintel.mcp.query_service import BackendLimits, DuckDBQueryService
 from codeintel.server.datasets import build_registry_and_limits, validate_dataset_registry
-from codeintel.server.fastapi import ApiAppConfig, BackendResource, create_app
+from codeintel.server.fastapi import BackendResource, create_app
 from codeintel.services.query_service import (
     HttpQueryService,
     LocalQueryService,
@@ -420,17 +419,17 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
     backend_obj = type("StubBackend", (), {"service": service})()
     backend = cast("QueryBackend", backend_obj)
 
-    def load_config() -> ApiAppConfig:
-        server_cfg = McpServerConfig(
+    def load_config() -> ServingConfig:
+        return ServingConfig(
             mode="remote_api",
             repo_root=tmp_path,
             repo="r",
             commit="c",
             api_base_url="http://test",
+            read_only=True,
         )
-        return ApiAppConfig(server=server_cfg, read_only=True)
 
-    def backend_factory(_: ApiAppConfig, *, _gateway: object | None = None) -> BackendResource:
+    def backend_factory(_: ServingConfig, *, _gateway: object | None = None) -> BackendResource:
         return BackendResource(backend=backend, service=service, close=lambda: None)
 
     app = create_app(config_loader=load_config, backend_factory=backend_factory)

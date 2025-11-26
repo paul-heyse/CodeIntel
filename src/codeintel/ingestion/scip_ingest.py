@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
 
-from codeintel.config.models import ScipIngestConfig, ToolsConfig
+from codeintel.config import ScipIngestStepConfig, ToolsConfig
 from codeintel.config.schemas.sql_builder import GOID_CROSSWALK_UPDATE_SCIP, ensure_schema
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,
@@ -52,7 +52,7 @@ class ScipFullBuildContext:
     """Inputs required for a full SCIP rebuild."""
 
     gateway: StorageGateway
-    cfg: ScipIngestConfig
+    cfg: ScipIngestStepConfig
     runtime: ScipRuntime
     index_scip: Path
     index_json: Path
@@ -63,7 +63,7 @@ class ScipFullBuildContext:
 class ScipIngestOps(SupportsFullRebuild, IncrementalIngestOps[Path]):
     """Incremental ingest operations for SCIP shards and symbol updates."""
 
-    cfg: ScipIngestConfig
+    cfg: ScipIngestStepConfig
     runtime: ScipRuntime
     service: ToolService
     shards_dir: Path = field(init=False)
@@ -182,7 +182,7 @@ class ScipIngestOps(SupportsFullRebuild, IncrementalIngestOps[Path]):
 
 def ingest_scip(
     gateway: StorageGateway,
-    cfg: ScipIngestConfig,
+    cfg: ScipIngestStepConfig,
     *,
     tracker: ChangeTracker | None = None,
     tool_service: ToolService | None = None,

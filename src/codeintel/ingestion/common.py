@@ -11,8 +11,8 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from codeintel.config import SnapshotRef
 from codeintel.config.schemas.sql_builder import PREPARED, ensure_schema
-from codeintel.core.config import SnapshotConfig
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.storage.gateway import StorageGateway
 from codeintel.utils.paths import normalize_rel_path
@@ -93,7 +93,7 @@ class ChangeRequest:
     @classmethod
     def from_snapshot(
         cls,
-        snapshot: SnapshotConfig,
+        snapshot: SnapshotRef,
         *,
         scan_profile: ScanProfile,
         full_rebuild: bool = False,
@@ -122,7 +122,7 @@ class ChangeRequest:
             Normalized request bound to the provided snapshot.
         """
         return cls(
-            repo=snapshot.repo_slug,
+            repo=snapshot.repo,
             commit=snapshot.commit,
             repo_root=snapshot.repo_root,
             language="python",

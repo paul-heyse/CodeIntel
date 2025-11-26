@@ -10,8 +10,8 @@ import anyio
 import httpx
 
 from codeintel.graphs.engine import NxGraphEngine
+from codeintel.config.serving_models import ServingConfig
 from codeintel.mcp import errors
-from codeintel.mcp.config import McpServerConfig
 from codeintel.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
@@ -908,7 +908,7 @@ class HttpBackend(QueryBackend):
 
 
 def create_backend(
-    cfg: McpServerConfig,
+    cfg: ServingConfig,
     *,
     gateway: StorageGateway,
     observability: ServiceObservability | None = None,

@@ -7,10 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config import ConfigBuilder, GraphMetricsStepConfig
+from codeintel.config import (
+    BuildPaths,
+    ConfigBuilder,
+    ExecutionConfig,
+    SnapshotRef,
+)
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.core.config import ExecutionConfig, PathsConfig, SnapshotConfig
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.orchestration import steps as orchestration_steps
 from codeintel.orchestration.steps import SemanticRolesStep
@@ -29,7 +33,7 @@ def _scan_profile(repo_root: Path) -> ScanProfile:
 def test_graph_engine_reused_with_backend_flags(tmp_path: Path) -> None:
     """Ensure orchestration uses a shared, backend-aware graph engine."""
     gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    snapshot = SnapshotConfig(repo_root=tmp_path, repo_slug="demo/repo", commit="deadbeef")
+    snapshot = SnapshotRef(repo_root=tmp_path, repo="demo/repo", commit="deadbeef")
     graph_backend = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
     execution = ExecutionConfig(
         build_dir=tmp_path / "build",
@@ -38,7 +42,11 @@ def test_graph_engine_reused_with_backend_flags(tmp_path: Path) -> None:
         config_profile=_scan_profile(tmp_path),
         graph_backend=graph_backend,
     )
-    paths = PathsConfig(snapshot=snapshot, execution=execution)
+    paths = BuildPaths.from_layout(
+        repo_root=tmp_path,
+        build_dir=execution.build_dir,
+        db_path=gateway.config.db_path,
+    )
     ctx = orchestration_steps.PipelineContext(
         snapshot=snapshot,
         execution=execution,
@@ -131,7 +139,7 @@ def _seed_semantic_roles_prereqs(gateway: StorageGateway, repo: str, commit: str
 def test_engine_reuse_across_semantic_roles(tmp_path: Path) -> None:
     """Semantic roles should reuse the shared engine without rebuilding."""
     gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    snapshot = SnapshotConfig(repo_root=tmp_path, repo_slug="demo/repo", commit="deadbeef")
+    snapshot = SnapshotRef(repo_root=tmp_path, repo="demo/repo", commit="deadbeef")
     graph_backend = GraphBackendConfig(use_gpu=False, backend="cpu", strict=False)
     execution = ExecutionConfig(
         build_dir=tmp_path / "build",
@@ -140,7 +148,11 @@ def test_engine_reuse_across_semantic_roles(tmp_path: Path) -> None:
         config_profile=_scan_profile(tmp_path),
         graph_backend=graph_backend,
     )
-    paths = PathsConfig(snapshot=snapshot, execution=execution)
+    paths = BuildPaths.from_layout(
+        repo_root=tmp_path,
+        build_dir=execution.build_dir,
+        db_path=gateway.config.db_path,
+    )
     ctx = orchestration_steps.PipelineContext(
         snapshot=snapshot,
         execution=execution,
@@ -172,7 +184,7 @@ def test_engine_reuse_across_semantic_roles(tmp_path: Path) -> None:
 def test_graph_runtime_reuses_engine(tmp_path: Path) -> None:
     """Shared runtime should expose the same engine instance."""
     gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    snapshot = SnapshotConfig(repo_root=tmp_path, repo_slug="demo/repo", commit="deadbeef")
+    snapshot = SnapshotRef(repo_root=tmp_path, repo="demo/repo", commit="deadbeef")
     graph_backend = GraphBackendConfig(use_gpu=False, backend="cpu", strict=False)
     execution = ExecutionConfig(
         build_dir=tmp_path / "build",
@@ -181,7 +193,11 @@ def test_graph_runtime_reuses_engine(tmp_path: Path) -> None:
         config_profile=_scan_profile(tmp_path),
         graph_backend=graph_backend,
     )
-    paths = PathsConfig(snapshot=snapshot, execution=execution)
+    paths = BuildPaths.from_layout(
+        repo_root=tmp_path,
+        build_dir=execution.build_dir,
+        db_path=gateway.config.db_path,
+    )
     ctx = orchestration_steps.PipelineContext(
         snapshot=snapshot,
         execution=execution,
@@ -204,7 +220,7 @@ def test_graph_runtime_reuses_engine(tmp_path: Path) -> None:
 def test_runtime_reuse_with_graph_context(tmp_path: Path) -> None:
     """Runtime reuse should hold even when a graph context is provided."""
     gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    snapshot = SnapshotConfig(repo_root=tmp_path, repo_slug="demo/repo", commit="deadbeef")
+    snapshot = SnapshotRef(repo_root=tmp_path, repo="demo/repo", commit="deadbeef")
     graph_backend = GraphBackendConfig(use_gpu=False, backend="cpu", strict=False)
     execution = ExecutionConfig(
         build_dir=tmp_path / "build",
@@ -213,17 +229,27 @@ def test_runtime_reuse_with_graph_context(tmp_path: Path) -> None:
         config_profile=_scan_profile(tmp_path),
         graph_backend=graph_backend,
     )
-    paths = PathsConfig(snapshot=snapshot, execution=execution)
+    paths = BuildPaths.from_layout(
+        repo_root=tmp_path,
+        build_dir=execution.build_dir,
+        db_path=gateway.config.db_path,
+    )
     ctx = orchestration_steps.PipelineContext(
         snapshot=snapshot,
         execution=execution,
         paths=paths,
         gateway=gateway,
     )
+    builder = ConfigBuilder.from_snapshot(
+        repo=snapshot.repo_slug,
+        commit=snapshot.commit,
+        repo_root=snapshot.repo_root,
+        build_dir=paths.build_dir,
+    )
 
     try:
         graph_ctx = orchestration_steps.build_graph_context(
-            GraphMetricsStepConfig.from_paths(repo=snapshot.repo_slug, commit=snapshot.commit),
+            builder.graph_metrics(),
             now=datetime.now(tz=UTC),
             use_gpu=False,
         )

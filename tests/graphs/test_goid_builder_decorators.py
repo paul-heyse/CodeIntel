@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from codeintel.config import ConfigBuilder, GoidBuilderStepConfig
+from codeintel.config import ConfigBuilder
 from codeintel.graphs import goid_builder
 
 
@@ -31,7 +32,8 @@ def test_goid_start_line_includes_decorator_span() -> None:
             "hash": "h1",
         }
     )
-    cfg = GoidBuilderStepConfig(repo="r", commit="c", language="python")
+    builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path())
+    cfg = builder.goid_builder(language="python")
     now = datetime.now(UTC)
 
     build_entries = goid_builder._build_goid_entries  # noqa: SLF001

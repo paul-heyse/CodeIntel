@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.server.fastapi import ApiAppConfig, create_app
+from codeintel.server.fastapi import create_app
 from codeintel.services.factory import BackendResource
 from codeintel.services.query_service import QueryService
 
@@ -31,16 +31,15 @@ def test_fastapi_wiring_smoke() -> None:
     service = cast("QueryService", object())
     backend = _StubBackend(service)
 
-    def _fake_loader() -> ApiAppConfig:
-        cfg = ServingConfig(
+    def _fake_loader() -> ServingConfig:
+        return ServingConfig(
             mode="remote_api",
             repo="r",
             commit="c",
             api_base_url="http://test",
         )
-        return ApiAppConfig(server=cfg, read_only=True)
 
-    def _fake_factory(_cfg: ApiAppConfig, *, _gateway: object | None = None) -> BackendResource:
+    def _fake_factory(_cfg: ServingConfig, *, _gateway: object | None = None) -> BackendResource:
         nonlocal closed
 
         def _close() -> None:

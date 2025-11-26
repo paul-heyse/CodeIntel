@@ -369,7 +369,9 @@ def build_external_dependencies(
     )
 
 
-def _prepare_external_dependencies(con: DuckDBConnection, cfg: ExternalDependenciesStepConfig) -> None:
+def _prepare_external_dependencies(
+    con: DuckDBConnection, cfg: ExternalDependenciesStepConfig
+) -> None:
     ensure_schema(con, "analytics.external_dependencies")
     con.execute(
         "DELETE FROM analytics.external_dependencies WHERE repo = ? AND commit = ?",

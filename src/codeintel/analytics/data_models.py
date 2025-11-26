@@ -11,13 +11,17 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_utils import call_name, literal_value, safe_unparse, snippet_from_lines
 from codeintel.analytics.evidence import EvidenceCollector
-from codeintel.config import DataModelsStepConfig
+from codeintel.config import ConfigBuilder, DataModelsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.ast_utils import parse_python_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.config.models import DataModelsConfig
 from codeintel.utils.paths import normalize_rel_path, relpath_to_module
 
 log = logging.getLogger(__name__)
@@ -958,7 +962,10 @@ def _persist_models(
         )
 
 
-def compute_data_models(gateway: StorageGateway, cfg: DataModelsStepConfig) -> None:
+def compute_data_models(
+    gateway: StorageGateway,
+    cfg: DataModelsStepConfig | DataModelsConfig,
+) -> None:
     """
     Populate analytics.data_models with extracted model definitions.
 
@@ -969,6 +976,14 @@ def compute_data_models(gateway: StorageGateway, cfg: DataModelsStepConfig) -> N
     cfg
         Data model extraction configuration.
     """
+    if not isinstance(cfg, DataModelsStepConfig):
+        builder = ConfigBuilder.from_snapshot(
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=cfg.repo_root,
+        )
+        cfg = builder.data_models()
+
     con = gateway.con
     ensure_schema(con, "analytics.data_models")
     ensure_schema(con, "analytics.data_model_fields")

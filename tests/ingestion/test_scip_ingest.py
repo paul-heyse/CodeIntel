@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.config import BuildPaths, ScipIngestStepConfig, SnapshotRef, ToolBinaries
 from codeintel.ingestion import scip_ingest
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
@@ -34,12 +35,16 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
     db_path = build_dir / "db" / "codeintel_prefect.duckdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    cfg = scip_ingest.ScipIngestConfig(
+    build_paths = BuildPaths.from_layout(
         repo_root=repo_root,
-        repo="demo/repo",
-        commit="deadbeef",
         build_dir=build_dir,
+        db_path=db_path,
         document_output_dir=document_output_dir,
+    )
+    cfg = ScipIngestStepConfig(
+        snapshot=SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=repo_root),
+        paths=build_paths,
+        binaries=ToolBinaries(),
     )
 
     gateway = open_gateway(
@@ -83,12 +88,16 @@ def test_ingest_scip_uses_injected_runner(tmp_path: Path) -> None:
     db_path = build_dir / "db" / "codeintel_prefect.duckdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    cfg = scip_ingest.ScipIngestConfig(
+    build_paths = BuildPaths.from_layout(
         repo_root=repo_root,
-        repo="demo/repo",
-        commit="deadbeef",
         build_dir=build_dir,
+        db_path=db_path,
         document_output_dir=document_output_dir,
+    )
+    cfg = ScipIngestStepConfig(
+        snapshot=SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=repo_root),
+        paths=build_paths,
+        binaries=ToolBinaries(),
         scip_runner=lambda _gateway, _cfg: scip_ingest.ScipIngestResult(
             status="success",
             index_scip=build_dir / "scip" / "index.scip",

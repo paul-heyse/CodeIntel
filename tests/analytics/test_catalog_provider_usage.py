@@ -7,12 +7,7 @@ from pathlib import Path
 
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.analytics.profiles import build_function_profile, build_module_profile
-from codeintel.config import (
-    ConfigBuilder,
-    GraphMetricsStepConfig,
-    ProfilesAnalyticsStepConfig,
-    SymbolUsesStepConfig,
-)
+from codeintel.config import ConfigBuilder
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageGateway
@@ -77,12 +72,8 @@ def test_symbol_uses_respects_catalog_module_map(
     )
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
-    cfg = SymbolUsesStepConfig.from_paths(
-        repo_root=tmp_path,
-        repo="r",
-        commit="c",
-        scip_json_path=scip_path,
-    )
+    builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=tmp_path)
+    cfg = builder.symbol_uses(scip_json_path=scip_path)
     build_symbol_use_edges(gateway, cfg, catalog_provider=provider)
 
     row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
@@ -129,12 +120,8 @@ def test_symbol_uses_falls_back_to_modules_when_catalog_partial(
 
     # Provide only the defining module via catalog; use module comes from core.modules.
     provider = _FakeProvider({"pkg/a.py": "pkg.def"})
-    cfg = SymbolUsesStepConfig.from_paths(
-        repo_root=tmp_path,
-        repo="r",
-        commit="c",
-        scip_json_path=scip_path,
-    )
+    builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=tmp_path)
+    cfg = builder.symbol_uses(scip_json_path=scip_path)
     build_symbol_use_edges(gateway, cfg, catalog_provider=provider)
 
     row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
@@ -166,7 +153,8 @@ def test_graph_metrics_uses_catalog_for_symbol_modules(
     )
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
-    cfg = GraphMetricsStepConfig.from_paths(repo="r", commit="c")
+    builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path().resolve())
+    cfg = builder.graph_metrics()
     compute_graph_metrics(gateway, cfg, catalog_provider=provider)
 
     modules = {
@@ -227,7 +215,8 @@ def test_profiles_use_catalog_module_map_when_modules_table_empty(
     )
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod"})
-    cfg = ProfilesAnalyticsStepConfig.from_paths(repo="r", commit="c")
+    builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path().resolve())
+    cfg = builder.profiles_analytics()
     build_function_profile(gateway, cfg, catalog_provider=provider)
     build_module_profile(gateway, cfg, catalog_provider=provider)
 

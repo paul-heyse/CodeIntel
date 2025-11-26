@@ -65,19 +65,19 @@ from codeintel.analytics.tests import (
     compute_test_graph_metrics,
 )
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
-from codeintel.config import ConfigBuilder, SymbolUsesStepConfig
+from codeintel.config import (
+    ConfigBuilder,
+    ExecutionConfig,
+    ExecutionOptions,
+    ScanProfiles,
+    SnapshotRef,
+    SymbolUsesStepConfig,
+)
 from codeintel.config.models import (
     FunctionAnalyticsOverrides,
     ToolsConfig,
 )
-from codeintel.config.primitives import GraphBackendConfig
-from codeintel.core.config import (
-    ExecutionConfig,
-    ExecutionOptions,
-    PathsConfig,
-    ScanProfilesConfig,
-    SnapshotConfig,
-)
+from codeintel.config.primitives import BuildPaths, GraphBackendConfig
 from codeintel.docs_export.runner import ExportOptions, ExportRunner, run_validated_exports
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
@@ -149,19 +149,15 @@ class ExportArgs:
     history_db_dir: Path | None = None
     graph_backend: GraphBackendConfig | None = None
 
-    def snapshot_config(self) -> SnapshotConfig:
+    def snapshot_config(self) -> SnapshotRef:
         """Build a snapshot configuration from the provided arguments.
 
         Returns
         -------
-        SnapshotConfig
+        SnapshotRef
             Normalized snapshot descriptor for the flow.
         """
-        return SnapshotConfig(
-            repo_root=self.repo_root,
-            repo_slug=self.repo,
-            commit=self.commit,
-        )
+        return SnapshotRef(repo_root=self.repo_root, repo=self.repo, commit=self.commit)
 
     def execution_config(self) -> ExecutionConfig:
         """Build the execution config with tool and scan profile defaults applied.
@@ -177,7 +173,7 @@ class ExportArgs:
             default_config_profile(self.repo_root)
         )
         graph_backend = self.graph_backend or GraphBackendConfig()
-        profiles = ScanProfilesConfig(code=code_profile, config=config_profile)
+        profiles = ScanProfiles(code=code_profile, config=config_profile)
         return ExecutionConfig.for_default_pipeline(
             build_dir=self.build_dir,
             tools=tools_cfg,
@@ -200,17 +196,21 @@ class ExportArgs:
         """
         return StorageConfig.for_ingest(self.db_path, history_db_path=self.history_db_dir)
 
-    def paths_config(self, execution: ExecutionConfig) -> PathsConfig:
-        """Derive build paths for the current snapshot/execution pair.
+    def build_paths(self, execution: ExecutionConfig, *, db_path: Path | None = None) -> BuildPaths:
+        """
+        Derive build paths for the current snapshot/execution pair.
 
         Returns
         -------
-        PathsConfig
-            Derived build and artifact paths bound to the execution config.
+        BuildPaths
+            Normalized build paths anchored to repo_root/build.
         """
-        return PathsConfig(
-            snapshot=self.snapshot_config(),
-            execution=execution,
+        return BuildPaths.from_layout(
+            repo_root=self.repo_root,
+            build_dir=execution.build_dir,
+            db_path=db_path or self.db_path,
+            document_output_dir=self.repo_root / "Document Output",
+            log_db_path=self.log_db_path,
         )
 
 
@@ -235,8 +235,8 @@ def _build_pipeline_context(args: ExportArgs) -> PipelineContext:
     """
     snapshot = args.snapshot_config()
     execution = args.execution_config()
-    paths = PathsConfig(snapshot=snapshot, execution=execution)
     storage_config = args.storage_config()
+    paths = args.build_paths(execution, db_path=storage_config.db_path)
     gateway = _get_gateway(storage_config)
     tool_runner = ToolRunner(
         tools_config=execution.tools,
@@ -585,7 +585,7 @@ def t_config_ingest(ctx: IngestionContext) -> None:
 def t_goids(repo: str, commit: str, db_path: Path) -> None:
     """Build GOID registry and crosswalk."""
     gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, Path(".")).goid_builder(language="python")
+    cfg = _builder(repo, commit, Path()).goid_builder(language="python")
     build_goids(gateway, cfg)
 
 
@@ -740,7 +740,7 @@ def t_data_model_usage(repo_root: Path, repo: str, commit: str, db_path: Path) -
 def t_coverage_functions(repo: str, commit: str, db_path: Path) -> None:
     """Aggregate coverage lines to function spans."""
     gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, Path(".")).coverage_analytics()
+    cfg = _builder(repo, commit, Path()).coverage_analytics()
     compute_coverage_functions(gateway, cfg)
 
 
@@ -772,7 +772,7 @@ def t_behavioral_coverage(repo_root: Path, repo: str, commit: str, db_path: Path
 def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
     """Compute graph metrics for functions and modules."""
     gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, Path(".")).graph_metrics()
+    cfg = _builder(repo, commit, Path()).graph_metrics()
     graph_backend = _graph_backend_config()
     graph_ctx = build_graph_context(
         cfg,
@@ -905,8 +905,8 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
         gateway = _ingest_gateway(db_path)
         catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
         step = RiskFactorsStep()
-        snapshot = SnapshotConfig(repo_root=repo_root, repo_slug=repo, commit=commit)
-        profiles = ScanProfilesConfig(
+        snapshot = SnapshotRef(repo_root=repo_root, repo=repo, commit=commit)
+        profiles = ScanProfiles(
             code=_code_profile_from_env(repo_root),
             config=_config_profile_from_env(repo_root),
         )
@@ -916,7 +916,11 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
             profiles=profiles,
             graph_backend=_graph_backend_config(),
         )
-        paths = PathsConfig(snapshot=snapshot, execution=execution)
+        paths = BuildPaths.from_layout(
+            repo_root=repo_root,
+            build_dir=build_dir,
+            db_path=db_path,
+        )
         ctx = PipelineContext(
             snapshot=snapshot,
             execution=execution,
@@ -956,8 +960,8 @@ def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir
     """Build function, file, and module profiles."""
     gateway = _ingest_gateway(db_path)
     step = ProfilesStep()
-    snapshot = SnapshotConfig(repo_root=repo_root, repo_slug=repo, commit=commit)
-    profiles = ScanProfilesConfig(
+    snapshot = SnapshotRef(repo_root=repo_root, repo=repo, commit=commit)
+    profiles = ScanProfiles(
         code=_code_profile_from_env(repo_root),
         config=_config_profile_from_env(repo_root),
     )
@@ -967,7 +971,11 @@ def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir
         profiles=profiles,
         graph_backend=_graph_backend_config(),
     )
-    paths = PathsConfig(snapshot=snapshot, execution=execution)
+    paths = BuildPaths.from_layout(
+        repo_root=repo_root,
+        build_dir=build_dir,
+        db_path=db_path,
+    )
     ctx = PipelineContext(
         snapshot=snapshot,
         execution=execution,

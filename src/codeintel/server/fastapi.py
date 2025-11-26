@@ -8,7 +8,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -49,29 +49,6 @@ from codeintel.storage.gateway import DuckDBError, StorageConfig, StorageGateway
 LOG = logging.getLogger("codeintel.server.fastapi")
 
 
-@dataclass
-class ApiAppConfig:
-    """Application configuration for the FastAPI server (compat wrapper)."""
-
-    server: ServingConfig
-    read_only: bool
-
-    @property
-    def default_limit(self) -> int:
-        """Expose default limit for backwards compatibility."""
-        return self.server.default_limit
-
-    @property
-    def repo(self) -> str:
-        """Repository slug for this deployment."""
-        return self.server.repo
-
-    @property
-    def commit(self) -> str:
-        """Commit SHA backing the current database."""
-        return self.server.commit
-
-
 def _ensure_readable_db(path: Path) -> None:
     """
     Validate that the DuckDB path exists and is readable.
@@ -104,7 +81,7 @@ def _ensure_readable_db(path: Path) -> None:
         raise PermissionError(message) from exc
 
 
-def load_api_config() -> ApiAppConfig:
+def load_api_config() -> ServingConfig:
     """
     Load and validate server configuration from environment variables.
 
@@ -115,7 +92,7 @@ def load_api_config() -> ApiAppConfig:
 
     Returns
     -------
-    ApiAppConfig
+    ServingConfig
         Validated configuration for the FastAPI surface.
     """
     config = ServingConfig.from_env()
@@ -131,11 +108,11 @@ def load_api_config() -> ApiAppConfig:
             message = "CODEINTEL_DB_PATH is required when CODEINTEL_MCP_MODE='local_db'"
             raise ValueError(message)
         _ensure_readable_db(db_path)
-    return ApiAppConfig(server=config, read_only=config.read_only)
+    return config
 
 
 def create_backend_resource(
-    cfg: ApiAppConfig | ServingConfig, *, gateway: StorageGateway | None = None
+    cfg: ServingConfig, *, gateway: StorageGateway | None = None
 ) -> BackendResource:
     """
     Instantiate the DuckDB backend for the API.
@@ -157,9 +134,8 @@ def create_backend_resource(
     errors.backend_failure
         If the query service cannot be constructed for the selected mode.
     """
-    serving_cfg = cfg.server if isinstance(cfg, ApiAppConfig) else cfg
     try:
-        return build_backend_resource(serving_cfg, gateway=gateway)
+        return build_backend_resource(cfg, gateway=gateway)
     except Exception as exc:
         raise errors.backend_failure(str(exc)) from exc
 
@@ -234,13 +210,9 @@ def install_logging_middleware(app: FastAPI) -> None:
         response = await call_next(request)
         duration_ms = (time.perf_counter() - start) * 1000
 
-        config = getattr(request.app.state, "config", None)
-        if isinstance(config, (ApiAppConfig, ServingConfig)):
-            repo = config.repo
-            commit = config.commit
-        else:
-            repo = "unknown"
-            commit = "unknown"
+    config: ServingConfig | None = getattr(request.app.state, "config", None)
+    repo = config.repo if config is not None else "unknown"
+    commit = config.commit if config is not None else "unknown"
 
         LOG.info(
             "Handled %s %s status=%s repo=%s commit=%s duration_ms=%.2f params=%s",
@@ -255,7 +227,7 @@ def install_logging_middleware(app: FastAPI) -> None:
         return response
 
 
-def get_app_config(request: Request) -> ApiAppConfig:
+def get_app_config(request: Request) -> ServingConfig:
     """
     Retrieve the validated application configuration from state.
 
@@ -274,11 +246,9 @@ def get_app_config(request: Request) -> ApiAppConfig:
     errors.backend_failure
         If the configuration is missing.
     """
-    config = getattr(request.app.state, "config", None)
-    if isinstance(config, ApiAppConfig):
+    config: ServingConfig | None = getattr(request.app.state, "config", None)
+    if config is not None:
         return config
-    if isinstance(config, ServingConfig):
-        return ApiAppConfig(server=config, read_only=config.read_only)
     message = "Server configuration is not initialized"
     raise errors.backend_failure(message)
 
@@ -338,7 +308,7 @@ def get_service(request: Request) -> QueryService:
     return service
 
 
-ConfigDep = Annotated[ApiAppConfig, Depends(get_app_config)]
+ConfigDep = Annotated[ServingConfig, Depends(get_app_config)]
 BackendDep = Annotated[QueryBackend, Depends(get_backend)]
 ServiceDep = Annotated[QueryService, Depends(get_service)]
 
@@ -1022,7 +992,7 @@ def register_routes(app: FastAPI) -> None:
 
 def create_app(
     *,
-    config_loader: Callable[[], ApiAppConfig] = load_api_config,
+    config_loader: Callable[[], ServingConfig] = load_api_config,
     backend_factory: Callable[..., BackendResource] = create_backend_resource,
     gateway: StorageGateway | None = None,
 ) -> FastAPI:
@@ -1048,22 +1018,20 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config = config_loader()
         gw = gateway
-        if gw is None:
-            server_cfg = config.server
-            if server_cfg.mode == "local_db":
-                db_path = server_cfg.db_path or Path(":memory:")
-                base_cfg = (
-                    StorageConfig.for_readonly(db_path)
-                    if server_cfg.read_only
-                    else StorageConfig.for_ingest(db_path)
-                )
-                gw_cfg = replace(
-                    base_cfg,
-                    repo=server_cfg.repo,
-                    commit=server_cfg.commit,
-                )
-                gw = open_gateway(gw_cfg)
-        if gw is None and config.server.mode == "local_db":
+        if gw is None and config.mode == "local_db":
+            db_path = config.db_path or Path(":memory:")
+            base_cfg = (
+                StorageConfig.for_readonly(db_path)
+                if config.read_only
+                else StorageConfig.for_ingest(db_path)
+            )
+            gw_cfg = replace(
+                base_cfg,
+                repo=config.repo,
+                commit=config.commit,
+            )
+            gw = open_gateway(gw_cfg)
+        if gw is None and config.mode == "local_db":
             message = "StorageGateway is required for local_db FastAPI app"
             raise errors.backend_failure(message)
         backend_kwargs: dict[str, object] = {}
