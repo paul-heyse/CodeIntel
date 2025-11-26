@@ -4,15 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.config import (
-    BuildPaths,
-    ExecutionConfig,
-    ScanProfiles,
-    SnapshotRef,
-)
+from codeintel.config import BuildPaths, ScanProfiles, SnapshotRef
 from codeintel.config.models import GraphBackendConfig, ToolsConfig
 from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
-from codeintel.orchestration.steps import (
+from codeintel.pipeline.orchestration.steps import (
     AstStep,
     CallGraphStep,
     CFGStep,
@@ -55,22 +50,19 @@ def test_steps_share_function_catalog(tmp_path: Path) -> None:
         code=default_code_profile(repo_root),
         config=default_config_profile(repo_root),
     )
-    execution = ExecutionConfig.for_default_pipeline(
-        build_dir=tmp_path / "build",
-        tools=ToolsConfig.model_validate({}),
-        profiles=profiles,
-        graph_backend=GraphBackendConfig(),
-    )
     paths = BuildPaths.from_layout(
         repo_root=repo_root,
-        build_dir=execution.build_dir,
+        build_dir=tmp_path / "build",
         db_path=db_path,
     )
     ctx = PipelineContext(
         snapshot=snapshot,
-        execution=execution,
         paths=paths,
         gateway=gateway,
+        tools=ToolsConfig.model_validate({}),
+        code_profile_cfg=profiles.code,
+        config_profile_cfg=profiles.config,
+        graph_backend_cfg=GraphBackendConfig(),
     )
 
     RepoScanStep().run(ctx)

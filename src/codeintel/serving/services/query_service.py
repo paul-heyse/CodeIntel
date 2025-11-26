@@ -8,7 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
-from codeintel.mcp.models import (
+from codeintel.serving.http.datasets import describe_dataset
+from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
@@ -30,15 +31,14 @@ from codeintel.mcp.models import (
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
-from codeintel.mcp.query_service import (
+from codeintel.serving.mcp.query_service import (
     BackendLimits,
     DuckDBQueryService,
     clamp_limit_value,
     clamp_offset_value,
 )
-from codeintel.server.datasets import describe_dataset
 
-LOG = logging.getLogger("codeintel.services.query")
+LOG = logging.getLogger("codeintel.serving.services.query")
 
 
 @dataclass

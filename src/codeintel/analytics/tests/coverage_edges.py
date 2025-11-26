@@ -20,9 +20,9 @@ from codeintel.graphs.function_catalog_service import (
     FunctionCatalogService,
 )
 from codeintel.ingestion.common import run_batch
-from codeintel.models.rows import TestCoverageEdgeRow, test_coverage_edge_to_tuple
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
-from codeintel.utils.paths import normalize_rel_path
+from codeintel.storage.rows import TestCoverageEdgeRow, test_coverage_edge_to_tuple
 
 log = logging.getLogger(__name__)
 

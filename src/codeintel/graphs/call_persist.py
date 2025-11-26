@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from codeintel.ingestion.common import run_batch
-from codeintel.models.rows import CallGraphEdgeRow, call_graph_edge_to_tuple
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.rows import CallGraphEdgeRow, call_graph_edge_to_tuple
 
 
 def default_edge_key(row: CallGraphEdgeRow) -> tuple[object, ...]:

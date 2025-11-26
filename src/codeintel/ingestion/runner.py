@@ -9,13 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.config import (
-    DocstringStepConfig,
-    ExecutionConfig,
-    ScipIngestStepConfig,
-    SnapshotRef,
-    ToolBinaries,
-)
+from codeintel.config import DocstringStepConfig, ScipIngestStepConfig, SnapshotRef, ToolBinaries
 from codeintel.config.builder import (
     ConfigIngestStepConfig,
     CoverageIngestStepConfig,
@@ -51,10 +45,11 @@ class IngestionContext:
     """Shared parameters required for all ingestion steps."""
 
     snapshot: SnapshotRef
-    execution: ExecutionConfig
     paths: BuildPaths
     gateway: StorageGateway
-    tools: ToolsConfig | None = None
+    tools: ToolsConfig
+    code_profile_cfg: ScanProfile
+    config_profile_cfg: ScanProfile
     tool_runner: ToolRunner | None = None
     tool_service: ToolService | None = None
     scip_runner: Callable[..., ScipIngestResult] | None = None
@@ -79,7 +74,7 @@ class IngestionContext:
     @property
     def build_dir(self) -> Path:
         """Build directory derived from execution config."""
-        return self.execution.build_dir
+        return self.paths.build_dir
 
     @property
     def document_output_dir(self) -> Path:
@@ -89,17 +84,17 @@ class IngestionContext:
     @property
     def code_profile(self) -> ScanProfile:
         """Code scanning profile for the run."""
-        return self.execution.code_profile
+        return self.code_profile_cfg
 
     @property
     def config_profile(self) -> ScanProfile:
         """Config scanning profile for the run."""
-        return self.execution.config_profile
+        return self.config_profile_cfg
 
     @property
     def active_tools(self) -> ToolsConfig:
         """Tools configuration, honoring overrides when provided."""
-        return self.tools or self.execution.tools
+        return self.tools
 
     @property
     def db_path(self) -> Path:

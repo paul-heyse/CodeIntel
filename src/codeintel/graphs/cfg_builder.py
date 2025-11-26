@@ -18,7 +18,8 @@ from codeintel.graphs.function_catalog_service import (
     FunctionCatalogService,
 )
 from codeintel.ingestion.common import run_batch
-from codeintel.models.rows import (
+from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.rows import (
     CFGBlockRow,
     CFGEdgeRow,
     DFGEdgeRow,
@@ -26,7 +27,6 @@ from codeintel.models.rows import (
     cfg_edge_to_tuple,
     dfg_edge_to_tuple,
 )
-from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

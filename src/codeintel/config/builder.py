@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from codeintel.config.parser_types import FunctionParserKind
     from codeintel.ingestion.scip_ingest import ScipIngestResult
     from codeintel.ingestion.source_scanner import ScanProfile
-    from codeintel.models.rows import (
+    from codeintel.storage.rows import (
         CallGraphEdgeRow,
         CFGBlockRow,
         CFGEdgeRow,
@@ -1013,6 +1013,9 @@ class ConfigBuilder:
         repo_root: Path,
         *,
         build_dir: Path | None = None,
+        db_path: Path | None = None,
+        document_output_dir: Path | None = None,
+        log_db_path: Path | None = None,
         branch: str | None = None,
     ) -> Self:
         """Create a builder from basic snapshot parameters.
@@ -1027,6 +1030,12 @@ class ConfigBuilder:
             Path to repository root.
         build_dir
             Optional override for build directory.
+        db_path
+            Optional override for DuckDB database path.
+        document_output_dir
+            Optional override for document output directory.
+        log_db_path
+            Optional override for pipeline logging DuckDB path.
         branch
             Optional branch name.
 
@@ -1041,7 +1050,13 @@ class ConfigBuilder:
             repo_root=repo_root,
             branch=branch,
         )
-        paths = BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
+        paths = BuildPaths.from_layout(
+            repo_root=repo_root,
+            build_dir=build_dir,
+            db_path=db_path,
+            document_output_dir=document_output_dir,
+            log_db_path=log_db_path,
+        )
         return cls(snapshot=snapshot, paths=paths)
 
     @classmethod

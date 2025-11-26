@@ -6,18 +6,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
-from codeintel.mcp.query_service import BackendLimits, DuckDBQueryService
-from codeintel.server.datasets import (
+from codeintel.serving.http.datasets import (
     build_registry_and_limits,
     describe_dataset,
     validate_dataset_registry,
 )
-from codeintel.services.query_service import (
+from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
+from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,
     ServiceObservability,
 )
-from codeintel.services.wiring import BackendResource, build_backend_resource
+from codeintel.serving.services.wiring import BackendResource, build_backend_resource
 from codeintel.storage.gateway import StorageGateway
 
 

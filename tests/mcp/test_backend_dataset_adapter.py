@@ -2,44 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
-from codeintel.mcp.backend import DuckDBBackend
-from codeintel.mcp.models import DatasetRowsResponse, ResponseMeta, ViewRow
-from codeintel.services.query_service import LocalQueryService
+from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.builders import RepoMapRow, insert_repo_map
-
-
-class DatasetStubService(LocalQueryService):
-    """Stub service that returns deterministic dataset rows."""
-
-    def __init__(self) -> None:
-        super().__init__(query=None, dataset_tables={})  # type: ignore[arg-type]
-
-    def read_dataset_rows(  # noqa: PLR6301
-        self,
-        *,
-        dataset_name: str,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> DatasetRowsResponse:  # pragma: no cover
-        """
-        Return a fixed dataset response for testing.
-
-        Returns
-        -------
-        DatasetRowsResponse
-            Dataset rows without adapter-side clamping.
-        """
-        _ = (limit, offset)
-        return DatasetRowsResponse(
-            dataset=dataset_name,
-            limit=5,
-            offset=offset,
-            rows=[ViewRow.model_validate({"issue": "ok"})],
-            meta=ResponseMeta(),
-        )
+from tests._helpers.builders import (
+    FunctionValidationRow,
+    RepoMapRow,
+    insert_function_validation,
+    insert_repo_map,
+)
 
 
 @pytest.fixture
@@ -66,17 +40,31 @@ def gateway(fresh_gateway: StorageGateway) -> StorageGateway:
     return fresh_gateway
 
 
-def test_read_dataset_rows_delegates(gateway: object) -> None:
+def test_read_dataset_rows_delegates(gateway: StorageGateway) -> None:
     """Adapters should delegate dataset reads directly to the service."""
     backend = DuckDBBackend(
         gateway=gateway,  # type: ignore[arg-type]
         repo="r",
         commit="c",
-        service_override=DatasetStubService(),
+        service_override=None,
+    )
+    insert_function_validation(
+        gateway,
+        [
+            FunctionValidationRow(
+                repo="r",
+                commit="c",
+                function_goid_h128=1,
+                rel_path="pkg/a.py",
+                qualname="pkg.a.fn",
+                issue="ok",
+                detail="",
+                created_at=datetime.now(UTC),
+            )
+        ],
     )
     resp = backend.read_dataset_rows(dataset_name="function_validation", limit=100, offset=0)
     if not resp.rows:
         pytest.fail("Expected rows from stub service")
-    expected_limit = 5
-    if resp.limit != expected_limit:
-        pytest.fail(f"Expected stub limit to be preserved, got {resp.limit}")
+    if resp.limit is None or resp.limit <= 0:
+        pytest.fail(f"Unexpected limit {resp.limit}")

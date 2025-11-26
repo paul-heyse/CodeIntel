@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.mcp.query_service import BackendLimits
-from codeintel.server.datasets import build_dataset_registry, build_registry_and_limits
+from codeintel.serving.http.datasets import build_dataset_registry, build_registry_and_limits
+from codeintel.serving.mcp.query_service import BackendLimits
 
 
 def test_limits_parity_between_local_and_remote_configs() -> None:

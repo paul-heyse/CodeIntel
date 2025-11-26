@@ -17,6 +17,7 @@ from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 from codeintel.ingestion.repo_scan import ingest_repo
+from codeintel.ingestion.tool_runner import ToolName, ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
 from codeintel.storage.gateway import (
@@ -74,7 +75,7 @@ from tests._helpers.builders import (
     insert_test_coverage_edges,
     insert_typedness,
 )
-from tests._helpers.fakes import FakeToolRunner, utcnow
+from tests._helpers.fakes import utcnow
 
 DEFAULT_REPO: Final = "demo/repo"
 DEFAULT_COMMIT: Final = "deadbeef"
@@ -92,7 +93,7 @@ class ProvisionedGateway:
     document_output_dir: Path
     coverage_file: Path
     gateway: StorageGateway
-    runner: FakeToolRunner
+    runner: ToolRunner
 
     def close(self) -> None:
         """Close the underlying gateway connection."""
@@ -367,32 +368,92 @@ def make_repo_context(
     )
 
 
-def _make_runner(repo_root: Path, files: list[Path]) -> FakeToolRunner:
-    """Build a FakeToolRunner configured with deterministic payloads.
+def _write_coverage_driver(repo_root: Path, files: list[Path]) -> Path:
+    """
+    Write a driver that imports repo modules to generate real coverage data.
 
     Returns
     -------
-    FakeToolRunner
-        Runner seeded with canned tool outputs for the sample repo.
+    Path
+        Path to the generated driver module.
     """
-    coverage_payload = {
-        "files": {
-            str(path.resolve()): {
-                "executed_lines": [1],
-                "missing_lines": [],
-            }
-            for path in files
-        }
-    }
-    payloads = {
-        "pyright": '{"generalDiagnostics": []}',
-        "pyrefly": "",
-        "ruff": "[]",
-        "json": coverage_payload,
-    }
+    driver_path = repo_root / "_coverage_driver.py"
+    module_names: list[str] = []
+    for path in files:
+        try:
+            rel = path.relative_to(repo_root)
+        except ValueError:
+            continue
+        module = rel.with_suffix("").as_posix().replace("/", ".")
+        if module.endswith(".__init__"):
+            module = module.rsplit(".", 1)[0]
+        if module:
+            module_names.append(module)
+    module_names = sorted(set(module_names))
+
+    lines: list[str] = ["import importlib", "from contextlib import suppress"]
+    if module_names:
+        lines.append(f"MODULES = {module_names!r}")
+        lines.append("for name in MODULES:")
+        lines.append("    with suppress(Exception):")
+        lines.append("        importlib.import_module(name)")
+    else:
+        lines.append("pass")
+
+    driver_path.write_text("\n".join(lines), encoding="utf8")
+    return driver_path
+
+
+def _generate_coverage_payload(
+    repo_root: Path,
+    *,
+    coverage_file: Path,
+    files: list[Path],
+    runner: ToolRunner,
+) -> None:
+    """
+    Execute coverage run against the sample repo using the real binary.
+
+    Raises
+    ------
+    RuntimeError
+        If the coverage tool exits with a non-zero status.
+    """
+    driver_path = _write_coverage_driver(repo_root, files)
+    result = runner.run(
+        ToolName.COVERAGE,
+        ["run", "--data-file", str(coverage_file), str(driver_path)],
+        cwd=repo_root,
+    )
+    if not result.ok:
+        message = f"coverage run failed: code={result.returncode} stderr={result.stderr}"
+        raise RuntimeError(message)
+
+
+def _make_runner(
+    repo_root: Path,
+    files: list[Path],
+    *,
+    coverage_file: Path,
+    tools_cfg: ToolsConfig,
+) -> ToolRunner:
+    """Build a ToolRunner seeded with real tool binaries and coverage data.
+
+    Returns
+    -------
+    ToolRunner
+        Runner configured with real tooling and a populated coverage DB.
+    """
     cache_dir = repo_root / "build" / ".tool_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    return FakeToolRunner(cache_dir=cache_dir, payloads=payloads)
+    runner = ToolRunner(tools_config=tools_cfg, cache_dir=cache_dir)
+    _generate_coverage_payload(
+        repo_root,
+        coverage_file=coverage_file,
+        files=files,
+        runner=runner,
+    )
+    return runner
 
 
 def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> StorageGateway:
@@ -449,11 +510,15 @@ def provision_ingested_repo(
         log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
     )
     coverage_file = build_paths.coverage_json
-    coverage_file.write_text("", encoding="utf8")
 
     files = _write_sample_repo(repo_root)
-    runner = _make_runner(repo_root, files)
     tools_cfg = ToolsConfig.model_validate({})
+    runner = _make_runner(
+        repo_root,
+        files,
+        coverage_file=coverage_file,
+        tools_cfg=tools_cfg,
+    )
     tool_service = ToolService(runner, tools_cfg)
     builder = ConfigBuilder.from_primitives(snapshot=snapshot, paths=build_paths)
 
@@ -528,11 +593,15 @@ def provision_existing_repo(
         log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
     )
     coverage_file = build_paths.coverage_json
-    coverage_file.write_text("", encoding="utf8")
 
     files = sorted(path for path in repo_root.rglob("*.py") if path.is_file())
-    runner = _make_runner(repo_root, files)
     tools_cfg = ToolsConfig.model_validate({})
+    runner = _make_runner(
+        repo_root,
+        files,
+        coverage_file=coverage_file,
+        tools_cfg=tools_cfg,
+    )
     tool_service = ToolService(runner, tools_cfg)
     builder = ConfigBuilder.from_primitives(snapshot=snapshot, paths=build_paths)
 
@@ -597,7 +666,13 @@ def provision_gateway_with_repo(
     ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
     coverage_file = repo_root / ".coverage"
     coverage_file.touch()
-    runner = _make_runner(repo_root, [])
+    tools_cfg = ToolsConfig.model_validate({})
+    runner = _make_runner(
+        repo_root,
+        [],
+        coverage_file=coverage_file,
+        tools_cfg=tools_cfg,
+    )
     gateway = _open_gateway_from_context(ctx, opts)
     if opts.apply_schema and (opts.ensure_views or opts.strict_schema):
         apply_all_schemas(gateway.con)

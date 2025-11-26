@@ -17,8 +17,8 @@ from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.config import DataModelsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.ast_utils import parse_python_module
+from codeintel.ingestion.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.utils.paths import normalize_rel_path, relpath_to_module
 
 log = logging.getLogger(__name__)
 

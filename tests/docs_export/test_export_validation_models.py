@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.docs_export.validate_exports import validate_files
+from codeintel.pipeline.export.validate_exports import validate_files
 
 
 def test_data_model_field_schema_validates_fixture(tmp_path: Path) -> None:

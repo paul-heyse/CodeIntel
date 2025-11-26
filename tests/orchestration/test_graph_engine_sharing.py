@@ -7,17 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config import (
-    BuildPaths,
-    ConfigBuilder,
-    ExecutionConfig,
-    SnapshotRef,
-)
+from codeintel.config import BuildPaths, ConfigBuilder, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.ingestion.source_scanner import ScanProfile
-from codeintel.orchestration import steps as orchestration_steps
-from codeintel.orchestration.steps import SemanticRolesStep
+from codeintel.pipeline.orchestration import steps as orchestration_steps
+from codeintel.pipeline.orchestration.steps import SemanticRolesStep
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import open_ingestion_gateway
 
@@ -35,23 +30,20 @@ def test_graph_engine_reused_with_backend_flags(tmp_path: Path) -> None:
     gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
     snapshot = SnapshotRef(repo_root=tmp_path, repo="demo/repo", commit="deadbeef")
     graph_backend = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
-    execution = ExecutionConfig(
-        build_dir=tmp_path / "build",
-        tools=ToolsConfig.default(),
-        code_profile=_scan_profile(tmp_path),
-        config_profile=_scan_profile(tmp_path),
-        graph_backend=graph_backend,
-    )
+    build_dir = tmp_path / "build"
     paths = BuildPaths.from_layout(
         repo_root=tmp_path,
-        build_dir=execution.build_dir,
+        build_dir=build_dir,
         db_path=gateway.config.db_path,
     )
     ctx = orchestration_steps.PipelineContext(
         snapshot=snapshot,
-        execution=execution,
         paths=paths,
         gateway=gateway,
+        tools=ToolsConfig.default(),
+        code_profile_cfg=_scan_profile(tmp_path),
+        config_profile_cfg=_scan_profile(tmp_path),
+        graph_backend_cfg=graph_backend,
     )
 
     try:
@@ -141,23 +133,20 @@ def test_engine_reuse_across_semantic_roles(tmp_path: Path) -> None:
     gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
     snapshot = SnapshotRef(repo_root=tmp_path, repo="demo/repo", commit="deadbeef")
     graph_backend = GraphBackendConfig(use_gpu=False, backend="cpu", strict=False)
-    execution = ExecutionConfig(
-        build_dir=tmp_path / "build",
-        tools=ToolsConfig.default(),
-        code_profile=_scan_profile(tmp_path),
-        config_profile=_scan_profile(tmp_path),
-        graph_backend=graph_backend,
-    )
+    build_dir = tmp_path / "build"
     paths = BuildPaths.from_layout(
         repo_root=tmp_path,
-        build_dir=execution.build_dir,
+        build_dir=build_dir,
         db_path=gateway.config.db_path,
     )
     ctx = orchestration_steps.PipelineContext(
         snapshot=snapshot,
-        execution=execution,
         paths=paths,
         gateway=gateway,
+        tools=ToolsConfig.default(),
+        code_profile_cfg=_scan_profile(tmp_path),
+        config_profile_cfg=_scan_profile(tmp_path),
+        graph_backend_cfg=graph_backend,
     )
 
     try:
@@ -186,23 +175,20 @@ def test_graph_runtime_reuses_engine(tmp_path: Path) -> None:
     gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
     snapshot = SnapshotRef(repo_root=tmp_path, repo="demo/repo", commit="deadbeef")
     graph_backend = GraphBackendConfig(use_gpu=False, backend="cpu", strict=False)
-    execution = ExecutionConfig(
-        build_dir=tmp_path / "build",
-        tools=ToolsConfig.default(),
-        code_profile=_scan_profile(tmp_path),
-        config_profile=_scan_profile(tmp_path),
-        graph_backend=graph_backend,
-    )
+    build_dir = tmp_path / "build"
     paths = BuildPaths.from_layout(
         repo_root=tmp_path,
-        build_dir=execution.build_dir,
+        build_dir=build_dir,
         db_path=gateway.config.db_path,
     )
     ctx = orchestration_steps.PipelineContext(
         snapshot=snapshot,
-        execution=execution,
         paths=paths,
         gateway=gateway,
+        tools=ToolsConfig.default(),
+        code_profile_cfg=_scan_profile(tmp_path),
+        config_profile_cfg=_scan_profile(tmp_path),
+        graph_backend_cfg=graph_backend,
     )
 
     try:
@@ -222,23 +208,20 @@ def test_runtime_reuse_with_graph_context(tmp_path: Path) -> None:
     gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
     snapshot = SnapshotRef(repo_root=tmp_path, repo="demo/repo", commit="deadbeef")
     graph_backend = GraphBackendConfig(use_gpu=False, backend="cpu", strict=False)
-    execution = ExecutionConfig(
-        build_dir=tmp_path / "build",
-        tools=ToolsConfig.default(),
-        code_profile=_scan_profile(tmp_path),
-        config_profile=_scan_profile(tmp_path),
-        graph_backend=graph_backend,
-    )
+    build_dir = tmp_path / "build"
     paths = BuildPaths.from_layout(
         repo_root=tmp_path,
-        build_dir=execution.build_dir,
+        build_dir=build_dir,
         db_path=gateway.config.db_path,
     )
     ctx = orchestration_steps.PipelineContext(
         snapshot=snapshot,
-        execution=execution,
         paths=paths,
         gateway=gateway,
+        tools=ToolsConfig.default(),
+        code_profile_cfg=_scan_profile(tmp_path),
+        config_profile_cfg=_scan_profile(tmp_path),
+        graph_backend_cfg=graph_backend,
     )
     builder = ConfigBuilder.from_snapshot(
         repo=snapshot.repo,

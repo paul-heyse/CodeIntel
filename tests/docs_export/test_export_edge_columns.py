@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
-from codeintel.docs_export.export_jsonl import export_jsonl_for_table
+from codeintel.pipeline.export.export_jsonl import export_jsonl_for_table
 from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.fixtures import provision_graph_ready_repo
 

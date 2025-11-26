@@ -6,7 +6,7 @@ import pytest
 
 from codeintel.config.models import GraphBackendConfig
 from codeintel.graphs.engine_factory import build_graph_engine
-from codeintel.mcp.backend import DuckDBBackend
+from codeintel.serving.mcp.backend import DuckDBBackend
 from tests._helpers.gateway import open_ingestion_gateway
 
 

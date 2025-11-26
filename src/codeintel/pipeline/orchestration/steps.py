@@ -62,17 +62,10 @@ from codeintel.analytics.tests import (
     compute_test_coverage_edges,
     compute_test_graph_metrics,
 )
-from codeintel.config import (
-    ConfigBuilder,
-    ExecutionConfig,
-    SnapshotRef,
-    TestCoverageStepConfig,
-)
+from codeintel.config import ConfigBuilder, SnapshotRef, TestCoverageStepConfig
 from codeintel.config.models import ToolsConfig
 from codeintel.config.parser_types import FunctionParserKind
-from codeintel.config.primitives import BuildPaths, GraphBackendConfig
-from codeintel.docs_export.export_jsonl import export_all_jsonl
-from codeintel.docs_export.export_parquet import export_all_parquet
+from codeintel.config.primitives import BuildPaths, GraphBackendConfig, ScanProfiles
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.engine import NxGraphEngine
@@ -102,12 +95,14 @@ from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.models.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
-from codeintel.server.datasets import validate_dataset_registry
+from codeintel.pipeline.export.export_jsonl import export_all_jsonl
+from codeintel.pipeline.export.export_parquet import export_all_parquet
+from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.storage.gateway import (
     StorageGateway,
     build_snapshot_gateway_resolver,
 )
+from codeintel.storage.rows import CallGraphEdgeRow, CFGBlockRow, CFGEdgeRow, DFGEdgeRow
 from codeintel.storage.views import create_all_views
 
 log = logging.getLogger(__name__)
@@ -150,9 +145,11 @@ class PipelineContext:
     """
 
     snapshot: SnapshotRef
-    execution: ExecutionConfig
     paths: BuildPaths
     gateway: StorageGateway
+    code_profile_cfg: ScanProfile
+    config_profile_cfg: ScanProfile
+    graph_backend_cfg: GraphBackendConfig
     tool_runner: ToolRunner | None = None
     tool_service: ToolService | None = None
     coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None
@@ -201,27 +198,27 @@ class PipelineContext:
     @property
     def build_dir(self) -> Path:
         """Build directory resolved from execution config."""
-        return self.execution.build_dir
+        return self.paths.build_dir
 
     @property
     def tools_config(self) -> ToolsConfig:
         """Resolve the active tools configuration."""
-        return self.tools or self.execution.tools
+        return self.tools or ToolsConfig.default()
 
     @property
     def code_profile(self) -> ScanProfile:
         """Code scan profile for this run."""
-        return self.execution.code_profile
+        return self.code_profile_cfg
 
     @property
     def config_profile(self) -> ScanProfile:
         """Config scan profile for this run."""
-        return self.execution.config_profile
+        return self.config_profile_cfg
 
     @property
     def graph_backend(self) -> GraphBackendConfig:
         """Graph backend configuration."""
-        return self.execution.graph_backend
+        return self.graph_backend_cfg
 
     def config_builder(self) -> ConfigBuilder:
         """Create a ConfigBuilder from this pipeline context.
@@ -231,11 +228,11 @@ class PipelineContext:
         ConfigBuilder
             Builder configured with snapshot and paths from this context.
         """
-        return ConfigBuilder.from_snapshot(
-            repo=self.repo,
-            commit=self.commit,
-            repo_root=self.repo_root,
-            build_dir=self.build_dir,
+        return ConfigBuilder.from_primitives(
+            snapshot=self.snapshot,
+            paths=self.paths,
+            profiles=ScanProfiles(code=self.code_profile, config=self.config_profile),
+            graph_backend=self.graph_backend,
         )
 
 
@@ -272,10 +269,11 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
     """
     return IngestionContext(
         snapshot=ctx.snapshot,
-        execution=ctx.execution,
         paths=ctx.paths,
         gateway=ctx.gateway,
         tools=ctx.tools_config,
+        code_profile_cfg=ctx.code_profile,
+        config_profile_cfg=ctx.config_profile,
         tool_runner=ctx.tool_runner,
         tool_service=ctx.tool_service,
         scip_runner=ctx.scip_runner,

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.docs_export.export_jsonl import export_all_jsonl
-from codeintel.docs_export.export_parquet import export_all_parquet
+from codeintel.pipeline.export.export_jsonl import export_all_jsonl
+from codeintel.pipeline.export.export_parquet import export_all_parquet
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import FunctionValidationRow, insert_function_validation
 

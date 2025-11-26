@@ -18,7 +18,6 @@ from codeintel.config import ConfigBuilder
 from codeintel.config.models import CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.docs_export.runner import ExportOptions, ExportRunner, run_validated_exports
 from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.ingestion.source_scanner import (
     default_code_profile,
@@ -26,10 +25,11 @@ from codeintel.ingestion.source_scanner import (
     profile_from_env,
 )
 from codeintel.ingestion.tool_runner import ToolRunner
-from codeintel.mcp.backend import DuckDBBackend
-from codeintel.orchestration.prefect_flow import ExportArgs, export_docs_flow
-from codeintel.server.datasets import validate_dataset_registry
-from codeintel.services.errors import ExportError, log_problem, problem
+from codeintel.pipeline.export.runner import ExportOptions, ExportRunner, run_validated_exports
+from codeintel.pipeline.orchestration.prefect_flow import ExportArgs, export_docs_flow
+from codeintel.serving.http.datasets import validate_dataset_registry
+from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.services.errors import ExportError, log_problem, problem
 from codeintel.storage.gateway import (
     DuckDBError,
     StorageConfig,
@@ -456,7 +456,9 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
             code_profile=profile_from_env(default_code_profile(repo_root)),
             config_profile=profile_from_env(default_config_profile(repo_root)),
             function_fail_on_missing_spans=args.function_fail_on_missing_spans,
-            function_parser=FunctionParserKind(args.function_parser) if args.function_parser else None,
+            function_parser=FunctionParserKind(args.function_parser)
+            if args.function_parser
+            else None,
             history_commits=tuple(args.history_commits) if args.history_commits else None,
             history_db_dir=args.history_db_dir,
             graph_backend=cfg.graph_backend,

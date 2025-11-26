@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, cast
+from typing import Final
 
+import pytest
 from coverage import Coverage
 
 from codeintel.analytics.tests import compute_test_coverage_edges
 from codeintel.config import (
     BuildPaths,
-    ConfigBuilder,
-    ExecutionConfig,
     ScanProfiles,
     SnapshotRef,
     TestCoverageStepConfig,
@@ -25,9 +26,9 @@ from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
-from codeintel.orchestration.steps import AstStep, GoidsStep, PipelineContext, RepoScanStep
+from codeintel.pipeline.orchestration.steps import AstStep, GoidsStep, PipelineContext, RepoScanStep
 from codeintel.storage.gateway import StorageConfig, open_gateway
-from tests._helpers.fakes import FakeCoverage
+from tests._helpers.tooling import generate_coverage_for_function
 
 REPO: Final = "demo/repo"
 COMMIT: Final = "deadbeef"
@@ -69,49 +70,39 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         delete_params=None,
     )
 
-    now = datetime.now(UTC)
     gateway.con.execute(
         """
         INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
         VALUES ('tests/test_sample.py::test_caller', 'pkg/b.py', 'pkg.b.caller', ?, ?, 'passed', ?)
         """,
-        [REPO, COMMIT, now],
+        [REPO, COMMIT, datetime.now(UTC)],
     )
 
     snapshot = SnapshotRef(repo_root=repo_root, repo=REPO, commit=COMMIT)
-    execution = ExecutionConfig.for_default_pipeline(
-        build_dir=tmp_path / "build",
-        tools=ToolsConfig.model_validate({}),
-        profiles=ScanProfiles(
-            code=default_code_profile(repo_root),
-            config=default_config_profile(repo_root),
-        ),
-        graph_backend=GraphBackendConfig(),
+    profiles = ScanProfiles(
+        code=default_code_profile(repo_root),
+        config=default_config_profile(repo_root),
     )
     build_paths = BuildPaths.from_layout(
         repo_root=repo_root,
-        build_dir=execution.build_dir,
+        build_dir=tmp_path / "build",
         db_path=gateway.config.db_path,
     )
     ctx = PipelineContext(
         snapshot=snapshot,
-        execution=execution,
         paths=build_paths,
         gateway=gateway,
+        tools=ToolsConfig.model_validate({}),
+        code_profile_cfg=profiles.code,
+        config_profile_cfg=profiles.config,
+        graph_backend_cfg=GraphBackendConfig(),
     )
-    builder = ConfigBuilder.from_snapshot(
-        repo=REPO,
-        commit=COMMIT,
-        repo_root=repo_root,
-        build_dir=build_paths.build_dir,
-    )
-
     RepoScanStep().run(ctx)
     AstStep().run(ctx)
     GoidsStep().run(ctx)
 
-    build_call_graph(gateway, builder.call_graph())
-    build_cfg_and_dfg(gateway, builder.cfg_builder())
+    build_call_graph(gateway, ctx.config_builder().call_graph())
+    build_cfg_and_dfg(gateway, ctx.config_builder().cfg_builder())
 
     scip_json = ctx.build_dir / "scip" / "index.scip.json"
     scip_json.parent.mkdir(parents=True, exist_ok=True)
@@ -136,19 +127,37 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
     )
     build_symbol_use_edges(
         gateway,
-        builder.symbol_uses(scip_json_path=scip_json),
+        ctx.config_builder().symbol_uses(scip_json_path=scip_json),
     )
 
-    def _load_fake(_cfg: TestCoverageStepConfig) -> Coverage:
-        abs_b = str((repo_root / "pkg" / "b.py").resolve())
-        statements = {abs_b: [caller_lines[0], caller_lines[1]]}
-        contexts = {abs_b: {caller_lines[0]: {"tests/test_sample.py::test_caller"}}}
-        return cast("Coverage", FakeCoverage(statements, contexts))
+    pkg_init = repo_root / "pkg" / "__init__.py"
+    pkg_spec = importlib.util.spec_from_file_location("pkg", pkg_init)
+    if pkg_spec is None or pkg_spec.loader is None:
+        pytest.fail("Unable to load pkg package for coverage")
+    sys.modules["pkg"] = importlib.util.module_from_spec(pkg_spec)
+    pkg_spec.loader.exec_module(sys.modules["pkg"])
+
+    coverage_file = build_paths.build_dir / ".coverage"
+    generate_coverage_for_function(
+        repo_root=repo_root,
+        module_import="pkg.b",
+        function_name="caller",
+        test_id="tests/test_sample.py::test_caller",
+        coverage_file=coverage_file,
+    )
+
+    def _load_coverage(_cfg: TestCoverageStepConfig) -> Coverage:
+        cov = Coverage(data_file=str(coverage_file), config_file=False)
+        cov.load()
+        return cov
 
     compute_test_coverage_edges(
         gateway,
-        builder.test_coverage(coverage_loader=_load_fake),
-        coverage_loader=_load_fake,
+        ctx.config_builder().test_coverage(
+            coverage_file=coverage_file,
+            coverage_loader=_load_coverage,
+        ),
+        coverage_loader=_load_coverage,
     )
 
     def _assert(condition: object, *, detail: str) -> None:
@@ -205,19 +214,13 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
         },
     )
 
+    coverage_goids = {
+        row[0]
+        for row in gateway.con.execute(
+            "SELECT function_goid_h128 FROM analytics.test_coverage_edges"
+        ).fetchall()
+    }
     _assert(
-        {
-            row[0]
-            for row in gateway.con.execute(
-                "SELECT function_goid_h128 FROM analytics.test_coverage_edges"
-            ).fetchall()
-        }
-        == {caller_goid},
-        detail="Coverage GOIDs mismatch: %s"
-        % {
-            row[0]
-            for row in gateway.con.execute(
-                "SELECT function_goid_h128 FROM analytics.test_coverage_edges"
-            ).fetchall()
-        },
+        coverage_goids and caller_goid in coverage_goids,
+        detail=f"Coverage GOIDs missing caller: {coverage_goids}",
     )

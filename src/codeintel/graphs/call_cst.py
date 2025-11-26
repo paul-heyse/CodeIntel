@@ -7,7 +7,7 @@ from libcst import MetadataWrapper, metadata
 
 from codeintel.graphs.call_context import EdgeResolutionContext
 from codeintel.graphs.call_resolution import build_evidence, resolve_callee, resolve_via_scip
-from codeintel.models.rows import CallGraphEdgeRow
+from codeintel.storage.rows import CallGraphEdgeRow
 
 FUNCTION_NODE_TYPES = (cst.FunctionDef, getattr(cst, "AsyncFunctionDef", cst.FunctionDef))
 

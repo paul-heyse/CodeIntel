@@ -6,12 +6,12 @@ import logging
 from collections.abc import Mapping
 from pathlib import Path
 
-from codeintel.docs_export import DEFAULT_VALIDATION_SCHEMAS
-from codeintel.docs_export.datasets import JSONL_DATASETS, PARQUET_DATASETS
-from codeintel.docs_export.manifest import write_dataset_manifest
-from codeintel.docs_export.validate_exports import validate_files
-from codeintel.server.datasets import validate_dataset_registry
-from codeintel.services.errors import ExportError, log_problem, problem
+from codeintel.pipeline.export import DEFAULT_VALIDATION_SCHEMAS
+from codeintel.pipeline.export.datasets import JSONL_DATASETS, PARQUET_DATASETS
+from codeintel.pipeline.export.manifest import write_dataset_manifest
+from codeintel.pipeline.export.validate_exports import validate_files
+from codeintel.serving.http.datasets import validate_dataset_registry
+from codeintel.serving.services.errors import ExportError, log_problem, problem
 from codeintel.storage.gateway import (
     DuckDBConnection,
     DuckDBError,

@@ -7,13 +7,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TypeVar, cast
 
-from codeintel.models.rows import (
+from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.rows import (
     FunctionValidationRow,
     GraphValidationRow,
     function_validation_row_to_tuple,
     graph_validation_row_to_tuple,
 )
-from codeintel.storage.gateway import StorageGateway
 
 RowT = TypeVar("RowT")
 

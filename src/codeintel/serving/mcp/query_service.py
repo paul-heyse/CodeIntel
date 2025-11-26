@@ -14,8 +14,8 @@ import networkx as nx
 
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.engine_factory import build_graph_engine
-from codeintel.mcp import errors
-from codeintel.mcp.models import (
+from codeintel.serving.mcp import errors
+from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetRowsResponse,
     FileHintsResponse,

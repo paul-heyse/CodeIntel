@@ -13,8 +13,8 @@ from typing import cast
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.ast_utils import parse_python_module
+from codeintel.ingestion.paths import relpath_to_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.utils.paths import relpath_to_module
 
 log = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from codeintel.graphs.call_context import EdgeResolutionContext
 from codeintel.graphs.call_resolution import build_evidence, resolve_callee, resolve_via_scip
-from codeintel.models.rows import CallGraphEdgeRow
+from codeintel.storage.rows import CallGraphEdgeRow
 
 
 def _extract_callee_ast(expr: ast.AST) -> tuple[str, list[str]]:

@@ -10,7 +10,7 @@ from codeintel.storage.gateway import DOCS_VIEWS as GATEWAY_DOCS_VIEWS
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
-    from codeintel.mcp.query_service import BackendLimits
+    from codeintel.serving.mcp.query_service import BackendLimits
 
 DOCS_VIEWS = {view.split(".", maxsplit=1)[1]: view for view in GATEWAY_DOCS_VIEWS}
 
@@ -72,7 +72,7 @@ def build_registry_and_limits(
     tuple[dict[str, str], BackendLimits]
         Registry mapping and backend limits built from the configuration.
     """
-    from codeintel.mcp.query_service import BackendLimits  # noqa: PLC0415
+    from codeintel.serving.mcp.query_service import BackendLimits  # noqa: PLC0415
 
     registry = build_dataset_registry(include_docs_views=include_docs_views)
     limits = BackendLimits.from_config(cfg)

@@ -23,8 +23,8 @@ from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.config import ConfigDataFlowStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.utils.paths import normalize_rel_path
 
 if TYPE_CHECKING:
     from codeintel.analytics.function_ast_cache import FunctionAst

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.mcp import errors
-from codeintel.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
+from codeintel.serving.mcp import errors
+from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.fixtures import seed_mcp_backend
 

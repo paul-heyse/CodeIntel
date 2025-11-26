@@ -14,7 +14,6 @@ from codeintel.analytics.dependencies import (
 )
 from codeintel.analytics.entrypoints import build_entrypoints
 from codeintel.config import ConfigBuilder
-from codeintel.config.models import RepoScanConfig
 from codeintel.graphs.function_catalog_service import FunctionCatalogService
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.ingestion.py_ast_extract import ingest_python_ast
@@ -287,15 +286,15 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
     _write_sample_repo(repo_root)
 
     with provision_gateway_with_repo(repo_root) as ctx:
-        tracker = ingest_repo(
-            ctx.gateway,
-            cfg=RepoScanConfig(repo_root=ctx.repo_root, repo=ctx.repo, commit=ctx.commit),
-        )
         builder = ConfigBuilder.from_snapshot(
             repo=ctx.repo,
             commit=ctx.commit,
             repo_root=ctx.repo_root,
             build_dir=ctx.build_dir,
+        )
+        tracker = ingest_repo(
+            ctx.gateway,
+            cfg=builder.repo_scan(),
         )
         insert_modules(
             ctx.gateway,

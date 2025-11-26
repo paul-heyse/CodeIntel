@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codeintel.docs_export.datasets import JSONL_DATASETS, PARQUET_DATASETS
+from codeintel.pipeline.export.datasets import JSONL_DATASETS, PARQUET_DATASETS
 from tests._helpers.fixtures import ProvisionedGateway
 
 

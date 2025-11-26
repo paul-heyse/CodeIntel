@@ -14,9 +14,9 @@ from codeintel.graphs.function_catalog_service import (
     FunctionCatalogService,
 )
 from codeintel.ingestion.common import run_batch
-from codeintel.models.rows import SymbolUseRow, symbol_use_to_tuple
+from codeintel.serving.protocols import ScipDocument
 from codeintel.storage.gateway import StorageGateway
-from codeintel.types import ScipDocument
+from codeintel.storage.rows import SymbolUseRow, symbol_use_to_tuple
 
 log = logging.getLogger(__name__)
 

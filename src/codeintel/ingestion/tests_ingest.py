@@ -14,9 +14,9 @@ from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
 from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.models.rows import TestCatalogRowModel, test_catalog_row_to_tuple
+from codeintel.serving.protocols import PytestTestEntry
 from codeintel.storage.gateway import StorageGateway
-from codeintel.types import PytestTestEntry
+from codeintel.storage.rows import TestCatalogRowModel, test_catalog_row_to_tuple
 
 log = logging.getLogger(__name__)
 

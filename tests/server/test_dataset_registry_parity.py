@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.mcp.backend import DuckDBBackend
-from codeintel.server.datasets import build_dataset_registry
-from codeintel.services.factory import DatasetRegistryOptions, build_service_from_config
-from codeintel.services.query_service import LocalQueryService
-from codeintel.services.wiring import build_backend_resource
+from codeintel.serving.http.datasets import build_dataset_registry
+from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.services.factory import DatasetRegistryOptions, build_service_from_config
+from codeintel.serving.services.query_service import LocalQueryService
+from codeintel.serving.services.wiring import build_backend_resource
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import RepoMapRow, insert_repo_map
 

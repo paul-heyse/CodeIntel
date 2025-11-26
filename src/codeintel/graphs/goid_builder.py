@@ -13,9 +13,9 @@ import pandas as pd
 from codeintel.config import GoidBuilderStepConfig
 from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.ingestion.common import run_batch
-from codeintel.models.rows import GoidCrosswalkRow, GoidRow, goid_crosswalk_to_tuple, goid_to_tuple
+from codeintel.ingestion.paths import relpath_to_module
 from codeintel.storage.gateway import StorageGateway
-from codeintel.utils.paths import relpath_to_module
+from codeintel.storage.rows import GoidCrosswalkRow, GoidRow, goid_crosswalk_to_tuple, goid_to_tuple
 
 log = logging.getLogger(__name__)
 DECIMAL_38_MAX = 10**38 - 1

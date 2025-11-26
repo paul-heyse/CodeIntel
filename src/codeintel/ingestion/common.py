@@ -13,9 +13,9 @@ from pathlib import Path
 
 from codeintel.config import SnapshotRef
 from codeintel.config.schemas.sql_builder import PREPARED, ensure_schema
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.storage.gateway import StorageGateway
-from codeintel.utils.paths import normalize_rel_path
 
 log = logging.getLogger(__name__)
 

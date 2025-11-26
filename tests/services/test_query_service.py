@@ -14,17 +14,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.mcp.backend import QueryBackend
-from codeintel.mcp.models import (
+from codeintel.serving.http.datasets import build_registry_and_limits, validate_dataset_registry
+from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.mcp.backend import QueryBackend
+from codeintel.serving.mcp.models import (
     DatasetRowsResponse,
     FunctionSummaryResponse,
     ResponseMeta,
     ViewRow,
 )
-from codeintel.mcp.query_service import BackendLimits, DuckDBQueryService
-from codeintel.server.datasets import build_registry_and_limits, validate_dataset_registry
-from codeintel.server.fastapi import BackendResource, create_app
-from codeintel.services.query_service import (
+from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
+from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,
     ServiceCallMetrics,
@@ -469,7 +469,7 @@ def test_local_query_service_reads_architecture_seed(
 def test_mcp_tool_delegation() -> None:
     """MCP tool registration delegates to the provided service."""
     fastmcp_mod = pytest.importorskip("mcp.server.fastmcp")
-    registry = importlib.import_module("codeintel.mcp.registry")
+    registry = importlib.import_module("codeintel.serving.mcp.registry")
 
     calls: list[str] = []
 

@@ -12,13 +12,13 @@ from typing import Any
 from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.paths import normalize_rel_path, repo_relpath
 from codeintel.ingestion.tool_runner import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
     ToolRunner,
 )
-from codeintel.utils.paths import normalize_rel_path, repo_relpath
 
 log = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 """Shared backend wiring helpers for HTTP and MCP surfaces.
 
-Preferred import path: ``from codeintel.services.factory import build_backend_resource``.
+Preferred import path: ``from codeintel.serving.services.factory import build_backend_resource``.
 """
 
 from __future__ import annotations
@@ -13,9 +13,9 @@ import anyio
 import httpx
 
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
-from codeintel.mcp.query_service import BackendLimits
-from codeintel.server.datasets import build_registry_and_limits
-from codeintel.services.query_service import (
+from codeintel.serving.http.datasets import build_registry_and_limits
+from codeintel.serving.mcp.query_service import BackendLimits
+from codeintel.serving.services.query_service import (
     LocalQueryService,
     QueryService,
     ServiceObservability,
@@ -24,8 +24,8 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
-    from codeintel.mcp.backend import QueryBackend
-    from codeintel.services.factory import DatasetRegistryOptions
+    from codeintel.serving.mcp.backend import QueryBackend
+    from codeintel.serving.services.factory import DatasetRegistryOptions
 
 __all__ = ["BackendResource", "build_backend_resource"]
 
@@ -75,7 +75,7 @@ def build_backend_resource(
     ValueError
         When required inputs are missing for the configured mode or unsupported modes are requested.
     """
-    from codeintel.services.factory import (  # noqa: PLC0415
+    from codeintel.serving.services.factory import (  # noqa: PLC0415
         DatasetRegistryOptions,
         get_observability_from_config,
     )
@@ -139,8 +139,8 @@ def _build_local_resource(
     if not effective_read_only:
         create_all_views(connection)
 
-    from codeintel.mcp.backend import DuckDBBackend  # noqa: PLC0415
-    from codeintel.services.factory import build_service_from_config  # noqa: PLC0415
+    from codeintel.serving.mcp.backend import DuckDBBackend  # noqa: PLC0415
+    from codeintel.serving.services.factory import build_service_from_config  # noqa: PLC0415
 
     service = build_service_from_config(
         cfg,
@@ -194,7 +194,7 @@ def _build_remote_resource(
         client = httpx.Client(base_url=cfg.api_base_url, timeout=cfg.timeout_seconds)
         owns_client = True
 
-    from codeintel.mcp.backend import HttpBackend  # noqa: PLC0415
+    from codeintel.serving.mcp.backend import HttpBackend  # noqa: PLC0415
 
     backend = HttpBackend(
         base_url=cfg.api_base_url,

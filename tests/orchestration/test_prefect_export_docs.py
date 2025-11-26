@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.docs_export.runner import ExportOptions
-from codeintel.orchestration.prefect_flow import ExportTaskHooks, t_export_docs
+from codeintel.pipeline.export.runner import ExportOptions
+from codeintel.pipeline.orchestration.prefect_flow import ExportTaskHooks, t_export_docs
 from codeintel.storage.gateway import StorageGateway
 
 

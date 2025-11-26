@@ -27,8 +27,8 @@ from codeintel.config import EntryPointsStepConfig
 from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.common import iter_modules, read_module_source
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.utils.paths import normalize_rel_path
 
 if TYPE_CHECKING:
     from codeintel.ingestion.source_scanner import ScanProfile

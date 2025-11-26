@@ -8,8 +8,8 @@ from collections.abc import Callable
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.mcp.registry import register_tools
-from codeintel.services.factory import BackendResource, build_backend_resource
+from codeintel.serving.mcp.registry import register_tools
+from codeintel.serving.services.factory import BackendResource, build_backend_resource
 from codeintel.storage.gateway import StorageGateway
 
 

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.docs_export.export_jsonl import export_all_jsonl, export_dataset_to_jsonl
-from codeintel.docs_export.export_parquet import export_all_parquet, export_dataset_to_parquet
+from codeintel.pipeline.export.export_jsonl import export_all_jsonl, export_dataset_to_jsonl
+from codeintel.pipeline.export.export_parquet import export_all_parquet, export_dataset_to_parquet
 from codeintel.storage.gateway import DatasetRegistry
 from tests._helpers.fixtures import ProvisionedGateway, provision_docs_export_ready
 

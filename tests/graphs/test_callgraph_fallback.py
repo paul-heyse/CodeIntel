@@ -7,7 +7,7 @@ from pathlib import Path
 from codeintel.graphs import callgraph_builder
 from codeintel.graphs.callgraph_builder import CallGraphRunScope
 from codeintel.graphs.function_catalog import FunctionCatalog, FunctionMeta
-from codeintel.models.rows import CallGraphEdgeRow
+from codeintel.storage.rows import CallGraphEdgeRow
 
 
 def test_callgraph_falls_back_to_ast(tmp_path: Path) -> None:

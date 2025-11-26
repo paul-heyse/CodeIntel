@@ -65,18 +65,10 @@ from codeintel.analytics.tests import (
     compute_test_graph_metrics,
 )
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
-from codeintel.config import (
-    ConfigBuilder,
-    ExecutionConfig,
-    ExecutionOptions,
-    ScanProfiles,
-    SnapshotRef,
-    SymbolUsesStepConfig,
-)
+from codeintel.config import ConfigBuilder, ScanProfiles, SnapshotRef, SymbolUsesStepConfig
 from codeintel.config.models import ToolsConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig
-from codeintel.docs_export.runner import ExportOptions, ExportRunner, run_validated_exports
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.engine_factory import build_graph_engine
@@ -106,14 +98,15 @@ from codeintel.ingestion.source_scanner import (
 )
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.orchestration.steps import (
+from codeintel.pipeline.export.runner import ExportOptions, ExportRunner, run_validated_exports
+from codeintel.pipeline.orchestration.steps import (
     PipelineContext,
     ProfilesStep,
     RiskFactorsStep,
     run_pipeline,
 )
-from codeintel.server.datasets import validate_dataset_registry
-from codeintel.services.errors import ExportError, log_problem, problem
+from codeintel.serving.http.datasets import validate_dataset_registry
+from codeintel.serving.services.errors import ExportError, log_problem, problem
 from codeintel.storage.gateway import (
     DuckDBError,
     StorageConfig,
@@ -158,31 +151,39 @@ class ExportArgs:
         """
         return SnapshotRef(repo_root=self.repo_root, repo=self.repo, commit=self.commit)
 
-    def execution_config(self) -> ExecutionConfig:
-        """Build the execution config with tool and scan profile defaults applied.
+    def resolved_tools(self) -> ToolsConfig:
+        """Return tools configuration with environment defaults applied.
 
         Returns
         -------
-        ExecutionConfig
-            Execution settings including tools, profiles, and history options.
+        ToolsConfig
+            Tools configuration with environment overrides applied.
         """
-        tools_cfg = _tools_from_env(self.tools)
+        return _tools_from_env(self.tools)
+
+    def resolved_profiles(self) -> ScanProfiles:
+        """Return code/config scan profiles with env overrides applied.
+
+        Returns
+        -------
+        ScanProfiles
+            Resolved code and config scan profiles.
+        """
         code_profile = self.code_profile or profile_from_env(default_code_profile(self.repo_root))
         config_profile = self.config_profile or profile_from_env(
             default_config_profile(self.repo_root)
         )
-        graph_backend = self.graph_backend or GraphBackendConfig()
-        profiles = ScanProfiles(code=code_profile, config=config_profile)
-        return ExecutionConfig.for_default_pipeline(
-            build_dir=self.build_dir,
-            tools=tools_cfg,
-            profiles=profiles,
-            graph_backend=graph_backend,
-            options=ExecutionOptions(
-                history_db_dir=self.history_db_dir,
-                history_commits=self.history_commits or (),
-            ),
-        )
+        return ScanProfiles(code=code_profile, config=config_profile)
+
+    def resolved_graph_backend(self) -> GraphBackendConfig:
+        """Return the graph backend configuration.
+
+        Returns
+        -------
+        GraphBackendConfig
+            Graph backend settings with defaults applied.
+        """
+        return self.graph_backend or GraphBackendConfig()
 
     def storage_config(self) -> StorageConfig:
         """Return an ingest-capable storage configuration.
@@ -194,7 +195,7 @@ class ExportArgs:
         """
         return StorageConfig.for_ingest(self.db_path, history_db_path=self.history_db_dir)
 
-    def build_paths(self, execution: ExecutionConfig, *, db_path: Path | None = None) -> BuildPaths:
+    def build_paths(self, *, db_path: Path | None = None) -> BuildPaths:
         """
         Derive build paths for the current snapshot/execution pair.
 
@@ -205,7 +206,7 @@ class ExportArgs:
         """
         return BuildPaths.from_layout(
             repo_root=self.repo_root,
-            build_dir=execution.build_dir,
+            build_dir=self.build_dir,
             db_path=db_path or self.db_path,
             document_output_dir=self.repo_root / "Document Output",
             log_db_path=self.log_db_path,
@@ -240,28 +241,30 @@ def _build_pipeline_context(args: ExportArgs) -> PipelineContext:
         Context ready for pipeline execution.
     """
     snapshot = args.snapshot_config()
-    execution = args.execution_config()
+    tools_cfg = args.resolved_tools()
+    profiles = args.resolved_profiles()
+    graph_backend = args.resolved_graph_backend()
     storage_config = args.storage_config()
-    paths = args.build_paths(execution, db_path=storage_config.db_path)
+    paths = args.build_paths(db_path=storage_config.db_path)
     gateway = _get_gateway(storage_config)
     tool_runner = ToolRunner(
-        tools_config=execution.tools,
+        tools_config=tools_cfg,
         cache_dir=paths.tool_cache,
     )
-    tool_service = ToolService(runner=tool_runner, tools_config=execution.tools)
+    tool_service = ToolService(runner=tool_runner, tools_config=tools_cfg)
     extra: dict[str, object] = {}
-    if execution.history_commits:
-        extra["history_commits"] = execution.history_commits
-    elif args.history_commits is not None:
+    if args.history_commits:
         extra["history_commits"] = args.history_commits
     return PipelineContext(
         snapshot=snapshot,
-        execution=execution,
         paths=paths,
         gateway=gateway,
         tool_runner=tool_runner,
         tool_service=tool_service,
-        tools=execution.tools,
+        tools=tools_cfg,
+        code_profile_cfg=profiles.code,
+        config_profile_cfg=profiles.config,
+        graph_backend_cfg=graph_backend,
         function_fail_on_missing_spans=args.function_fail_on_missing_spans,
         function_parser=args.function_parser,
         extra=extra,
@@ -917,12 +920,6 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
             code=_code_profile_from_env(repo_root),
             config=_config_profile_from_env(repo_root),
         )
-        execution = ExecutionConfig.for_default_pipeline(
-            build_dir=build_dir,
-            tools=_tools_from_env(),
-            profiles=profiles,
-            graph_backend=_graph_backend_config(),
-        )
         paths = BuildPaths.from_layout(
             repo_root=repo_root,
             build_dir=build_dir,
@@ -930,10 +927,13 @@ def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build
         )
         ctx = PipelineContext(
             snapshot=snapshot,
-            execution=execution,
             paths=paths,
             gateway=gateway,
             function_catalog=catalog,
+            tools=_tools_from_env(),
+            code_profile_cfg=profiles.code,
+            config_profile_cfg=profiles.config,
+            graph_backend_cfg=_graph_backend_config(),
         )
         step.run(ctx)
     except Exception as exc:  # pragma: no cover - error path
@@ -972,12 +972,6 @@ def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir
         code=_code_profile_from_env(repo_root),
         config=_config_profile_from_env(repo_root),
     )
-    execution = ExecutionConfig.for_default_pipeline(
-        build_dir=build_dir,
-        tools=_tools_from_env(),
-        profiles=profiles,
-        graph_backend=_graph_backend_config(),
-    )
     paths = BuildPaths.from_layout(
         repo_root=repo_root,
         build_dir=build_dir,
@@ -985,9 +979,12 @@ def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir
     )
     ctx = PipelineContext(
         snapshot=snapshot,
-        execution=execution,
         paths=paths,
         gateway=gateway,
+        tools=_tools_from_env(),
+        code_profile_cfg=profiles.code,
+        config_profile_cfg=profiles.config,
+        graph_backend_cfg=_graph_backend_config(),
     )
     step.run(ctx)
 

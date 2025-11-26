@@ -22,9 +22,9 @@ from codeintel.graphs.function_catalog_service import (
 from codeintel.graphs.function_index import FunctionSpan
 from codeintel.graphs.import_resolver import collect_aliases
 from codeintel.ingestion.common import run_batch
-from codeintel.models.rows import CallGraphEdgeRow, CallGraphNodeRow, call_graph_node_to_tuple
+from codeintel.ingestion.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.gateway import DuckDBError, StorageGateway
-from codeintel.utils.paths import normalize_rel_path, relpath_to_module
+from codeintel.storage.rows import CallGraphEdgeRow, CallGraphNodeRow, call_graph_node_to_tuple
 
 log = logging.getLogger(__name__)
 
