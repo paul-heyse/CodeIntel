@@ -95,7 +95,7 @@ from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.pipeline.export.export_jsonl import export_all_jsonl
+from codeintel.pipeline.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.pipeline.export.export_parquet import export_all_parquet
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.storage.gateway import (
@@ -1380,12 +1380,12 @@ class ExportDocsStep:
         export_all_parquet(
             ctx.gateway,
             ctx.document_output_dir,
-            datasets=datasets,
+            options=ExportCallOptions(validate_exports=False, datasets=datasets),
         )
         export_all_jsonl(
             ctx.gateway,
             ctx.document_output_dir,
-            datasets=datasets,
+            options=ExportCallOptions(validate_exports=False, datasets=datasets),
         )
         log.info("Document Output refreshed at %s", ctx.document_output_dir)
 

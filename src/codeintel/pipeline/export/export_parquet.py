@@ -11,6 +11,7 @@ from pathlib import Path
 from time import perf_counter
 
 from codeintel.pipeline.export import DEFAULT_VALIDATION_SCHEMAS
+from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.manifest import write_dataset_manifest
 from codeintel.pipeline.export.validate_exports import validate_files
 from codeintel.serving.http.datasets import validate_dataset_registry
@@ -26,12 +27,14 @@ log = logging.getLogger(__name__)
 
 MAX_EXPORT_LIMIT = 9_223_372_036_854_775_807
 AUDIT_LOG_PATH = os.getenv("CODEINTEL_EXPORT_AUDIT_LOG")
-AUDIT_SQL_LOG_PATH = os.getenv("CODEINTEL_EXPORT_AUDIT_SQL_LOG")
 AUDIT_TABLE_ENABLED = os.getenv("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
 # When set, the above enable audit logging of export metadata.
 
+
 @dataclass(frozen=True)
 class AuditRecord:
+    """Metadata about a Parquet export for optional audit logging."""
+
     table_name: str
     macro: str
     rows: int | None
@@ -40,7 +43,8 @@ class AuditRecord:
 
 
 def _validate_registry_or_raise(gateway: StorageGateway) -> None:
-    """Validate dataset registry and normalize error type for schema mismatches.
+    """
+    Validate dataset registry and normalize error type for schema mismatches.
 
     Raises
     ------
@@ -125,24 +129,35 @@ NORMALIZED_MACROS: dict[str, str] = {
     "analytics.behavioral_coverage": "metadata.normalized_behavioral_coverage",
 }
 
+
 def _macro_relation(
     con: DuckDBConnection,
     table_key: str,
     row_limit: int,
     row_offset: int,
     *,
-    require_normalized_macros: bool = False,
+    require_normalized_macros: bool,
 ) -> tuple[DuckDBRelation, str]:
     macro = NORMALIZED_MACROS.get(table_key)
     if macro:
         log.debug("Exporting via normalized macro for %s: %s", table_key, macro)
-        return (
-            con.sql(
-                f"SELECT * FROM {macro}(?, ?, ?)",  # noqa: S608 - trusted macro name
-                params=[table_key, row_limit, row_offset],
-            ),
-            macro,
-        )
+        try:
+            return (
+                con.sql(
+                    f"SELECT * FROM {macro}(?, ?, ?)",  # noqa: S608 - trusted macro name
+                    params=[table_key, row_limit, row_offset],
+                ),
+                macro,
+            )
+        except DuckDBError as exc:
+            if require_normalized_macros:
+                message = f"No normalized macro available for {table_key}"
+                raise ValueError(message) from exc
+            log.warning(
+                "Normalized macro %s missing; falling back to dataset_rows for %s",
+                macro,
+                table_key,
+            )
     if require_normalized_macros:
         message = f"No normalized macro found for {table_key}"
         raise ValueError(message)
@@ -159,10 +174,6 @@ def _macro_relation(
     )
 
 
-def _explain_sql(con: DuckDBConnection, sql: str, params: list[object]) -> str | None:
-    return None
-
-
 def _write_audit_entry(
     *,
     record: AuditRecord,
@@ -170,7 +181,7 @@ def _write_audit_entry(
 ) -> None:
     if AUDIT_LOG_PATH is None and not AUDIT_TABLE_ENABLED:
         return
-    record = {
+    json_record = {
         "table": record.table_name,
         "macro": record.macro,
         "rows": record.rows,
@@ -179,9 +190,8 @@ def _write_audit_entry(
     }
     if AUDIT_LOG_PATH is not None:
         with Path(AUDIT_LOG_PATH).open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record))
+            handle.write(json.dumps(json_record))
             handle.write("\n")
-    # Skip writing SQL/plan to file to avoid string-based SQL emission concerns.
     if AUDIT_TABLE_ENABLED:
         con.execute(
             """
@@ -204,18 +214,15 @@ def _write_audit_entry(
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                record["table"],
-                record["macro"],
-                record["rows"],
-                record["duration_s"],
-                record["output"],
+                record.table_name,
+                record.macro,
+                record.rows,
+                record.duration_s,
+                str(record.output_path),
                 None,
                 None,
             ],
         )
-
-
-
 
 
 def export_parquet_for_table(
@@ -227,21 +234,6 @@ def export_parquet_for_table(
 ) -> None:
     """
     Export a single DuckDB table to Parquet.
-
-    Parameters
-    ----------
-    gateway :
-        StorageGateway providing the DuckDB connection.
-    table_name : str
-        Fully qualified table name (schema.table) to export.
-    output_path : Path
-        Destination path for the Parquet file.
-
-    Notes
-    -----
-    Uses `COPY (SELECT * FROM <table>) TO <path> (FORMAT PARQUET)`. The export
-    assumes the database already scopes data to a single repo/commit. Table
-    names are validated against the known dataset mapping to avoid unsafe SQL.
 
     Raises
     ------
@@ -262,7 +254,6 @@ def export_parquet_for_table(
         0,
         require_normalized_macros=require_normalized_macros,
     )
-    sql_text = None
     write_parquet = getattr(rel, "write_parquet", None)
     if write_parquet is not None:
         write_parquet(str(output_path))
@@ -308,19 +299,10 @@ def export_dataset_to_parquet(
     dataset_name: str,
     output_dir: Path,
     *,
-    require_normalized_macros: bool = False,
+    options: ExportCallOptions | None = None,
 ) -> Path:
     """
     Export a dataset resolved through the dataset registry to Parquet.
-
-    Parameters
-    ----------
-    gateway :
-        StorageGateway providing the DuckDB connection.
-    dataset_name : str
-        Logical dataset name to export (e.g., ``function_profile``).
-    output_dir : Path
-        Destination directory for the Parquet file.
 
     Returns
     -------
@@ -340,11 +322,12 @@ def export_dataset_to_parquet(
     table_name = dataset_mapping[dataset_name]
     filename = parquet_mapping.get(table_name, f"{dataset_name}.parquet")
     output_path = output_dir / filename
+    opts = options or ExportCallOptions()
     export_parquet_for_table(
         gateway,
         table_name,
         output_path,
-        require_normalized_macros=require_normalized_macros,
+        require_normalized_macros=opts.require_normalized_macros,
     )
     return output_path
 
@@ -353,33 +336,17 @@ def export_all_parquet(
     gateway: StorageGateway,
     document_output_dir: Path,
     *,
-    validate_exports: bool = True,
-    schemas: list[str] | None = None,
-    datasets: list[str] | None = None,
-    require_normalized_macros: bool = False,
+    options: ExportCallOptions | None = None,
 ) -> None:
     """
     Export configured datasets to Parquet files under `Document Output/`.
-
-    Parameters
-    ----------
-    gateway:
-        StorageGateway with all tables populated.
-    document_output_dir:
-        Path to the `Document Output/` directory (will be created
-        if it does not exist).
-    validate_exports:
-        Whether to validate selected datasets against JSON Schemas after export.
-    schemas:
-        Optional subset of schema names to validate; defaults to the standard export set.
-    datasets:
-        Optional list of dataset names to export; defaults to datasets with Parquet filenames.
 
     Raises
     ------
     ExportError
         If validation fails for any selected schema after export.
     """
+    opts = options or ExportCallOptions()
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -387,7 +354,7 @@ def export_all_parquet(
     dataset_mapping = gateway.datasets.mapping
     jsonl_mapping = gateway.datasets.jsonl_mapping or {}
     parquet_mapping = gateway.datasets.parquet_mapping or {}
-    selected = _select_dataset_tables(dataset_mapping, parquet_mapping, datasets)
+    selected = _select_dataset_tables(dataset_mapping, parquet_mapping, opts.datasets)
     missing_tables = set(parquet_mapping) - set(dataset_mapping.values())
     for table_name in sorted(missing_tables):
         log.warning("Skipping %s; table not present in dataset registry", table_name)
@@ -402,7 +369,7 @@ def export_all_parquet(
                 gateway,
                 table_name,
                 output_path,
-                require_normalized_macros=require_normalized_macros,
+                require_normalized_macros=opts.require_normalized_macros,
             )
             written.append(output_path)
         except (DuckDBError, OSError, ValueError) as exc:
@@ -424,8 +391,8 @@ def export_all_parquet(
     )
     written.append(manifest_path)
 
-    if validate_exports:
-        schema_list = schemas or DEFAULT_VALIDATION_SCHEMAS
+    if opts.validate_exports:
+        schema_list = opts.schemas or DEFAULT_VALIDATION_SCHEMAS
         for schema_name in schema_list:
             matching = [p for p in written if p.name.startswith(schema_name)]
             if not matching:

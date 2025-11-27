@@ -25,7 +25,12 @@ from codeintel.ingestion.source_scanner import (
     profile_from_env,
 )
 from codeintel.ingestion.tool_runner import ToolRunner
-from codeintel.pipeline.export.runner import ExportOptions, ExportRunner, run_validated_exports
+from codeintel.pipeline.export.export_jsonl import ExportCallOptions
+from codeintel.pipeline.export.runner import (
+    ExportOptions,
+    ExportRunner,
+    run_validated_exports,
+)
 from codeintel.pipeline.orchestration.prefect_flow import ExportArgs, export_docs_flow
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
@@ -615,6 +620,11 @@ def _cmd_subsystem_modules(args: argparse.Namespace) -> int:
 def _cmd_storage_validate_macros(args: argparse.Namespace) -> int:
     """
     Validate macro registry hashes and normalized macro schemas for a database.
+
+    Returns
+    -------
+    int
+        Exit code indicating success (0) or failure (non-zero).
     """
     cfg = StorageConfig.for_ingest(args.db_path)
     gateway = open_gateway(cfg)
@@ -624,7 +634,7 @@ def _cmd_storage_validate_macros(args: argparse.Namespace) -> int:
         validate_dataset_schema_registry(gateway.con)
         validate_normalized_macro_schemas(gateway.con)
     except RuntimeError as exc:
-        LOG.error("Macro validation failed: %s", exc)
+        LOG.exception("Macro validation failed", exc_info=exc)
         gateway.close()
         return 1
     dataset_rows_list = dataset_rows_only_entries()
@@ -680,11 +690,13 @@ def cmd_docs_export(
             gateway=gateway,
             output_dir=out_dir,
             options=ExportOptions(
-                validate_exports=bool(getattr(args, "validate_exports", False)),
-                schemas=schemas,
-                datasets=datasets,
-                require_normalized_macros=bool(
-                    getattr(args, "require_normalized_macros", False)
+                export=ExportCallOptions(
+                    validate_exports=bool(getattr(args, "validate_exports", False)),
+                    schemas=schemas,
+                    datasets=datasets,
+                    require_normalized_macros=bool(
+                        getattr(args, "require_normalized_macros", False)
+                    ),
                 ),
                 validator=validator,
             ),

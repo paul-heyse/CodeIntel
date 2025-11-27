@@ -226,7 +226,7 @@ def _canonical_type(type_str: str) -> str:
 
 def _expected_schema_hash(table_key: str) -> str:
     schema = TABLE_SCHEMAS[table_key]
-    parts = []
+    parts: list[str] = []
     for column in schema.columns:
         canonical_type = _canonical_type(column.type)
         parts.append(f"{column.name}:{canonical_type}")
@@ -247,7 +247,13 @@ def _assert_macro_coverage() -> None:
 
 
 def dataset_rows_only_entries() -> list[str]:
-    """Return datasets explicitly allowlisted for dataset_rows-only reads."""
+    """Return datasets explicitly allowlisted for dataset_rows-only reads.
+
+    Returns
+    -------
+    list[str]
+        Sorted dataset identifiers permitted to use dataset_rows-only reads.
+    """
     return sorted(DATASET_ROWS_ONLY)
 
 
@@ -938,7 +944,9 @@ def validate_dataset_schema_registry(con: DuckDBPyConnection) -> None:
         When schema hashes drift or registry entries are missing.
     """
     expected = {table_key: _expected_schema_hash(table_key) for table_key in TABLE_SCHEMAS}
-    rows = con.execute("SELECT table_key, schema_hash FROM metadata.dataset_schema_registry").fetchall()
+    rows = con.execute(
+        "SELECT table_key, schema_hash FROM metadata.dataset_schema_registry"
+    ).fetchall()
     actual = {str(table_key): str(schema_hash) for table_key, schema_hash in rows}
 
     missing = sorted(set(expected) - set(actual))
@@ -970,13 +978,13 @@ def _macro_schema_differences(con: DuckDBPyConnection) -> list[str]:
 
         expected = {col.name: _canonical_type(col.type) for col in schema.columns}
 
-        missing = set(expected) - set(actual)
+        missing = expected.keys() - actual.keys()
         if missing:
             failures.append(f"{table_key}: missing columns {sorted(missing)}")
             continue
         for col_name, expected_type in expected.items():
             actual_type = actual[col_name]
-            if expected_type in ("TIMESTAMP", "DATE") and actual_type == "VARCHAR":
+            if expected_type in {"TIMESTAMP", "DATE"} and actual_type == "VARCHAR":
                 continue
             if actual_type != expected_type:
                 failures.append(f"{table_key}.{col_name}: {actual_type} != {expected_type}")
@@ -1040,9 +1048,8 @@ def bootstrap_metadata_datasets(
     validate_normalized_macro_schemas(con)
     dataset_rows_list = dataset_rows_only_entries()
     if dataset_rows_list:
-        warning_message = (
-            "dataset_rows-only datasets (no normalized macro): "
-            + ", ".join(dataset_rows_list)
+        warning_message = "dataset_rows-only datasets (no normalized macro): " + ", ".join(
+            dataset_rows_list
         )
         # Use DuckDB's warning log for visibility during bootstrap.
         con.execute("SELECT ? AS warning", [warning_message])

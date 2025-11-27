@@ -98,6 +98,7 @@ from codeintel.ingestion.source_scanner import (
 )
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
+from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions, ExportRunner, run_validated_exports
 from codeintel.pipeline.orchestration.steps import (
     PipelineContext,
@@ -1062,9 +1063,11 @@ def t_export_docs(
     """
     resolved_hooks = hooks or ExportTaskHooks()
     export_options = options or ExportOptions(
-        validate_exports=False,
-        schemas=None,
-        datasets=None,
+        export=ExportCallOptions(
+            validate_exports=False,
+            schemas=None,
+            datasets=None,
+        ),
         validator=resolved_hooks.validator,
     )
     if options is not None and options.validator is not resolved_hooks.validator:

@@ -32,13 +32,29 @@ AUDIT_TABLE_ENABLED = os.getenv("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
 # When set, the above enable audit logging of export metadata.
 
 
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "false").lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class AuditRecord:
+    """Metadata about a completed export for optional audit logging."""
+
     table_name: str
     macro: str
     rows: int | None
     duration_s: float
     output_path: Path
+
+
+@dataclass(frozen=True)
+class ExportCallOptions:
+    """Options controlling dataset selection, validation, and macro enforcement."""
+
+    validate_exports: bool = True
+    schemas: list[str] | None = None
+    datasets: list[str] | None = None
+    require_normalized_macros: bool = False
 
 
 def _validate_registry_or_raise(gateway: StorageGateway) -> None:
@@ -156,13 +172,23 @@ def _macro_relation(
     macro = NORMALIZED_MACROS.get(table_key)
     if macro:
         log.debug("Exporting via normalized macro for %s: %s", table_key, macro)
-        return (
-            con.sql(
-                f"SELECT * FROM {macro}(?, ?, ?)",  # noqa: S608 - macro name is trusted
-                params=[table_key, row_limit, row_offset],
-            ),
-            macro,
-        )
+        try:
+            return (
+                con.sql(
+                    f"SELECT * FROM {macro}(?, ?, ?)",  # noqa: S608 - macro name is trusted
+                    params=[table_key, row_limit, row_offset],
+                ),
+                macro,
+            )
+        except DuckDBError as exc:
+            if require_normalized_macros:
+                message = f"No normalized macro available for {table_key}"
+                raise ValueError(message) from exc
+            log.warning(
+                "Normalized macro %s missing; falling back to dataset_rows for %s",
+                macro,
+                table_key,
+            )
     if require_normalized_macros:
         message = f"No normalized macro found for {table_key}"
         raise ValueError(message)
@@ -249,6 +275,8 @@ def export_jsonl_for_table(
         Fully qualified table name (schema.table) to export.
     output_path : Path
         Destination path for the JSONL file.
+    require_normalized_macros : bool, optional
+        When True, raise if a normalized macro is not available for this dataset.
 
     Notes
     -----
@@ -349,6 +377,8 @@ def export_dataset_to_jsonl(
         Logical dataset name to export (e.g., ``function_profile``).
     output_dir : Path
         Destination directory for the JSONL file.
+    require_normalized_macros : bool, optional
+        When True, raise if a normalized macro is not available for this dataset.
 
     Returns
     -------
@@ -381,10 +411,7 @@ def export_all_jsonl(
     gateway: StorageGateway,
     document_output_dir: Path,
     *,
-    validate_exports: bool = True,
-    schemas: list[str] | None = None,
-    datasets: list[str] | None = None,
-    require_normalized_macros: bool = False,
+    options: ExportCallOptions | None = None,
 ) -> list[Path]:
     """
     Export configured datasets to JSONL files under `Document Output/`.
@@ -395,12 +422,8 @@ def export_all_jsonl(
         StorageGateway providing the DuckDB connection seeded with CodeIntel schemas.
     document_output_dir : Path
         Target directory where JSONL artifacts are written.
-    validate_exports : bool
-        Whether to validate selected datasets against JSON Schemas after export.
-    schemas : list[str] | None
-        Optional subset of schema names to validate; defaults to the standard export set.
-    datasets : list[str] | None
-        Optional list of dataset names to export; defaults to datasets with JSONL filenames.
+    options : ExportCallOptions | None
+        Export options controlling dataset selection, validation, and macro requirements.
 
     Returns
     -------
@@ -415,25 +438,27 @@ def export_all_jsonl(
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
 
+    opts = options or ExportCallOptions()
     _validate_registry_or_raise(gateway)
     dataset_mapping = gateway.datasets.mapping
     jsonl_mapping = gateway.datasets.jsonl_mapping or {}
-    parquet_mapping = gateway.datasets.parquet_mapping or {}
-    selected = _select_dataset_tables(dataset_mapping, jsonl_mapping, datasets)
+    require_normalized = opts.require_normalized_macros or _env_flag(
+        "CODEINTEL_REQUIRE_NORMALIZED_MACROS"
+    )
+    selected = _select_dataset_tables(dataset_mapping, jsonl_mapping, opts.datasets)
     for table_name in sorted(set(jsonl_mapping) - set(dataset_mapping.values())):
         log.warning("Skipping %s; table not present in dataset registry", table_name)
 
     written: list[Path] = []
 
     for dataset_name, table_name in sorted(selected.items()):
-        filename = jsonl_mapping.get(table_name, f"{dataset_name}.jsonl")
-        output_path = document_output_dir / filename
+        output_path = document_output_dir / jsonl_mapping.get(table_name, f"{dataset_name}.jsonl")
         try:
             export_jsonl_for_table(
                 gateway,
                 table_name,
                 output_path,
-                require_normalized_macros=require_normalized_macros,
+                require_normalized_macros=require_normalized,
             )
             written.append(output_path)
         except (DuckDBError, OSError, ValueError) as exc:
@@ -467,14 +492,13 @@ def export_all_jsonl(
         document_output_dir,
         dataset_mapping,
         jsonl_mapping=jsonl_mapping,
-        parquet_mapping=parquet_mapping,
+        parquet_mapping=gateway.datasets.parquet_mapping or {},
         selected=list(selected.keys()),
     )
     written.append(manifest_path)
 
-    if validate_exports:
-        schema_list = schemas or DEFAULT_VALIDATION_SCHEMAS
-        for schema_name in schema_list:
+    if opts.validate_exports:
+        for schema_name in opts.schemas or DEFAULT_VALIDATION_SCHEMAS:
             matching = [p for p in written if p.name.startswith(schema_name)]
             if not matching:
                 continue

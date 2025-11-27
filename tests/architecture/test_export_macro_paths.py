@@ -11,7 +11,14 @@ DISALLOWED_SNIPPETS = (
 
 
 def test_exporters_avoid_direct_table_reads() -> None:
-    """Exporters should be macro-driven, not direct table/dataframe reads."""
+    """
+    Exporters should be macro-driven, not direct table/dataframe reads.
+
+    Raises
+    ------
+    AssertionError
+        When disallowed snippets are found.
+    """
     base = Path("src/codeintel/pipeline/export")
     targets = [
         base / "export_jsonl.py",
@@ -20,8 +27,7 @@ def test_exporters_avoid_direct_table_reads() -> None:
     offenders: list[str] = []
     for path in targets:
         text = path.read_text(encoding="utf-8")
-        for snippet in DISALLOWED_SNIPPETS:
-            if snippet in text:
-                offenders.append(f"{path}:{snippet}")
+        offenders.extend(f"{path}:{snippet}" for snippet in DISALLOWED_SNIPPETS if snippet in text)
     if offenders:
-        raise AssertionError(f"Disallowed direct table/dataframe use: {', '.join(offenders)}")
+        message = f"Disallowed direct table/dataframe use: {', '.join(offenders)}"
+        raise AssertionError(message)

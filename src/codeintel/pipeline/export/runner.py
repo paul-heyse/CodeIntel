@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from codeintel.pipeline.export.export_jsonl import export_all_jsonl
+from codeintel.pipeline.export.export_jsonl import (
+    ExportCallOptions,
+    export_all_jsonl,
+)
 from codeintel.pipeline.export.export_parquet import export_all_parquet
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.storage.gateway import StorageGateway
@@ -21,9 +24,7 @@ class Exporter(Protocol):
         gateway: StorageGateway,
         document_output_dir: Path,
         *,
-        validate_exports: bool,
-        schemas: list[str] | None,
-        datasets: list[str] | None,
+        options: ExportCallOptions | None = None,
     ) -> None:
         """Execute an export call."""
         ...
@@ -37,9 +38,7 @@ class JsonlExporter(Protocol):
         gateway: StorageGateway,
         document_output_dir: Path,
         *,
-        validate_exports: bool,
-        schemas: list[str] | None,
-        datasets: list[str] | None,
+        options: ExportCallOptions | None = None,
     ) -> list[Path]:
         """Execute an export call and return emitted file paths."""
         ...
@@ -63,10 +62,7 @@ class ExportRunner(Protocol):
 class ExportOptions:
     """Options controlling export validation and dataset selection."""
 
-    validate_exports: bool = False
-    schemas: list[str] | None = None
-    datasets: list[str] | None = None
-    require_normalized_macros: bool = False
+    export: ExportCallOptions = field(default_factory=ExportCallOptions)
     validator: Callable[[StorageGateway], None] = validate_dataset_registry
     export_parquet_fn: Exporter = field(default=export_all_parquet)
     export_jsonl_fn: JsonlExporter = field(default=export_all_jsonl)
@@ -100,16 +96,10 @@ def run_validated_exports(
     opts.export_parquet_fn(
         gateway,
         output_dir,
-        validate_exports=opts.validate_exports,
-        schemas=opts.schemas,
-        datasets=opts.datasets,
-        require_normalized_macros=opts.require_normalized_macros,
+        options=opts.export,
     )
     return opts.export_jsonl_fn(
         gateway,
         output_dir,
-        validate_exports=opts.validate_exports,
-        schemas=opts.schemas,
-        datasets=opts.datasets,
-        require_normalized_macros=opts.require_normalized_macros,
+        options=opts.export,
     )

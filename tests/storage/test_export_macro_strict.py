@@ -21,20 +21,21 @@ def test_require_macros_allows_macro_backed_tables(
         output,
         require_normalized_macros=True,
     )
-    assert output.exists()
+    if not output.exists():
+        pytest.fail("Expected JSONL export output to be written")
 
 
 def test_require_macros_rejects_dataset_rows_only(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="No normalized macro"):
         export_jsonl_for_table(
             fresh_gateway,
             "core.goids",
             tmp_path / "goids.jsonl",
             require_normalized_macros=True,
         )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="No normalized macro"):
         export_parquet_for_table(
             fresh_gateway,
             "core.goids",

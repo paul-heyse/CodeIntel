@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
+from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions, run_validated_exports
 from codeintel.storage.gateway import StorageConfig, StorageGateway
 
@@ -61,17 +62,35 @@ def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) 
         _ = gateway.datasets
         calls.append("validator")
 
-    def export_parquet_fn(*_: object, **kwargs: object) -> None:
-        calls.append(f"parquet:{kwargs.get('datasets')}")
+    def export_parquet_fn(
+        gateway: StorageGateway,
+        document_output_dir: Path,
+        *,
+        options: ExportCallOptions | None = None,
+    ) -> None:
+        _ = gateway
+        _ = document_output_dir
+        opts = options or ExportCallOptions()
+        calls.append(f"parquet:{opts.datasets}")
 
-    def export_jsonl_fn(*_: object, **kwargs: object) -> list[Path]:
-        calls.append(f"jsonl:{kwargs.get('datasets')}")
+    def export_jsonl_fn(
+        gateway: StorageGateway,
+        document_output_dir: Path,
+        *,
+        options: ExportCallOptions | None = None,
+    ) -> list[Path]:
+        _ = gateway
+        _ = document_output_dir
+        opts = options or ExportCallOptions()
+        calls.append(f"jsonl:{opts.datasets}")
         return [tmp_path / "dummy.jsonl"]
 
     options = ExportOptions(
-        validate_exports=False,
-        schemas=None,
-        datasets=["a"],
+        export=ExportCallOptions(
+            validate_exports=False,
+            schemas=None,
+            datasets=["a"],
+        ),
         validator=cast("Callable[[StorageGateway], None]", validator),
         export_parquet_fn=export_parquet_fn,
         export_jsonl_fn=export_jsonl_fn,
