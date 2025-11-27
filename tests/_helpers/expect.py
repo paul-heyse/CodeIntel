@@ -73,9 +73,7 @@ def expect_is_instance(
     """
     if isinstance(value, expected_type):
         return
-    failure_message = (
-        f"{_prefix(label)}expected instance of {expected_type!r}, got {type(value)!r}"
-    )
+    failure_message = f"{_prefix(label)}expected instance of {expected_type!r}, got {type(value)!r}"
     raise AssertionError(failure_message)
 
 
