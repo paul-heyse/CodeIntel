@@ -11,9 +11,7 @@ from codeintel.ingestion.ingest_service import ingest_via_macro
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
-def _sample_rows(
-    con: DuckDBConnection, table_key: str, count: int
-) -> list[tuple[object, ...]]:
+def _sample_rows(con: DuckDBConnection, table_key: str, count: int) -> list[tuple[object, ...]]:
     cols = con.execute(
         """
         SELECT column_name, data_type, is_nullable

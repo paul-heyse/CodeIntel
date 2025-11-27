@@ -52,27 +52,20 @@ def _macro_insert_rows(
     normalized: list[tuple[object, ...]] = []
     for row in rows_list:
         if len(row) > col_count:
-            message = (
-                f"Row for {table_key} has {len(row)} values, exceeds column count {col_count}"
-            )
+            message = f"Row for {table_key} has {len(row)} values, exceeds column count {col_count}"
             raise ValueError(message)
         padded = tuple(row) + (None,) * (col_count - len(row))
         normalized.append(padded)
     view_name = f"temp_ingest_values_{table_name}"
     con.execute(f"DROP TABLE IF EXISTS {view_name}")
-    con.execute(
-        f"CREATE TEMP TABLE {view_name} AS SELECT * FROM {table_sql} WHERE 0=1"  # noqa: S608
-    )
+    con.table(table_key).limit(0).create(view_name)
     placeholders = ", ".join("?" for _ in columns)
     column_list = ", ".join(columns)
     con.executemany(
         f"INSERT INTO {view_name} ({column_list}) VALUES ({placeholders})",  # noqa: S608 - validated
         normalized,
     )
-    macro_name = f"metadata.ingest_{table_name}"
-    con.execute(
-        f"INSERT INTO {table_sql} SELECT * FROM {macro_name}(?)", [view_name]  # noqa: S608 - validated
-    )
+    con.table(view_name).insert_into(table_key)
     con.execute(f"DROP TABLE IF EXISTS {view_name}")
 
 
@@ -337,7 +330,8 @@ class CoreTables:
             Iterable of (module, path, repo, commit).
         """
         normalized = [
-            (module, path, repo, commit, "python", "[]", "[]") for module, path, repo, commit in rows
+            (module, path, repo, commit, "python", "[]", "[]")
+            for module, path, repo, commit in rows
         ]
         _macro_insert_rows(self.con, "core.modules", normalized)
 
@@ -510,10 +504,7 @@ class GraphTables:
             elif len(row) == expected_full_len:
                 normalized_rows.append(tuple(row))
             else:
-                message = (
-                    "symbol_use_edges rows must have 5 or 7 fields, "
-                    f"got {len(row)}: {row}"
-                )
+                message = f"symbol_use_edges rows must have 5 or 7 fields, got {len(row)}: {row}"
                 raise ValueError(message)
         _macro_insert_rows(self.con, "graph.symbol_use_edges", normalized_rows)
 

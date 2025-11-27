@@ -363,6 +363,7 @@ INGEST_MACROS: dict[str, str] = {
     if not table_key.startswith("metadata.")
 }
 
+
 def _build_ingest_macro_ddl(macro: str) -> str:
     """
     Build DDL for an ingest macro using a validated macro name.

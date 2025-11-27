@@ -2036,9 +2036,7 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
         gateway.con.execute(
             "DELETE FROM core.modules WHERE path IN ('pkg/mod_a.py', 'pkg/mod_b.py')"
         )
-        gateway.con.execute(
-            "DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1001, 1002)"
-        )
+        gateway.con.execute("DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1001, 1002)")
         insert_goids(
             gateway,
             [

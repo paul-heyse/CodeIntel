@@ -24,41 +24,7 @@ Legacy step configs have been migrated to use `ConfigBuilder` and the new step c
 Use `ConfigBuilder.from_snapshot()` to create step configurations.
 """
 
-from codeintel.config.builder import (
-    BehavioralCoverageStepConfig,
-    CallGraphStepConfig,
-    CFGBuilderStepConfig,
-    ConfigBuilder,
-    ConfigDataFlowStepConfig,
-    ConfigIngestStepConfig,
-    CoverageAnalyticsStepConfig,
-    CoverageIngestStepConfig,
-    DataModelsStepConfig,
-    DataModelUsageStepConfig,
-    DocstringStepConfig,
-    EntryPointsStepConfig,
-    ExternalDependenciesStepConfig,
-    FunctionAnalyticsStepConfig,
-    FunctionContractsStepConfig,
-    FunctionEffectsStepConfig,
-    FunctionHistoryStepConfig,
-    GoidBuilderStepConfig,
-    GraphMetricsStepConfig,
-    HistoryTimeseriesStepConfig,
-    HotspotsStepConfig,
-    ImportGraphStepConfig,
-    ProfilesAnalyticsStepConfig,
-    PyAstIngestStepConfig,
-    RepoScanStepConfig,
-    ScipIngestStepConfig,
-    SemanticRolesStepConfig,
-    SubsystemsStepConfig,
-    SymbolUsesStepConfig,
-    TestCoverageStepConfig,
-    TestProfileStepConfig,
-    TestsIngestStepConfig,
-    TypingIngestStepConfig,
-)
+from codeintel.config.builder import ConfigBuilder
 
 # Re-export CLI boundary models for convenience
 from codeintel.config.models import (
@@ -76,6 +42,45 @@ from codeintel.config.primitives import (
     StepConfig,
     ToolBinaries,
 )
+from codeintel.config.steps_analytics import (
+    BehavioralCoverageStepConfig,
+    CoverageAnalyticsStepConfig,
+    DataModelsStepConfig,
+    DataModelUsageStepConfig,
+    EntryPointsStepConfig,
+    EntryPointToggles,
+    FunctionAnalyticsStepConfig,
+    FunctionContractsStepConfig,
+    FunctionEffectsStepConfig,
+    FunctionHistoryStepConfig,
+    HistoryTimeseriesStepConfig,
+    HotspotsStepConfig,
+    ProfilesAnalyticsStepConfig,
+    SemanticRolesStepConfig,
+    SubsystemsStepConfig,
+    TestCoverageStepConfig,
+    TestProfileStepConfig,
+)
+from codeintel.config.steps_graphs import (
+    CallGraphStepConfig,
+    CFGBuilderStepConfig,
+    ConfigDataFlowStepConfig,
+    ExternalDependenciesStepConfig,
+    GoidBuilderStepConfig,
+    GraphMetricsStepConfig,
+    ImportGraphStepConfig,
+    SymbolUsesStepConfig,
+)
+from codeintel.config.steps_ingestion import (
+    ConfigIngestStepConfig,
+    CoverageIngestStepConfig,
+    DocstringStepConfig,
+    PyAstIngestStepConfig,
+    RepoScanStepConfig,
+    ScipIngestStepConfig,
+    TestsIngestStepConfig,
+    TypingIngestStepConfig,
+)
 
 __all__ = [
     "BehavioralCoverageStepConfig",
@@ -92,6 +97,7 @@ __all__ = [
     "DataModelUsageStepConfig",
     "DataModelsStepConfig",
     "DocstringStepConfig",
+    "EntryPointToggles",
     "EntryPointsStepConfig",
     "ExecutionOptions",
     "ExternalDependenciesStepConfig",
