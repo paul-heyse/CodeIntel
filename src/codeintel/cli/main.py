@@ -37,6 +37,13 @@ from codeintel.storage.gateway import (
     build_snapshot_gateway_resolver,
     open_gateway,
 )
+from codeintel.storage.metadata_bootstrap import (
+    _assert_macro_coverage,
+    dataset_rows_only_entries,
+    validate_dataset_schema_registry,
+    validate_macro_registry,
+    validate_normalized_macro_schemas,
+)
 
 LOG = logging.getLogger("codeintel.cli")
 
@@ -266,8 +273,30 @@ def _make_parser() -> argparse.ArgumentParser:
         action="append",
         help="Dataset name to export (can be repeated). Defaults to all mapped datasets.",
     )
+    p_export.add_argument(
+        "--require-normalized-macros",
+        action="store_true",
+        help="Fail if any requested dataset lacks a normalized macro.",
+    )
     _add_graph_backend_args(p_export)
     p_export.set_defaults(func=cmd_docs_export)
+
+    # -----------------------------------------------------------------------
+    # storage helpers
+    # -----------------------------------------------------------------------
+    p_storage = subparsers.add_parser("storage", help="Storage validation helpers")
+    storage_sub = p_storage.add_subparsers(dest="subcommand", required=True)
+    p_validate_macros = storage_sub.add_parser(
+        "validate-macros",
+        help="Validate macro registry hashes and normalized macro schemas.",
+    )
+    p_validate_macros.add_argument(
+        "--db-path",
+        type=Path,
+        default=Path("build/db/codeintel_prefect.duckdb"),
+        help="Path to the DuckDB database to validate.",
+    )
+    p_validate_macros.set_defaults(func=_cmd_storage_validate_macros)
 
     # -----------------------------------------------------------------------
     # History aggregation
@@ -583,6 +612,32 @@ def _cmd_subsystem_modules(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_storage_validate_macros(args: argparse.Namespace) -> int:
+    """
+    Validate macro registry hashes and normalized macro schemas for a database.
+    """
+    cfg = StorageConfig.for_ingest(args.db_path)
+    gateway = open_gateway(cfg)
+    try:
+        _assert_macro_coverage()
+        validate_macro_registry(gateway.con)
+        validate_dataset_schema_registry(gateway.con)
+        validate_normalized_macro_schemas(gateway.con)
+    except RuntimeError as exc:
+        LOG.error("Macro validation failed: %s", exc)
+        gateway.close()
+        return 1
+    dataset_rows_list = dataset_rows_only_entries()
+    if dataset_rows_list:
+        LOG.info(
+            "dataset_rows-only datasets (no normalized macro): %s",
+            ", ".join(dataset_rows_list),
+        )
+    gateway.close()
+    LOG.info("Macro validation passed.")
+    return 0
+
+
 def cmd_docs_export(
     args: argparse.Namespace,
     *,
@@ -628,6 +683,9 @@ def cmd_docs_export(
                 validate_exports=bool(getattr(args, "validate_exports", False)),
                 schemas=schemas,
                 datasets=datasets,
+                require_normalized_macros=bool(
+                    getattr(args, "require_normalized_macros", False)
+                ),
                 validator=validator,
             ),
         )

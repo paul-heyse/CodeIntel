@@ -1,3 +1,781 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="3" tests="308" time="33.816" timestamp="2025-11-26T15:35:12.904337-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.analytics.test_ast_utils" name="test_safe_unparse_survives_invalid_nodes" time="0.001" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_neighbor_stats_with_weights" time="0.001" /><testcase classname="tests.analytics.test_cli_parser" name="test_function_parser_invalid_exits" time="0.004" /><testcase classname="tests.analytics.test_history_timeseries" name="test_history_timeseries_aggregates_functions" time="5.003" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_flask_role_detected" time="0.001" /><testcase classname="tests.analytics.test_graph_metrics_calculations" name="test_graph_metrics_ready_gateway_smoke" time="0.345" /><testcase classname="tests.analytics.test_domain_api_exports" name="test_graphs_api_exports_expected_symbols" time="0.001" /><testcase classname="tests.analytics.test_domain_api_exports" name="test_history_api_exports_expected_symbols" time="0.000" /><testcase classname="tests.analytics.test_span_resolver" name="test_build_span_index_skips_missing_goids" time="0.002" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_global_graph_stats_triangle" time="0.003" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_component_metadata_cycles_and_layers" time="0.001" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_typer_cli_detected" time="0.000" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_pytest_fixture_vs_test_role" time="0.000" /><testcase classname="tests.analytics.test_entrypoint_evidence" name="test_detect_entrypoints_emits_snippet_evidence" time="0.001" /><testcase classname="tests.analytics.test_span_resolver" name="test_resolve_span_success" time="0.001" /><testcase classname="tests.analytics.test_ast_utils" name="test_snippet_from_lines_includes_range" time="0.000" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_projection_metrics_basic" time="0.002" /><testcase classname="tests.analytics.test_evidence" name="test_evidence_collector_deduplicates_and_truncates" time="0.001" /><testcase classname="tests.analytics.test_evidence" name="test_validate_evidence_samples_rejects_invalid_payloads" time="0.001" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_symbol_and_config_metrics_builder_round_trip" time="2.059" /><testcase classname="tests.analytics.test_span_resolver" name="test_resolve_span_missing" time="0.000" /><testcase classname="tests.analytics.test_cli_parser" name="test_function_parser_default_none" time="0.002" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_bipartite_degrees_weight_and_centrality" time="0.001" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_bounded_simple_path_count_caps_results" time="0.001" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_provisioned_gateway_round_trip" time="0.634" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_service_tag_and_graph_signal" time="0.000" /><testcase classname="tests.analytics.test_dependencies_config_values" name="test_load_config_keys_filters_repo" time="2.053" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_structural_metrics_triangle_and_core" time="0.054" /><testcase classname="tests.analytics.test_entrypoints_and_dependencies" name="test_entrypoints_and_dependencies_round_trip" time="2.356" /><testcase classname="tests.analytics.test_graph_stats_smoke" name="test_graph_stats_records_counts_for_basic_graphs" time="0.214" /><testcase classname="tests.cli.test_nx_backend" name="test_maybe_enable_nx_gpu_raises_when_strict" time="0.003" /><testcase classname="tests.analytics.test_graph_metrics_smoke" name="test_compute_graph_metrics_with_small_graph" time="0.203" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_centrality_directed_weighted_and_seeded" time="0.001" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_centrality_undirected_empty_returns_zeroes" time="0.001" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_file_backed_gateway_creates_db" time="1.976" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_graph_views_exist" time="0.647" /><testcase classname="tests.analytics.test_function_history" name="test_function_history_populates_rows" time="2.071" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_graph_metrics_uses_catalog_for_symbol_modules" time="2.108" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_symbol_uses_respects_catalog_module_map" time="2.047" /><testcase classname="tests.analytics.test_functions_validation" name="test_records_validation_when_parse_fails" time="2.073" /><testcase classname="tests.analytics.test_symbol_config_metrics" name="test_symbol_and_config_metrics_populate_and_views_create" time="2.321" /><testcase classname="tests.analytics.test_subsystems" name="test_subsystems_cluster_and_risk_aggregation" time="2.137" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_file_backed_gateway_releases_handles" time="1.991" /><testcase classname="tests.analytics.test_domain_api_exports" name="test_functions_api_exports_expected_symbols" time="0.000" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.behavioral_coverage]" time="2.043" /><testcase classname="tests.architecture.test_analytics_graph_boundary" name="test_analytics_modules_do_not_import_nx_views" time="0.002" /><testcase classname="tests.architecture.test_analytics_imports" name="test_external_imports_use_domain_apis" time="0.005" /><testcase classname="tests.architecture.test_duckdb_boundaries" name="test_duckdb_usage_is_localized" time="0.004" /><testcase classname="tests.architecture.test_nx_views_boundary" name="test_nx_views_only_used_in_graphs_layer" time="0.003" /><testcase classname="tests.architecture.test_query_layer_boundaries" name="test_adapters_do_not_embed_sql" time="0.001" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_projection_module_edges]" time="1.977" /><testcase classname="tests.analytics.test_test_profiles" name="test_ast_index_detects_io_and_asserts" time="0.001" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.functions-expected0]" time="0.000" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.graphs-expected1]" time="0.000" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.history-expected2]" time="0.001" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.parsing-expected3]" time="0.000" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.dfg_block_metrics]" time="1.973" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_graph_stats_include_symbol_and_config_graphs" time="2.037" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_builder_inserts_round_trip" time="1.997" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_symbol_uses_falls_back_to_modules_when_catalog_partial" time="1.994" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.data_model_fields]" time="1.994" /><testcase classname="tests.analytics.test_function_history" name="test_function_history_respects_min_threshold" time="2.022" /><testcase classname="tests.cli.test_docs_export_cli" name="test_cmd_docs_export_invokes_validator_before_exports" time="0.001" /><testcase classname="tests.cli.test_history_timeseries_cli" name="test_history_timeseries_cli_happy_path" time="5.061" /><testcase classname="tests.analytics.test_functions_validation" name="test_span_not_found_is_recorded" time="2.019" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_strict_schema_flag_enforces_views" time="0.274" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_profiles_use_catalog_module_map_when_modules_table_empty" time="2.041" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.cfg_block_metrics]" time="2.002" /><testcase classname="tests.analytics.test_graph_metrics_calculations" name="test_compute_function_graph_metrics_counts_and_cycles" time="0.307" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.external_dependencies]" time="1.991" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_values]" time="1.984" /><testcase classname="tests.analytics.test_symbol_config_metrics" name="test_subsystem_agreement_exposed_in_views" time="2.166" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_effects]" time="1.972" /><testcase classname="tests.analytics.test_graph_metrics_calculations" name="test_compute_module_graph_metrics_with_symbol_coupling" time="0.257" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.dfg_function_metrics]" time="1.975" /><testcase classname="tests.analytics.test_test_profiles" name="test_flakiness_score_caps_at_one" time="0.000" /><testcase classname="tests.analytics.test_test_profiles" name="test_behavior_tags_include_ast_and_io_hints" time="0.000" /><testcase classname="tests.analytics.test_test_profiles" name="test_importance_score_includes_subsystem_risk" time="0.000" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_docs_export_ready_has_non_nulls" time="0.316" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_subsystem_agreement_summary_aggregates" time="2.165" /><testcase classname="tests.analytics.test_model_config_heuristics" name="test_data_models_and_usage_and_config_flow" time="0.251" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_strict_fixtures_expose_views" time="5.707" /><testcase classname="tests.analytics.test_ast_utils" name="test_call_name_resolves_attribute_chain" time="0.001" /><testcase classname="tests.analytics.test_ast_utils" name="test_resolve_call_target_uses_alias_map" time="0.000" /><testcase classname="tests.analytics.test_ast_utils" name="test_literal_value_coercions" time="0.000" /><testcase classname="tests.analytics.test_profiles" name="test_profile_builders_aggregate_expected_fields" time="0.657" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_fastapi_role_detected" time="0.001" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.data_model_relationships]" time="1.987" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_data_flow]" time="1.975" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.cfg_function_metrics]" time="1.984" /><testcase classname="tests.analytics.test_cfg_dfg_metrics_ext" name="test_cfg_metrics_ext_populates_loop_and_unreachable_counts" time="2.075" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.external_dependency_calls]" time="1.979" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.coverage_functions]" time="1.978" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_loose_gateway_allows_schema_drift" time="1.983" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_history]" time="1.982" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.history_timeseries]" time="1.968" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.dfg_function_metrics_ext]" time="1.978" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_metrics_modules]" time="1.974" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_validation_flags_large_symbol_community_and_config_hubs" time="2.014" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.semantic_roles_modules]" time="1.972" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.tags_index]" time="1.969" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_graph_metrics_tests]" time="1.963" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.data_model_usage]" time="1.969" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_graph_metrics_keys]" time="1.964" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.cfg_function_metrics_ext]" time="1.970" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.file_profile]" time="1.969" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.coverage_lines]" time="1.969" /><testcase classname="tests.analytics.test_cfg_dfg_metrics_ext" name="test_dfg_metrics_ext_counts_use_kinds_and_paths" time="2.022" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_types]" time="1.962" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_metrics]" time="1.959" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.hotspots]" time="1.961" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.entrypoint_tests]" time="1.960" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_metrics_modules_ext]" time="1.957" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.subsystem_modules]" time="1.969" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.static_diagnostics]" time="1.964" /><testcase classname="tests.cli.test_history_timeseries_cli" name="test_history_timeseries_cli_missing_snapshot" time="0.966" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_catalog]" time="1.964" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_profile]" time="1.961" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.data_models]" time="1.973" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_graph_metrics_modules]" time="1.971" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.ast_nodes]" time="1.972" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_contracts]" time="1.970" /><testcase classname="tests.cli.test_nx_backend" name="test_maybe_enable_nx_gpu_noop_when_disabled" time="0.000" /><testcase classname="tests.cli.test_nx_backend" name="test_maybe_enable_nx_gpu_soft_fallback" time="0.001" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.goid_crosswalk]" time="1.971" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.call_graph_edges]" time="1.980" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_validation]" time="1.980" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_profile]" time="1.969" /><testcase classname="tests.config.test_subsystems_config" name="test_invalid_overrides_raise[overrides0-integer]" time="0.001" /><testcase classname="tests.config.test_subsystems_config" name="test_invalid_overrides_raise[overrides1-integer]" time="0.001" /><testcase classname="tests.config.test_subsystems_config" name="test_invalid_overrides_raise[overrides2-numeric]" time="0.001" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_validation_passes_on_minimal_data" time="0.733" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.module_profile]" time="1.972" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.entrypoints]" time="1.974" /><testcase classname="tests.docs_export.test_export_edge_columns" name="test_call_graph_edges_export_includes_repo_commit" time="0.653" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_stats]" time="1.980" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_helpers_resolve_dataset_names" time="0.776" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.subsystems]" time="1.986" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.subsystem_agreement]" time="1.984" /><testcase classname="tests.docs_export.test_export_edge_columns" name="test_import_graph_edges_export_includes_repo_commit" time="0.623" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_subset_by_dataset_name" time="1.099" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_validation_runs_against_registry" time="0.326" /><testcase classname="tests.docs_export.test_export_validation_flag" name="test_docs_export_validation_flag_triggers_schema_check" time="4.429" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_coverage_edges]" time="1.983" /><testcase classname="tests.docs_export.test_export_parity" name="test_export_mappings_cover_required_tables" time="0.000" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_callee_import_alias_global_attr_chain" time="0.000" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_callee_unresolved_returns_none" time="0.000" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_via_scip_uses_crosswalk_mapping" time="0.000" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_dedupe_includes_repo_commit_scope" time="0.000" /><testcase classname="tests.graphs.test_engine_factory" name="test_build_graph_engine_uses_backend_flags" time="0.482" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.typedness]" time="1.972" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.cfg_edges]" time="1.986" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_projection_key_edges]" time="1.986" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.cst_nodes]" time="1.993" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.import_modules]" time="1.998" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.goids]" time="1.992" /><testcase classname="tests.graphs.test_engine_factory" name="test_build_graph_engine_cpu_backend_leaves_env_clean" time="0.192" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.call_graph_nodes]" time="2.005" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.goid_risk_factors]" time="1.989" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_subset_validates_dataset_names" time="0.734" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.semantic_roles_functions]" time="1.996" /><testcase classname="tests.docs_export.test_export_validation_models" name="test_data_model_field_schema_validates_fixture" time="0.002" /><testcase classname="tests.docs_export.test_export_validation_models" name="test_data_model_relationship_schema_validates_fixture" time="0.001" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_validation]" time="1.979" /><testcase classname="tests.graphs.test_function_index" name="test_lookup_falls_back_to_enclosing_and_same_line" time="0.001" /><testcase classname="tests.graphs.test_goid_builder_decorators" name="test_goid_start_line_includes_decorator_span" time="0.001" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.symbol_graph_metrics_functions]" time="1.980" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.subsystem_graph_metrics]" time="1.985" /><testcase classname="tests.docs_export.test_validate_exports" name="test_docs_export_views_exist" time="1.963" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_graph_metrics_functions]" time="1.974" /><testcase classname="tests.graphs.test_callgraph_fallback" name="test_callgraph_falls_back_to_ast" time="0.003" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_callee_precedence_local_then_alias" time="0.000" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.ast_metrics]" time="1.990" /><testcase classname="tests.graphs.test_engine_nx" name="test_engine_matches_nx_views_for_core_graphs" time="0.195" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.dfg_edges]" time="1.992" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.docstrings]" time="1.982" /><testcase classname="tests.graphs.test_function_index" name="test_lookup_prefers_exact_span_and_qualname" time="0.000" /><testcase classname="tests.ingestion.test_common_changes" name="test_compute_changes_tracks_add_modify_delete" time="0.203" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.symbol_use_edges]" time="1.969" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.modules]" time="1.966" /><testcase classname="tests.config.test_subsystems_config" name="test_overrides_are_applied_and_typed" time="0.000" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path2]" time="0.001" /><testcase classname="tests.ingestion.test_py_ast_extract" name="test_ast_visitor_records_decorator_span" time="0.001" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_repo_scan_honors_scan_profile" time="0.204" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.cfg_blocks]" time="1.958" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_metrics_functions]" time="1.960" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_aliases_import_and_from_import" time="0.003" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_import_edges_relative_resolution" time="0.001" /><testcase classname="tests.ingestion.test_scip_ingest" name="test_ingest_scip_produces_artifacts" time="0.966"><skipped type="pytest.skip" message="SCIP ingestion not successful in test environment: Tool scip-python failed (code=127)&#10;Args: ('index', '/tmp/pytest-of-paul/pytest-57/popen-gw4/test_ingest_scip_produces_arti0/repo', '--output', '/tmp/pytest-of-paul/pytest-57/popen-gw4/test_ingest_scip_produces_arti0/repo/build/scip/index.scip')&#10;stderr: /usr/bin/env: 'node': No such file or directory">/home/paul/CodeIntel/tests/ingestion/test_scip_ingest.py:56: SCIP ingestion not successful in test environment: Tool scip-python failed (code=127)
-Args: ('index', '/tmp/pytest-of-paul/pytest-57/popen-gw4/test_ingest_scip_produces_arti0/repo', '--output', '/tmp/pytest-of-paul/pytest-57/popen-gw4/test_ingest_scip_produces_arti0/repo/build/scip/index.scip')
-stderr: /usr/bin/env: 'node': No such file or directory</skipped></testcase><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path0]" time="0.001" /><testcase classname="tests.ingestion.test_subprocess_policy" name="test_no_direct_subprocess_usage_outside_tooling" time="0.009" /><testcase classname="tests.ingestion.test_tool_runner" name="test_tool_runner_missing_binary" time="0.001" /><testcase classname="tests.ingestion.test_tool_runner" name="test_tool_runner_unknown_tool" time="0.001" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_coverage_ingest_uses_runner" time="0.734" /><testcase classname="tests.graphs.test_graph_validation_catalog" name="test_graph_validation_orphan_uses_catalog_map" time="2.945" /><testcase classname="tests.docs_export.test_function_validation_export" name="test_function_validation_export" time="2.890" /><testcase classname="tests.docs_export.test_graph_validation_export" name="test_graph_validation_export" time="3.226" /><testcase classname="tests.graphs.test_span_consistency_integration" name="test_span_alignment_across_components" time="2.088" /><testcase classname="tests.ingestion.test_tool_service" name="test_tool_service_pyright_parses_errors" time="0.476" /><testcase classname="tests.graphs.test_symbol_uses_module_fallback" name="test_partial_catalog_map_falls_back_to_db" time="0.977" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.symbol_graph_metrics_modules]" time="1.969" /><testcase classname="tests.graphs.test_symbol_uses_module_fallback" name="test_no_module_mapping_keeps_same_module_false" time="0.979" /><testcase classname="tests.docs_export.test_validate_exports" name="test_export_raises_on_validation_failure" time="3.328" /><testcase classname="tests.docs_export.test_export_parity" name="test_export_mappings_registered_with_dataset_registry" time="3.031" /><testcase classname="tests.docs_export.test_export_runner" name="test_run_validated_exports_invokes_validator_before_exports" time="0.001" /><testcase classname="tests.ingestion.test_scip_ingest" name="test_ingest_scip_uses_injected_runner" time="0.964" /><testcase classname="tests.ingestion.test_tool_service" name="test_tool_service_pyrefly_parses_errors" time="0.498" /><testcase classname="tests.lint.test_no_legacy_data_model_json" name="test_no_legacy_json_usage_outside_whitelist" time="0.007" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_import_edges_deep_relative_and_multi_targets" time="0.003" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_aliases_handles_from_import_aliases_and_packages" time="0.001" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_all_writes_expected_files" time="1.207" /><testcase classname="tests.ingestion.test_tool_service" name="test_tool_service_coverage_reports" time="0.481" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_incremental" time="1.971" /><testcase classname="tests.docs_export.test_validate_exports" name="test_validate_jsonl_happy_path" time="0.002" /><testcase classname="tests.docs_export.test_validate_exports" name="test_validate_jsonl_failure" time="0.002" /><testcase classname="tests.docs_export.test_validate_exports" name="test_export_logs_problem_detail_on_validation_failure" time="3.387" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.import_graph_edges]" time="1.977" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.file_state]" time="1.976" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path1]" time="0.001" /><testcase classname="tests.mcp.test_registry_limits_parity" name="test_limits_parity_between_local_and_remote_configs" time="0.001" /><testcase classname="tests.mcp.test_registry_limits_parity" name="test_registry_helper_matches_base_registry" time="0.001" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.repo_map]" time="1.972" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_typing_ingest_uses_shared_runner" time="0.502" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_metrics_functions_ext]" time="1.986" /><testcase classname="tests.ingestion.test_scip_ingest_ops" name="test_scip_module_filter_limits_to_src_python_files" time="0.007" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_runtime_reuse_with_graph_context" time="0.201" /><testcase classname="tests.orchestration.test_history_timeseries_prefect" name="test_prefect_history_timeseries_step" time="4.258" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_engine_reuse_across_semantic_roles" time="0.193" /><testcase classname="tests.orchestration.test_prefect_export_docs" name="test_t_export_docs_invokes_validator_before_export" time="1.669" /><testcase classname="tests.mcp.test_backend" name="test_read_dataset_rows_unknown" time="2.066" /><testcase classname="tests.graphs.test_import_modules" name="test_import_modules_matches_condensation_layers" time="2.057" /><testcase classname="tests.mcp.test_backend" name="test_tests_for_function_not_found" time="2.066" /><testcase classname="tests.mcp.test_backend" name="test_callgraph_direction_validation" time="2.059" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy" time="2.016" /><testcase classname="tests.graphs.test_validation" name="test_run_graph_validations_emits_warnings" time="2.987" /><testcase classname="tests.mcp.test_backend" name="test_get_function_summary" time="2.049" /><testcase classname="tests.mcp.test_backend_dataset_adapter" name="test_read_dataset_rows_delegates" time="1.982" /><testcase classname="tests.mcp.test_duckdb_backend_engine" name="test_duckdb_backend_uses_injected_engine" time="0.191" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_respects_module_filter_and_deleted_paths" time="2.013" /><testcase classname="tests.mcp.test_wiring_smoke" name="test_mcp_wiring_smoke" time="2.587" /><testcase classname="tests.mcp.test_backend" name="test_get_tests_for_function_invalid" time="2.064" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_graph_runtime_reuses_engine" time="0.200" /><testcase classname="tests.mcp.test_backend" name="test_get_tests_for_function" time="2.069" /><testcase classname="tests.orchestration.test_pipeline_catalog_entrypoint" name="test_pipeline_steps_use_function_catalog" time="1.410" /><testcase classname="tests.orchestration.test_prefect_flow_smoke" name="test_prefect_flow_imports" time="0.000" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_graph_engine_reused_with_backend_flags" time="0.472" /><testcase classname="tests.server.test_fastapi" name="test_function_summary_success" time="1.235" /><testcase classname="tests.graphs.test_callgraph_builder" name="test_callgraph_handles_aliases_and_relative_imports" time="0.279" /><testcase classname="tests.mcp.test_backend" name="test_dataset_rows_clamping" time="2.040" /><testcase classname="tests.mcp.test_backend" name="test_read_function_validation_dataset" time="2.047" /><testcase classname="tests.mcp.test_backend" name="test_dataset_list_includes_function_validation" time="2.053" /><testcase classname="tests.orchestration.test_risk_factors_catalog_fallback" name="test_risk_factors_uses_catalog_modules_when_core_modules_empty" time="1.007" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_callgraph_neighborhood_limits" time="1.150" /><testcase classname="tests.mcp.test_backend" name="test_function_validation_clamping" time="2.038" /><testcase classname="tests.mcp.test_backend_adapter" name="test_require_identifier_validation" time="2.005" /><testcase classname="tests.server.test_fastapi" name="test_tests_for_function_success" time="1.220" /><testcase classname="tests.server.test_fastapi" name="test_dataset_rows_success" time="1.226" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_backend_registry_matches_gateway" time="1.176" /><testcase classname="tests.mcp.test_backend_adapter" name="test_validate_direction_accepts_expected" time="2.001" /><testcase classname="tests.server.test_datasets_registry" name="test_function_validation_dataset_present" time="0.001" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_full_rebuild_flag_forces_rebuild" time="2.020" /><testcase classname="tests.mcp.test_backend" name="test_get_function_summary_invalid" time="2.060" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_fastapi_endpoints_smoke" time="1.276" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_http_backend_against_fastapi" time="1.209" /><testcase classname="tests.server.test_fastapi" name="test_tests_for_function_validation" time="1.201" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_import_boundary_limits" time="1.136" /><testcase classname="tests.services.test_backend_limits" name="test_http_service_applies_backend_limits" time="0.001" /><testcase classname="tests.services.test_query_service" name="test_http_high_risk_clamps_using_limits" time="0.000" /><testcase classname="tests.services.test_query_service" name="test_fastapi_delegates_to_query_service" time="0.032" /><testcase classname="tests.services.test_errors" name="test_problem_defaults_and_to_dict" time="0.000" /><testcase classname="tests.orchestration.test_pipeline_catalog_reuse" name="test_steps_share_function_catalog" time="1.319" /><testcase classname="tests.mcp.test_backend_adapter" name="test_backend_delegates_after_validation" time="2.022" /><testcase classname="tests.server.test_fastapi" name="test_dataset_rows_limit_clamped" time="1.208" /><testcase classname="tests.services.test_factory_wiring" name="test_build_backend_resource_local" time="2.164" /><testcase classname="tests.services.test_errors" name="test_log_problem_emits_json" time="0.001" /><testcase classname="tests.server.test_fastapi" name="test_dataset_rows_unknown_dataset" time="1.202" /><testcase classname="tests.services.test_factory_wiring" name="test_build_backend_resource_remote" time="3.589" /><testcase classname="tests.server.test_fastapi" name="test_function_summary_not_found" time="1.206" /><testcase classname="tests.services.test_query_service" name="test_local_read_dataset_rows_propagates_errors" time="0.001" /><testcase classname="tests.test_tests_analytics_unit" name="test_backfill_test_goids_updates_catalog" time="0.684" /><testcase classname="tests.server.test_fastapi" name="test_backend_registry_matches_gateway" time="1.165" /><testcase classname="tests.services.test_query_service" name="test_local_read_dataset_rows_records_observability" time="0.001" /><testcase classname="tests.test_tests_analytics_unit" name="test_compute_test_coverage_edges_with_real_coverage" time="0.738" /><testcase classname="tests.services.test_query_service" name="test_http_read_dataset_rows_invalid_offset" time="0.001" /><testcase classname="tests.server.test_dataset_registry_parity" name="test_dataset_registry_parity_across_factory_defaults" time="1.999" /><testcase classname="tests.services.test_query_service" name="test_http_read_dataset_rows_clamps_limit" time="0.001" /><testcase classname="tests.server.test_dataset_registry_parity" name="test_backend_resource_limits_and_registry_align" time="2.159" /><testcase classname="tests.services.test_errors" name="test_problem_allows_override_instance_and_type" time="0.001" /><testcase classname="tests.services.test_query_service" name="test_local_query_service_reads_architecture_seed" time="1.607" /><testcase classname="tests.services.test_factory_wiring" name="test_build_backend_resource_gateway_path" time="2.598" /><testcase classname="tests.services.test_query_service" name="test_query_service_contract_local_vs_http" time="1.746" /><testcase classname="tests.services.test_errors" name="test_problem_error_taxonomy_subclasses" time="0.001" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_health_reports_limits" time="1.206" /><testcase classname="tests.test_tests_analytics_unit" name="test_edges_for_file_uses_test_meta" time="0.001" /><testcase classname="tests.services.test_query_service" name="test_mcp_tool_delegation" time="0.006"><skipped type="pytest.skip" message="FastMCP tools registry not available">/home/paul/CodeIntel/tests/services/test_query_service.py:501: FastMCP tools registry not available</skipped></testcase><testcase classname="tests.test_tests_analytics_unit" name="test_compute_test_coverage_edges_respects_injected_loader" time="0.676" /><testcase classname="tests.services.test_query_service" name="test_local_read_dataset_rows_defaults_limit" time="0.001" /><testcase classname="tests.test_callgraph_alias_resolution" name="test_callgraph_resolves_import_alias" time="2.029" /><testcase classname="tests.test_pipeline_smoke" name="test_pipeline_export_docs_smoke" time="0.001"><skipped type="pytest.xfail" message="Pipeline export_docs currently fails in function_effects catalog integration" /></testcase><testcase classname="tests.storage.test_views_scoping" name="test_call_graph_view_scopes_edges_to_repo_commit" time="0.672" /><testcase classname="tests.orchestration.test_prefect_flow_smoke" name="test_prefect_flow_preflight_only" time="5.891" /><testcase classname="tests.orchestration.test_prefect_flow_smoke" name="test_cli_docs_export_with_validation" time="7.916" /><testcase classname="tests.storage.test_schema_function_validation" name="test_apply_all_schemas_creates_function_validation" time="1.964" /><testcase classname="tests.storage.test_schema_alignment" name="test_apply_and_validate_schema_alignment" time="2.103" /><testcase classname="tests.storage.test_gateway_helpers" name="test_insert_helpers_write_expected_rows" time="2.018" /><testcase classname="tests.test_testing_contract" name="test_testing_charter_forbidden_patterns" time="0.009" /><testcase classname="tests.server.test_wiring_smoke" name="test_fastapi_wiring_smoke" time="1.669" /><testcase classname="tests.services.test_backend_limits" name="test_clamp_limit_value_caps_and_reports" time="0.001" /></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="9" skipped="3" tests="324" time="49.273" timestamp="2025-11-26T21:07:56.318656-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.analytics.test_graph_service_unit" name="test_bipartite_degrees_weight_and_centrality" time="0.002" /><testcase classname="tests.analytics.test_ast_utils" name="test_resolve_call_target_uses_alias_map" time="0.001" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_neighbor_stats_with_weights" time="0.001" /><testcase classname="tests.architecture.test_analytics_imports" name="test_external_imports_use_domain_apis" time="0.007" /><testcase classname="tests.analytics.test_cli_parser" name="test_function_parser_invalid_exits" time="0.005" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_fastapi_role_detected" time="0.001" /><testcase classname="tests.analytics.test_domain_api_exports" name="test_history_api_exports_expected_symbols" time="0.001" /><testcase classname="tests.analytics.test_graph_metrics_calculations" name="test_compute_module_graph_metrics_with_symbol_coupling" time="0.538" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.functions-expected0]" time="0.001" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_component_metadata_cycles_and_layers" time="0.001" /><testcase classname="tests.analytics.test_ast_utils" name="test_literal_value_coercions" time="0.000" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_provisioned_gateway_round_trip" time="0.869" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_flask_role_detected" time="0.000" /><testcase classname="tests.analytics.test_entrypoint_evidence" name="test_detect_entrypoints_emits_snippet_evidence" time="0.001" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.graphs-expected1]" time="0.001" /><testcase classname="tests.analytics.test_span_resolver" name="test_build_span_index_skips_missing_goids" time="0.002" /><testcase classname="tests.analytics.test_span_resolver" name="test_resolve_span_success" time="0.001" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_typer_cli_detected" time="0.000" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.history-expected2]" time="0.000" /><testcase classname="tests.analytics.test_span_resolver" name="test_resolve_span_missing" time="0.001" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_pytest_fixture_vs_test_role" time="0.000" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_bounded_simple_path_count_caps_results" time="0.001" /><testcase classname="tests.analytics.test_graph_stats_smoke" name="test_graph_stats_records_counts_for_basic_graphs" time="0.420" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.parsing-expected3]" time="0.000" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_projection_metrics_basic" time="0.002" /><testcase classname="tests.analytics.test_cli_parser" name="test_function_parser_default_none" time="0.002" /><testcase classname="tests.analytics.test_entrypoints_and_dependencies" name="test_entrypoints_and_dependencies_round_trip" time="3.379" /><testcase classname="tests.architecture.test_duckdb_boundaries" name="test_duckdb_usage_is_localized" time="0.004" /><testcase classname="tests.architecture.test_export_macro_paths" name="test_exporters_avoid_direct_table_reads" time="0.000" /><testcase classname="tests.analytics.test_ast_utils" name="test_safe_unparse_survives_invalid_nodes" time="0.000" /><testcase classname="tests.analytics.test_ast_utils" name="test_snippet_from_lines_includes_range" time="0.000" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_file_backed_gateway_releases_handles" time="3.099" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_structural_metrics_triangle_and_core" time="0.058" /><testcase classname="tests.analytics.test_dependencies_config_values" name="test_load_config_keys_filters_repo" time="3.113" /><testcase classname="tests.architecture.test_analytics_graph_boundary" name="test_analytics_modules_do_not_import_nx_views" time="0.002" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_service_tag_and_graph_signal" time="0.001" /><testcase classname="tests.cli.test_docs_export_cli" name="test_cmd_docs_export_invokes_validator_before_exports" time="0.002" /><testcase classname="tests.architecture.test_nx_views_boundary" name="test_nx_views_only_used_in_graphs_layer" time="0.003" /><testcase classname="tests.cli.test_nx_backend" name="test_maybe_enable_nx_gpu_raises_when_strict" time="0.003" /><testcase classname="tests.cli.test_history_timeseries_cli" name="test_history_timeseries_cli_happy_path" time="8.395" /><testcase classname="tests.architecture.test_query_layer_boundaries" name="test_adapters_do_not_embed_sql" time="0.001" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_global_graph_stats_triangle" time="0.003" /><testcase classname="tests.analytics.test_graph_metrics_calculations" name="test_graph_metrics_ready_gateway_smoke" time="0.552" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_file_backed_gateway_creates_db" time="3.050" /><testcase classname="tests.analytics.test_graph_metrics_smoke" name="test_compute_graph_metrics_with_small_graph" time="0.387" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_graph_views_exist" time="0.880" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_centrality_directed_weighted_and_seeded" time="0.001" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_centrality_undirected_empty_returns_zeroes" time="0.001" /><testcase classname="tests.analytics.test_symbol_config_metrics" name="test_subsystem_agreement_exposed_in_views" time="3.264" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_symbol_uses_falls_back_to_modules_when_catalog_partial" time="3.090" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_subsystem_agreement_summary_aggregates" time="3.271" /><testcase classname="tests.analytics.test_function_history" name="test_function_history_populates_rows" time="3.132" /><testcase classname="tests.analytics.test_subsystems" name="test_subsystems_cluster_and_risk_aggregation" time="3.197" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.entrypoint_tests]" time="3.108" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_symbol_uses_respects_catalog_module_map" time="3.120" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_strict_schema_flag_enforces_views" time="0.477" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.behavioral_coverage]" time="3.117" /><testcase classname="tests.analytics.test_domain_api_exports" name="test_functions_api_exports_expected_symbols" time="0.000" /><testcase classname="tests.analytics.test_domain_api_exports" name="test_graphs_api_exports_expected_symbols" time="0.000" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_data_flow]" time="3.091" /><testcase classname="tests.analytics.test_test_profiles" name="test_flakiness_score_caps_at_one" time="0.000" /><testcase classname="tests.analytics.test_test_profiles" name="test_behavior_tags_include_ast_and_io_hints" time="0.000" /><testcase classname="tests.analytics.test_test_profiles" name="test_importance_score_includes_subsystem_risk" time="0.000" /><testcase classname="tests.analytics.test_test_profiles" name="test_ast_index_detects_io_and_asserts" time="0.001" /><testcase classname="tests.analytics.test_evidence" name="test_evidence_collector_deduplicates_and_truncates" time="0.000" /><testcase classname="tests.analytics.test_evidence" name="test_validate_evidence_samples_rejects_invalid_payloads" time="0.001" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_builder_inserts_round_trip" time="3.101" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_graph_stats_include_symbol_and_config_graphs" time="3.126" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_profile]" time="3.063" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_graph_metrics_uses_catalog_for_symbol_modules" time="3.153" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_metrics_functions_ext]" time="3.084" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.entrypoints]" time="3.087" /><testcase classname="tests.analytics.test_function_history" name="test_function_history_respects_min_threshold" time="3.111" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.data_model_usage]" time="3.089" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.cfg_block_metrics]" time="3.101" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_graph_metrics_keys]" time="3.101" /><testcase classname="tests.analytics.test_symbol_config_metrics" name="test_symbol_and_config_metrics_populate_and_views_create" time="3.354" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_validation_flags_large_symbol_community_and_config_hubs" time="3.110" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.history_timeseries]" time="3.086" /><testcase classname="tests.analytics.test_history_timeseries" name="test_history_timeseries_aggregates_functions" time="8.222" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.semantic_roles_modules]" time="3.068" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_loose_gateway_allows_schema_drift" time="3.065" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_docs_export_ready_has_non_nulls" time="0.533" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.file_profile]" time="3.073" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_symbol_and_config_metrics_builder_round_trip" time="3.094" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_types]" time="3.072" /><testcase classname="tests.cli.test_history_timeseries_cli" name="test_history_timeseries_cli_missing_snapshot" time="2.071" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_metrics_modules]" time="3.090" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.data_models]" time="3.099" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.external_dependencies]" time="3.109" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.cfg_function_metrics]" time="3.090" /><testcase classname="tests.analytics.test_functions_validation" name="test_records_validation_when_parse_fails" time="3.108" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_profiles_use_catalog_module_map_when_modules_table_empty" time="3.140" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_graph_metrics_modules]" time="3.091" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.hotspots]" time="3.095" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.static_diagnostics]" time="3.088" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_values]" time="3.098" /><testcase classname="tests.cli.test_nx_backend" name="test_maybe_enable_nx_gpu_noop_when_disabled" time="0.000" /><testcase classname="tests.cli.test_nx_backend" name="test_maybe_enable_nx_gpu_soft_fallback" time="0.001" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_contracts]" time="3.086" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_validation]" time="3.080" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_metrics_modules_ext]" time="3.094" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.external_dependency_calls]" time="3.086" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.dfg_block_metrics]" time="3.101" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.cfg_function_metrics_ext]" time="3.102" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_projection_key_edges]" time="3.086" /><testcase classname="tests.analytics.test_functions_validation" name="test_span_not_found_is_recorded" time="3.104" /><testcase classname="tests.analytics.test_cfg_dfg_metrics_ext" name="test_cfg_metrics_ext_populates_loop_and_unreachable_counts" time="3.187" /><testcase classname="tests.analytics.test_graph_metrics_calculations" name="test_compute_function_graph_metrics_counts_and_cycles" time="0.525" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.module_profile]" time="3.078" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.subsystem_agreement]" time="3.086" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.coverage_functions]" time="3.069" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.cst_nodes]" time="3.078" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_effects]" time="3.077" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.subsystems]" time="3.079" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.goid_risk_factors]" time="3.066" /><testcase classname="tests.analytics.test_model_config_heuristics" name="test_data_models_and_usage_and_config_flow" time="0.445" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_strict_fixtures_expose_views" time="8.121" /><testcase classname="tests.analytics.test_ast_utils" name="test_call_name_resolves_attribute_chain" time="0.001" /><testcase classname="tests.docs_export.test_export_runner" name="test_run_validated_exports_invokes_validator_before_exports" time="0.001" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_all_writes_expected_files" time="0.998"><failure message="TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'">docs_export_gateway = ProvisionedGateway(repo='r', commit='c', repo_root=PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw1/test_export_all...PyConnection object at 0x79d5081319f0&gt;)), runner=&lt;codeintel.ingestion.tool_runner.ToolRunner object at 0x79d50c4d79b0&gt;)
+tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw1/test_export_all_writes_expecte0')
+
+    def test_export_all_writes_expected_files(
+        docs_export_gateway: ProvisionedGateway, tmp_path: Path
+    ) -&gt; None:
+        """
+        Seed a minimal DB and verify Parquet/JSONL exports are produced.
+    
+        This ensures the export mappings are usable end-to-end.
+    
+        Raises
+        ------
+        AssertionError
+            If any expected export is missing after running both exporters.
+        """
+        output_dir = tmp_path / "Document Output"
+&gt;       export_all_parquet(docs_export_gateway.gateway, output_dir)
+
+tests/docs_export/test_export_smoke.py:47: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/codeintel/pipeline/export/export_parquet.py:390: in export_all_parquet
+    export_parquet_for_table(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+gateway = _DuckDBGateway(config=StorageConfig(db_path=PosixPath(':memory:'), read_only=False, apply_schema=True, ensure_views=Tr...ction object at 0x79d5081319f0&gt;), analytics=AnalyticsTables(con=&lt;_duckdb.DuckDBPyConnection object at 0x79d5081319f0&gt;))
+table_name = 'core.ast_metrics', output_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw1/test_export_all_writes_expecte0/Document Output/ast_metrics.parquet')
+
+    def export_parquet_for_table(
+        gateway: StorageGateway,
+        table_name: str,
+        output_path: Path,
+        *,
+        require_normalized_macros: bool = False,
+    ) -&gt; None:
+        """
+        Export a single DuckDB table to Parquet.
+    
+        Parameters
+        ----------
+        gateway :
+            StorageGateway providing the DuckDB connection.
+        table_name : str
+            Fully qualified table name (schema.table) to export.
+        output_path : Path
+            Destination path for the Parquet file.
+    
+        Notes
+        -----
+        Uses `COPY (SELECT * FROM &lt;table&gt;) TO &lt;path&gt; (FORMAT PARQUET)`. The export
+        assumes the database already scopes data to a single repo/commit. Table
+        names are validated against the known dataset mapping to avoid unsafe SQL.
+    
+        Raises
+        ------
+        ValueError
+            If the requested table is not registered in the dataset mapping.
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_mapping = gateway.datasets.mapping
+        if table_name not in dataset_mapping.values():
+            message = f"Refusing to export unknown dataset table: {table_name}"
+            raise ValueError(message)
+        log.info("Exporting %s -&gt; %s", table_name, output_path)
+        start = perf_counter()
+        rel, macro_name = _macro_relation(
+            gateway.con,
+            table_name,
+            MAX_EXPORT_LIMIT,
+            0,
+            require_normalized_macros=require_normalized_macros,
+        )
+        sql_text = f"SELECT * FROM {macro_name}(?, ?, ?)"
+        plan_text = _explain_sql(gateway.con, sql_text, [table_name, MAX_EXPORT_LIMIT, 0])
+        write_parquet = getattr(rel, "write_parquet", None)
+        if write_parquet is not None:
+            write_parquet(str(output_path))
+            row_count_row = rel.aggregate("count(*)").fetchone()
+            rows = int(row_count_row[0]) if row_count_row else 0
+            duration = perf_counter() - start
+&gt;           _write_audit_entry(
+                table_name=table_name,
+                macro=macro_name,
+                rows=rows,
+                duration_s=duration,
+                output_path=output_path,
+                sql=sql_text,
+                plan=plan_text,
+                con=gateway.con,
+            )
+E           TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'
+
+src/codeintel/pipeline/export/export_parquet.py:261: TypeError</failure></testcase><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_stats]" time="3.089" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_catalog]" time="3.089" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.dfg_function_metrics]" time="3.092" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_profile]" time="3.102" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.config_projection_module_edges]" time="3.097" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.semantic_roles_functions]" time="3.099" /><testcase classname="tests.analytics.test_cfg_dfg_metrics_ext" name="test_dfg_metrics_ext_counts_use_kinds_and_paths" time="3.147" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.subsystem_graph_metrics]" time="3.092" /><testcase classname="tests.config.test_subsystems_config" name="test_invalid_overrides_raise[overrides0-integer]" time="0.001" /><testcase classname="tests.config.test_subsystems_config" name="test_invalid_overrides_raise[overrides1-integer]" time="0.001" /><testcase classname="tests.config.test_subsystems_config" name="test_invalid_overrides_raise[overrides2-numeric]" time="0.001" /><testcase classname="tests.docs_export.test_export_edge_columns" name="test_call_graph_edges_export_includes_repo_commit" time="0.898" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.coverage_lines]" time="3.079" /><testcase classname="tests.analytics.test_profiles" name="test_profile_builders_aggregate_expected_fields" time="0.932" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.call_graph_nodes]" time="3.083" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_validation_passes_on_minimal_data" time="0.992"><failure message="TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'">docs_export_gateway = ProvisionedGateway(repo='r', commit='c', repo_root=PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw1/test_export_val...PyConnection object at 0x79d50c4c72f0&gt;)), runner=&lt;codeintel.ingestion.tool_runner.ToolRunner object at 0x79d50c56e360&gt;)
+tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw1/test_export_validation_passes_0')
+
+    def test_export_validation_passes_on_minimal_data(
+        docs_export_gateway: ProvisionedGateway, tmp_path: Path
+    ) -&gt; None:
+        """Ensure validation succeeds when provided with conforming exports."""
+        output_dir = tmp_path / "Document Output"
+&gt;       export_all_parquet(
+            docs_export_gateway.gateway,
+            output_dir,
+            validate_exports=True,
+            schemas=["function_profile"],
+        )
+
+tests/docs_export/test_export_smoke.py:102: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/codeintel/pipeline/export/export_parquet.py:390: in export_all_parquet
+    export_parquet_for_table(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+gateway = _DuckDBGateway(config=StorageConfig(db_path=PosixPath(':memory:'), read_only=False, apply_schema=True, ensure_views=Tr...ction object at 0x79d50c4c72f0&gt;), analytics=AnalyticsTables(con=&lt;_duckdb.DuckDBPyConnection object at 0x79d50c4c72f0&gt;))
+table_name = 'core.ast_metrics', output_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw1/test_export_validation_passes_0/Document Output/ast_metrics.parquet')
+
+    def export_parquet_for_table(
+        gateway: StorageGateway,
+        table_name: str,
+        output_path: Path,
+        *,
+        require_normalized_macros: bool = False,
+    ) -&gt; None:
+        """
+        Export a single DuckDB table to Parquet.
+    
+        Parameters
+        ----------
+        gateway :
+            StorageGateway providing the DuckDB connection.
+        table_name : str
+            Fully qualified table name (schema.table) to export.
+        output_path : Path
+            Destination path for the Parquet file.
+    
+        Notes
+        -----
+        Uses `COPY (SELECT * FROM &lt;table&gt;) TO &lt;path&gt; (FORMAT PARQUET)`. The export
+        assumes the database already scopes data to a single repo/commit. Table
+        names are validated against the known dataset mapping to avoid unsafe SQL.
+    
+        Raises
+        ------
+        ValueError
+            If the requested table is not registered in the dataset mapping.
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_mapping = gateway.datasets.mapping
+        if table_name not in dataset_mapping.values():
+            message = f"Refusing to export unknown dataset table: {table_name}"
+            raise ValueError(message)
+        log.info("Exporting %s -&gt; %s", table_name, output_path)
+        start = perf_counter()
+        rel, macro_name = _macro_relation(
+            gateway.con,
+            table_name,
+            MAX_EXPORT_LIMIT,
+            0,
+            require_normalized_macros=require_normalized_macros,
+        )
+        sql_text = f"SELECT * FROM {macro_name}(?, ?, ?)"
+        plan_text = _explain_sql(gateway.con, sql_text, [table_name, MAX_EXPORT_LIMIT, 0])
+        write_parquet = getattr(rel, "write_parquet", None)
+        if write_parquet is not None:
+            write_parquet(str(output_path))
+            row_count_row = rel.aggregate("count(*)").fetchone()
+            rows = int(row_count_row[0]) if row_count_row else 0
+            duration = perf_counter() - start
+&gt;           _write_audit_entry(
+                table_name=table_name,
+                macro=macro_name,
+                rows=rows,
+                duration_s=duration,
+                output_path=output_path,
+                sql=sql_text,
+                plan=plan_text,
+                con=gateway.con,
+            )
+E           TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'
+
+src/codeintel/pipeline/export/export_parquet.py:261: TypeError</failure></testcase><testcase classname="tests.docs_export.test_export_smoke" name="test_export_subset_by_dataset_name" time="0.965"><failure message="TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'">docs_export_gateway = ProvisionedGateway(repo='r', commit='c', repo_root=PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_su...PyConnection object at 0x72df80f8db30&gt;)), runner=&lt;codeintel.ingestion.tool_runner.ToolRunner object at 0x72df80fa3820&gt;)
+tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_subset_by_dataset_0')
+
+    def test_export_subset_by_dataset_name(
+        docs_export_gateway: ProvisionedGateway, tmp_path: Path
+    ) -&gt; None:
+        """Exports honor dataset-name selection using the registry."""
+        output_dir = tmp_path / "Document Output"
+        selected = ["function_metrics", "goids"]
+&gt;       export_all_parquet(
+            docs_export_gateway.gateway,
+            output_dir,
+            datasets=selected,
+        )
+
+tests/docs_export/test_export_smoke.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/codeintel/pipeline/export/export_parquet.py:390: in export_all_parquet
+    export_parquet_for_table(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+gateway = _DuckDBGateway(config=StorageConfig(db_path=PosixPath(':memory:'), read_only=False, apply_schema=True, ensure_views=Tr...ction object at 0x72df80f8db30&gt;), analytics=AnalyticsTables(con=&lt;_duckdb.DuckDBPyConnection object at 0x72df80f8db30&gt;))
+table_name = 'analytics.function_metrics', output_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_subset_by_dataset_0/Document Output/function_metrics.parquet')
+
+    def export_parquet_for_table(
+        gateway: StorageGateway,
+        table_name: str,
+        output_path: Path,
+        *,
+        require_normalized_macros: bool = False,
+    ) -&gt; None:
+        """
+        Export a single DuckDB table to Parquet.
+    
+        Parameters
+        ----------
+        gateway :
+            StorageGateway providing the DuckDB connection.
+        table_name : str
+            Fully qualified table name (schema.table) to export.
+        output_path : Path
+            Destination path for the Parquet file.
+    
+        Notes
+        -----
+        Uses `COPY (SELECT * FROM &lt;table&gt;) TO &lt;path&gt; (FORMAT PARQUET)`. The export
+        assumes the database already scopes data to a single repo/commit. Table
+        names are validated against the known dataset mapping to avoid unsafe SQL.
+    
+        Raises
+        ------
+        ValueError
+            If the requested table is not registered in the dataset mapping.
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_mapping = gateway.datasets.mapping
+        if table_name not in dataset_mapping.values():
+            message = f"Refusing to export unknown dataset table: {table_name}"
+            raise ValueError(message)
+        log.info("Exporting %s -&gt; %s", table_name, output_path)
+        start = perf_counter()
+        rel, macro_name = _macro_relation(
+            gateway.con,
+            table_name,
+            MAX_EXPORT_LIMIT,
+            0,
+            require_normalized_macros=require_normalized_macros,
+        )
+        sql_text = f"SELECT * FROM {macro_name}(?, ?, ?)"
+        plan_text = _explain_sql(gateway.con, sql_text, [table_name, MAX_EXPORT_LIMIT, 0])
+        write_parquet = getattr(rel, "write_parquet", None)
+        if write_parquet is not None:
+            write_parquet(str(output_path))
+            row_count_row = rel.aggregate("count(*)").fetchone()
+            rows = int(row_count_row[0]) if row_count_row else 0
+            duration = perf_counter() - start
+&gt;           _write_audit_entry(
+                table_name=table_name,
+                macro=macro_name,
+                rows=rows,
+                duration_s=duration,
+                output_path=output_path,
+                sql=sql_text,
+                plan=plan_text,
+                con=gateway.con,
+            )
+E           TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'
+
+src/codeintel/pipeline/export/export_parquet.py:261: TypeError</failure></testcase><testcase classname="tests.docs_export.test_validate_exports" name="test_export_raises_on_validation_failure" time="4.418" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.docstrings]" time="3.122" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_history]" time="3.101" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.symbol_graph_metrics_functions]" time="3.104" /><testcase classname="tests.graphs.test_callgraph_fallback" name="test_callgraph_falls_back_to_ast" time="0.003" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_callee_precedence_local_then_alias" time="0.000" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_callee_import_alias_global_attr_chain" time="0.000" /><testcase classname="tests.graphs.test_engine_factory" name="test_build_graph_engine_uses_backend_flags" time="0.812" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_metrics_functions]" time="3.093" /><testcase classname="tests.docs_export.test_export_edge_columns" name="test_import_graph_edges_export_includes_repo_commit" time="0.954" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_subset_validates_dataset_names" time="1.081" /><testcase classname="tests.graphs.test_engine_factory" name="test_build_graph_engine_cpu_backend_leaves_env_clean" time="0.404" /><testcase classname="tests.graphs.test_engine_nx" name="test_engine_matches_nx_views_for_core_graphs" time="0.406" /><testcase classname="tests.graphs.test_function_index" name="test_lookup_prefers_exact_span_and_qualname" time="0.000" /><testcase classname="tests.graphs.test_function_index" name="test_lookup_falls_back_to_enclosing_and_same_line" time="0.001" /><testcase classname="tests.graphs.test_goid_builder_decorators" name="test_goid_start_line_includes_decorator_span" time="0.001" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_aliases_import_and_from_import" time="0.001" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_import_edges_relative_resolution" time="0.001" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_import_edges_deep_relative_and_multi_targets" time="0.001" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_aliases_handles_from_import_aliases_and_packages" time="0.001" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.graph_validation]" time="3.123" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_coverage_edges]" time="3.108" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_helpers_resolve_dataset_names" time="0.532"><failure message="TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'">docs_export_gateway = ProvisionedGateway(repo='r', commit='c', repo_root=PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_he...PyConnection object at 0x72df8153f2f0&gt;)), runner=&lt;codeintel.ingestion.tool_runner.ToolRunner object at 0x72df8012ee00&gt;)
+tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_helpers_resolve_da0')
+
+    def test_export_helpers_resolve_dataset_names(
+        docs_export_gateway: ProvisionedGateway, tmp_path: Path
+    ) -&gt; None:
+        """Dataset-aware export helpers resolve registry names to filenames."""
+        output_dir = tmp_path / "Document Output"
+        jsonl_path = export_dataset_to_jsonl(
+            docs_export_gateway.gateway, "function_metrics", output_dir
+        )
+&gt;       parquet_path = export_dataset_to_parquet(
+            docs_export_gateway.gateway, "function_metrics", output_dir
+        )
+
+tests/docs_export/test_export_smoke.py:169: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/codeintel/pipeline/export/export_parquet.py:332: in export_dataset_to_parquet
+    export_parquet_for_table(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+gateway = _DuckDBGateway(config=StorageConfig(db_path=PosixPath(':memory:'), read_only=False, apply_schema=True, ensure_views=Tr...ction object at 0x72df8153f2f0&gt;), analytics=AnalyticsTables(con=&lt;_duckdb.DuckDBPyConnection object at 0x72df8153f2f0&gt;))
+table_name = 'analytics.function_metrics', output_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_helpers_resolve_da0/Document Output/function_metrics.parquet')
+
+    def export_parquet_for_table(
+        gateway: StorageGateway,
+        table_name: str,
+        output_path: Path,
+        *,
+        require_normalized_macros: bool = False,
+    ) -&gt; None:
+        """
+        Export a single DuckDB table to Parquet.
+    
+        Parameters
+        ----------
+        gateway :
+            StorageGateway providing the DuckDB connection.
+        table_name : str
+            Fully qualified table name (schema.table) to export.
+        output_path : Path
+            Destination path for the Parquet file.
+    
+        Notes
+        -----
+        Uses `COPY (SELECT * FROM &lt;table&gt;) TO &lt;path&gt; (FORMAT PARQUET)`. The export
+        assumes the database already scopes data to a single repo/commit. Table
+        names are validated against the known dataset mapping to avoid unsafe SQL.
+    
+        Raises
+        ------
+        ValueError
+            If the requested table is not registered in the dataset mapping.
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_mapping = gateway.datasets.mapping
+        if table_name not in dataset_mapping.values():
+            message = f"Refusing to export unknown dataset table: {table_name}"
+            raise ValueError(message)
+        log.info("Exporting %s -&gt; %s", table_name, output_path)
+        start = perf_counter()
+        rel, macro_name = _macro_relation(
+            gateway.con,
+            table_name,
+            MAX_EXPORT_LIMIT,
+            0,
+            require_normalized_macros=require_normalized_macros,
+        )
+        sql_text = f"SELECT * FROM {macro_name}(?, ?, ?)"
+        plan_text = _explain_sql(gateway.con, sql_text, [table_name, MAX_EXPORT_LIMIT, 0])
+        write_parquet = getattr(rel, "write_parquet", None)
+        if write_parquet is not None:
+            write_parquet(str(output_path))
+            row_count_row = rel.aggregate("count(*)").fetchone()
+            rows = int(row_count_row[0]) if row_count_row else 0
+            duration = perf_counter() - start
+&gt;           _write_audit_entry(
+                table_name=table_name,
+                macro=macro_name,
+                rows=rows,
+                duration_s=duration,
+                output_path=output_path,
+                sql=sql_text,
+                plan=plan_text,
+                con=gateway.con,
+            )
+E           TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'
+
+src/codeintel/pipeline/export/export_parquet.py:261: TypeError</failure></testcase><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.dfg_function_metrics_ext]" time="3.121" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.typedness]" time="3.111" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.goids]" time="3.125" /><testcase classname="tests.docs_export.test_export_validation_models" name="test_data_model_relationship_schema_validates_fixture" time="0.003" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.import_graph_edges]" time="3.118" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.subsystem_modules]" time="3.112" /><testcase classname="tests.docs_export.test_validate_exports" name="test_validate_jsonl_happy_path" time="0.003" /><testcase classname="tests.docs_export.test_validate_exports" name="test_validate_jsonl_failure" time="0.002" /><testcase classname="tests.docs_export.test_validate_exports" name="test_docs_export_views_exist" time="3.024" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.data_model_fields]" time="3.100" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.cfg_blocks]" time="3.065" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_validation_runs_against_registry" time="0.525" /><testcase classname="tests.docs_export.test_export_validation_flag" name="test_docs_export_validation_flag_triggers_schema_check" time="5.135"><failure message="Failed: Expected success exit code 0 without validation, got 1">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw4/test_docs_export_validation_fl0')
+
+    def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -&gt; None:
+        """Verify docs export honors validation toggle and surfaces failures."""
+        db_path = tmp_path / "db.duckdb"
+        _seed_invalid_function_profile(db_path, tmp_path)
+    
+        output_dir = tmp_path / "out_validate"
+        args_validate = [
+            "docs",
+            "export",
+            "--repo-root",
+            str(tmp_path),
+            "--repo",
+            "demo/repo",
+            "--commit",
+            "deadbeef",
+            "--db-path",
+            str(db_path),
+            "--build-dir",
+            str(tmp_path / "build"),
+            "--document-output-dir",
+            str(output_dir),
+            "--validate",
+        ]
+        exit_code = cli_main.main(args_validate)
+        if exit_code != 1:
+            pytest.fail(f"Expected validation failure exit code 1, got {exit_code}")
+    
+        output_dir_no_validate = tmp_path / "out_no_validate"
+        args_no_validate = [
+            "docs",
+            "export",
+            "--repo-root",
+            str(tmp_path),
+            "--repo",
+            "demo/repo",
+            "--commit",
+            "deadbeef",
+            "--db-path",
+            str(db_path),
+            "--build-dir",
+            str(tmp_path / "build2"),
+            "--document-output-dir",
+            str(output_dir_no_validate),
+        ]
+        exit_code_no_validate = cli_main.main(args_no_validate)
+        if exit_code_no_validate != 0:
+&gt;           pytest.fail(f"Expected success exit code 0 without validation, got {exit_code_no_validate}")
+E           Failed: Expected success exit code 0 without validation, got 1
+
+tests/docs_export/test_export_validation_flag.py:147: Failed</failure></testcase><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.file_state]" time="3.054" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.function_metrics]" time="3.057" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_callee_unresolved_returns_none" time="0.001" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_via_scip_uses_crosswalk_mapping" time="0.000" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_dedupe_includes_repo_commit_scope" time="0.000" /><testcase classname="tests.ingestion.test_common_changes" name="test_compute_changes_tracks_add_modify_delete" time="0.398" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.symbol_graph_metrics_modules]" time="3.069" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path0]" time="0.001" /><testcase classname="tests.ingestion.test_py_ast_extract" name="test_ast_visitor_records_decorator_span" time="0.001" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_repo_scan_honors_scan_profile" time="0.423" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_coverage_ingest_uses_runner" time="0.948" /><testcase classname="tests.docs_export.test_validate_exports" name="test_export_logs_problem_detail_on_validation_failure" time="4.345" /><testcase classname="tests.graphs.test_span_consistency_integration" name="test_span_alignment_across_components" time="3.148" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_typing_ingest_uses_shared_runner" time="0.699" /><testcase classname="tests.graphs.test_symbol_uses_module_fallback" name="test_partial_catalog_map_falls_back_to_db" time="2.023" /><testcase classname="tests.graphs.test_graph_validation_catalog" name="test_graph_validation_orphan_uses_catalog_map" time="3.997" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_graph_metrics_functions]" time="3.042" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.ast_metrics]" time="3.029" /><testcase classname="tests.docs_export.test_function_validation_export" name="test_function_validation_export" time="4.001"><failure message="TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'">fresh_gateway = _DuckDBGateway(config=StorageConfig(db_path=PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw3/test_function_validati...ction object at 0x7bedebfe3a30&gt;), analytics=AnalyticsTables(con=&lt;_duckdb.DuckDBPyConnection object at 0x7bedebfe3a30&gt;))
+tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw3/test_function_validation_expor0')
+
+    def test_function_validation_export(fresh_gateway: StorageGateway, tmp_path: Path) -&gt; None:
+        """Export writes function_validation artifacts when rows exist."""
+        gateway = fresh_gateway
+    
+        insert_function_validation(
+            gateway,
+            [
+                FunctionValidationRow(
+                    repo="demo/repo",
+                    commit="deadbeef",
+                    function_goid_h128=123,
+                    rel_path="mod.py",
+                    qualname="pkg.mod.func",
+                    issue="span_not_found",
+                    detail="Span 1-2",
+                    created_at=datetime.now(UTC),
+                )
+            ],
+        )
+    
+        jsonl_dir = tmp_path / "jsonl"
+        parquet_dir = tmp_path / "parquet"
+        export_all_jsonl(gateway, jsonl_dir)
+&gt;       export_all_parquet(gateway, parquet_dir)
+
+tests/docs_export/test_function_validation_export.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/codeintel/pipeline/export/export_parquet.py:390: in export_all_parquet
+    export_parquet_for_table(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+gateway = _DuckDBGateway(config=StorageConfig(db_path=PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw3/test_function_validati...ction object at 0x7bedebfe3a30&gt;), analytics=AnalyticsTables(con=&lt;_duckdb.DuckDBPyConnection object at 0x7bedebfe3a30&gt;))
+table_name = 'core.ast_metrics', output_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw3/test_function_validation_expor0/parquet/ast_metrics.parquet')
+
+    def export_parquet_for_table(
+        gateway: StorageGateway,
+        table_name: str,
+        output_path: Path,
+        *,
+        require_normalized_macros: bool = False,
+    ) -&gt; None:
+        """
+        Export a single DuckDB table to Parquet.
+    
+        Parameters
+        ----------
+        gateway :
+            StorageGateway providing the DuckDB connection.
+        table_name : str
+            Fully qualified table name (schema.table) to export.
+        output_path : Path
+            Destination path for the Parquet file.
+    
+        Notes
+        -----
+        Uses `COPY (SELECT * FROM &lt;table&gt;) TO &lt;path&gt; (FORMAT PARQUET)`. The export
+        assumes the database already scopes data to a single repo/commit. Table
+        names are validated against the known dataset mapping to avoid unsafe SQL.
+    
+        Raises
+        ------
+        ValueError
+            If the requested table is not registered in the dataset mapping.
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_mapping = gateway.datasets.mapping
+        if table_name not in dataset_mapping.values():
+            message = f"Refusing to export unknown dataset table: {table_name}"
+            raise ValueError(message)
+        log.info("Exporting %s -&gt; %s", table_name, output_path)
+        start = perf_counter()
+        rel, macro_name = _macro_relation(
+            gateway.con,
+            table_name,
+            MAX_EXPORT_LIMIT,
+            0,
+            require_normalized_macros=require_normalized_macros,
+        )
+        sql_text = f"SELECT * FROM {macro_name}(?, ?, ?)"
+        plan_text = _explain_sql(gateway.con, sql_text, [table_name, MAX_EXPORT_LIMIT, 0])
+        write_parquet = getattr(rel, "write_parquet", None)
+        if write_parquet is not None:
+            write_parquet(str(output_path))
+            row_count_row = rel.aggregate("count(*)").fetchone()
+            rows = int(row_count_row[0]) if row_count_row else 0
+            duration = perf_counter() - start
+&gt;           _write_audit_entry(
+                table_name=table_name,
+                macro=macro_name,
+                rows=rows,
+                duration_s=duration,
+                output_path=output_path,
+                sql=sql_text,
+                plan=plan_text,
+                con=gateway.con,
+            )
+E           TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'
+
+src/codeintel/pipeline/export/export_parquet.py:261: TypeError</failure></testcase><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.modules]" time="3.034" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.import_modules]" time="3.020" /><testcase classname="tests.docs_export.test_export_parity" name="test_export_mappings_cover_required_tables" time="4.061" /><testcase classname="tests.graphs.test_symbol_uses_module_fallback" name="test_no_module_mapping_keeps_same_module_false" time="2.045" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.data_model_relationships]" time="3.028" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.cfg_edges]" time="3.014" /><testcase classname="tests.ingestion.test_scip_ingest" name="test_ingest_scip_produces_artifacts" time="2.002"><skipped type="pytest.skip" message="SCIP ingestion not successful in test environment: Tool scip-python failed (code=127)&#10;Args: ('index', '/tmp/pytest-of-paul/pytest-121/popen-gw9/test_ingest_scip_produces_arti0/repo', '--output', '/tmp/pytest-of-paul/pytest-121/popen-gw9/test_ingest_scip_produces_arti0/repo/build/scip/index.scip')&#10;stderr: /usr/bin/env: 'node': No such file or directory">/home/paul/CodeIntel/tests/ingestion/test_scip_ingest.py:56: SCIP ingestion not successful in test environment: Tool scip-python failed (code=127)
+Args: ('index', '/tmp/pytest-of-paul/pytest-121/popen-gw9/test_ingest_scip_produces_arti0/repo', '--output', '/tmp/pytest-of-paul/pytest-121/popen-gw9/test_ingest_scip_produces_arti0/repo/build/scip/index.scip')
+stderr: /usr/bin/env: 'node': No such file or directory</skipped></testcase><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.goid_crosswalk]" time="3.031" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.tags_index]" time="3.021" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path1]" time="0.001" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path2]" time="0.000" /><testcase classname="tests.ingestion.test_scip_ingest_ops" name="test_scip_module_filter_limits_to_src_python_files" time="0.009" /><testcase classname="tests.ingestion.test_subprocess_policy" name="test_no_direct_subprocess_usage_outside_tooling" time="0.009" /><testcase classname="tests.docs_export.test_export_validation_models" name="test_data_model_field_schema_validates_fixture" time="0.002" /><testcase classname="tests.ingestion.test_scip_ingest" name="test_ingest_scip_uses_injected_runner" time="2.036" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[analytics.test_graph_metrics_tests]" time="3.026" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.ast_nodes]" time="3.024" /><testcase classname="tests.ingestion.test_tool_runner" name="test_tool_runner_missing_binary" time="0.002" /><testcase classname="tests.ingestion.test_tool_runner" name="test_tool_runner_unknown_tool" time="0.001" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[core.repo_map]" time="3.029" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.symbol_use_edges]" time="3.019" /><testcase classname="tests.config.test_subsystems_config" name="test_overrides_are_applied_and_typed" time="0.001" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_incremental" time="3.018" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.dfg_edges]" time="3.016" /><testcase classname="tests.ingestion.test_tool_service" name="test_tool_service_pyright_parses_errors" time="0.502" /><testcase classname="tests.graphs.test_callgraph_builder" name="test_callgraph_handles_aliases_and_relative_imports" time="0.514" /><testcase classname="tests.graphs.test_import_modules" name="test_import_modules_matches_condensation_layers" time="3.057" /><testcase classname="tests.docs_export.test_graph_validation_export" name="test_graph_validation_export" time="4.643"><failure message="TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw3/test_graph_validation_export0')
+
+    @pytest.mark.usefixtures("fresh_gateway")
+    def test_graph_validation_export(tmp_path: Path) -&gt; None:
+        """
+        Graph validation rows should be exported to JSONL and Parquet.
+    
+        Raises
+        ------
+        AssertionError
+            If expected export artifacts or content are missing.
+        """
+        ctx = provision_docs_export_ready(
+            tmp_path, repo="demo/repo", commit="deadbeef", file_backed=False
+        )
+        gateway = ctx.gateway
+        con = gateway.con
+        con.execute(
+            "DELETE FROM analytics.graph_validation WHERE repo = ? AND commit = ?",
+            ["demo/repo", "deadbeef"],
+        )
+        row: GraphValidationRow = {
+            "repo": "demo/repo",
+            "commit": "deadbeef",
+            "graph_name": "call_graph",
+            "entity_id": "pkg/a.py",
+            "issue": "missing_function_goids",
+            "severity": "warning",
+            "rel_path": "pkg/a.py",
+            "detail": "1 functions, 0 GOIDs",
+            "metadata": {"function_count": 1, "goid_count": 0},
+            "created_at": datetime.now(UTC),
+        }
+        con.execute(
+            """
+            INSERT INTO analytics.graph_validation (
+                repo, commit, graph_name, entity_id, issue, severity, rel_path, detail, metadata, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            graph_validation_row_to_tuple(row),
+        )
+    
+        doc_out = tmp_path / "Document Output"
+        export_all_jsonl(gateway, doc_out)
+&gt;       export_all_parquet(gateway, doc_out)
+
+tests/docs_export/test_graph_validation_export.py:58: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/codeintel/pipeline/export/export_parquet.py:390: in export_all_parquet
+    export_parquet_for_table(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+gateway = _DuckDBGateway(config=StorageConfig(db_path=PosixPath(':memory:'), read_only=False, apply_schema=True, ensure_views=Tr...ction object at 0x7bedec32b2b0&gt;), analytics=AnalyticsTables(con=&lt;_duckdb.DuckDBPyConnection object at 0x7bedec32b2b0&gt;))
+table_name = 'core.ast_metrics', output_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw3/test_graph_validation_export0/Document Output/ast_metrics.parquet')
+
+    def export_parquet_for_table(
+        gateway: StorageGateway,
+        table_name: str,
+        output_path: Path,
+        *,
+        require_normalized_macros: bool = False,
+    ) -&gt; None:
+        """
+        Export a single DuckDB table to Parquet.
+    
+        Parameters
+        ----------
+        gateway :
+            StorageGateway providing the DuckDB connection.
+        table_name : str
+            Fully qualified table name (schema.table) to export.
+        output_path : Path
+            Destination path for the Parquet file.
+    
+        Notes
+        -----
+        Uses `COPY (SELECT * FROM &lt;table&gt;) TO &lt;path&gt; (FORMAT PARQUET)`. The export
+        assumes the database already scopes data to a single repo/commit. Table
+        names are validated against the known dataset mapping to avoid unsafe SQL.
+    
+        Raises
+        ------
+        ValueError
+            If the requested table is not registered in the dataset mapping.
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_mapping = gateway.datasets.mapping
+        if table_name not in dataset_mapping.values():
+            message = f"Refusing to export unknown dataset table: {table_name}"
+            raise ValueError(message)
+        log.info("Exporting %s -&gt; %s", table_name, output_path)
+        start = perf_counter()
+        rel, macro_name = _macro_relation(
+            gateway.con,
+            table_name,
+            MAX_EXPORT_LIMIT,
+            0,
+            require_normalized_macros=require_normalized_macros,
+        )
+        sql_text = f"SELECT * FROM {macro_name}(?, ?, ?)"
+        plan_text = _explain_sql(gateway.con, sql_text, [table_name, MAX_EXPORT_LIMIT, 0])
+        write_parquet = getattr(rel, "write_parquet", None)
+        if write_parquet is not None:
+            write_parquet(str(output_path))
+            row_count_row = rel.aggregate("count(*)").fetchone()
+            rows = int(row_count_row[0]) if row_count_row else 0
+            duration = perf_counter() - start
+&gt;           _write_audit_entry(
+                table_name=table_name,
+                macro=macro_name,
+                rows=rows,
+                duration_s=duration,
+                output_path=output_path,
+                sql=sql_text,
+                plan=plan_text,
+                con=gateway.con,
+            )
+E           TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'
+
+src/codeintel/pipeline/export/export_parquet.py:261: TypeError</failure></testcase><testcase classname="tests.ingestion.test_tool_service" name="test_tool_service_pyrefly_parses_errors" time="0.499" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_respects_module_filter_and_deleted_paths" time="3.041" /><testcase classname="tests.docs_export.test_export_parity" name="test_export_mappings_registered_with_dataset_registry" time="4.058" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_graph_engine_reused_with_backend_flags" time="0.748" /><testcase classname="tests.mcp.test_backend" name="test_get_tests_for_function" time="3.066" /><testcase classname="tests.ingestion.test_tool_service" name="test_tool_service_coverage_reports" time="0.539" /><testcase classname="tests.lint.test_no_legacy_data_model_json" name="test_no_legacy_json_usage_outside_whitelist" time="0.022" /><testcase classname="tests.orchestration.test_prefect_export_docs" name="test_t_export_docs_invokes_validator_before_export" time="1.982" /><testcase classname="tests.orchestration.test_history_timeseries_prefect" name="test_prefect_history_timeseries_step" time="7.664" /><testcase classname="tests.mcp.test_backend" name="test_read_dataset_rows_unknown" time="3.096" /><testcase classname="tests.graphs.test_validation" name="test_run_graph_validations_emits_warnings" time="4.021" /><testcase classname="tests.mcp.test_backend" name="test_read_function_validation_dataset" time="3.086" /><testcase classname="tests.mcp.test_backend_adapter" name="test_require_identifier_validation" time="3.079" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema[graph.call_graph_edges]" time="3.075" /><testcase classname="tests.mcp.test_backend_dataset_adapter" name="test_read_dataset_rows_delegates" time="3.089" /><testcase classname="tests.mcp.test_duckdb_backend_engine" name="test_duckdb_backend_uses_injected_engine" time="0.400" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy" time="3.076" /><testcase classname="tests.mcp.test_registry_limits_parity" name="test_limits_parity_between_local_and_remote_configs" time="0.001" /><testcase classname="tests.mcp.test_backend" name="test_get_function_summary" time="3.084" /><testcase classname="tests.mcp.test_registry_limits_parity" name="test_registry_helper_matches_base_registry" time="0.001" /><testcase classname="tests.orchestration.test_prefect_flow_smoke" name="test_prefect_flow_imports" time="0.000" /><testcase classname="tests.mcp.test_wiring_smoke" name="test_mcp_wiring_smoke" time="3.682" /><testcase classname="tests.mcp.test_backend" name="test_get_function_summary_invalid" time="3.094" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_engine_reuse_across_semantic_roles" time="0.403" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_full_rebuild_flag_forces_rebuild" time="3.053" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_runtime_reuse_with_graph_context" time="0.428" /><testcase classname="tests.mcp.test_backend" name="test_get_tests_for_function_invalid" time="3.085" /><testcase classname="tests.orchestration.test_pipeline_catalog_entrypoint" name="test_pipeline_steps_use_function_catalog" time="2.484" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_graph_runtime_reuses_engine" time="0.408" /><testcase classname="tests.mcp.test_backend" name="test_function_validation_clamping" time="3.088" /><testcase classname="tests.orchestration.test_pipeline_catalog_reuse" name="test_steps_share_function_catalog" time="2.375" /><testcase classname="tests.mcp.test_backend" name="test_dataset_rows_clamping" time="3.075" /><testcase classname="tests.server.test_fastapi" name="test_tests_for_function_validation" time="2.248" /><testcase classname="tests.mcp.test_backend" name="test_callgraph_direction_validation" time="3.067" /><testcase classname="tests.orchestration.test_risk_factors_catalog_fallback" name="test_risk_factors_uses_catalog_modules_when_core_modules_empty" time="2.045" /><testcase classname="tests.mcp.test_backend" name="test_dataset_list_includes_function_validation" time="3.073" /><testcase classname="tests.server.test_fastapi" name="test_tests_for_function_success" time="2.263" /><testcase classname="tests.server.test_fastapi" name="test_function_summary_success" time="2.274" /><testcase classname="tests.server.test_fastapi" name="test_dataset_rows_success" time="2.258" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_backend_registry_matches_gateway" time="2.256" /><testcase classname="tests.mcp.test_backend_adapter" name="test_validate_direction_accepts_expected" time="3.025" /><testcase classname="tests.mcp.test_backend_adapter" name="test_backend_delegates_after_validation" time="3.028" /><testcase classname="tests.server.test_datasets_registry" name="test_function_validation_dataset_present" time="0.001" /><testcase classname="tests.services.test_query_service" name="test_local_read_dataset_rows_propagates_errors" time="0.001" /><testcase classname="tests.services.test_query_service" name="test_local_read_dataset_rows_records_observability" time="0.001" /><testcase classname="tests.services.test_query_service" name="test_http_read_dataset_rows_clamps_limit" time="0.000" /><testcase classname="tests.services.test_query_service" name="test_http_read_dataset_rows_invalid_offset" time="0.000" /><testcase classname="tests.services.test_query_service" name="test_http_high_risk_clamps_using_limits" time="0.000" /><testcase classname="tests.services.test_query_service" name="test_fastapi_delegates_to_query_service" time="0.041" /><testcase classname="tests.mcp.test_backend" name="test_tests_for_function_not_found" time="3.064" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_fastapi_endpoints_smoke" time="2.327" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_health_reports_limits" time="2.251" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_callgraph_neighborhood_limits" time="2.265" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_import_boundary_limits" time="2.273" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_http_backend_against_fastapi" time="2.343" /><testcase classname="tests.services.test_backend_limits" name="test_clamp_limit_value_caps_and_reports" time="0.000" /><testcase classname="tests.server.test_fastapi" name="test_backend_registry_matches_gateway" time="2.204" /><testcase classname="tests.services.test_errors" name="test_problem_error_taxonomy_subclasses" time="0.001" /><testcase classname="tests.services.test_errors" name="test_problem_allows_override_instance_and_type" time="0.000" /><testcase classname="tests.server.test_fastapi" name="test_dataset_rows_unknown_dataset" time="2.273" /><testcase classname="tests.services.test_factory_wiring" name="test_build_backend_resource_local" time="3.229" /><testcase classname="tests.server.test_fastapi" name="test_dataset_rows_limit_clamped" time="2.309" /><testcase classname="tests.server.test_wiring_smoke" name="test_fastapi_wiring_smoke" time="3.750" /><testcase classname="tests.services.test_factory_wiring" name="test_build_backend_resource_remote" time="5.375" /><testcase classname="tests.services.test_query_service" name="test_local_query_service_reads_architecture_seed" time="2.732" /><testcase classname="tests.server.test_fastapi" name="test_function_summary_not_found" time="2.312" /><testcase classname="tests.server.test_dataset_registry_parity" name="test_dataset_registry_parity_across_factory_defaults" time="3.098" /><testcase classname="tests.services.test_backend_limits" name="test_http_service_applies_backend_limits" time="0.001" /><testcase classname="tests.storage.test_normalized_macros_helper" name="test_normalized_macros_match_expected_sets" time="0.000" /><testcase classname="tests.services.test_errors" name="test_log_problem_emits_json" time="0.002" /><testcase classname="tests.services.test_query_service" name="test_mcp_tool_delegation" time="0.007"><skipped type="pytest.skip" message="FastMCP tools registry not available">/home/paul/CodeIntel/tests/services/test_query_service.py:501: FastMCP tools registry not available</skipped></testcase><testcase classname="tests.storage.test_views_scoping" name="test_call_graph_view_scopes_edges_to_repo_commit" time="0.952" /><testcase classname="tests.orchestration.test_prefect_flow_smoke" name="test_cli_docs_export_with_validation" time="9.223"><failure message="Failed: CLI docs export failed with exit code 1">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw1/test_cli_docs_export_with_vali0'), prefect_quiet_env = None
+
+    def test_cli_docs_export_with_validation(tmp_path: Path, prefect_quiet_env: None) -&gt; None:
+        """
+        Export via the real CLI with validation enabled against a minimal seeded DB.
+    
+        This mirrors the production entry point instead of calling internal helpers.
+        """
+        _ = prefect_quiet_env
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir(parents=True, exist_ok=True)
+        (repo_root / ".git").mkdir(parents=True, exist_ok=True)
+        build_dir = repo_root / "build"
+        db_path = build_dir / "db" / "codeintel.duckdb"
+        gateway = open_fresh_duckdb(db_path)
+        seed_docs_export_minimal(gateway, repo="demo/repo", commit="deadbeef")
+        gateway.close()
+    
+        document_output_dir = repo_root / "Document Output"
+        argv = [
+            "docs",
+            "export",
+            "--repo-root",
+            str(repo_root),
+            "--repo",
+            "demo/repo",
+            "--commit",
+            "deadbeef",
+            "--db-path",
+            str(db_path),
+            "--build-dir",
+            str(build_dir),
+            "--document-output-dir",
+            str(document_output_dir),
+            "--validate",
+            "--schema",
+            "function_profile",
+        ]
+    
+        exit_code = _run_cli(argv)
+        if exit_code != 0:
+&gt;           pytest.fail(f"CLI docs export failed with exit code {exit_code}")
+E           Failed: CLI docs export failed with exit code 1
+
+tests/orchestration/test_prefect_flow_smoke.py:110: Failed</failure></testcase><testcase classname="tests.server.test_dataset_registry_parity" name="test_backend_resource_limits_and_registry_align" time="3.265" /><testcase classname="tests.services.test_query_service" name="test_local_read_dataset_rows_defaults_limit" time="0.001" /><testcase classname="tests.test_tests_analytics_unit" name="test_edges_for_file_uses_test_meta" time="0.001" /><testcase classname="tests.test_tests_analytics_unit" name="test_compute_test_coverage_edges_with_real_coverage" time="0.960" /><testcase classname="tests.storage.test_export_macro_strict" name="test_require_macros_rejects_dataset_rows_only" time="3.048" /><testcase classname="tests.test_tests_analytics_unit" name="test_compute_test_coverage_edges_respects_injected_loader" time="0.899" /><testcase classname="tests.services.test_query_service" name="test_query_service_contract_local_vs_http" time="2.801" /><testcase classname="tests.storage.test_macro_performance" name="test_normalized_macro_latency_smoke[graph.call_graph_edges]" time="3.126" /><testcase classname="tests.storage.test_macro_registry" name="test_macro_registry_hashes" time="3.123" /><testcase classname="tests.storage.test_metadata_bootstrap" name="test_metadata_bootstrap_populates_catalog" time="0.244" /><testcase classname="tests.services.test_factory_wiring" name="test_build_backend_resource_gateway_path" time="3.669" /><testcase classname="tests.storage.test_normalized_macros_helper" name="test_normalized_macro_schema_validation" time="3.070" /><testcase classname="tests.storage.test_schema_alignment" name="test_apply_and_validate_schema_alignment" time="3.205" /><testcase classname="tests.storage.test_export_macro_invocation" name="test_export_calls_macro_sentinel" time="3.065"><failure message="TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_calls_macro_sentin0')
+fresh_gateway = _DuckDBGateway(config=StorageConfig(db_path=PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_calls_mac...ction object at 0x72df8006f330&gt;), analytics=AnalyticsTables(con=&lt;_duckdb.DuckDBPyConnection object at 0x72df8006f330&gt;))
+
+    @pytest.mark.smoke
+    def test_export_calls_macro_sentinel(tmp_path: Path, fresh_gateway: StorageGateway) -&gt; None:
+        """Export should fail without macro and succeed once macro is restored."""
+        _seed_call_graph_edges(fresh_gateway)
+    
+        jsonl_out = tmp_path / "out.jsonl"
+        parquet_out = tmp_path / "out.parquet"
+    
+        con = fresh_gateway.con
+        con.execute("DROP MACRO IF EXISTS metadata.normalized_call_graph_edges")
+    
+        with pytest.raises(Exception):
+            export_jsonl_for_table(fresh_gateway, "graph.call_graph_edges", jsonl_out)
+    
+        con.execute(
+            """
+            CREATE OR REPLACE MACRO metadata.normalized_call_graph_edges(
+                table_key TEXT,
+                row_limit BIGINT := 9223372036854775807,
+                row_offset BIGINT := 0
+            ) AS TABLE
+            SELECT
+                repo,
+                commit,
+                CAST(caller_goid_h128 AS BIGINT) AS caller_goid_h128,
+                CAST(callee_goid_h128 AS BIGINT) AS callee_goid_h128,
+                * EXCLUDE (repo, commit, caller_goid_h128, callee_goid_h128)
+            FROM metadata.dataset_rows(table_key, row_limit, row_offset)
+            """
+        )
+    
+        export_jsonl_for_table(fresh_gateway, "graph.call_graph_edges", jsonl_out)
+&gt;       export_parquet_for_table(fresh_gateway, "graph.call_graph_edges", parquet_out)
+
+tests/storage/test_export_macro_invocation.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+gateway = _DuckDBGateway(config=StorageConfig(db_path=PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_calls_mac...ction object at 0x72df8006f330&gt;), analytics=AnalyticsTables(con=&lt;_duckdb.DuckDBPyConnection object at 0x72df8006f330&gt;))
+table_name = 'graph.call_graph_edges', output_path = PosixPath('/tmp/pytest-of-paul/pytest-121/popen-gw10/test_export_calls_macro_sentin0/out.parquet')
+
+    def export_parquet_for_table(
+        gateway: StorageGateway,
+        table_name: str,
+        output_path: Path,
+        *,
+        require_normalized_macros: bool = False,
+    ) -&gt; None:
+        """
+        Export a single DuckDB table to Parquet.
+    
+        Parameters
+        ----------
+        gateway :
+            StorageGateway providing the DuckDB connection.
+        table_name : str
+            Fully qualified table name (schema.table) to export.
+        output_path : Path
+            Destination path for the Parquet file.
+    
+        Notes
+        -----
+        Uses `COPY (SELECT * FROM &lt;table&gt;) TO &lt;path&gt; (FORMAT PARQUET)`. The export
+        assumes the database already scopes data to a single repo/commit. Table
+        names are validated against the known dataset mapping to avoid unsafe SQL.
+    
+        Raises
+        ------
+        ValueError
+            If the requested table is not registered in the dataset mapping.
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_mapping = gateway.datasets.mapping
+        if table_name not in dataset_mapping.values():
+            message = f"Refusing to export unknown dataset table: {table_name}"
+            raise ValueError(message)
+        log.info("Exporting %s -&gt; %s", table_name, output_path)
+        start = perf_counter()
+        rel, macro_name = _macro_relation(
+            gateway.con,
+            table_name,
+            MAX_EXPORT_LIMIT,
+            0,
+            require_normalized_macros=require_normalized_macros,
+        )
+        sql_text = f"SELECT * FROM {macro_name}(?, ?, ?)"
+        plan_text = _explain_sql(gateway.con, sql_text, [table_name, MAX_EXPORT_LIMIT, 0])
+        write_parquet = getattr(rel, "write_parquet", None)
+        if write_parquet is not None:
+            write_parquet(str(output_path))
+            row_count_row = rel.aggregate("count(*)").fetchone()
+            rows = int(row_count_row[0]) if row_count_row else 0
+            duration = perf_counter() - start
+&gt;           _write_audit_entry(
+                table_name=table_name,
+                macro=macro_name,
+                rows=rows,
+                duration_s=duration,
+                output_path=output_path,
+                sql=sql_text,
+                plan=plan_text,
+                con=gateway.con,
+            )
+E           TypeError: _write_audit_entry() got an unexpected keyword argument 'plan'
+
+src/codeintel/pipeline/export/export_parquet.py:261: TypeError</failure></testcase><testcase classname="tests.test_pipeline_smoke" name="test_pipeline_export_docs_smoke" time="0.001"><skipped type="pytest.xfail" message="Pipeline export_docs currently fails in function_effects catalog integration" /></testcase><testcase classname="tests.storage.test_export_macro_parity" name="test_macro_parity_exports_seeded_rows" time="3.071" /><testcase classname="tests.test_testing_contract" name="test_testing_charter_forbidden_patterns" time="0.011" /><testcase classname="tests.storage.test_export_macro_strict" name="test_require_macros_allows_macro_backed_tables" time="3.058" /><testcase classname="tests.test_tests_analytics_unit" name="test_backfill_test_goids_updates_catalog" time="0.889" /><testcase classname="tests.test_callgraph_alias_resolution" name="test_callgraph_resolves_import_alias" time="3.098" /><testcase classname="tests.storage.test_gateway_helpers" name="test_insert_helpers_write_expected_rows" time="3.175" /><testcase classname="tests.orchestration.test_prefect_flow_smoke" name="test_prefect_flow_preflight_only" time="7.127" /><testcase classname="tests.storage.test_macro_performance" name="test_normalized_macro_latency_smoke[analytics.function_metrics]" time="3.043" /><testcase classname="tests.storage.test_macro_schemas" name="test_macro_schemas_match_table_definitions" time="3.048" /><testcase classname="tests.services.test_errors" name="test_problem_defaults_and_to_dict" time="0.001" /><testcase classname="tests.storage.test_normalized_macros_helper" name="test_normalized_macros_defined" time="3.030" /><testcase classname="tests.storage.test_normalized_macros_helper" name="test_dataset_rows_only_tables_parse" time="3.032" /><testcase classname="tests.storage.test_normalized_macros" name="test_normalized_macros_execute" time="3.024" /><testcase classname="tests.storage.test_schema_function_validation" name="test_apply_all_schemas_creates_function_validation" time="3.022" /><testcase classname="tests.storage.test_metadata_dataset_rows_macro" name="test_dataset_rows_macro_handles_registry_datasets" time="2.632" /></testsuite></testsuites>
