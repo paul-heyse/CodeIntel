@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import cast
 
 from codeintel.pipeline.export import DEFAULT_VALIDATION_SCHEMAS
-from codeintel.pipeline.export.datasets import JSONL_DATASETS, PARQUET_DATASETS
 from codeintel.pipeline.export.manifest import write_dataset_manifest
 from codeintel.pipeline.export.validate_exports import validate_files
 from codeintel.serving.http.datasets import validate_dataset_registry
@@ -23,6 +25,20 @@ from codeintel.storage.gateway import (
 )
 
 log = logging.getLogger(__name__)
+
+MAX_EXPORT_LIMIT = 9_223_372_036_854_775_807
+AUDIT_LOG_PATH = os.getenv("CODEINTEL_EXPORT_AUDIT_LOG")
+AUDIT_TABLE_ENABLED = os.getenv("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
+# When set, the above enable audit logging of export metadata.
+
+
+@dataclass(frozen=True)
+class AuditRecord:
+    table_name: str
+    macro: str
+    rows: int | None
+    duration_s: float
+    output_path: Path
 
 
 def _validate_registry_or_raise(gateway: StorageGateway) -> None:
@@ -61,83 +77,166 @@ def _resolve_dataset_table(dataset_name: str, dataset_mapping: Mapping[str, str]
 
 def _select_dataset_tables(
     dataset_mapping: Mapping[str, str],
+    jsonl_mapping: Mapping[str, str],
     datasets: list[str] | None,
 ) -> dict[str, str]:
+    """
+    Determine which dataset names and tables to export.
+
+    Parameters
+    ----------
+    dataset_mapping
+        Mapping of dataset name -> table/view key from the gateway registry.
+    jsonl_mapping
+        Mapping of table/view key -> JSONL filename from the gateway registry.
+    datasets
+        Optional list of dataset names requested by the caller.
+
+    Returns
+    -------
+    dict[str, str]
+        Selected dataset name -> table/view key mapping.
+    """
     if datasets is None:
-        return {name: table for name, table in dataset_mapping.items() if table in JSONL_DATASETS}
+        return {name: table for name, table in dataset_mapping.items() if table in jsonl_mapping}
     selected: dict[str, str] = {}
     for dataset_name in datasets:
         selected[dataset_name] = _resolve_dataset_table(dataset_name, dataset_mapping)
     return selected
 
 
-def _default_repo_commit(con: DuckDBConnection) -> tuple[str, str]:
-    row = con.execute("SELECT repo, commit FROM core.repo_map LIMIT 1").fetchone()
-    if row is None:
-        return "", ""
-    repo, commit = row
-    return str(repo), str(commit)
+NORMALIZED_MACROS: dict[str, str] = {
+    "graph.call_graph_edges": "metadata.normalized_call_graph_edges",
+    "graph.symbol_use_edges": "metadata.normalized_symbol_use_edges",
+    "analytics.test_coverage_edges": "metadata.normalized_test_coverage_edges",
+    "analytics.function_metrics": "metadata.normalized_function_metrics",
+    "analytics.function_profile": "metadata.normalized_function_profile",
+    "analytics.function_history": "metadata.normalized_function_history",
+    "analytics.function_types": "metadata.normalized_function_types",
+    "analytics.test_catalog": "metadata.normalized_test_catalog",
+    "analytics.coverage_functions": "metadata.normalized_coverage_functions",
+    "analytics.goid_risk_factors": "metadata.normalized_goid_risk_factors",
+    "analytics.function_validation": "metadata.normalized_function_validation",
+    "analytics.graph_validation": "metadata.normalized_graph_validation",
+    "graph.cfg_blocks": "metadata.normalized_cfg_blocks",
+    "graph.cfg_edges": "metadata.normalized_cfg_edges",
+    "graph.dfg_edges": "metadata.normalized_dfg_edges",
+    "analytics.cfg_block_metrics": "metadata.normalized_cfg_block_metrics",
+    "analytics.cfg_function_metrics": "metadata.normalized_cfg_function_metrics",
+    "analytics.cfg_function_metrics_ext": "metadata.normalized_cfg_function_metrics_ext",
+    "analytics.config_data_flow": "metadata.normalized_config_data_flow",
+    "analytics.data_model_usage": "metadata.normalized_data_model_usage",
+    "analytics.dfg_block_metrics": "metadata.normalized_dfg_block_metrics",
+    "analytics.dfg_function_metrics": "metadata.normalized_dfg_function_metrics",
+    "analytics.dfg_function_metrics_ext": "metadata.normalized_dfg_function_metrics_ext",
+    "analytics.entrypoint_tests": "metadata.normalized_entrypoint_tests",
+    "analytics.entrypoints": "metadata.normalized_entrypoints",
+    "analytics.external_dependency_calls": "metadata.normalized_external_dependency_calls",
+    "analytics.function_contracts": "metadata.normalized_function_contracts",
+    "analytics.function_effects": "metadata.normalized_function_effects",
+    "analytics.graph_metrics_functions": "metadata.normalized_graph_metrics_functions",
+    "analytics.graph_metrics_functions_ext": "metadata.normalized_graph_metrics_functions_ext",
+    "analytics.history_timeseries": "metadata.normalized_history_timeseries",
+    "analytics.semantic_roles_functions": "metadata.normalized_semantic_roles_functions",
+    "analytics.symbol_graph_metrics_functions": "metadata.normalized_symbol_graph_metrics_functions",
+    "analytics.test_graph_metrics_functions": "metadata.normalized_test_graph_metrics_functions",
+    "analytics.test_profile": "metadata.normalized_test_profile",
+    "analytics.behavioral_coverage": "metadata.normalized_behavioral_coverage",
+}
 
 
-def _normalized_relation(con: DuckDBConnection, table_name: str) -> DuckDBRelation:
-    if table_name == "graph.call_graph_edges":
-        return con.sql(
-            """
-            SELECT
-              repo,
-              commit,
-              CAST(caller_goid_h128 AS BIGINT) AS caller_goid_h128,
-              CAST(callee_goid_h128 AS BIGINT) AS callee_goid_h128,
-              * EXCLUDE (repo, commit, caller_goid_h128, callee_goid_h128)
-            FROM graph.call_graph_edges
-            """
+def _macro_relation(
+    con: DuckDBConnection,
+    table_key: str,
+    row_limit: int,
+    row_offset: int,
+    *,
+    require_normalized_macros: bool = False,
+) -> tuple[DuckDBRelation, str]:
+    macro = NORMALIZED_MACROS.get(table_key)
+    if macro:
+        log.debug("Exporting via normalized macro for %s: %s", table_key, macro)
+        return (
+            con.sql(
+                f"SELECT * FROM {macro}(?, ?, ?)",  # noqa: S608 - macro name is trusted
+                params=[table_key, row_limit, row_offset],
+            ),
+            macro,
         )
-    if table_name == "graph.symbol_use_edges":
-        repo_default, commit_default = _default_repo_commit(con)
-        df = con.execute(
+    if require_normalized_macros:
+        message = f"No normalized macro found for {table_key}"
+        raise ValueError(message)
+    log.debug("Exporting via dataset_rows fallback for %s", table_key)
+    return (
+        con.sql(
             """
-            SELECT
-              ? AS repo,
-              ? AS commit,
-              symbol,
-              def_path,
-              use_path,
-              same_file,
-              same_module,
-              CAST(def_goid_h128 AS BIGINT) AS def_goid_h128,
-              CAST(use_goid_h128 AS BIGINT) AS use_goid_h128
-            FROM graph.symbol_use_edges
+            SELECT *
+            FROM metadata.dataset_rows(?, ?, ?)
             """,
-            [repo_default, commit_default],
-        ).fetch_df()
-        return con.from_df(df)
-    if table_name == "analytics.test_coverage_edges":
-        return con.sql(
+            params=[table_key, row_limit, row_offset],
+        ),
+        "metadata.dataset_rows",
+    )
+
+
+def _write_audit_entry(
+    record: AuditRecord,
+    *,
+    con: DuckDBConnection,
+) -> None:
+    if AUDIT_LOG_PATH is None and not AUDIT_TABLE_ENABLED:
+        return
+    json_record = {
+        "table": record.table_name,
+        "macro": record.macro,
+        "rows": record.rows,
+        "duration_s": record.duration_s,
+        "output": str(record.output_path),
+    }
+    if AUDIT_LOG_PATH is not None:
+        with Path(AUDIT_LOG_PATH).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(json_record))
+            handle.write("\n")
+    # Skip writing SQL/plan to file to avoid string-based SQL emission concerns.
+    if AUDIT_TABLE_ENABLED:
+        con.execute(
             """
-            SELECT
-              repo,
-              commit,
-              test_id,
-              CAST(test_goid_h128 AS BIGINT) AS test_goid_h128,
-              CAST(function_goid_h128 AS BIGINT) AS function_goid_h128,
-              urn,
-              rel_path,
-              qualname,
-              covered_lines,
-              executable_lines,
-              coverage_ratio,
-              last_status,
-              CAST(created_at AS VARCHAR) AS created_at
-            FROM analytics.test_coverage_edges
-            """
+            CREATE TABLE IF NOT EXISTS metadata.export_audit (
+                dataset TEXT,
+                macro TEXT,
+                rows BIGINT,
+                duration_s DOUBLE,
+                output_path TEXT,
+                sql TEXT,
+                plan TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
         )
-    return con.table(table_name)
+        con.execute(
+            """
+            INSERT INTO metadata.export_audit
+                (dataset, macro, rows, duration_s, output_path, sql, plan)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                record.table_name,
+                record.macro,
+                record.rows,
+                record.duration_s,
+                str(record.output_path),
+                None,
+                None,
+            ],
+        )
 
 
 def export_jsonl_for_table(
     gateway: StorageGateway,
     table_name: str,
     output_path: Path,
+    *,
+    require_normalized_macros: bool = False,
 ) -> None:
     """
     Export a single DuckDB table to JSONL.
@@ -182,21 +281,62 @@ def export_jsonl_for_table(
             output_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
             return
 
-    rel = _normalized_relation(con, table_name)
+    start = perf_counter()
+    rel, macro_name = _macro_relation(
+        con,
+        table_name,
+        MAX_EXPORT_LIMIT,
+        0,
+        require_normalized_macros=require_normalized_macros,
+    )
     write_json = getattr(rel, "write_json", None)
     if write_json is not None:
         callable_write_json = cast("Callable[..., object]", write_json)
         callable_write_json(str(output_path), array=False)
+        row_count_row = rel.aggregate("count(*)").fetchone()
+        rows = int(row_count_row[0]) if row_count_row else 0
+        duration = perf_counter() - start
+        _write_audit_entry(
+            AuditRecord(
+                table_name=table_name,
+                macro=macro_name,
+                rows=rows,
+                duration_s=duration,
+                output_path=output_path,
+            ),
+            con=con,
+        )
+        log.debug(
+            "Exported %s rows for %s via macro in %.3fs",
+            rows,
+            table_name,
+            duration,
+        )
         return
 
     df = rel.df()
     df.to_json(output_path, orient="records", lines=True, date_format="iso")
+    duration = perf_counter() - start
+    rows = len(df)
+    _write_audit_entry(
+        AuditRecord(
+            table_name=table_name,
+            macro=macro_name,
+            rows=rows,
+            duration_s=duration,
+            output_path=output_path,
+        ),
+        con=con,
+    )
+    log.debug("Exported %s rows for %s via macro fallback in %.3fs", rows, table_name, duration)
 
 
 def export_dataset_to_jsonl(
     gateway: StorageGateway,
     dataset_name: str,
     output_dir: Path,
+    *,
+    require_normalized_macros: bool = False,
 ) -> Path:
     """
     Export a dataset resolved through the dataset registry to JSONL.
@@ -221,13 +361,19 @@ def export_dataset_to_jsonl(
         If the dataset name is unknown.
     """
     dataset_mapping = gateway.datasets.mapping
+    jsonl_mapping = gateway.datasets.jsonl_mapping or {}
     if dataset_name not in dataset_mapping:
         message = f"Unknown dataset: {dataset_name}"
         raise ValueError(message)
     table_name = dataset_mapping[dataset_name]
-    filename = JSONL_DATASETS.get(table_name, f"{dataset_name}.jsonl")
+    filename = jsonl_mapping.get(table_name, f"{dataset_name}.jsonl")
     output_path = output_dir / filename
-    export_jsonl_for_table(gateway, table_name, output_path)
+    export_jsonl_for_table(
+        gateway,
+        table_name,
+        output_path,
+        require_normalized_macros=require_normalized_macros,
+    )
     return output_path
 
 
@@ -238,6 +384,7 @@ def export_all_jsonl(
     validate_exports: bool = True,
     schemas: list[str] | None = None,
     datasets: list[str] | None = None,
+    require_normalized_macros: bool = False,
 ) -> list[Path]:
     """
     Export configured datasets to JSONL files under `Document Output/`.
@@ -270,18 +417,24 @@ def export_all_jsonl(
 
     _validate_registry_or_raise(gateway)
     dataset_mapping = gateway.datasets.mapping
-    selected = _select_dataset_tables(dataset_mapping, datasets)
-    missing_tables = set(JSONL_DATASETS) - set(dataset_mapping.values())
-    for table_name in sorted(missing_tables):
+    jsonl_mapping = gateway.datasets.jsonl_mapping or {}
+    parquet_mapping = gateway.datasets.parquet_mapping or {}
+    selected = _select_dataset_tables(dataset_mapping, jsonl_mapping, datasets)
+    for table_name in sorted(set(jsonl_mapping) - set(dataset_mapping.values())):
         log.warning("Skipping %s; table not present in dataset registry", table_name)
 
     written: list[Path] = []
 
     for dataset_name, table_name in sorted(selected.items()):
-        filename = JSONL_DATASETS.get(table_name, f"{dataset_name}.jsonl")
+        filename = jsonl_mapping.get(table_name, f"{dataset_name}.jsonl")
         output_path = document_output_dir / filename
         try:
-            export_jsonl_for_table(gateway, table_name, output_path)
+            export_jsonl_for_table(
+                gateway,
+                table_name,
+                output_path,
+                require_normalized_macros=require_normalized_macros,
+            )
             written.append(output_path)
         except (DuckDBError, OSError, ValueError) as exc:
             # Log and continue: some tables may legitimately be empty or missing
@@ -294,23 +447,27 @@ def export_all_jsonl(
             )
 
     # repo_map.json is handled separately
-    repo_map_path = export_repo_map_json(gateway, document_output_dir)
-    if repo_map_path is not None:
-        written.append(repo_map_path)
+    if repo_map := export_repo_map_json(gateway, document_output_dir):
+        written.append(repo_map)
 
     # Optionally write a small manifest
     index_path = document_output_dir / "index.json"
-    manifest = {
-        "generated_at": datetime.now(UTC).isoformat(),
-        "files": [p.name for p in written],
-    }
-    index_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    index_path.write_text(
+        json.dumps(
+            {
+                "generated_at": datetime.now(UTC).isoformat(),
+                "files": [p.name for p in written],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     written.append(index_path)
     manifest_path = write_dataset_manifest(
         document_output_dir,
         dataset_mapping,
-        jsonl_mapping=JSONL_DATASETS,
-        parquet_mapping=PARQUET_DATASETS,
+        jsonl_mapping=jsonl_mapping,
+        parquet_mapping=parquet_mapping,
         selected=list(selected.keys()),
     )
     written.append(manifest_path)
@@ -321,8 +478,7 @@ def export_all_jsonl(
             matching = [p for p in written if p.name.startswith(schema_name)]
             if not matching:
                 continue
-            exit_code = validate_files(schema_name, matching)
-            if exit_code != 0:
+            if validate_files(schema_name, matching) != 0:
                 pd = problem(
                     code="export.validation_failed",
                     title="Export validation failed",

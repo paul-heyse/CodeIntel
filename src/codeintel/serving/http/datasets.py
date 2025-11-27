@@ -6,8 +6,8 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
-from codeintel.storage.gateway import DOCS_VIEWS as GATEWAY_DOCS_VIEWS
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
+from codeintel.storage.views import DOCS_VIEWS as GATEWAY_DOCS_VIEWS
 
 if TYPE_CHECKING:
     from codeintel.serving.mcp.query_service import BackendLimits
@@ -96,24 +96,31 @@ def describe_dataset(name: str, table: str) -> str:
     return f"{name}: {table} ({column_names}{extra})"
 
 
-def validate_dataset_registry(gateway: StorageGateway) -> None:
-    """
-    Validate that registered datasets exist and match expected schemas.
+def _macro_failure_message(
+    con: DuckDBConnection,
+    dataset_name: str,
+    table: str,
+) -> str | None:
+    try:
+        con.execute(
+            """
+            SELECT 1
+            FROM metadata.dataset_rows(?, 0, 0)
+            LIMIT 0
+            """,
+            [table],
+        )
+    except DuckDBError as exc:
+        return f"{dataset_name} ({table}): {exc}"
+    return None
 
-    Parameters
-    ----------
-    gateway
-        StorageGateway providing the connection and dataset registry.
 
-    Raises
-    ------
-    ValueError
-        When required tables/views are missing or mismatched.
-    """
-    con = gateway.con
-    dataset_mapping = dict(gateway.datasets.mapping)
+def _collect_dataset_registry_issues(
+    con: DuckDBConnection, dataset_mapping: dict[str, str]
+) -> tuple[list[str], list[str], list[str]]:
     missing: list[str] = []
     mismatched: list[str] = []
+    macro_failures: list[str] = []
 
     for dataset_name, table in sorted(dataset_mapping.items()):
         if "." not in table:
@@ -155,12 +162,40 @@ def validate_dataset_registry(gateway: StorageGateway) -> None:
         ]
         if actual != expected:
             mismatched.append(table)
+            continue
 
-    if missing or mismatched:
+        macro_failure = _macro_failure_message(con, dataset_name, table)
+        if macro_failure:
+            macro_failures.append(macro_failure)
+
+    return missing, mismatched, macro_failures
+
+
+def validate_dataset_registry(gateway: StorageGateway) -> None:
+    """
+    Validate that registered datasets exist and match expected schemas.
+
+    Parameters
+    ----------
+    gateway
+        StorageGateway providing the connection and dataset registry.
+
+    Raises
+    ------
+    ValueError
+        When required tables/views are missing or mismatched, or the dataset_rows macro fails.
+    """
+    con = gateway.con
+    dataset_mapping = dict(gateway.datasets.mapping)
+    missing, mismatched, macro_failures = _collect_dataset_registry_issues(con, dataset_mapping)
+
+    if missing or mismatched or macro_failures:
         parts: list[str] = []
         if missing:
             parts.append(f"missing tables/views: {', '.join(missing)}")
         if mismatched:
             parts.append(f"schema mismatches: {', '.join(mismatched)}")
+        if macro_failures:
+            parts.append(f"dataset_rows failures: {', '.join(macro_failures)}")
         message = "Dataset registry validation failed; " + " | ".join(parts)
         raise ValueError(message)

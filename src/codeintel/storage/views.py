@@ -4,6 +4,44 @@ from __future__ import annotations
 
 import duckdb
 
+DOCS_VIEWS: tuple[str, ...] = (
+    "docs.v_function_summary",
+    "docs.v_call_graph_enriched",
+    "docs.v_function_architecture",
+    "docs.v_function_history",
+    "docs.v_function_history_timeseries",
+    "docs.v_module_history_timeseries",
+    "docs.v_module_architecture",
+    "docs.v_test_architecture",
+    "docs.v_behavioral_classification_input",
+    "docs.v_symbol_module_graph",
+    "docs.v_config_graph_metrics_keys",
+    "docs.v_config_graph_metrics_modules",
+    "docs.v_config_projection_key_edges",
+    "docs.v_config_projection_module_edges",
+    "docs.v_config_data_flow",
+    "docs.v_subsystem_agreement",
+    "docs.v_cfg_block_architecture",
+    "docs.v_dfg_block_architecture",
+    "docs.v_subsystem_summary",
+    "docs.v_module_with_subsystem",
+    "docs.v_ide_hints",
+    "docs.v_entrypoints",
+    "docs.v_external_dependencies",
+    "docs.v_external_dependency_calls",
+    "docs.v_data_models",
+    "docs.v_data_model_fields",
+    "docs.v_data_model_relationships",
+    "docs.v_data_models_normalized",
+    "docs.v_data_model_usage",
+    "docs.v_test_to_function",
+    "docs.v_file_summary",
+    "docs.v_function_profile",
+    "docs.v_file_profile",
+    "docs.v_module_profile",
+    "docs.v_validation_summary",
+)
+
 
 def create_all_views(con: duckdb.DuckDBPyConnection) -> None:
     """

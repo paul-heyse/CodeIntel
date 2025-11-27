@@ -38,29 +38,9 @@ from codeintel.serving.mcp.models import (
     TestsForFunctionResponse,
     ViewRow,
 )
-from codeintel.storage.gateway import DuckDBConnection, DuckDBRelation, StorageGateway
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 RowDict = dict[str, object]
-DOCS_VIEW_QUERIES: dict[str, str] = {
-    "docs.v_function_summary": "SELECT * FROM docs.v_function_summary",
-    "docs.v_call_graph_enriched": "SELECT * FROM docs.v_call_graph_enriched",
-    "docs.v_function_architecture": "SELECT * FROM docs.v_function_architecture",
-    "docs.v_module_architecture": "SELECT * FROM docs.v_module_architecture",
-    "docs.v_symbol_module_graph": "SELECT * FROM docs.v_symbol_module_graph",
-    "docs.v_config_graph_metrics_keys": "SELECT * FROM docs.v_config_graph_metrics_keys",
-    "docs.v_config_graph_metrics_modules": "SELECT * FROM docs.v_config_graph_metrics_modules",
-    "docs.v_config_projection_key_edges": "SELECT * FROM docs.v_config_projection_key_edges",
-    "docs.v_config_projection_module_edges": "SELECT * FROM docs.v_config_projection_module_edges",
-    "docs.v_subsystem_agreement": "SELECT * FROM docs.v_subsystem_agreement",
-    "docs.v_subsystem_summary": "SELECT * FROM docs.v_subsystem_summary",
-    "docs.v_module_with_subsystem": "SELECT * FROM docs.v_module_with_subsystem",
-    "docs.v_ide_hints": "SELECT * FROM docs.v_ide_hints",
-    "docs.v_test_to_function": "SELECT * FROM docs.v_test_to_function",
-    "docs.v_file_summary": "SELECT * FROM docs.v_file_summary",
-    "docs.v_function_profile": "SELECT * FROM docs.v_function_profile",
-    "docs.v_file_profile": "SELECT * FROM docs.v_file_profile",
-    "docs.v_module_profile": "SELECT * FROM docs.v_module_profile",
-}
 
 
 @dataclass(frozen=True)
@@ -1346,7 +1326,7 @@ class DuckDBQueryService:
             When the dataset name is unknown.
         """
         table = self.gateway.datasets.mapping.get(dataset_name)
-        if not table:
+        if table is None:
             message = f"Unknown dataset: {dataset_name}"
             raise errors.invalid_argument(message)
 
@@ -1364,7 +1344,7 @@ class DuckDBQueryService:
             messages=[*limit_clamp.messages, *offset_clamp.messages],
         )
 
-        if limit_clamp.has_error or offset_clamp.has_error:
+        if limit_clamp.has_error or offset_clamp.has_error or limit_clamp.applied <= 0:
             return DatasetRowsResponse(
                 dataset=dataset_name,
                 limit=limit_clamp.applied,
@@ -1373,14 +1353,12 @@ class DuckDBQueryService:
                 meta=meta,
             )
 
-        relation: DuckDBRelation
-        if table in DOCS_VIEW_QUERIES:
-            relation = self.con.sql(DOCS_VIEW_QUERIES[table])
-        else:
-            relation = self.con.table(table)
-        relation = relation.limit(limit_clamp.applied, offset_clamp.applied)
-        rows = relation.fetchall()
-        cols = [desc[0] for desc in relation.description]
+        result = self.con.execute(
+            "SELECT * FROM metadata.dataset_rows(?, ?, ?)",
+            [table, limit_clamp.applied, offset_clamp.applied],
+        )
+        rows = result.fetchall()
+        cols = [desc[0] for desc in result.description]
         mapped = [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
         meta.truncated = limit_clamp.applied > 0 and len(mapped) == limit_clamp.applied
         if not mapped:

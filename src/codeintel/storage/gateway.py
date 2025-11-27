@@ -9,48 +9,10 @@ from typing import Protocol
 
 import duckdb
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.storage.datasets import Dataset, load_dataset_registry
+from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
 from codeintel.storage.schemas import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.views import create_all_views
-
-DOCS_VIEWS: tuple[str, ...] = (
-    "docs.v_function_summary",
-    "docs.v_call_graph_enriched",
-    "docs.v_function_architecture",
-    "docs.v_function_history",
-    "docs.v_function_history_timeseries",
-    "docs.v_module_history_timeseries",
-    "docs.v_module_architecture",
-    "docs.v_test_architecture",
-    "docs.v_behavioral_classification_input",
-    "docs.v_symbol_module_graph",
-    "docs.v_config_graph_metrics_keys",
-    "docs.v_config_graph_metrics_modules",
-    "docs.v_config_projection_key_edges",
-    "docs.v_config_projection_module_edges",
-    "docs.v_config_data_flow",
-    "docs.v_subsystem_agreement",
-    "docs.v_cfg_block_architecture",
-    "docs.v_dfg_block_architecture",
-    "docs.v_subsystem_summary",
-    "docs.v_module_with_subsystem",
-    "docs.v_ide_hints",
-    "docs.v_entrypoints",
-    "docs.v_external_dependencies",
-    "docs.v_external_dependency_calls",
-    "docs.v_data_models",
-    "docs.v_data_model_fields",
-    "docs.v_data_model_relationships",
-    "docs.v_data_models_normalized",
-    "docs.v_data_model_usage",
-    "docs.v_test_to_function",
-    "docs.v_file_summary",
-    "docs.v_function_profile",
-    "docs.v_file_profile",
-    "docs.v_module_profile",
-    "docs.v_validation_summary",
-)
-
 
 DuckDBConnection = duckdb.DuckDBPyConnection
 DuckDBRelation = duckdb.DuckDBPyRelation
@@ -129,11 +91,14 @@ class StorageConfig:
 
 @dataclass(frozen=True)
 class DatasetRegistry:
-    """Track known table and view dataset names."""
+    """Track known table and view dataset names and export metadata."""
 
     mapping: Mapping[str, str]
     tables: tuple[str, ...]
     views: tuple[str, ...]
+    meta: Mapping[str, Dataset] | None = None
+    jsonl_mapping: Mapping[str, str] | None = None
+    parquet_mapping: Mapping[str, str] | None = None
 
     @property
     def all_datasets(self) -> tuple[str, ...]:
@@ -149,7 +114,7 @@ class DatasetRegistry:
 
     def resolve(self, name: str) -> str:
         """
-        Return a validated dataset name.
+        Return a validated dataset table or view key.
 
         Parameters
         ----------
@@ -211,32 +176,42 @@ SnapshotGatewayResolver = Callable[[str], StorageGateway]
 """Callable returning a StorageGateway for a given commit."""
 
 
-def build_dataset_registry(*, include_views: bool = True) -> DatasetRegistry:
+def build_dataset_registry(
+    con: DuckDBConnection,
+    *,
+    include_views: bool = True,
+) -> DatasetRegistry:
     """
-    Build a dataset registry from known tables and docs views.
+    Build a dataset registry from DuckDB's metadata.datasets catalog.
 
     Parameters
     ----------
+    con
+        Active DuckDB connection with metadata tables initialized.
     include_views
         When True, include docs views alongside base tables.
 
     Returns
     -------
     DatasetRegistry
-        Registry containing table/view identifiers and validation helpers.
+        Registry containing dataset metadata and export filenames.
     """
-
-    def _dataset_name(key: str) -> str:
-        _, name = key.split(".", maxsplit=1) if "." in key else ("", key)
-        return name
-
-    table_keys = tuple(sorted(TABLE_SCHEMAS.keys()))
-    view_keys = DOCS_VIEWS if include_views else ()
-    mapping = {_dataset_name(key): key for key in table_keys}
-    mapping.update({_dataset_name(key): key for key in view_keys})
-    table_names = tuple(_dataset_name(key) for key in table_keys)
-    view_names = tuple(_dataset_name(key) for key in view_keys)
-    return DatasetRegistry(mapping=mapping, tables=table_names, views=view_names)
+    ds_registry = load_dataset_registry(con)
+    mapping: dict[str, str] = {name: ds.table_key for name, ds in ds_registry.by_name.items()}
+    table_names = tuple(name for name, ds in ds_registry.by_name.items() if not ds.is_view)
+    view_names = (
+        tuple(name for name, ds in ds_registry.by_name.items() if ds.is_view)
+        if include_views
+        else ()
+    )
+    return DatasetRegistry(
+        mapping=mapping,
+        tables=table_names,
+        views=view_names,
+        meta=ds_registry.by_name,
+        jsonl_mapping=ds_registry.jsonl_datasets,
+        parquet_mapping=ds_registry.parquet_datasets,
+    )
 
 
 @dataclass(frozen=True)
@@ -1260,7 +1235,14 @@ def _connect(config: StorageConfig) -> DuckDBConnection:
     if not config.read_only and config.db_path != Path(":memory:"):
         config.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    con = duckdb.connect(str(config.db_path), read_only=config.read_only)
+    con: DuckDBConnection
+    if not config.read_only and config.db_path != Path(":memory:") and not config.db_path.exists():
+        con = duckdb.connect(str(Path(":memory:")))
+        db_path_str = str(config.db_path).replace("'", "''")
+        con.execute(f"ATTACH DATABASE '{db_path_str}' AS main_db (STORAGE_VERSION 'latest')")
+        con.execute("USE main_db")
+    else:
+        con = duckdb.connect(str(config.db_path), read_only=config.read_only)
     if config.attach_history:
         if config.history_db_path is None:
             message = "attach_history requires history_db_path"
@@ -1295,8 +1277,10 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
     StorageGateway
         Gateway exposing typed accessors and dataset registry.
     """
-    datasets = build_dataset_registry()
     con = _connect(config)
+    if not config.read_only:
+        bootstrap_metadata_datasets(con)
+    datasets = build_dataset_registry(con)
     return _DuckDBGateway(config=config, datasets=datasets, con=con)
 
 

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from codeintel.pipeline.export.datasets import JSONL_DATASETS, PARQUET_DATASETS
 from tests._helpers.fixtures import ProvisionedGateway
 
 
-def test_export_mappings_cover_required_tables() -> None:
+def test_export_mappings_cover_required_tables(
+    docs_export_gateway: ProvisionedGateway,
+) -> None:
     """
     Ensure export mappings include core, graph, analytics tables per architecture.
 
@@ -17,6 +18,10 @@ def test_export_mappings_cover_required_tables() -> None:
     AssertionError
         If either Parquet or JSONL mappings omit required tables.
     """
+    gateway = docs_export_gateway.gateway
+    jsonl_mapping = gateway.datasets.jsonl_mapping or {}
+    parquet_mapping = gateway.datasets.parquet_mapping or {}
+
     required_tables = {
         # core
         "core.goids",
@@ -48,8 +53,8 @@ def test_export_mappings_cover_required_tables() -> None:
         "analytics.goid_risk_factors",
     }
 
-    missing_parquet = required_tables - set(PARQUET_DATASETS)
-    missing_jsonl = required_tables - set(JSONL_DATASETS)
+    missing_parquet = required_tables - set(parquet_mapping)
+    missing_jsonl = required_tables - set(jsonl_mapping)
 
     if missing_parquet:
         message = f"Parquet mapping missing: {sorted(missing_parquet)}"
@@ -71,8 +76,10 @@ def test_export_mappings_registered_with_dataset_registry(
         If any export mapping references an unregistered table.
     """
     mapping_tables = set(docs_export_gateway.gateway.datasets.mapping.values())
-    missing_parquet = set(PARQUET_DATASETS) - mapping_tables
-    missing_jsonl = set(JSONL_DATASETS) - mapping_tables
+    jsonl_mapping = docs_export_gateway.gateway.datasets.jsonl_mapping or {}
+    parquet_mapping = docs_export_gateway.gateway.datasets.parquet_mapping or {}
+    missing_parquet = set(parquet_mapping) - mapping_tables
+    missing_jsonl = set(jsonl_mapping) - mapping_tables
     if missing_parquet:
         message = f"Parquet export tables not registered: {sorted(missing_parquet)}"
         raise AssertionError(message)

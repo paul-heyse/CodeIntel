@@ -66,6 +66,7 @@ class ExportOptions:
     validate_exports: bool = False
     schemas: list[str] | None = None
     datasets: list[str] | None = None
+    require_normalized_macros: bool = False
     validator: Callable[[StorageGateway], None] = validate_dataset_registry
     export_parquet_fn: Exporter = field(default=export_all_parquet)
     export_jsonl_fn: JsonlExporter = field(default=export_all_jsonl)
@@ -102,6 +103,7 @@ def run_validated_exports(
         validate_exports=opts.validate_exports,
         schemas=opts.schemas,
         datasets=opts.datasets,
+        require_normalized_macros=opts.require_normalized_macros,
     )
     return opts.export_jsonl_fn(
         gateway,
@@ -109,4 +111,5 @@ def run_validated_exports(
         validate_exports=opts.validate_exports,
         schemas=opts.schemas,
         datasets=opts.datasets,
+        require_normalized_macros=opts.require_normalized_macros,
     )
