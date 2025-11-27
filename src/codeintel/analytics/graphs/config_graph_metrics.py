@@ -8,7 +8,7 @@ from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     GraphContext,
     ProjectionMetrics,
@@ -120,7 +120,7 @@ def compute_config_graph_metrics(
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntimeOptions | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Compute metrics for config keys/modules and their projections.
@@ -133,24 +133,28 @@ def compute_config_graph_metrics(
         Repository identifier anchoring the metrics.
     commit : str
         Commit hash anchoring the metrics snapshot.
-    runtime : GraphRuntimeOptions | None
-        Optional runtime options supplying cached graphs and backend selection.
+    runtime : GraphRuntime | GraphRuntimeOptions | None
+        Optional runtime supplying cached graphs and backend selection.
     """
-    runtime = runtime or GraphRuntimeOptions()
-    context = runtime.context
-    graph_ctx = runtime.graph_ctx
-    use_gpu = runtime.use_gpu
+    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    graph_ctx = runtime_opts.graph_ctx
+    use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.config_graph_metrics_keys")
     ensure_schema(con, "analytics.config_graph_metrics_modules")
     ensure_schema(con, "analytics.config_projection_key_edges")
     ensure_schema(con, "analytics.config_projection_module_edges")
 
-    if context is not None and (context.repo != repo or context.commit != commit):
+    if runtime_opts.context is not None and (
+        runtime_opts.context.repo != repo or runtime_opts.context.commit != commit
+    ):
         return
 
-    engine: GraphEngine = runtime.build_engine(gateway, repo, commit)
-    graph = engine.config_module_bipartite()
+    if isinstance(runtime, GraphRuntime):
+        graph = runtime.ensure_config_module_bipartite()
+    else:
+        engine: GraphEngine = runtime_opts.build_engine(gateway, repo, commit)
+        graph = engine.config_module_bipartite()
     if graph.number_of_nodes() == 0:
         log_empty_graph("config_module_bipartite", graph)
         _clear_config_tables(gateway, repo, commit)

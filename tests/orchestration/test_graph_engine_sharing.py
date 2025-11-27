@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config import BuildPaths, ConfigBuilder, SnapshotRef
+from codeintel.config import BuildPaths, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.ingestion.source_scanner import ScanProfile
@@ -196,9 +196,6 @@ def test_graph_runtime_reuses_engine(tmp_path: Path) -> None:
         runtime = orchestration_steps.ensure_graph_runtime(ctx, acx=None)
         if runtime.engine is not engine:
             pytest.fail("Runtime did not reuse the shared engine instance")
-        rebuilt = runtime.build_engine(gateway, snapshot.repo, snapshot.commit)
-        if rebuilt is not engine:
-            pytest.fail("Runtime.build_engine did not return the shared engine")
     finally:
         gateway.close()
 
@@ -223,21 +220,9 @@ def test_runtime_reuse_with_graph_context(tmp_path: Path) -> None:
         config_profile_cfg=_scan_profile(tmp_path),
         graph_backend_cfg=graph_backend,
     )
-    builder = ConfigBuilder.from_snapshot(
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        repo_root=snapshot.repo_root,
-        build_dir=paths.build_dir,
-    )
-
     try:
-        graph_ctx = orchestration_steps.build_graph_context(
-            builder.graph_metrics(),
-            now=datetime.now(tz=UTC),
-            use_gpu=False,
-        )
-        runtime_one = orchestration_steps.ensure_graph_runtime(ctx, graph_ctx=graph_ctx)
-        runtime_two = orchestration_steps.ensure_graph_runtime(ctx, graph_ctx=graph_ctx)
+        runtime_one = orchestration_steps.ensure_graph_runtime(ctx)
+        runtime_two = orchestration_steps.ensure_graph_runtime(ctx)
         if runtime_one.engine is not runtime_two.engine:
             pytest.fail("Graph runtime did not reuse the shared engine with graph context")
     finally:

@@ -17,7 +17,8 @@ from codeintel.analytics.function_ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
-from codeintel.graphs.engine import NxGraphEngine
+from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.engine import GraphEngine, NxGraphEngine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -228,6 +229,8 @@ def _load_trimmed_graph(
 def build_analytics_context(
     gateway: StorageGateway,
     cfg: AnalyticsContextConfig,
+    *,
+    engine: GraphEngine | None = None,
 ) -> AnalyticsContext:
     """
     Construct an `AnalyticsContext` with cached artifacts for a run.
@@ -238,6 +241,8 @@ def build_analytics_context(
         Storage gateway exposing the DuckDB connection.
     cfg
         Context configuration (repo, commit, budgets).
+    engine
+        Optional pre-built graph engine to reuse; when omitted an NxGraphEngine is constructed.
 
     Returns
     -------
@@ -257,10 +262,9 @@ def build_analytics_context(
     module_map = load_module_map(gateway, cfg.repo, cfg.commit)
     timers["module_map_ms"] = (monotonic() - start) * 1000.0
 
-    engine = NxGraphEngine(
+    engine = engine or NxGraphEngine(
         gateway=gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
+        snapshot=SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root),
         use_gpu=cfg.use_gpu,
     )
     graphs: dict[str, nx.Graph | None] = {}

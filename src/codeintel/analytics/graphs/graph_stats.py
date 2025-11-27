@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     GraphContext,
     build_projection_graph,
@@ -26,7 +26,7 @@ def compute_graph_stats(
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntimeOptions | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate analytics.graph_stats for call/import and related graphs.
@@ -39,14 +39,14 @@ def compute_graph_stats(
         Repository identifier anchoring the metrics.
     commit : str
         Commit hash anchoring the metrics snapshot.
-    runtime : GraphRuntimeOptions | None
-        Optional runtime options including cached graphs and backend selection.
+    runtime : GraphRuntime | GraphRuntimeOptions | None
+        Optional runtime supplying cached graphs and backend selection.
     """
-    runtime = runtime or GraphRuntimeOptions()
-    use_gpu = runtime.use_gpu
+    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.graph_stats")
-    ctx = runtime.graph_ctx or GraphContext(
+    ctx = runtime_opts.graph_ctx or GraphContext(
         repo=repo,
         commit=commit,
         now=datetime.now(UTC),
@@ -55,17 +55,26 @@ def compute_graph_stats(
     if ctx.use_gpu != use_gpu:
         ctx = replace(ctx, use_gpu=use_gpu)
 
-    engine: GraphEngine = runtime.build_engine(gateway, repo, commit)
-    call_graph = engine.call_graph()
-    import_graph = engine.import_graph()
+    if isinstance(runtime, GraphRuntime):
+        call_graph = runtime.ensure_call_graph()
+        import_graph = runtime.ensure_import_graph()
+        symbol_module_graph = runtime.ensure_symbol_module_graph()
+        symbol_function_graph = runtime.ensure_symbol_function_graph()
+        config_bipartite = runtime.ensure_config_module_bipartite()
+    else:
+        engine: GraphEngine = runtime_opts.build_engine(gateway, repo, commit)
+        call_graph = engine.call_graph()
+        import_graph = engine.import_graph()
+        symbol_module_graph = engine.symbol_module_graph()
+        symbol_function_graph = engine.symbol_function_graph()
+        config_bipartite = engine.config_module_bipartite()
     graphs: dict[str, nx.Graph | nx.DiGraph] = {
         "call_graph": call_graph,
         "import_graph": import_graph,
-        "symbol_module_graph": engine.symbol_module_graph(),
-        "symbol_function_graph": engine.symbol_function_graph(),
+        "symbol_module_graph": symbol_module_graph,
+        "symbol_function_graph": symbol_function_graph,
     }
 
-    config_bipartite = engine.config_module_bipartite()
     if config_bipartite.number_of_nodes() > 0:
         keys = {n for n, d in config_bipartite.nodes(data=True) if d.get("bipartite") == 0}
         modules = set(config_bipartite) - keys

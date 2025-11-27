@@ -2,53 +2,46 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.graph_service import GraphContext
-from codeintel.config.primitives import GraphBackendConfig
-from codeintel.graphs.engine import GraphEngine
+from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.graphs.engine import GraphEngine, GraphKind
 from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
+    import networkx as nx
+
     from codeintel.analytics.context import AnalyticsContext
+    from codeintel.analytics.graph_service import GraphContext
 
 
 @dataclass(frozen=True)
 class GraphRuntimeOptions:
-    """
-    Runtime options for graph-based analytics functions.
+    """Configuration describing how to construct a `GraphRuntime`."""
 
-    Attributes
-    ----------
-    context :
-        Optional shared AnalyticsContext containing cached graphs.
-    graph_ctx :
-        Optional GraphContext carrying weights and sampling limits.
-    graph_backend :
-        Optional backend selection used to derive GPU preferences.
-    engine :
-        Optional pre-built GraphEngine to reuse across analytics modules.
-    """
-
+    snapshot: SnapshotRef | None = None
+    backend: GraphBackendConfig | None = None
+    graphs: GraphKind = GraphKind.ALL
+    eager: bool = False
+    validate: bool = False
+    cache_key: str | None = None
     context: AnalyticsContext | None = None
     graph_ctx: GraphContext | None = None
-    graph_backend: GraphBackendConfig | None = None
     engine: GraphEngine | None = None
 
     @property
-    def use_gpu(self) -> bool:
-        """
-        Compute whether GPU execution is preferred.
+    def resolved_backend(self) -> GraphBackendConfig:
+        """Return a concrete backend configuration."""
+        return self.backend or GraphBackendConfig()
 
-        Returns
-        -------
-        bool
-            True when graph_backend or graph_ctx requests GPU usage.
-        """
-        if self.graph_backend is not None:
-            return bool(self.graph_backend.use_gpu)
+    @property
+    def use_gpu(self) -> bool:
+        """Compute whether GPU execution is preferred."""
+        if self.backend is not None:
+            return bool(self.backend.use_gpu)
         if self.graph_ctx is not None:
             return bool(self.graph_ctx.use_gpu)
         return False
@@ -58,30 +51,166 @@ class GraphRuntimeOptions:
         gateway: StorageGateway,
         repo: str,
         commit: str,
+        *,
+        snapshot: SnapshotRef | None = None,
     ) -> GraphEngine:
-        """
-        Construct or reuse a GraphEngine for the target snapshot.
-
-        Parameters
-        ----------
-        gateway :
-            Storage gateway for accessing DuckDB-backed graph views.
-        repo : str
-            Repository identifier anchoring the graph snapshot.
-        commit : str
-            Commit hash anchoring the graph snapshot.
-
-        Returns
-        -------
-        GraphEngine
-            Engine capable of materializing the configured graphs.
-        """
+        """Construct or reuse a graph engine for the target snapshot."""
         if self.engine is not None:
             return self.engine
-
+        target_snapshot = snapshot or self.snapshot
+        if target_snapshot is None:
+            target_snapshot = SnapshotRef(
+                repo=repo,
+                commit=commit,
+                repo_root=Path(),
+            )
         return build_graph_engine(
             gateway,
-            (repo, commit),
-            graph_backend=self.graph_backend,
+            target_snapshot,
+            graph_backend=self.resolved_backend,
             context=self.context,
         )
+
+
+@dataclass
+class GraphRuntime:
+    """Live runtime wrapping a GraphEngine plus cached graph instances."""
+
+    options: GraphRuntimeOptions
+    engine: GraphEngine
+    call_graph: nx.DiGraph | None = None
+    import_graph: nx.DiGraph | None = None
+    cfg_graph: nx.DiGraph | None = None
+    symbol_module_graph: nx.Graph | None = None
+    symbol_function_graph: nx.Graph | None = None
+    config_module_bipartite: nx.Graph | None = None
+    test_function_bipartite: nx.Graph | None = None
+    _cache: dict[GraphKind, object] = field(default_factory=dict, repr=False)
+
+    @property
+    def backend(self) -> GraphBackendConfig:
+        """Resolved backend configuration for this runtime."""
+        return self.options.resolved_backend
+
+    @property
+    def use_gpu(self) -> bool:
+        """Flag indicating whether the backend prefers GPU execution."""
+        return self.backend.use_gpu
+
+    def ensure_call_graph(self) -> nx.DiGraph:
+        """Return a cached call graph, loading it from the engine when needed."""
+        if self.call_graph is None:
+            self.call_graph = self.engine.load_call_graph()
+        return self.call_graph
+
+    def ensure_import_graph(self) -> nx.DiGraph:
+        """Return a cached import graph, loading it from the engine when needed."""
+        if self.import_graph is None:
+            self.import_graph = self.engine.load_import_graph()
+        return self.import_graph
+
+    def ensure_cfg_graph(self) -> nx.DiGraph | None:
+        """Return a cached CFG graph when available."""
+        if self.cfg_graph is not None:
+            return self.cfg_graph
+        cached = self._cache.get(GraphKind.CFG_GRAPH)
+        if cached is not None:
+            self.cfg_graph = cached  # type: ignore[assignment]
+        return self.cfg_graph
+
+    def ensure_symbol_module_graph(self) -> nx.Graph:
+        """Return a cached symbol-module graph, loading from the engine when needed."""
+        if self.symbol_module_graph is None:
+            self.symbol_module_graph = self.engine.load_symbol_module_graph()
+        return self.symbol_module_graph
+
+    def ensure_symbol_function_graph(self) -> nx.Graph:
+        """Return a cached symbol-function graph, loading from the engine when needed."""
+        if self.symbol_function_graph is None:
+            self.symbol_function_graph = self.engine.load_symbol_function_graph()
+        return self.symbol_function_graph
+
+    def ensure_config_module_bipartite(self) -> nx.Graph:
+        """Return a cached config-module bipartite graph."""
+        if self.config_module_bipartite is None:
+            self.config_module_bipartite = self.engine.load_config_module_bipartite()
+        return self.config_module_bipartite
+
+    def ensure_test_function_bipartite(self) -> nx.Graph:
+        """Return a cached test-function bipartite graph."""
+        if self.test_function_bipartite is None:
+            self.test_function_bipartite = self.engine.load_test_function_bipartite()
+        return self.test_function_bipartite
+
+
+def build_graph_runtime(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    backend: GraphBackendConfig,
+    *,
+    graphs: GraphKind = GraphKind.ALL,
+    eager: bool = False,
+    validate: bool = False,
+    cache_key: str | None = None,
+    context: AnalyticsContext | None = None,
+) -> GraphRuntime:
+    """
+    Construct a GraphRuntime bound to a snapshot and backend configuration.
+
+    Parameters
+    ----------
+    gateway :
+        Storage gateway for the snapshot database.
+    snapshot :
+        Repository snapshot describing repo/commit/root.
+    backend :
+        Graph backend configuration controlling GPU usage.
+    graphs :
+        Graph kinds to build eagerly when requested.
+    eager :
+        Whether to populate graphs immediately.
+    validate :
+        Whether to run validation hooks during eager builds.
+    cache_key :
+        Optional cache key for external caching layers.
+    context :
+        Optional analytics context used to seed graph caches.
+    """
+    options = GraphRuntimeOptions(
+        snapshot=snapshot,
+        backend=backend,
+        graphs=graphs,
+        eager=eager,
+        validate=validate,
+        cache_key=cache_key,
+    )
+    engine = build_graph_engine(
+        gateway,
+        snapshot,
+        graph_backend=backend,
+        context=context,
+    )
+    runtime = GraphRuntime(options=options, engine=engine)
+
+    if eager:
+        if graphs & GraphKind.CALL_GRAPH:
+            runtime.ensure_call_graph()
+        if graphs & GraphKind.IMPORT_GRAPH:
+            runtime.ensure_import_graph()
+        if graphs & GraphKind.SYMBOL_MODULE_GRAPH:
+            runtime.ensure_symbol_module_graph()
+        if graphs & GraphKind.SYMBOL_FUNCTION_GRAPH:
+            runtime.ensure_symbol_function_graph()
+        if graphs & GraphKind.CONFIG_MODULE_BIPARTITE:
+            runtime.ensure_config_module_bipartite()
+        if graphs & GraphKind.TEST_FUNCTION_BIPARTITE:
+            runtime.ensure_test_function_bipartite()
+    return runtime
+
+
+__all__ = [
+    "GraphKind",
+    "GraphRuntime",
+    "GraphRuntimeOptions",
+    "build_graph_runtime",
+]

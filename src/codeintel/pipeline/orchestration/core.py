@@ -14,8 +14,7 @@ from codeintel.analytics.context import (
     AnalyticsContextConfig,
     build_analytics_context,
 )
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
-from codeintel.analytics.graph_service import GraphContext
+from codeintel.analytics.graph_runtime import GraphKind, GraphRuntime, build_graph_runtime
 from codeintel.config import (
     ConfigBuilder,
     GraphBackendConfig,
@@ -25,8 +24,7 @@ from codeintel.config import (
 )
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths
-from codeintel.graphs.engine import NxGraphEngine
-from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -125,7 +123,7 @@ class PipelineContext:
     analytics_context: AnalyticsContext | None = None
     change_tracker: ChangeTracker | None = None
     tools: ToolsConfig | None = None
-    graph_engine: NxGraphEngine | None = None
+    graph_runtime: GraphRuntime | None = None
     export_datasets: tuple[str, ...] | None = None
 
     @property
@@ -177,6 +175,11 @@ class PipelineContext:
     def graph_backend(self) -> GraphBackendConfig:
         """Graph backend configuration."""
         return self.graph_backend_cfg
+
+    @property
+    def graph_engine(self) -> GraphEngine | None:
+        """Convenience accessor for the shared graph engine."""
+        return self.graph_runtime.engine if self.graph_runtime is not None else None
 
     def config_builder(self) -> ConfigBuilder:
         """
@@ -293,6 +296,7 @@ def _analytics_context(ctx: PipelineContext) -> AnalyticsContext:
         Shared analytics artifacts (catalog, module map, graphs, ASTs).
     """
     if ctx.analytics_context is None:
+        runtime = ctx.graph_runtime or _graph_runtime(ctx, acx=None)
         ctx.analytics_context = build_analytics_context(
             ctx.gateway,
             AnalyticsContextConfig(
@@ -301,62 +305,52 @@ def _analytics_context(ctx: PipelineContext) -> AnalyticsContext:
                 repo_root=ctx.repo_root,
                 use_gpu=ctx.graph_backend.use_gpu,
             ),
+            engine=runtime.engine,
         )
         ctx.function_catalog = ctx.analytics_context.catalog
     return ctx.analytics_context
 
 
-def _graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> NxGraphEngine:
-    """
-    Construct or reuse a shared graph engine for the pipeline run.
-
-    Returns
-    -------
-    NxGraphEngine
-        Cached engine keyed to the pipeline snapshot.
-    """
-    context = acx or ctx.analytics_context
-    if ctx.graph_engine is None:
-        ctx.graph_engine = build_graph_engine(
-            ctx.gateway,
-            (ctx.repo, ctx.commit),
-            graph_backend=ctx.graph_backend,
-            context=context,
-        )
-    return ctx.graph_engine
+def _graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> GraphEngine:
+    """Construct or reuse a shared graph engine for the pipeline run."""
+    return _graph_runtime(ctx, acx=acx).engine
 
 
 def _graph_runtime(
     ctx: PipelineContext,
-    *,
-    graph_ctx: GraphContext | None = None,
     acx: AnalyticsContext | None = None,
-) -> GraphRuntimeOptions:
+) -> GraphRuntime:
     """
     Build a runtime bundle for graph consumers using the shared engine.
 
     Returns
     -------
-    GraphRuntimeOptions
+    GraphRuntime
         Runtime configured to reuse the shared engine and backend.
     """
-    context = acx or _analytics_context(ctx)
-    engine = _graph_engine(ctx, context)
-    return GraphRuntimeOptions(
+    context = acx or ctx.analytics_context
+    if ctx.graph_runtime is not None:
+        return ctx.graph_runtime
+    runtime = build_graph_runtime(
+        ctx.gateway,
+        ctx.snapshot,
+        ctx.graph_backend,
+        graphs=GraphKind.ALL,
+        eager=False,
+        validate=False,
         context=context,
-        graph_ctx=graph_ctx,
-        graph_backend=ctx.graph_backend,
-        engine=engine,
     )
+    ctx.graph_runtime = runtime
+    return runtime
 
 
-def ensure_graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> NxGraphEngine:
+def ensure_graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> GraphEngine:
     """
     Public helper to retrieve the shared graph engine for the pipeline snapshot.
 
     Returns
     -------
-    NxGraphEngine
+    GraphEngine
         Shared engine keyed to the pipeline's repo and commit.
     """
     return _graph_engine(ctx, acx)
@@ -364,19 +358,17 @@ def ensure_graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = Non
 
 def ensure_graph_runtime(
     ctx: PipelineContext,
-    *,
-    graph_ctx: GraphContext | None = None,
     acx: AnalyticsContext | None = None,
-) -> GraphRuntimeOptions:
+) -> GraphRuntime:
     """
     Public helper to construct a shared graph runtime for the pipeline snapshot.
 
     Returns
     -------
-    GraphRuntimeOptions
+    GraphRuntime
         Runtime bound to the shared engine and backend preferences.
     """
-    return _graph_runtime(ctx, graph_ctx=graph_ctx, acx=acx)
+    return _graph_runtime(ctx, acx=acx)
 
 
 __all__ = [

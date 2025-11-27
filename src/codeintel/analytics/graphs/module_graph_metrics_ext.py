@@ -9,7 +9,7 @@ from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     CentralityBundle,
     ComponentBundle,
@@ -137,12 +137,15 @@ def compute_graph_metrics_modules_ext(
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntimeOptions | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate analytics.graph_metrics_modules_ext with richer import metrics."""
-    runtime = runtime or GraphRuntimeOptions()
-    ctx = _resolve_module_context(runtime, repo, commit)
-    engine = runtime.build_engine(gateway, repo, commit)
+    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    ctx = _resolve_module_context(runtime_opts, repo, commit)
+    if isinstance(runtime, GraphRuntime):
+        engine = runtime.engine
+    else:
+        engine = runtime_opts.build_engine(gateway, repo, commit)
     views = _build_import_views(engine)
     slices = _module_metric_slices(views, ctx)
     rows = _module_metric_rows(repo, commit, ctx, views, slices)

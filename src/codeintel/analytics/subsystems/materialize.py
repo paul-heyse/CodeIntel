@@ -26,7 +26,7 @@ from codeintel.analytics.subsystems.edge_stats import (
 )
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
 from codeintel.config import SubsystemsStepConfig
-from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
+from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -109,14 +109,8 @@ def build_subsystems(
         )
     graph_engine = engine
     if graph_engine is None:
-        graph_engine = NxGraphEngine(
-            gateway=gateway,
-            repo=cfg.repo,
-            commit=cfg.commit,
-            use_gpu=context.use_gpu if context is not None else False,
-        )
-        if context is not None and context.repo == cfg.repo and context.commit == cfg.commit:
-            graph_engine.seed(GraphKind.IMPORT_GRAPH, context.import_graph)
+        message = "Graph engine is required for subsystem materialization."
+        raise ValueError(message)
     ctx = SubsystemBuildContext(
         cfg=cfg,
         labels=labels,

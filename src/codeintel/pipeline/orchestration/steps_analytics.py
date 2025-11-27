@@ -60,8 +60,6 @@ from codeintel.pipeline.orchestration.core import (
     StepPhase,
     _analytics_context,
     _function_catalog,
-    _graph_engine,
-    _graph_runtime,
     _log_step,
     _resolve_code_profile,
     ensure_graph_runtime,
@@ -252,7 +250,7 @@ class FunctionEffectsStep:
         _log_step(self.name)
         cfg = ctx.config_builder().function_effects()
         acx = _analytics_context(ctx)
-        runtime = _graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
         compute_function_effects(
             ctx.gateway,
             cfg,
@@ -536,12 +534,13 @@ class GraphMetricsStep:
             use_gpu=ctx.graph_backend.use_gpu,
         )
         acx = _analytics_context(ctx)
-        runtime = _graph_runtime(ctx, graph_ctx=graph_ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
         compute_graph_metrics(
             gateway,
             cfg,
             catalog_provider=acx.catalog,
             runtime=runtime,
+            graph_ctx=graph_ctx,
         )
         compute_graph_metrics_functions_ext(
             gateway,
@@ -646,8 +645,8 @@ class SubsystemsStep:
         gateway = ctx.gateway
         cfg = ctx.config_builder().subsystems()
         acx = _analytics_context(ctx)
-        engine = _graph_engine(ctx, acx)
-        build_subsystems(gateway, cfg, context=acx, engine=engine)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
+        build_subsystems(gateway, cfg, context=acx, engine=runtime.engine)
 
 
 @dataclass
