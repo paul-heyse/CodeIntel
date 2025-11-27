@@ -19,9 +19,9 @@ from codeintel.analytics.graph_service import (
     component_metadata,
     structural_metrics,
 )
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 CENTRALITY_SAMPLE_LIMIT = 500
 RICH_CLUB_PERCENTILE = 0.1

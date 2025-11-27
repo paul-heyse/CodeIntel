@@ -6,9 +6,9 @@ from time import perf_counter
 
 import pytest
 
-from codeintel.config.schemas.sql_builder import prepared_statements_dynamic
 from codeintel.ingestion.ingest_service import ingest_via_macro
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from codeintel.storage.sql_helpers import prepared_statements_dynamic
 
 
 def _sample_rows(con: DuckDBConnection, table_key: str, count: int) -> list[tuple[object, ...]]:

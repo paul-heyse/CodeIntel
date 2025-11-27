@@ -19,9 +19,9 @@ from codeintel.analytics.graph_service import (
     structural_metrics,
     to_decimal_id,
 )
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 CENTRALITY_SAMPLE_LIMIT = 500
 EIGEN_MAX_ITER = 200

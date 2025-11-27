@@ -12,6 +12,7 @@ from codeintel.config.primitives import ScanProfiles, SnapshotRef
 
 if TYPE_CHECKING:
     from coverage import Coverage
+
     from codeintel.ingestion.source_scanner import ScanProfile
 
 

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 import pytest
 from prefect.server.api import server as prefect_server
+from prefect.settings import PREFECT_API_KEY, PREFECT_API_URL, temporary_settings
 from prefect.testing.utilities import prefect_test_harness
 
 
@@ -49,8 +51,20 @@ def prefect_quiet_env() -> Iterator[None]:
     The harness starts a temporary API/database and ensures clean shutdown,
     preventing teardown errors or CRASHED states when the process exits.
     """
+    prev_events = os.environ.get("PREFECT_EVENTS_ENABLED")
+    os.environ["PREFECT_EVENTS_ENABLED"] = "false"
     with (
+        temporary_settings(
+            {
+                PREFECT_API_URL: None,
+                PREFECT_API_KEY: "testing-disable-events",
+            }
+        ),
         _quiet_prefect_logging(),
         prefect_test_harness(),
     ):
         yield
+    if prev_events is None:
+        os.environ.pop("PREFECT_EVENTS_ENABLED", None)
+    else:
+        os.environ["PREFECT_EVENTS_ENABLED"] = prev_events

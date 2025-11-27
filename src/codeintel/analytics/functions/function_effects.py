@@ -22,7 +22,6 @@ from codeintel.analytics.function_ast_cache import (
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import FunctionEffectsStepConfig
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
@@ -30,6 +29,7 @@ from codeintel.graphs.function_catalog_service import (
 )
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 

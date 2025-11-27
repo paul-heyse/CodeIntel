@@ -2,14 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from codeintel.config.schemas.ingestion_sql import verify_ingestion_columns
-from codeintel.config.schemas.registry_adapter import load_registry_columns
-from codeintel.storage.gateway import DuckDBConnection
-
-_INGESTION_COLUMNS_VERIFIED: list[bool] = [False]
-
 # ---------------------------------------------------------------------------
 # Column lists (single source of truth for SQL literals below)
 # ---------------------------------------------------------------------------
@@ -737,82 +729,6 @@ GRAPH_VALIDATION_INSERT = (
 )
 
 
-@dataclass(frozen=True)
-class PreparedStatements:
-    """Prepared insert/delete SQL for a table."""
-
-    insert_sql: str
-    delete_sql: str | None = None
-
-
-def prepared_statements_dynamic(con: DuckDBConnection, table_key: str) -> PreparedStatements:
-    """
-    Return prepared SQL using registry-derived column order for macro-backed tables.
-
-    Parameters
-    ----------
-    con :
-        Active DuckDB connection.
-    table_key :
-        Registry key (e.g., "analytics.function_metrics").
-
-    Returns
-    -------
-    PreparedStatements
-        Insert and optional delete SQL with column order sourced from the registry.
-
-    Raises
-    ------
-    RuntimeError
-        If the table is missing from the registry.
-    """
-    registry_cols = load_registry_columns(con).get(table_key)
-    if registry_cols is None:
-        message = f"Table {table_key} missing from registry"
-        raise RuntimeError(message)
-    cols_sql = ", ".join(registry_cols)
-    placeholders = ", ".join("?" for _ in registry_cols)
-    schema_name, table_name = table_key.split(".", maxsplit=1)
-    table_sql = f'"{schema_name}"."{table_name}"'
-    insert_sql = f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders})"  # noqa: S608 - registry-controlled identifiers
-    return PreparedStatements(
-        insert_sql=insert_sql,
-        delete_sql=None,
-    )
-
-
-def ensure_schema(con: DuckDBConnection, table_key: str) -> None:
-    """
-    Validate that the live DuckDB table matches the registry definition.
-
-    Checks column presence/order and NOT NULL flags.
-
-    Raises
-    ------
-    RuntimeError
-        If the table is missing or deviates from the registry.
-    """
-    if not _INGESTION_COLUMNS_VERIFIED[0]:
-        verify_ingestion_columns(con)
-        _INGESTION_COLUMNS_VERIFIED[0] = True
-
-    registry_cols = load_registry_columns(con).get(table_key)
-    if registry_cols is None:
-        message = f"Table {table_key} missing from registry"
-        raise RuntimeError(message)
-    schema_name, table_name = table_key.split(".", maxsplit=1)
-    info = con.execute(f"PRAGMA table_info({schema_name}.{table_name})").fetchall()
-    if not info:
-        message = f"Table {table_key} is missing"
-        raise RuntimeError(message)
-
-    names = [row[1] for row in info]
-    expected_cols = registry_cols
-    if names != expected_cols:
-        message = f"Column order mismatch for {table_key}: db={names}, registry={expected_cols}"
-        raise RuntimeError(message)
-
-
 __all__ = [
     "AST_METRICS_COLUMNS",
     "AST_METRICS_DELETE",
@@ -882,7 +798,4 @@ __all__ = [
     "TYPEDNESS_COLUMNS",
     "TYPEDNESS_DELETE",
     "TYPEDNESS_INSERT",
-    "PreparedStatements",
-    "ensure_schema",
-    "prepared_statements_dynamic",
 ]

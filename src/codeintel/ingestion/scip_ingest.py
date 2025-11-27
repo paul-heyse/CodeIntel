@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from codeintel.config import ScipIngestStepConfig, ToolsConfig
-from codeintel.config.schemas.sql_builder import GOID_CROSSWALK_UPDATE_SCIP, ensure_schema
+from codeintel.config.schemas.sql_builder import GOID_CROSSWALK_UPDATE_SCIP
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,
     IncrementalIngestOps,
@@ -23,6 +23,7 @@ from codeintel.ingestion.common import ModuleRecord
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolExecutionError, ToolNotFoundError, ToolService
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 

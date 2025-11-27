@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.analytics.dependencies import load_config_key_map
-from codeintel.config.schemas.sql_builder import ensure_schema
+from codeintel.storage.sql_helpers import ensure_schema
 from tests._helpers.fixtures import provision_gateway_with_repo
 
 

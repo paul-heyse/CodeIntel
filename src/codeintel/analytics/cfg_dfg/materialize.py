@@ -25,8 +25,8 @@ from codeintel.analytics.cfg_dfg.dfg_core import (
 )
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.graph_service import GraphContext
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 MAX_CFG_CENTRALITY_SAMPLE = 100
 MAX_CFG_EIGEN_SAMPLE = 200

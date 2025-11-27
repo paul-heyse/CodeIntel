@@ -22,8 +22,8 @@ from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.ingestion.common import load_module_map
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.module_index import load_module_map
 
 log = logging.getLogger(__name__)
 

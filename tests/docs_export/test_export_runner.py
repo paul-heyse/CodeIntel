@@ -9,6 +9,7 @@ from typing import Protocol, cast
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions, run_validated_exports
 from codeintel.storage.gateway import StorageConfig, StorageGateway
+from tests._helpers.fixtures import provision_docs_export_ready
 
 
 class _StubGateway(Protocol):
@@ -35,28 +36,7 @@ def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) 
         If the validator/export invocation order or outputs are unexpected.
     """
     calls: list[str] = []
-
-    class Gateway:
-        def __init__(self) -> None:
-            self.datasets = object()
-            self.config = StorageConfig(db_path=Path(":memory:"))
-            self.core = object()
-            self.graph = object()
-            self.docs = object()
-            self.analytics = object()
-            self.con = object()
-
-        @staticmethod
-        def close() -> None:
-            return None
-
-        @staticmethod
-        def execute(_sql: str, _params: object | None = None) -> object:
-            return object()
-
-        @staticmethod
-        def table(_name: str) -> object:
-            return object()
+    ctx = provision_docs_export_ready(tmp_path, db_path=tmp_path / "db.duckdb", file_backed=True)
 
     def validator(gateway: _StubGateway) -> None:
         _ = gateway.datasets
@@ -96,9 +76,12 @@ def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) 
         export_jsonl_fn=export_jsonl_fn,
     )
 
-    result = run_validated_exports(
-        gateway=cast("StorageGateway", Gateway()), output_dir=tmp_path, options=options
-    )
+    try:
+        result = run_validated_exports(
+            gateway=cast("StorageGateway", ctx.gateway), output_dir=tmp_path, options=options
+        )
+    finally:
+        ctx.close()
 
     expected_calls = ["validator", "parquet:['a']", "jsonl:['a']"]
     if calls != expected_calls:

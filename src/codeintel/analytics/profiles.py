@@ -13,12 +13,12 @@ from datetime import UTC, datetime
 
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.config import ProfilesAnalyticsStepConfig
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 

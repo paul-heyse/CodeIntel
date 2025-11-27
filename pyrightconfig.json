@@ -5,7 +5,7 @@
   "venvPath": ".",
   "venv": ".venv",
   "useLibraryCodeForTypes": true,
-  "stubPath": "src/codeintel/stubs",
+  "stubPath": "src/codeintel",
   "include": ["src", "tests", "docs"],
   "exclude": [
     ".git",

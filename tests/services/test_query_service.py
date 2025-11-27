@@ -16,12 +16,10 @@ from fastapi.testclient import TestClient
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.http.datasets import build_registry_and_limits, validate_dataset_registry
 from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import QueryBackend
 from codeintel.serving.mcp.models import (
-    DatasetRowsResponse,
     FunctionSummaryResponse,
-    ResponseMeta,
-    ViewRow,
 )
 from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
 from codeintel.serving.services.query_service import (
@@ -31,6 +29,7 @@ from codeintel.serving.services.query_service import (
     ServiceObservability,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.architecture import open_seeded_architecture_gateway
 
 
 @runtime_checkable
@@ -82,67 +81,6 @@ def _invoke_list_datasets(
     local: LocalQueryService, _params: dict[str, object]
 ) -> list[dict[str, object]]:
     return [descriptor.model_dump() for descriptor in local.list_datasets()]
-
-
-class StubDuckQuery:
-    """Minimal DuckDBQueryService stand-in for LocalQueryService tests."""
-
-    def __init__(self) -> None:
-        self.limits = BackendLimits(default_limit=3, max_rows_per_call=5)
-        self.last_call: tuple[str, int | None, int] | None = None
-        self.summary_calls = 0
-
-    def read_dataset_rows(
-        self, *, dataset_name: str, limit: int | None, offset: int
-    ) -> DatasetRowsResponse:
-        """
-        Record the dataset read request and return a stubbed response.
-
-        Returns
-        -------
-        DatasetRowsResponse
-            Response containing a single row for test assertions.
-
-        Raises
-        ------
-        ValueError
-            When the dataset is not recognized.
-        """
-        self.last_call = (dataset_name, limit, offset)
-        if dataset_name == "missing":
-            message = "Unknown dataset"
-            raise ValueError(message)
-        return DatasetRowsResponse(
-            dataset=dataset_name,
-            limit=self.limits.max_rows_per_call,
-            offset=offset,
-            rows=[ViewRow.model_validate({"issue": "ok"})],
-            meta=ResponseMeta(),
-        )
-
-    def get_function_summary(
-        self,
-        *,
-        urn: str | None = None,
-        goid_h128: int | None = None,
-        rel_path: str | None = None,
-        qualname: str | None = None,
-    ) -> FunctionSummaryResponse:
-        """
-        Record function summary requests and return a canned response.
-
-        Returns
-        -------
-        FunctionSummaryResponse
-            Response containing the requested qualname when provided.
-        """
-        _ = (goid_h128, rel_path)
-        self.summary_calls += 1
-        return FunctionSummaryResponse(
-            found=True,
-            summary=ViewRow.model_validate({"qualname": qualname or "fn", "urn": urn}),
-            meta=ResponseMeta(),
-        )
 
 
 class RecordingObservability(ServiceObservability):
@@ -270,63 +208,94 @@ def _build_http_adapter_from_local(
     return HttpQueryService(request_json=request_json, limits=limits)
 
 
-def test_local_read_dataset_rows_defaults_limit() -> None:
-    """Local service uses backend default limit when none is provided."""
-    query = StubDuckQuery()
-    service = LocalQueryService(query=cast("DuckDBQueryService", query), dataset_tables={})
-    _resp = service.read_dataset_rows(dataset_name="docs", limit=None, offset=0)
-    if query.last_call != ("docs", query.limits.default_limit, 0):
-        message = f"Unexpected call args: {query.last_call}"
-        pytest.fail(message)
-
-
-def test_local_read_dataset_rows_propagates_errors() -> None:
-    """Local service does not swallow errors from the query layer."""
-    service = LocalQueryService(
-        query=cast("DuckDBQueryService", StubDuckQuery()), dataset_tables={}
+def _build_local_service(
+    gateway: StorageGateway,
+    *,
+    limits: BackendLimits | None = None,
+    observability: ServiceObservability | None = None,
+) -> LocalQueryService:
+    effective_limits = limits or BackendLimits(default_limit=3, max_rows_per_call=5)
+    registry = dict(gateway.datasets.mapping)
+    validate_dataset_registry(gateway)
+    repo = getattr(getattr(gateway, "config", None), "repo", "demo/repo") or "demo/repo"
+    commit = getattr(getattr(gateway, "config", None), "commit", "deadbeef") or "deadbeef"
+    query = DuckDBQueryService(
+        gateway=gateway,
+        repo=repo,
+        commit=commit,
+        limits=effective_limits,
     )
-    with pytest.raises(ValueError, match="Unknown dataset"):
+    return LocalQueryService(
+        query=query,
+        dataset_tables=registry,
+        observability=observability,
+    )
+
+
+def _seed_call_graph_edges(gateway: StorageGateway) -> None:
+    gateway.con.execute(
+        """
+        INSERT INTO graph.call_graph_edges (
+            repo,
+            commit,
+            caller_goid_h128,
+            callee_goid_h128,
+            callsite_path,
+            callsite_line,
+            callsite_col,
+            language,
+            kind,
+            resolved_via,
+            confidence,
+            evidence_json
+        )
+        VALUES ('demo/repo', 'deadbeef', 101, NULL, 'pkg/mod.py', 1, 0, 'python', 'unresolved', 'unresolved', 0.0, '{}')
+        """
+    )
+
+
+def test_local_read_dataset_rows_defaults_limit(architecture_gateway: StorageGateway) -> None:
+    """Local service uses backend default limit when none is provided."""
+    limits = BackendLimits(default_limit=3, max_rows_per_call=5)
+    _seed_call_graph_edges(architecture_gateway)
+    service = _build_local_service(architecture_gateway, limits=limits)
+    resp = service.read_dataset_rows(dataset_name="call_graph_edges", limit=None, offset=0)
+    if resp.limit != limits.default_limit:
+        message = f"Unexpected applied limit: {resp.limit}"
+        pytest.fail(message)
+    if resp.meta is None or resp.meta.applied_limit != limits.default_limit:
+        pytest.fail(f"Meta did not capture applied limit: {resp.meta}")
+
+
+def test_local_read_dataset_rows_propagates_errors(architecture_gateway: StorageGateway) -> None:
+    """Local service does not swallow errors from the query layer."""
+    service = _build_local_service(architecture_gateway)
+    with pytest.raises(errors.McpError, match="Unknown dataset"):
         service.read_dataset_rows(dataset_name="missing", limit=1, offset=0)
 
 
-def test_local_read_dataset_rows_records_observability() -> None:
+def test_local_read_dataset_rows_records_observability(
+    architecture_gateway: StorageGateway,
+) -> None:
     """Dataset reads emit observability metrics with dataset, rows, and truncation."""
-
-    class TruncatedQuery(StubDuckQuery):
-        def read_dataset_rows(
-            self, *, dataset_name: str, limit: int | None, offset: int
-        ) -> DatasetRowsResponse:
-            _ = limit
-            self.last_call = (dataset_name, limit, offset)
-            return DatasetRowsResponse(
-                dataset=dataset_name,
-                limit=limit or 0,
-                offset=offset,
-                rows=[
-                    ViewRow.model_validate({"issue": "ok"}),
-                    ViewRow.model_validate({"issue": "ok2"}),
-                ],
-                meta=ResponseMeta(truncated=True),
-            )
-
-    query = TruncatedQuery()
     observability = RecordingObservability()
-    service = LocalQueryService(
-        query=cast("DuckDBQueryService", query),
-        dataset_tables={},
+    _seed_call_graph_edges(architecture_gateway)
+    service = _build_local_service(
+        architecture_gateway,
+        limits=BackendLimits(default_limit=2, max_rows_per_call=5),
         observability=observability,
     )
-    _resp = service.read_dataset_rows(dataset_name="docs", limit=2, offset=1)
+    resp = service.read_dataset_rows(dataset_name="call_graph_edges", limit=1, offset=0)
 
     if not observability.records:
         pytest.fail("Expected observability record")
     metrics = observability.records[0]
-    expected_rows = 2
-    if metrics.dataset != "docs":
+    expected_rows = len(resp.rows)
+    if metrics.dataset != "call_graph_edges":
         pytest.fail(f"Unexpected dataset in metrics: {metrics}")
     if metrics.rows != expected_rows:
         pytest.fail(f"Unexpected row count in metrics: {metrics}")
-    if metrics.truncated is not True:
+    if metrics.truncated != resp.meta.truncated:
         pytest.fail(f"Truncation flag missing in metrics: {metrics}")
 
 
@@ -392,11 +361,20 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
     """FastAPI routes delegate to the injected QueryService instance."""
     calls: list[str] = []
 
+    gateway = open_seeded_architecture_gateway(repo="demo/repo", commit="deadbeef")
+    limits = BackendLimits(default_limit=3, max_rows_per_call=5)
+
     class RecordingService(LocalQueryService):
         """Service that records method calls."""
 
         def __init__(self) -> None:
-            super().__init__(query=cast("DuckDBQueryService", StubDuckQuery()), dataset_tables={})
+            query = DuckDBQueryService(
+                gateway=gateway,
+                repo="demo/repo",
+                commit="deadbeef",
+                limits=limits,
+            )
+            super().__init__(query=query, dataset_tables=dict(gateway.datasets.mapping))
 
         def get_function_summary(
             self,
@@ -423,8 +401,8 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
         return ServingConfig(
             mode="remote_api",
             repo_root=tmp_path,
-            repo="r",
-            commit="c",
+            repo="demo/repo",
+            commit="deadbeef",
             api_base_url="http://test",
             read_only=True,
         )
@@ -434,12 +412,13 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
 
     app = create_app(config_loader=load_config, backend_factory=backend_factory)
     with TestClient(app) as client:
-        response = client.get("/function/summary", params={"urn": "urn:foo"})
+        response = client.get("/function/summary", params={"goid_h128": 1})
         if response.status_code != HTTPStatus.OK:
             message = f"Unexpected status: {response.status_code}"
             pytest.fail(message)
     if "get_function_summary" not in calls:
         pytest.fail("Service was not invoked by route")
+    gateway.close()
 
 
 def test_local_query_service_reads_architecture_seed(
@@ -473,11 +452,20 @@ def test_mcp_tool_delegation() -> None:
 
     calls: list[str] = []
 
+    gateway = open_seeded_architecture_gateway(repo="demo/repo", commit="deadbeef")
+    limits = BackendLimits(default_limit=3, max_rows_per_call=5)
+
     class DummyService(LocalQueryService):
         """Service that records method invocations."""
 
         def __init__(self) -> None:
-            super().__init__(query=cast("DuckDBQueryService", StubDuckQuery()), dataset_tables={})
+            query = DuckDBQueryService(
+                gateway=gateway,
+                repo="demo/repo",
+                commit="deadbeef",
+                limits=limits,
+            )
+            super().__init__(query=query, dataset_tables=dict(gateway.datasets.mapping))
 
         def get_function_summary(
             self,
@@ -505,6 +493,7 @@ def test_mcp_tool_delegation() -> None:
     _result = tool({"urn": "urn:foo"})
     if "get_function_summary" not in calls:
         pytest.fail("Service was not invoked via MCP tool")
+    gateway.close()
 
 
 def test_query_service_contract_local_vs_http(

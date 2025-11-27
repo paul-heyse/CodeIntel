@@ -26,9 +26,9 @@ from codeintel.analytics.subsystems.edge_stats import (
 )
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
 from codeintel.config import SubsystemsStepConfig
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 
