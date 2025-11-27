@@ -8,9 +8,12 @@ from codeintel.analytics.graph_service import build_graph_context
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,
+    StepMetadata,
+    StepPhase,
     ensure_graph_engine,
     ensure_graph_runtime,
 )
+from codeintel.pipeline.orchestration.registry import StepRegistry, build_registry
 from codeintel.pipeline.orchestration.steps_analytics import (
     ANALYTICS_STEPS,
     BehavioralCoverageStep,
@@ -57,65 +60,27 @@ from codeintel.pipeline.orchestration.steps_ingestion import (
     TypingIngestStep,
 )
 
-PIPELINE_STEPS: dict[str, PipelineStep] = {}
-PIPELINE_STEPS.update(INGESTION_STEPS)
-PIPELINE_STEPS.update(GRAPH_STEPS)
-PIPELINE_STEPS.update(ANALYTICS_STEPS)
-PIPELINE_STEPS.update(EXPORT_STEPS)
+# Build the unified registry from phase-specific step dictionaries
+REGISTRY: StepRegistry = build_registry(
+    INGESTION_STEPS,
+    GRAPH_STEPS,
+    ANALYTICS_STEPS,
+    EXPORT_STEPS,
+)
 
+# Backward-compatible exports
+PIPELINE_STEPS: dict[str, PipelineStep] = REGISTRY.as_dict()
 PIPELINE_STEPS_BY_NAME: dict[str, PipelineStep] = PIPELINE_STEPS
-PIPELINE_DEPS: dict[str, tuple[str, ...]] = {
-    name: tuple(step.deps) for name, step in PIPELINE_STEPS.items()
-}
-PIPELINE_SEQUENCE: tuple[str, ...] = tuple(PIPELINE_STEPS.keys())
-
-
-def _topological_order(step_names: Sequence[str]) -> list[str]:
-    """
-    Return a topological ordering of the requested pipeline steps.
-
-    Returns
-    -------
-    list[str]
-        Steps ordered to respect declared dependencies.
-
-    Raises
-    ------
-    RuntimeError
-        If a dependency cycle is detected.
-    """
-    deps = {name: set(PIPELINE_DEPS.get(name, ())) for name in step_names}
-    remaining = set(step_names)
-    ordered: list[str] = []
-    no_deps = [name for name in step_names if not deps[name]]
-
-    while no_deps:
-        name = no_deps.pop()
-        ordered.append(name)
-        remaining.discard(name)
-        for other in list(remaining):
-            deps[other].discard(name)
-            if not deps[other]:
-                no_deps.append(other)
-
-    if remaining:
-        message = f"Circular dependencies detected: {sorted(remaining)}"
-        raise RuntimeError(message)
-    return ordered
-
-
-def _expand_with_deps(name: str, expanded: set[str]) -> None:
-    """Recursively include dependencies for the requested step."""
-    if name in expanded:
-        return
-    for dep in PIPELINE_DEPS.get(name, ()):
-        _expand_with_deps(dep, expanded)
-    expanded.add(name)
+PIPELINE_DEPS: dict[str, tuple[str, ...]] = REGISTRY.dependency_graph()
+PIPELINE_SEQUENCE: tuple[str, ...] = REGISTRY.list_all_names()
 
 
 def run_pipeline(ctx: PipelineContext, *, selected_steps: Sequence[str] | None = None) -> None:
     """
     Execute pipeline steps in topological order using the shared context.
+
+    This function delegates to the unified StepRegistry for step discovery,
+    dependency expansion, and execution.
 
     Parameters
     ----------
@@ -123,31 +88,8 @@ def run_pipeline(ctx: PipelineContext, *, selected_steps: Sequence[str] | None =
         PipelineContext containing configs and runtime services.
     selected_steps
         Optional subset of steps to execute; dependencies are included automatically.
-
-    Raises
-    ------
-    KeyError
-        If a requested step name is not registered.
-    RuntimeError
-        If a dependency cycle is detected among the selected steps.
     """
-    step_names = tuple(selected_steps) if selected_steps is not None else PIPELINE_SEQUENCE
-
-    expanded: set[str] = set()
-    for name in step_names:
-        if name not in PIPELINE_STEPS_BY_NAME:
-            message = f"Unknown pipeline step: {name}"
-            raise KeyError(message)
-        _expand_with_deps(name, expanded)
-
-    ordered_names = [name for name in PIPELINE_SEQUENCE if name in expanded]
-    try:
-        ordered = _topological_order(tuple(ordered_names))
-    except RuntimeError as exc:  # pragma: no cover - defensive guard
-        raise RuntimeError(str(exc)) from exc
-    for name in ordered:
-        step = PIPELINE_STEPS_BY_NAME[name]
-        step.run(ctx)
+    REGISTRY.execute(ctx, selected_steps)
 
 
 __all__ = [
@@ -155,6 +97,7 @@ __all__ = [
     "PIPELINE_SEQUENCE",
     "PIPELINE_STEPS",
     "PIPELINE_STEPS_BY_NAME",
+    "REGISTRY",
     "AstStep",
     "BehavioralCoverageStep",
     "CFGStep",
@@ -188,6 +131,9 @@ __all__ = [
     "SCIPIngestStep",
     "SchemaBootstrapStep",
     "SemanticRolesStep",
+    "StepMetadata",
+    "StepPhase",
+    "StepRegistry",
     "SubsystemsStep",
     "SymbolUsesStep",
     "TestCoverageEdgesStep",

@@ -32,6 +32,7 @@ from codeintel.pipeline.export.runner import (
     run_validated_exports,
 )
 from codeintel.pipeline.orchestration.prefect_flow import ExportArgs, export_docs_flow
+from codeintel.pipeline.orchestration.steps import REGISTRY, StepPhase
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.errors import ExportError, log_problem, problem
@@ -179,27 +180,9 @@ def _add_subsystem_subparser(
     p_subsys_modules.set_defaults(func=_cmd_subsystem_modules)
 
 
-def _make_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="codeintel",
-        description="CodeIntel metadata pipeline and export CLI",
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="Increase verbosity (can be repeated)",
-    )
-
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # -----------------------------------------------------------------------
-    # pipeline run
-    # -----------------------------------------------------------------------
-    p_pipeline = subparsers.add_parser("pipeline", help="Run enrichment pipeline")
-    pipeline_sub = p_pipeline.add_subparsers(dest="subcommand", required=True)
-
+def _add_pipeline_run_subparser(
+    pipeline_sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     p_run = pipeline_sub.add_parser(
         "run",
         help="Run the full pipeline via Prefect (targets are ignored; runs export_docs_flow).",
@@ -250,12 +233,61 @@ def _make_parser() -> argparse.ArgumentParser:
     _add_graph_backend_args(p_run)
     p_run.set_defaults(func=_cmd_pipeline_run)
 
-    # -----------------------------------------------------------------------
-    # docs export
-    # -----------------------------------------------------------------------
-    p_docs = subparsers.add_parser("docs", help="Document Output helpers")
-    docs_sub = p_docs.add_subparsers(dest="subcommand", required=True)
 
+def _add_pipeline_list_steps_subparser(
+    pipeline_sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    p_list_steps = pipeline_sub.add_parser(
+        "list-steps",
+        help="List all available pipeline steps with descriptions.",
+    )
+    p_list_steps.add_argument(
+        "--phase",
+        choices=["ingestion", "graphs", "analytics", "export"],
+        help="Filter steps by phase.",
+    )
+    p_list_steps.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Output as JSON for machine consumption.",
+    )
+    p_list_steps.set_defaults(func=_cmd_pipeline_list_steps)
+
+
+def _add_pipeline_deps_subparser(
+    pipeline_sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    p_deps = pipeline_sub.add_parser(
+        "deps",
+        help="Show dependency tree for a pipeline step.",
+    )
+    p_deps.add_argument(
+        "step_name",
+        help="Name of the step to show dependencies for.",
+    )
+    p_deps.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Output as JSON for machine consumption.",
+    )
+    p_deps.set_defaults(func=_cmd_pipeline_deps)
+
+
+def _register_pipeline_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    pipeline_parser = subparsers.add_parser("pipeline", help="Run enrichment pipeline")
+    pipeline_sub = pipeline_parser.add_subparsers(dest="subcommand", required=True)
+    _add_pipeline_run_subparser(pipeline_sub)
+    _add_pipeline_list_steps_subparser(pipeline_sub)
+    _add_pipeline_deps_subparser(pipeline_sub)
+
+
+def _add_docs_export_subparser(
+    docs_sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     p_export = docs_sub.add_parser(
         "export",
         help="Export Parquet + JSONL datasets from DuckDB into Document Output/",
@@ -287,9 +319,18 @@ def _make_parser() -> argparse.ArgumentParser:
     _add_graph_backend_args(p_export)
     p_export.set_defaults(func=cmd_docs_export)
 
-    # -----------------------------------------------------------------------
-    # storage helpers
-    # -----------------------------------------------------------------------
+
+def _register_docs_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    p_docs = subparsers.add_parser("docs", help="Document Output helpers")
+    docs_sub = p_docs.add_subparsers(dest="subcommand", required=True)
+    _add_docs_export_subparser(docs_sub)
+
+
+def _register_storage_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     p_storage = subparsers.add_parser("storage", help="Storage validation helpers")
     storage_sub = p_storage.add_subparsers(dest="subcommand", required=True)
     p_validate_macros = storage_sub.add_parser(
@@ -310,9 +351,10 @@ def _make_parser() -> argparse.ArgumentParser:
     )
     p_validate_macros.set_defaults(func=_cmd_storage_validate_macros)
 
-    # -----------------------------------------------------------------------
-    # History aggregation
-    # -----------------------------------------------------------------------
+
+def _register_history_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     p_history = subparsers.add_parser(
         "history-timeseries",
         help="Aggregate analytics.history_timeseries across commits.",
@@ -365,9 +407,10 @@ def _make_parser() -> argparse.ArgumentParser:
     )
     p_history.set_defaults(func=_cmd_history_timeseries)
 
-    # -----------------------------------------------------------------------
-    # IDE helpers
-    # -----------------------------------------------------------------------
+
+def _register_ide_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     p_ide = subparsers.add_parser("ide", help="IDE helper commands")
     ide_sub = p_ide.add_subparsers(dest="subcommand", required=True)
 
@@ -383,6 +426,27 @@ def _make_parser() -> argparse.ArgumentParser:
     )
     p_ide_hints.set_defaults(func=_cmd_ide_hints)
 
+
+def _make_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="codeintel",
+        description="CodeIntel metadata pipeline and export CLI",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity (can be repeated)",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    _register_pipeline_commands(subparsers)
+    _register_docs_commands(subparsers)
+    _register_storage_commands(subparsers)
+    _register_history_commands(subparsers)
+    _register_ide_commands(subparsers)
     _add_subsystem_subparser(subparsers)
 
     return parser
@@ -507,6 +571,99 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
         ),
         targets=targets,
     )
+    return 0
+
+
+def _cmd_pipeline_list_steps(args: argparse.Namespace) -> int:
+    """
+    List all available pipeline steps with descriptions.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success).
+    """
+    phase_filter = getattr(args, "phase", None)
+    output_json = getattr(args, "output_json", False)
+
+    if phase_filter:
+        phase = StepPhase(phase_filter)
+        steps = REGISTRY.list_by_phase(phase)
+    else:
+        steps = REGISTRY.list_all()
+
+    if output_json:
+        data = [
+            {
+                "name": meta.name,
+                "description": meta.description,
+                "phase": meta.phase.value,
+                "deps": list(meta.deps),
+            }
+            for meta in steps
+        ]
+        sys.stdout.write(json.dumps(data, indent=2))
+        sys.stdout.write("\n")
+    else:
+        for meta in steps:
+            deps_str = ", ".join(meta.deps) if meta.deps else "(none)"
+            sys.stdout.write(f"{meta.name} [{meta.phase.value}]\n")
+            sys.stdout.write(f"  {meta.description}\n")
+            sys.stdout.write(f"  deps: {deps_str}\n")
+            sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_pipeline_deps(args: argparse.Namespace) -> int:
+    """
+    Show dependency tree for a pipeline step.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success, 1 if step not found).
+    """
+    step_name = args.step_name
+    output_json = getattr(args, "output_json", False)
+
+    if step_name not in REGISTRY:
+        LOG.error("Unknown step: %s", step_name)
+        return 1
+
+    # Get all transitive dependencies
+    expanded = REGISTRY.expand_with_deps([step_name])
+    expanded.discard(step_name)  # Remove the step itself from deps
+
+    # Get direct deps
+    direct_deps = tuple(REGISTRY.get_deps(step_name))
+
+    if output_json:
+        data = {
+            "step": step_name,
+            "direct_deps": list(direct_deps),
+            "transitive_deps": sorted(expanded),
+        }
+        sys.stdout.write(json.dumps(data, indent=2))
+        sys.stdout.write("\n")
+    else:
+        step = REGISTRY[step_name]
+        sys.stdout.write(f"Step: {step_name}\n")
+        sys.stdout.write(f"Description: {step.description}\n")
+        sys.stdout.write(f"Phase: {step.phase.value}\n")
+        sys.stdout.write("\n")
+        sys.stdout.write(f"Direct dependencies ({len(direct_deps)}):\n")
+        if direct_deps:
+            for dep in direct_deps:
+                sys.stdout.write(f"  - {dep}\n")
+        else:
+            sys.stdout.write("  (none)\n")
+        sys.stdout.write("\n")
+        sys.stdout.write(f"All transitive dependencies ({len(expanded)}):\n")
+        if expanded:
+            for dep in sorted(expanded):
+                sys.stdout.write(f"  - {dep}\n")
+        else:
+            sys.stdout.write("  (none)\n")
     return 0
 
 

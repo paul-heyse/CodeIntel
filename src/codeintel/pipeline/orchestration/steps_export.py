@@ -8,7 +8,12 @@ from dataclasses import dataclass
 
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.pipeline.export.export_parquet import export_all_parquet
-from codeintel.pipeline.orchestration.core import PipelineContext, PipelineStep, _log_step
+from codeintel.pipeline.orchestration.core import (
+    PipelineContext,
+    PipelineStep,
+    StepPhase,
+    _log_step,
+)
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.storage.views import create_all_views
 
@@ -20,6 +25,8 @@ class ExportDocsStep:
     """Export all Parquet + JSONL datasets into Document Output/."""
 
     name: str = "export_docs"
+    description: str = "Export all Parquet and JSONL datasets into Document Output/."
+    phase: StepPhase = StepPhase.EXPORT
     deps: Sequence[str] = (
         "repo_scan",
         "scip_ingest",

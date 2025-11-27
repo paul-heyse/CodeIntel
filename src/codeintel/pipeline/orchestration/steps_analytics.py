@@ -57,6 +57,7 @@ from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,
+    StepPhase,
     _analytics_context,
     _function_catalog,
     _graph_engine,
@@ -136,6 +137,8 @@ class HotspotsStep:
     """Build analytics.hotspots from core.ast_metrics plus git churn."""
 
     name: str = "hotspots"
+    description: str = "Compute file-level hotspot scores from AST metrics and git churn."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("ast_extract",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -151,6 +154,8 @@ class FunctionHistoryStep:
     """Aggregate per-function git history."""
 
     name: str = "function_history"
+    description: str = "Aggregate git churn and commit history per function GOID."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("function_metrics", "hotspots")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -166,6 +171,8 @@ class HistoryTimeseriesStep:
     """Aggregate cross-commit analytics.history_timeseries."""
 
     name: str = "history_timeseries"
+    description: str = "Aggregate analytics across commits into history timeseries."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("profiles",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -202,6 +209,8 @@ class FunctionAnalyticsStep:
     """Build analytics.function_metrics and analytics.function_types."""
 
     name: str = "function_metrics"
+    description: str = "Compute per-function metrics, complexity, and type annotations."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("goids",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -234,6 +243,8 @@ class FunctionEffectsStep:
     """Classify side effects and purity for functions."""
 
     name: str = "function_effects"
+    description: str = "Classify side effects and purity for each function."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("goids", "callgraph")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -256,6 +267,8 @@ class FunctionContractsStep:
     """Infer pre/postconditions and nullability."""
 
     name: str = "function_contracts"
+    description: str = "Infer pre/postconditions and nullability contracts for functions."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("function_metrics", "docstrings_ingest")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -271,6 +284,8 @@ class DataModelsStep:
     """Extract structured data models from class definitions."""
 
     name: str = "data_models"
+    description: str = "Extract structured data models from class definitions."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("ast_extract", "goids", "docstrings_ingest")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -285,6 +300,8 @@ class DataModelUsageStep:
     """Classify per-function data model usage."""
 
     name: str = "data_model_usage"
+    description: str = "Classify per-function data model read/write usage patterns."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("data_models", "callgraph", "cfg", "function_metrics")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -300,6 +317,8 @@ class ConfigDataFlowStep:
     """Track config key usage at the function level."""
 
     name: str = "config_data_flow"
+    description: str = "Track configuration key usage and data flow at the function level."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("config_ingest", "callgraph", "function_metrics", "entrypoints")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -316,6 +335,8 @@ class CoverageAnalyticsStep:
     """Build analytics.coverage_functions from GOIDs and coverage_lines."""
 
     name: str = "coverage_functions"
+    description: str = "Aggregate line coverage data to function-level metrics."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("goids", "coverage_ingest")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -332,6 +353,8 @@ class TestCoverageEdgesStep:
     """Build analytics.test_coverage_edges from coverage contexts."""
 
     name: str = "test_coverage_edges"
+    description: str = "Build test-to-function coverage edges from coverage contexts."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("coverage_ingest", "tests_ingest", "goids")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -348,6 +371,8 @@ class RiskFactorsStep:
     """Aggregate analytics into analytics.goid_risk_factors."""
 
     name: str = "risk_factors"
+    description: str = "Aggregate analytics into per-function risk scores and levels."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = (
         "function_metrics",
         "coverage_functions",
@@ -496,6 +521,8 @@ class GraphMetricsStep:
     """Compute graph metrics for functions and modules."""
 
     name: str = "graph_metrics"
+    description: str = "Compute centrality, coupling, and graph metrics for functions and modules."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("callgraph", "import_graph", "symbol_uses", "cfg", "test_coverage_edges")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -578,6 +605,10 @@ class SemanticRolesStep:
     """Classify functions and modules into semantic roles."""
 
     name: str = "semantic_roles"
+    description: str = (
+        "Classify functions and modules into semantic roles like handler, service, util."
+    )
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = (
         "function_effects",
         "function_contracts",
@@ -605,6 +636,8 @@ class SubsystemsStep:
     """Infer subsystems from module coupling and risk signals."""
 
     name: str = "subsystems"
+    description: str = "Infer subsystems from module coupling and risk signals."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("import_graph", "symbol_uses", "risk_factors")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -622,6 +655,8 @@ class TestProfileStep:
     """Build per-test profiles."""
 
     name: str = "test_profile"
+    description: str = "Build per-test profiles with coverage and subsystem context."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = (
         "tests_ingest",
         "coverage_functions",
@@ -642,6 +677,8 @@ class BehavioralCoverageStep:
     """Assign heuristic behavior tags to tests."""
 
     name: str = "behavioral_coverage"
+    description: str = "Assign heuristic behavior tags to tests (unit, integration, etc.)."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("test_profile",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -666,6 +703,8 @@ class EntryPointsStep:
     """Detect HTTP/CLI/job entrypoints and map them to handlers and tests."""
 
     name: str = "entrypoints"
+    description: str = "Detect HTTP/CLI/job entrypoints and map them to handlers and tests."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = (
         "subsystems",
         "coverage_functions",
@@ -686,6 +725,8 @@ class ExternalDependenciesStep:
     """Identify external dependency usage across functions."""
 
     name: str = "external_dependencies"
+    description: str = "Identify external dependency usage across functions."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = ("goids", "config_ingest")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -709,6 +750,8 @@ class ProfilesStep:
     """Build function, file, and module profiles."""
 
     name: str = "profiles"
+    description: str = "Build aggregated profiles for functions, files, and modules."
+    phase: StepPhase = StepPhase.ANALYTICS
     deps: Sequence[str] = (
         "risk_factors",
         "callgraph",
