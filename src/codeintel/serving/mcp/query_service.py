@@ -39,8 +39,15 @@ from codeintel.serving.mcp.models import (
     ViewRow,
 )
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-
-RowDict = dict[str, object]
+from codeintel.storage.repositories import (
+    DatasetReadRepository,
+    FunctionRepository,
+    GraphRepository,
+    ModuleRepository,
+    SubsystemRepository,
+    TestRepository,
+)
+from codeintel.storage.repositories.base import RowDict
 
 
 @dataclass(frozen=True)
@@ -155,22 +162,6 @@ def clamp_offset_value(offset: int) -> ClampResult:
     return ClampResult(applied=offset)
 
 
-def _fetch_one_dict(cur: DuckDBConnection, sql: str, params: list[object]) -> RowDict | None:
-    result = cur.execute(sql, params)
-    row = result.fetchone()
-    if row is None:
-        return None
-    cols = [desc[0] for desc in result.description]
-    return {col: row[idx] for idx, col in enumerate(cols)}
-
-
-def _fetch_all_dicts(cur: DuckDBConnection, sql: str, params: list[object]) -> list[RowDict]:
-    result = cur.execute(sql, params)
-    rows = result.fetchall()
-    cols = [desc[0] for desc in result.description]
-    return [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
-
-
 def _normalize_entrypoints(rows: list[RowDict]) -> None:
     """Ensure entrypoints_json is always a list for downstream consumers."""
     for row in rows:
@@ -196,6 +187,12 @@ class DuckDBQueryService:
     limits: BackendLimits
     engine: NxGraphEngine | None = None
     _engine: NxGraphEngine | None = field(default=None, init=False, repr=False)
+    _functions: FunctionRepository | None = field(default=None, init=False, repr=False)
+    _modules: ModuleRepository | None = field(default=None, init=False, repr=False)
+    _subsystems: SubsystemRepository | None = field(default=None, init=False, repr=False)
+    _tests: TestRepository | None = field(default=None, init=False, repr=False)
+    _datasets: DatasetReadRepository | None = field(default=None, init=False, repr=False)
+    _graphs: GraphRepository | None = field(default=None, init=False, repr=False)
 
     @property
     def con(self) -> DuckDBConnection:
@@ -226,6 +223,48 @@ class DuckDBQueryService:
         """
         return self._graph_engine()
 
+    @property
+    def functions(self) -> FunctionRepository:
+        """Lazily construct a function repository."""
+        if self._functions is None:
+            self._functions = FunctionRepository(self.gateway, self.repo, self.commit)
+        return self._functions
+
+    @property
+    def modules(self) -> ModuleRepository:
+        """Lazily construct a module repository."""
+        if self._modules is None:
+            self._modules = ModuleRepository(self.gateway, self.repo, self.commit)
+        return self._modules
+
+    @property
+    def subsystems(self) -> SubsystemRepository:
+        """Lazily construct a subsystem repository."""
+        if self._subsystems is None:
+            self._subsystems = SubsystemRepository(self.gateway, self.repo, self.commit)
+        return self._subsystems
+
+    @property
+    def tests(self) -> TestRepository:
+        """Lazily construct a test repository."""
+        if self._tests is None:
+            self._tests = TestRepository(self.gateway, self.repo, self.commit)
+        return self._tests
+
+    @property
+    def datasets(self) -> DatasetReadRepository:
+        """Lazily construct a dataset repository."""
+        if self._datasets is None:
+            self._datasets = DatasetReadRepository(self.gateway, self.repo, self.commit)
+        return self._datasets
+
+    @property
+    def graphs(self) -> GraphRepository:
+        """Lazily construct a graph repository."""
+        if self._graphs is None:
+            self._graphs = GraphRepository(self.gateway, self.repo, self.commit)
+        return self._graphs
+
     def _resolve_function_goid(
         self,
         *,
@@ -234,43 +273,16 @@ class DuckDBQueryService:
         rel_path: str | None = None,
         qualname: str | None = None,
     ) -> int | None:
-        if goid_h128 is not None:
-            return goid_h128
-
-        if urn:
-            row = _fetch_one_dict(
-                self.con,
-                """
-                SELECT function_goid_h128
-                FROM docs.v_function_summary
-                WHERE repo = ? AND commit = ? AND urn = ?
-                LIMIT 1
-                """,
-                [self.repo, self.commit, urn],
+        try:
+            return self.functions.resolve_function_goid(
+                urn=urn,
+                goid_h128=goid_h128,
+                rel_path=rel_path,
+                qualname=qualname,
             )
-        elif rel_path and qualname:
-            row = _fetch_one_dict(
-                self.con,
-                """
-                SELECT function_goid_h128
-                FROM docs.v_function_summary
-                WHERE repo = ? AND commit = ? AND rel_path = ? AND qualname = ?
-                LIMIT 1
-                """,
-                [self.repo, self.commit, rel_path, qualname],
-            )
-        else:
-            row = None
-
-        if not row:
-            return None
-        value = row.get("function_goid_h128")
-        if value is None:
-            return None
-        if isinstance(value, (int, float, str)):
-            return int(value)
-        message = f"Unexpected goid type: {type(value)!r}"
-        raise errors.backend_failure(message)
+        except ValueError as exc:
+            message = str(exc)
+            raise errors.backend_failure(message) from exc
 
     def get_function_summary(
         self,
@@ -299,48 +311,17 @@ class DuckDBQueryService:
             If no identifier is provided.
         """
         meta = ResponseMeta()
-        summary: ViewRow | None = None
-        if urn:
-            row = _fetch_one_dict(
-                self.con,
-                """
-                SELECT *
-                FROM docs.v_function_summary
-                WHERE repo = ? AND commit = ? AND urn = ?
-                LIMIT 1
-                """,
-                [self.repo, self.commit, urn],
-            )
-            summary = ViewRow.model_validate(row) if row else None
-        elif goid_h128 is not None:
-            row = _fetch_one_dict(
-                self.con,
-                """
-                SELECT *
-                FROM docs.v_function_summary
-                WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
-                LIMIT 1
-                """,
-                [self.repo, self.commit, goid_h128],
-            )
-            summary = ViewRow.model_validate(row) if row else None
-        elif rel_path and qualname:
-            row = _fetch_one_dict(
-                self.con,
-                """
-                SELECT *
-                FROM docs.v_function_summary
-                WHERE repo = ? AND commit = ? AND rel_path = ? AND qualname = ?
-                LIMIT 1
-                """,
-                [self.repo, self.commit, rel_path, qualname],
-            )
-            summary = ViewRow.model_validate(row) if row else None
-        else:
+        if goid_h128 is None and not (urn or (rel_path and qualname)):
             message = "Must provide urn or goid_h128 or (rel_path + qualname)."
             raise errors.invalid_argument(message)
 
-        if summary is None:
+        resolved = self._resolve_function_goid(
+            urn=urn,
+            goid_h128=goid_h128,
+            rel_path=rel_path,
+            qualname=qualname,
+        )
+        if resolved is None:
             meta.messages.append(
                 Message(
                     code="not_found",
@@ -356,7 +337,28 @@ class DuckDBQueryService:
             )
             return FunctionSummaryResponse(found=False, summary=None, meta=meta)
 
-        return FunctionSummaryResponse(found=True, summary=summary, meta=meta)
+        row = self.functions.get_function_summary_by_goid(resolved)
+        if row is None:
+            meta.messages.append(
+                Message(
+                    code="not_found",
+                    severity="info",
+                    detail="Function not found",
+                    context={
+                        "urn": urn,
+                        "goid_h128": goid_h128 or resolved,
+                        "rel_path": rel_path,
+                        "qualname": qualname,
+                    },
+                )
+            )
+            return FunctionSummaryResponse(found=False, summary=None, meta=meta)
+
+        return FunctionSummaryResponse(
+            found=True,
+            summary=ViewRow.model_validate(row),
+            meta=meta,
+        )
 
     def list_high_risk_functions(
         self,
@@ -383,7 +385,6 @@ class DuckDBQueryService:
             Functions, truncation flag, and metadata.
         """
         applied_limit = self.limits.default_limit if limit is None else limit
-        extra_clause = " AND tested = TRUE" if tested_only else ""
         clamp = clamp_limit_value(
             applied_limit,
             default=applied_limit,
@@ -397,30 +398,11 @@ class DuckDBQueryService:
         if clamp.has_error:
             return HighRiskFunctionsResponse(functions=[], truncated=False, meta=meta)
 
-        params: list[object] = [self.repo, self.commit, min_risk, clamp.applied]
-        sql = (
-            """
-            SELECT
-                function_goid_h128,
-                urn,
-                rel_path,
-                qualname,
-                risk_score,
-                risk_level,
-                coverage_ratio,
-                tested,
-                complexity_bucket,
-                typedness_bucket,
-                hotspot_score
-            FROM analytics.goid_risk_factors
-            WHERE repo = ? AND commit = ? AND risk_score >= ?"""
-            + extra_clause
-            + """
-            ORDER BY risk_score DESC
-            LIMIT ?
-            """
+        rows = self.functions.list_high_risk_functions(
+            min_risk=min_risk,
+            limit=clamp.applied,
+            tested_only=tested_only,
         )
-        rows = _fetch_all_dicts(self.con, sql, params)
         models = [ViewRow.model_validate(r) for r in rows]
         truncated = clamp.applied > 0 and len(rows) == clamp.applied
         meta.truncated = truncated
@@ -475,37 +457,11 @@ class DuckDBQueryService:
         incoming: list[ViewRow] = []
 
         if direction in {"out", "both"}:
-            out_sql = """
-                SELECT *
-                FROM docs.v_call_graph_enriched
-                WHERE caller_goid_h128 = ?
-                  AND caller_repo = ?
-                  AND caller_commit = ?
-                ORDER BY callee_qualname
-                LIMIT ?
-            """
-            out_rows = _fetch_all_dicts(
-                self.con,
-                out_sql,
-                [goid_h128, self.repo, self.commit, clamp.applied],
-            )
+            out_rows = self.graphs.get_outgoing_callgraph_neighbors(goid_h128, limit=clamp.applied)
             outgoing = [ViewRow.model_validate(r) for r in out_rows]
 
         if direction in {"in", "both"}:
-            in_sql = """
-                SELECT *
-                FROM docs.v_call_graph_enriched
-                WHERE callee_goid_h128 = ?
-                  AND callee_repo = ?
-                  AND callee_commit = ?
-                ORDER BY caller_qualname
-                LIMIT ?
-            """
-            in_rows = _fetch_all_dicts(
-                self.con,
-                in_sql,
-                [goid_h128, self.repo, self.commit, clamp.applied],
-            )
+            in_rows = self.graphs.get_incoming_callgraph_neighbors(goid_h128, limit=clamp.applied)
             incoming = [ViewRow.model_validate(r) for r in in_rows]
 
         meta.truncated = clamp.applied > 0 and (
@@ -544,61 +500,31 @@ class DuckDBQueryService:
             message = "Must provide goid_h128 or urn."
             raise errors.invalid_argument(message)
 
+        resolved = self._resolve_function_goid(goid_h128=goid_h128, urn=urn)
+        meta = ResponseMeta(requested_limit=limit)
+        if resolved is None:
+            meta.messages.append(
+                Message(
+                    code="not_found",
+                    severity="info",
+                    detail="Function not found",
+                    context={"urn": urn, "goid_h128": goid_h128},
+                )
+            )
+            return TestsForFunctionResponse(tests=[], meta=meta)
+
         applied_limit = self.limits.default_limit if limit is None else limit
         clamp = clamp_limit_value(
             applied_limit,
             default=applied_limit,
             max_limit=self.limits.max_rows_per_call,
         )
-        meta = ResponseMeta(
-            requested_limit=limit,
-            applied_limit=clamp.applied,
-            messages=list(clamp.messages),
-        )
+        meta.applied_limit = clamp.applied
+        meta.messages.extend(clamp.messages)
         if clamp.has_error:
             return TestsForFunctionResponse(tests=[], meta=meta)
 
-        columns = {
-            col[1]
-            for col in self.con.execute("PRAGMA table_info('docs.v_test_to_function')").fetchall()
-        }
-        repo_field = (
-            "test_repo" if "test_repo" in columns else ("repo" if "repo" in columns else None)
-        )
-        commit_field = (
-            "test_commit"
-            if "test_commit" in columns
-            else ("commit" if "commit" in columns else None)
-        )
-
-        where_clauses = []
-        params: list[object] = []
-
-        if repo_field is not None:
-            where_clauses.append(f"{repo_field} = ?")
-            params.append(self.repo)
-        if commit_field is not None:
-            where_clauses.append(f"{commit_field} = ?")
-            params.append(self.commit)
-
-        if goid_h128 is not None:
-            where_clauses.append("function_goid_h128 = ?")
-            params.append(goid_h128)
-        else:
-            where_clauses.append("urn = ?")
-            params.append(urn)
-
-        where_sql = " AND ".join(where_clauses) if where_clauses else "TRUE"
-        sql = "\n".join(
-            [
-                "SELECT *",
-                "FROM docs.v_test_to_function",
-                "WHERE " + where_sql,
-                "ORDER BY test_id",
-                "LIMIT ?",
-            ]
-        )
-        rows = _fetch_all_dicts(self.con, sql, [*params, clamp.applied])
+        rows = self.tests.get_tests_for_function(resolved, limit=clamp.applied)
         meta.truncated = clamp.applied > 0 and len(rows) == clamp.applied
         if not rows:
             meta.messages.append(
@@ -606,10 +532,13 @@ class DuckDBQueryService:
                     code="not_found",
                     severity="info",
                     detail="No tests found for function",
-                    context={"urn": urn, "goid_h128": goid_h128},
+                    context={"urn": urn, "goid_h128": resolved},
                 )
             )
-        return TestsForFunctionResponse(tests=[ViewRow.model_validate(r) for r in rows], meta=meta)
+        return TestsForFunctionResponse(
+            tests=[ViewRow.model_validate(r) for r in rows],
+            meta=meta,
+        )
 
     def get_callgraph_neighborhood(
         self,
@@ -802,18 +731,7 @@ class DuckDBQueryService:
         FileSummaryResponse
             Summary payload indicating whether the file was found.
         """
-        file_row = _fetch_one_dict(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_file_summary
-            WHERE rel_path = ?
-              AND repo = ?
-              AND commit = ?
-            LIMIT 1
-            """,
-            [rel_path, self.repo, self.commit],
-        )
+        file_row = self.modules.get_file_summary(rel_path)
         if not file_row:
             meta = ResponseMeta(
                 messages=[
@@ -827,18 +745,7 @@ class DuckDBQueryService:
             )
             return FileSummaryResponse(found=False, file=None, meta=meta)
 
-        funcs = _fetch_all_dicts(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_function_summary
-            WHERE rel_path = ?
-              AND repo = ?
-              AND commit = ?
-            ORDER BY qualname
-            """,
-            [rel_path, self.repo, self.commit],
-        )
+        funcs = self.functions.list_function_summaries_for_file(rel_path)
         file_payload = dict(file_row)
         file_payload["functions"] = [ViewRow.model_validate(r) for r in funcs]
         return FileSummaryResponse(
@@ -861,18 +768,7 @@ class DuckDBQueryService:
         FunctionProfileResponse
             Profile payload indicating whether it was found.
         """
-        row = _fetch_one_dict(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_function_profile
-            WHERE repo = ?
-              AND commit = ?
-              AND function_goid_h128 = ?
-            LIMIT 1
-            """,
-            [self.repo, self.commit, goid_h128],
-        )
+        row = self.functions.get_function_profile(goid_h128)
         if row is None:
             meta = ResponseMeta(
                 messages=[
@@ -905,18 +801,7 @@ class DuckDBQueryService:
         FileProfileResponse
             Profile payload and metadata.
         """
-        row = _fetch_one_dict(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_file_profile
-            WHERE repo = ?
-              AND commit = ?
-              AND rel_path = ?
-            LIMIT 1
-            """,
-            [self.repo, self.commit, rel_path],
-        )
+        row = self.modules.get_file_profile(rel_path)
         if row is None:
             meta = ResponseMeta(
                 messages=[
@@ -949,18 +834,7 @@ class DuckDBQueryService:
         ModuleProfileResponse
             Profile payload and metadata.
         """
-        row = _fetch_one_dict(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_module_profile
-            WHERE repo = ?
-              AND commit = ?
-              AND module = ?
-            LIMIT 1
-            """,
-            [self.repo, self.commit, module],
-        )
+        row = self.modules.get_module_profile(module)
         if row is None:
             meta = ResponseMeta(
                 messages=[
@@ -988,18 +862,7 @@ class DuckDBQueryService:
         FunctionArchitectureResponse
             Architecture payload and found flag.
         """
-        row = _fetch_one_dict(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_function_architecture
-            WHERE repo = ?
-              AND commit = ?
-              AND function_goid_h128 = ?
-            LIMIT 1
-            """,
-            [self.repo, self.commit, goid_h128],
-        )
+        row = self.functions.get_function_architecture(goid_h128)
         if row is None:
             return FunctionArchitectureResponse(
                 found=False,
@@ -1030,18 +893,7 @@ class DuckDBQueryService:
         ModuleArchitectureResponse
             Architecture payload and found flag.
         """
-        row = _fetch_one_dict(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_module_architecture
-            WHERE repo = ?
-              AND commit = ?
-              AND module = ?
-            LIMIT 1
-            """,
-            [self.repo, self.commit, module],
-        )
+        row = self.modules.get_module_architecture(module)
         if row is None:
             return ModuleArchitectureResponse(
                 found=False,
@@ -1074,42 +926,8 @@ class DuckDBQueryService:
         SubsystemSummaryResponse
             Subsystem rows and metadata.
         """
-        filters = ["s.repo = ?", "s.commit = ?"]
-        params: list[object] = [self.repo, self.commit]
-        if role:
-            filters.append(
-                """
-                EXISTS (
-                    SELECT 1
-                    FROM analytics.subsystem_modules sm
-                    WHERE sm.repo = s.repo
-                      AND sm.commit = s.commit
-                      AND sm.subsystem_id = s.subsystem_id
-                      AND sm.role = ?
-                )
-                """
-            )
-            params.append(role)
-        if q:
-            filters.append("(s.name ILIKE ? OR s.description ILIKE ?)")
-            pattern = f"%{q}%"
-            params.extend([pattern, pattern])
-
         limit_value = limit if limit is not None else self.limits.default_limit
-        where_clause = " AND ".join(filters)
-        query_parts = [
-            "SELECT *",
-            "FROM docs.v_subsystem_summary s",
-            "WHERE " + where_clause,
-            "ORDER BY module_count DESC, subsystem_id",
-            "LIMIT ?",
-        ]
-        query = "\n".join(query_parts)
-        rows = _fetch_all_dicts(
-            self.con,
-            query,
-            [*params, limit_value],
-        )
+        rows = self.subsystems.list_subsystems(limit=limit_value, role=role, query=q)
         _normalize_entrypoints(rows)
         return SubsystemSummaryResponse(
             subsystems=[ViewRow.model_validate(r) for r in rows],
@@ -1128,17 +946,7 @@ class DuckDBQueryService:
         ModuleSubsystemResponse
             Membership rows and metadata.
         """
-        rows = _fetch_all_dicts(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_module_with_subsystem
-            WHERE repo = ?
-              AND commit = ?
-              AND module = ?
-            """,
-            [self.repo, self.commit, module],
-        )
+        rows = self.subsystems.list_subsystems_for_module(module)
         if not rows:
             return ModuleSubsystemResponse(
                 found=False,
@@ -1169,17 +977,7 @@ class DuckDBQueryService:
         FileHintsResponse
             Hint rows scoped to the provided relative path.
         """
-        rows = _fetch_all_dicts(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_ide_hints
-            WHERE repo = ?
-              AND commit = ?
-              AND rel_path = ?
-            """,
-            [self.repo, self.commit, rel_path],
-        )
+        rows = self.modules.get_file_hints(rel_path)
         if not rows:
             return FileHintsResponse(
                 found=False,
@@ -1210,31 +1008,9 @@ class DuckDBQueryService:
         SubsystemModulesResponse
             Subsystem detail and module rows.
         """
-        subsystem_row = _fetch_one_dict(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_subsystem_summary
-            WHERE repo = ?
-              AND commit = ?
-              AND subsystem_id = ?
-            LIMIT 1
-            """,
-            [self.repo, self.commit, subsystem_id],
-        )
+        subsystem_row = self.subsystems.get_subsystem_summary(subsystem_id)
         _normalize_entrypoints_dict(subsystem_row)
-        modules = _fetch_all_dicts(
-            self.con,
-            """
-            SELECT *
-            FROM docs.v_module_with_subsystem
-            WHERE repo = ?
-              AND commit = ?
-              AND subsystem_id = ?
-            ORDER BY module
-            """,
-            [self.repo, self.commit, subsystem_id],
-        )
+        modules = self.subsystems.list_subsystem_modules(subsystem_id)
         if subsystem_row is None:
             return SubsystemModulesResponse(
                 found=False,
@@ -1352,16 +1128,13 @@ class DuckDBQueryService:
                 rows=[],
                 meta=meta,
             )
-
-        result = self.con.execute(
-            "SELECT * FROM metadata.dataset_rows(?, ?, ?)",
-            [table, limit_clamp.applied, offset_clamp.applied],
+        rows = self.datasets.read_dataset_rows(
+            table_key=table,
+            limit=limit_clamp.applied,
+            offset=offset_clamp.applied,
         )
-        rows = result.fetchall()
-        cols = [desc[0] for desc in result.description]
-        mapped = [{col: row[idx] for idx, col in enumerate(cols)} for row in rows]
-        meta.truncated = limit_clamp.applied > 0 and len(mapped) == limit_clamp.applied
-        if not mapped:
+        meta.truncated = limit_clamp.applied > 0 and len(rows) == limit_clamp.applied
+        if not rows:
             meta.messages.append(
                 Message(
                     code="dataset_empty",
@@ -1374,6 +1147,6 @@ class DuckDBQueryService:
             dataset=dataset_name,
             limit=limit_clamp.applied,
             offset=offset_clamp.applied,
-            rows=[ViewRow.model_validate(r) for r in mapped],
+            rows=[ViewRow.model_validate(r) for r in rows],
             meta=meta,
         )

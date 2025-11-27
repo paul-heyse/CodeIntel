@@ -55,9 +55,7 @@ def prepared_statements_dynamic(
     schema_name, table_name = table_key.split(".", maxsplit=1)
     table_sql = f'"{schema_name}"."{table_name}"'
 
-    insert_sql = (
-        f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders})"  # noqa: S608
-    )
+    insert_sql = f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders})"  # noqa: S608
     return PreparedStatements(
         insert_sql=insert_sql,
         delete_sql=None,

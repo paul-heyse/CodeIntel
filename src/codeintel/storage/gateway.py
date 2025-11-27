@@ -2,189 +2,34 @@
 
 from __future__ import annotations
 
-import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 import duckdb
 
-from codeintel.storage.datasets import Dataset, load_dataset_registry
+from codeintel.storage.config import StorageConfig
+from codeintel.storage.ingest_helpers import macro_insert_rows
 from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
+from codeintel.storage.registry_helpers import DatasetRegistry, build_dataset_registry
 from codeintel.storage.schemas import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.views import create_all_views
+
+__all__ = [
+    "DuckDBConnection",
+    "DuckDBError",
+    "DuckDBRelation",
+    "StorageConfig",
+    "StorageGateway",
+    "build_snapshot_gateway_resolver",
+    "open_gateway",
+    "open_memory_gateway",
+]
 
 DuckDBConnection = duckdb.DuckDBPyConnection
 DuckDBRelation = duckdb.DuckDBPyRelation
 DuckDBError = duckdb.Error
-
-
-def _macro_insert_rows(
-    con: DuckDBConnection,
-    table_key: str,
-    rows: Iterable[Sequence[object]],
-) -> None:
-    """
-    Insert rows via ingest macro using table schema as ground truth.
-
-    Pads missing trailing columns with NULLs; raises if rows exceed schema width.
-
-    Raises
-    ------
-    ValueError
-        If the table name is invalid or rows exceed the column count.
-    """
-    rows_list = list(rows)
-    if not rows_list:
-        return
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", table_key):
-        message = f"Invalid table key: {table_key}"
-        raise ValueError(message)
-    schema_name, table_name = table_key.split(".", maxsplit=1)
-    table_sql = f'"{schema_name}"."{table_name}"'
-    pragma_sql = f"PRAGMA table_info({table_sql})"
-    columns = [row[1] for row in con.execute(pragma_sql).fetchall()]
-    if not columns:
-        message = f"Table {table_key} missing"
-        raise ValueError(message)
-    col_count = len(columns)
-    normalized: list[tuple[object, ...]] = []
-    for row in rows_list:
-        if len(row) > col_count:
-            message = f"Row for {table_key} has {len(row)} values, exceeds column count {col_count}"
-            raise ValueError(message)
-        padded = tuple(row) + (None,) * (col_count - len(row))
-        normalized.append(padded)
-    view_name = f"temp_ingest_values_{table_name}"
-    con.execute(f"DROP TABLE IF EXISTS {view_name}")
-    con.table(table_key).limit(0).create(view_name)
-    placeholders = ", ".join("?" for _ in columns)
-    column_list = ", ".join(columns)
-    con.executemany(
-        f"INSERT INTO {view_name} ({column_list}) VALUES ({placeholders})",  # noqa: S608 - validated
-        normalized,
-    )
-    con.table(view_name).insert_into(table_key)
-    con.execute(f"DROP TABLE IF EXISTS {view_name}")
-
-
-@dataclass(frozen=True)
-class StorageConfig:
-    """Define configuration for opening a CodeIntel DuckDB database."""
-
-    db_path: Path
-    read_only: bool = False
-    apply_schema: bool = False
-    ensure_views: bool = False
-    validate_schema: bool = False
-    attach_history: bool = False
-    history_db_path: Path | None = None
-    repo: str | None = None
-    commit: str | None = None
-
-    @classmethod
-    def for_ingest(
-        cls,
-        db_path: Path,
-        *,
-        history_db_path: Path | None = None,
-    ) -> StorageConfig:
-        """
-        Build a write-capable configuration used by ingestion and analytics runs.
-
-        Parameters
-        ----------
-        db_path
-            Primary DuckDB database path.
-        history_db_path
-            Optional history database to attach for cross-commit analytics.
-
-        Returns
-        -------
-        StorageConfig
-            Preconfigured ingest-ready storage configuration.
-        """
-        return cls(
-            db_path=db_path,
-            read_only=False,
-            apply_schema=True,
-            ensure_views=True,
-            validate_schema=True,
-            attach_history=history_db_path is not None,
-            history_db_path=history_db_path,
-        )
-
-    @classmethod
-    def for_readonly(cls, db_path: Path) -> StorageConfig:
-        """
-        Build a read-only configuration for serving/inspection surfaces.
-
-        Parameters
-        ----------
-        db_path
-            DuckDB database path to open read-only.
-
-        Returns
-        -------
-        StorageConfig
-            Preconfigured read-only storage configuration.
-        """
-        return cls(
-            db_path=db_path,
-            read_only=True,
-            apply_schema=False,
-            ensure_views=True,
-            validate_schema=True,
-        )
-
-
-@dataclass(frozen=True)
-class DatasetRegistry:
-    """Track known table and view dataset names and export metadata."""
-
-    mapping: Mapping[str, str]
-    tables: tuple[str, ...]
-    views: tuple[str, ...]
-    meta: Mapping[str, Dataset] | None = None
-    jsonl_mapping: Mapping[str, str] | None = None
-    parquet_mapping: Mapping[str, str] | None = None
-
-    @property
-    def all_datasets(self) -> tuple[str, ...]:
-        """
-        Return all registered dataset identifiers.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Combined table and view names.
-        """
-        return self.tables + self.views
-
-    def resolve(self, name: str) -> str:
-        """
-        Return a validated dataset table or view key.
-
-        Parameters
-        ----------
-        name
-            Dataset identifier to validate.
-
-        Returns
-        -------
-        str
-            Fully qualified dataset name.
-
-        Raises
-        ------
-        KeyError
-            If the dataset name is unknown.
-        """
-        if name not in self.mapping:
-            message = f"Unknown dataset: {name}"
-            raise KeyError(message)
-        return self.mapping[name]
 
 
 class StorageGateway(Protocol):
@@ -224,44 +69,6 @@ class StorageGateway(Protocol):
 
 SnapshotGatewayResolver = Callable[[str], StorageGateway]
 """Callable returning a StorageGateway for a given commit."""
-
-
-def build_dataset_registry(
-    con: DuckDBConnection,
-    *,
-    include_views: bool = True,
-) -> DatasetRegistry:
-    """
-    Build a dataset registry from DuckDB's metadata.datasets catalog.
-
-    Parameters
-    ----------
-    con
-        Active DuckDB connection with metadata tables initialized.
-    include_views
-        When True, include docs views alongside base tables.
-
-    Returns
-    -------
-    DatasetRegistry
-        Registry containing dataset metadata and export filenames.
-    """
-    ds_registry = load_dataset_registry(con)
-    mapping: dict[str, str] = {name: ds.table_key for name, ds in ds_registry.by_name.items()}
-    table_names = tuple(name for name, ds in ds_registry.by_name.items() if not ds.is_view)
-    view_names = (
-        tuple(name for name, ds in ds_registry.by_name.items() if ds.is_view)
-        if include_views
-        else ()
-    )
-    return DatasetRegistry(
-        mapping=mapping,
-        tables=table_names,
-        views=view_names,
-        meta=ds_registry.by_name,
-        jsonl_mapping=ds_registry.jsonl_datasets,
-        parquet_mapping=ds_registry.parquet_datasets,
-    )
 
 
 @dataclass(frozen=True)
@@ -315,7 +122,7 @@ class CoreTables:
         rows
             Iterable of (repo, commit, modules_json, overlays_json, generated_at_iso).
         """
-        _macro_insert_rows(self.con, "core.repo_map", rows)
+        macro_insert_rows(self.con, "core.repo_map", rows)
 
     def insert_modules(
         self,
@@ -333,7 +140,7 @@ class CoreTables:
             (module, path, repo, commit, "python", "[]", "[]")
             for module, path, repo, commit in rows
         ]
-        _macro_insert_rows(self.con, "core.modules", normalized)
+        macro_insert_rows(self.con, "core.modules", normalized)
 
     def insert_goids(
         self,
@@ -362,7 +169,7 @@ class CoreTables:
             Iterable of (goid_h128, urn, repo, commit, rel_path, language, kind,
             qualname, start_line, end_line, created_at_iso).
         """
-        _macro_insert_rows(self.con, "core.goids", rows)
+        macro_insert_rows(self.con, "core.goids", rows)
 
 
 @dataclass(frozen=True)
@@ -411,7 +218,7 @@ class GraphTables:
             callsite_path, callsite_line, callsite_col, language, kind,
             resolved_via, confidence, evidence_json).
         """
-        _macro_insert_rows(self.con, "graph.call_graph_edges", rows)
+        macro_insert_rows(self.con, "graph.call_graph_edges", rows)
 
     def call_graph_nodes(self) -> DuckDBRelation:
         """
@@ -436,7 +243,7 @@ class GraphTables:
         rows
             Iterable of (goid_h128, language, kind, arity, is_public, rel_path).
         """
-        _macro_insert_rows(self.con, "graph.call_graph_nodes", rows)
+        macro_insert_rows(self.con, "graph.call_graph_nodes", rows)
 
     def import_graph_edges(self) -> DuckDBRelation:
         """
@@ -462,7 +269,7 @@ class GraphTables:
             Iterable of (repo, commit, src_module, dst_module, src_fan_out,
             dst_fan_in, cycle_group).
         """
-        _macro_insert_rows(self.con, "graph.import_graph_edges", rows)
+        macro_insert_rows(self.con, "graph.import_graph_edges", rows)
 
     def symbol_use_edges(self) -> DuckDBRelation:
         """
@@ -506,7 +313,7 @@ class GraphTables:
             else:
                 message = f"symbol_use_edges rows must have 5 or 7 fields, got {len(row)}: {row}"
                 raise ValueError(message)
-        _macro_insert_rows(self.con, "graph.symbol_use_edges", normalized_rows)
+        macro_insert_rows(self.con, "graph.symbol_use_edges", normalized_rows)
 
     def insert_cfg_blocks(
         self,
@@ -520,7 +327,7 @@ class GraphTables:
         rows
             Iterable of values matching cfg_blocks columns.
         """
-        _macro_insert_rows(self.con, "graph.cfg_blocks", rows)
+        macro_insert_rows(self.con, "graph.cfg_blocks", rows)
 
     def insert_cfg_edges(
         self,
@@ -534,7 +341,7 @@ class GraphTables:
         rows
             Iterable of (function_goid_h128, src_block_id, dst_block_id, edge_kind).
         """
-        _macro_insert_rows(self.con, "graph.cfg_edges", rows)
+        macro_insert_rows(self.con, "graph.cfg_edges", rows)
 
     def insert_dfg_edges(
         self,
@@ -548,7 +355,7 @@ class GraphTables:
         rows
             Iterable of values matching dfg_edges columns.
         """
-        _macro_insert_rows(self.con, "graph.dfg_edges", rows)
+        macro_insert_rows(self.con, "graph.dfg_edges", rows)
 
 
 @dataclass(frozen=True)
@@ -661,7 +468,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching coverage_functions columns.
         """
-        _macro_insert_rows(self.con, "analytics.coverage_functions", rows)
+        macro_insert_rows(self.con, "analytics.coverage_functions", rows)
 
     def coverage_lines(self) -> DuckDBRelation:
         """
@@ -686,7 +493,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching coverage_lines columns.
         """
-        _macro_insert_rows(self.con, "analytics.coverage_lines", rows)
+        macro_insert_rows(self.con, "analytics.coverage_lines", rows)
 
     def test_catalog(self) -> DuckDBRelation:
         """
@@ -728,7 +535,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching test_catalog columns.
         """
-        _macro_insert_rows(self.con, "analytics.test_catalog", rows)
+        macro_insert_rows(self.con, "analytics.test_catalog", rows)
 
     def test_coverage_edges(self) -> DuckDBRelation:
         """
@@ -769,7 +576,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching test_coverage_edges columns.
         """
-        _macro_insert_rows(self.con, "analytics.test_coverage_edges", rows)
+        macro_insert_rows(self.con, "analytics.test_coverage_edges", rows)
 
     def insert_function_metrics(
         self,
@@ -815,7 +622,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching function_metrics columns.
         """
-        _macro_insert_rows(self.con, "analytics.function_metrics", rows)
+        macro_insert_rows(self.con, "analytics.function_metrics", rows)
 
     def insert_goid_risk_factors(
         self,
@@ -862,7 +669,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching goid_risk_factors columns.
         """
-        _macro_insert_rows(self.con, "analytics.goid_risk_factors", rows)
+        macro_insert_rows(self.con, "analytics.goid_risk_factors", rows)
 
     def insert_config_values(
         self,
@@ -877,7 +684,7 @@ class AnalyticsTables:
             Iterable of (repo, commit, config_path, format, key, reference_paths,
             reference_modules, reference_modules_json, reference_count).
         """
-        _macro_insert_rows(self.con, "analytics.config_values", rows)
+        macro_insert_rows(self.con, "analytics.config_values", rows)
 
     def insert_typedness(
         self,
@@ -891,7 +698,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching typedness columns.
         """
-        _macro_insert_rows(self.con, "analytics.typedness", rows)
+        macro_insert_rows(self.con, "analytics.typedness", rows)
 
     def insert_static_diagnostics(
         self,
@@ -905,7 +712,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching static_diagnostics columns.
         """
-        _macro_insert_rows(self.con, "analytics.static_diagnostics", rows)
+        macro_insert_rows(self.con, "analytics.static_diagnostics", rows)
 
     def insert_graph_metrics_functions(
         self,
@@ -936,7 +743,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching graph_metrics_functions columns.
         """
-        _macro_insert_rows(self.con, "analytics.graph_metrics_functions", rows)
+        macro_insert_rows(self.con, "analytics.graph_metrics_functions", rows)
 
     def insert_graph_metrics_modules(
         self,
@@ -969,7 +776,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching graph_metrics_modules columns.
         """
-        _macro_insert_rows(self.con, "analytics.graph_metrics_modules", rows)
+        macro_insert_rows(self.con, "analytics.graph_metrics_modules", rows)
 
     def insert_subsystems(
         self,
@@ -1004,7 +811,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching subsystems columns.
         """
-        _macro_insert_rows(self.con, "analytics.subsystems", rows)
+        macro_insert_rows(self.con, "analytics.subsystems", rows)
 
     def insert_subsystem_modules(
         self,
@@ -1018,7 +825,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching subsystem_modules columns.
         """
-        _macro_insert_rows(self.con, "analytics.subsystem_modules", rows)
+        macro_insert_rows(self.con, "analytics.subsystem_modules", rows)
 
 
 @dataclass
