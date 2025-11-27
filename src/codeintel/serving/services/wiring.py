@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 import anyio
 import httpx
 
+from codeintel.analytics.graph_runtime import build_graph_runtime
+from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.serving.http.datasets import build_registry_and_limits
 from codeintel.serving.mcp.query_service import BackendLimits
@@ -147,6 +149,13 @@ def _build_local_resource(
         gateway=gateway,
         registry=registry_opts,
         observability=observability,
+        graph_engine=runtime.engine,
+    )
+    snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
+    runtime = build_graph_runtime(
+        gateway,
+        snapshot,
+        GraphBackendConfig(),
     )
     backend = DuckDBBackend(
         gateway=gateway,
@@ -154,6 +163,7 @@ def _build_local_resource(
         commit=cfg.commit,
         limits=limits,
         observability=observability,
+        query_engine=runtime.engine,
         service_override=service if isinstance(service, LocalQueryService) else None,
     )
 

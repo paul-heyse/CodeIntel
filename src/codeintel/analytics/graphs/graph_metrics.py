@@ -12,9 +12,9 @@ from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     GraphContext,
     build_graph_context,
@@ -28,6 +28,9 @@ from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
+if TYPE_CHECKING:
+    from codeintel.analytics.context import AnalyticsContext
+
 log = logging.getLogger(__name__)
 
 
@@ -36,7 +39,9 @@ def compute_graph_metrics(
     cfg: GraphMetricsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
-    runtime: GraphRuntimeOptions | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    graph_ctx: GraphContext | None = None,
+    analytics_context: AnalyticsContext | None = None,
 ) -> None:
     """
     Populate analytics graph metrics tables for the provided repo/commit.
@@ -49,28 +54,38 @@ def compute_graph_metrics(
         Graph metrics configuration for the current repository snapshot.
     catalog_provider :
         Optional catalog provider reused for module lookups.
-    runtime : GraphRuntimeOptions | None
-        Optional runtime options supplying cached graphs and backend selection.
+    runtime : GraphRuntime | GraphRuntimeOptions | None
+        Shared graph runtime supplying cached graphs and backend selection.
+    graph_ctx :
+        Optional precomputed graph context for sampling caps and seeds.
     """
-    runtime = runtime or GraphRuntimeOptions()
-    context = runtime.context
-    graph_ctx = runtime.graph_ctx
+    runtime_opts: GraphRuntimeOptions
+    engine: GraphEngine
+    use_gpu: bool
+    if isinstance(runtime, GraphRuntime):
+        runtime_opts = runtime.options
+        engine = runtime.engine
+        use_gpu = runtime.backend.use_gpu
+    else:
+        runtime_opts = runtime or GraphRuntimeOptions()
+        engine = runtime_opts.build_engine(gateway, cfg.repo, cfg.commit)
+        use_gpu = runtime_opts.use_gpu
+
     con = gateway.con
     ensure_schema(con, "analytics.graph_metrics_functions")
     ensure_schema(con, "analytics.graph_metrics_modules")
-    use_gpu = runtime.use_gpu
-    ctx = graph_ctx or build_graph_context(
+    ctx = graph_ctx or runtime_opts.graph_ctx or build_graph_context(
         cfg,
         now=datetime.now(tz=UTC),
         use_gpu=use_gpu,
     )
     if ctx.repo != cfg.repo or ctx.commit != cfg.commit or ctx.use_gpu != use_gpu:
         ctx = replace(ctx, repo=cfg.repo, commit=cfg.commit, use_gpu=use_gpu)
-    engine: GraphEngine = runtime.build_engine(gateway, cfg.repo, cfg.commit)
     _compute_function_graph_metrics(gateway, cfg, ctx=ctx, engine=engine)
     module_by_path = None
-    if context is not None:
-        module_by_path = context.module_map
+    active_context = analytics_context or runtime_opts.context
+    if active_context is not None:
+        module_by_path = active_context.module_map
     elif catalog_provider is not None:
         module_by_path = catalog_provider.catalog().module_by_path
     _compute_module_graph_metrics(

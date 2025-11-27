@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from codeintel.analytics.graph_runtime import build_graph_runtime
+from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
+from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.http.datasets import (
     build_registry_and_limits,
     describe_dataset,
@@ -101,6 +104,8 @@ def build_local_query_service(
         Dataset registry options including validation behavior.
     observability:
         Optional observability configuration for structured logging.
+    graph_engine:
+        Optional graph engine injected into the local query service.
 
     Returns
     -------
@@ -155,6 +160,7 @@ def build_service_from_config(
     request_json: Callable[[str, dict[str, object]], object] | None = None,
     registry: DatasetRegistryOptions | None = None,
     observability: ServiceObservability | None = None,
+    graph_engine: GraphEngine | None = None,
 ) -> LocalQueryService | HttpQueryService:
     """
     Construct a query service from ServingConfig using local or remote transport.
@@ -171,6 +177,8 @@ def build_service_from_config(
         Dataset registry options (local only).
     observability:
         Optional observability configuration for structured logging.
+    graph_engine:
+        Optional graph engine injected into the local query service.
 
     Returns
     -------
@@ -190,11 +198,21 @@ def build_service_from_config(
             message = "StorageGateway is required for local_db service construction"
             raise ValueError(message)
         registry_opts = registry or DatasetRegistryOptions()
+        engine = graph_engine
+        if engine is None:
+            snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
+            runtime = build_graph_runtime(
+                gateway,
+                snapshot,
+                GraphBackendConfig(),
+            )
+            engine = runtime.engine
         query = DuckDBQueryService(
             gateway=gateway,
             repo=cfg.repo,
             commit=cfg.commit,
             limits=limits,
+            graph_engine=engine,
         )
         return build_local_query_service(
             gateway,

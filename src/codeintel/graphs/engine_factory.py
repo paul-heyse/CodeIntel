@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.config.primitives import GraphBackendConfig
+from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
 from codeintel.storage.gateway import StorageGateway
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 
 def build_graph_engine(
     gateway: StorageGateway,
-    snapshot: tuple[str, str],
+    snapshot: SnapshotRef | tuple[str, str],
     *,
     graph_backend: GraphBackendConfig | None = None,
     context: AnalyticsContext | None = None,
@@ -29,8 +30,8 @@ def build_graph_engine(
     ----------
     gateway :
         Storage gateway providing graph tables and views.
-    snapshot : tuple[str, str]
-        Repository and commit anchoring the graph snapshot.
+    snapshot :
+        Repository snapshot anchoring the graph build or a (repo, commit) tuple.
     graph_backend : GraphBackendConfig | None, optional
         Backend selection controlling GPU usage.
     context : AnalyticsContext | None, optional
@@ -55,14 +56,21 @@ def build_graph_engine(
             raise ValueError(message)
         maybe_enable_nx_gpu(graph_backend, env=env)
     use_gpu = bool(graph_backend.use_gpu) if graph_backend is not None else False
-    repo, commit = snapshot
+    normalized_snapshot = (
+        snapshot
+        if isinstance(snapshot, SnapshotRef)
+        else SnapshotRef(repo=snapshot[0], commit=snapshot[1], repo_root=Path())
+    )
     engine = NxGraphEngine(
         gateway=gateway,
-        repo=repo,
-        commit=commit,
+        snapshot=normalized_snapshot,
         use_gpu=use_gpu,
     )
-    if context is not None and context.repo == repo and context.commit == commit:
+    if (
+        context is not None
+        and context.repo == normalized_snapshot.repo
+        and context.commit == normalized_snapshot.commit
+    ):
         engine.seed(GraphKind.CALL_GRAPH, context.call_graph)
         engine.seed(GraphKind.IMPORT_GRAPH, context.import_graph)
         engine.seed(GraphKind.SYMBOL_MODULE_GRAPH, context.symbol_module_graph)

@@ -9,7 +9,7 @@ from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.graph_service import GraphContext, centrality_directed
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
@@ -64,24 +64,25 @@ def compute_subsystem_graph_metrics(
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntimeOptions | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Build subsystem-level condensed import graph metrics."""
-    runtime = runtime or GraphRuntimeOptions()
-    graph_ctx = runtime.graph_ctx
+    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    graph_ctx = runtime_opts.graph_ctx
     con = gateway.con
     ensure_schema(con, "analytics.subsystem_graph_metrics")
     graph_ctx = graph_ctx or GraphContext(
         repo=repo,
         commit=commit,
         now=datetime.now(UTC),
-        use_gpu=runtime.use_gpu,
+        use_gpu=runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu,
     )
-    if graph_ctx.use_gpu != runtime.use_gpu:
-        graph_ctx = replace(graph_ctx, use_gpu=runtime.use_gpu)
+    use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu
+    if graph_ctx.use_gpu != use_gpu:
+        graph_ctx = replace(graph_ctx, use_gpu=use_gpu)
 
-    if runtime.context is not None and (
-        runtime.context.repo != repo or runtime.context.commit != commit
+    if runtime_opts.context is not None and (
+        runtime_opts.context.repo != repo or runtime_opts.context.commit != commit
     ):
         return
 
@@ -106,8 +107,12 @@ def compute_subsystem_graph_metrics(
     subsystem_graph = nx.DiGraph()
     subsystem_graph.add_nodes_from({subsystem_id for subsystem_id, _ in membership_rows})
 
-    engine: GraphEngine = runtime.build_engine(gateway, repo, commit)
-    for src, dst, data in engine.import_graph().edges(data=True):
+    if isinstance(runtime, GraphRuntime):
+        import_graph = runtime.ensure_import_graph()
+    else:
+        engine: GraphEngine = runtime_opts.build_engine(gateway, repo, commit)
+        import_graph = engine.import_graph()
+    for src, dst, data in import_graph.edges(data=True):
         src_sub = module_to_subsystem.get(src)
         dst_sub = module_to_subsystem.get(dst)
         if src_sub is None or dst_sub is None or src_sub == dst_sub:

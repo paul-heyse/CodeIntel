@@ -19,10 +19,10 @@ from codeintel.analytics.function_ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import FunctionEffectsStepConfig
-from codeintel.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
+from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -112,7 +112,7 @@ def compute_function_effects(
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
-    runtime: GraphRuntimeOptions | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate `analytics.function_effects` for the target repo/commit.
@@ -138,17 +138,11 @@ def compute_function_effects(
         else catalog_provider
         or FunctionCatalogService.from_db(gateway, repo=cfg.repo, commit=cfg.commit)
     )
-    if runtime is not None:
-        engine: GraphEngine = runtime.build_engine(gateway, cfg.repo, cfg.commit)
+    if isinstance(runtime, GraphRuntime):
+        engine: GraphEngine = runtime.engine
     else:
-        engine = NxGraphEngine(
-            gateway=gateway,
-            repo=cfg.repo,
-            commit=cfg.commit,
-            use_gpu=context.use_gpu if context is not None else False,
-        )
-        if context is not None:
-            engine.seed(GraphKind.CALL_GRAPH, context.call_graph)
+        runtime_opts = runtime or GraphRuntimeOptions()
+        engine = runtime_opts.build_engine(gateway, cfg.repo, cfg.commit)
 
     inputs = _EffectInputs(
         gateway=gateway,

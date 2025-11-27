@@ -18,6 +18,7 @@ from codeintel.pipeline.orchestration.core import (
     StepPhase,
     _function_catalog,
     _log_step,
+    ensure_graph_runtime,
 )
 
 log = logging.getLogger(__name__)
@@ -132,12 +133,14 @@ class GraphValidationStep:
         _log_step(self.name)
         gateway = ctx.gateway
         catalog = _function_catalog(ctx)
+        runtime = ensure_graph_runtime(ctx)
         run_graph_validations(
             gateway,
             repo=ctx.repo,
             commit=ctx.commit,
             catalog_provider=catalog,
             logger=log,
+            runtime=runtime,
         )
 
 

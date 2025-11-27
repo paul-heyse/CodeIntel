@@ -12,8 +12,7 @@ from dataclasses import dataclass, field
 
 import networkx as nx
 
-from codeintel.graphs.engine import NxGraphEngine
-from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -185,8 +184,8 @@ class DuckDBQueryService:
     repo: str
     commit: str
     limits: BackendLimits
-    engine: NxGraphEngine | None = None
-    _engine: NxGraphEngine | None = field(default=None, init=False, repr=False)
+    graph_engine: GraphEngine | None = None
+    _engine: GraphEngine | None = field(default=None, init=False, repr=False)
     _functions: FunctionRepository | None = field(default=None, init=False, repr=False)
     _modules: ModuleRepository | None = field(default=None, init=False, repr=False)
     _subsystems: SubsystemRepository | None = field(default=None, init=False, repr=False)
@@ -199,29 +198,22 @@ class DuckDBQueryService:
         """Underlying DuckDB connection."""
         return self.gateway.con
 
-    def _graph_engine(self) -> NxGraphEngine:
+    def _require_graph_engine(self) -> GraphEngine:
         """
-        Return a memoized graph engine for this snapshot.
+        Return the configured graph engine or raise when missing.
 
         Returns
         -------
-        NxGraphEngine
+        GraphEngine
             Engine configured for the service repo/commit.
         """
-        if self._engine is None:
-            self._engine = self.engine or build_graph_engine(self.gateway, (self.repo, self.commit))
+        if self._engine is not None:
+            return self._engine
+        if self.graph_engine is None:
+            message = "Graph engine must be provided to DuckDBQueryService."
+            raise errors.backend_failure(message)
+        self._engine = self.graph_engine
         return self._engine
-
-    def graph_engine(self) -> NxGraphEngine:
-        """
-        Public accessor for the graph engine.
-
-        Returns
-        -------
-        NxGraphEngine
-            Cached or newly built graph engine for this service.
-        """
-        return self._graph_engine()
 
     @property
     def functions(self) -> FunctionRepository:
@@ -579,7 +571,7 @@ class DuckDBQueryService:
             raise errors.invalid_argument(message)
         limit = clamp.applied
         meta_messages = list(clamp.messages)
-        graph = self._graph_engine().call_graph()
+        graph = self._require_graph_engine().call_graph()
         if goid_h128 not in graph:
             return GraphNeighborhoodResponse(
                 nodes=[],
@@ -657,7 +649,7 @@ class DuckDBQueryService:
             raise errors.invalid_argument(message)
         limit = clamp.applied
         meta_messages = list(clamp.messages)
-        import_graph = self._graph_engine().import_graph()
+        import_graph = self._require_graph_engine().import_graph()
         memberships = dict(
             self.con.execute(
                 """

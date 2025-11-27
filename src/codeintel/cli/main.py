@@ -12,12 +12,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Literal, Protocol
 
+from codeintel.analytics.graph_runtime import build_graph_runtime
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.config import ConfigBuilder
 from codeintel.config.models import CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.parser_types import FunctionParserKind
-from codeintel.config.primitives import GraphBackendConfig
-from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
 from codeintel.ingestion.source_scanner import (
     default_code_profile,
@@ -529,6 +529,20 @@ def _open_gateway(cfg: CodeIntelConfig, *, read_only: bool) -> StorageGateway:
     return open_gateway(gateway_cfg)
 
 
+def _build_runtime(cfg: CodeIntelConfig, gateway: StorageGateway):
+    """Construct a GraphRuntime for CLI commands."""
+    snapshot = SnapshotRef(
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        repo_root=cfg.repo.repo_root,
+    )
+    return build_graph_runtime(
+        gateway,
+        snapshot,
+        cfg.graph_backend,
+    )
+
+
 def _cmd_pipeline_run(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     maybe_enable_nx_gpu(cfg.graph_backend)
@@ -670,12 +684,8 @@ def _cmd_pipeline_deps(args: argparse.Namespace) -> int:
 def _cmd_ide_hints(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
-    engine = build_graph_engine(
-        gateway,
-        (cfg.repo.repo, cfg.repo.commit),
-        graph_backend=cfg.graph_backend,
-        env=os.environ,
-    )
+    runtime = _build_runtime(cfg, gateway)
+    engine = runtime.engine
     backend = DuckDBBackend(
         gateway=gateway,
         repo=cfg.repo.repo,
@@ -700,12 +710,8 @@ def _cmd_ide_hints(args: argparse.Namespace) -> int:
 def _cmd_subsystem_list(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
-    engine = build_graph_engine(
-        gateway,
-        (cfg.repo.repo, cfg.repo.commit),
-        graph_backend=cfg.graph_backend,
-        env=os.environ,
-    )
+    runtime = _build_runtime(cfg, gateway)
+    engine = runtime.engine
     backend = DuckDBBackend(
         gateway=gateway,
         repo=cfg.repo.repo,
@@ -729,12 +735,8 @@ def _cmd_subsystem_list(args: argparse.Namespace) -> int:
 def _cmd_subsystem_show(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
-    engine = build_graph_engine(
-        gateway,
-        (cfg.repo.repo, cfg.repo.commit),
-        graph_backend=cfg.graph_backend,
-        env=os.environ,
-    )
+    runtime = _build_runtime(cfg, gateway)
+    engine = runtime.engine
     backend = DuckDBBackend(
         gateway=gateway,
         repo=cfg.repo.repo,
@@ -758,12 +760,8 @@ def _cmd_subsystem_show(args: argparse.Namespace) -> int:
 def _cmd_subsystem_modules(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
-    engine = build_graph_engine(
-        gateway,
-        (cfg.repo.repo, cfg.repo.commit),
-        graph_backend=cfg.graph_backend,
-        env=os.environ,
-    )
+    runtime = _build_runtime(cfg, gateway)
+    engine = runtime.engine
     backend = DuckDBBackend(
         gateway=gateway,
         repo=cfg.repo.repo,

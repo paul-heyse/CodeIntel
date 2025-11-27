@@ -9,9 +9,10 @@ from typing import Any, cast
 
 import networkx as nx
 
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions, build_graph_runtime
 from codeintel.analytics.parsing.validation import GraphValidationReporter
-from codeintel.graphs.engine import NxGraphEngine
-from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.function_catalog import FunctionCatalog, load_function_catalog
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.gateway import DuckDBError, StorageGateway
@@ -49,6 +50,7 @@ def run_graph_validations(
     commit: str,
     catalog_provider: FunctionCatalogProvider | None = None,
     logger: logging.Logger | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Emit warnings for common graph integrity issues.
@@ -65,7 +67,19 @@ def run_graph_validations(
         if catalog_provider is not None
         else load_function_catalog(gateway, repo=repo, commit=commit)
     )
-    engine = build_graph_engine(gateway, (repo, commit))
+    engine: GraphEngine
+    if isinstance(runtime, GraphRuntime) or (isinstance(runtime, GraphRuntimeOptions) and runtime.engine is not None):
+        engine = runtime.engine
+    else:
+        snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+        runtime_built = build_graph_runtime(
+            gateway,
+            snapshot,
+            runtime.resolved_backend
+            if isinstance(runtime, GraphRuntimeOptions)
+            else GraphBackendConfig(),
+        )
+        engine = runtime_built.engine
     findings = []
     findings.extend(_warn_missing_function_goids(gateway, repo, commit, active_log))
     findings.extend(_warn_callsite_span_mismatches(gateway, catalog, repo, commit, active_log))
@@ -541,7 +555,7 @@ def _subsystem_disagreement_findings(
 
 
 def warn_graph_structure(
-    engine: NxGraphEngine,
+    engine: GraphEngine,
     repo: str,
     commit: str,
     log: logging.Logger | None = None,

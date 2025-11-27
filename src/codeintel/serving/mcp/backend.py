@@ -10,7 +10,7 @@ import anyio
 import httpx
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.graphs.engine import NxGraphEngine
+from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -242,7 +242,7 @@ class DuckDBBackend(QueryBackend):
     service_override: LocalQueryService | None = None
     service: QueryService = field(init=False)
     query: DuckDBQueryService | None = field(init=False, default=None)
-    query_engine: NxGraphEngine | None = None
+    query_engine: GraphEngine | None = None
 
     def __post_init__(self) -> None:
         """
@@ -275,7 +275,7 @@ class DuckDBBackend(QueryBackend):
             repo=self.repo,
             commit=self.commit,
             limits=self.limits,
-            engine=self.query_engine,
+            graph_engine=self.query_engine,
         )
         self.service = LocalQueryService(
             query=self.query,

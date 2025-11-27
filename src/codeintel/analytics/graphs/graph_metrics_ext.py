@@ -8,7 +8,7 @@ from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.graph_service import (
     CentralityBundle,
     ComponentBundle,
@@ -153,7 +153,7 @@ def compute_graph_metrics_functions_ext(
     *,
     repo: str,
     commit: str,
-    runtime: GraphRuntimeOptions | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate analytics.graph_metrics_functions_ext with additional centralities.
@@ -166,12 +166,15 @@ def compute_graph_metrics_functions_ext(
         Repository identifier anchoring the metrics.
     commit : str
         Commit hash anchoring the metrics snapshot.
-    runtime : GraphRuntimeOptions | None
+    runtime : GraphRuntime | GraphRuntimeOptions | None
         Optional runtime options including cached graphs and backend selection.
     """
-    runtime = runtime or GraphRuntimeOptions()
-    ctx = _resolve_function_context(runtime, repo, commit)
-    engine = runtime.build_engine(gateway, repo, commit)
+    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    ctx = _resolve_function_context(runtime_opts, repo, commit)
+    if isinstance(runtime, GraphRuntime):
+        engine = runtime.engine
+    else:
+        engine = runtime_opts.build_engine(gateway, repo, commit)
     views = _build_function_views(engine)
     slices = _function_metric_slices(views, ctx)
     rows = _function_metric_rows(repo, commit, ctx, views, slices)
