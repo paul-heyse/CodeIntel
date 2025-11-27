@@ -143,6 +143,8 @@ class SymbolUseRow(TypedDict):
     use_path: str
     same_file: bool
     same_module: bool
+    def_goid_h128: int | None
+    use_goid_h128: int | None
 
 
 def symbol_use_to_tuple(row: SymbolUseRow) -> tuple[object, ...]:
@@ -160,6 +162,8 @@ def symbol_use_to_tuple(row: SymbolUseRow) -> tuple[object, ...]:
         row["use_path"],
         row["same_file"],
         row["same_module"],
+        row["def_goid_h128"],
+        row["use_goid_h128"],
     )
 
 

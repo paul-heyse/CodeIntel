@@ -255,7 +255,13 @@ class SymbolUseEdgeRow:
     use_goid_h128: int | None = None
 
     def to_basic_tuple(self) -> tuple[str, str, str, bool, bool]:
-        return (self.symbol, self.def_path, self.use_path, self.same_file, self.same_module)
+        return (
+            self.symbol,
+            self.def_path,
+            self.use_path,
+            self.same_file,
+            self.same_module,
+        )
 
     def to_detailed_tuple(
         self,

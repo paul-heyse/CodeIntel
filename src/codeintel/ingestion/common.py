@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.config import SnapshotRef
-from codeintel.config.schemas.sql_builder import PREPARED, ensure_schema
+from codeintel.config.schemas.sql_builder import prepared_statements_dynamic
+from codeintel.ingestion.ingest_service import ensure_schema, ingest_via_macro
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.storage.gateway import StorageGateway
@@ -394,7 +395,7 @@ def _upsert_file_state(
         "DELETE FROM core.file_state WHERE repo = ? AND rel_path = ? AND language = ?",
         delete_params,
     )
-    gateway.con.executemany(PREPARED["core.file_state"].insert_sql, file_state_rows)
+    ingest_via_macro(gateway.con, "core.file_state", file_state_rows)
 
 
 def _log_change_details(request: ChangeRequest, summary: ChangeSummary) -> None:
@@ -579,21 +580,20 @@ def run_batch(
     """
     active_con = gateway.con
     ensure_schema(active_con, table_key)
-    stmts = PREPARED[table_key]
+    stmts = prepared_statements_dynamic(active_con, table_key)
 
     start = time.perf_counter()
     if delete_params is not None and stmts.delete_sql is not None:
         active_con.execute(stmts.delete_sql, delete_params)
-    if rows:
-        active_con.executemany(stmts.insert_sql, rows)
+    ingested = ingest_via_macro(active_con, table_key, rows) if rows else 0
     duration = time.perf_counter() - start
 
     if scope is not None:
-        log_progress("ingest", scope=scope, table=table_key, rows=len(rows), duration_s=duration)
+        log_progress("ingest", scope=scope, table=table_key, rows=ingested, duration_s=duration)
     else:
-        log.info("ingest table=%s rows=%d duration=%.2fs", table_key, len(rows), duration)
+        log.info("ingest table=%s rows=%d duration=%.2fs", table_key, ingested, duration)
 
-    return BatchResult(table_key=table_key, rows=len(rows), duration_s=duration)
+    return BatchResult(table_key=table_key, rows=ingested, duration_s=duration)
 
 
 def insert_relation(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.schemas.registry_adapter import load_registry_columns
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
@@ -33,19 +33,16 @@ def _columns_for(con: DuckDBConnection, schema_name: str, table_name: str) -> se
     return {row[0] for row in rows}
 
 
-@pytest.mark.parametrize("fq_name", sorted(TABLE_SCHEMAS.keys()))
-def test_ingestion_sql_tables_match_schema(fq_name: str, fresh_gateway: StorageGateway) -> None:
+def test_ingestion_sql_tables_match_schema(fresh_gateway: StorageGateway) -> None:
     """Ensure registry tables exist with expected columns."""
-    schema = TABLE_SCHEMAS[fq_name]
     con = fresh_gateway.con
-    schema_name = schema.schema
-    table_name = schema.name
-    cols = schema.column_names()
-
-    if not _table_exists(con, schema_name, table_name):
-        pytest.fail(f"{table_name} table is missing")
-    present = _columns_for(con, schema_name, table_name)
-    expected = set(cols)
-    if not expected.issubset(present):
-        missing = expected - present
-        pytest.fail(f"{table_name} columns drift: missing {missing}")
+    registry = load_registry_columns(con)
+    for fq_name, registry_cols in sorted(registry.items()):
+        schema_name, table_name = fq_name.split(".", maxsplit=1)
+        if not _table_exists(con, schema_name, table_name):
+            pytest.fail(f"{table_name} table is missing")
+        present = _columns_for(con, schema_name, table_name)
+        expected = set(registry_cols)
+        if not expected.issubset(present):
+            missing = expected - present
+            pytest.fail(f"{table_name} columns drift: missing {missing}")

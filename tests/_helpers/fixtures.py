@@ -2031,15 +2031,19 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
     )
     gateway = ctx.gateway
     if run_metrics:
+        # Clear any prior seeds for these deterministic ids/paths to avoid PK clashes.
+        gateway.con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1001, 1002)")
         gateway.con.execute(
-            "DELETE FROM core.goids WHERE repo = ? AND commit = ? AND goid_h128 IN (1, 2)",
-            [repo, commit],
+            "DELETE FROM core.modules WHERE path IN ('pkg/mod_a.py', 'pkg/mod_b.py')"
+        )
+        gateway.con.execute(
+            "DELETE FROM graph.call_graph_nodes WHERE goid_h128 IN (1001, 1002)"
         )
         insert_goids(
             gateway,
             [
                 GoidRow(
-                    goid_h128=1,
+                    goid_h128=1001,
                     urn="urn:pkg.mod_a.a",
                     repo=repo,
                     commit=commit,
@@ -2051,7 +2055,7 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
                     created_at=utcnow(),
                 ),
                 GoidRow(
-                    goid_h128=2,
+                    goid_h128=1002,
                     urn="urn:pkg.mod_b.b",
                     repo=repo,
                     commit=commit,
@@ -2068,7 +2072,7 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
             gateway,
             [
                 CallGraphNodeRow(
-                    1,
+                    1001,
                     "python",
                     "function",
                     0,
@@ -2076,7 +2080,7 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
                     rel_path="pkg/mod_a.py",
                 ),
                 CallGraphNodeRow(
-                    2,
+                    1002,
                     "python",
                     "function",
                     0,
@@ -2091,8 +2095,8 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
                 CallGraphEdgeRow(
                     repo,
                     commit,
-                    1,
-                    2,
+                    1001,
+                    1002,
                     "pkg/mod_a.py",
                     3,
                     0,
@@ -2103,7 +2107,7 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
                 )
             ],
         )
-    if build_callgraph_enabled:
+    if build_callgraph_enabled and not run_metrics:
         cfg = ConfigBuilder.from_snapshot(
             repo=repo, commit=commit, repo_root=repo_root
         ).call_graph()
@@ -2198,6 +2202,8 @@ def build_callgraph_fixture_repo(  # noqa: PLR0913
     )
     gateway = ctx.gateway
     if goid_entries:
+        gateway.con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1001, 1002, 1003, 1004)")
+        gateway.con.execute("DELETE FROM core.modules WHERE path IN ('pkg/a.py', 'pkg/b.py')")
         seed_callgraph_goids(gateway, repo=repo, commit=commit, entries=goid_entries)
     cfg = ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root).call_graph()
     build_call_graph(gateway, cfg)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +18,62 @@ from codeintel.storage.views import create_all_views
 DuckDBConnection = duckdb.DuckDBPyConnection
 DuckDBRelation = duckdb.DuckDBPyRelation
 DuckDBError = duckdb.Error
+
+
+def _macro_insert_rows(
+    con: DuckDBConnection,
+    table_key: str,
+    rows: Iterable[Sequence[object]],
+) -> None:
+    """
+    Insert rows via ingest macro using table schema as ground truth.
+
+    Pads missing trailing columns with NULLs; raises if rows exceed schema width.
+
+    Raises
+    ------
+    ValueError
+        If the table name is invalid or rows exceed the column count.
+    """
+    rows_list = list(rows)
+    if not rows_list:
+        return
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", table_key):
+        message = f"Invalid table key: {table_key}"
+        raise ValueError(message)
+    schema_name, table_name = table_key.split(".", maxsplit=1)
+    table_sql = f'"{schema_name}"."{table_name}"'
+    pragma_sql = f"PRAGMA table_info({table_sql})"
+    columns = [row[1] for row in con.execute(pragma_sql).fetchall()]
+    if not columns:
+        message = f"Table {table_key} missing"
+        raise ValueError(message)
+    col_count = len(columns)
+    normalized: list[tuple[object, ...]] = []
+    for row in rows_list:
+        if len(row) > col_count:
+            message = (
+                f"Row for {table_key} has {len(row)} values, exceeds column count {col_count}"
+            )
+            raise ValueError(message)
+        padded = tuple(row) + (None,) * (col_count - len(row))
+        normalized.append(padded)
+    view_name = f"temp_ingest_values_{table_name}"
+    con.execute(f"DROP TABLE IF EXISTS {view_name}")
+    con.execute(
+        f"CREATE TEMP TABLE {view_name} AS SELECT * FROM {table_sql} WHERE 0=1"  # noqa: S608
+    )
+    placeholders = ", ".join("?" for _ in columns)
+    column_list = ", ".join(columns)
+    con.executemany(
+        f"INSERT INTO {view_name} ({column_list}) VALUES ({placeholders})",  # noqa: S608 - validated
+        normalized,
+    )
+    macro_name = f"metadata.ingest_{table_name}"
+    con.execute(
+        f"INSERT INTO {table_sql} SELECT * FROM {macro_name}(?)", [view_name]  # noqa: S608 - validated
+    )
+    con.execute(f"DROP TABLE IF EXISTS {view_name}")
 
 
 @dataclass(frozen=True)
@@ -265,13 +322,7 @@ class CoreTables:
         rows
             Iterable of (repo, commit, modules_json, overlays_json, generated_at_iso).
         """
-        self.con.executemany(
-            """
-            INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "core.repo_map", rows)
 
     def insert_modules(
         self,
@@ -285,13 +336,10 @@ class CoreTables:
         rows
             Iterable of (module, path, repo, commit).
         """
-        self.con.executemany(
-            """
-            INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-            VALUES (?, ?, ?, ?, 'python', '[]', '[]')
-            """,
-            rows,
-        )
+        normalized = [
+            (module, path, repo, commit, "python", "[]", "[]") for module, path, repo, commit in rows
+        ]
+        _macro_insert_rows(self.con, "core.modules", normalized)
 
     def insert_goids(
         self,
@@ -320,16 +368,7 @@ class CoreTables:
             Iterable of (goid_h128, urn, repo, commit, rel_path, language, kind,
             qualname, start_line, end_line, created_at_iso).
         """
-        self.con.executemany(
-            """
-            INSERT INTO core.goids (
-                goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-                start_line, end_line, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "core.goids", rows)
 
 
 @dataclass(frozen=True)
@@ -378,17 +417,7 @@ class GraphTables:
             callsite_path, callsite_line, callsite_col, language, kind,
             resolved_via, confidence, evidence_json).
         """
-        self.con.executemany(
-            """
-            INSERT INTO graph.call_graph_edges (
-                repo, commit, caller_goid_h128, callee_goid_h128, callsite_path,
-                callsite_line, callsite_col, language, kind, resolved_via, confidence,
-                evidence_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "graph.call_graph_edges", rows)
 
     def call_graph_nodes(self) -> DuckDBRelation:
         """
@@ -413,15 +442,7 @@ class GraphTables:
         rows
             Iterable of (goid_h128, language, kind, arity, is_public, rel_path).
         """
-        self.con.executemany(
-            """
-            INSERT INTO graph.call_graph_nodes (
-                goid_h128, language, kind, arity, is_public, rel_path
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "graph.call_graph_nodes", rows)
 
     def import_graph_edges(self) -> DuckDBRelation:
         """
@@ -447,15 +468,7 @@ class GraphTables:
             Iterable of (repo, commit, src_module, dst_module, src_fan_out,
             dst_fan_in, cycle_group).
         """
-        self.con.executemany(
-            """
-            INSERT INTO graph.import_graph_edges (
-                repo, commit, src_module, dst_module, src_fan_out, dst_fan_in, cycle_group
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "graph.import_graph_edges", rows)
 
     def symbol_use_edges(self) -> DuckDBRelation:
         """
@@ -470,7 +483,7 @@ class GraphTables:
 
     def insert_symbol_use_edges(
         self,
-        rows: Iterable[tuple[str, str, str, bool, bool]],
+        rows: Iterable[Sequence[object]],
     ) -> None:
         """
         Insert rows into graph.symbol_use_edges.
@@ -478,17 +491,31 @@ class GraphTables:
         Parameters
         ----------
         rows
-            Iterable of (symbol, def_path, use_path, same_file, same_module).
+            Iterable of (symbol, def_path, use_path, same_file, same_module, def_goid_h128, use_goid_h128).
+
+        Raises
+        ------
+        ValueError
+            If a row is not length 5 or 7.
         """
-        self.con.executemany(
-            """
-            INSERT INTO graph.symbol_use_edges (
-                symbol, def_path, use_path, same_file, same_module
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        expected_basic_len = 5
+        expected_full_len = 7
+        normalized_rows = []
+        for row in rows:
+            if len(row) == expected_basic_len:
+                symbol, def_path, use_path, same_file, same_module = row
+                normalized_rows.append(
+                    (symbol, def_path, use_path, same_file, same_module, None, None)
+                )
+            elif len(row) == expected_full_len:
+                normalized_rows.append(tuple(row))
+            else:
+                message = (
+                    "symbol_use_edges rows must have 5 or 7 fields, "
+                    f"got {len(row)}: {row}"
+                )
+                raise ValueError(message)
+        _macro_insert_rows(self.con, "graph.symbol_use_edges", normalized_rows)
 
     def insert_cfg_blocks(
         self,
@@ -502,16 +529,7 @@ class GraphTables:
         rows
             Iterable of values matching cfg_blocks columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO graph.cfg_blocks (
-                function_goid_h128, block_idx, block_id, label, file_path, start_line,
-                end_line, kind, stmts_json, in_degree, out_degree
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "graph.cfg_blocks", rows)
 
     def insert_cfg_edges(
         self,
@@ -525,15 +543,7 @@ class GraphTables:
         rows
             Iterable of (function_goid_h128, src_block_id, dst_block_id, edge_kind).
         """
-        self.con.executemany(
-            """
-            INSERT INTO graph.cfg_edges (
-                function_goid_h128, src_block_id, dst_block_id, edge_kind
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "graph.cfg_edges", rows)
 
     def insert_dfg_edges(
         self,
@@ -547,16 +557,7 @@ class GraphTables:
         rows
             Iterable of values matching dfg_edges columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO graph.dfg_edges (
-                function_goid_h128, src_block_id, dst_block_id, src_var, dst_var,
-                edge_kind
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "graph.dfg_edges", rows)
 
 
 @dataclass(frozen=True)
@@ -669,17 +670,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching coverage_functions columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.coverage_functions (
-                function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-                start_line, end_line, executable_lines, covered_lines, coverage_ratio,
-                tested, untested_reason, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.coverage_functions", rows)
 
     def coverage_lines(self) -> DuckDBRelation:
         """
@@ -704,16 +695,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching coverage_lines columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.coverage_lines (
-                repo, commit, rel_path, line, is_executable, is_covered, hits,
-                context_count, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.coverage_lines", rows)
 
     def test_catalog(self) -> DuckDBRelation:
         """
@@ -755,16 +737,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching test_catalog columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.test_catalog (
-                test_id, test_goid_h128, urn, repo, commit, rel_path, qualname, kind,
-                status, duration_ms, markers, parametrized, flaky, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.test_catalog", rows)
 
     def test_coverage_edges(self) -> DuckDBRelation:
         """
@@ -805,17 +778,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching test_coverage_edges columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.test_coverage_edges (
-                test_id, test_goid_h128, function_goid_h128, urn, repo, commit, rel_path,
-                qualname, covered_lines, executable_lines, coverage_ratio, last_status,
-                created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.test_coverage_edges", rows)
 
     def insert_function_metrics(
         self,
@@ -861,23 +824,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching function_metrics columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.function_metrics (
-                function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-                start_line, end_line, loc, logical_loc, param_count, positional_params,
-                keyword_only_params, has_varargs, has_varkw, is_async, is_generator,
-                return_count, yield_count, raise_count, cyclomatic_complexity,
-                max_nesting_depth, stmt_count, decorator_count, has_docstring,
-                complexity_bucket, created_at
-            )
-            VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?
-            )
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.function_metrics", rows)
 
     def insert_goid_risk_factors(
         self,
@@ -924,23 +871,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching goid_risk_factors columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.goid_risk_factors (
-                function_goid_h128, urn, repo, commit, rel_path, language, kind, qualname,
-                loc, logical_loc, cyclomatic_complexity, complexity_bucket,
-                typedness_bucket, typedness_source, hotspot_score, file_typed_ratio,
-                static_error_count, has_static_errors, executable_lines, covered_lines,
-                coverage_ratio, tested, test_count, failing_test_count, last_test_status,
-                risk_score, risk_level, tags, owners, created_at
-            )
-            VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            )
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.goid_risk_factors", rows)
 
     def insert_config_values(
         self,
@@ -955,16 +886,7 @@ class AnalyticsTables:
             Iterable of (repo, commit, config_path, format, key, reference_paths,
             reference_modules, reference_modules_json, reference_count).
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.config_values (
-                repo, commit, config_path, format, key, reference_paths,
-                reference_modules, reference_count
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.config_values", rows)
 
     def insert_typedness(
         self,
@@ -978,16 +900,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching typedness columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.typedness (
-                repo, commit, path, type_error_count, annotation_ratio, untyped_defs,
-                overlay_needed
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.typedness", rows)
 
     def insert_static_diagnostics(
         self,
@@ -1001,16 +914,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching static_diagnostics columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.static_diagnostics (
-                repo, commit, rel_path, pyrefly_errors, pyright_errors, ruff_errors,
-                total_errors, has_errors
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.static_diagnostics", rows)
 
     def insert_graph_metrics_functions(
         self,
@@ -1041,17 +945,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching graph_metrics_functions columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.graph_metrics_functions (
-                repo, commit, function_goid_h128, call_fan_in, call_fan_out,
-                call_in_degree, call_out_degree, call_pagerank, call_betweenness,
-                call_closeness, call_cycle_member, call_cycle_id, call_layer, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.graph_metrics_functions", rows)
 
     def insert_graph_metrics_modules(
         self,
@@ -1084,18 +978,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching graph_metrics_modules columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.graph_metrics_modules (
-                repo, commit, module, import_fan_in, import_fan_out, import_in_degree,
-                import_out_degree, import_pagerank, import_betweenness, import_closeness,
-                import_cycle_member, import_cycle_id, import_layer, symbol_fan_in,
-                symbol_fan_out, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.graph_metrics_modules", rows)
 
     def insert_subsystems(
         self,
@@ -1130,18 +1013,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching subsystems columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.subsystems (
-                repo, commit, subsystem_id, name, description, module_count, modules_json,
-                entrypoints_json, internal_edge_count, external_edge_count, fan_in,
-                fan_out, function_count, avg_risk_score, max_risk_score,
-                high_risk_function_count, risk_level, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.subsystems", rows)
 
     def insert_subsystem_modules(
         self,
@@ -1155,15 +1027,7 @@ class AnalyticsTables:
         rows
             Iterable of values matching subsystem_modules columns.
         """
-        self.con.executemany(
-            """
-            INSERT INTO analytics.subsystem_modules (
-                repo, commit, subsystem_id, module, role
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+        _macro_insert_rows(self.con, "analytics.subsystem_modules", rows)
 
 
 @dataclass

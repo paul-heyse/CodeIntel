@@ -18,6 +18,14 @@ def _canonical_type(type_str: str) -> str:
 
 @pytest.mark.smoke
 def test_macro_schemas_match_table_definitions(fresh_gateway: StorageGateway) -> None:
+    """
+    Normalized macro outputs should align with TABLE_SCHEMAS definitions.
+
+    Raises
+    ------
+    AssertionError
+        If any macro output schema deviates from the table schema contract.
+    """
     con = fresh_gateway.con
     failures: list[str] = []
     for table_key, macro in sorted(NORMALIZED_MACROS.items()):
