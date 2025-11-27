@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.schemas.ingestion_sql import verify_ingestion_columns
+from codeintel.config.schemas.registry_adapter import load_registry_columns
 from codeintel.storage.gateway import DuckDBConnection
+
+_INGESTION_COLUMNS_VERIFIED: list[bool] = [False]
 
 # ---------------------------------------------------------------------------
 # Column lists (single source of truth for SQL literals below)
@@ -462,64 +465,6 @@ DOCSTRINGS_COLUMNS = [
 ]
 
 
-def _assert_columns(table_key: str, columns: list[str]) -> None:
-    """
-    Raise if registry column order drifts from the hardcoded literals.
-
-    Parameters
-    ----------
-    table_key:
-        Registry key (e.g., "core.ast_nodes").
-    columns:
-        Expected column list for the table.
-
-    Raises
-    ------
-    RuntimeError
-        If the registry column order does not match literals.
-    """
-    registry_cols = TABLE_SCHEMAS[table_key].column_names()
-    if registry_cols != columns:
-        message = f"Column drift for {table_key}: registry={registry_cols} literals={columns}"
-        raise RuntimeError(message)
-
-
-_assert_columns("core.ast_nodes", AST_NODES_COLUMNS)
-_assert_columns("core.ast_metrics", AST_METRICS_COLUMNS)
-_assert_columns("core.cst_nodes", CST_NODES_COLUMNS)
-_assert_columns("core.docstrings", DOCSTRINGS_COLUMNS)
-_assert_columns("core.modules", MODULES_COLUMNS)
-_assert_columns("core.file_state", FILE_STATE_COLUMNS)
-_assert_columns("core.repo_map", REPO_MAP_COLUMNS)
-_assert_columns("core.goids", GOIDS_COLUMNS)
-_assert_columns("core.goid_crosswalk", GOID_CROSSWALK_COLUMNS)
-_assert_columns("analytics.coverage_lines", COVERAGE_LINES_COLUMNS)
-_assert_columns("analytics.function_metrics", FUNCTION_METRICS_COLUMNS)
-_assert_columns("analytics.function_types", FUNCTION_TYPES_COLUMNS)
-_assert_columns("analytics.function_effects", FUNCTION_EFFECTS_COLUMNS)
-_assert_columns("analytics.function_contracts", FUNCTION_CONTRACTS_COLUMNS)
-_assert_columns("analytics.test_catalog", TEST_CATALOG_COLUMNS)
-_assert_columns("analytics.config_values", CONFIG_VALUES_COLUMNS)
-_assert_columns("analytics.typedness", TYPEDNESS_COLUMNS)
-_assert_columns("analytics.static_diagnostics", STATIC_DIAGNOSTICS_COLUMNS)
-_assert_columns("analytics.hotspots", HOTSPOTS_COLUMNS)
-_assert_columns("analytics.tags_index", TAGS_INDEX_COLUMNS)
-_assert_columns("analytics.typedness", TYPEDNESS_COLUMNS)
-_assert_columns("analytics.static_diagnostics", STATIC_DIAGNOSTICS_COLUMNS)
-_assert_columns("analytics.test_coverage_edges", TEST_COVERAGE_EDGE_COLUMNS)
-_assert_columns("graph.symbol_use_edges", SYMBOL_USE_COLUMNS)
-_assert_columns("graph.call_graph_nodes", CALL_GRAPH_NODE_COLUMNS)
-_assert_columns("graph.call_graph_edges", CALL_GRAPH_EDGE_COLUMNS)
-_assert_columns("graph.import_graph_edges", IMPORT_EDGE_COLUMNS)
-_assert_columns("graph.import_modules", IMPORT_MODULE_COLUMNS)
-_assert_columns("graph.cfg_blocks", CFG_BLOCK_COLUMNS)
-_assert_columns("graph.cfg_edges", CFG_EDGE_COLUMNS)
-_assert_columns("graph.dfg_edges", DFG_EDGE_COLUMNS)
-_assert_columns("analytics.cfg_function_metrics_ext", CFG_FUNCTION_METRICS_EXT_COLUMNS)
-_assert_columns("analytics.dfg_function_metrics_ext", DFG_FUNCTION_METRICS_EXT_COLUMNS)
-_assert_columns("analytics.semantic_roles_functions", SEMANTIC_ROLES_FUNCTIONS_COLUMNS)
-_assert_columns("analytics.semantic_roles_modules", SEMANTIC_ROLES_MODULES_COLUMNS)
-
 # ---------------------------------------------------------------------------
 # Prepared SQL literals (static, coupled to column lists)
 # ---------------------------------------------------------------------------
@@ -800,134 +745,40 @@ class PreparedStatements:
     delete_sql: str | None = None
 
 
-PREPARED: dict[str, PreparedStatements] = {
-    "core.ast_nodes": PreparedStatements(insert_sql=AST_NODES_INSERT, delete_sql=AST_NODES_DELETE),
-    "core.ast_metrics": PreparedStatements(
-        insert_sql=AST_METRICS_INSERT, delete_sql=AST_METRICS_DELETE
-    ),
-    "core.cst_nodes": PreparedStatements(insert_sql=CST_NODES_INSERT, delete_sql=CST_NODES_DELETE),
-    "core.docstrings": PreparedStatements(
-        insert_sql=DOCSTRINGS_INSERT, delete_sql=DOCSTRINGS_DELETE
-    ),
-    "core.file_state": PreparedStatements(
-        insert_sql=FILE_STATE_INSERT,
-        delete_sql=FILE_STATE_DELETE,
-    ),
-    "core.modules": PreparedStatements(insert_sql=MODULES_INSERT, delete_sql=MODULES_DELETE),
-    "core.repo_map": PreparedStatements(insert_sql=REPO_MAP_INSERT, delete_sql=REPO_MAP_DELETE),
-    "core.goids": PreparedStatements(insert_sql=GOIDS_INSERT, delete_sql=GOIDS_DELETE),
-    "core.goid_crosswalk": PreparedStatements(
-        insert_sql=GOID_CROSSWALK_INSERT, delete_sql=GOID_CROSSWALK_DELETE
-    ),
-    "analytics.coverage_lines": PreparedStatements(
-        insert_sql=COVERAGE_LINES_INSERT,
-        delete_sql=COVERAGE_LINES_DELETE,
-    ),
-    "analytics.function_metrics": PreparedStatements(
-        insert_sql=FUNCTION_METRICS_INSERT,
-        delete_sql=FUNCTION_METRICS_DELETE,
-    ),
-    "analytics.function_types": PreparedStatements(
-        insert_sql=FUNCTION_TYPES_INSERT,
-        delete_sql=FUNCTION_TYPES_DELETE,
-    ),
-    "analytics.function_effects": PreparedStatements(
-        insert_sql=FUNCTION_EFFECTS_INSERT,
-        delete_sql=FUNCTION_EFFECTS_DELETE,
-    ),
-    "analytics.function_contracts": PreparedStatements(
-        insert_sql=FUNCTION_CONTRACTS_INSERT,
-        delete_sql=FUNCTION_CONTRACTS_DELETE,
-    ),
-    "analytics.semantic_roles_functions": PreparedStatements(
-        insert_sql=SEMANTIC_ROLES_FUNCTIONS_INSERT,
-        delete_sql=SEMANTIC_ROLES_FUNCTIONS_DELETE,
-    ),
-    "analytics.semantic_roles_modules": PreparedStatements(
-        insert_sql=SEMANTIC_ROLES_MODULES_INSERT,
-        delete_sql=SEMANTIC_ROLES_MODULES_DELETE,
-    ),
-    "analytics.test_catalog": PreparedStatements(
-        insert_sql=TEST_CATALOG_INSERT,
-        delete_sql=TEST_CATALOG_DELETE,
-    ),
-    "analytics.config_values": PreparedStatements(
-        insert_sql=CONFIG_VALUES_INSERT,
-        delete_sql="DELETE FROM analytics.config_values WHERE repo = ? AND commit = ?",
-    ),
-    "analytics.tags_index": PreparedStatements(
-        insert_sql=TAGS_INDEX_INSERT, delete_sql=TAGS_INDEX_DELETE
-    ),
-    "analytics.typedness": PreparedStatements(
-        insert_sql=TYPEDNESS_INSERT, delete_sql=TYPEDNESS_DELETE
-    ),
-    "analytics.static_diagnostics": PreparedStatements(
-        insert_sql=STATIC_DIAGNOSTICS_INSERT,
-        delete_sql=STATIC_DIAGNOSTICS_DELETE,
-    ),
-    "analytics.function_validation": PreparedStatements(
-        insert_sql=FUNCTION_VALIDATION_INSERT,
-        delete_sql=FUNCTION_VALIDATION_DELETE,
-    ),
-    "analytics.graph_validation": PreparedStatements(
-        insert_sql=GRAPH_VALIDATION_INSERT,
-        delete_sql=GRAPH_VALIDATION_DELETE,
-    ),
-    "analytics.hotspots": PreparedStatements(insert_sql=HOTSPOTS_INSERT),
-    "analytics.test_coverage_edges": PreparedStatements(
-        insert_sql=TEST_COVERAGE_EDGE_INSERT,
-        delete_sql=TEST_COVERAGE_EDGE_DELETE,
-    ),
-    "graph.call_graph_nodes": PreparedStatements(
-        insert_sql=CALL_GRAPH_NODES_INSERT,
-        delete_sql=CALL_GRAPH_NODES_DELETE,
-    ),
-    "graph.call_graph_edges": PreparedStatements(
-        insert_sql=CALL_GRAPH_EDGES_INSERT,
-        delete_sql=CALL_GRAPH_EDGES_DELETE,
-    ),
-    "graph.import_graph_edges": PreparedStatements(
-        insert_sql=IMPORT_EDGES_INSERT,
-        delete_sql=IMPORT_EDGES_DELETE,
-    ),
-    "graph.import_modules": PreparedStatements(
-        insert_sql=IMPORT_MODULES_INSERT,
-        delete_sql=IMPORT_MODULES_DELETE,
-    ),
-    "graph.cfg_blocks": PreparedStatements(
-        insert_sql=CFG_BLOCKS_INSERT, delete_sql=CFG_BLOCKS_DELETE
-    ),
-    "graph.cfg_edges": PreparedStatements(insert_sql=CFG_EDGES_INSERT, delete_sql=CFG_EDGES_DELETE),
-    "graph.dfg_edges": PreparedStatements(insert_sql=DFG_EDGES_INSERT, delete_sql=DFG_EDGES_DELETE),
-    "analytics.cfg_function_metrics_ext": PreparedStatements(
-        insert_sql=CFG_FUNCTION_METRICS_EXT_INSERT,
-        delete_sql=CFG_FUNCTION_METRICS_EXT_DELETE,
-    ),
-    "analytics.dfg_function_metrics_ext": PreparedStatements(
-        insert_sql=DFG_FUNCTION_METRICS_EXT_INSERT,
-        delete_sql=DFG_FUNCTION_METRICS_EXT_DELETE,
-    ),
-    "graph.symbol_use_edges": PreparedStatements(
-        insert_sql=SYMBOL_USE_INSERT, delete_sql=SYMBOL_USE_DELETE
-    ),
-}
-
-
-def prepared_statements(table_key: str) -> PreparedStatements:
+def prepared_statements_dynamic(con: DuckDBConnection, table_key: str) -> PreparedStatements:
     """
-    Return pre-built SQL strings for the given table key.
+    Return prepared SQL using registry-derived column order for macro-backed tables.
 
     Parameters
     ----------
-    table_key:
-        Registry key (e.g., "core.ast_nodes").
+    con :
+        Active DuckDB connection.
+    table_key :
+        Registry key (e.g., "analytics.function_metrics").
 
     Returns
     -------
     PreparedStatements
-        Insert and optional delete SQL for the table.
+        Insert and optional delete SQL with column order sourced from the registry.
+
+    Raises
+    ------
+    RuntimeError
+        If the table is missing from the registry.
     """
-    return PREPARED[table_key]
+    registry_cols = load_registry_columns(con).get(table_key)
+    if registry_cols is None:
+        message = f"Table {table_key} missing from registry"
+        raise RuntimeError(message)
+    cols_sql = ", ".join(registry_cols)
+    placeholders = ", ".join("?" for _ in registry_cols)
+    schema_name, table_name = table_key.split(".", maxsplit=1)
+    table_sql = f'"{schema_name}"."{table_name}"'
+    insert_sql = f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders})"  # noqa: S608 - registry-controlled identifiers
+    return PreparedStatements(
+        insert_sql=insert_sql,
+        delete_sql=None,
+    )
 
 
 def ensure_schema(con: DuckDBConnection, table_key: str) -> None:
@@ -941,34 +792,25 @@ def ensure_schema(con: DuckDBConnection, table_key: str) -> None:
     RuntimeError
         If the table is missing or deviates from the registry.
     """
-    table = TABLE_SCHEMAS[table_key]
-    info = con.execute(f"PRAGMA table_info({table.schema}.{table.name})").fetchall()
+    if not _INGESTION_COLUMNS_VERIFIED[0]:
+        verify_ingestion_columns(con)
+        _INGESTION_COLUMNS_VERIFIED[0] = True
+
+    registry_cols = load_registry_columns(con).get(table_key)
+    if registry_cols is None:
+        message = f"Table {table_key} missing from registry"
+        raise RuntimeError(message)
+    schema_name, table_name = table_key.split(".", maxsplit=1)
+    info = con.execute(f"PRAGMA table_info({schema_name}.{table_name})").fetchall()
     if not info:
-        message = f"Table {table.fq_name} is missing"
+        message = f"Table {table_key} is missing"
         raise RuntimeError(message)
 
     names = [row[1] for row in info]
-    expected_cols = table.column_names()
+    expected_cols = registry_cols
     if names != expected_cols:
-        message = f"Column order mismatch for {table.fq_name}: db={names}, registry={expected_cols}"
+        message = f"Column order mismatch for {table_key}: db={names}, registry={expected_cols}"
         raise RuntimeError(message)
-
-    notnull_flags = {row[1]: bool(row[3]) for row in info}  # column_name -> notnull (1/0)
-    to_harden: list[str] = []
-    for col in table.columns:
-        db_nullable = not bool(notnull_flags.get(col.name))
-        if db_nullable != col.nullable:
-            if not col.nullable and db_nullable:
-                to_harden.append(col.name)
-                continue
-            message = (
-                f"Nullability mismatch for {table.fq_name}.{col.name}: "
-                f"db nullable={db_nullable}, expected {col.nullable}"
-            )
-            raise RuntimeError(message)
-
-    for col_name in to_harden:
-        con.execute(f"ALTER TABLE {table.schema}.{table.name} ALTER COLUMN {col_name} SET NOT NULL")
 
 
 __all__ = [
@@ -1012,7 +854,6 @@ __all__ = [
     "MODULES_COLUMNS",
     "MODULES_DELETE",
     "MODULES_INSERT",
-    "PREPARED",
     "REPO_MAP_COLUMNS",
     "REPO_MAP_DELETE",
     "REPO_MAP_INSERT",
@@ -1043,5 +884,5 @@ __all__ = [
     "TYPEDNESS_INSERT",
     "PreparedStatements",
     "ensure_schema",
-    "prepared_statements",
+    "prepared_statements_dynamic",
 ]

@@ -1,8 +1,13 @@
-"""Central SQL registry for ingestion steps (coupled to table schemas)."""
+"""Central SQL registry for ingestion steps (coupled to registry metadata)."""
 
 from __future__ import annotations
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from typing import TYPE_CHECKING
+
+from codeintel.config.schemas.registry_adapter import load_registry_columns
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import DuckDBConnection
 
 # Column lists (single source of truth for SQL literals below)
 AST_NODES_COLUMNS = [
@@ -115,22 +120,39 @@ STATIC_DIAGNOSTICS_COLUMNS = [
 ]
 
 
-def _assert_columns(table_key: str, columns: list[str]) -> None:
-    registry_cols = TABLE_SCHEMAS[table_key].column_names()
-    if registry_cols != columns:
-        message = f"Column drift for {table_key}: registry={registry_cols} literals={columns}"
-        raise RuntimeError(message)
+LITERAL_COLUMNS: dict[str, list[str]] = {
+    "core.ast_nodes": AST_NODES_COLUMNS,
+    "core.ast_metrics": AST_METRICS_COLUMNS,
+    "core.cst_nodes": CST_NODES_COLUMNS,
+    "core.file_state": FILE_STATE_COLUMNS,
+    "analytics.coverage_lines": COVERAGE_LINES_COLUMNS,
+    "analytics.test_catalog": TEST_CATALOG_COLUMNS,
+    "analytics.config_values": CONFIG_VALUES_COLUMNS,
+    "analytics.typedness": TYPEDNESS_COLUMNS,
+    "analytics.static_diagnostics": STATIC_DIAGNOSTICS_COLUMNS,
+}
 
 
-_assert_columns("core.ast_nodes", AST_NODES_COLUMNS)
-_assert_columns("core.ast_metrics", AST_METRICS_COLUMNS)
-_assert_columns("core.cst_nodes", CST_NODES_COLUMNS)
-_assert_columns("core.file_state", FILE_STATE_COLUMNS)
-_assert_columns("analytics.coverage_lines", COVERAGE_LINES_COLUMNS)
-_assert_columns("analytics.test_catalog", TEST_CATALOG_COLUMNS)
-_assert_columns("analytics.config_values", CONFIG_VALUES_COLUMNS)
-_assert_columns("analytics.typedness", TYPEDNESS_COLUMNS)
-_assert_columns("analytics.static_diagnostics", STATIC_DIAGNOSTICS_COLUMNS)
+def verify_ingestion_columns(con: DuckDBConnection) -> None:
+    """
+    Verify that ingestion column literals match the live registry.
+
+    Raises
+    ------
+    RuntimeError
+        If any literal column order deviates from the registry.
+    """
+    registry = load_registry_columns(con)
+    for table_key, literal_cols in LITERAL_COLUMNS.items():
+        registry_cols = registry.get(table_key)
+        if registry_cols is None:
+            message = f"{table_key} missing from registry"
+            raise RuntimeError(message)
+        if registry_cols != literal_cols:
+            message = (
+                f"Column drift for {table_key}: registry={registry_cols} literals={literal_cols}"
+            )
+            raise RuntimeError(message)
 
 
 # SQL literals derived from column lists above (no dynamic f-strings)

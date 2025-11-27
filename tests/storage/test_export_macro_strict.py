@@ -14,6 +14,7 @@ from codeintel.storage.gateway import StorageGateway
 def test_require_macros_allows_macro_backed_tables(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
+    """Macro-backed datasets export successfully when enforcement is enabled."""
     output = tmp_path / "function_metrics.jsonl"
     export_jsonl_for_table(
         fresh_gateway,
@@ -28,6 +29,7 @@ def test_require_macros_allows_macro_backed_tables(
 def test_require_macros_rejects_dataset_rows_only(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
+    """Dataset_rows-only tables are rejected when macros are required."""
     with pytest.raises(ValueError, match="No normalized macro"):
         export_jsonl_for_table(
             fresh_gateway,

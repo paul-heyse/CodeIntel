@@ -24,7 +24,6 @@ from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
 from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
-from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
 from codeintel.pipeline.orchestration.steps import AstStep, GoidsStep, PipelineContext, RepoScanStep
 from codeintel.storage.gateway import StorageConfig, open_gateway
@@ -58,16 +57,6 @@ def test_pipeline_steps_use_function_catalog(tmp_path: Path) -> None:
             ensure_views=True,
             validate_schema=True,
         )
-    )
-
-    run_batch(
-        gateway,
-        "core.modules",
-        [
-            ("pkg.a", "pkg/a.py", REPO, COMMIT, "python", "[]", "[]"),
-            ("pkg.b", "pkg/b.py", REPO, COMMIT, "python", "[]", "[]"),
-        ],
-        delete_params=None,
     )
 
     gateway.con.execute(

@@ -257,6 +257,56 @@ def dataset_rows_only_entries() -> list[str]:
     return sorted(DATASET_ROWS_ONLY)
 
 
+def load_dataset_schema_registry(con: DuckDBPyConnection) -> dict[str, str]:
+    """
+    Return the dataset schema hashes recorded in metadata.dataset_schema_registry.
+
+    Parameters
+    ----------
+    con :
+        Active DuckDB connection.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of table key -> schema hash string.
+    """
+    rows = con.execute(
+        "SELECT table_key, schema_hash FROM metadata.dataset_schema_registry"
+    ).fetchall()
+    return {str(table_key): str(schema_hash) for table_key, schema_hash in rows}
+
+
+def load_macro_registry(con: DuckDBPyConnection) -> dict[str, tuple[str | None, str, str | None]]:
+    """
+    Return macro registry entries keyed by macro name.
+
+    Parameters
+    ----------
+    con :
+        Active DuckDB connection.
+
+    Returns
+    -------
+    dict[str, tuple[str | None, str, str | None]]
+        Mapping of macro_name -> (dataset_table_key, ddl_hash, schema_hash).
+    """
+    rows = con.execute(
+        """
+        SELECT macro_name, dataset_table_key, ddl_hash, schema_hash
+        FROM metadata.macro_registry
+        """
+    ).fetchall()
+    registry: dict[str, tuple[str | None, str, str | None]] = {}
+    for macro_name, dataset_table_key, ddl_hash, schema_hash in rows:
+        registry[str(macro_name)] = (
+            str(dataset_table_key) if dataset_table_key is not None else None,
+            str(ddl_hash),
+            str(schema_hash) if schema_hash is not None else None,
+        )
+    return registry
+
+
 def _register_dataset_schema_hashes(con: DuckDBPyConnection) -> None:
     entries = {table_key: _expected_schema_hash(table_key) for table_key in TABLE_SCHEMAS}
     con.execute("DELETE FROM metadata.dataset_schema_registry")
@@ -307,8 +357,46 @@ NORMALIZED_MACROS: dict[str, str] = {
     "analytics.test_profile": "metadata.normalized_test_profile",
     "analytics.behavioral_coverage": "metadata.normalized_behavioral_coverage",
 }
+INGEST_MACROS: dict[str, str] = {
+    table_key: f"metadata.ingest_{table_key.split('.', maxsplit=1)[1]}"
+    for table_key in TABLE_SCHEMAS
+    if not table_key.startswith("metadata.")
+}
 
-METADATA_SCHEMA_DDL: tuple[str, ...] = (
+def _build_ingest_macro_ddl(macro: str) -> str:
+    """
+    Build DDL for an ingest macro using a validated macro name.
+
+    Parameters
+    ----------
+    macro :
+        Fully qualified macro name (e.g., metadata.ingest_function_metrics).
+
+    Returns
+    -------
+    str
+        CREATE OR REPLACE MACRO statement.
+
+    Raises
+    ------
+    ValueError
+        If the macro name contains unsupported characters.
+    """
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", macro):
+        message = f"Invalid macro name: {macro}"
+        raise ValueError(message)
+    template = """
+    CREATE OR REPLACE MACRO {macro_name}(input_view TEXT) AS TABLE
+    SELECT * FROM query_table(input_view);
+    """
+    return template.format(macro_name=macro)
+
+
+INGEST_MACRO_DDLS: tuple[str, ...] = tuple(
+    _build_ingest_macro_ddl(macro) for macro in sorted(INGEST_MACROS.values())
+)
+
+METADATA_SCHEMA_DDL_BASE: tuple[str, ...] = (
     """
     CREATE SCHEMA IF NOT EXISTS metadata;
     """,
@@ -326,6 +414,9 @@ METADATA_SCHEMA_DDL: tuple[str, ...] = (
         schema_hash TEXT NOT NULL
     );
     """,
+)
+
+METADATA_SCHEMA_DDL_REST: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS metadata.datasets (
         table_key        TEXT PRIMARY KEY,
@@ -805,6 +896,10 @@ METADATA_SCHEMA_DDL: tuple[str, ...] = (
     """,
 )
 
+METADATA_SCHEMA_DDL: tuple[str, ...] = (
+    METADATA_SCHEMA_DDL_BASE + INGEST_MACRO_DDLS + METADATA_SCHEMA_DDL_REST
+)
+
 
 def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
     """Create metadata schema, datasets catalog, and helper macros."""
@@ -888,6 +983,7 @@ def _upsert_macro_registry(
 def _register_macros(con: DuckDBPyConnection) -> None:
     macro_hashes = _collect_macro_hashes()
     macro_to_dataset = {v: k for k, v in NORMALIZED_MACROS.items()}
+    macro_to_dataset.update({v: k for k, v in INGEST_MACROS.items()})
     schema_hashes = {
         macro: _expected_schema_hash(dataset) for macro, dataset in macro_to_dataset.items()
     }
@@ -914,6 +1010,7 @@ def validate_macro_registry(con: DuckDBPyConnection) -> None:
     """
     macro_hashes = _collect_macro_hashes()
     macro_to_dataset = {v: k for k, v in NORMALIZED_MACROS.items()}
+    macro_to_dataset.update({v: k for k, v in INGEST_MACROS.items()})
     schema_hashes = {
         macro: _expected_schema_hash(dataset) for macro, dataset in macro_to_dataset.items()
     }
@@ -932,6 +1029,33 @@ def validate_macro_registry(con: DuckDBPyConnection) -> None:
         if missing:
             parts.append(f"Missing registry rows: {', '.join(sorted(missing))}")
         raise RuntimeError("Macro registry validation failed: " + "; ".join(parts))
+
+
+def ingest_macro_coverage(con: DuckDBPyConnection) -> tuple[list[str], list[str]]:
+    """
+    Return missing and present ingest macros for visibility/logging.
+
+    Returns
+    -------
+    tuple[list[str], list[str]]
+        (missing_macro_names, present_macro_names)
+    """
+    rows = con.execute(
+        """
+        SELECT CONCAT_WS('.', schema_name, function_name)
+        FROM duckdb_functions()
+        WHERE function_type IN ('macro', 'table_macro')
+        """
+    ).fetchall()
+    available = {str(row[0]).lower() for row in rows}
+    missing: list[str] = []
+    present: list[str] = []
+    for macro in sorted(INGEST_MACROS.values()):
+        if macro.lower() in available or macro.split(".")[-1].lower() in available:
+            present.append(macro)
+        else:
+            missing.append(macro)
+    return missing, present
 
 
 def validate_dataset_schema_registry(con: DuckDBPyConnection) -> None:

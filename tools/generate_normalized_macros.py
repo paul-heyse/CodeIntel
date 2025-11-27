@@ -84,12 +84,21 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _iter_tables(selected: Iterable[str]) -> list[str]:
+    """
+    Return selected table keys or all known schema keys when none provided.
+
+    Returns
+    -------
+    list[str]
+        Ordered list of table keys to render.
+    """
     if selected:
         return list(selected)
     return sorted(TABLE_SCHEMAS.keys())
 
 
 def main() -> None:
+    """Render normalized macro DDL for the requested tables to stdout."""
     args = _parse_args()
     for table_key in _iter_tables(args.tables):
         macro = render_macro(table_key)

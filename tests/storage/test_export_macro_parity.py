@@ -46,9 +46,7 @@ def _seed_minimal_rows(con: DuckDBConnection) -> None:
 
 @pytest.mark.smoke
 def test_macro_parity_exports_seeded_rows(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
-    """
-    Seed minimal rows for representative macro-backed datasets and export via macros.
-    """
+    """Seed minimal rows and export via normalized macros."""
     con = fresh_gateway.con
     _seed_minimal_rows(con)
 
@@ -64,11 +62,11 @@ def test_macro_parity_exports_seeded_rows(fresh_gateway: StorageGateway, tmp_pat
         if table_key not in NORMALIZED_MACROS:
             pytest.skip(f"{table_key} not macro-backed")
         output_path = out_dir / f"{table_key.replace('.', '_')}.jsonl"
-    export_jsonl_for_table(
-        fresh_gateway,
-        table_key,
-        output_path,
-        require_normalized_macros=True,
-    )
-    if not output_path.exists() or output_path.stat().st_size == 0:
-        pytest.fail(f"Export did not produce data for {table_key}")
+        export_jsonl_for_table(
+            fresh_gateway,
+            table_key,
+            output_path,
+            require_normalized_macros=True,
+        )
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            pytest.fail(f"Export did not produce data for {table_key}")

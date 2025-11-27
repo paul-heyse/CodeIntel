@@ -181,6 +181,8 @@ def _build_symbol_edges(
                     use_path=use_path,
                     same_file=same_file,
                     same_module=same_module,
+                    def_goid_h128=None,
+                    use_goid_h128=None,
                 )
             )
     return rows

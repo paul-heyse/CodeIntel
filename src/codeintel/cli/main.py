@@ -45,6 +45,7 @@ from codeintel.storage.gateway import (
 from codeintel.storage.metadata_bootstrap import (
     _assert_macro_coverage,
     dataset_rows_only_entries,
+    ingest_macro_coverage,
     validate_dataset_schema_registry,
     validate_macro_registry,
     validate_normalized_macro_schemas,
@@ -300,6 +301,12 @@ def _make_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("build/db/codeintel_prefect.duckdb"),
         help="Path to the DuckDB database to validate.",
+    )
+    p_validate_macros.add_argument(
+        "--require-ingest-macros",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Fail if any ingest macros are missing (default: True).",
     )
     p_validate_macros.set_defaults(func=_cmd_storage_validate_macros)
 
@@ -628,13 +635,24 @@ def _cmd_storage_validate_macros(args: argparse.Namespace) -> int:
     """
     cfg = StorageConfig.for_ingest(args.db_path)
     gateway = open_gateway(cfg)
+    missing_ingest: list[str] = []
+    error: RuntimeError | None = None
     try:
         _assert_macro_coverage()
         validate_macro_registry(gateway.con)
         validate_dataset_schema_registry(gateway.con)
         validate_normalized_macro_schemas(gateway.con)
+        missing_ingest, present_ingest = ingest_macro_coverage(gateway.con)
+        if missing_ingest:
+            LOG.warning("Missing ingest macros: %s", ", ".join(missing_ingest))
+        LOG.debug("Present ingest macros: %s", ", ".join(present_ingest))
+        if args.require_ingest_macros and missing_ingest:
+            message = ", ".join(missing_ingest)
+            error = RuntimeError(f"Ingest macros missing: {message}")
     except RuntimeError as exc:
-        LOG.exception("Macro validation failed", exc_info=exc)
+        error = exc
+    if error is not None:
+        LOG.error("Macro validation failed", exc_info=error)
         gateway.close()
         return 1
     dataset_rows_list = dataset_rows_only_entries()
