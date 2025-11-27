@@ -1105,10 +1105,8 @@ def _connect(config: StorageConfig) -> DuckDBConnection:
         if not config.history_db_path.exists():
             message = f"History database not found: {config.history_db_path}"
             raise FileNotFoundError(message)
-        con.execute(
-            "ATTACH DATABASE ? AS history",
-            [str(config.history_db_path)],
-        )
+        history_path_str = str(config.history_db_path).replace("'", "''")
+        con.execute(f"ATTACH DATABASE '{history_path_str}' AS history")
     if config.apply_schema and not config.read_only:
         apply_all_schemas(con)
     if config.ensure_views and not config.read_only:

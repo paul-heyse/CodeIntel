@@ -30,7 +30,8 @@ from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions, ExportRunner, run_validated_exports
-from codeintel.pipeline.orchestration.steps import PipelineContext, run_pipeline
+from codeintel.pipeline.orchestration.prefect_adapter import run_pipeline_as_tasks
+from codeintel.pipeline.orchestration.steps import REGISTRY, PipelineContext, run_pipeline
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.storage.gateway import (
     StorageConfig,
@@ -226,7 +227,7 @@ def _get_gateway(config: StorageConfig) -> StorageGateway:
     return gateway
 
 
-def _close_gateways() -> None:
+def close_gateways() -> None:
     """Close and clear any cached gateways."""
     for gateway in _GATEWAY_CACHE.values():
         gateway.close()
@@ -339,9 +340,10 @@ def t_history_timeseries(params: HistoryTimeseriesTaskParams) -> None:
     )
     builder = ConfigBuilder.from_primitives(snapshot=snapshot, paths=paths)
     cfg = builder.history_timeseries(commits=params.commits)
-    gateway = _get_gateway(
-        StorageConfig.for_ingest(params.db_path, history_db_path=params.history_db_dir)
-    )
+    # Note: Don't use history_db_path here - the snapshot_resolver handles
+    # loading individual snapshot DBs from the directory. attach_history is
+    # for attaching a single history DB file, not a directory of snapshots.
+    gateway = _get_gateway(StorageConfig.for_ingest(params.db_path))
     snapshot_resolver = build_snapshot_gateway_resolver(
         db_dir=params.history_db_dir,
         repo=params.repo,
@@ -389,16 +391,37 @@ def t_export_docs(
     )
 
 
+# Provide .fn attribute for non-task functions (t_export_docs is not a @task)
+# Note: t_history_timeseries already has .fn from @task decorator - DO NOT overwrite!
 t_export_docs.fn = t_export_docs  # type: ignore[attr-defined]
-t_history_timeseries.fn = t_history_timeseries  # type: ignore[attr-defined]
 
 
 @flow(name="export_docs_flow")
 def export_docs_flow(
     args: ExportArgs,
     targets: Iterable[str] | None = None,
+    *,
+    use_prefect_tasks: bool = False,
+    task_retries: int = 1,
+    task_retry_delay_seconds: int = 2,
 ) -> None:
-    """Run the CodeIntel pipeline within a Prefect flow."""
+    """
+    Run the CodeIntel pipeline within a Prefect flow.
+
+    Parameters
+    ----------
+    args
+        Export arguments containing repo, commit, and path configuration.
+    targets
+        Optional subset of steps to execute; dependencies are included automatically.
+    use_prefect_tasks
+        If True, wrap each step as a separate Prefect task with retries.
+        If False (default), run steps sequentially without task wrapping.
+    task_retries
+        Number of retry attempts for each task (only used when use_prefect_tasks=True).
+    task_retry_delay_seconds
+        Delay between retries in seconds (only used when use_prefect_tasks=True).
+    """
     _configure_prefect_logging()
     run_logger = get_run_logger()
     graph_backend = args.resolved_graph_backend()
@@ -408,16 +431,27 @@ def export_docs_flow(
     selected = tuple(targets) if targets is not None else None
     try:
         run_logger.info("Starting pipeline for %s@%s", ctx.repo, ctx.commit)
-        run_pipeline(ctx, selected_steps=selected)
+        if use_prefect_tasks:
+            run_logger.info("Running steps as individual Prefect tasks")
+            run_pipeline_as_tasks(
+                ctx,
+                REGISTRY,
+                selected_steps=selected,
+                retries=task_retries,
+                retry_delay_seconds=task_retry_delay_seconds,
+            )
+        else:
+            run_pipeline(ctx, selected_steps=selected)
         run_logger.info("Pipeline complete for %s@%s", ctx.repo, ctx.commit)
     finally:
-        _close_gateways()
+        close_gateways()
 
 
 __all__ = [
     "ExportArgs",
     "ExportTaskHooks",
     "HistoryTimeseriesTaskParams",
+    "close_gateways",
     "export_docs_flow",
     "gateway_cache_stats",
     "t_export_docs",

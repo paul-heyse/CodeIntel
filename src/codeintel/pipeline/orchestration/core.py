@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -50,6 +51,38 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger(__name__)
+
+
+class StepPhase(Enum):
+    """Classification of pipeline step phases."""
+
+    INGESTION = "ingestion"
+    GRAPHS = "graphs"
+    ANALYTICS = "analytics"
+    EXPORT = "export"
+
+
+@dataclass(frozen=True)
+class StepMetadata:
+    """
+    Machine-readable metadata for a pipeline step.
+
+    Parameters
+    ----------
+    name
+        Unique step identifier.
+    description
+        Human-readable description of what the step does.
+    phase
+        Pipeline phase this step belongs to.
+    deps
+        Names of steps this step depends on.
+    """
+
+    name: str
+    description: str
+    phase: StepPhase
+    deps: tuple[str, ...]
 
 
 def _log_step(name: str) -> None:
@@ -163,9 +196,20 @@ class PipelineContext:
 
 
 class PipelineStep(Protocol):
-    """Contract for pipeline steps."""
+    """
+    Contract for pipeline steps.
+
+    Each step must define:
+    - name: Unique identifier for the step.
+    - description: Human-readable description of the step's purpose.
+    - phase: The pipeline phase this step belongs to.
+    - deps: Sequence of step names this step depends on.
+    - run(): Method to execute the step with a PipelineContext.
+    """
 
     name: str
+    description: str
+    phase: StepPhase
     deps: Sequence[str]
 
     def run(self, ctx: PipelineContext) -> None:
@@ -338,6 +382,8 @@ def ensure_graph_runtime(
 __all__ = [
     "PipelineContext",
     "PipelineStep",
+    "StepMetadata",
+    "StepPhase",
     "_analytics_context",
     "_function_catalog",
     "_graph_engine",

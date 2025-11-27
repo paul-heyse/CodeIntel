@@ -21,6 +21,7 @@ from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,
+    StepPhase,
     _ingestion_ctx,
     _log_step,
 )
@@ -33,6 +34,8 @@ class SchemaBootstrapStep:
     """Apply schemas and create views before ingestion."""
 
     name: str = "schema_bootstrap"
+    description: str = "Apply database schemas and create views before ingestion."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ()
 
     def run(self, ctx: PipelineContext) -> None:  # noqa: ARG002
@@ -45,6 +48,8 @@ class RepoScanStep:
     """Ingest repository modules and repo_map."""
 
     name: str = "repo_scan"
+    description: str = "Scan repository and ingest modules into core.modules."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("schema_bootstrap",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -59,6 +64,8 @@ class SCIPIngestStep:
     """Run scip-python and register SCIP artifacts/view."""
 
     name: str = "scip_ingest"
+    description: str = "Run scip-python and register SCIP artifacts and symbols."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -80,6 +87,8 @@ class CSTStep:
     """Parse CST and persist rows."""
 
     name: str = "cst_extract"
+    description: str = "Parse CST using LibCST and persist rows into core.cst_nodes."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -93,6 +102,8 @@ class AstStep:
     """Parse stdlib AST and persist rows/metrics."""
 
     name: str = "ast_extract"
+    description: str = "Parse Python AST and persist rows and metrics into core tables."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -106,6 +117,8 @@ class CoverageIngestStep:
     """Load coverage.py data into analytics.coverage_lines."""
 
     name: str = "coverage_ingest"
+    description: str = "Load coverage.py data into analytics.coverage_lines."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ()
 
     def run(self, ctx: PipelineContext) -> None:
@@ -119,6 +132,8 @@ class TestsIngestStep:
     """Load pytest JSON report into analytics.test_catalog."""
 
     name: str = "tests_ingest"
+    description: str = "Load pytest JSON report into analytics.test_catalog."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ()
 
     def run(self, ctx: PipelineContext) -> None:
@@ -132,6 +147,8 @@ class TypingIngestStep:
     """Collect typedness/static diagnostics."""
 
     name: str = "typing_ingest"
+    description: str = "Collect typedness and static diagnostics from AST and pyright."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ()
 
     def run(self, ctx: PipelineContext) -> None:
@@ -145,6 +162,8 @@ class DocstringsIngestStep:
     """Extract and persist structured docstrings."""
 
     name: str = "docstrings_ingest"
+    description: str = "Extract and persist structured docstrings from Python modules."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -158,6 +177,8 @@ class ConfigIngestStep:
     """Flatten config files into analytics.config_values."""
 
     name: str = "config_ingest"
+    description: str = "Flatten configuration files into analytics.config_values."
+    phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ()
 
     def run(self, ctx: PipelineContext) -> None:

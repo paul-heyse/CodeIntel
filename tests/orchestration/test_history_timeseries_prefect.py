@@ -6,6 +6,7 @@ from pathlib import Path
 
 from codeintel.pipeline.orchestration.prefect_flow import (
     HistoryTimeseriesTaskParams,
+    close_gateways,
     t_history_timeseries,
 )
 from codeintel.storage.gateway import StorageConfig, open_gateway
@@ -15,17 +16,17 @@ from tests._helpers.history import SnapshotSpec, create_snapshot_db
 from tests._helpers.tooling import init_git_repo_with_history
 
 
-def test_prefect_history_timeseries_step(tmp_path: Path) -> None:
+def test_prefect_history_timeseries_step(tmp_path: Path, prefect_quiet_env: None) -> None:
     """Execute Prefect task end-to-end and verify history rows materialize."""
+    _ = prefect_quiet_env  # Mark fixture as used
     git_ctx = init_git_repo_with_history(tmp_path)
     repo = "demo/repo"
     commit_new, commit_old = git_ctx.commits
-    history_dir = tmp_path / "snapshots"
-    db_path = history_dir / f"codeintel-{commit_new}.duckdb"
+    snapshot_dir = tmp_path / "snapshots"
 
-    # Current commit DB (used as gateway target)
+    # Create snapshot databases for both commits
     create_snapshot_db(
-        history_dir,
+        snapshot_dir,
         SnapshotSpec(
             repo=repo,
             commit=commit_new,
@@ -35,9 +36,8 @@ def test_prefect_history_timeseries_step(tmp_path: Path) -> None:
             qualname="foo",
         ),
     )
-    # Older snapshot
     create_snapshot_db(
-        history_dir,
+        snapshot_dir,
         SnapshotSpec(
             repo=repo,
             commit=commit_old,
@@ -48,17 +48,23 @@ def test_prefect_history_timeseries_step(tmp_path: Path) -> None:
         ),
     )
 
+    # Use a SEPARATE output database (not one of the snapshots)
+    # This matches the pattern in test_history_timeseries.py which works correctly
+    output_db = tmp_path / "history_output.duckdb"
+
     params = HistoryTimeseriesTaskParams(
         repo_root=git_ctx.repo_root,
         repo=repo,
         commits=(commit_new, commit_old),
-        history_db_dir=history_dir,
-        db_path=db_path,
+        history_db_dir=snapshot_dir,
+        db_path=output_db,
         runner=git_ctx.runner,
     )
     t_history_timeseries.fn(params)
+    # Close cached gateways from the task to avoid file handle conflicts
+    close_gateways()
 
-    gateway = open_gateway(StorageConfig(db_path=db_path, validate_schema=False))
+    gateway = open_gateway(StorageConfig(db_path=output_db, validate_schema=False))
     create_all_views(gateway.con)
     rows = gateway.con.execute(
         "SELECT commit FROM analytics.history_timeseries WHERE repo = ?",

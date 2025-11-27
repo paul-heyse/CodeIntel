@@ -15,6 +15,7 @@ from codeintel.graphs.validation import run_graph_validations
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,
+    StepPhase,
     _function_catalog,
     _log_step,
 )
@@ -27,6 +28,8 @@ class GoidsStep:
     """Build core.goids and core.goid_crosswalk from AST."""
 
     name: str = "goids"
+    description: str = "Build core.goids and core.goid_crosswalk from AST nodes."
+    phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("ast_extract",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -42,6 +45,8 @@ class CallGraphStep:
     """Build graph.call_graph_nodes and graph.call_graph_edges."""
 
     name: str = "callgraph"
+    description: str = "Build static call graph nodes and edges from CST/AST analysis."
+    phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("goids", "repo_scan")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -61,6 +66,8 @@ class CFGStep:
     """Build graph.cfg_blocks, graph.cfg_edges, and graph.dfg_edges."""
 
     name: str = "cfg"
+    description: str = "Build control-flow and data-flow graph structures."
+    phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("function_metrics",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -77,6 +84,8 @@ class ImportGraphStep:
     """Build graph.import_graph_edges from LibCST imports."""
 
     name: str = "import_graph"
+    description: str = "Build module import graph edges from LibCST analysis."
+    phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext) -> None:
@@ -92,6 +101,8 @@ class SymbolUsesStep:
     """Build graph.symbol_use_edges from index.scip.json."""
 
     name: str = "symbol_uses"
+    description: str = "Build symbol definition-to-use edges from SCIP index."
+    phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("repo_scan", "scip_ingest")
 
     def run(self, ctx: PipelineContext) -> None:
@@ -112,6 +123,8 @@ class GraphValidationStep:
     """Run integrity validations over graph datasets."""
 
     name: str = "graph_validation"
+    description: str = "Validate graph integrity for GOIDs, spans, and orphan nodes."
+    phase: StepPhase = StepPhase.GRAPHS
     deps: Sequence[str] = ("callgraph", "cfg")
 
     def run(self, ctx: PipelineContext) -> None:
