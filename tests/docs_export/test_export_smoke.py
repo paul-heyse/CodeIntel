@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.pipeline.export.export_jsonl import export_all_jsonl, export_dataset_to_jsonl
+from codeintel.pipeline.export.export_jsonl import (
+    ExportCallOptions,
+    export_all_jsonl,
+    export_dataset_to_jsonl,
+)
 from codeintel.pipeline.export.export_parquet import export_all_parquet, export_dataset_to_parquet
 from codeintel.storage.gateway import DatasetRegistry
 from tests._helpers.fixtures import ProvisionedGateway, provision_docs_export_ready
@@ -44,8 +48,16 @@ def test_export_all_writes_expected_files(
         If any expected export is missing after running both exporters.
     """
     output_dir = tmp_path / "Document Output"
-    export_all_parquet(docs_export_gateway.gateway, output_dir)
-    export_all_jsonl(docs_export_gateway.gateway, output_dir)
+    export_all_parquet(
+        docs_export_gateway.gateway,
+        output_dir,
+        options=ExportCallOptions(validate_exports=False),
+    )
+    export_all_jsonl(
+        docs_export_gateway.gateway,
+        output_dir,
+        options=ExportCallOptions(validate_exports=False),
+    )
 
     expected_basenames = {
         "goids.parquet",
@@ -102,8 +114,7 @@ def test_export_validation_passes_on_minimal_data(
     export_all_parquet(
         docs_export_gateway.gateway,
         output_dir,
-        validate_exports=True,
-        schemas=["function_profile"],
+        options=ExportCallOptions(validate_exports=True, schemas=["function_profile"]),
     )
 
 
@@ -116,12 +127,12 @@ def test_export_subset_by_dataset_name(
     export_all_parquet(
         docs_export_gateway.gateway,
         output_dir,
-        datasets=selected,
+        options=ExportCallOptions(validate_exports=False, datasets=selected),
     )
     export_all_jsonl(
         docs_export_gateway.gateway,
         output_dir,
-        datasets=selected,
+        options=ExportCallOptions(validate_exports=False, datasets=selected),
     )
 
     written = {p.name for p in output_dir.iterdir() if p.is_file()}
@@ -154,7 +165,7 @@ def test_export_subset_validates_dataset_names(
         export_all_jsonl(
             docs_export_gateway.gateway,
             output_dir,
-            datasets=["missing_dataset"],
+            options=ExportCallOptions(validate_exports=False, datasets=["missing_dataset"]),
         )
 
 
@@ -186,8 +197,7 @@ def test_export_helpers_resolve_dataset_names(
     export_all_jsonl(
         docs_export_gateway.gateway,
         output_dir,
-        validate_exports=True,
-        schemas=["function_profile"],
+        options=ExportCallOptions(validate_exports=True, schemas=["function_profile"]),
     )
 
 
@@ -202,4 +212,8 @@ def test_export_validation_runs_against_registry(
         views=(),
     )
     with pytest.raises(ValueError, match="missing tables/views"):
-        export_all_jsonl(docs_export_gateway.gateway, output_dir)
+        export_all_jsonl(
+            docs_export_gateway.gateway,
+            output_dir,
+            options=ExportCallOptions(validate_exports=False),
+        )

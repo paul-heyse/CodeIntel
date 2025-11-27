@@ -13,6 +13,7 @@ Emits DuckDB macro DDL to stdout. Casting rules are intentionally simple:
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Iterable
 from typing import NamedTuple
 
@@ -55,20 +56,20 @@ def render_macro(table_key: str, *, default_limit: int = DEFAULT_LIMIT) -> Rende
     """
     schema = TABLE_SCHEMAS[table_key]
     _, short_name = table_key.split(".", maxsplit=1)
-    macro_name = f"metadata.normalized_{short_name}"
+    macro_name = "metadata.normalized_" + short_name
     select_list = ",\n        ".join(
         _cast_expression(column.name, column.type) for column in schema.columns
     )
-    ddl = f"""
-CREATE OR REPLACE MACRO {macro_name}(
-    table_key TEXT,
-    row_limit BIGINT := {default_limit},
-    row_offset BIGINT := 0
-) AS TABLE
-SELECT
-        {select_list}
-FROM metadata.dataset_rows(table_key, row_limit, row_offset) ds;
-""".strip()
+    ddl_lines = [
+        "CREATE OR REPLACE MACRO ",
+        macro_name,
+        "(\n    table_key TEXT,\n    row_limit BIGINT := ",
+        str(default_limit),
+        ",\n    row_offset BIGINT := 0\n) AS TABLE\nSELECT\n        ",
+        select_list,
+        "\nFROM metadata.dataset_rows(table_key, row_limit, row_offset) ds;",
+    ]
+    ddl = "".join(ddl_lines).strip()
     return RenderedMacro(macro_name=macro_name, ddl=ddl)
 
 
@@ -93,8 +94,8 @@ def main() -> None:
     for table_key in _iter_tables(args.tables):
         macro = render_macro(table_key)
         # Emit to stdout; callers can redirect as needed.
-        print(macro.ddl)  # noqa: T201
-        print()
+        sys.stdout.write(macro.ddl)
+        sys.stdout.write("\n\n")
 
 
 if __name__ == "__main__":

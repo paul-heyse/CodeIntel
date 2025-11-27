@@ -7,15 +7,18 @@ import re
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.metadata_bootstrap import (
-    METADATA_SCHEMA_DDL,
-    NORMALIZED_MACROS,
-    _canonical_type,
-)
+from codeintel.storage.metadata_bootstrap import METADATA_SCHEMA_DDL, NORMALIZED_MACROS
 
 
 def _canonicalize_ddl(stmt: str) -> str:
     return " ".join(stmt.split())
+
+
+def _canonical_type(type_str: str) -> str:
+    upper = type_str.upper()
+    if upper.startswith("DECIMAL") or upper == "BIGINT":
+        return "BIGINT"
+    return upper
 
 
 def _collect_macro_hashes() -> dict[str, str]:
@@ -41,26 +44,33 @@ def _expected_schema_hash(table_key: str) -> str:
 
 
 def test_macro_registry_hashes(fresh_gateway: StorageGateway) -> None:
-    """All macros defined in DDL must be present with matching hashes."""
+    """
+    All macros defined in DDL must be present with matching hashes.
+
+    Raises
+    ------
+    AssertionError
+        If registry entries are missing or drifted.
+    """
     con = fresh_gateway.con
     expected_hashes = _collect_macro_hashes()
-    macro_to_dataset = {v: k for k, v in NORMALIZED_MACROS.items()}
+    macro_to_dataset = {macro: table_key for table_key, macro in NORMALIZED_MACROS.items()}
 
-    rows = con.execute(
-        "SELECT macro_name, dataset_table_key, ddl_hash, schema_hash FROM metadata.macro_registry"
-    ).fetchall()
     actual = {
         str(name): (
             str(dataset) if dataset is not None else None,
             str(ddl_hash),
             str(schema_hash) if schema_hash is not None else None,
         )
-        for name, dataset, ddl_hash, schema_hash in rows
+        for name, dataset, ddl_hash, schema_hash in con.execute(
+            "SELECT macro_name, dataset_table_key, ddl_hash, schema_hash FROM metadata.macro_registry"
+        ).fetchall()
     }
 
     missing = sorted(set(expected_hashes) - set(actual))
     if missing:
-        raise AssertionError(f"Missing macro registry entries: {', '.join(missing)}")
+        message = f"Missing macro registry entries: {', '.join(missing)}"
+        raise AssertionError(message)
 
     mismatched: list[str] = []
     dataset_mismatch: list[str] = []
@@ -79,8 +89,11 @@ def test_macro_registry_hashes(fresh_gateway: StorageGateway) -> None:
                 schema_mismatch.append(name)
 
     if mismatched:
-        raise AssertionError(f"Hash drift detected for: {', '.join(sorted(mismatched))}")
+        message = f"Hash drift detected for: {', '.join(sorted(mismatched))}"
+        raise AssertionError(message)
     if dataset_mismatch:
-        raise AssertionError(f"Dataset mapping drift for: {', '.join(sorted(dataset_mismatch))}")
+        message = f"Dataset mapping drift for: {', '.join(sorted(dataset_mismatch))}"
+        raise AssertionError(message)
     if schema_mismatch:
-        raise AssertionError(f"Schema hash drift for: {', '.join(sorted(schema_mismatch))}")
+        message = f"Schema hash drift for: {', '.join(sorted(schema_mismatch))}"
+        raise AssertionError(message)

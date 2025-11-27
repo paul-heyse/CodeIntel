@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions
 from codeintel.pipeline.orchestration.prefect_flow import ExportTaskHooks, t_export_docs
 from codeintel.storage.gateway import StorageGateway
@@ -48,7 +49,9 @@ def test_t_export_docs_invokes_validator_before_export(tmp_path: Path) -> None:
         gateway_factory=gateway_factory,
         create_views=create_views,
     )
-    export_options = ExportOptions(validate_exports=True, schemas=["public"])
+    export_options = ExportOptions(
+        export=ExportCallOptions(validate_exports=True, schemas=["public"])
+    )
     t_export_docs(
         db_path=tmp_path / "db.duckdb",
         document_output_dir=output_dir,

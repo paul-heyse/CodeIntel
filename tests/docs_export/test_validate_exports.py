@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.pipeline.export.export_jsonl import export_all_jsonl
+from codeintel.pipeline.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.pipeline.export.export_parquet import export_all_parquet
 from codeintel.pipeline.export.validate_exports import main
 from codeintel.serving.services.errors import ExportError
@@ -94,8 +94,7 @@ def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
             export_all_parquet(
                 ctx.gateway,
                 output_dir,
-                validate_exports=True,
-                schemas=["function_profile"],
+                options=ExportCallOptions(validate_exports=True, schemas=["function_profile"]),
             )
 
 
@@ -124,8 +123,7 @@ def test_export_logs_problem_detail_on_validation_failure(
             export_all_jsonl(
                 ctx.gateway,
                 output_dir,
-                validate_exports=True,
-                schemas=["function_profile"],
+                options=ExportCallOptions(validate_exports=True, schemas=["function_profile"]),
             )
         error_logs = [
             rec for rec in caplog.records if "export.validation_failed" in rec.getMessage()

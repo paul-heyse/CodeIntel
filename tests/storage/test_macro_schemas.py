@@ -34,13 +34,13 @@ def test_macro_schemas_match_table_definitions(fresh_gateway: StorageGateway) ->
 
         expected = {col.name: _canonical_type(col.type) for col in schema.columns}
 
-        missing = set(expected) - set(actual)
+        missing = expected.keys() - actual.keys()
         if missing:
             failures.append(f"{table_key}: missing columns {sorted(missing)}")
             continue
         for col_name, expected_type in expected.items():
             actual_type = actual[col_name]
-            if expected_type in ("TIMESTAMP", "DATE") and actual_type == "VARCHAR":
+            if expected_type in {"TIMESTAMP", "DATE"} and actual_type == "VARCHAR":
                 continue
             if actual_type != expected_type:
                 failures.append(f"{table_key}.{col_name}: {actual_type} != {expected_type}")
