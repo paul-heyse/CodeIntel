@@ -11,9 +11,9 @@ import networkx as nx
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.graph_service import GraphContext, centrality_directed
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 
 def _dag_layers(graph: nx.DiGraph) -> dict[str, int]:

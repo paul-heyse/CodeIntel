@@ -12,13 +12,13 @@ from pathlib import Path
 from typing import SupportsFloat, SupportsIndex
 
 from codeintel.config import HistoryTimeseriesStepConfig
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.storage.gateway import (
     DuckDBConnection,
     SnapshotGatewayResolver,
     StorageGateway,
 )
+from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 

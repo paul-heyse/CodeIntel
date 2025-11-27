@@ -14,9 +14,9 @@ from codeintel.analytics.graph_service import (
     build_projection_graph,
     global_graph_stats,
 )
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 

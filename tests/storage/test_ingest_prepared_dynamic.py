@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.schemas.sql_builder import prepared_statements_dynamic
 from codeintel.ingestion.ingest_service import INGEST_MACRO_TABLES, macro_exists
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import prepared_statements_dynamic
 
 
 def test_dynamic_prepared_statements_match_registry(fresh_gateway: StorageGateway) -> None:

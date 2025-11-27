@@ -24,10 +24,10 @@ from codeintel.analytics.context import (
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config import ExternalDependenciesStepConfig
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

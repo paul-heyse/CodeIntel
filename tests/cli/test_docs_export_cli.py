@@ -11,12 +11,7 @@ from codeintel.cli.main import cmd_docs_export
 from codeintel.config.models import CodeIntelConfig
 from codeintel.pipeline.export.runner import ExportOptions
 from codeintel.storage.gateway import StorageGateway
-
-
-class _StubGateway:
-    """Minimal gateway stub."""
-
-    con: object = object()
+from tests._helpers.fixtures import provision_docs_export_ready
 
 
 def _make_args(tmp_path: Path) -> argparse.Namespace:
@@ -39,6 +34,7 @@ def _make_args(tmp_path: Path) -> argparse.Namespace:
 def test_cmd_docs_export_invokes_validator_before_exports(tmp_path: Path) -> None:
     """CLI docs export uses the provided validator before running exports."""
     events: list[str] = []
+    ctx = provision_docs_export_ready(tmp_path, db_path=tmp_path / "db.duckdb", file_backed=True)
 
     def validator(_gateway: StorageGateway) -> None:
         events.append("validator")
@@ -56,18 +52,20 @@ def test_cmd_docs_export_invokes_validator_before_exports(tmp_path: Path) -> Non
         if not read_only:
             pytest.fail("Expected read-only gateway")
         _ = cfg  # unused in stub
-        return _StubGateway()  # type: ignore[return-value]
+        return ctx.gateway
 
     args = _make_args(tmp_path)
-    # Ensure output dir exists for runner invocation.
     args.document_output_dir.mkdir(parents=True, exist_ok=True)
 
-    exit_code = cmd_docs_export(
-        args,
-        validator=validator,
-        export_runner=export_runner,
-        gateway_factory=gateway_factory,  # type: ignore[arg-type]
-    )
+    try:
+        exit_code = cmd_docs_export(
+            args,
+            validator=validator,
+            export_runner=export_runner,
+            gateway_factory=gateway_factory,  # type: ignore[arg-type]
+        )
+    finally:
+        ctx.close()
 
     if exit_code != 0:
         pytest.fail(f"Unexpected exit: {exit_code}")

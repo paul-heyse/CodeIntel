@@ -6,9 +6,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from codeintel.graphs.function_index import FunctionSpan, FunctionSpanIndex
-from codeintel.ingestion.common import load_module_map
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.module_index import load_module_map
 
 
 @dataclass(frozen=True)

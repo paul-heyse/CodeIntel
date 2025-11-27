@@ -13,13 +13,13 @@ from docstring_parser import DocstringStyle, ParseError, parse
 from codeintel.config.builder import DocstringStepConfig
 from codeintel.ingestion.common import (
     iter_modules,
-    load_module_map,
     read_module_source,
     run_batch,
     should_skip_empty,
 )
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.module_index import load_module_map
 from codeintel.storage.rows import DocstringRow, docstring_row_to_tuple
 
 log = logging.getLogger(__name__)

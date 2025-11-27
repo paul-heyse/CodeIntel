@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING, Protocol
 from codeintel.config.primitives import BuildPaths, ScanProfiles, SnapshotRef
 
 if TYPE_CHECKING:
+    from codeintel.ingestion.source_scanner import ScanProfile
     from codeintel.storage.rows import (
         CallGraphEdgeRow,
         CFGBlockRow,
         CFGEdgeRow,
         DFGEdgeRow,
     )
-    from codeintel.ingestion.source_scanner import ScanProfile
 
 
 @dataclass(frozen=True)

@@ -23,10 +23,10 @@ from codeintel.analytics.graph_service import (
     neighbor_stats,
 )
 from codeintel.config import GraphMetricsStepConfig
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 

@@ -12,11 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.config import SnapshotRef
-from codeintel.config.schemas.sql_builder import prepared_statements_dynamic
 from codeintel.ingestion.ingest_service import ensure_schema, ingest_via_macro
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.module_index import load_module_map
+from codeintel.storage.sql_helpers import prepared_statements_dynamic
 
 log = logging.getLogger(__name__)
 
@@ -436,39 +437,6 @@ def _log_change_details(request: ChangeRequest, summary: ChangeSummary) -> None:
             len(summary.deleted),
             [record.rel_path for record in summary.deleted[:max_samples]],
         )
-
-
-def load_module_map(
-    gateway: StorageGateway,
-    repo: str,
-    commit: str,
-    *,
-    language: str | None = None,
-    logger: logging.Logger | None = None,
-) -> dict[str, str]:
-    """
-    Load path->module mapping from core.modules.
-
-    Returns
-    -------
-    dict[str, str]
-        Normalized mapping of relative path -> module name.
-    """
-    con = gateway.con
-    params: list[object] = [repo, commit]
-    query = """
-        SELECT path, module
-        FROM core.modules
-        WHERE repo = ? AND commit = ?
-        """
-    if language is not None:
-        query += " AND language = ?"
-        params.append(language)
-    rows = con.execute(query, params).fetchall()
-    module_map = {normalize_rel_path(str(path)): str(module) for path, module in rows}
-    if not module_map:
-        (logger or log).warning("No modules found in core.modules for %s@%s", repo, commit)
-    return module_map
 
 
 def iter_modules(

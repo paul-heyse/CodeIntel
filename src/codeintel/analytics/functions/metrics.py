@@ -31,9 +31,9 @@ from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.config import FunctionAnalyticsStepConfig
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 

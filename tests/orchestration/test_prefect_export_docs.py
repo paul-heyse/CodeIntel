@@ -9,7 +9,13 @@ import pytest
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions
 from codeintel.pipeline.orchestration.prefect_flow import ExportTaskHooks, t_export_docs
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import (
+    DuckDBConnection,
+    StorageConfig,
+    StorageGateway,
+    open_gateway,
+)
+from codeintel.storage.views import create_all_views
 
 
 class _StubGateway:
@@ -22,6 +28,7 @@ class _StubGateway:
 def test_t_export_docs_invokes_validator_before_export(tmp_path: Path) -> None:
     """Prefect task validates registry before exporting datasets."""
     events: list[str] = []
+    opened: list[StorageGateway] = []
 
     def validator(_gateway: StorageGateway) -> None:
         events.append("validator")
@@ -36,10 +43,19 @@ def test_t_export_docs_invokes_validator_before_export(tmp_path: Path) -> None:
         return []
 
     def gateway_factory(_db_path: Path) -> StorageGateway:
-        return _StubGateway()  # type: ignore[return-value]
+        cfg = StorageConfig(
+            db_path=_db_path,
+            apply_schema=True,
+            ensure_views=True,
+            validate_schema=True,
+        )
+        gateway = open_gateway(cfg)
+        opened.append(gateway)
+        return gateway
 
-    def create_views(_con: object) -> None:
+    def create_views(con: DuckDBConnection) -> None:
         events.append("views")
+        create_all_views(con)
 
     output_dir = tmp_path / "out"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -52,12 +68,16 @@ def test_t_export_docs_invokes_validator_before_export(tmp_path: Path) -> None:
     export_options = ExportOptions(
         export=ExportCallOptions(validate_exports=True, schemas=["public"])
     )
-    t_export_docs(
-        db_path=tmp_path / "db.duckdb",
-        document_output_dir=output_dir,
-        options=export_options,
-        hooks=hooks,
-    )
+    try:
+        t_export_docs(
+            db_path=tmp_path / "db.duckdb",
+            document_output_dir=output_dir,
+            options=export_options,
+            hooks=hooks,
+        )
+    finally:
+        for gateway in opened:
+            gateway.close()
 
     expected = ["views", "validator", f"export:{output_dir}"]
     if events != expected:

@@ -10,12 +10,12 @@ from typing import Any, cast
 import networkx as nx
 
 from codeintel.analytics.parsing.validation import GraphValidationReporter
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.engine_factory import build_graph_engine
 from codeintel.graphs.function_catalog import FunctionCatalog, load_function_catalog
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 SAMPLE_LIMIT = 5
 SYMBOL_COMMUNITY_MIN = 2

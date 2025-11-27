@@ -17,9 +17,9 @@ from codeintel.analytics.graph_service import (
     log_projection_skipped,
     projection_metrics,
 )
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 MAX_BETWEENNESS_NODES = 1000
 

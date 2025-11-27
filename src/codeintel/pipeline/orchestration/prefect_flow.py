@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -15,11 +15,11 @@ from prefect.logging.configuration import setup_logging
 from prefect.logging.handlers import PrefectConsoleHandler
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 from codeintel.config import ConfigBuilder, ScanProfiles, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig
+from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
     default_code_profile,
@@ -374,21 +374,14 @@ def t_export_docs(
     options: ExportOptions | None = None,
     hooks: ExportTaskHooks | None = None,
 ) -> None:
-    """
-    Create views and export Parquet/JSONL artifacts.
-
-    Raises
-    ------
-    Exception
-        Propagates any export runner errors to the caller.
-    """
+    """Create views and export Parquet/JSONL artifacts."""
     resolved_hooks = hooks or ExportTaskHooks()
     export_options = options or ExportOptions(
         export=ExportCallOptions(validate_exports=False, schemas=None, datasets=None)
     )
+    export_options = replace(export_options, validator=resolved_hooks.validator)
     gateway = resolved_hooks.gateway_factory(db_path)
     resolved_hooks.create_views(gateway.con)
-    resolved_hooks.validator(gateway)
     resolved_hooks.export_runner(
         gateway=gateway,
         output_dir=document_output_dir,

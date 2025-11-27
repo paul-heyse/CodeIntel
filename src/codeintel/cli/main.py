@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 from codeintel.config import ConfigBuilder
 from codeintel.config.models import CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
 from codeintel.ingestion.source_scanner import (
     default_code_profile,
     default_config_profile,

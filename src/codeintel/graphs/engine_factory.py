@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
-from codeintel.cli.nx_backend import maybe_enable_nx_gpu
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
+from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:

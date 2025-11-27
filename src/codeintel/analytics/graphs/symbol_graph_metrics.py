@@ -14,9 +14,9 @@ from codeintel.analytics.graph_service import (
     structural_metrics,
     to_decimal_id,
 )
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 MAX_BETWEENNESS_NODES = 1000
 MAX_COMMUNITY_NODES = 5000

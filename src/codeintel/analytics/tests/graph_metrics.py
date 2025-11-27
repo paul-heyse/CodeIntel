@@ -16,9 +16,9 @@ from codeintel.analytics.graph_service import (
     bipartite_degrees,
     projection_metrics,
 )
-from codeintel.config.schemas.sql_builder import ensure_schema
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import ensure_schema
 
 
 def _to_decimal(value: int) -> Decimal:

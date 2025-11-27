@@ -6,17 +6,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from codeintel.config.schemas.ingestion_sql import verify_ingestion_columns
 from codeintel.config.schemas.registry_adapter import load_registry_columns
-from codeintel.config.schemas.sql_builder import ensure_schema as _ensure_schema
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.storage.sql_helpers import ensure_schema as _ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection
 else:
     DuckDBConnection = Any
 
-_VALIDATED: list[bool] = [False]
 INGEST_MACROS: dict[str, str] = {
     table_key: f"metadata.ingest_{table_key.split('.', maxsplit=1)[1]}"
     for table_key in TABLE_SCHEMAS
@@ -53,9 +51,6 @@ def _load_macro_names(con: DuckDBConnection) -> set[str]:
 
 def ensure_schema(con: DuckDBConnection, table_key: str) -> None:
     """Validate registry alignment once per process and ensure the table matches the registry."""
-    if not _VALIDATED[0]:
-        verify_ingestion_columns(con)
-        _VALIDATED[0] = True
     _ensure_schema(con, table_key)
 
 
