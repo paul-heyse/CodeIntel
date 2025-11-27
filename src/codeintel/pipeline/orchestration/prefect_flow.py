@@ -6,90 +6,20 @@ import logging
 import os
 import sys
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, replace
-from datetime import UTC, datetime
-from logging import Logger
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import networkx as nx
 from prefect import flow, get_run_logger, task
-from prefect.cache_policies import NO_CACHE
 from prefect.logging.configuration import setup_logging
 from prefect.logging.handlers import PrefectConsoleHandler
 
-from codeintel.analytics.ast_metrics import build_hotspots
-from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
-from codeintel.analytics.context import (
-    AnalyticsContext,
-    AnalyticsContextConfig,
-    build_analytics_context,
-)
-from codeintel.analytics.coverage_analytics import compute_coverage_functions
-from codeintel.analytics.data_model_usage import compute_data_model_usage
-from codeintel.analytics.data_models import compute_data_models
-from codeintel.analytics.dependencies import (
-    build_external_dependencies,
-    build_external_dependency_calls,
-)
-from codeintel.analytics.entrypoints import build_entrypoints
-from codeintel.analytics.functions import (
-    FunctionAnalyticsOptions,
-    compute_function_contracts,
-    compute_function_effects,
-    compute_function_history,
-    compute_function_metrics_and_types,
-)
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
-from codeintel.analytics.graph_service import build_graph_context
-from codeintel.analytics.graphs import (
-    compute_config_data_flow,
-    compute_config_graph_metrics,
-    compute_graph_metrics,
-    compute_graph_metrics_functions_ext,
-    compute_graph_metrics_modules_ext,
-    compute_graph_stats,
-    compute_subsystem_agreement,
-    compute_subsystem_graph_metrics,
-    compute_symbol_graph_metrics_functions,
-    compute_symbol_graph_metrics_modules,
-)
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.analytics.parsing.validation import FunctionValidationReporter
-from codeintel.analytics.semantic_roles import compute_semantic_roles
-from codeintel.analytics.subsystems import build_subsystems
-from codeintel.analytics.tests import (
-    build_behavioral_coverage,
-    build_test_profile,
-    compute_test_coverage_edges,
-    compute_test_graph_metrics,
-)
 from codeintel.cli.nx_backend import maybe_enable_nx_gpu
-from codeintel.config import ConfigBuilder, ScanProfiles, SnapshotRef, SymbolUsesStepConfig
+from codeintel.config import ConfigBuilder, ScanProfiles, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig
-from codeintel.graphs.callgraph_builder import build_call_graph
-from codeintel.graphs.cfg_builder import build_cfg_and_dfg
-from codeintel.graphs.engine_factory import build_graph_engine
-from codeintel.graphs.function_catalog_service import FunctionCatalogService
-from codeintel.graphs.goid_builder import build_goids
-from codeintel.graphs.import_graph import build_import_graph
-from codeintel.graphs.symbol_uses import build_symbol_use_edges
-from codeintel.graphs.validation import run_graph_validations
-from codeintel.ingestion import scip_ingest
-from codeintel.ingestion.runner import (
-    IngestionContext,
-    run_ast_extract,
-    run_config_ingest,
-    run_coverage_ingest,
-    run_cst_extract,
-    run_docstrings_ingest,
-    run_repo_scan,
-    run_scip_ingest,
-    run_tests_ingest,
-    run_typing_ingest,
-)
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
     default_code_profile,
@@ -100,23 +30,25 @@ from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions, ExportRunner, run_validated_exports
-from codeintel.pipeline.orchestration.steps import (
-    PipelineContext,
-    ProfilesStep,
-    RiskFactorsStep,
-    run_pipeline,
-)
+from codeintel.pipeline.orchestration.steps import PipelineContext, run_pipeline
 from codeintel.serving.http.datasets import validate_dataset_registry
-from codeintel.serving.services.errors import ExportError, log_problem, problem
 from codeintel.storage.gateway import (
-    DuckDBError,
     StorageConfig,
     StorageGateway,
     build_snapshot_gateway_resolver,
     open_gateway,
 )
-from codeintel.storage.schemas import assert_schema_alignment, ensure_schemas_preserve
 from codeintel.storage.views import create_all_views
+
+log = logging.getLogger(__name__)
+_GATEWAY_CACHE: dict[
+    tuple[str, str, bool, bool, bool, bool, bool],
+    StorageGateway,
+] = {}
+_GATEWAY_STATS: dict[str, int] = {"opens": 0, "hits": 0}
+_PREFECT_LOGGING_SETTINGS_PATH = Path(__file__).with_name("prefect_logging.yml")
+os.environ.setdefault("PREFECT_LOGGING_SETTINGS_PATH", str(_PREFECT_LOGGING_SETTINGS_PATH))
+DEFAULT_BUILD_SUBDIR = Path("build")
 
 
 @dataclass(frozen=True)
@@ -143,7 +75,8 @@ class ExportArgs:
     graph_backend: GraphBackendConfig | None = None
 
     def snapshot_config(self) -> SnapshotRef:
-        """Build a snapshot configuration from the provided arguments.
+        """
+        Build a snapshot configuration from the provided arguments.
 
         Returns
         -------
@@ -153,7 +86,8 @@ class ExportArgs:
         return SnapshotRef(repo_root=self.repo_root, repo=self.repo, commit=self.commit)
 
     def resolved_tools(self) -> ToolsConfig:
-        """Return tools configuration with environment defaults applied.
+        """
+        Return tools configuration with environment defaults applied.
 
         Returns
         -------
@@ -163,7 +97,8 @@ class ExportArgs:
         return _tools_from_env(self.tools)
 
     def resolved_profiles(self) -> ScanProfiles:
-        """Return code/config scan profiles with env overrides applied.
+        """
+        Return code/config scan profiles with env overrides applied.
 
         Returns
         -------
@@ -177,7 +112,8 @@ class ExportArgs:
         return ScanProfiles(code=code_profile, config=config_profile)
 
     def resolved_graph_backend(self) -> GraphBackendConfig:
-        """Return the graph backend configuration.
+        """
+        Return the graph backend configuration.
 
         Returns
         -------
@@ -187,7 +123,8 @@ class ExportArgs:
         return self.graph_backend or GraphBackendConfig()
 
     def storage_config(self) -> StorageConfig:
-        """Return an ingest-capable storage configuration.
+        """
+        Return an ingest-capable storage configuration.
 
         Returns
         -------
@@ -214,25 +151,9 @@ class ExportArgs:
         )
 
 
-_GATEWAY_CACHE: dict[
-    tuple[str, str, bool, bool, bool, bool, bool],
-    StorageGateway,
-] = {}
-_GATEWAY_STATS: dict[str, int] = {"opens": 0, "hits": 0}
-_PREFECT_LOGGING_SETTINGS_PATH = Path(__file__).with_name("prefect_logging.yml")
-os.environ.setdefault("PREFECT_LOGGING_SETTINGS_PATH", str(_PREFECT_LOGGING_SETTINGS_PATH))
-_GRAPH_BACKEND_STATE: dict[str, GraphBackendConfig] = {"config": GraphBackendConfig()}
-
-
-@dataclass(frozen=True)
-class FunctionMetricsTaskConfig:
-    """Optional configuration for the function_metrics Prefect task."""
-
-    fail_on_missing_spans: bool = False
-    parser: FunctionParserKind | None = None
-
-
-def _build_pipeline_context(args: ExportArgs) -> PipelineContext:
+def _build_pipeline_context(
+    args: ExportArgs, *, graph_backend: GraphBackendConfig
+) -> PipelineContext:
     """
     Construct a PipelineContext from export arguments using consolidated configs.
 
@@ -244,7 +165,6 @@ def _build_pipeline_context(args: ExportArgs) -> PipelineContext:
     snapshot = args.snapshot_config()
     tools_cfg = args.resolved_tools()
     profiles = args.resolved_profiles()
-    graph_backend = args.resolved_graph_backend()
     storage_config = args.storage_config()
     paths = args.build_paths(db_path=storage_config.db_path)
     gateway = _get_gateway(storage_config)
@@ -290,8 +210,6 @@ def _get_gateway(config: StorageConfig) -> StorageGateway:
     """
     Return a cached StorageGateway for the flow run.
 
-    Cache key includes all toggles to avoid mixing incompatible configs.
-
     Returns
     -------
     StorageGateway
@@ -306,39 +224,6 @@ def _get_gateway(config: StorageConfig) -> StorageGateway:
     _GATEWAY_STATS["opens"] += 1
     _GATEWAY_CACHE[key] = gateway
     return gateway
-
-
-def _ingest_config(db_path: Path, *, history_db_path: Path | None = None) -> StorageConfig:
-    """Return a write-capable StorageConfig for the primary pipeline database.
-
-    Returns
-    -------
-    StorageConfig
-        Configured for ingest mode with optional history attachment.
-    """
-    return StorageConfig.for_ingest(db_path, history_db_path=history_db_path)
-
-
-def _ingest_gateway(db_path: Path, *, history_db_path: Path | None = None) -> StorageGateway:
-    """Open or reuse an ingest-mode gateway for the given database path.
-
-    Returns
-    -------
-    StorageGateway
-        Cached or newly opened gateway.
-    """
-    return _get_gateway(_ingest_config(db_path, history_db_path=history_db_path))
-
-
-def _builder(repo: str, commit: str, repo_root: Path) -> ConfigBuilder:
-    """Create a ConfigBuilder for the given snapshot parameters.
-
-    Returns
-    -------
-    ConfigBuilder
-        Builder configured for the snapshot.
-    """
-    return ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root)
 
 
 def _close_gateways() -> None:
@@ -366,61 +251,11 @@ def gateway_cache_stats() -> dict[str, int]:
     }
 
 
-def _graph_backend_config() -> GraphBackendConfig:
-    """
-    Return the active graph backend configuration for the flow.
-
-    Returns
-    -------
-    GraphBackendConfig
-        Backend preferences currently in effect.
-    """
-    return _GRAPH_BACKEND_STATE["config"]
-
-
-def _build_prefect_analytics_context(
-    gateway: StorageGateway,
-    repo_root: Path,
-    repo: str,
-    commit: str,
-    graph_backend: GraphBackendConfig | None = None,
-) -> AnalyticsContext:
-    """
-    Construct an AnalyticsContext for Prefect tasks.
-
-    Returns
-    -------
-    AnalyticsContext
-        Shared analytics artifacts for the provided repository snapshot.
-    """
-    backend = graph_backend or _graph_backend_config()
-    return build_analytics_context(
-        gateway,
-        AnalyticsContextConfig(
-            repo=repo,
-            commit=commit,
-            repo_root=repo_root,
-            use_gpu=backend.use_gpu,
-        ),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Tasks with light caching/retries for deterministic steps
-# ---------------------------------------------------------------------------
-
-log = logging.getLogger(__name__)
 _PREFECT_LOGGING_CONFIGURED = False
 
 
 def _configure_prefect_logging() -> None:
-    """
-    Configure Prefect logging to use a simple stderr handler instead of Rich console.
-
-    Prefect's default console handler can attempt to write to a closed stream during
-    teardown of test flows; this replaces console handlers with a standard stream
-    handler and leaves other handlers intact.
-    """
+    """Configure Prefect logging to use a simple stderr handler instead of Rich console."""
     global _PREFECT_LOGGING_CONFIGURED  # noqa: PLW0603
     if _PREFECT_LOGGING_CONFIGURED:
         return
@@ -459,7 +294,7 @@ def _tools_from_env(base: ToolsConfig | None = None) -> ToolsConfig:
     Returns
     -------
     ToolsConfig
-        Merged tool configuration honoring environment variables.
+        Tools configuration with environment overrides applied.
     """
     data = base.model_dump() if base is not None else {}
     env_map = {
@@ -481,518 +316,9 @@ def _tools_from_env(base: ToolsConfig | None = None) -> ToolsConfig:
     return ToolsConfig.model_validate(data)
 
 
-def _code_profile_from_env(repo_root: Path, base: ScanProfile | None = None) -> ScanProfile:
-    """Build a code ScanProfile honoring environment overrides.
-
-    Returns
-    -------
-    ScanProfile
-        Effective code scan profile after applying overrides.
-    """
-    return profile_from_env(base or default_code_profile(repo_root))
-
-
-def _config_profile_from_env(repo_root: Path, base: ScanProfile | None = None) -> ScanProfile:
-    """Build a config ScanProfile honoring environment overrides.
-
-    Returns
-    -------
-    ScanProfile
-        Effective config scan profile after applying overrides.
-    """
-    return profile_from_env(base or default_config_profile(repo_root))
-
-
-@task(
-    name="repo_scan",
-    retries=2,
-    retry_delay_seconds=2,
-    cache_policy=NO_CACHE,
-)
-def t_repo_scan(ctx: IngestionContext) -> None:
-    """Ingest repository modules and repo_map rows."""
-    run_repo_scan(ctx)
-
-
-@task(
-    name="scip_ingest",
-    retries=2,
-    retry_delay_seconds=5,
-    cache_policy=NO_CACHE,
-)
-def t_scip_ingest(ctx: IngestionContext) -> scip_ingest.ScipIngestResult:
-    """
-    Run scip-python ingestion and register SCIP artifacts.
-
-    Returns
-    -------
-    scip_ingest.ScipIngestResult
-        Status and artifact paths for SCIP ingestion.
-    """
-    result = run_scip_ingest(ctx)
-    if result.status != "success":
-        log.info("SCIP ingestion skipped or failed: %s", result.reason or result.status)
-    return result
-
-
-@task(
-    name="cst_extract",
-    retries=2,
-    retry_delay_seconds=2,
-    cache_policy=NO_CACHE,
-)
-def t_cst_extract(ctx: IngestionContext) -> None:
-    """Parse CST and persist into cst_nodes."""
-    run_cst_extract(ctx)
-
-
-@task(
-    name="ast_extract",
-    retries=2,
-    retry_delay_seconds=2,
-    cache_policy=NO_CACHE,
-)
-def t_ast_extract(ctx: IngestionContext) -> None:
-    """Parse Python stdlib AST and persist into ast tables."""
-    run_ast_extract(ctx)
-
-
-@task(name="coverage_ingest", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_coverage_ingest(ctx: IngestionContext) -> None:
-    """Load coverage lines into analytics.coverage_lines."""
-    run_coverage_ingest(ctx)
-
-
-@task(name="tests_ingest", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_tests_ingest(ctx: IngestionContext) -> None:
-    """Load pytest test catalog into analytics.test_catalog."""
-    run_tests_ingest(ctx)
-
-
-@task(name="typing_ingest", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_typing_ingest(ctx: IngestionContext) -> None:
-    """Collect typedness/static diagnostics."""
-    run_typing_ingest(ctx)
-
-
-@task(
-    name="docstrings_ingest",
-    retries=1,
-    retry_delay_seconds=2,
-    cache_policy=NO_CACHE,
-)
-def t_docstrings_ingest(ctx: IngestionContext) -> None:
-    """Extract structured docstrings into core.docstrings."""
-    run_docstrings_ingest(ctx)
-
-
-@task(name="config_ingest", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_config_ingest(ctx: IngestionContext) -> None:
-    """Flatten config values into analytics.config_values."""
-    run_config_ingest(ctx)
-
-
-@task(name="goids", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_goids(repo: str, commit: str, db_path: Path) -> None:
-    """Build GOID registry and crosswalk."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, Path()).goid_builder(language="python")
-    build_goids(gateway, cfg)
-
-
-@task(name="callgraph", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_callgraph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
-    """Construct call graph nodes and edges."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).call_graph()
-    build_call_graph(gateway, cfg)
-
-
-@task(name="cfg_dfg", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_cfg(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
-    """Emit minimal CFG/DFG scaffolding."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).cfg_builder()
-    build_cfg_and_dfg(gateway, cfg)
-
-
-@task(name="import_graph", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_import_graph(repo: str, commit: str, repo_root: Path, db_path: Path) -> None:
-    """Build import graph edges via LibCST analysis."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).import_graph()
-    build_import_graph(gateway, cfg)
-
-
-@task(name="symbol_uses", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_symbol_uses(
-    cfg: SymbolUsesStepConfig,
-    db_path: Path,
-) -> None:
-    """Derive symbol use edges from SCIP JSON."""
-    gateway = _ingest_gateway(db_path)
-    build_symbol_use_edges(gateway, cfg)
-
-
-@task(name="hotspots", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_hotspots(
-    repo_root: Path, repo: str, commit: str, db_path: Path, runner: ToolRunner | None = None
-) -> None:
-    """Compute file-level hotspot scores."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).hotspots()
-    build_hotspots(gateway, cfg, runner=runner)
-
-
-@task(name="function_history", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_function_history(
-    repo_root: Path, repo: str, commit: str, db_path: Path, runner: ToolRunner | None = None
-) -> None:
-    """Aggregate per-function git history."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).function_history()
-    compute_function_history(gateway, cfg, runner=runner)
-
-
-@task(name="function_metrics", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_function_metrics(
-    repo_root: Path,
-    repo: str,
-    commit: str,
-    db_path: Path,
-    task_cfg: FunctionMetricsTaskConfig | None = None,
-) -> None:
-    """Compute per-function metrics and types."""
-    run_logger = get_run_logger()
-    params = task_cfg or FunctionMetricsTaskConfig()
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).function_analytics(
-        fail_on_missing_spans=params.fail_on_missing_spans,
-        parser=params.parser,
-    )
-    reporter = FunctionValidationReporter(repo=repo, commit=commit)
-    summary = compute_function_metrics_and_types(
-        gateway,
-        cfg,
-        options=FunctionAnalyticsOptions(validation_reporter=reporter),
-    )
-    run_logger.info(
-        "function_metrics summary rows=%d types=%d validation=%d parse_failed=%d span_not_found=%d",
-        summary["metrics_rows"],
-        summary["types_rows"],
-        summary["validation_total"],
-        summary["validation_parse_failed"],
-        summary["validation_span_not_found"],
-    )
-
-
-@task(name="function_effects", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_function_effects(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Classify side effects and purity."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).function_effects()
-    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
-    runtime = GraphRuntimeOptions(
-        context=context,
-        graph_backend=_graph_backend_config(),
-        engine=build_graph_engine(
-            gateway,
-            (repo, commit),
-            graph_backend=_graph_backend_config(),
-            context=context,
-        ),
-    )
-    compute_function_effects(
-        gateway,
-        cfg,
-        catalog_provider=context.catalog,
-        context=context,
-        runtime=runtime,
-    )
-
-
-@task(name="function_contracts", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_function_contracts(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Infer contracts and nullability."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).function_contracts()
-    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
-    compute_function_contracts(
-        gateway,
-        cfg,
-        catalog_provider=context.catalog,
-        context=context,
-    )
-
-
-@task(name="data_models", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_data_models(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Extract structured data models."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).data_models()
-    compute_data_models(gateway, cfg)
-
-
-@task(name="data_model_usage", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_data_model_usage(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Classify model usage per function."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).data_model_usage()
-    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
-    compute_data_model_usage(
-        gateway,
-        cfg,
-        catalog_provider=context.catalog,
-        context=context,
-    )
-
-
-@task(name="coverage_functions", retries=1, retry_delay_seconds=2)
-def t_coverage_functions(repo: str, commit: str, db_path: Path) -> None:
-    """Aggregate coverage lines to function spans."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, Path()).coverage_analytics()
-    compute_coverage_functions(gateway, cfg)
-
-
-@task(name="test_coverage_edges", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_test_coverage_edges(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Build test-to-function coverage edges."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).test_coverage()
-    compute_test_coverage_edges(gateway, cfg)
-
-
-@task(name="test_profile", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_test_profile(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Build per-test profiles."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).test_profile()
-    build_test_profile(gateway, cfg)
-
-
-@task(name="behavioral_coverage", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_behavioral_coverage(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Assign behavior tags to tests."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).behavioral_coverage()
-    build_behavioral_coverage(gateway, cfg)
-
-
-@task(name="graph_metrics", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_graph_metrics(repo: str, commit: str, db_path: Path) -> None:
-    """Compute graph metrics for functions and modules."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, Path()).graph_metrics()
-    graph_backend = _graph_backend_config()
-    graph_ctx = build_graph_context(
-        cfg,
-        now=datetime.now(tz=UTC),
-        use_gpu=graph_backend.use_gpu,
-    )
-    runtime = GraphRuntimeOptions(
-        context=None,
-        graph_ctx=graph_ctx,
-        graph_backend=graph_backend,
-    )
-    compute_graph_metrics(gateway, cfg, runtime=runtime)
-    compute_graph_metrics_functions_ext(
-        gateway,
-        repo=repo,
-        commit=commit,
-        runtime=runtime,
-    )
-    compute_graph_metrics_modules_ext(
-        gateway,
-        repo=repo,
-        commit=commit,
-        runtime=runtime,
-    )
-    compute_symbol_graph_metrics_modules(
-        gateway,
-        repo=repo,
-        commit=commit,
-        runtime=runtime,
-    )
-    compute_symbol_graph_metrics_functions(
-        gateway,
-        repo=repo,
-        commit=commit,
-        runtime=runtime,
-    )
-    compute_config_graph_metrics(
-        gateway,
-        repo=repo,
-        commit=commit,
-        runtime=runtime,
-    )
-    compute_subsystem_graph_metrics(
-        gateway,
-        repo=repo,
-        commit=commit,
-        runtime=runtime,
-    )
-    compute_subsystem_agreement(gateway, repo=repo, commit=commit)
-    compute_graph_stats(gateway, repo=repo, commit=commit, runtime=runtime)
-    compute_test_graph_metrics(
-        gateway,
-        repo=repo,
-        commit=commit,
-        runtime=runtime,
-    )
-    compute_cfg_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
-    compute_dfg_metrics(gateway, repo=repo, commit=commit, graph_ctx=graph_ctx)
-
-
-@task(name="semantic_roles", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_semantic_roles(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Classify semantic roles for functions and modules."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).semantic_roles()
-    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
-    compute_semantic_roles(
-        gateway,
-        cfg,
-        catalog_provider=context.catalog,
-        context=context,
-    )
-
-
-@task(name="entrypoints", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_entrypoints(
-    repo_root: Path,
-    repo: str,
-    commit: str,
-    db_path: Path,
-    code_profile: ScanProfile | None,
-) -> None:
-    """Detect entrypoints across supported frameworks."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).entrypoints(scan_profile=code_profile)
-    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
-    build_entrypoints(
-        gateway,
-        cfg,
-        catalog_provider=context.catalog,
-        context=context,
-    )
-
-
-@task(name="external_dependencies", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_external_dependencies(
-    repo_root: Path,
-    repo: str,
-    commit: str,
-    db_path: Path,
-    code_profile: ScanProfile | None,
-) -> None:
-    """Capture external dependency usage."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).external_dependencies(scan_profile=code_profile)
-    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
-    build_external_dependency_calls(
-        gateway,
-        cfg,
-        catalog_provider=context.catalog,
-        context=context,
-    )
-    build_external_dependencies(gateway, cfg)
-
-
-@task(name="config_data_flow", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_config_data_flow(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Track config key usage and call chains."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).config_data_flow()
-    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
-    compute_config_data_flow(gateway, cfg, context=context)
-
-
-@task(name="risk_factors", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_risk_factors(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir: Path) -> None:
-    """Populate analytics.goid_risk_factors from analytics tables."""
-    run_logger = get_run_logger()
-    try:
-        gateway = _ingest_gateway(db_path)
-        catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
-        step = RiskFactorsStep()
-        snapshot = SnapshotRef(repo_root=repo_root, repo=repo, commit=commit)
-        profiles = ScanProfiles(
-            code=_code_profile_from_env(repo_root),
-            config=_config_profile_from_env(repo_root),
-        )
-        paths = BuildPaths.from_layout(
-            repo_root=repo_root,
-            build_dir=build_dir,
-            db_path=db_path,
-        )
-        ctx = PipelineContext(
-            snapshot=snapshot,
-            paths=paths,
-            gateway=gateway,
-            function_catalog=catalog,
-            tools=_tools_from_env(),
-            code_profile_cfg=profiles.code,
-            config_profile_cfg=profiles.config,
-            graph_backend_cfg=_graph_backend_config(),
-        )
-        step.run(ctx)
-    except Exception as exc:  # pragma: no cover - error path
-        pd = problem(
-            code="pipeline.task_failed",
-            title="risk_factors task failed",
-            detail=str(exc),
-            extras={"task": "risk_factors", "repo": repo, "commit": commit},
-        )
-        log_problem(run_logger, pd)
-        raise
-
-
-@task(name="subsystems", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_subsystems(repo_root: Path, repo: str, commit: str, db_path: Path) -> None:
-    """Infer subsystem clusters and membership."""
-    gateway = _ingest_gateway(db_path)
-    cfg = _builder(repo, commit, repo_root).subsystems()
-    context = _build_prefect_analytics_context(gateway, repo_root, repo, commit)
-    engine = build_graph_engine(
-        gateway,
-        (repo, commit),
-        graph_backend=_graph_backend_config(),
-        context=context,
-    )
-    build_subsystems(gateway, cfg, context=context, engine=engine)
-
-
-@task(name="profiles", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_profiles(repo_root: Path, repo: str, commit: str, db_path: Path, build_dir: Path) -> None:
-    """Build function, file, and module profiles."""
-    gateway = _ingest_gateway(db_path)
-    step = ProfilesStep()
-    snapshot = SnapshotRef(repo_root=repo_root, repo=repo, commit=commit)
-    profiles = ScanProfiles(
-        code=_code_profile_from_env(repo_root),
-        config=_config_profile_from_env(repo_root),
-    )
-    paths = BuildPaths.from_layout(
-        repo_root=repo_root,
-        build_dir=build_dir,
-        db_path=db_path,
-    )
-    ctx = PipelineContext(
-        snapshot=snapshot,
-        paths=paths,
-        gateway=gateway,
-        tools=_tools_from_env(),
-        code_profile_cfg=profiles.code,
-        config_profile_cfg=profiles.config,
-        graph_backend_cfg=_graph_backend_config(),
-    )
-    step.run(ctx)
-
-
 @dataclass(frozen=True)
 class HistoryTimeseriesTaskParams:
-    """Arguments for the history_timeseries Prefect task."""
+    """Parameters for the history_timeseries Prefect task."""
 
     repo_root: Path
     repo: str
@@ -1002,25 +328,19 @@ class HistoryTimeseriesTaskParams:
     runner: ToolRunner | None = None
 
 
-@task(name="history_timeseries", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
+@task(name="history_timeseries", retries=1, retry_delay_seconds=2)
 def t_history_timeseries(params: HistoryTimeseriesTaskParams) -> None:
-    """Aggregate analytics.history_timeseries using multiple commit snapshots."""
-    if not params.commits:
-        return
-    gateway_cfg = StorageConfig(
+    """Execute history_timeseries analytics across provided commits."""
+    snapshot = SnapshotRef(repo_root=params.repo_root, repo=params.repo, commit=params.commits[0])
+    paths = BuildPaths.from_layout(
+        repo_root=params.repo_root,
+        build_dir=params.repo_root / DEFAULT_BUILD_SUBDIR,
         db_path=params.db_path,
-        read_only=False,
-        apply_schema=False,
-        ensure_views=False,
-        validate_schema=False,
     )
-    gateway = _get_gateway(gateway_cfg)
-    params.history_db_dir.mkdir(parents=True, exist_ok=True)
-
-    # Use first commit as the primary commit for builder
-    primary_commit = params.commits[0] if params.commits else ""
-    cfg = _builder(params.repo, primary_commit, params.repo_root).history_timeseries(
-        commits=params.commits
+    builder = ConfigBuilder.from_primitives(snapshot=snapshot, paths=paths)
+    cfg = builder.history_timeseries(commits=params.commits)
+    gateway = _get_gateway(
+        StorageConfig.for_ingest(params.db_path, history_db_path=params.history_db_dir)
     )
     snapshot_resolver = build_snapshot_gateway_resolver(
         db_dir=params.history_db_dir,
@@ -1041,15 +361,16 @@ class ExportTaskHooks:
 
     validator: Callable[[StorageGateway], None] = validate_dataset_registry
     export_runner: ExportRunner = run_validated_exports
-    gateway_factory: Callable[[Path], StorageGateway] = _ingest_gateway
+    gateway_factory: Callable[[Path], StorageGateway] = lambda db_path: _get_gateway(
+        StorageConfig.for_ingest(db_path)
+    )
     create_views: Callable[[Any], None] = create_all_views
 
 
-@task(name="export_docs", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
 def t_export_docs(
+    *,
     db_path: Path,
     document_output_dir: Path,
-    *,
     options: ExportOptions | None = None,
     hooks: ExportTaskHooks | None = None,
 ) -> None:
@@ -1058,72 +379,25 @@ def t_export_docs(
 
     Raises
     ------
-    ExportError
-        If export validation fails for any selected dataset.
+    Exception
+        Propagates any export runner errors to the caller.
     """
     resolved_hooks = hooks or ExportTaskHooks()
     export_options = options or ExportOptions(
-        export=ExportCallOptions(
-            validate_exports=False,
-            schemas=None,
-            datasets=None,
-        ),
-        validator=resolved_hooks.validator,
+        export=ExportCallOptions(validate_exports=False, schemas=None, datasets=None)
     )
-    if options is not None and options.validator is not resolved_hooks.validator:
-        export_options = replace(options, validator=resolved_hooks.validator)
-    run_logger = get_run_logger()
     gateway = resolved_hooks.gateway_factory(db_path)
-    con = gateway.con
-    try:
-        resolved_hooks.create_views(con)
-        resolved_hooks.export_runner(
-            gateway=gateway,
-            output_dir=document_output_dir,
-            options=export_options,
-        )
-    except ExportError as exc:
-        log_problem(run_logger, exc.problem_detail)
-        raise
-    except Exception as exc:  # pragma: no cover - error path
-        pd = problem(
-            code="pipeline.task_failed",
-            title="export_docs task failed",
-            detail=str(exc),
-            extras={"task": "export_docs"},
-        )
-        log_problem(run_logger, pd)
-        raise
+    resolved_hooks.create_views(gateway.con)
+    resolved_hooks.validator(gateway)
+    resolved_hooks.export_runner(
+        gateway=gateway,
+        output_dir=document_output_dir,
+        options=export_options,
+    )
 
 
-@task(name="graph_validation", retries=1, retry_delay_seconds=2, cache_policy=NO_CACHE)
-def t_graph_validation(repo: str, commit: str, db_path: Path) -> None:
-    """Run graph validation warnings."""
-    run_logger = get_run_logger()
-    try:
-        gateway = _ingest_gateway(db_path)
-        catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
-        run_graph_validations(
-            gateway,
-            repo=repo,
-            commit=commit,
-            catalog_provider=catalog,
-            logger=cast("Logger", run_logger),
-        )
-    except (
-        DuckDBError,
-        nx.NetworkXException,
-        ValueError,
-        RuntimeError,
-    ) as exc:  # pragma: no cover - error path
-        pd = problem(
-            code="pipeline.task_failed",
-            title="graph_validation task failed",
-            detail=str(exc),
-            extras={"task": "graph_validation", "repo": repo, "commit": commit},
-        )
-        log_problem(run_logger, pd)
-        run_logger.warning("Graph validation failed but continuing: %s", exc)
+t_export_docs.fn = t_export_docs  # type: ignore[attr-defined]
+t_history_timeseries.fn = t_history_timeseries  # type: ignore[attr-defined]
 
 
 @flow(name="export_docs_flow")
@@ -1134,11 +408,10 @@ def export_docs_flow(
     """Run the CodeIntel pipeline within a Prefect flow."""
     _configure_prefect_logging()
     run_logger = get_run_logger()
-    graph_backend = args.graph_backend or GraphBackendConfig()
-    _GRAPH_BACKEND_STATE["config"] = graph_backend
+    graph_backend = args.resolved_graph_backend()
     maybe_enable_nx_gpu(graph_backend)
 
-    ctx = _build_pipeline_context(args)
+    ctx = _build_pipeline_context(args, graph_backend=graph_backend)
     selected = tuple(targets) if targets is not None else None
     try:
         run_logger.info("Starting pipeline for %s@%s", ctx.repo, ctx.commit)
@@ -1148,22 +421,12 @@ def export_docs_flow(
         _close_gateways()
 
 
-@task(name="schema_bootstrap", retries=1, retry_delay_seconds=1, cache_policy=NO_CACHE)
-def t_schema_bootstrap(db_path: Path) -> None:
-    """
-    Apply schemas, validate alignment, and create views.
-
-    This is intentionally a distinct task for visibility and future adjustments.
-    """
-    gateway = _get_gateway(
-        StorageConfig(
-            db_path=db_path,
-            read_only=False,
-            apply_schema=False,
-            ensure_views=False,
-            validate_schema=False,
-        )
-    )
-    ensure_schemas_preserve(gateway.con)
-    create_all_views(gateway.con)
-    assert_schema_alignment(gateway.con, strict=True, logger=log)
+__all__ = [
+    "ExportArgs",
+    "ExportTaskHooks",
+    "HistoryTimeseriesTaskParams",
+    "export_docs_flow",
+    "gateway_cache_stats",
+    "t_export_docs",
+    "t_history_timeseries",
+]

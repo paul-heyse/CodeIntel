@@ -131,9 +131,7 @@ def ingest_via_macro(
     table_sql = f'"{schema_name}"."{table_name}"'
     con.execute("DROP TABLE IF EXISTS temp_ingest_values")
     con.execute(f"CREATE TEMP TABLE temp_ingest_values AS SELECT * FROM {table_sql} WHERE 0=1")
-    con.executemany(
-        f"INSERT INTO temp_ingest_values ({column_list}) VALUES ({placeholders})", rows
-    )
+    con.executemany(f"INSERT INTO temp_ingest_values ({column_list}) VALUES ({placeholders})", rows)
     con.execute(
         f"INSERT INTO {table_sql} SELECT * FROM {macro_name}(?)",
         ["temp_ingest_values"],
