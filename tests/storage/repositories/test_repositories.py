@@ -13,6 +13,7 @@ from codeintel.storage.repositories import (
     TestRepository,
 )
 from codeintel.storage.repositories.data_models import DataModelRepository
+from tests._helpers.fixtures import ProvisionedGateway
 
 
 def _expect_true(condition: object, message: str) -> None:
@@ -34,7 +35,7 @@ def _expect_in(member: object, container: list[object], message: str) -> None:
 
 
 def _repos(
-    provisioned_ctx: object,
+    provisioned_ctx: ProvisionedGateway,
 ) -> tuple[
     FunctionRepository,
     ModuleRepository,
@@ -56,15 +57,26 @@ def _repos(
     )
 
 
-def test_function_repository_reads(docs_export_gateway: object) -> None:
-    """Function repository should resolve GOIDs and surface summaries."""
+def test_function_repository_reads(docs_export_gateway: ProvisionedGateway) -> None:
+    """
+    Function repository should resolve GOIDs and surface summaries.
+
+    Raises
+    ------
+    AssertionError
+        If required rows are missing from repositories.
+    """
     functions, _, tests_repo, graphs, _, datasets = _repos(docs_export_gateway)
 
     goid = functions.resolve_function_goid(urn="urn:foo")
-    _expect_true(goid is not None, "resolve_function_goid should return goid")
+    if goid is None:
+        message = "resolve_function_goid should return goid"
+        raise AssertionError(message)
 
     summary = functions.get_function_summary_by_goid(goid)
-    _expect_true(summary is not None, "function summary exists")
+    if summary is None:
+        message = "function summary exists"
+        raise AssertionError(message)
     _expect_equal(summary["qualname"], "pkg.foo:func", "qualname mismatch")
 
     per_file = functions.list_function_summaries_for_file("foo.py")
@@ -88,16 +100,27 @@ def test_function_repository_reads(docs_export_gateway: object) -> None:
     _expect_equal(incoming[0]["caller_goid_h128"], goid, "caller id mismatch")
 
     dataset_rows = datasets.read_dataset_rows("analytics.function_metrics", limit=10, offset=0)
-    _expect_true(bool(dataset_rows), "dataset rows should be readable")
+    if not dataset_rows:
+        message = "dataset rows should be readable"
+        raise AssertionError(message)
     _expect_equal(dataset_rows[0]["function_goid_h128"], goid, "dataset goid mismatch")
 
 
-def test_module_repository_reads(docs_export_gateway: object) -> None:
-    """Module repository should surface file metadata and IDE hints."""
+def test_module_repository_reads(docs_export_gateway: ProvisionedGateway) -> None:
+    """
+    Module repository should surface file metadata and IDE hints.
+
+    Raises
+    ------
+    AssertionError
+        If expected summary rows are missing.
+    """
     _, modules, _, _, _, _ = _repos(docs_export_gateway)
 
     summary = modules.get_file_summary("foo.py")
-    _expect_true(summary is not None, "file summary exists")
+    if summary is None:
+        message = "file summary exists"
+        raise AssertionError(message)
     _expect_equal(summary["rel_path"], "foo.py", "summary path mismatch")
 
     hints = modules.get_file_hints("foo.py")
@@ -105,7 +128,7 @@ def test_module_repository_reads(docs_export_gateway: object) -> None:
     _expect_equal(hints[0]["module"], "pkg.foo", "hint module mismatch")
 
 
-def _seed_subsystem_data(provisioned_ctx: object) -> None:
+def _seed_subsystem_data(provisioned_ctx: ProvisionedGateway) -> None:
     now = datetime.now().astimezone()
     gateway = provisioned_ctx.gateway
     repo = provisioned_ctx.repo
@@ -130,16 +153,14 @@ def _seed_subsystem_data(provisioned_ctx: object) -> None:
                 0.1,
                 0,
                 "low",
-                now,
+                now.isoformat(),
             )
         ]
     )
-    gateway.analytics.insert_subsystem_modules(
-        [(repo, commit, "subsystem-1", "pkg.foo", "owner")]
-    )
+    gateway.analytics.insert_subsystem_modules([(repo, commit, "subsystem-1", "pkg.foo", "owner")])
 
 
-def test_subsystem_repository_reads(docs_export_gateway: object) -> None:
+def test_subsystem_repository_reads(docs_export_gateway: ProvisionedGateway) -> None:
     """Subsystem repository should return seeded subsystem summaries and memberships."""
     _, _, _, _, subsystems, _ = _repos(docs_export_gateway)
     _seed_subsystem_data(docs_export_gateway)
@@ -157,7 +178,7 @@ def test_subsystem_repository_reads(docs_export_gateway: object) -> None:
     _expect_equal(memberships[0]["subsystem_id"], "subsystem-1", "membership id mismatch")
 
 
-def test_data_model_repository_reads(docs_export_gateway: object) -> None:
+def test_data_model_repository_reads(docs_export_gateway: ProvisionedGateway) -> None:
     """Data model repository should surface normalized rows."""
     ctx = docs_export_gateway
     gateway = ctx.gateway

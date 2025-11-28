@@ -34,6 +34,7 @@ from codeintel.serving.mcp.models import (
 )
 from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
 from codeintel.serving.services.factory import (
+    ServiceBuildOptions,
     build_service_from_config,
     get_observability_from_config,
 )
@@ -944,7 +945,9 @@ def create_backend(
         service = build_service_from_config(
             cfg,
             gateway=gateway,
-            observability=resolved_observability,
+            options=ServiceBuildOptions(
+                observability=resolved_observability,
+            ),
         )
         return DuckDBBackend(
             gateway=gateway,

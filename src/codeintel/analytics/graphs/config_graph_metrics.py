@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.graph_service import (
     GraphContext,
     ProjectionMetrics,
@@ -17,7 +22,7 @@ from codeintel.analytics.graph_service import (
     log_projection_skipped,
     projection_metrics,
 )
-from codeintel.graphs.engine import GraphEngine
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -136,9 +141,18 @@ def compute_config_graph_metrics(
     runtime : GraphRuntime | GraphRuntimeOptions | None
         Optional runtime supplying cached graphs and backend selection.
     """
-    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    runtime_opts = (
+        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    )
+    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    resolved_runtime = resolve_graph_runtime(
+        gateway,
+        snapshot,
+        runtime_opts,
+        context=runtime_opts.context,
+    )
     graph_ctx = runtime_opts.graph_ctx
-    use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu
+    use_gpu = resolved_runtime.backend.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.config_graph_metrics_keys")
     ensure_schema(con, "analytics.config_graph_metrics_modules")
@@ -150,11 +164,7 @@ def compute_config_graph_metrics(
     ):
         return
 
-    if isinstance(runtime, GraphRuntime):
-        graph = runtime.ensure_config_module_bipartite()
-    else:
-        engine: GraphEngine = runtime_opts.build_engine(gateway, repo, commit)
-        graph = engine.config_module_bipartite()
+    graph = resolved_runtime.ensure_config_module_bipartite()
     if graph.number_of_nodes() == 0:
         log_empty_graph("config_module_bipartite", graph)
         _clear_config_tables(gateway, repo, commit)

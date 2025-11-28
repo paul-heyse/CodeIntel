@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.graph_service import (
     CentralityBundle,
     ComponentBundle,
@@ -19,6 +24,7 @@ from codeintel.analytics.graph_service import (
     structural_metrics,
     to_decimal_id,
 )
+from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
@@ -169,12 +175,18 @@ def compute_graph_metrics_functions_ext(
     runtime : GraphRuntime | GraphRuntimeOptions | None
         Optional runtime options including cached graphs and backend selection.
     """
-    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    runtime_opts = (
+        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    )
+    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    resolved_runtime = resolve_graph_runtime(
+        gateway,
+        snapshot,
+        runtime_opts,
+        context=runtime_opts.context,
+    )
     ctx = _resolve_function_context(runtime_opts, repo, commit)
-    if isinstance(runtime, GraphRuntime):
-        engine = runtime.engine
-    else:
-        engine = runtime_opts.build_engine(gateway, repo, commit)
+    engine = resolved_runtime.engine
     views = _build_function_views(engine)
     slices = _function_metric_slices(views, ctx)
     rows = _function_metric_rows(repo, commit, ctx, views, slices)

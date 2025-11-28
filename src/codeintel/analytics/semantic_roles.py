@@ -17,7 +17,11 @@ from codeintel.analytics.context import (
     ensure_analytics_context,
 )
 from codeintel.analytics.function_ast_cache import FunctionAst
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import SemanticRolesStepConfig
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
@@ -195,7 +199,6 @@ def compute_semantic_roles(
     con = gateway.con
     ensure_schema(con, "analytics.semantic_roles_functions")
     ensure_schema(con, "analytics.semantic_roles_modules")
-    runtime_opts = runtime or GraphRuntimeOptions()
 
     shared_context = ensure_analytics_context(
         gateway,
@@ -207,10 +210,12 @@ def compute_semantic_roles(
         ),
         context=context,
     )
-    if isinstance(runtime, GraphRuntime):
-        _ = runtime.engine
-    else:
-        runtime_opts.build_engine(gateway, cfg.repo, cfg.commit)
+    resolve_graph_runtime(
+        gateway,
+        cfg.snapshot,
+        runtime or GraphRuntimeOptions(),
+        context=shared_context,
+    )
     module_by_path = shared_context.module_map
     ast_map = shared_context.function_ast_map
 

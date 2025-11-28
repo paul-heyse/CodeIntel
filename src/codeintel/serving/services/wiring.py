@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import anyio
 import httpx
 
-from codeintel.analytics.graph_runtime import build_graph_runtime
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.serving.http.datasets import build_registry_and_limits
@@ -144,18 +144,21 @@ def _build_local_resource(
     from codeintel.serving.mcp.backend import DuckDBBackend  # noqa: PLC0415
     from codeintel.serving.services.factory import build_service_from_config  # noqa: PLC0415
 
-    service = build_service_from_config(
-        cfg,
-        gateway=gateway,
-        registry=registry_opts,
-        observability=observability,
-        graph_engine=runtime.engine,
-    )
     snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
     runtime = build_graph_runtime(
         gateway,
-        snapshot,
-        GraphBackendConfig(),
+        GraphRuntimeOptions(snapshot=snapshot, backend=GraphBackendConfig()),
+    )
+    from codeintel.serving.services.factory import ServiceBuildOptions  # noqa: PLC0415
+
+    service = build_service_from_config(
+        cfg,
+        gateway=gateway,
+        options=ServiceBuildOptions(
+            registry=registry_opts,
+            observability=observability,
+            graph_engine=runtime.engine,
+        ),
     )
     backend = DuckDBBackend(
         gateway=gateway,

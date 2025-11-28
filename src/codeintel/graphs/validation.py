@@ -46,8 +46,7 @@ def _hub_threshold(node_count: int) -> int:
 def run_graph_validations(
     gateway: StorageGateway,
     *,
-    repo: str,
-    commit: str,
+    snapshot: SnapshotRef,
     catalog_provider: FunctionCatalogProvider | None = None,
     logger: logging.Logger | None = None,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
@@ -61,23 +60,36 @@ def run_graph_validations(
     - Modules with no GOIDs (orphans).
     """
     active_log = logger or logging.getLogger(__name__)
+    repo = snapshot.repo
+    commit = snapshot.commit
     _log_db_snapshot(gateway, repo, commit, active_log)
     catalog = (
         catalog_provider.catalog()
         if catalog_provider is not None
-        else load_function_catalog(gateway, repo=repo, commit=commit)
+        else load_function_catalog(gateway, repo=snapshot.repo, commit=snapshot.commit)
     )
     engine: GraphEngine
-    if isinstance(runtime, GraphRuntime) or (isinstance(runtime, GraphRuntimeOptions) and runtime.engine is not None):
+    if isinstance(runtime, GraphRuntime):
         engine = runtime.engine
+    elif isinstance(runtime, GraphRuntimeOptions):
+        if runtime.engine is not None:
+            engine = runtime.engine
+        else:
+            runtime_built = build_graph_runtime(
+                gateway,
+                runtime,
+                context=runtime.context,
+            )
+            engine = runtime_built.engine
     else:
-        snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+        options = GraphRuntimeOptions(
+            snapshot=snapshot,
+            backend=GraphBackendConfig(),
+        )
         runtime_built = build_graph_runtime(
             gateway,
-            snapshot,
-            runtime.resolved_backend
-            if isinstance(runtime, GraphRuntimeOptions)
-            else GraphBackendConfig(),
+            options,
+            context=options.context,
         )
         engine = runtime_built.engine
     findings = []

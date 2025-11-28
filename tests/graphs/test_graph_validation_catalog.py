@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.storage.gateway import StorageGateway
@@ -37,11 +40,13 @@ def test_graph_validation_orphan_uses_catalog_map(fresh_gateway: StorageGateway)
     con = gateway.con
     apply_all_schemas(con)
     provider = _CatalogProvider({"pkg/a.py": "pkg.a"})
-    seed_graph_validation_gaps(gateway, repo="r", commit="c")
+    repo = "r"
+    commit = "c"
+    seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
     run_graph_validations(
         gateway,
-        repo="r",
-        commit="c",
+        snapshot=snapshot,
         catalog_provider=provider,
     )
     rows = con.execute("SELECT rel_path FROM analytics.graph_validation").fetchall()

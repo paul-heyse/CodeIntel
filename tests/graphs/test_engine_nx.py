@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 
 import networkx as nx
 import pytest
 
+from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs import nx_views
 from codeintel.graphs.engine import NxGraphEngine
 from tests._helpers.builders import (
@@ -144,7 +146,10 @@ def test_engine_matches_nx_views_for_core_graphs() -> None:
                 )
             ],
         )
-        engine = NxGraphEngine(gateway=gateway, repo=repo, commit=commit)
+        engine = NxGraphEngine(
+            gateway=gateway,
+            snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=Path()),
+        )
         comparisons: list[tuple[str, Callable[[], nx.Graph], Callable[[], nx.Graph]]] = [
             (
                 "call_graph",

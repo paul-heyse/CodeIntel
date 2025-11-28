@@ -121,7 +121,9 @@ def compute_test_graph_metrics(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate test and function-side metrics derived from test coverage graphs."""
-    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    runtime_opts = (
+        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    )
     context = runtime_opts.context
     graph_ctx = runtime_opts.graph_ctx
     use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu

@@ -136,8 +136,7 @@ class GraphValidationStep:
         runtime = ensure_graph_runtime(ctx)
         run_graph_validations(
             gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
+            snapshot=ctx.snapshot,
             catalog_provider=catalog,
             logger=log,
             runtime=runtime,

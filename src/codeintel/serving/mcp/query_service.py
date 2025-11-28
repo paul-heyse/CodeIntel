@@ -206,6 +206,11 @@ class DuckDBQueryService:
         -------
         GraphEngine
             Engine configured for the service repo/commit.
+
+        Raises
+        ------
+        errors.backend_failure
+            If no graph engine is configured.
         """
         if self._engine is not None:
             return self._engine

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,7 @@ from codeintel.analytics.graphs import (
     compute_graph_stats,
     compute_subsystem_agreement,
 )
+from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
 from codeintel.storage.gateway import StorageGateway
@@ -269,7 +271,10 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
         ],
     )
 
-    engine = NxGraphEngine(gateway=gateway, repo=REPO, commit=COMMIT)
+    engine = NxGraphEngine(
+        gateway=gateway,
+        snapshot=SnapshotRef(repo=REPO, commit=COMMIT, repo_root=Path()),
+    )
     findings = warn_graph_structure(engine, REPO, COMMIT, log=None)
     check_names = {f["check_name"] for f in findings}
     if "symbol_graph_large_community" not in check_names:

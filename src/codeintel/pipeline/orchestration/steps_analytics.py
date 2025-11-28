@@ -39,6 +39,7 @@ from codeintel.analytics.graphs import (
     compute_symbol_graph_metrics_functions,
     compute_symbol_graph_metrics_modules,
 )
+from codeintel.analytics.graphs.graph_metrics import GraphMetricsContexts
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.analytics.profiles import (
     build_file_profile,
@@ -540,7 +541,7 @@ class GraphMetricsStep:
             cfg,
             catalog_provider=acx.catalog,
             runtime=runtime,
-            graph_ctx=graph_ctx,
+            contexts=GraphMetricsContexts(graph_ctx=graph_ctx, analytics_context=acx),
         )
         compute_graph_metrics_functions_ext(
             gateway,

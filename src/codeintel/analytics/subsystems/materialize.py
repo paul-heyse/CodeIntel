@@ -74,7 +74,14 @@ def build_subsystems(
     context: AnalyticsContext | None = None,
     engine: GraphEngine | None = None,
 ) -> None:
-    """Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit."""
+    """
+    Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit.
+
+    Raises
+    ------
+    ValueError
+        When a graph engine is not provided.
+    """
     con = gateway.con
     ensure_schema(con, "analytics.subsystems")
     ensure_schema(con, "analytics.subsystem_modules")

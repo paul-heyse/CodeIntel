@@ -5,13 +5,18 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.graph_service import GraphContext, centrality_directed
-from codeintel.graphs.engine import GraphEngine
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -59,6 +64,28 @@ def _degree_maps(
     )
 
 
+def _build_subsystem_graph(
+    import_graph: nx.DiGraph, membership_rows: list[tuple[str, str]], graph_ctx: GraphContext
+) -> nx.DiGraph:
+    module_to_subsystem: dict[str, str] = {
+        str(module): str(subsystem_id) for subsystem_id, module in membership_rows
+    }
+    subsystem_graph = nx.DiGraph()
+    subsystem_graph.add_nodes_from({subsystem_id for subsystem_id, _ in membership_rows})
+
+    for src, dst, data in import_graph.edges(data=True):
+        src_sub = module_to_subsystem.get(src)
+        dst_sub = module_to_subsystem.get(dst)
+        if src_sub is None or dst_sub is None or src_sub == dst_sub:
+            continue
+        weight = float(data.get(graph_ctx.betweenness_weight or "weight", 1.0))
+        if subsystem_graph.has_edge(src_sub, dst_sub):
+            subsystem_graph[src_sub][dst_sub]["weight"] += weight
+        else:
+            subsystem_graph.add_edge(src_sub, dst_sub, weight=weight)
+    return subsystem_graph
+
+
 def compute_subsystem_graph_metrics(
     gateway: StorageGateway,
     *,
@@ -67,7 +94,16 @@ def compute_subsystem_graph_metrics(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Build subsystem-level condensed import graph metrics."""
-    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    runtime_opts = (
+        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    )
+    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    resolved_runtime = resolve_graph_runtime(
+        gateway,
+        snapshot,
+        runtime_opts,
+        context=runtime_opts.context,
+    )
     graph_ctx = runtime_opts.graph_ctx
     con = gateway.con
     ensure_schema(con, "analytics.subsystem_graph_metrics")
@@ -75,11 +111,10 @@ def compute_subsystem_graph_metrics(
         repo=repo,
         commit=commit,
         now=datetime.now(UTC),
-        use_gpu=runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu,
+        use_gpu=resolved_runtime.backend.use_gpu,
     )
-    use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu
-    if graph_ctx.use_gpu != use_gpu:
-        graph_ctx = replace(graph_ctx, use_gpu=use_gpu)
+    if graph_ctx.use_gpu != resolved_runtime.backend.use_gpu:
+        graph_ctx = replace(graph_ctx, use_gpu=resolved_runtime.backend.use_gpu)
 
     if runtime_opts.context is not None and (
         runtime_opts.context.repo != repo or runtime_opts.context.commit != commit
@@ -101,27 +136,11 @@ def compute_subsystem_graph_metrics(
         )
         return
 
-    module_to_subsystem: dict[str, str] = {
-        str(module): str(subsystem_id) for subsystem_id, module in membership_rows
-    }
-    subsystem_graph = nx.DiGraph()
-    subsystem_graph.add_nodes_from({subsystem_id for subsystem_id, _ in membership_rows})
-
-    if isinstance(runtime, GraphRuntime):
-        import_graph = runtime.ensure_import_graph()
-    else:
-        engine: GraphEngine = runtime_opts.build_engine(gateway, repo, commit)
-        import_graph = engine.import_graph()
-    for src, dst, data in import_graph.edges(data=True):
-        src_sub = module_to_subsystem.get(src)
-        dst_sub = module_to_subsystem.get(dst)
-        if src_sub is None or dst_sub is None or src_sub == dst_sub:
-            continue
-        weight = float(data.get(graph_ctx.betweenness_weight or "weight", 1.0))
-        if subsystem_graph.has_edge(src_sub, dst_sub):
-            subsystem_graph[src_sub][dst_sub]["weight"] += weight
-        else:
-            subsystem_graph.add_edge(src_sub, dst_sub, weight=weight)
+    subsystem_graph = _build_subsystem_graph(
+        resolved_runtime.ensure_import_graph(),
+        membership_rows,
+        graph_ctx,
+    )
 
     if subsystem_graph.number_of_nodes() == 0:
         con.execute(

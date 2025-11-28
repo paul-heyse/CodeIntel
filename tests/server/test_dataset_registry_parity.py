@@ -9,7 +9,11 @@ import pytest
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.http.datasets import build_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.services.factory import DatasetRegistryOptions, build_service_from_config
+from codeintel.serving.services.factory import (
+    DatasetRegistryOptions,
+    ServiceBuildOptions,
+    build_service_from_config,
+)
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.serving.services.wiring import build_backend_resource
 from codeintel.storage.gateway import StorageGateway
@@ -48,7 +52,9 @@ def test_dataset_registry_parity_across_factory_defaults(fresh_gateway: StorageG
     svc = build_service_from_config(
         cfg,
         gateway=gateway,
-        registry=DatasetRegistryOptions(tables=base_registry, validate=False),
+        options=ServiceBuildOptions(
+            registry=DatasetRegistryOptions(tables=base_registry, validate=False),
+        ),
     )
     if not isinstance(svc, LocalQueryService):
         pytest.fail("Expected LocalQueryService")
