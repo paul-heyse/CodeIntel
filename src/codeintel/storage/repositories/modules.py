@@ -16,6 +16,25 @@ from codeintel.storage.repositories.base import (
 class ModuleRepository(BaseRepository):
     """Read module and file metadata from docs views."""
 
+    def list_modules(self) -> list[str]:
+        """
+        List module identifiers for the repo/commit.
+
+        Returns
+        -------
+        list[str]
+            Sorted module names for the current snapshot.
+        """
+        sql = """
+            SELECT module
+            FROM core.modules
+            WHERE repo = ?
+              AND commit = ?
+            ORDER BY module
+        """
+        rows = fetch_all_dicts(self.con, sql, [self.repo, self.commit])
+        return [str(row["module"]) for row in rows]
+
     def get_file_summary(self, rel_path: str) -> RowDict | None:
         """
         Return file summary row for a relative path.

@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.graphs.engine import GraphEngine, GraphKind
 from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.graphs.nx_backend import BackendEnablement
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     import networkx as nx
 
     from codeintel.analytics.context import AnalyticsContext
-    from codeintel.analytics.graph_service import GraphContext
 
 
 @dataclass(frozen=True)
@@ -29,7 +30,6 @@ class GraphRuntimeOptions:
     validate: bool = False
     cache_key: str | None = None
     context: AnalyticsContext | None = None
-    graph_ctx: GraphContext | None = None
     engine: GraphEngine | None = None
 
     @property
@@ -42,44 +42,7 @@ class GraphRuntimeOptions:
         """Compute whether GPU execution is preferred."""
         if self.backend is not None:
             return bool(self.backend.use_gpu)
-        if self.graph_ctx is not None:
-            return bool(self.graph_ctx.use_gpu)
         return False
-
-    def build_engine(
-        self,
-        gateway: StorageGateway,
-        repo: str,
-        commit: str,
-        *,
-        snapshot: SnapshotRef | None = None,
-    ) -> GraphEngine:
-        """
-        Construct or reuse a graph engine for the target snapshot.
-
-        This helper is retained for backward compatibility; prefer
-        `resolve_graph_runtime` and `GraphRuntime.engine` in new code.
-
-        Returns
-        -------
-        GraphEngine
-            Engine bound to the resolved snapshot and backend.
-        """
-        if self.engine is not None:
-            return self.engine
-        target_snapshot = snapshot or self.snapshot
-        if target_snapshot is None:
-            target_snapshot = SnapshotRef(
-                repo=repo,
-                commit=commit,
-                repo_root=Path(),
-            )
-        return build_graph_engine(
-            gateway,
-            target_snapshot,
-            graph_backend=self.resolved_backend,
-            context=self.context,
-        )
 
 
 @dataclass
@@ -88,6 +51,7 @@ class GraphRuntime:
 
     options: GraphRuntimeOptions
     engine: GraphEngine
+    backend_info: BackendEnablement | None = None
     call_graph: nx.DiGraph | None = None
     import_graph: nx.DiGraph | None = None
     cfg_graph: nx.DiGraph | None = None
@@ -241,7 +205,8 @@ def build_graph_runtime(
         graph_backend=resolved_backend,
         context=resolved_context,
     )
-    runtime = GraphRuntime(options=options, engine=engine)
+    backend_info = getattr(engine, "backend_info", None)
+    runtime = GraphRuntime(options=options, engine=engine, backend_info=backend_info)
 
     if options.eager:
         if options.graphs & GraphKind.CALL_GRAPH:
@@ -300,7 +265,6 @@ def resolve_graph_runtime(
         validate=opts.validate,
         cache_key=opts.cache_key,
         context=resolved_context,
-        graph_ctx=opts.graph_ctx,
         engine=opts.engine,
     )
     if opts.engine is not None:
@@ -313,10 +277,107 @@ def resolve_graph_runtime(
     )
 
 
+@dataclass
+class PooledRuntime:
+    """Runtime wrapper with timestamps for pooling."""
+
+    runtime: GraphRuntime
+    created_at: float
+    last_used: float
+
+
+class GraphRuntimePool:
+    """LRU/TTL pool for GraphRuntime instances keyed by snapshot/backend."""
+
+    def __init__(
+        self,
+        *,
+        max_size: int = 4,
+        ttl_seconds: float | None = None,
+        time_func: Callable[[], float] = time.time,
+    ) -> None:
+        if max_size <= 0:
+            message = "max_size must be positive"
+            raise ValueError(message)
+        self._max_size = max_size
+        self._ttl = ttl_seconds
+        self._time = time_func
+        self._entries: dict[tuple[object, ...], PooledRuntime] = {}
+
+    def get(
+        self,
+        gateway: StorageGateway,
+        options: GraphRuntimeOptions,
+        *,
+        context: AnalyticsContext | None = None,
+    ) -> GraphRuntime:
+        """
+        Return a pooled runtime or build and cache when missing/expired.
+
+        Returns
+        -------
+        GraphRuntime
+            Runtime bound to the provided snapshot/backend.
+
+        Raises
+        ------
+        ValueError
+            When ``options.snapshot`` is missing.
+        """
+        if options.snapshot is None:
+            message = "GraphRuntimeOptions.snapshot is required for pooling."
+            raise ValueError(message)
+        now = self._time()
+        key = self._key(options)
+        entry = self._entries.get(key)
+        if entry is not None and not self._expired(entry, now):
+            entry.last_used = now
+            return entry.runtime
+
+        runtime = resolve_graph_runtime(gateway, options.snapshot, options, context=context)
+        self._evict_lru(now)
+        self._entries[key] = PooledRuntime(runtime=runtime, created_at=now, last_used=now)
+        return runtime
+
+    def _expired(self, entry: PooledRuntime, now: float) -> bool:
+        if self._ttl is None:
+            return False
+        return (now - entry.last_used) > self._ttl
+
+    def _evict_lru(self, now: float) -> None:
+        keys_to_drop = [key for key, entry in self._entries.items() if self._expired(entry, now)]
+        for key in keys_to_drop:
+            self._entries.pop(key, None)
+
+        while len(self._entries) >= self._max_size:
+            oldest_key = min(self._entries.items(), key=lambda item: item[1].last_used)[0]
+            self._entries.pop(oldest_key, None)
+
+    @staticmethod
+    def _key(options: GraphRuntimeOptions) -> tuple[object, ...]:
+        snapshot = options.snapshot
+        if snapshot is None:
+            message = "GraphRuntimeOptions.snapshot is required for pooling."
+            raise ValueError(message)
+        backend = options.backend or GraphBackendConfig()
+        return (
+            snapshot.repo,
+            snapshot.commit,
+            backend.backend,
+            backend.use_gpu,
+            backend.strict,
+            options.graphs,
+            options.eager,
+            options.validate,
+        )
+
+
 __all__ = [
     "GraphKind",
     "GraphRuntime",
     "GraphRuntimeOptions",
+    "GraphRuntimePool",
+    "PooledRuntime",
     "build_graph_runtime",
     "resolve_graph_runtime",
 ]

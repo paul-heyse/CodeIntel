@@ -31,6 +31,7 @@ from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
+    from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
     from codeintel.ingestion.source_scanner import ScanProfile
 
 log = logging.getLogger(__name__)
@@ -97,6 +98,7 @@ def build_entrypoints(
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate analytics.entrypoints and analytics.entrypoint_tests.
@@ -111,6 +113,8 @@ def build_entrypoints(
         Optional function catalog to reuse across steps.
     context
         Optional shared analytics context to reuse catalog and module maps.
+    runtime
+        Optional shared graph runtime used to reuse the pipeline engine.
     """
     con = gateway.con
     ensure_schema(con, "analytics.entrypoints")
@@ -134,6 +138,7 @@ def build_entrypoints(
             catalog_provider=catalog_provider,
         ),
         context=context,
+        runtime=runtime,
     )
     catalog = shared_context.catalog
     entrypoint_context = _build_entrypoint_context(

@@ -11,6 +11,7 @@ import networkx as nx
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs import nx_views
+from codeintel.graphs.nx_backend import BackendEnablement
 from codeintel.storage.gateway import StorageGateway
 
 
@@ -154,6 +155,7 @@ class NxGraphEngine:
     gateway: StorageGateway
     snapshot: SnapshotRef
     use_gpu: bool = False
+    backend_info: BackendEnablement | None = None
     _cache: dict[GraphKind, nx.Graph] = field(default_factory=dict)
 
     def seed(self, kind: GraphKind, graph: nx.Graph | None) -> None:

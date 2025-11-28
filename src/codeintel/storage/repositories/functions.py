@@ -186,3 +186,27 @@ class FunctionRepository(BaseRepository):
             LIMIT 1
         """
         return fetch_one_dict(self.con, sql, [self.repo, self.commit, goid_h128])
+
+    def list_function_goids(self) -> list[int]:
+        """
+        Return all function GOIDs for the repo/commit.
+
+        Returns
+        -------
+        list[int]
+            Function GOIDs present in the snapshot.
+        """
+        sql = """
+            SELECT function_goid_h128
+            FROM docs.v_function_summary
+            WHERE repo = ?
+              AND commit = ?
+        """
+        rows = fetch_all_dicts(self.con, sql, [self.repo, self.commit])
+        goids: list[int] = []
+        for row in rows:
+            raw = row.get("function_goid_h128")
+            if raw is None:
+                continue
+            goids.append(int(raw))
+        return goids

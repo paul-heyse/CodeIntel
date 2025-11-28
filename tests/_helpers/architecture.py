@@ -74,6 +74,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
     now = datetime.now(UTC)
     now_iso = now.isoformat()
 
+    gateway.core.insert_repo_map([(repo, commit, "{}", "{}", now_iso)])
     gateway.core.insert_modules(
         [
             ("pkg.mod", "pkg/mod.py", repo, commit),

@@ -17,8 +17,14 @@ from codeintel.analytics.function_ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
-from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs.engine import GraphEngine, NxGraphEngine
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    build_graph_runtime,
+    resolve_graph_runtime,
+)
+from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -226,10 +232,60 @@ def _load_trimmed_graph(
     return trimmed, truncated, metrics, elapsed_ms
 
 
+def _resolve_engine(
+    gateway: StorageGateway,
+    cfg: AnalyticsContextConfig,
+    runtime: GraphRuntime | GraphRuntimeOptions | None,
+    engine: GraphEngine | None,
+) -> GraphEngine:
+    """
+    Normalize runtime inputs and ensure an engine is available.
+
+    Returns
+    -------
+    GraphEngine
+        Active engine derived from the provided runtime or newly constructed.
+    """
+    normalized_runtime: GraphRuntime | None
+    if runtime is None:
+        normalized_runtime = None
+    elif isinstance(runtime, GraphRuntime):
+        normalized_runtime = runtime
+    else:
+        snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
+        normalized_runtime = resolve_graph_runtime(
+            gateway,
+            snapshot,
+            runtime,
+        )
+
+    active_engine = engine
+    if active_engine is None and normalized_runtime is not None:
+        active_engine = normalized_runtime.engine
+    if active_engine is None:
+        snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
+        backend = (
+            normalized_runtime.backend
+            if normalized_runtime is not None
+            else GraphBackendConfig(use_gpu=cfg.use_gpu)
+        )
+        normalized_runtime = build_graph_runtime(
+            gateway,
+            GraphRuntimeOptions(
+                snapshot=snapshot,
+                backend=backend,
+                context=None,
+            ),
+        )
+        active_engine = normalized_runtime.engine
+    return active_engine
+
+
 def build_analytics_context(
     gateway: StorageGateway,
     cfg: AnalyticsContextConfig,
     *,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     engine: GraphEngine | None = None,
 ) -> AnalyticsContext:
     """
@@ -241,8 +297,11 @@ def build_analytics_context(
         Storage gateway exposing the DuckDB connection.
     cfg
         Context configuration (repo, commit, budgets).
+    runtime
+        Optional shared graph runtime used to reuse an existing engine when available.
     engine
-        Optional pre-built graph engine to reuse; when omitted an NxGraphEngine is constructed.
+        Optional pre-built graph engine to reuse; when omitted the runtime or a freshly
+        built runtime will supply one.
 
     Returns
     -------
@@ -251,6 +310,12 @@ def build_analytics_context(
     """
     timers: dict[str, float] = {}
     graph_metrics: list[dict[str, object]] = []
+    active_engine = _resolve_engine(
+        gateway=gateway,
+        cfg=cfg,
+        runtime=runtime,
+        engine=engine,
+    )
 
     start = monotonic()
     catalog = cfg.catalog_provider or FunctionCatalogService.from_db(
@@ -262,11 +327,6 @@ def build_analytics_context(
     module_map = load_module_map(gateway, cfg.repo, cfg.commit)
     timers["module_map_ms"] = (monotonic() - start) * 1000.0
 
-    engine = engine or NxGraphEngine(
-        gateway=gateway,
-        snapshot=SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root),
-        use_gpu=cfg.use_gpu,
-    )
     graphs: dict[str, nx.Graph | None] = {}
     truncated: dict[str, bool] = {}
 
@@ -292,7 +352,7 @@ def build_analytics_context(
 
     _record_graph(
         "call_graph",
-        engine.call_graph,
+        active_engine.call_graph,
         max_nodes=cfg.max_call_graph_nodes,
         max_edges=cfg.max_graph_edges,
         seed=cfg.sample_seed,
@@ -300,7 +360,7 @@ def build_analytics_context(
 
     _record_graph(
         "import_graph",
-        lambda: _import_graph_or_none(engine),
+        lambda: _import_graph_or_none(active_engine),
         max_nodes=cfg.max_import_graph_nodes,
         max_edges=cfg.max_graph_edges,
         seed=cfg.sample_seed + 1,
@@ -317,14 +377,14 @@ def build_analytics_context(
     if cfg.load_symbol_graphs:
         _record_graph(
             "symbol_module_graph",
-            engine.symbol_module_graph,
+            active_engine.symbol_module_graph,
             max_nodes=cfg.max_symbol_graph_nodes,
             max_edges=cfg.max_symbol_graph_edges,
             seed=cfg.sample_seed + 2,
         )
         _record_graph(
             "symbol_function_graph",
-            engine.symbol_function_graph,
+            active_engine.symbol_function_graph,
             max_nodes=cfg.max_symbol_graph_nodes,
             max_edges=cfg.max_symbol_graph_edges,
             seed=cfg.sample_seed + 3,
@@ -443,6 +503,7 @@ def ensure_analytics_context(
     *,
     cfg: AnalyticsContextConfig,
     context: AnalyticsContext | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> AnalyticsContext:
     """
     Return an existing `AnalyticsContext` or build one from the provided config.
@@ -455,6 +516,8 @@ def ensure_analytics_context(
         AnalyticsContextConfig specifying repo, commit, and budgets.
     context:
         Optional pre-built context to reuse.
+    runtime:
+        Optional graph runtime used to reuse an existing engine and caches.
 
     Returns
     -------
@@ -474,4 +537,12 @@ def ensure_analytics_context(
             )
             raise ValueError(message)
         return context
-    return build_analytics_context(gateway, cfg)
+    if isinstance(runtime, GraphRuntime):
+        engine_snapshot = runtime.engine.snapshot
+        if engine_snapshot.repo != cfg.repo or engine_snapshot.commit != cfg.commit:
+            message = (
+                "GraphRuntime mismatch: "
+                f"{engine_snapshot.repo}@{engine_snapshot.commit} vs {cfg.repo}@{cfg.commit}"
+            )
+            raise ValueError(message)
+    return build_analytics_context(gateway, cfg, runtime=runtime)

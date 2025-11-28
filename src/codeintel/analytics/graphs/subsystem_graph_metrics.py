@@ -3,21 +3,26 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
 import networkx as nx
 
+from codeintel.analytics.graph_rows import (
+    SubsystemMetricInputs,
+    build_subsystem_graph_rows,
+)
 from codeintel.analytics.graph_runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,
 )
 from codeintel.analytics.graph_service import GraphContext, centrality_directed
+from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.repositories.subsystems import SubsystemRepository
 from codeintel.storage.sql_helpers import ensure_schema
 
 
@@ -104,31 +109,27 @@ def compute_subsystem_graph_metrics(
         runtime_opts,
         context=runtime_opts.context,
     )
-    graph_ctx = runtime_opts.graph_ctx
     con = gateway.con
     ensure_schema(con, "analytics.subsystem_graph_metrics")
-    graph_ctx = graph_ctx or GraphContext(
-        repo=repo,
-        commit=commit,
-        now=datetime.now(UTC),
-        use_gpu=resolved_runtime.backend.use_gpu,
+    graph_ctx = resolve_graph_context(
+        GraphContextSpec(
+            repo=repo,
+            commit=commit,
+            use_gpu=resolved_runtime.backend.use_gpu,
+            now=datetime.now(UTC),
+        )
     )
-    if graph_ctx.use_gpu != resolved_runtime.backend.use_gpu:
-        graph_ctx = replace(graph_ctx, use_gpu=resolved_runtime.backend.use_gpu)
 
     if runtime_opts.context is not None and (
         runtime_opts.context.repo != repo or runtime_opts.context.commit != commit
     ):
         return
 
-    membership_rows = con.execute(
-        """
-        SELECT subsystem_id, module
-        FROM analytics.subsystem_modules
-        WHERE repo = ? AND commit = ?
-        """,
-        [repo, commit],
-    ).fetchall()
+    repository = SubsystemRepository(gateway=gateway, repo=repo, commit=commit)
+    membership_rows: list[tuple[str, str]] = [
+        (str(row["subsystem_id"]), str(row["module"]))
+        for row in repository.list_subsystem_memberships()
+    ]
     if not membership_rows:
         con.execute(
             "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
@@ -153,22 +154,19 @@ def compute_subsystem_graph_metrics(
     layer_by_subsystem = _layer_by_subsystem(subsystem_graph)
     degree_maps = _degree_maps(subsystem_graph, weight=graph_ctx.betweenness_weight)
 
-    now = graph_ctx.resolved_now()
-    rows = [
-        (
-            repo,
-            commit,
-            subsystem,
-            float(degree_maps[0].get(subsystem, 0.0)),
-            float(degree_maps[1].get(subsystem, 0.0)),
-            centralities[0].get(subsystem, 0.0),
-            centralities[1].get(subsystem, 0.0),
-            centralities[2].get(subsystem, 0.0),
-            layer_by_subsystem.get(subsystem, 0),
-            now,
+    rows = build_subsystem_graph_rows(
+        SubsystemMetricInputs(
+            repo=repo,
+            commit=commit,
+            in_degree=degree_maps[0],
+            out_degree=degree_maps[1],
+            pagerank=centralities[0],
+            betweenness=centralities[1],
+            closeness=centralities[2],
+            layer=layer_by_subsystem,
+            created_at=graph_ctx.resolved_now(),
         )
-        for subsystem in subsystem_graph.nodes
-    ]
+    )
 
     con.execute(
         "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",

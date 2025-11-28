@@ -344,6 +344,7 @@ def compute_config_data_flow(
             repo_root=cfg.repo_root,
         ),
         context=context,
+        runtime=runtime,
     )
 
     entrypoints = _entrypoints(con, cfg.repo, cfg.commit)

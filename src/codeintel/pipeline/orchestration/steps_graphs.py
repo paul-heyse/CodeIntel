@@ -138,7 +138,6 @@ class GraphValidationStep:
             gateway,
             snapshot=ctx.snapshot,
             catalog_provider=catalog,
-            logger=log,
             runtime=runtime,
         )
 

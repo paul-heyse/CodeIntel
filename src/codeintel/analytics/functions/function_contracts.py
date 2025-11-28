@@ -8,6 +8,7 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_utils import literal_int, literal_value, safe_unparse
 from codeintel.analytics.context import (
@@ -22,6 +23,9 @@ from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
+
+if TYPE_CHECKING:
+    from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +50,7 @@ def compute_function_contracts(
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate `analytics.function_contracts` for a repo/commit snapshot.
@@ -60,6 +65,8 @@ def compute_function_contracts(
         Optional function catalog to reuse across steps.
     context:
         Optional shared analytics context to reuse catalog and AST caches.
+    runtime:
+        Optional shared graph runtime used to reuse the pipeline engine.
     """
     con = gateway.con
     ensure_schema(con, "analytics.function_contracts")
@@ -73,6 +80,7 @@ def compute_function_contracts(
             catalog_provider=catalog_provider,
         ),
         context=context,
+        runtime=runtime,
     )
 
     ast_by_goid = shared_context.function_ast_map

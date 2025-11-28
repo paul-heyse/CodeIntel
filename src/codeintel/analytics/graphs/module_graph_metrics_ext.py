@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
 import networkx as nx
 
+from codeintel.analytics.graph_rows import (
+    ModuleMetricExtInputs,
+    ModuleMetricExtRow,
+    build_module_metric_ext_rows,
+)
 from codeintel.analytics.graph_runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
@@ -24,6 +29,7 @@ from codeintel.analytics.graph_service import (
     component_metadata,
     structural_metrics,
 )
+from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
@@ -62,20 +68,17 @@ def _rich_club_cutoff(degree_map: dict[object, int]) -> int:
 
 
 def _resolve_module_context(runtime: GraphRuntimeOptions, repo: str, commit: str) -> GraphContext:
-    ctx = runtime.graph_ctx or GraphContext(
-        repo=repo,
-        commit=commit,
-        now=datetime.now(UTC),
-        betweenness_sample=CENTRALITY_SAMPLE_LIMIT,
-        pagerank_weight="weight",
-        betweenness_weight="weight",
-        use_gpu=runtime.use_gpu,
+    return resolve_graph_context(
+        GraphContextSpec(
+            repo=repo,
+            commit=commit,
+            use_gpu=runtime.use_gpu,
+            now=datetime.now(UTC),
+            betweenness_cap=CENTRALITY_SAMPLE_LIMIT,
+            pagerank_weight="weight",
+            betweenness_weight="weight",
+        )
     )
-    if ctx.betweenness_sample > CENTRALITY_SAMPLE_LIMIT:
-        ctx = replace(ctx, betweenness_sample=CENTRALITY_SAMPLE_LIMIT)
-    if ctx.use_gpu != runtime.use_gpu:
-        ctx = replace(ctx, use_gpu=runtime.use_gpu)
-    return ctx
 
 
 def _build_import_views(
@@ -109,33 +112,42 @@ def _module_metric_rows(
     ctx: GraphContext,
     views: ImportGraphViews,
     slices: ModuleGraphSlices,
-) -> list[tuple[object, ...]]:
-    created_at = ctx.resolved_now()
-    return [
-        (
-            repo,
-            commit,
-            module,
-            slices.centralities.betweenness.get(module, 0.0),
-            slices.centralities.closeness.get(module, 0.0),
-            slices.centralities.eigenvector.get(module, 0.0),
-            slices.centralities.harmonic.get(module, 0.0),
-            slices.structure.core_number.get(module),
-            slices.structure.constraint.get(module),
-            slices.structure.effective_size.get(module),
-            slices.degree_map.get(module, 0) >= slices.degree_cutoff
-            if slices.degree_cutoff > 0
-            else False,
-            slices.structure.core_number.get(module),
-            slices.structure.community_id.get(module),
-            slices.components.component_id.get(module),
-            slices.components.component_size.get(module),
-            slices.components.scc_id.get(module),
-            slices.components.scc_size.get(module),
-            created_at,
-        )
+) -> list[ModuleMetricExtRow]:
+    centralities = {
+        "betweenness": slices.centralities.betweenness,
+        "closeness": slices.centralities.closeness,
+        "eigenvector": slices.centralities.eigenvector,
+        "harmonic": slices.centralities.harmonic,
+    }
+    structure = {
+        "core_number": slices.structure.core_number,
+        "constraint": slices.structure.constraint,
+        "effective_size": slices.structure.effective_size,
+        "community_id": slices.structure.community_id,
+    }
+    components = {
+        "component_id": slices.components.component_id,
+        "component_size": slices.components.component_size,
+        "scc_id": slices.components.scc_id,
+        "scc_size": slices.components.scc_size,
+    }
+    rich_club = {
+        module: slices.degree_map.get(module, 0) >= slices.degree_cutoff
+        if slices.degree_cutoff > 0
+        else False
         for module in views.simple_graph.nodes
-    ]
+    }
+    inputs = ModuleMetricExtInputs(
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+        centralities=centralities,
+        structure=structure,
+        components=components,
+        rich_club=rich_club,
+        nodes=sorted(views.simple_graph.nodes),
+    )
+    return build_module_metric_ext_rows(inputs)
 
 
 def compute_graph_metrics_modules_ext(

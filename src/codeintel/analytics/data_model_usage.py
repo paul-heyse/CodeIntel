@@ -9,6 +9,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
 from codeintel.analytics.context import (
@@ -23,6 +24,9 @@ from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.data_models import DataModelRow, fetch_models
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
@@ -446,6 +450,7 @@ def compute_data_model_usage(
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate analytics.data_model_usage with per-function model usage classifications.
@@ -460,6 +465,8 @@ def compute_data_model_usage(
         Optional function catalog to reuse across analytics steps.
     context
         Optional shared analytics context to reuse catalog, module map, and ASTs.
+    runtime
+        Optional shared graph runtime used to reuse the pipeline engine.
     """
     con = gateway.con
     ensure_schema(con, "analytics.data_model_usage")
@@ -483,6 +490,7 @@ def compute_data_model_usage(
             catalog_provider=catalog_provider,
         ),
         context=context,
+        runtime=runtime,
     )
 
     module_map = shared_context.module_map

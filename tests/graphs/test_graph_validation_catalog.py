@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.validation import run_graph_validations
@@ -48,6 +49,7 @@ def test_graph_validation_orphan_uses_catalog_map(fresh_gateway: StorageGateway)
         gateway,
         snapshot=snapshot,
         catalog_provider=provider,
+        runtime=GraphRuntimeOptions(snapshot=snapshot),
     )
     rows = con.execute("SELECT rel_path FROM analytics.graph_validation").fetchall()
     _expect(condition=rows == [("pkg/a.py",)], detail=f"unexpected paths {rows}")

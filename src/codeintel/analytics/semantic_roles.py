@@ -20,7 +20,6 @@ from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.graph_runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
-    resolve_graph_runtime,
 )
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import SemanticRolesStepConfig
@@ -209,12 +208,7 @@ def compute_semantic_roles(
             catalog_provider=catalog_provider,
         ),
         context=context,
-    )
-    resolve_graph_runtime(
-        gateway,
-        cfg.snapshot,
-        runtime or GraphRuntimeOptions(),
-        context=shared_context,
+        runtime=runtime,
     )
     module_by_path = shared_context.module_map
     ast_map = shared_context.function_ast_map

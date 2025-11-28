@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.graphs.engine import GraphEngine
@@ -65,6 +65,7 @@ class ServiceBuildOptions:
 
     registry: DatasetRegistryOptions | None = None
     observability: ServiceObservability | None = None
+    graph_runtime: GraphRuntime | None = None
     graph_engine: GraphEngine | None = None
 
 
@@ -195,12 +196,21 @@ def build_service_from_config(
     _, limits = build_registry_and_limits(cfg)
     resolved_options = options or ServiceBuildOptions()
     resolved_observability = resolved_options.observability or get_observability_from_config(cfg)
+    runtime = resolved_options.graph_runtime
     if cfg.mode == "local_db":
         if gateway is None:
             message = "StorageGateway is required for local_db service construction"
             raise ValueError(message)
         registry_opts = resolved_options.registry or DatasetRegistryOptions()
         engine = resolved_options.graph_engine
+        if runtime is not None:
+            if runtime.options.snapshot is not None and (
+                runtime.options.snapshot.repo != cfg.repo
+                or runtime.options.snapshot.commit != cfg.commit
+            ):
+                message = "GraphRuntime snapshot mismatch for serving configuration"
+                raise ValueError(message)
+            engine = runtime.engine
         if engine is None:
             snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
             runtime = build_graph_runtime(

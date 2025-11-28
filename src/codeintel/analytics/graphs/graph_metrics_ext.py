@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
 import networkx as nx
 
+from codeintel.analytics.graph_rows import (
+    FunctionMetricExtInputs,
+    FunctionMetricExtRow,
+    build_function_metric_ext_rows,
+)
 from codeintel.analytics.graph_runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
@@ -22,8 +27,8 @@ from codeintel.analytics.graph_service import (
     centrality_directed,
     component_metadata,
     structural_metrics,
-    to_decimal_id,
 )
+from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
@@ -62,25 +67,18 @@ def _bridge_endpoint_counts(graph: nx.Graph) -> dict[int, int]:
 
 
 def _resolve_function_context(runtime: GraphRuntimeOptions, repo: str, commit: str) -> GraphContext:
-    ctx = runtime.graph_ctx or GraphContext(
-        repo=repo,
-        commit=commit,
-        now=datetime.now(UTC),
-        betweenness_sample=CENTRALITY_SAMPLE_LIMIT,
-        eigen_max_iter=EIGEN_MAX_ITER,
-        pagerank_weight="weight",
-        betweenness_weight="weight",
-        use_gpu=runtime.use_gpu,
-    )
-    if ctx.betweenness_sample > CENTRALITY_SAMPLE_LIMIT or ctx.eigen_max_iter > EIGEN_MAX_ITER:
-        ctx = replace(
-            ctx,
-            betweenness_sample=min(ctx.betweenness_sample, CENTRALITY_SAMPLE_LIMIT),
-            eigen_max_iter=min(ctx.eigen_max_iter, EIGEN_MAX_ITER),
+    return resolve_graph_context(
+        GraphContextSpec(
+            repo=repo,
+            commit=commit,
+            use_gpu=runtime.use_gpu,
+            now=datetime.now(UTC),
+            betweenness_cap=CENTRALITY_SAMPLE_LIMIT,
+            eigen_cap=EIGEN_MAX_ITER,
+            pagerank_weight="weight",
+            betweenness_weight="weight",
         )
-    if ctx.use_gpu != runtime.use_gpu:
-        ctx = replace(ctx, use_gpu=runtime.use_gpu)
-    return ctx
+    )
 
 
 def _build_function_views(
@@ -118,40 +116,47 @@ def _function_metric_rows(
     ctx: GraphContext,
     views: GraphViews,
     slices: FunctionGraphSlices,
-) -> list[tuple[object, ...]]:
-    rows: list[tuple[object, ...]] = []
+) -> list[FunctionMetricExtRow]:
     node_count = views.graph.number_of_nodes()
-    created_at = ctx.resolved_now()
-    for node in views.simple_graph.nodes:
-        goid = to_decimal_id(node)
-        ancestor_count = len(nx.ancestors(views.graph, node)) if node_count else 0
-        descendant_count = len(nx.descendants(views.graph, node)) if node_count else 0
-        rows.append(
-            (
-                repo,
-                commit,
-                goid,
-                slices.centralities.betweenness.get(node, 0.0),
-                slices.centralities.closeness.get(node, 0.0),
-                slices.centralities.eigenvector.get(node, 0.0),
-                slices.centralities.harmonic.get(node, 0.0),
-                slices.structure.core_number.get(node),
-                slices.structure.clustering.get(node, 0.0),
-                int(slices.structure.triangles.get(node, 0)),
-                node in slices.articulations,
-                None,
-                slices.bridge_incident.get(node, 0) > 0,
-                slices.components.component_id.get(node),
-                slices.components.component_size.get(node),
-                slices.components.scc_id.get(node),
-                slices.components.scc_size.get(node),
-                ancestor_count,
-                descendant_count,
-                slices.structure.community_id.get(node),
-                created_at,
-            )
-        )
-    return rows
+    ancestor_count = {
+        node: len(nx.ancestors(views.graph, node)) if node_count else 0
+        for node in views.simple_graph.nodes
+    }
+    descendant_count = {
+        node: len(nx.descendants(views.graph, node)) if node_count else 0
+        for node in views.simple_graph.nodes
+    }
+    centralities = {
+        "betweenness": slices.centralities.betweenness,
+        "closeness": slices.centralities.closeness,
+        "eigenvector": slices.centralities.eigenvector,
+        "harmonic": slices.centralities.harmonic,
+    }
+    structure = {
+        "core_number": slices.structure.core_number,
+        "clustering": slices.structure.clustering,
+        "triangles": slices.structure.triangles,
+        "community_id": slices.structure.community_id,
+    }
+    components = {
+        "component_id": slices.components.component_id,
+        "component_size": slices.components.component_size,
+        "scc_id": slices.components.scc_id,
+        "scc_size": slices.components.scc_size,
+    }
+    inputs = FunctionMetricExtInputs(
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+        centralities=centralities,
+        structure=structure,
+        components=components,
+        articulations=slices.articulations,
+        bridge_incident=slices.bridge_incident,
+        ancestor_count=ancestor_count,
+        descendant_count=descendant_count,
+    )
+    return build_function_metric_ext_rows(inputs)
 
 
 def compute_graph_metrics_functions_ext(
