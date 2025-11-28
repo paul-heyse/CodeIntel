@@ -5,16 +5,21 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.graph_service import (
     GraphContext,
     build_projection_graph,
     global_graph_stats,
 )
-from codeintel.graphs.engine import GraphEngine
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -42,8 +47,17 @@ def compute_graph_stats(
     runtime : GraphRuntime | GraphRuntimeOptions | None
         Optional runtime supplying cached graphs and backend selection.
     """
-    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
-    use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu
+    runtime_opts = (
+        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    )
+    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    resolved_runtime = resolve_graph_runtime(
+        gateway,
+        snapshot,
+        runtime_opts,
+        context=runtime_opts.context,
+    )
+    use_gpu = resolved_runtime.backend.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.graph_stats")
     ctx = runtime_opts.graph_ctx or GraphContext(
@@ -55,24 +69,12 @@ def compute_graph_stats(
     if ctx.use_gpu != use_gpu:
         ctx = replace(ctx, use_gpu=use_gpu)
 
-    if isinstance(runtime, GraphRuntime):
-        call_graph = runtime.ensure_call_graph()
-        import_graph = runtime.ensure_import_graph()
-        symbol_module_graph = runtime.ensure_symbol_module_graph()
-        symbol_function_graph = runtime.ensure_symbol_function_graph()
-        config_bipartite = runtime.ensure_config_module_bipartite()
-    else:
-        engine: GraphEngine = runtime_opts.build_engine(gateway, repo, commit)
-        call_graph = engine.call_graph()
-        import_graph = engine.import_graph()
-        symbol_module_graph = engine.symbol_module_graph()
-        symbol_function_graph = engine.symbol_function_graph()
-        config_bipartite = engine.config_module_bipartite()
+    config_bipartite = resolved_runtime.ensure_config_module_bipartite()
     graphs: dict[str, nx.Graph | nx.DiGraph] = {
-        "call_graph": call_graph,
-        "import_graph": import_graph,
-        "symbol_module_graph": symbol_module_graph,
-        "symbol_function_graph": symbol_function_graph,
+        "call_graph": resolved_runtime.ensure_call_graph(),
+        "import_graph": resolved_runtime.ensure_import_graph(),
+        "symbol_module_graph": resolved_runtime.ensure_symbol_module_graph(),
+        "symbol_function_graph": resolved_runtime.ensure_symbol_function_graph(),
     }
 
     if config_bipartite.number_of_nodes() > 0:

@@ -20,7 +20,11 @@ from codeintel.analytics.context import (
     ensure_analytics_context,
 )
 from codeintel.analytics.evidence import EvidenceCollector
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.config import ConfigDataFlowStepConfig
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -347,11 +351,13 @@ def compute_config_data_flow(
     ast_by_goid = shared_context.function_ast_map
     missing = shared_context.missing_function_goids
     if call_graph is None and runtime is not None:
-        if isinstance(runtime, GraphRuntime):
-            call_graph = runtime.ensure_call_graph()
-        else:
-            engine = runtime.build_engine(gateway, cfg.repo, cfg.commit)
-            call_graph = engine.call_graph()
+        resolved_runtime = resolve_graph_runtime(
+            gateway,
+            cfg.snapshot,
+            runtime,
+            context=shared_context,
+        )
+        call_graph = resolved_runtime.ensure_call_graph()
     if call_graph is None:
         log.warning(
             "Call graph unavailable for %s@%s; skipping config data flow", cfg.repo, cfg.commit

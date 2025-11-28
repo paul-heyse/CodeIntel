@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Literal, Protocol
 
-from codeintel.analytics.graph_runtime import build_graph_runtime
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions, build_graph_runtime
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.config import ConfigBuilder
 from codeintel.config.models import CliPathsInput, CodeIntelConfig, RepoConfig
@@ -529,17 +529,23 @@ def _open_gateway(cfg: CodeIntelConfig, *, read_only: bool) -> StorageGateway:
     return open_gateway(gateway_cfg)
 
 
-def _build_runtime(cfg: CodeIntelConfig, gateway: StorageGateway):
-    """Construct a GraphRuntime for CLI commands."""
+def _build_runtime(cfg: CodeIntelConfig, gateway: StorageGateway) -> GraphRuntime:
+    """
+    Construct a GraphRuntime for CLI commands.
+
+    Returns
+    -------
+    GraphRuntime
+        Runtime bound to the CLI snapshot and backend settings.
+    """
     snapshot = SnapshotRef(
         repo=cfg.repo.repo,
         commit=cfg.repo.commit,
-        repo_root=cfg.repo.repo_root,
+        repo_root=cfg.paths.repo_root,
     )
     return build_graph_runtime(
         gateway,
-        snapshot,
-        cfg.graph_backend,
+        GraphRuntimeOptions(snapshot=snapshot, backend=cfg.graph_backend),
     )
 
 

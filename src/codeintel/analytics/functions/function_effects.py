@@ -19,10 +19,13 @@ from codeintel.analytics.function_ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import FunctionEffectsStepConfig
-from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -69,7 +72,7 @@ class _EffectInputs:
     cfg: FunctionEffectsStepConfig
     catalog: FunctionCatalogProvider
     context: AnalyticsContext | None
-    engine: GraphEngine
+    runtime: GraphRuntime
 
 
 def _effects_payload(
@@ -138,18 +141,19 @@ def compute_function_effects(
         else catalog_provider
         or FunctionCatalogService.from_db(gateway, repo=cfg.repo, commit=cfg.commit)
     )
-    if isinstance(runtime, GraphRuntime):
-        engine: GraphEngine = runtime.engine
-    else:
-        runtime_opts = runtime or GraphRuntimeOptions()
-        engine = runtime_opts.build_engine(gateway, cfg.repo, cfg.commit)
+    active_runtime = resolve_graph_runtime(
+        gateway,
+        cfg.snapshot,
+        runtime,
+        context=context,
+    )
 
     inputs = _EffectInputs(
         gateway=gateway,
         cfg=cfg,
         catalog=catalog,
         context=context,
-        engine=engine,
+        runtime=active_runtime,
     )
     rows = _build_effect_rows(inputs=inputs, now=datetime.now(tz=UTC))
 
@@ -188,7 +192,7 @@ def _build_effect_rows(
         goid: analysis.direct_effectful for goid, analysis in analyses.items()
     }
 
-    call_graph = inputs.engine.call_graph()
+    call_graph = inputs.runtime.ensure_call_graph()
     transitive_hits = _compute_transitive_effects(
         call_graph,
         direct_flags,

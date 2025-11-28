@@ -27,7 +27,7 @@ def test_duckdb_backend_uses_injected_engine() -> None:
         )
         if backend.query is None:
             pytest.fail("DuckDBBackend did not initialize query service")
-        if backend.query.graph_engine() is not engine:
+        if backend.query.graph_engine is not engine:
             pytest.fail("DuckDBBackend did not reuse the provided engine")
     finally:
         gateway.close()

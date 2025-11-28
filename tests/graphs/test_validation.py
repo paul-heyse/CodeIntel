@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Final
 
 from _pytest.logging import LogCaptureFixture
 
+from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
@@ -28,9 +30,10 @@ def test_run_graph_validations_emits_warnings(
     commit: Final = "deadbeef"
     apply_all_schemas(gateway.con)
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
 
     with caplog.at_level("WARNING"):
-        run_graph_validations(gateway, repo=repo, commit=commit)
+        run_graph_validations(gateway, snapshot=snapshot)
 
     messages = " ".join(record.message for record in caplog.records)
     expected = ["outside caller spans", "module(s) have no GOIDs"]

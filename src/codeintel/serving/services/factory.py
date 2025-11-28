@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from codeintel.analytics.graph_runtime import build_graph_runtime
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.graphs.engine import GraphEngine
@@ -59,6 +59,15 @@ class DatasetRegistryOptions:
     validate: bool = True
 
 
+@dataclass(frozen=True)
+class ServiceBuildOptions:
+    """Optional knobs for constructing query services."""
+
+    registry: DatasetRegistryOptions | None = None
+    observability: ServiceObservability | None = None
+    graph_engine: GraphEngine | None = None
+
+
 def get_observability_from_config(cfg: ServingConfig) -> ServiceObservability | None:
     """
     Derive service observability settings from configuration flags.
@@ -104,8 +113,6 @@ def build_local_query_service(
         Dataset registry options including validation behavior.
     observability:
         Optional observability configuration for structured logging.
-    graph_engine:
-        Optional graph engine injected into the local query service.
 
     Returns
     -------
@@ -158,9 +165,7 @@ def build_service_from_config(
     *,
     gateway: StorageGateway | None = None,
     request_json: Callable[[str, dict[str, object]], object] | None = None,
-    registry: DatasetRegistryOptions | None = None,
-    observability: ServiceObservability | None = None,
-    graph_engine: GraphEngine | None = None,
+    options: ServiceBuildOptions | None = None,
 ) -> LocalQueryService | HttpQueryService:
     """
     Construct a query service from ServingConfig using local or remote transport.
@@ -173,12 +178,8 @@ def build_service_from_config(
         StorageGateway for local_db mode.
     request_json:
         HTTP JSON request callable for remote_api mode.
-    registry:
-        Dataset registry options (local only).
-    observability:
-        Optional observability configuration for structured logging.
-    graph_engine:
-        Optional graph engine injected into the local query service.
+    options:
+        Optional bundle configuring registry, observability, and graph engine.
 
     Returns
     -------
@@ -192,19 +193,19 @@ def build_service_from_config(
         are missing or the serving mode is unsupported.
     """
     _, limits = build_registry_and_limits(cfg)
-    resolved_observability = observability or get_observability_from_config(cfg)
+    resolved_options = options or ServiceBuildOptions()
+    resolved_observability = resolved_options.observability or get_observability_from_config(cfg)
     if cfg.mode == "local_db":
         if gateway is None:
             message = "StorageGateway is required for local_db service construction"
             raise ValueError(message)
-        registry_opts = registry or DatasetRegistryOptions()
-        engine = graph_engine
+        registry_opts = resolved_options.registry or DatasetRegistryOptions()
+        engine = resolved_options.graph_engine
         if engine is None:
             snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
             runtime = build_graph_runtime(
                 gateway,
-                snapshot,
-                GraphBackendConfig(),
+                GraphRuntimeOptions(snapshot=snapshot, backend=GraphBackendConfig()),
             )
             engine = runtime.engine
         query = DuckDBQueryService(
@@ -239,6 +240,7 @@ def build_service_from_config(
 __all__ = [
     "BackendResource",
     "DatasetRegistryOptions",
+    "ServiceBuildOptions",
     "ServiceObservability",
     "build_backend_resource",
     "build_http_query_service",

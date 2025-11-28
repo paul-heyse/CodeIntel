@@ -44,24 +44,97 @@ class GraphEngine(Protocol):
     exposing those details to analytics consumers.
     """
 
+    gateway: StorageGateway
+
+    @property
+    def use_gpu(self) -> bool:
+        """Preferred backend GPU flag."""
+        ...
+
+    def call_graph(self) -> nx.DiGraph:
+        """
+        Return the directed call graph (cached or freshly loaded).
+
+        Returns
+        -------
+        nx.DiGraph
+            Directed call graph.
+        """
+        ...
+
     def load_call_graph(self) -> nx.DiGraph:
         """Return the directed call graph."""
+        ...
+
+    def import_graph(self) -> nx.DiGraph:
+        """
+        Return the directed import graph (cached or freshly loaded).
+
+        Returns
+        -------
+        nx.DiGraph
+            Directed import graph.
+        """
         ...
 
     def load_import_graph(self) -> nx.DiGraph:
         """Return the directed import graph."""
         ...
 
+    def symbol_module_graph(self) -> nx.Graph:
+        """
+        Return the undirected symbol-module coupling graph (cached or loaded).
+
+        Returns
+        -------
+        nx.Graph
+            Symbol-module coupling graph.
+        """
+        ...
+
     def load_symbol_module_graph(self) -> nx.Graph:
         """Return the undirected symbol-module coupling graph."""
+        ...
+
+    def symbol_function_graph(self) -> nx.Graph:
+        """
+        Return the undirected symbol-function coupling graph (cached or loaded).
+
+        Returns
+        -------
+        nx.Graph
+            Symbol-function coupling graph.
+        """
         ...
 
     def load_symbol_function_graph(self) -> nx.Graph:
         """Return the undirected symbol-function coupling graph."""
         ...
 
+    def config_module_bipartite(self) -> nx.Graph:
+        """
+        Return the config key <-> module bipartite graph (cached or loaded).
+
+        Returns
+        -------
+        nx.Graph
+            Config-module bipartite graph.
+        """
+        ...
+
     def load_config_module_bipartite(self) -> nx.Graph:
         """Return the config key <-> module bipartite graph."""
+        ...
+
+    def test_function_bipartite(self) -> nx.Graph:
+        """
+        Return the test <-> function bipartite graph (cached or loaded).
+
+        Returns
+        -------
+        nx.Graph
+            Test-function bipartite graph.
+        """
         ...
 
     def load_test_function_bipartite(self) -> nx.Graph:
@@ -127,7 +200,14 @@ class NxGraphEngine:
         return cast("nx.DiGraph", graph)
 
     def load_call_graph(self) -> nx.DiGraph:
-        """Alias for call_graph to satisfy GraphEngine protocol."""
+        """
+        Alias for call_graph to satisfy GraphEngine protocol.
+
+        Returns
+        -------
+        nx.DiGraph
+            Directed call graph.
+        """
         return self.call_graph()
 
     def import_graph(self) -> nx.DiGraph:
@@ -151,7 +231,14 @@ class NxGraphEngine:
         return cast("nx.DiGraph", graph)
 
     def load_import_graph(self) -> nx.DiGraph:
-        """Alias for import_graph to satisfy GraphEngine protocol."""
+        """
+        Alias for import_graph to satisfy GraphEngine protocol.
+
+        Returns
+        -------
+        nx.DiGraph
+            Directed import graph.
+        """
         return self.import_graph()
 
     def symbol_module_graph(self) -> nx.Graph:
@@ -174,7 +261,14 @@ class NxGraphEngine:
         )
 
     def load_symbol_module_graph(self) -> nx.Graph:
-        """Alias for symbol_module_graph to satisfy GraphEngine protocol."""
+        """
+        Alias for symbol_module_graph to satisfy GraphEngine protocol.
+
+        Returns
+        -------
+        nx.Graph
+            Symbol-module coupling graph.
+        """
         return self.symbol_module_graph()
 
     def symbol_function_graph(self) -> nx.Graph:
@@ -197,7 +291,14 @@ class NxGraphEngine:
         )
 
     def load_symbol_function_graph(self) -> nx.Graph:
-        """Alias for symbol_function_graph to satisfy GraphEngine protocol."""
+        """
+        Alias for symbol_function_graph to satisfy GraphEngine protocol.
+
+        Returns
+        -------
+        nx.Graph
+            Symbol-function coupling graph.
+        """
         return self.symbol_function_graph()
 
     def config_module_bipartite(self) -> nx.Graph:
@@ -220,7 +321,14 @@ class NxGraphEngine:
         )
 
     def load_config_module_bipartite(self) -> nx.Graph:
-        """Alias for config_module_bipartite to satisfy GraphEngine protocol."""
+        """
+        Alias for config_module_bipartite to satisfy GraphEngine protocol.
+
+        Returns
+        -------
+        nx.Graph
+            Config-module bipartite graph.
+        """
         return self.config_module_bipartite()
 
     def test_function_bipartite(self) -> nx.Graph:
@@ -243,5 +351,12 @@ class NxGraphEngine:
         )
 
     def load_test_function_bipartite(self) -> nx.Graph:
-        """Alias for test_function_bipartite to satisfy GraphEngine protocol."""
+        """
+        Alias for test_function_bipartite to satisfy GraphEngine protocol.
+
+        Returns
+        -------
+        nx.Graph
+            Test-function bipartite graph.
+        """
         return self.test_function_bipartite()

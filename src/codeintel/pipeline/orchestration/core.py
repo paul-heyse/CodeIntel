@@ -14,7 +14,12 @@ from codeintel.analytics.context import (
     AnalyticsContextConfig,
     build_analytics_context,
 )
-from codeintel.analytics.graph_runtime import GraphKind, GraphRuntime, build_graph_runtime
+from codeintel.analytics.graph_runtime import (
+    GraphKind,
+    GraphRuntime,
+    GraphRuntimeOptions,
+    build_graph_runtime,
+)
 from codeintel.config import (
     ConfigBuilder,
     GraphBackendConfig,
@@ -312,7 +317,14 @@ def _analytics_context(ctx: PipelineContext) -> AnalyticsContext:
 
 
 def _graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> GraphEngine:
-    """Construct or reuse a shared graph engine for the pipeline run."""
+    """
+    Construct or reuse a shared graph engine for the pipeline run.
+
+    Returns
+    -------
+    GraphEngine
+        Engine bound to the pipeline snapshot.
+    """
     return _graph_runtime(ctx, acx=acx).engine
 
 
@@ -331,13 +343,17 @@ def _graph_runtime(
     context = acx or ctx.analytics_context
     if ctx.graph_runtime is not None:
         return ctx.graph_runtime
-    runtime = build_graph_runtime(
-        ctx.gateway,
-        ctx.snapshot,
-        ctx.graph_backend,
+    options = GraphRuntimeOptions(
+        snapshot=ctx.snapshot,
+        backend=ctx.graph_backend,
         graphs=GraphKind.ALL,
         eager=False,
         validate=False,
+        context=context,
+    )
+    runtime = build_graph_runtime(
+        ctx.gateway,
+        options,
         context=context,
     )
     ctx.graph_runtime = runtime

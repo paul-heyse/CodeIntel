@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.graph_service import (
     GraphContext,
     centrality_undirected,
@@ -14,7 +19,7 @@ from codeintel.analytics.graph_service import (
     structural_metrics,
     to_decimal_id,
 )
-from codeintel.graphs.engine import GraphEngine
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -30,9 +35,18 @@ def compute_symbol_graph_metrics_modules(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate analytics.symbol_graph_metrics_modules from module symbol coupling."""
-    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    runtime_opts = (
+        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    )
+    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    resolved_runtime = resolve_graph_runtime(
+        gateway,
+        snapshot,
+        runtime_opts,
+        context=runtime_opts.context,
+    )
     graph_ctx = runtime_opts.graph_ctx
-    use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu
+    use_gpu = resolved_runtime.backend.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.symbol_graph_metrics_modules")
     ctx = graph_ctx or GraphContext(
@@ -53,11 +67,7 @@ def compute_symbol_graph_metrics_modules(
     ):
         return
 
-    if isinstance(runtime, GraphRuntime):
-        graph = runtime.ensure_symbol_module_graph()
-    else:
-        engine: GraphEngine = runtime_opts.build_engine(gateway, repo, commit)
-        graph = engine.symbol_module_graph()
+    graph = resolved_runtime.ensure_symbol_module_graph()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_module_graph", graph)
         con.execute(
@@ -117,9 +127,18 @@ def compute_symbol_graph_metrics_functions(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate analytics.symbol_graph_metrics_functions from function symbol coupling."""
-    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    runtime_opts = (
+        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    )
+    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    resolved_runtime = resolve_graph_runtime(
+        gateway,
+        snapshot,
+        runtime_opts,
+        context=runtime_opts.context,
+    )
     graph_ctx = runtime_opts.graph_ctx
-    use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu
+    use_gpu = resolved_runtime.backend.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.symbol_graph_metrics_functions")
     ctx = graph_ctx or GraphContext(
@@ -140,11 +159,7 @@ def compute_symbol_graph_metrics_functions(
     ):
         return
 
-    if isinstance(runtime, GraphRuntime):
-        graph = runtime.ensure_symbol_function_graph()
-    else:
-        engine: GraphEngine = runtime_opts.build_engine(gateway, repo, commit)
-        graph = engine.symbol_function_graph()
+    graph = resolved_runtime.ensure_symbol_function_graph()
     if graph.number_of_nodes() == 0:
         log_empty_graph("symbol_function_graph", graph)
         con.execute(

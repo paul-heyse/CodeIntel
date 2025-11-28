@@ -5,11 +5,16 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.graph_service import (
     CentralityBundle,
     ComponentBundle,
@@ -19,6 +24,7 @@ from codeintel.analytics.graph_service import (
     component_metadata,
     structural_metrics,
 )
+from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
@@ -140,12 +146,18 @@ def compute_graph_metrics_modules_ext(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate analytics.graph_metrics_modules_ext with richer import metrics."""
-    runtime_opts = runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    runtime_opts = (
+        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
+    )
+    snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    resolved_runtime = resolve_graph_runtime(
+        gateway,
+        snapshot,
+        runtime_opts,
+        context=runtime_opts.context,
+    )
     ctx = _resolve_module_context(runtime_opts, repo, commit)
-    if isinstance(runtime, GraphRuntime):
-        engine = runtime.engine
-    else:
-        engine = runtime_opts.build_engine(gateway, repo, commit)
+    engine = resolved_runtime.engine
     views = _build_import_views(engine)
     slices = _module_metric_slices(views, ctx)
     rows = _module_metric_rows(repo, commit, ctx, views, slices)

@@ -177,13 +177,13 @@ def _trim_graph(
     return working, truncated, result
 
 
-def _import_graph_or_none(
-    engine: NxGraphEngine,
-) -> nx.DiGraph | None:
+def _import_graph_or_none(engine: GraphEngine) -> nx.DiGraph | None:
     try:
-        graph = engine.import_graph()
+        graph = engine.load_import_graph()
     except Exception:
-        log.exception("Failed to load import graph for %s@%s", engine.repo, engine.commit)
+        log.exception(
+            "Failed to load import graph for %s@%s", engine.snapshot.repo, engine.snapshot.commit
+        )
         return None
     return graph
 
