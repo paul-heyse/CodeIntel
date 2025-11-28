@@ -6,7 +6,6 @@ import logging
 import os
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.analytics.ast_metrics import build_hotspots
@@ -26,20 +25,12 @@ from codeintel.analytics.functions import (
     compute_function_history,
     compute_function_metrics_and_types,
 )
-from codeintel.analytics.graph_service import build_graph_context
+from codeintel.analytics.graph_service_runtime import GraphServiceRuntime
 from codeintel.analytics.graphs import (
     compute_config_data_flow,
     compute_config_graph_metrics,
-    compute_graph_metrics,
-    compute_graph_metrics_functions_ext,
-    compute_graph_metrics_modules_ext,
-    compute_graph_stats,
     compute_subsystem_agreement,
-    compute_subsystem_graph_metrics,
-    compute_symbol_graph_metrics_functions,
-    compute_symbol_graph_metrics_modules,
 )
-from codeintel.analytics.graphs.graph_metrics import GraphMetricsContexts
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.analytics.profiles import (
     build_file_profile,
@@ -275,7 +266,14 @@ class FunctionContractsStep:
         _log_step(self.name)
         cfg = ctx.config_builder().function_contracts()
         acx = _analytics_context(ctx)
-        compute_function_contracts(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
+        compute_function_contracts(
+            ctx.gateway,
+            cfg,
+            catalog_provider=acx.catalog,
+            context=acx,
+            runtime=runtime,
+        )
 
 
 @dataclass
@@ -308,7 +306,14 @@ class DataModelUsageStep:
         _log_step(self.name)
         cfg = ctx.config_builder().data_model_usage()
         acx = _analytics_context(ctx)
-        compute_data_model_usage(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
+        compute_data_model_usage(
+            ctx.gateway,
+            cfg,
+            catalog_provider=acx.catalog,
+            context=acx,
+            runtime=runtime,
+        )
 
 
 @dataclass
@@ -529,26 +534,16 @@ class GraphMetricsStep:
         _log_step(self.name)
         gateway = ctx.gateway
         cfg = ctx.config_builder().graph_metrics()
-        graph_ctx = build_graph_context(
-            cfg,
-            now=datetime.now(tz=UTC),
-            use_gpu=ctx.graph_backend.use_gpu,
-        )
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        compute_graph_metrics(
-            gateway,
-            cfg,
+        service = GraphServiceRuntime(
+            gateway=gateway,
+            runtime=runtime,
+            analytics_context=acx,
             catalog_provider=acx.catalog,
-            runtime=runtime,
-            contexts=GraphMetricsContexts(graph_ctx=graph_ctx, analytics_context=acx),
         )
-        compute_graph_metrics_functions_ext(
-            gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            runtime=runtime,
-        )
+        service.compute_graph_metrics(cfg)
+        service.compute_graph_metrics_ext(repo=ctx.repo, commit=ctx.commit)
         compute_test_graph_metrics(
             gateway,
             repo=ctx.repo,
@@ -556,48 +551,27 @@ class GraphMetricsStep:
             runtime=runtime,
         )
         compute_cfg_metrics(
-            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
+            gateway,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            context=acx,
         )
         compute_dfg_metrics(
-            gateway, repo=ctx.repo, commit=ctx.commit, context=acx, graph_ctx=graph_ctx
-        )
-        compute_graph_metrics_modules_ext(
             gateway,
             repo=ctx.repo,
             commit=ctx.commit,
-            runtime=runtime,
+            context=acx,
         )
-        compute_symbol_graph_metrics_modules(
-            gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            runtime=runtime,
-        )
-        compute_symbol_graph_metrics_functions(
-            gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            runtime=runtime,
-        )
+        service.compute_symbol_metrics(repo=ctx.repo, commit=ctx.commit)
         compute_config_graph_metrics(
             gateway,
             repo=ctx.repo,
             commit=ctx.commit,
             runtime=runtime,
         )
-        compute_subsystem_graph_metrics(
-            gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            runtime=runtime,
-        )
+        service.compute_subsystem_metrics(repo=ctx.repo, commit=ctx.commit)
         compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)
-        compute_graph_stats(
-            gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            runtime=runtime,
-        )
+        service.compute_graph_stats(repo=ctx.repo, commit=ctx.commit)
 
 
 @dataclass
@@ -647,7 +621,7 @@ class SubsystemsStep:
         cfg = ctx.config_builder().subsystems()
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        build_subsystems(gateway, cfg, context=acx, engine=runtime.engine)
+        build_subsystems(gateway, cfg, context=acx, runtime=runtime)
 
 
 @dataclass
@@ -716,8 +690,15 @@ class EntryPointsStep:
         """Populate analytics.entrypoints and analytics.entrypoint_tests."""
         _log_step(self.name)
         acx = _analytics_context(ctx)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
         cfg = ctx.config_builder().entrypoints(scan_profile=_resolve_code_profile(ctx))
-        build_entrypoints(ctx.gateway, cfg, catalog_provider=acx.catalog, context=acx)
+        build_entrypoints(
+            ctx.gateway,
+            cfg,
+            catalog_provider=acx.catalog,
+            context=acx,
+            runtime=runtime,
+        )
 
 
 @dataclass
@@ -733,6 +714,7 @@ class ExternalDependenciesStep:
         """Populate dependency call edges and aggregated usage."""
         _log_step(self.name)
         acx = _analytics_context(ctx)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
         cfg = ctx.config_builder().external_dependencies(
             scan_profile=_resolve_code_profile(ctx),
         )
@@ -741,6 +723,7 @@ class ExternalDependenciesStep:
             cfg,
             catalog_provider=acx.catalog,
             context=acx,
+            runtime=runtime,
         )
         build_external_dependencies(ctx.gateway, cfg)
 

@@ -18,6 +18,7 @@ from codeintel.serving.services.factory import (
     build_backend_resource,
 )
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
+from codeintel.serving.services.wiring import BackendResourceOptions
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.views import create_all_views
 from tests._helpers.builders import RepoMapRow, insert_repo_map
@@ -92,7 +93,11 @@ def _build_remote_app(tmp_path: Path, repo: str, commit: str) -> tuple[FastAPI, 
         read_only=True,
     )
     registry_opts = DatasetRegistryOptions(tables={}, validate=False)
-    resource = build_backend_resource(cfg, gateway=gateway, registry=registry_opts)
+    resource = build_backend_resource(
+        cfg,
+        gateway=gateway,
+        options=BackendResourceOptions(registry=registry_opts),
+    )
     app = create_app(
         config_loader=lambda: cfg,
         backend_factory=lambda _cfg, **_kwargs: resource,
@@ -129,7 +134,7 @@ def test_build_backend_resource_local(tmp_path: Path) -> None:
                 commit="c",
             )
         ),
-        registry=registry_opts,
+        options=BackendResourceOptions(registry=registry_opts),
     )
     if not isinstance(resource.service, LocalQueryService):
         pytest.fail("Expected LocalQueryService for local_db wiring")

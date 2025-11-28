@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime
 
 from codeintel.analytics.cfg_dfg.cfg_core import (
@@ -24,7 +23,7 @@ from codeintel.analytics.cfg_dfg.dfg_core import (
     load_dfg_edges,
 )
 from codeintel.analytics.context import AnalyticsContext
-from codeintel.analytics.graph_service import GraphContext
+from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -39,7 +38,6 @@ def compute_cfg_metrics(
     repo: str,
     commit: str,
     context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
 ) -> None:
     """Populate cfg_function_metrics and cfg_block_metrics tables."""
     if context is not None and (context.repo != repo or context.commit != commit):
@@ -51,18 +49,17 @@ def compute_cfg_metrics(
 
     blocks_by_fn, edges_by_fn = load_cfg_blocks(gateway, repo, commit)
     metadata = cfg_function_metadata(gateway, repo, commit)
-    ctx_base = graph_ctx or GraphContext(
-        repo=repo,
-        commit=commit,
-        now=datetime.now(UTC),
+    metrics_ctx = resolve_graph_context(
+        GraphContextSpec(
+            repo=repo,
+            commit=commit,
+            use_gpu=False,
+            now=datetime.now(UTC),
+            betweenness_cap=MAX_CFG_CENTRALITY_SAMPLE,
+            eigen_cap=MAX_CFG_EIGEN_SAMPLE,
+        )
     )
-    resolved_now = ctx_base.resolved_now()
-    metrics_ctx = replace(
-        ctx_base,
-        now=resolved_now,
-        betweenness_sample=min(ctx_base.betweenness_sample, MAX_CFG_CENTRALITY_SAMPLE),
-        eigen_max_iter=min(ctx_base.eigen_max_iter, MAX_CFG_EIGEN_SAMPLE),
-    )
+    resolved_now = metrics_ctx.resolved_now()
 
     fn_rows: list[tuple[object, ...]] = []
     fn_ext_rows: list[tuple[object, ...]] = []
@@ -152,7 +149,6 @@ def compute_dfg_metrics(
     repo: str,
     commit: str,
     context: AnalyticsContext | None = None,
-    graph_ctx: GraphContext | None = None,
 ) -> None:
     """Populate dfg_function_metrics and dfg_block_metrics tables."""
     if context is not None and (context.repo != repo or context.commit != commit):
@@ -164,18 +160,17 @@ def compute_dfg_metrics(
 
     edges_by_fn = load_dfg_edges(gateway, repo, commit)
     metadata = dfg_function_metadata(gateway, repo, commit)
-    ctx_base = graph_ctx or GraphContext(
-        repo=repo,
-        commit=commit,
-        now=datetime.now(UTC),
+    metrics_ctx = resolve_graph_context(
+        GraphContextSpec(
+            repo=repo,
+            commit=commit,
+            use_gpu=False,
+            now=datetime.now(UTC),
+            betweenness_cap=MAX_DFG_CENTRALITY_SAMPLE,
+            eigen_cap=MAX_CFG_EIGEN_SAMPLE,
+        )
     )
-    resolved_now = ctx_base.resolved_now()
-    metrics_ctx = replace(
-        ctx_base,
-        now=resolved_now,
-        betweenness_sample=min(ctx_base.betweenness_sample, MAX_DFG_CENTRALITY_SAMPLE),
-        eigen_max_iter=min(ctx_base.eigen_max_iter, MAX_CFG_EIGEN_SAMPLE),
-    )
+    resolved_now = metrics_ctx.resolved_now()
 
     fn_rows: list[tuple[object, ...]] = []
     fn_ext_rows: list[tuple[object, ...]] = []

@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions, build_graph_runtime
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.parsing.validation import GraphValidationReporter
-from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.function_catalog import FunctionCatalog, load_function_catalog
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
@@ -24,6 +30,15 @@ CONFIG_KEY_MIN_THRESHOLD = 2
 HUB_MIN_DEGREE_FLOOR = 10
 HUB_DEGREE_RATIO = 0.1
 CALL_SCC_MIN = 5
+
+
+@dataclass(frozen=True)
+class GraphValidationOptions:
+    """Optional controls for graph validation behavior."""
+
+    severity_overrides: Mapping[str, Literal["info", "warning", "error"]] | None = None
+    hard_fail: bool = False
+    max_findings_per_rule: int | None = None
 
 
 def _hub_threshold(node_count: int) -> int:
@@ -48,8 +63,8 @@ def run_graph_validations(
     *,
     snapshot: SnapshotRef,
     catalog_provider: FunctionCatalogProvider | None = None,
-    logger: logging.Logger | None = None,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions,
+    options: GraphValidationOptions | None = None,
 ) -> None:
     """
     Emit warnings for common graph integrity issues.
@@ -58,8 +73,14 @@ def run_graph_validations(
     - Files with functions in AST that are missing GOIDs.
     - Call graph edges whose callsites lie outside caller spans.
     - Modules with no GOIDs (orphans).
+
+    Raises
+    ------
+    RuntimeError
+        When hard_fail is enabled and error-level findings are present.
     """
-    active_log = logger or logging.getLogger(__name__)
+    validation_opts = options or GraphValidationOptions()
+    active_log = logging.getLogger(__name__)
     repo = snapshot.repo
     commit = snapshot.commit
     _log_db_snapshot(gateway, repo, commit, active_log)
@@ -68,42 +89,93 @@ def run_graph_validations(
         if catalog_provider is not None
         else load_function_catalog(gateway, repo=snapshot.repo, commit=snapshot.commit)
     )
-    engine: GraphEngine
-    if isinstance(runtime, GraphRuntime):
-        engine = runtime.engine
-    elif isinstance(runtime, GraphRuntimeOptions):
-        if runtime.engine is not None:
-            engine = runtime.engine
-        else:
-            runtime_built = build_graph_runtime(
-                gateway,
-                runtime,
-                context=runtime.context,
-            )
-            engine = runtime_built.engine
-    else:
-        options = GraphRuntimeOptions(
-            snapshot=snapshot,
-            backend=GraphBackendConfig(),
-        )
-        runtime_built = build_graph_runtime(
-            gateway,
-            options,
-            context=options.context,
-        )
-        engine = runtime_built.engine
+    resolved_runtime = _resolve_validation_runtime(
+        gateway,
+        snapshot=snapshot,
+        runtime=runtime,
+    )
+    engine: GraphEngine = resolved_runtime.engine
     findings = []
     findings.extend(_warn_missing_function_goids(gateway, repo, commit, active_log))
     findings.extend(_warn_callsite_span_mismatches(gateway, catalog, repo, commit, active_log))
     findings.extend(_warn_orphan_modules(gateway, repo, commit, active_log, catalog))
     findings.extend(warn_graph_structure(engine, repo, commit, active_log))
-    _persist_findings(gateway, findings, repo, commit)
+    normalized_findings = _apply_severity_overrides(
+        findings, validation_opts.severity_overrides
+    )
+    capped_findings = _cap_findings(normalized_findings, validation_opts.max_findings_per_rule)
+    _persist_findings(gateway, capped_findings, repo, commit)
     active_log.info(
         "Graph validation completed for %s@%s: %d finding(s)",
         repo,
         commit,
-        len(findings),
+        len(capped_findings),
     )
+    if validation_opts.hard_fail and _has_error_findings(capped_findings):
+        message = "Graph validation failed with error-level findings"
+        raise RuntimeError(message)
+
+
+def _resolve_validation_runtime(
+    gateway: StorageGateway,
+    *,
+    snapshot: SnapshotRef,
+    runtime: GraphRuntime | GraphRuntimeOptions,
+) -> GraphRuntime:
+    runtime_snapshot = (
+        runtime.options.snapshot if isinstance(runtime, GraphRuntime) else runtime.snapshot
+    )
+    if runtime_snapshot is not None and (
+        runtime_snapshot.repo != snapshot.repo or runtime_snapshot.commit != snapshot.commit
+    ):
+        message = "GraphRuntime snapshot mismatch for validation run"
+        raise ValueError(message)
+
+    if isinstance(runtime, GraphRuntime):
+        return runtime
+
+    options = runtime if runtime.snapshot is not None else replace(runtime, snapshot=snapshot)
+    return resolve_graph_runtime(gateway, snapshot, options)
+
+
+def _apply_severity_overrides(
+    findings: list[dict[str, object]],
+    overrides: Mapping[str, Literal["info", "warning", "error"]] | None,
+) -> list[dict[str, object]]:
+    if not overrides:
+        return findings
+    normalized: list[dict[str, object]] = []
+    for finding in findings:
+        check = str(finding.get("check_name") or "")
+        override = overrides.get(check)
+        if override is None:
+            normalized.append(finding)
+            continue
+        updated = dict(finding)
+        updated["severity"] = override
+        normalized.append(updated)
+    return normalized
+
+
+def _cap_findings(
+    findings: list[dict[str, object]], max_per_rule: int | None
+) -> list[dict[str, object]]:
+    if max_per_rule is None or max_per_rule <= 0:
+        return findings
+    counts: dict[str, int] = {}
+    capped: list[dict[str, object]] = []
+    for finding in findings:
+        check = str(finding.get("check_name") or "")
+        seen = counts.get(check, 0)
+        if seen >= max_per_rule:
+            continue
+        counts[check] = seen + 1
+        capped.append(finding)
+    return capped
+
+
+def _has_error_findings(findings: list[dict[str, object]]) -> bool:
+    return any(finding.get("severity") == "error" for finding in findings)
 
 
 def _warn_missing_function_goids(

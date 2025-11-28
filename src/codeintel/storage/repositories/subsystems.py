@@ -119,6 +119,23 @@ class SubsystemRepository(BaseRepository):
         """
         return fetch_all_dicts(self.con, sql, [self.repo, self.commit, subsystem_id])
 
+    def list_subsystem_memberships(self) -> list[RowDict]:
+        """
+        Return all subsystem-module memberships for the repo/commit.
+
+        Returns
+        -------
+        list[RowDict]
+            Membership rows keyed by subsystem and module.
+        """
+        sql = """
+            SELECT subsystem_id, module
+            FROM analytics.subsystem_modules
+            WHERE repo = ?
+              AND commit = ?
+        """
+        return fetch_all_dicts(self.con, sql, [self.repo, self.commit])
+
     def list_subsystems_for_module(self, module: str) -> list[RowDict]:
         """
         Return subsystem memberships for a module.

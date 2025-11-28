@@ -15,7 +15,10 @@ from codeintel.serving.services.factory import (
     build_service_from_config,
 )
 from codeintel.serving.services.query_service import LocalQueryService
-from codeintel.serving.services.wiring import build_backend_resource
+from codeintel.serving.services.wiring import (
+    BackendResourceOptions,
+    build_backend_resource,
+)
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import RepoMapRow, insert_repo_map
 
@@ -80,7 +83,9 @@ def test_backend_resource_limits_and_registry_align(fresh_gateway: StorageGatewa
     resource = build_backend_resource(
         cfg,
         gateway=gateway,
-        registry=DatasetRegistryOptions(tables=base_registry, validate=False),
+        options=BackendResourceOptions(
+            registry=DatasetRegistryOptions(tables=base_registry, validate=False)
+        ),
     )
     backend = resource.backend
     if not isinstance(backend, DuckDBBackend):

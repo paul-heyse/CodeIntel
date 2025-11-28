@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,10 +14,10 @@ from codeintel.analytics.graph_runtime import (
     resolve_graph_runtime,
 )
 from codeintel.analytics.graph_service import (
-    GraphContext,
     build_projection_graph,
     global_graph_stats,
 )
+from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
@@ -60,14 +59,14 @@ def compute_graph_stats(
     use_gpu = resolved_runtime.backend.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.graph_stats")
-    ctx = runtime_opts.graph_ctx or GraphContext(
-        repo=repo,
-        commit=commit,
-        now=datetime.now(UTC),
-        use_gpu=use_gpu,
+    ctx = resolve_graph_context(
+        GraphContextSpec(
+            repo=repo,
+            commit=commit,
+            use_gpu=use_gpu,
+            now=datetime.now(UTC),
+        )
     )
-    if ctx.use_gpu != use_gpu:
-        ctx = replace(ctx, use_gpu=use_gpu)
 
     config_bipartite = resolved_runtime.ensure_config_module_bipartite()
     graphs: dict[str, nx.Graph | nx.DiGraph] = {

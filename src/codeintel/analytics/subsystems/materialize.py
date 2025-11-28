@@ -11,6 +11,11 @@ from typing import Any
 import networkx as nx
 
 from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.subsystems.affinity import (
     build_weighted_graph,
     clusters_from_labels,
@@ -72,15 +77,24 @@ def build_subsystems(
     cfg: SubsystemsStepConfig,
     *,
     context: AnalyticsContext | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     engine: GraphEngine | None = None,
 ) -> None:
     """
     Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit.
 
-    Raises
-    ------
-    ValueError
-        When a graph engine is not provided.
+    Parameters
+    ----------
+    gateway :
+        Storage gateway backing the analytics tables.
+    cfg :
+        Subsystem inference configuration.
+    context :
+        Optional analytics context for typeahead and module lookups.
+    runtime :
+        Shared graph runtime or options describing how to build one.
+    engine :
+        Deprecated direct graph engine override; prefer `runtime`.
     """
     con = gateway.con
     ensure_schema(con, "analytics.subsystems")
@@ -106,23 +120,45 @@ def build_subsystems(
     labels = reassign_small_clusters(labels, adjacency, cfg.min_modules)
     labels = limit_clusters(labels, adjacency, cfg.max_subsystems)
 
-    if context is not None and (context.repo != cfg.repo or context.commit != cfg.commit):
+    runtime_opts: GraphRuntimeOptions
+    if isinstance(runtime, GraphRuntime):
+        runtime_opts = runtime.options
+    else:
+        runtime_opts = runtime or GraphRuntimeOptions()
+        if engine is not None and runtime_opts.engine is None:
+            runtime_opts = GraphRuntimeOptions(
+                snapshot=runtime_opts.snapshot,
+                backend=runtime_opts.backend,
+                graphs=runtime_opts.graphs,
+                eager=runtime_opts.eager,
+                validate=runtime_opts.validate,
+                cache_key=runtime_opts.cache_key,
+                context=runtime_opts.context,
+                engine=engine,
+            )
+
+    active_context = context or runtime_opts.context
+    if active_context is not None and (
+        active_context.repo != cfg.repo or active_context.commit != cfg.commit
+    ):
         log.warning(
             "subsystems context mismatch: context=%s@%s cfg=%s@%s",
-            context.repo,
-            context.commit,
+            active_context.repo,
+            active_context.commit,
             cfg.repo,
             cfg.commit,
         )
-    graph_engine = engine
-    if graph_engine is None:
-        message = "Graph engine is required for subsystem materialization."
-        raise ValueError(message)
+    resolved_runtime = resolve_graph_runtime(
+        gateway,
+        cfg.snapshot,
+        runtime_opts,
+        context=active_context,
+    )
     ctx = SubsystemBuildContext(
         cfg=cfg,
         labels=labels,
         tags_by_module=tags_by_module,
-        import_graph=graph_engine.import_graph(),
+        import_graph=resolved_runtime.ensure_import_graph(),
         risk_stats=aggregate_risk(gateway, cfg, labels),
         now=datetime.now(UTC),
     )

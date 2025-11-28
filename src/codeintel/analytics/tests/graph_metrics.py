@@ -5,18 +5,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.analytics.graph_service import (
     BipartiteDegrees,
     GraphContext,
     bipartite_degrees,
     projection_metrics,
 )
-from codeintel.graphs.engine import GraphEngine
+from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -121,44 +127,32 @@ def compute_test_graph_metrics(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """Populate test and function-side metrics derived from test coverage graphs."""
-    runtime_opts = (
-        runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
-    )
-    context = runtime_opts.context
-    graph_ctx = runtime_opts.graph_ctx
-    use_gpu = runtime.use_gpu if isinstance(runtime, GraphRuntime) else runtime_opts.use_gpu
+    resolved_options = (
+        runtime.options if isinstance(runtime, GraphRuntime) else runtime
+    ) or GraphRuntimeOptions()
     con = gateway.con
     ensure_schema(con, "analytics.test_graph_metrics_tests")
     ensure_schema(con, "analytics.test_graph_metrics_functions")
 
-    if context is not None and (context.repo != repo or context.commit != commit):
+    snapshot = resolved_options.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    resolved_runtime = resolve_graph_runtime(gateway, snapshot, resolved_options)
+    if resolved_runtime.options.context is not None and (
+        resolved_runtime.options.context.repo != repo
+        or resolved_runtime.options.context.commit != commit
+    ):
         return
 
-    if isinstance(runtime, GraphRuntime):
-        graph = runtime.ensure_test_function_bipartite()
-    else:
-        engine: GraphEngine = runtime_opts.build_engine(gateway, repo, commit)
-        graph = engine.test_function_bipartite()
-    graph_ctx = graph_ctx or GraphContext(
-        repo=repo,
-        commit=commit,
-        now=datetime.now(UTC),
-        pagerank_weight="weight",
-        betweenness_weight="weight",
-        use_gpu=use_gpu,
-    )
-    if graph_ctx.use_gpu != use_gpu:
-        graph_ctx = GraphContext(
-            repo=graph_ctx.repo,
-            commit=graph_ctx.commit,
-            now=graph_ctx.now,
-            betweenness_sample=graph_ctx.betweenness_sample,
-            eigen_max_iter=graph_ctx.eigen_max_iter,
-            seed=graph_ctx.seed,
-            pagerank_weight=graph_ctx.pagerank_weight,
-            betweenness_weight=graph_ctx.betweenness_weight,
-            use_gpu=use_gpu,
+    graph = resolved_runtime.ensure_test_function_bipartite()
+    graph_ctx = resolve_graph_context(
+        GraphContextSpec(
+            repo=repo,
+            commit=commit,
+            use_gpu=resolved_runtime.backend.use_gpu,
+            now=datetime.now(UTC),
+            pagerank_weight="weight",
+            betweenness_weight="weight",
         )
+    )
     now = graph_ctx.resolved_now()
 
     tests = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}

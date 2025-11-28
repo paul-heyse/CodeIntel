@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING
 import anyio
 import httpx
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    GraphRuntimePool,
+    build_graph_runtime,
+)
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.serving.http.datasets import build_registry_and_limits
@@ -41,13 +46,22 @@ class BackendResource:
     close: Callable[[], None]
 
 
+@dataclass
+class BackendResourceOptions:
+    """Options controlling backend construction for serving."""
+
+    registry: DatasetRegistryOptions | None = None
+    observability: ServiceObservability | None = None
+    graph_runtime: GraphRuntime | None = None
+    runtime_pool: GraphRuntimePool | None = None
+
+
 def build_backend_resource(
     cfg: ServingConfig,
     *,
     gateway: StorageGateway | None = None,
     http_client: httpx.Client | httpx.AsyncClient | None = None,
-    registry: DatasetRegistryOptions | None = None,
-    observability: ServiceObservability | None = None,
+    options: BackendResourceOptions | None = None,
 ) -> BackendResource:
     """
     Construct a backend and shared service with unified wiring.
@@ -62,10 +76,8 @@ def build_backend_resource(
         StorageGateway supplying connection and dataset registry for local_db mode.
     http_client:
         Optional pre-built HTTPX client for remote_api mode.
-    registry:
-        Optional dataset registry options.
-    observability:
-        Optional observability configuration.
+    options:
+        Optional bundle controlling registry, observability, and runtime reuse.
 
     Returns
     -------
@@ -82,16 +94,20 @@ def build_backend_resource(
         get_observability_from_config,
     )
 
-    resolved_observability = observability or get_observability_from_config(cfg)
-    registry_opts = registry or DatasetRegistryOptions()
+    resolved_options = options or BackendResourceOptions()
+    resolved_observability = resolved_options.observability or get_observability_from_config(cfg)
+    registry_opts = resolved_options.registry or DatasetRegistryOptions()
     _, limits = build_registry_and_limits(cfg)
 
     if cfg.mode == "local_db":
         return _build_local_resource(
             cfg,
             gateway=gateway,
-            registry_opts=registry_opts,
-            observability=resolved_observability,
+            options=BackendResourceOptions(
+                registry=registry_opts,
+                observability=resolved_observability,
+                graph_runtime=resolved_options.graph_runtime,
+            ),
             limits=limits,
         )
 
@@ -111,9 +127,8 @@ def _build_local_resource(
     cfg: ServingConfig,
     *,
     gateway: StorageGateway | None,
-    registry_opts: DatasetRegistryOptions,
-    observability: ServiceObservability | None,
     limits: BackendLimits,
+    options: BackendResourceOptions,
 ) -> BackendResource:
     """
     Construct a local DuckDB backend and service bundle.
@@ -145,19 +160,25 @@ def _build_local_resource(
     from codeintel.serving.services.factory import build_service_from_config  # noqa: PLC0415
 
     snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
-    runtime = build_graph_runtime(
-        gateway,
-        GraphRuntimeOptions(snapshot=snapshot, backend=GraphBackendConfig()),
-    )
+    runtime_opts = GraphRuntimeOptions(snapshot=snapshot, backend=GraphBackendConfig())
+    if options.graph_runtime is not None:
+        active_runtime = options.graph_runtime
+    elif options.runtime_pool is not None:
+        active_runtime = options.runtime_pool.get(gateway, runtime_opts)
+    else:
+        active_runtime = build_graph_runtime(
+            gateway,
+            runtime_opts,
+        )
     from codeintel.serving.services.factory import ServiceBuildOptions  # noqa: PLC0415
 
     service = build_service_from_config(
         cfg,
         gateway=gateway,
         options=ServiceBuildOptions(
-            registry=registry_opts,
-            observability=observability,
-            graph_engine=runtime.engine,
+            registry=options.registry,
+            observability=options.observability,
+            graph_runtime=active_runtime,
         ),
     )
     backend = DuckDBBackend(
@@ -165,8 +186,8 @@ def _build_local_resource(
         repo=cfg.repo,
         commit=cfg.commit,
         limits=limits,
-        observability=observability,
-        query_engine=runtime.engine,
+        observability=options.observability,
+        query_engine=active_runtime.engine,
         service_override=service if isinstance(service, LocalQueryService) else None,
     )
 

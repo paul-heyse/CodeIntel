@@ -13,7 +13,7 @@ from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.http.fastapi import BackendResource, create_app
+from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.backend import BackendLimits, DuckDBBackend, HttpBackend
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
@@ -56,11 +56,7 @@ def _build_app(gateway: StorageGateway, db_path: Path, *, repo: str, commit: str
     def _loader() -> ServingConfig:
         return cfg
 
-    def _backend_factory(_: ServingConfig, *, gateway: StorageGateway) -> BackendResource:
-        backend = DuckDBBackend(gateway=gateway, repo=repo, commit=commit)
-        return BackendResource(backend=backend, service=backend.service, close=lambda: None)
-
-    return create_app(config_loader=_loader, backend_factory=_backend_factory, gateway=gateway)
+    return create_app(config_loader=_loader, gateway=gateway)
 
 
 def test_backend_registry_matches_gateway(tmp_path: Path) -> None:

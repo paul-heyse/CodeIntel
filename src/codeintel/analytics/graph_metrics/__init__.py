@@ -1,8 +1,6 @@
-"""Shared graph metrics facade re-exporting split modules."""
+"""Focused graph metrics helpers split from analytics.graph_service."""
 
-from __future__ import annotations
-
-from codeintel.analytics.graph_metrics import (
+from codeintel.analytics.graph_metrics.metrics import (
     BipartiteDegrees,
     CentralityBundle,
     ComponentBundle,
@@ -40,20 +38,13 @@ from codeintel.analytics.graph_metrics import (
     structural_metrics,
     to_decimal_id,
 )
-from codeintel.analytics.graph_service_runtime import (
-    DEFAULT_BETWEENNESS_SAMPLE,
-    GraphContext,
-    build_graph_context,
-)
 
 __all__ = [
-    "DEFAULT_BETWEENNESS_SAMPLE",
     "BipartiteDegrees",
     "CentralityBundle",
     "ComponentBundle",
     "DominanceMetrics",
     "GlobalGraphStats",
-    "GraphContext",
     "NeighborStats",
     "ProjectionMetrics",
     "StructuralMetrics",
@@ -61,7 +52,6 @@ __all__ = [
     "bounded_simple_path_count",
     "build_cfg_graph",
     "build_dfg_graph",
-    "build_graph_context",
     "build_projection_graph",
     "centrality_directed",
     "centrality_undirected",

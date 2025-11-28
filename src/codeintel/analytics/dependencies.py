@@ -32,6 +32,8 @@ from codeintel.storage.sql_helpers import ensure_schema
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+
 log = logging.getLogger(__name__)
 
 CALLSITE_MEDIUM_THRESHOLD = 10
@@ -171,6 +173,7 @@ def build_external_dependency_calls(
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
     context: AnalyticsContext | None = None,
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
 ) -> None:
     """
     Populate analytics.external_dependency_calls from AST traversal.
@@ -185,6 +188,8 @@ def build_external_dependency_calls(
         Optional function catalog to reuse across steps.
     context
         Optional shared analytics context to reuse catalog, module map, and ASTs.
+    runtime
+        Optional shared graph runtime used to reuse the pipeline engine.
     """
     patterns = _load_dependency_patterns(cfg)
     if not patterns:
@@ -207,6 +212,7 @@ def build_external_dependency_calls(
             catalog_provider=catalog_provider,
         ),
         context=context,
+        runtime=runtime,
     )
     catalog = shared_context.catalog
     module_map = shared_context.module_map

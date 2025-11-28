@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -22,6 +21,7 @@ from codeintel.analytics.graph_service import (
     log_projection_skipped,
     projection_metrics,
 )
+from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
@@ -151,7 +151,6 @@ def compute_config_graph_metrics(
         runtime_opts,
         context=runtime_opts.context,
     )
-    graph_ctx = runtime_opts.graph_ctx
     use_gpu = resolved_runtime.backend.use_gpu
     con = gateway.con
     ensure_schema(con, "analytics.config_graph_metrics_keys")
@@ -169,19 +168,18 @@ def compute_config_graph_metrics(
         log_empty_graph("config_module_bipartite", graph)
         _clear_config_tables(gateway, repo, commit)
         return
-    created_at = graph_ctx.resolved_now() if graph_ctx is not None else datetime.now(UTC)
-    ctx = graph_ctx or GraphContext(
-        repo=repo,
-        commit=commit,
-        now=created_at,
-        pagerank_weight="weight",
-        betweenness_weight="weight",
-        use_gpu=use_gpu,
+    ctx = resolve_graph_context(
+        GraphContextSpec(
+            repo=repo,
+            commit=commit,
+            use_gpu=use_gpu,
+            now=datetime.now(UTC),
+            betweenness_cap=MAX_BETWEENNESS_NODES,
+            pagerank_weight="weight",
+            betweenness_weight="weight",
+        )
     )
-    if ctx.betweenness_sample > MAX_BETWEENNESS_NODES:
-        ctx = replace(ctx, betweenness_sample=MAX_BETWEENNESS_NODES)
-    if ctx.use_gpu != use_gpu:
-        ctx = replace(ctx, use_gpu=use_gpu)
+    created_at = ctx.resolved_now()
 
     keys = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}
     modules = set(graph) - keys

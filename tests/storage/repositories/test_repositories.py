@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from codeintel.storage.repositories import (
@@ -28,7 +29,7 @@ def _expect_equal(actual: object, expected: object, message: str) -> None:
     raise AssertionError(message)
 
 
-def _expect_in(member: object, container: list[object], message: str) -> None:
+def _expect_in(member: object, container: Sequence[object], message: str) -> None:
     if member in container:
         return
     raise AssertionError(message)
@@ -86,6 +87,8 @@ def test_function_repository_reads(docs_export_gateway: ProvisionedGateway) -> N
     high_risk = functions.list_high_risk_functions(min_risk=0.0, limit=5, tested_only=False)
     _expect_true(bool(high_risk), "high risk list should not be empty")
     _expect_in(goid, [row["function_goid_h128"] for row in high_risk], "goid missing")
+    function_ids = functions.list_function_goids()
+    _expect_in(goid, function_ids, "goid missing from list_function_goids")
 
     tests_for_fn = tests_repo.get_tests_for_function(goid, limit=5)
     _expect_equal(len(tests_for_fn), 1, "tests_for_function length mismatch")
@@ -122,6 +125,9 @@ def test_module_repository_reads(docs_export_gateway: ProvisionedGateway) -> Non
         message = "file summary exists"
         raise AssertionError(message)
     _expect_equal(summary["rel_path"], "foo.py", "summary path mismatch")
+
+    module_ids = modules.list_modules()
+    _expect_in("pkg.foo", module_ids, "module missing from list_modules")
 
     hints = modules.get_file_hints("foo.py")
     _expect_true(bool(hints), "IDE hints should exist for module path")
