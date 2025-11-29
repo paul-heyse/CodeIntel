@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/symbol_uses.py
+# hypothesis_version: 6.148.3
+
+['/', 'ScipDocument', '\\', 'build', 'documents', 'index.scip.json', 'occurrences', 'r', 'relative_path', 'scip', 'symbol', 'symbol_roles', 'utf-8']

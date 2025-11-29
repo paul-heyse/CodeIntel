@@ -1,48 +1,16 @@
-"""Shared typed protocols and TypedDicts to reduce use of ``Any``."""
+"""Shared typed protocols to reduce use of ``Any`` in serving layer."""
 
 from __future__ import annotations
 
-from typing import Protocol, TypedDict
+from typing import Protocol
 
-
-class PytestCallEntry(TypedDict, total=False):
-    """Subset of pytest-json-report call data."""
-
-    duration: float
-
-
-class PytestTestEntry(TypedDict, total=False):
-    """Shape of a pytest-json-report test object."""
-
-    nodeid: str
-    keywords: dict[str, bool] | list[str]
-    outcome: str
-    status: str
-    call: PytestCallEntry
-
-
-class PyreflyError(TypedDict, total=False):
-    """Shape of a pyrefly JSON diagnostic."""
-
-    path: str
-    line: int | None
-    column: int | None
-    message: str
-    code: str | None
-
-
-class ScipOccurrence(TypedDict, total=False):
-    """Occurrence entry within a SCIP JSON document."""
-
-    symbol: str
-    symbol_roles: int
-
-
-class ScipDocument(TypedDict, total=False):
-    """SCIP JSON document emitted by scip-python."""
-
-    relative_path: str
-    occurrences: list[ScipOccurrence]
+from codeintel.core.types import (
+    PytestCallEntry,
+    PytestTestEntry,
+    ScipDocument,
+    ScipOccurrence,
+    ScipRange,
+)
 
 
 class HasModelDump(Protocol):
@@ -51,3 +19,13 @@ class HasModelDump(Protocol):
     def model_dump(self) -> dict[str, object]:
         """Return a dictionary representation."""
         ...
+
+
+__all__ = [
+    "HasModelDump",
+    "PytestCallEntry",
+    "PytestTestEntry",
+    "ScipDocument",
+    "ScipOccurrence",
+    "ScipRange",
+]

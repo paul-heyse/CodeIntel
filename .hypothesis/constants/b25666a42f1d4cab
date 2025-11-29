@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/types.py
+# hypothesis_version: 6.148.3
+
+['/', 'GraphBackendConfig', 'GraphFeatureFlags', 'PytestCallEntry', 'PytestTestEntry', 'ScipDocument', 'ScipOccurrence', 'ScipRange', 'SnapshotRef', '\\', 'call', 'duration', 'end_character', 'end_line', 'keywords', 'nodeid', 'occurrences', 'outcome', 'range', 'relative_path', 'start_character', 'start_line', 'status', 'symbol', 'symbol_roles', 'unknown']

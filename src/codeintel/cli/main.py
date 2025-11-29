@@ -37,6 +37,7 @@ from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.errors import ExportError, log_problem, problem
 from codeintel.storage.catalog import (
+    SamplingConfig,
     build_catalog,
     write_html_catalog,
     write_markdown_catalog,
@@ -1619,8 +1620,10 @@ def _cmd_datasets_catalog(args: argparse.Namespace) -> int:
         entries = build_catalog(
             registry,
             con=gateway.con,
-            sample_rows=int(args.sample_rows),
-            sample_rows_strict=bool(args.sample_rows_strict),
+            sampling=SamplingConfig(
+                sample_rows=int(args.sample_rows),
+                sample_rows_strict=bool(args.sample_rows_strict),
+            ),
             warn=_warn,
         )
     except Exception as exc:  # noqa: BLE001 - surface sampling failures when strict
