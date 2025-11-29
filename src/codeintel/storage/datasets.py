@@ -153,9 +153,7 @@ class DatasetRegistry:
         tuple[str, ...]
             Dataset names with attached JSON Schema identifiers.
         """
-        return tuple(
-            name for name, ds in self.by_name.items() if ds.json_schema_id is not None
-        )
+        return tuple(name for name, ds in self.by_name.items() if ds.json_schema_id is not None)
 
     def dataset_dependencies(self) -> dict[str, tuple[str, ...]]:
         """
@@ -198,6 +196,18 @@ def _row_binding(
     to_tuple: Callable[..., tuple[object, ...]],
 ) -> RowBinding:
     return RowBinding(row_type=row_type, to_tuple=cast("RowToTuple", to_tuple))
+
+
+def _metadata_for_name(name: str) -> dict[str, object]:
+    return {
+        "description": DESCRIPTION_BY_DATASET_NAME.get(name),
+        "owner": OWNER_BY_DATASET_NAME.get(name),
+        "freshness_sla": FRESHNESS_BY_DATASET_NAME.get(name),
+        "retention_policy": RETENTION_BY_DATASET_NAME.get(name),
+        "upstream_dependencies": DEPENDENCIES_BY_DATASET_NAME.get(name, ()),
+        "stable_id": STABLE_ID_BY_DATASET_NAME.get(name, name),
+        "schema_version": SCHEMA_VERSION_BY_DATASET_NAME.get(name, "1"),
+    }
 
 
 ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = {
@@ -306,7 +316,7 @@ ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = {
 # Dataset-level JSON Schema metadata.
 # Keys: dataset logical names (Dataset.name).
 # Values: JSON Schema identifiers (filenames without .json) under
-# config/config/schemas/export/.
+# src/codeintel/config/schemas/export/.
 JSON_SCHEMA_BY_DATASET_NAME: dict[str, str] = {
     # Profiles
     "function_profile": "function_profile",
@@ -375,6 +385,9 @@ RETENTION_BY_DATASET_NAME: dict[str, str] = {
     "data_model_fields": "90d",
     "data_model_relationships": "90d",
 }
+
+STABLE_ID_BY_DATASET_NAME: dict[str, str] = {}
+SCHEMA_VERSION_BY_DATASET_NAME: dict[str, str] = {}
 
 DEPENDENCIES_BY_DATASET_NAME: dict[str, tuple[str, ...]] = {
     "function_profile": ("call_graph_edges", "symbol_use_edges"),
@@ -581,11 +594,7 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
         schema: TableSchema | None = None if is_view else TABLE_SCHEMAS.get(table_key)
         row_binding = ROW_BINDINGS_BY_TABLE_KEY.get(table_key)
         json_schema_id = JSON_SCHEMA_BY_DATASET_NAME.get(name)
-        description = DESCRIPTION_BY_DATASET_NAME.get(name)
-        owner = OWNER_BY_DATASET_NAME.get(name)
-        freshness_sla = FRESHNESS_BY_DATASET_NAME.get(name)
-        retention_policy = RETENTION_BY_DATASET_NAME.get(name)
-        dependencies = DEPENDENCIES_BY_DATASET_NAME.get(name, ())
+        meta = _metadata_for_name(name)
         ds = Dataset(
             table_key=table_key,
             name=name,
@@ -595,11 +604,13 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
             parquet_filename=parquet_filename,
             is_view=bool(is_view),
             json_schema_id=json_schema_id,
-            description=description,
-            owner=owner,
-            freshness_sla=freshness_sla,
-            retention_policy=retention_policy,
-            upstream_dependencies=dependencies,
+            description=cast("str | None", meta["description"]),
+            owner=cast("str | None", meta["owner"]),
+            freshness_sla=cast("str | None", meta["freshness_sla"]),
+            retention_policy=cast("str | None", meta["retention_policy"]),
+            stable_id=cast("str | None", meta["stable_id"]),
+            schema_version=cast("str | None", meta["schema_version"]),
+            upstream_dependencies=cast("tuple[str, ...]", meta["upstream_dependencies"]),
         )
         by_name[name] = ds
         by_table[table_key] = ds

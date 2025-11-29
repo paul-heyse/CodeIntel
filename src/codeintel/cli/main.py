@@ -36,6 +36,7 @@ from codeintel.pipeline.orchestration.steps import REGISTRY, StepPhase
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.errors import ExportError, log_problem, problem
+from codeintel.storage.conformance import run_conformance
 from codeintel.storage.contract_validation import collect_contract_issues
 from codeintel.storage.datasets import list_dataset_specs, load_dataset_registry
 from codeintel.storage.gateway import (
@@ -441,18 +442,25 @@ def _register_dataset_commands(
     p_lint.add_argument(
         "--schema-dir",
         type=Path,
-        default=Path("config/config/schemas/export"),
-        help="Directory containing export JSON Schemas (default: config/config/schemas/export)",
+        default=Path("src/codeintel/config/schemas/export"),
+        help="Directory containing export JSON Schemas (default: src/codeintel/config/schemas/export)",
+    )
+    p_lint.add_argument(
+        "--sample-rows",
+        action="store_true",
+        help="Validate a small sample of rows against JSON Schemas when available.",
     )
     p_lint.set_defaults(func=_cmd_datasets_lint)
 
-    p_diff = ds_sub.add_parser("diff", help="Diff current dataset specs against a baseline JSON file")
+    p_diff = ds_sub.add_parser(
+        "diff", help="Diff current dataset specs against a baseline JSON file"
+    )
     _add_common_repo_args(p_diff)
     p_diff.add_argument(
         "--baseline",
         type=Path,
-        required=True,
-        help="Path to a JSON baseline produced by `codeintel datasets snapshot` or prior runs.",
+        default=None,
+        help="Path to a JSON baseline produced by `codeintel datasets snapshot` (optional when using --against-ref).",
     )
     p_diff.add_argument(
         "--output",
@@ -460,9 +468,23 @@ def _register_dataset_commands(
         default=None,
         help="Optional path to write the current specs snapshot.",
     )
+    p_diff.add_argument(
+        "--against-ref",
+        type=str,
+        default=None,
+        help="Git ref to load a baseline snapshot from (with --baseline-path).",
+    )
+    p_diff.add_argument(
+        "--baseline-path",
+        type=Path,
+        default=Path("build/dataset_specs.json"),
+        help="Path (relative to repo root) of the snapshot inside the git ref (default: build/dataset_specs.json).",
+    )
     p_diff.set_defaults(func=_cmd_datasets_diff)
 
-    p_snapshot = ds_sub.add_parser("snapshot", help="Write the current dataset specs to a JSON file")
+    p_snapshot = ds_sub.add_parser(
+        "snapshot", help="Write the current dataset specs to a JSON file"
+    )
     _add_common_repo_args(p_snapshot)
     p_snapshot.add_argument(
         "--output",
@@ -471,6 +493,29 @@ def _register_dataset_commands(
         help="Path to write the snapshot JSON.",
     )
     p_snapshot.set_defaults(func=_cmd_datasets_snapshot)
+
+    p_conf = ds_sub.add_parser(
+        "conformance", help="Run full dataset conformance checks (optionally sample rows)"
+    )
+    _add_common_repo_args(p_conf)
+    p_conf.add_argument(
+        "--schema-dir",
+        type=Path,
+        default=Path("src/codeintel/config/schemas/export"),
+        help="Directory containing export JSON Schemas (default: src/codeintel/config/schemas/export)",
+    )
+    p_conf.add_argument(
+        "--sample-rows",
+        action="store_true",
+        help="Validate a sample of rows against JSON Schemas when available.",
+    )
+    p_conf.add_argument(
+        "--sample-size",
+        type=int,
+        default=50,
+        help="Number of rows to sample per dataset when --sample-rows is set (default: 50).",
+    )
+    p_conf.set_defaults(func=_cmd_datasets_conformance)
 
 
 def _make_parser() -> argparse.ArgumentParser:
@@ -1062,6 +1107,10 @@ def _cmd_datasets_lint(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
     issues = collect_contract_issues(gateway.con, schema_base_dir=args.schema_dir)
+    if args.sample_rows:
+        # Row-sampling handled by conformance runner; keep lint fast by omitting here.
+        sys.stderr.write("Row sampling requested; run `codeintel datasets conformance` instead.\n")
+        return 2
     if issues:
         for issue in issues:
             sys.stderr.write(f"{issue}\n")
@@ -1088,6 +1137,36 @@ def _cmd_datasets_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_datasets_conformance(args: argparse.Namespace) -> int:
+    """
+    Run conformance checks including contract validation and optional row sampling.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success, 1 on issues, 2 on invalid input).
+    """
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=True)
+    try:
+        report = run_conformance(
+            gateway.con,
+            schema_base_dir=args.schema_dir,
+            sample_rows=bool(args.sample_rows),
+            sample_size=int(args.sample_size),
+        )
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"Conformance run failed: {exc}\n")
+        return 2
+    if not report.ok:
+        for issue in report.issues:
+            prefix = issue.dataset or "global"
+            sys.stderr.write(f"[{prefix}] {issue.message}\n")
+        return 1
+    sys.stdout.write("Dataset conformance passed.\n")
+    return 0
+
+
 def _cmd_datasets_diff(args: argparse.Namespace) -> int:
     """
     Diff current dataset specs against a baseline snapshot.
@@ -1100,26 +1179,22 @@ def _cmd_datasets_diff(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
     current_specs = list_dataset_specs(load_dataset_registry(gateway.con))
-    if not args.baseline.exists():
-        sys.stderr.write(f"Baseline file not found: {args.baseline}\n")
-        return 1
-    baseline_specs: list[dict[str, object]] = json.loads(args.baseline.read_text(encoding="utf-8"))
-    baseline_by_name: dict[str, dict[str, object]] = {}
-    for spec in baseline_specs:
-        name = str(spec.get("name"))
-        baseline_by_name[name] = spec
-    current_by_name: dict[str, dict[str, object]] = {}
-    for spec in current_specs:
-        name = str(spec.get("name"))
-        current_by_name[name] = spec
-
-    added = sorted(set(current_by_name) - set(baseline_by_name))
-    removed = sorted(set(baseline_by_name) - set(current_by_name))
-    changed = sorted(
-        name
-        for name in current_by_name
-        if name in baseline_by_name and current_by_name[name] != baseline_by_name[name]
-    )
+    baseline_specs: list[dict[str, object]] = []
+    if args.against_ref:
+        baseline_specs = _load_specs_from_ref(
+            repo_root=cfg.paths.repo_root,
+            ref=args.against_ref,
+            snapshot_path=args.baseline_path,
+        )
+    elif args.baseline is not None:
+        if not args.baseline.exists():
+            sys.stderr.write(f"Baseline file not found: {args.baseline}\n")
+            return 1
+        baseline_specs = json.loads(args.baseline.read_text(encoding="utf-8"))
+    else:
+        sys.stderr.write("Provide either --baseline or --against-ref\n")
+        return 2
+    added, removed, changed = _diff_specs(current_specs, baseline_specs)
 
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -1136,6 +1211,68 @@ def _cmd_datasets_diff(args: argparse.Namespace) -> int:
     if changed:
         sys.stdout.write(f"Changed datasets: {', '.join(changed)}\n")
     return 1
+
+
+def _load_specs_from_ref(
+    *, repo_root: Path, ref: str, snapshot_path: Path
+) -> list[dict[str, object]]:
+    """
+    Load dataset specs snapshot from a git ref and path.
+
+    Parameters
+    ----------
+    repo_root
+        Repository root for running git commands.
+    ref
+        Git reference (commit SHA, branch, or tag).
+    snapshot_path
+        Path to the snapshot file inside the repository at the ref.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Parsed dataset specs JSON content from the referenced snapshot.
+
+    Raises
+    ------
+    RuntimeError
+        When the snapshot cannot be loaded from the provided ref/path.
+    """
+    target = f"{ref}:{snapshot_path.as_posix()}"
+    runner = ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
+    result = runner.run("git", ["show", target], cwd=repo_root)
+    if result.returncode != 0:
+        message = f"Failed to load snapshot from {target}: {result.stderr.strip()}"
+        raise RuntimeError(message)
+    return json.loads(result.stdout)
+
+
+def _diff_specs(
+    current_specs: list[dict[str, object]],
+    baseline_specs: list[dict[str, object]],
+) -> tuple[list[str], list[str], list[str]]:
+    """
+    Compute added/removed/changed dataset names between two spec sets.
+
+    Returns
+    -------
+    tuple[list[str], list[str], list[str]]
+        Added, removed, and changed dataset names.
+    """
+    baseline_by_name: dict[str, dict[str, object]] = {
+        str(spec.get("name")): spec for spec in baseline_specs
+    }
+    current_by_name: dict[str, dict[str, object]] = {
+        str(spec.get("name")): spec for spec in current_specs
+    }
+    added = sorted(set(current_by_name) - set(baseline_by_name))
+    removed = sorted(set(baseline_by_name) - set(current_by_name))
+    changed = sorted(
+        name
+        for name in current_by_name
+        if name in baseline_by_name and current_by_name[name] != baseline_by_name[name]
+    )
+    return added, removed, changed
 
 
 # ---------------------------------------------------------------------------

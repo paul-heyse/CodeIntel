@@ -1,20 +1,26 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.codeintel.dev/export/function_profile.json",
-  "title": "Function Profile Export",
-  "allOf": [
-    { "$ref": "./base.json" },
-    {
-      "type": "object",
-      "properties": {
-        "function_goid_h128": { "type": ["integer", "string"] },
-        "urn": { "type": "string" },
-        "rel_path": { "type": "string" },
-        "module": { "type": "string" },
-        "qualname": { "type": "string" },
-        "risk_level": { "type": "string" }
-      },
-      "required": ["function_goid_h128", "urn", "rel_path"]
-    }
-  ]
+  "title": "Function profile export",
+  "type": "object",
+  "allOf": [{ "$ref": "base.json" }],
+  "properties": {
+    "repo": { "type": "string" },
+    "commit": { "type": "string" },
+    "function_goid_h128": { "type": "integer" },
+    "urn": { "type": ["string", "null"] },
+    "rel_path": { "type": "string" },
+    "module": { "type": "string" },
+    "language": { "type": ["string", "null"] },
+    "qualname": { "type": ["string", "null"] },
+    "call_fan_in": { "type": ["integer", "null"] },
+    "call_fan_out": { "type": ["integer", "null"] },
+    "risk_score": { "type": ["number", "null"] },
+    "risk_level": { "type": ["string", "null"] },
+    "owners": {},
+    "tags": {},
+    "created_at": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "required": ["repo", "commit", "function_goid_h128", "rel_path", "module"],
+  "additionalProperties": true
 }

@@ -18,7 +18,9 @@ def test_dataset_specs_include_contract_fields() -> None:
     """Dataset specs should surface filenames, schema IDs, and row binding flags."""
     gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=False)
     try:
-        query = DuckDBQueryService(gateway=gateway, repo="repo", commit="commit", limits=BackendLimits())
+        query = DuckDBQueryService(
+            gateway=gateway, repo="repo", commit="commit", limits=BackendLimits()
+        )
         specs = query.dataset_specs()
         spec_map = {spec.name: spec for spec in specs}
         _require(condition="function_profile" in spec_map, message="function_profile spec missing")

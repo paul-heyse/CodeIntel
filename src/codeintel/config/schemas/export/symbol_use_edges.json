@@ -1,19 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.codeintel.dev/export/symbol_use_edges.json",
-  "title": "Symbol Use Edges Export",
-  "allOf": [
-    { "$ref": "./base.json" },
-    {
-      "type": "object",
-      "properties": {
-        "symbol": { "type": "string" },
-        "def_path": { "type": "string" },
-        "use_path": { "type": "string" },
-        "same_file": { "type": "boolean" },
-        "same_module": { "type": "boolean" }
-      },
-      "required": ["symbol", "def_path", "use_path"]
-    }
-  ]
+  "title": "Symbol use edges export",
+  "type": "object",
+  "properties": {
+    "symbol": { "type": "string" },
+    "def_path": { "type": "string" },
+    "use_path": { "type": "string" },
+    "same_file": { "type": "boolean" },
+    "same_module": { "type": "boolean" },
+    "def_goid_h128": { "type": ["integer", "null"] },
+    "use_goid_h128": { "type": ["integer", "null"] }
+  },
+  "required": ["symbol", "def_path", "use_path", "same_file", "same_module"],
+  "additionalProperties": true
 }

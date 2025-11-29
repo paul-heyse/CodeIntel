@@ -1,20 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.codeintel.dev/export/test_coverage_edges.json",
-  "title": "Test Coverage Edges Export",
-  "allOf": [
-    { "$ref": "./base.json" },
-    {
-      "type": "object",
-      "properties": {
-        "test_id": { "type": "string" },
-        "function_goid_h128": { "type": ["integer", "string"] },
-        "rel_path": { "type": "string" },
-        "covered_lines": { "type": "number" },
-        "executable_lines": { "type": "number" },
-        "coverage_ratio": { "type": "number" }
-      },
-      "required": ["test_id", "function_goid_h128", "rel_path"]
-    }
-  ]
+  "title": "Test coverage edges export",
+  "type": "object",
+  "allOf": [{ "$ref": "base.json" }],
+  "properties": {
+    "repo": { "type": "string" },
+    "commit": { "type": "string" },
+    "test_id": { "type": ["string", "null"] },
+    "test_goid_h128": { "type": ["integer", "null"] },
+    "function_goid_h128": { "type": ["integer", "null"] },
+    "urn": { "type": ["string", "null"] },
+    "rel_path": { "type": ["string", "null"] },
+    "qualname": { "type": ["string", "null"] },
+    "covered_lines": { "type": ["integer", "null"] },
+    "executable_lines": { "type": ["integer", "null"] },
+    "coverage_ratio": { "type": ["number", "null"] },
+    "last_status": { "type": ["string", "null"] },
+    "created_at": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "required": ["repo", "commit"],
+  "additionalProperties": true
 }

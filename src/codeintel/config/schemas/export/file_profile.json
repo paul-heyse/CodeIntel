@@ -1,17 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.codeintel.dev/export/file_profile.json",
-  "title": "File Profile Export",
-  "allOf": [
-    { "$ref": "./base.json" },
-    {
-      "type": "object",
-      "properties": {
-        "rel_path": { "type": "string" },
-        "module": { "type": "string" },
-        "language": { "type": "string" }
-      },
-      "required": ["rel_path"]
-    }
-  ]
+  "title": "File profile export",
+  "type": "object",
+  "allOf": [{ "$ref": "base.json" }],
+  "properties": {
+    "repo": { "type": "string" },
+    "commit": { "type": "string" },
+    "rel_path": { "type": "string" },
+    "module": { "type": "string" },
+    "language": { "type": ["string", "null"] },
+    "hotspot_score": { "type": ["number", "null"] },
+    "coverage_ratio": { "type": ["number", "null"] },
+    "owners": {},
+    "tags": {}
+  },
+  "required": ["repo", "commit", "rel_path", "module"],
+  "additionalProperties": true
 }
