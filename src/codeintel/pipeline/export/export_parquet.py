@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 
-from codeintel.pipeline.export import DEFAULT_VALIDATION_SCHEMAS
+from codeintel.pipeline.export import default_validation_schemas
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.manifest import write_dataset_manifest
 from codeintel.pipeline.export.validate_exports import validate_files
@@ -392,7 +392,7 @@ def export_all_parquet(
     written.append(manifest_path)
 
     if opts.validate_exports:
-        schema_list = opts.schemas or DEFAULT_VALIDATION_SCHEMAS
+        schema_list = opts.schemas or default_validation_schemas()
         for schema_name in schema_list:
             matching = [p for p in written if p.name.startswith(schema_name)]
             if not matching:
