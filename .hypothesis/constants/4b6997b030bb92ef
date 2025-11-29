@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tool_runner.py
+# hypothesis_version: 6.148.3
+
+['.tool_cache', 'build', 'coverage', 'git', 'pyrefly', 'pyright', 'pytest', 'replace', 'ruff', 'scip', 'scip-python', 'timed out', 'utf8']

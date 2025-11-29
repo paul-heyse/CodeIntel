@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/metrics.py
+# hypothesis_version: 6.148.3
+
+['#', '/', '\\', 'annotation', 'body', 'commit', 'decorator_list', 'end_line', 'goid_h128', 'high', 'kind', 'language', 'low', 'medium', 'metrics_rows', 'missing AST', 'parse_failed', 'qualname', 'rel_path', 'repo', 'span_not_found', 'start_line', 'types_rows', 'unknown', 'urn', 'validation_total']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/models.py
+# hypothesis_version: 6.148.3
+
+[300.0, '.tool_cache', 'Document Output', 'DuckDB database path', 'Path to git binary', 'Path to ruff binary', 'Path to scip binary', 'after', 'before', 'build', 'build_dir', 'coverage', 'coverage.json', 'coverage_file', 'db', 'db_path', 'document_output_dir', 'export_docs', 'git', 'logs', 'pyrefly', 'pyright', 'pytest', 'pytest-report.json', 'pytest_report_path', 'repo_root', 'ruff', 'scip', 'scip-python', 'test-results']

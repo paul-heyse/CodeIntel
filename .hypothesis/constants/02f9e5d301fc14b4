@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/parsing.py
+# hypothesis_version: 6.148.3
+
+['FunctionParserKind', 'ParsedFunction', 'ParsedModule', 'parse_python_file', 'resolve_span']

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import types
 import typing
 from collections.abc import Mapping
 from pathlib import Path
@@ -12,11 +13,12 @@ import jsonschema
 
 from codeintel.storage.datasets import DatasetRegistry
 
-TYPE_MAP: dict[type[object], dict[str, str]] = {
+TYPE_MAP: dict[type[object], dict[str, object]] = {
     str: {"type": "string"},
     int: {"type": "integer"},
     float: {"type": "number"},
     bool: {"type": "boolean"},
+    object: {"type": ["object", "array", "string", "number", "boolean", "null"]},
 }
 
 
@@ -64,7 +66,7 @@ def _schema_for_type(annotation: object) -> dict[str, object]:
     elif origin is typing.Literal:
         literals = get_args(annotation)
         schema = {"enum": list(literals)}
-    elif origin is typing.Union:
+    elif origin in {typing.Union, types.UnionType}:
         schema = _schema_for_union(get_args(annotation))
     else:
         schema = {"type": "string"}

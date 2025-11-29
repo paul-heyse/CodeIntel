@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/common.py
+# hypothesis_version: 6.148.3
+
+[5.0, '*', '<deleted>', 'CODEINTEL_CHANGE_LOG', 'core.file_state', 'ingest', 'python', 'utf-8', 'utf8']

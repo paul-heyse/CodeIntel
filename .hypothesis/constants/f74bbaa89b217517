@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/context.py
+# hypothesis_version: 6.148.3
+
+[0.0, 1000.0, 'call_graph', 'call_graph_ms', 'catalog_ms', 'commit', 'edges_after', 'edges_before', 'function_asts_ms', 'graph', 'graphs', 'import', 'import_graph', 'import_graph_ms', 'max_edges', 'max_nodes', 'module_map_ms', 'nodes_after', 'nodes_before', 'nx.DiGraph', 'nx.Graph', 'repo', 'seed', 'symbol_function', 'symbol_module', 'symbol_module_graph', 'timers', 'truncated']

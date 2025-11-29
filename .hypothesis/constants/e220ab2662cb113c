@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/repo_scan.py
+# hypothesis_version: 6.148.3
+
+['analytics.tags_index', 'core.modules', 'core.repo_map', 'description', 'excludes', 'includes', 'matches', 'python', 'r', 'tag', 'tags_index', 'tags_index.yaml', 'utf8']

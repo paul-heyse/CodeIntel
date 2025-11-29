@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/source_scanner.py
+# hypothesis_version: 6.148.3
+
+[5.0, 250, '**/*.cfg', '**/*.ini', '**/*.py', '**/*.toml', '**/*.yaml', '**/*.yml', ',', '.DS_Store', '.git', '.hg', '.idea', '.mypy_cache', '.pytest_cache', '.svn', '.tox', '.venv', '.vscode', '/', ';', '__pycache__', 'build', 'dist', 'node_modules', 'src', 'venv']

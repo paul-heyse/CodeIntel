@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graph_service_runtime.py
+# hypothesis_version: 6.148.3
+
+[200, 500, 1000, 'GraphContext', 'GraphContextCaps', 'GraphContextSpec', 'GraphServiceRuntime', 'build_graph_context', 'default', 'duration_ms', 'features', 'graph_metrics', 'graph_runtime', 'graph_stats', 'metric', 'op', 'provided', 'use_gpu', 'weight']

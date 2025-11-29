@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/paths.py
+# hypothesis_version: 6.148.3
+
+['.', 'ensure_repo_root', 'normalize_rel_path', 'relpath_to_module', 'repo_relpath']

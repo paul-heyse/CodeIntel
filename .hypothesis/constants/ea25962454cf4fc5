@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/dependencies.py
+# hypothesis_version: 6.148.3
+
+[0.0, 0.5, 1.0, 2.0, 3.0, 4.0, '.', 'admin', 'category', 'config', 'critical', 'criticality', 'end_lineno', 'high', 'info', 'libs', 'lineno', 'load_config_key_map', 'low', 'match', 'matched_pattern', 'medium', 'method', 'method_prefix', 'mode', 'modes', 'patterns', 'python', 'read', 'service_name', 'severity', 'target', 'unknown', 'utf-8', 'utf8', 'write']

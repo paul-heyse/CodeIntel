@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/pipeline/export/export_parquet.py
+# hypothesis_version: 6.148.3
+
+[9223372036854775807, '1', 'Exporting %s -> %s', 'a', 'can_export_parquet', 'count(*)', 'dataset_registry', 'duration_s', 'false', 'files', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'lenient', 'macro', 'on', 'output', 'rows', 'schema', 'schema mismatches', 'schema_version', 'stage', 'strict', 'table', 'true', 'utf-8', 'write_parquet', 'yes']

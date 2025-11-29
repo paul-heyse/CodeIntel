@@ -820,6 +820,15 @@ This dataset is typically joined with `module_profile.*` and `subsystem_modules.
 
 `docs.v_subsystem_summary` exposes these rows directly and is the recommended surface for querying subsystem data.
 
+Subsystem docs views (read-only caches):
+
+* `docs.v_subsystem_profile` — cached subsystem profile with size, entrypoints, graph metrics, and risk rollups (served by `codeintel subsystem profiles`).
+* `docs.v_subsystem_coverage` — cached coverage aggregates per subsystem (test counts, coverage ratios) exposed via `codeintel subsystem coverage`.
+
+These docs datasets are marked with `docs_view` and `read_only` capabilities in the registry so they can be filtered or highlighted in dataset listings.
+Recommended cadence: refresh the subsystem profile/coverage caches alongside analytics runs; for live-query fallback, keep a lightweight index on `analytics.test_profile(primary_subsystem_id, repo, commit)` to speed coverage aggregation.
+Indexing guidance: `analytics.subsystems` also carries `idx_analytics_subsystems_repo_commit_id` to keep doc view lookups and joins cheap; opt for cache + indexes over heavier materialization, and revisit CTE/materialization only if profiling shows sustained regressions.
+
 ## 31. Subsystem Membership (`subsystem_modules.*`)
 
 **Purpose**: Mapping of modules to subsystems, including flags for entrypoints and cycle participation. Used by `docs.v_module_with_subsystem` and `docs.v_module_architecture`.

@@ -926,6 +926,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("created_at", "TIMESTAMP"),
         ],
         primary_key=("repo", "commit", "subsystem_id"),
+        indexes=(Index("idx_subsystem_profile_cache_repo_commit", ("repo", "commit")),),
         description="Materialized subsystem profile rows for docs views",
     ),
     "analytics.subsystem_coverage_cache": TableSchema(
@@ -956,6 +957,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("created_at", "TIMESTAMP"),
         ],
         primary_key=("repo", "commit", "subsystem_id"),
+        indexes=(Index("idx_subsystem_coverage_cache_repo_commit", ("repo", "commit")),),
         description="Materialized subsystem coverage aggregates for docs views",
     ),
     "analytics.graph_stats": TableSchema(
@@ -1217,7 +1219,13 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "test_id"),
-        indexes=(Index("idx_analytics_test_profile_test_id", ("test_id",)),),
+        indexes=(
+            Index("idx_analytics_test_profile_test_id", ("test_id",)),
+            Index(
+                "idx_analytics_test_profile_primary_subsystem",
+                ("primary_subsystem_id", "repo", "commit"),
+            ),
+        ),
         description=(
             "Per-test profile combining execution status, coverage footprint, AST metrics, IO usage, "
             "and flakiness/importance heuristics."
@@ -1742,6 +1750,12 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "subsystem_id"),
+        indexes=(
+            Index(
+                "idx_analytics_subsystems_repo_commit_id",
+                ("repo", "commit", "subsystem_id"),
+            ),
+        ),
         description="Inferred architectural subsystems with summary metrics",
     ),
     "analytics.subsystem_modules": TableSchema(

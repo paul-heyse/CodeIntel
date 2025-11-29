@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/views/__init__.py
+# hypothesis_version: 6.148.3
+
+['ALIAS_DOCS_VIEWS', 'DERIVED_DOCS_VIEWS', 'DOCS_VIEWS', 'create_all_views', 'docs.v_file_profile']

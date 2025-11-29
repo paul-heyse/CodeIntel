@@ -450,6 +450,7 @@ class ConfigBuilder:
         slow_test_threshold_ms: float = 2000.0,
         io_spec: dict[str, object] | None = None,
         refresh_subsystem_cache: bool = True,
+        benchmark_subsystem_cache: bool = False,
     ) -> TestProfileStepConfig:
         """
         Build test profile configuration.
@@ -463,6 +464,7 @@ class ConfigBuilder:
             slow_test_threshold_ms=slow_test_threshold_ms,
             io_spec=io_spec,
             refresh_subsystem_cache=refresh_subsystem_cache,
+            benchmark_subsystem_cache=benchmark_subsystem_cache,
         )
 
     def behavioral_coverage(

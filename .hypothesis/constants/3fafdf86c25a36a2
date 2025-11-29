@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/coverage_ingest.py
+# hypothesis_version: 6.148.3
+
+['.tool_cache', 'api', 'build', 'cli', 'coverage file', 'coverage.json']

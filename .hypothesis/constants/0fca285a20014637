@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/errors.py
+# hypothesis_version: 6.148.3
+
+['code', 'detail', 'extras', 'instance', 'status', 'title', 'type']

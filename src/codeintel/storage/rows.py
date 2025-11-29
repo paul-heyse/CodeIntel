@@ -26,6 +26,8 @@ __all__ = [
     "ImportModuleRow",
     "ModuleProfileRowModel",
     "StaticDiagnosticRow",
+    "SubsystemCoverageCacheRow",
+    "SubsystemProfileCacheRow",
     "SymbolUseRow",
     "TestCatalogRowModel",
     "TestCoverageEdgeRow",
@@ -53,6 +55,8 @@ __all__ = [
     "serialize_test_coverage_edge",
     "serialize_test_profile_row",
     "static_diagnostic_to_tuple",
+    "subsystem_coverage_cache_to_tuple",
+    "subsystem_profile_cache_to_tuple",
     "symbol_use_to_tuple",
     "typedness_row_to_tuple",
 ]
@@ -1595,3 +1599,187 @@ def behavioral_coverage_row_to_tuple(row: BehavioralCoverageRowModel) -> tuple[o
         Values in the order expected by behavioral_coverage INSERTs.
     """
     return _serialize_row(row, BEHAVIORAL_COVERAGE_COLUMNS)
+
+
+_SubsystemProfileColumn = Literal[
+    "repo",
+    "commit",
+    "subsystem_id",
+    "name",
+    "description",
+    "module_count",
+    "modules_json",
+    "entrypoints_json",
+    "internal_edge_count",
+    "external_edge_count",
+    "fan_in",
+    "fan_out",
+    "function_count",
+    "avg_risk_score",
+    "max_risk_score",
+    "high_risk_function_count",
+    "risk_level",
+    "import_in_degree",
+    "import_out_degree",
+    "import_pagerank",
+    "import_betweenness",
+    "import_closeness",
+    "import_layer",
+    "created_at",
+]
+SUBSYSTEM_PROFILE_COLUMNS: tuple[_SubsystemProfileColumn, ...] = (
+    "repo",
+    "commit",
+    "subsystem_id",
+    "name",
+    "description",
+    "module_count",
+    "modules_json",
+    "entrypoints_json",
+    "internal_edge_count",
+    "external_edge_count",
+    "fan_in",
+    "fan_out",
+    "function_count",
+    "avg_risk_score",
+    "max_risk_score",
+    "high_risk_function_count",
+    "risk_level",
+    "import_in_degree",
+    "import_out_degree",
+    "import_pagerank",
+    "import_betweenness",
+    "import_closeness",
+    "import_layer",
+    "created_at",
+)
+
+
+class SubsystemProfileCacheRow(TypedDict):
+    """Row shape for ``analytics.subsystem_profile_cache`` inserts."""
+
+    repo: str
+    commit: str
+    subsystem_id: str
+    name: str | None
+    description: str | None
+    module_count: int | None
+    modules_json: object | None
+    entrypoints_json: list[object] | dict[str, object] | None
+    internal_edge_count: int | None
+    external_edge_count: int | None
+    fan_in: int | None
+    fan_out: int | None
+    function_count: int | None
+    avg_risk_score: float | None
+    max_risk_score: float | None
+    high_risk_function_count: int | None
+    risk_level: str | None
+    import_in_degree: float | None
+    import_out_degree: float | None
+    import_pagerank: float | None
+    import_betweenness: float | None
+    import_closeness: float | None
+    import_layer: int | None
+    created_at: datetime | None
+
+
+def subsystem_profile_cache_to_tuple(row: SubsystemProfileCacheRow) -> tuple[object, ...]:
+    """
+    Serialize a SubsystemProfileCacheRow into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by subsystem_profile_cache INSERTs.
+    """
+    return _serialize_row(row, SUBSYSTEM_PROFILE_COLUMNS)
+
+
+_SubsystemCoverageColumn = Literal[
+    "repo",
+    "commit",
+    "subsystem_id",
+    "name",
+    "description",
+    "module_count",
+    "function_count",
+    "risk_level",
+    "avg_risk_score",
+    "max_risk_score",
+    "test_count",
+    "passed_test_count",
+    "failed_test_count",
+    "skipped_test_count",
+    "xfail_test_count",
+    "flaky_test_count",
+    "total_functions_covered",
+    "avg_functions_covered",
+    "max_functions_covered",
+    "min_functions_covered",
+    "function_coverage_ratio",
+    "created_at",
+]
+SUBSYSTEM_COVERAGE_COLUMNS: tuple[_SubsystemCoverageColumn, ...] = (
+    "repo",
+    "commit",
+    "subsystem_id",
+    "name",
+    "description",
+    "module_count",
+    "function_count",
+    "risk_level",
+    "avg_risk_score",
+    "max_risk_score",
+    "test_count",
+    "passed_test_count",
+    "failed_test_count",
+    "skipped_test_count",
+    "xfail_test_count",
+    "flaky_test_count",
+    "total_functions_covered",
+    "avg_functions_covered",
+    "max_functions_covered",
+    "min_functions_covered",
+    "function_coverage_ratio",
+    "created_at",
+)
+
+
+class SubsystemCoverageCacheRow(TypedDict):
+    """Row shape for ``analytics.subsystem_coverage_cache`` inserts."""
+
+    repo: str
+    commit: str
+    subsystem_id: str
+    name: str | None
+    description: str | None
+    module_count: int | None
+    function_count: int | None
+    risk_level: str | None
+    avg_risk_score: float | None
+    max_risk_score: float | None
+    test_count: int | None
+    passed_test_count: int | None
+    failed_test_count: int | None
+    skipped_test_count: int | None
+    xfail_test_count: int | None
+    flaky_test_count: int | None
+    total_functions_covered: int | None
+    avg_functions_covered: float | None
+    max_functions_covered: float | None
+    min_functions_covered: float | None
+    function_coverage_ratio: float | None
+    created_at: datetime | None
+
+
+def subsystem_coverage_cache_to_tuple(row: SubsystemCoverageCacheRow) -> tuple[object, ...]:
+    """
+    Serialize a SubsystemCoverageCacheRow into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by subsystem_coverage_cache INSERTs.
+    """
+    return _serialize_row(row, SUBSYSTEM_COVERAGE_COLUMNS)

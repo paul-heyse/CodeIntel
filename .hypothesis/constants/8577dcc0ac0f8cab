@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/engine.py
+# hypothesis_version: 6.148.3
+
+['nx.DiGraph']

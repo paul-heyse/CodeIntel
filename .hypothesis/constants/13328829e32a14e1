@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/__init__.py
+# hypothesis_version: 6.148.3
+
+['CFGBlockRow', 'CFGEdgeRow', 'CallGraphEdgeRow', 'CallGraphNodeRow', 'ConfigValueRow', 'CoverageLineRow', 'DFGEdgeRow', 'DocstringRow', 'GoidCrosswalkRow', 'GoidRow', 'HotspotRow', 'ImportEdgeRow', 'ImportModuleRow', 'StaticDiagnosticRow', 'SymbolUseRow', 'TestCatalogRowModel', 'TestCoverageEdgeRow', 'TypednessRow']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/runner.py
+# hypothesis_version: 6.148.3
+
+['ast_extract', 'config_ingest', 'coverage_ingest', 'cst_extract', 'docstrings_ingest', 'process', 'repo_scan', 'scip_ingest', 'tests_ingest', 'typing_ingest']

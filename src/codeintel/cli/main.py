@@ -160,12 +160,15 @@ def _add_subsystem_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
     """Register subsystem-related subcommands."""
-    p_subsys = subparsers.add_parser("subsystem", help="Subsystem exploration helpers")
+    p_subsys = subparsers.add_parser(
+        "subsystem",
+        help="Subsystem exploration helpers (docs views, read-only caches)",
+    )
     subsys_sub = p_subsys.add_subparsers(dest="subcommand", required=True)
 
     p_subsys_list = subsys_sub.add_parser(
         "list",
-        help="List inferred subsystems with role/risk metadata.",
+        help="List inferred subsystems with role/risk metadata (cached docs view).",
     )
     _add_common_repo_args(p_subsys_list)
     p_subsys_list.add_argument("--role", help="Filter subsystems by role tag")
@@ -175,15 +178,35 @@ def _add_subsystem_subparser(
 
     p_subsys_show = subsys_sub.add_parser(
         "show",
-        help="Show subsystem detail and modules.",
+        help="Show subsystem detail and modules (docs view, read-only).",
     )
     _add_common_repo_args(p_subsys_show)
     p_subsys_show.add_argument("--subsystem-id", required=True, help="Subsystem identifier")
     p_subsys_show.set_defaults(func=_cmd_subsystem_show)
 
+    p_subsys_profiles = subsys_sub.add_parser(
+        "profiles",
+        help="List subsystem profiles (docs.v_subsystem_profile, read-only docs view).",
+    )
+    _add_common_repo_args(p_subsys_profiles)
+    p_subsys_profiles.add_argument(
+        "--limit", type=int, default=None, help="Limit subsystem profile rows"
+    )
+    p_subsys_profiles.set_defaults(func=_cmd_subsystem_profiles)
+
+    p_subsys_coverage = subsys_sub.add_parser(
+        "coverage",
+        help="List subsystem coverage rollups (docs.v_subsystem_coverage, read-only docs view).",
+    )
+    _add_common_repo_args(p_subsys_coverage)
+    p_subsys_coverage.add_argument(
+        "--limit", type=int, default=None, help="Limit subsystem coverage rows"
+    )
+    p_subsys_coverage.set_defaults(func=_cmd_subsystem_coverage)
+
     p_subsys_modules = subsys_sub.add_parser(
         "module-memberships",
-        help="List subsystem memberships for a module.",
+        help="List subsystem memberships for a module (docs view, read-only).",
     )
     _add_common_repo_args(p_subsys_modules)
     p_subsys_modules.add_argument("--module", required=True, help="Module name (e.g., pkg.mod)")
@@ -577,6 +600,31 @@ def _register_dataset_commands(
         help="Validate a small sample of rows against JSON Schemas when available.",
     )
     p_lint.set_defaults(func=_cmd_datasets_lint)
+
+    p_list = ds_sub.add_parser(
+        "list",
+        help="List datasets with capabilities and optional docs/read-only filters.",
+    )
+    _add_common_repo_args(p_list)
+    p_list.add_argument(
+        "--docs-view",
+        choices=["include", "exclude", "only"],
+        default="include",
+        help="Filter docs.* views (default: include).",
+    )
+    p_list.add_argument(
+        "--read-only",
+        choices=["include", "exclude", "only"],
+        default="include",
+        help="Filter read-only datasets (views and docs) (default: include).",
+    )
+    p_list.add_argument(
+        "--max-description",
+        type=int,
+        default=80,
+        help="Maximum description length before truncation (default: 80).",
+    )
+    p_list.set_defaults(func=_cmd_datasets_list)
 
     p_diff = ds_sub.add_parser(
         "diff", help="Diff current dataset specs against a baseline JSON file"
@@ -1091,6 +1139,48 @@ def _cmd_subsystem_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_subsystem_profiles(args: argparse.Namespace) -> int:
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=True)
+    runtime = _build_runtime(cfg, gateway)
+    engine = runtime.engine
+    backend = DuckDBBackend(
+        gateway=gateway,
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        query_engine=engine,
+    )
+    response = backend.service.list_subsystem_profiles(limit=args.limit)
+    payload = {
+        "profiles": [row.model_dump() for row in response.profiles],
+        "meta": response.meta.model_dump(),
+    }
+    sys.stdout.write(json.dumps(payload))
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_subsystem_coverage(args: argparse.Namespace) -> int:
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=True)
+    runtime = _build_runtime(cfg, gateway)
+    engine = runtime.engine
+    backend = DuckDBBackend(
+        gateway=gateway,
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        query_engine=engine,
+    )
+    response = backend.service.list_subsystem_coverage(limit=args.limit)
+    payload = {
+        "coverage": [row.model_dump() for row in response.coverage],
+        "meta": response.meta.model_dump(),
+    }
+    sys.stdout.write(json.dumps(payload))
+    sys.stdout.write("\n")
+    return 0
+
+
 def _cmd_subsystem_modules(args: argparse.Namespace) -> int:
     cfg = _build_config_from_args(args)
     gateway = _open_gateway(cfg, read_only=True)
@@ -1264,6 +1354,134 @@ def _cmd_history_timeseries(args: argparse.Namespace) -> int:
         args.output_db,
         len(args.commits),
     )
+    return 0
+
+
+def _format_capabilities(caps: dict[str, bool]) -> str:
+    """
+    Return a compact capability label string.
+
+    Returns
+    -------
+    str
+        Comma-separated capability labels or "-" when empty.
+    """
+    labels: list[str] = []
+    if caps.get("docs_view"):
+        labels.append("docs")
+    if caps.get("read_only"):
+        labels.append("ro")
+    if caps.get("can_validate"):
+        labels.append("validate")
+    if caps.get("can_export_jsonl"):
+        labels.append("jsonl")
+    if caps.get("can_export_parquet"):
+        labels.append("parquet")
+    if caps.get("has_row_binding"):
+        labels.append("binding")
+    if caps.get("is_view") and not caps.get("docs_view"):
+        labels.append("view")
+    return ",".join(labels) if labels else "-"
+
+
+ELLIPSIS_LEN = 3
+
+
+def _caps_match(
+    caps: dict[str, bool],
+    *,
+    docs_view_filter: str,
+    read_only_filter: str,
+) -> bool:
+    """
+    Apply docs/read-only filters to capability flags.
+
+    Returns
+    -------
+    bool
+        True when the dataset matches both filter settings.
+    """
+    is_docs = bool(caps.get("docs_view"))
+    is_read_only = bool(caps.get("read_only"))
+    docs_ok = (docs_view_filter != "only" or is_docs) and (
+        docs_view_filter != "exclude" or not is_docs
+    )
+    read_only_ok = (read_only_filter != "only" or is_read_only) and (
+        read_only_filter != "exclude" or not is_read_only
+    )
+    return docs_ok and read_only_ok
+
+
+def _truncate(text: str, limit: int) -> str:
+    """
+    Truncate a string to a maximum length with an ellipsis.
+
+    Returns
+    -------
+    str
+        Original text when within the limit, otherwise a trimmed string.
+    """
+    if limit <= 0 or len(text) <= limit:
+        return text
+    if limit <= ELLIPSIS_LEN:
+        return text[:limit]
+    return text[: limit - ELLIPSIS_LEN] + "..."
+
+
+def _cmd_datasets_list(args: argparse.Namespace) -> int:
+    """
+    List datasets with capabilities, optionally filtering docs and read-only entries.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success).
+    """
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=True)
+    registry = load_dataset_registry(gateway.con)
+    max_desc = int(args.max_description)
+    rows: list[tuple[str, str, str, str, str]] = []
+    for name, ds in sorted(registry.by_name.items()):
+        caps = ds.capabilities()
+        if not _caps_match(
+            caps,
+            docs_view_filter=args.docs_view,
+            read_only_filter=args.read_only,
+        ):
+            continue
+        rows.append(
+            (
+                name,
+                ds.table_key,
+                ds.family or "",
+                _format_capabilities(caps),
+                _truncate(ds.description or "", max_desc),
+            )
+        )
+
+    if not rows:
+        sys.stdout.write("No datasets matched the requested filters.\n")
+        return 0
+
+    headers = ("name", "table", "family", "caps", "description")
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for idx, value in enumerate(row):
+            widths[idx] = max(widths[idx], len(value))
+
+    def _fmt(row: tuple[str, ...]) -> str:
+        parts: list[str] = []
+        for idx, value in enumerate(row):
+            if idx == len(row) - 1:
+                parts.append(value)
+            else:
+                parts.append(value.ljust(widths[idx]))
+        return "  ".join(parts)
+
+    sys.stdout.write(_fmt(headers) + "\n")
+    for row in rows:
+        sys.stdout.write(_fmt(row) + "\n")
     return 0
 
 

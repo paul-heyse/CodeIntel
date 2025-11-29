@@ -122,12 +122,16 @@ class Dataset:
         dict[str, bool]
             Flags for validation and export support.
         """
+        docs_view = self.table_key.startswith("docs.")
+        read_only = self.is_view or docs_view
         return {
             "can_validate": self.json_schema_id is not None,
             "can_export_jsonl": self.jsonl_filename is not None,
             "can_export_parquet": self.parquet_filename is not None,
             "has_row_binding": self.row_binding is not None,
             "is_view": self.is_view,
+            "docs_view": docs_view,
+            "read_only": read_only,
         }
 
 
@@ -332,6 +336,22 @@ ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = {
         row_type=row_models.BehavioralCoverageRowModel,
         to_tuple=row_models.behavioral_coverage_row_to_tuple,
     ),
+    "analytics.subsystem_profile_cache": _row_binding(
+        row_type=row_models.SubsystemProfileCacheRow,
+        to_tuple=row_models.subsystem_profile_cache_to_tuple,
+    ),
+    "analytics.subsystem_coverage_cache": _row_binding(
+        row_type=row_models.SubsystemCoverageCacheRow,
+        to_tuple=row_models.subsystem_coverage_cache_to_tuple,
+    ),
+    "docs.v_subsystem_profile": _row_binding(
+        row_type=row_models.SubsystemProfileCacheRow,
+        to_tuple=row_models.subsystem_profile_cache_to_tuple,
+    ),
+    "docs.v_subsystem_coverage": _row_binding(
+        row_type=row_models.SubsystemCoverageCacheRow,
+        to_tuple=row_models.subsystem_coverage_cache_to_tuple,
+    ),
 }
 
 # Dataset-level JSON Schema metadata.
@@ -350,6 +370,10 @@ JSON_SCHEMA_BY_DATASET_NAME: dict[str, str] = {
     # Tests
     "test_profile": "test_profile",
     "behavioral_coverage": "behavioral_coverage",
+    "v_subsystem_profile": "v_subsystem_profile",
+    "v_subsystem_coverage": "v_subsystem_coverage",
+    "subsystem_profile_cache": "subsystem_profile_cache",
+    "subsystem_coverage_cache": "subsystem_coverage_cache",
     # Data models
     "data_model_fields": "data_model_fields",
     "data_model_relationships": "data_model_relationships",
@@ -381,6 +405,10 @@ OWNER_BY_DATASET_NAME: dict[str, str] = {
     "test_coverage_edges": "analytics",
     "test_profile": "qa",
     "behavioral_coverage": "qa",
+    "v_subsystem_profile": "docs",
+    "v_subsystem_coverage": "docs",
+    "subsystem_profile_cache": "analytics",
+    "subsystem_coverage_cache": "analytics",
     "data_model_fields": "analytics",
     "data_model_relationships": "analytics",
 }
@@ -394,6 +422,10 @@ FRESHNESS_BY_DATASET_NAME: dict[str, str] = {
     "test_coverage_edges": "daily",
     "test_profile": "daily",
     "behavioral_coverage": "daily",
+    "v_subsystem_profile": "daily",
+    "v_subsystem_coverage": "daily",
+    "subsystem_profile_cache": "daily",
+    "subsystem_coverage_cache": "daily",
     "data_model_fields": "daily",
     "data_model_relationships": "daily",
 }
@@ -407,6 +439,10 @@ RETENTION_BY_DATASET_NAME: dict[str, str] = {
     "test_coverage_edges": "90d",
     "test_profile": "90d",
     "behavioral_coverage": "90d",
+    "v_subsystem_profile": "90d",
+    "v_subsystem_coverage": "90d",
+    "subsystem_profile_cache": "90d",
+    "subsystem_coverage_cache": "90d",
     "data_model_fields": "90d",
     "data_model_relationships": "90d",
 }

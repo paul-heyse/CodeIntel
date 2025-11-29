@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/data_model_usage.py
+# hypothesis_version: 6.148.3
+
+['.', '[^A-Za-z0-9_\\.]', 'add', 'all', 'asdict', 'astuple', 'bulk_create', 'commit', 'create', 'delete', 'dict', 'filter', 'filter_by', 'first', 'first_or_none', 'full_clean', 'get', 'join', 'json', 'lineno', 'merge', 'model_dump', 'model_dump_json', 'model_id', 'model_validate', 'module', 'objects', 'one', 'one_or_none', 'query', 'read', 'refresh', 'refresh_from_db', 'remove', 'save', 'scalar_one', 'scalar_one_or_none', 'select', 'serialize', 'subsystem_id', 'subsystem_name', 'to_dict', 'update', 'usage', 'validate', 'values', 'values_list', 'where']

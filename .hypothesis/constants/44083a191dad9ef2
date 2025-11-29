@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/pipeline/orchestration/prefect_adapter.py
+# hypothesis_version: 6.148.3
+
+['build_task_map', 'make_prefect_task']

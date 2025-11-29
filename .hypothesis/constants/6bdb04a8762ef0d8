@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/scaffold.py
+# hypothesis_version: 6.148.3
+
+['    placeholder: str', '# metadata entry:', '$id', '$schema', '),', 'Row', '_', 'freshness_sla', 'is_view', 'json_schema_id', 'jsonl_filename', 'lenient', 'name', 'object', 'owner', 'parquet_filename', 'placeholder', 'properties', 'required', 'retention_policy', 'schema_version', 'stable_id', 'strict', 'string', 'table_key', 'title', 'type', 'utf-8', 'validation_profile']

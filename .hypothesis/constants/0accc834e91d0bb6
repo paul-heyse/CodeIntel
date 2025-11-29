@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/docstrings_ingest.py
+# hypothesis_version: 6.148.3
+
+['.', '<unknown>', 'auto', 'class', 'core.docstrings', 'default', 'desc', 'description', 'end_lineno', 'example', 'examples', 'function', 'lineno', 'long_desc', 'method', 'module', 'name', 'params', 'python', 'raises', 'returns', 'short_desc', 'snippet', 'style', 'text', 'type', 'unknown']

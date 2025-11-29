@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/__init__.py
+# hypothesis_version: 6.148.3
+
+['BackendResource', 'HttpQueryService', 'LocalQueryService']

@@ -1,0 +1,29 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.148.3 <no-reply@hypothesis.works>
+Date: Sat, 29 Nov 2025 13:53:18
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/storage/test_schema_roundtrip.py
++++ ./tests/storage/test_schema_roundtrip.py
+@@ -69,6 +69,20 @@
+ 
+ @settings(max_examples=15)
+ @given(st.from_type(BehavioralCoverageRowModel))
++@example(
++    row={'repo': '',
++     'commit': '',
++     'test_id': '',
++     'test_goid_h128': None,
++     'rel_path': '',
++     'qualname': None,
++     'behavior_tags': None,
++     'tag_source': '',
++     'heuristic_version': None,
++     'llm_model': None,
++     'llm_run_id': None,
++     'created_at': datetime.datetime(2000, 1, 1, 0, 0)},
++).via('discovered failure')
+ def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None:
+     """Generated schemas should align with behavioral coverage TypedDict and serializer."""
+     schema = json_schema_from_typeddict(BehavioralCoverageRowModel)

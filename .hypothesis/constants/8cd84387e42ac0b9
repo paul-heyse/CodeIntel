@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/backend.py
+# hypothesis_version: 6.148.3
+
+[0.1, 0.7, 30.0, 100, 400, 500, '/function/summary', '/health', 'both', 'goid_h128', 'incoming', 'local_db', 'outgoing', 'qualname', 'rel_path', 'remote_api', 'urn']

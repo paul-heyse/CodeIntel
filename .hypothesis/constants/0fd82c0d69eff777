@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/cfg_dfg/cfg_core.py
+# hypothesis_version: 6.148.3
+
+[0.0, 1000, 'back', 'block', 'entry', 'exception', 'exit', 'fallthrough', 'false', 'in', 'kind', 'loop', 'out', 'true']
