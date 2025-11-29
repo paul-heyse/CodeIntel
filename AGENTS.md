@@ -45,14 +45,17 @@
 
 3) **Validate quality gates locally**
   ```bash
-  uv run ruff format && uv run ruff check --fix
-  uv run pyright --warnings --pythonversion=3.13
-  uv run pyrefly check
-  uv run vulture src tools stubs --min-confidence 90
-  uv run pytest -q
+  uv run python -m tools.quality_report --output build/quality-results/quality_report.json
   # If OpenAPI changed: lint spec (e.g., spectral lint openapi.yaml)
 
   ```
+  - The consolidated report is written to `build/quality-results/quality_report.json`
+    (also printed to stdout) with per-tool status, stdout/stderr, and timing metadata.
+  - The script executes, in order:
+    - `uv run ruff check --fix` (lint + autofix for style/import issues).
+    - `uv run pyright --warnings --pythonversion=3.13` (strict type checking with warnings).
+    - `uv run pyrefly check` (additional type and contract validation).
+    - `uv run pytest -q` (unit/integration suites in quiet mode).
 
 ### Quality checks (zero-error mandate)
 

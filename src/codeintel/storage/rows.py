@@ -1478,7 +1478,7 @@ TEST_PROFILE_COLUMNS: tuple[_TestProfileColumn, ...] = (
 )
 
 
-class TestProfileRowModel(TypedDict):
+class ProfileRowModel(TypedDict):
     """Row shape for ``analytics.test_profile`` inserts."""
 
     repo: str
@@ -1523,9 +1523,12 @@ class TestProfileRowModel(TypedDict):
     created_at: datetime
 
 
-def serialize_test_profile_row(row: TestProfileRowModel) -> tuple[object, ...]:
+TestProfileRowModel = ProfileRowModel
+
+
+def serialize_test_profile_row(row: ProfileRowModel) -> tuple[object, ...]:
     """
-    Serialize a TestProfileRowModel into INSERT column order.
+    Serialize a ProfileRowModel into INSERT column order.
 
     Returns
     -------
