@@ -10,7 +10,7 @@ import sys
 from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 
 from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions, build_graph_runtime
 from codeintel.analytics.history import compute_history_timeseries_gateways
@@ -36,9 +36,14 @@ from codeintel.pipeline.orchestration.steps import REGISTRY, StepPhase
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.errors import ExportError, log_problem, problem
+from codeintel.storage.catalog import (
+    build_catalog,
+    write_html_catalog,
+    write_markdown_catalog,
+)
 from codeintel.storage.conformance import run_conformance
 from codeintel.storage.contract_validation import collect_contract_issues
-from codeintel.storage.datasets import list_dataset_specs, load_dataset_registry
+from codeintel.storage.datasets import DatasetRegistry, list_dataset_specs, load_dataset_registry
 from codeintel.storage.gateway import (
     DuckDBError,
     StorageConfig,
@@ -54,6 +59,8 @@ from codeintel.storage.metadata_bootstrap import (
     validate_macro_registry,
     validate_normalized_macro_schemas,
 )
+from codeintel.storage.scaffold import ScaffoldOptions, scaffold_dataset
+from codeintel.storage.schema_generation import generate_export_schemas
 
 LOG = logging.getLogger("codeintel.cli")
 
@@ -232,6 +239,16 @@ def _add_pipeline_run_subparser(
         dest="export_datasets",
         action="append",
         help="Dataset name to export during docs export step (can be repeated).",
+    )
+    p_run.add_argument(
+        "--export-validation-profile",
+        choices=["strict", "lenient"],
+        help="Override validation profile for exports (default: dataset contract default).",
+    )
+    p_run.add_argument(
+        "--force-full-export",
+        action="store_true",
+        help="Force re-export even when incremental markers match.",
     )
     _add_graph_backend_args(p_run)
     p_run.set_defaults(func=_cmd_pipeline_run)
@@ -430,6 +447,115 @@ def _register_ide_commands(
     p_ide_hints.set_defaults(func=_cmd_ide_hints)
 
 
+def _register_scaffold_parser(
+    ds_sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = ds_sub.add_parser(
+        "scaffold",
+        help="Create a new dataset scaffold (TypedDict, schema, bindings, metadata).",
+    )
+    parser.add_argument("name", help="Logical dataset name (e.g., my_dataset).")
+    parser.add_argument(
+        "--kind",
+        choices=["table", "view"],
+        default="table",
+        help="Dataset kind; views skip default export filenames (default: table).",
+    )
+    parser.add_argument(
+        "--table-key",
+        type=str,
+        default=None,
+        help="Fully qualified table key (default: analytics.<name> or docs.<name> for views).",
+    )
+    parser.add_argument(
+        "--owner",
+        type=str,
+        default=None,
+        help="Owner/team for the dataset (optional).",
+    )
+    parser.add_argument(
+        "--freshness-sla",
+        type=str,
+        default=None,
+        help="Freshness expectation (e.g., daily, hourly).",
+    )
+    parser.add_argument(
+        "--retention-policy",
+        type=str,
+        default=None,
+        help="Retention policy string (e.g., 90d).",
+    )
+    parser.add_argument(
+        "--schema-version",
+        type=str,
+        default="1",
+        help="Schema version identifier (default: 1).",
+    )
+    parser.add_argument(
+        "--validation-profile",
+        choices=["strict", "lenient"],
+        default="strict",
+        help="Validation profile to seed in metadata (default: strict).",
+    )
+    parser.add_argument(
+        "--schema-id",
+        type=str,
+        default=None,
+        help="JSON Schema identifier to create (default: <name>).",
+    )
+    parser.add_argument(
+        "--jsonl-filename",
+        type=str,
+        default=None,
+        help="Default JSONL filename (default: <name>.jsonl).",
+    )
+    parser.add_argument(
+        "--parquet-filename",
+        type=str,
+        default=None,
+        help="Default Parquet filename (default: <name>.parquet).",
+    )
+    parser.add_argument(
+        "--stable-id",
+        type=str,
+        default=None,
+        help="Stable identifier for contract diffs (default: <name>).",
+    )
+    parser.add_argument(
+        "--specs-snapshot",
+        type=Path,
+        default=Path("build/catalog/dataset_specs.json"),
+        help="Optional dataset specs snapshot to check for name/stable_id clashes.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("build/dataset_scaffolds"),
+        help="Directory to write scaffold artifacts (default: build/dataset_scaffolds).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan the scaffold without writing files.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow overwriting existing files.",
+    )
+    parser.add_argument(
+        "--emit-bootstrap-snippet",
+        action="store_true",
+        help="Write a combined bootstrap snippet for metadata and bindings.",
+    )
+    parser.add_argument(
+        "--check-registry",
+        action="store_true",
+        help="Validate against the live registry to catch name/stable_id/table clashes.",
+    )
+    parser.set_defaults(func=_cmd_datasets_scaffold)
+
+
 def _register_dataset_commands(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -516,6 +642,50 @@ def _register_dataset_commands(
         help="Number of rows to sample per dataset when --sample-rows is set (default: 50).",
     )
     p_conf.set_defaults(func=_cmd_datasets_conformance)
+
+    p_codegen = ds_sub.add_parser(
+        "generate-schemas",
+        help="Generate export JSON Schemas from TypedDict row models into a directory",
+    )
+    _add_common_repo_args(p_codegen)
+    p_codegen.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("src/codeintel/config/schemas/export"),
+        help="Directory to write generated schemas (default: src/codeintel/config/schemas/export)",
+    )
+    p_codegen.add_argument(
+        "--datasets",
+        nargs="*",
+        help="Optional dataset names to generate; defaults to all datasets with row bindings.",
+    )
+    p_codegen.set_defaults(func=_cmd_datasets_generate_schemas)
+
+    p_catalog = ds_sub.add_parser(
+        "catalog",
+        help="Generate a Markdown/HTML dataset catalog from the registry.",
+    )
+    _add_common_repo_args(p_catalog)
+    p_catalog.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("build/catalog"),
+        help="Directory to write catalog artifacts (default: build/catalog).",
+    )
+    p_catalog.add_argument(
+        "--sample-rows",
+        type=int,
+        default=3,
+        help="Number of sample rows to include per dataset (default: 3, use 0 to skip).",
+    )
+    p_catalog.add_argument(
+        "--sample-rows-strict",
+        action="store_true",
+        help="Fail if sampling cannot be performed instead of silently skipping.",
+    )
+    p_catalog.set_defaults(func=_cmd_datasets_catalog)
+
+    _register_scaffold_parser(ds_sub)
 
 
 def _make_parser() -> argparse.ArgumentParser:
@@ -744,6 +914,8 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
             history_db_dir=args.history_db_dir,
             graph_backend=cfg.graph_backend,
             export_datasets=tuple(args.export_datasets) if args.export_datasets else None,
+            export_validation_profile=getattr(args, "export_validation_profile", None),
+            force_full_export=bool(getattr(args, "force_full_export", False)),
         ),
         targets=targets,
     )
@@ -1164,6 +1336,209 @@ def _cmd_datasets_conformance(args: argparse.Namespace) -> int:
             sys.stderr.write(f"[{prefix}] {issue.message}\n")
         return 1
     sys.stdout.write("Dataset conformance passed.\n")
+    return 0
+
+
+def _cmd_datasets_generate_schemas(args: argparse.Namespace) -> int:
+    """
+    Generate JSON Schemas from TypedDict row models for export validation.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success).
+    """
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=True)
+    registry = load_dataset_registry(gateway.con)
+    include = set(args.datasets) if args.datasets else None
+    written = generate_export_schemas(
+        registry,
+        output_dir=args.output_dir,
+        include_datasets=include,
+    )
+    if not written:
+        sys.stdout.write("No schemas generated (no matching datasets with row bindings).\n")
+        return 0
+    sys.stdout.write(f"Wrote {len(written)} schemas to {args.output_dir}\n")
+    return 0
+
+
+def _cmd_datasets_catalog(args: argparse.Namespace) -> int:
+    """
+    Generate a Markdown/HTML catalog from the dataset registry.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success).
+    """
+    db_path: Path = args.db_path
+    warnings_seen: set[str] = set()
+
+    def _warn(msg: str) -> None:
+        if msg in warnings_seen:
+            return
+        warnings_seen.add(msg)
+        sys.stderr.write(msg + "\n")
+
+    if not db_path.exists():
+        if args.sample_rows_strict:
+            sys.stderr.write(f"Database not found at {db_path}; cannot generate catalog.\n")
+            return 1
+        _warn(f"Database not found at {db_path}; writing empty catalog artifacts.")
+        output_dir = args.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        md = write_markdown_catalog(output_dir, [])
+        html = write_html_catalog(output_dir, [])
+        sys.stdout.write(f"Wrote catalog: {md}, {html}\n")
+        return 0
+
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=True)
+    registry = load_dataset_registry(gateway.con)
+    try:
+        entries = build_catalog(
+            registry,
+            con=gateway.con,
+            sample_rows=int(args.sample_rows),
+            sample_rows_strict=bool(args.sample_rows_strict),
+            warn=_warn,
+        )
+    except Exception as exc:  # noqa: BLE001 - surface sampling failures when strict
+        sys.stderr.write(f"Failed to generate catalog samples: {exc}\n")
+        return 1
+    output_dir = args.output_dir
+    md = write_markdown_catalog(output_dir, entries)
+    html = write_html_catalog(output_dir, entries)
+    sys.stdout.write(f"Wrote catalog: {md}, {html}\n")
+    return 0
+
+
+def run_datasets_catalog(args: argparse.Namespace) -> int:
+    """
+    Public wrapper to generate the catalog (primarily for tests/tools).
+
+    Returns
+    -------
+    int
+        Exit code (0 on success).
+    """
+    return _cmd_datasets_catalog(args)
+
+
+class ScaffoldConfigError(Exception):
+    """Configuration error while building scaffold options."""
+
+    def __init__(self, message: str, exit_code: int = 1) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
+
+
+def build_scaffold_options(
+    args: argparse.Namespace, *, registry: DatasetRegistry | None = None
+) -> ScaffoldOptions:
+    """
+    Construct scaffold options from CLI arguments with guardrails.
+
+    Returns
+    -------
+    ScaffoldOptions
+        Validated scaffold options derived from CLI arguments.
+
+    Raises
+    ------
+    ScaffoldConfigError
+        When validation fails.
+    """
+    name = args.name
+    kind = str(getattr(args, "kind", "table"))
+    table_key = args.table_key or f"{'docs' if kind == 'view' else 'analytics'}.{name}"
+    schema_id = args.schema_id or name
+    stable_id = args.stable_id or name
+    jsonl_filename = args.jsonl_filename or (None if kind == "view" else f"{name}.jsonl")
+    parquet_filename = args.parquet_filename or (None if kind == "view" else f"{name}.parquet")
+    existing_schema = Path("src/codeintel/config/schemas/export") / f"{schema_id}.json"
+    overwrite = bool(args.overwrite)
+    if existing_schema.exists() and not overwrite:
+        message = f"Schema already exists: {existing_schema}"
+        raise ScaffoldConfigError(message, exit_code=1)
+    specs_snapshot: Path = args.specs_snapshot
+    if specs_snapshot.exists() and not overwrite:
+        try:
+            specs = json.loads(specs_snapshot.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            message = f"Failed to parse specs snapshot {specs_snapshot}: {exc}"
+            raise ScaffoldConfigError(message, exit_code=2) from exc
+        names = {str(spec.get("name")) for spec in specs}
+        stable_ids = {str(spec.get("stable_id")) for spec in specs if "stable_id" in spec}
+        if name in names:
+            message = f"Dataset name already present in snapshot: {name}"
+            raise ScaffoldConfigError(message, 1)
+        if stable_id in stable_ids:
+            message = f"Stable ID already present in snapshot: {stable_id}"
+            raise ScaffoldConfigError(message, exit_code=1)
+
+    if registry is not None:
+        if name in registry.by_name:
+            message = f"Dataset name already present in registry: {name}"
+            raise ScaffoldConfigError(message, exit_code=1)
+        if stable_id in {ds.stable_id for ds in registry.by_name.values() if ds.stable_id}:
+            message = f"Stable ID already present in registry: {stable_id}"
+            raise ScaffoldConfigError(message, exit_code=1)
+        if table_key in registry.by_table_key:
+            message = f"Table key already present in registry: {table_key}"
+            raise ScaffoldConfigError(message, exit_code=1)
+    return ScaffoldOptions(
+        name=name,
+        table_key=table_key,
+        owner=args.owner,
+        freshness_sla=args.freshness_sla,
+        retention_policy=args.retention_policy,
+        schema_version=args.schema_version,
+        stable_id=stable_id,
+        validation_profile=cast("Literal['strict', 'lenient']", args.validation_profile),
+        jsonl_filename=jsonl_filename,
+        parquet_filename=parquet_filename,
+        schema_id=schema_id,
+        output_dir=args.output_dir,
+        is_view=kind == "view",
+        overwrite=overwrite,
+        dry_run=bool(args.dry_run),
+        emit_bootstrap_snippet=bool(args.emit_bootstrap_snippet),
+    )
+
+
+def _cmd_datasets_scaffold(args: argparse.Namespace) -> int:
+    """
+    Scaffold a new dataset contract skeleton.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success).
+    """
+    registry: DatasetRegistry | None = None
+    if getattr(args, "check_registry", False):
+        cfg = _build_config_from_args(args)
+        gateway = _open_gateway(cfg, read_only=True)
+        registry = load_dataset_registry(gateway.con)
+    try:
+        opts = build_scaffold_options(args, registry=registry)
+    except ScaffoldConfigError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return exc.exit_code
+    result = scaffold_dataset(opts)
+    sys.stdout.write(
+        "Scaffold plan:\n"
+        f"  TypedDict: {result.typed_dict}\n"
+        f"  Row binding snippet: {result.row_binding}\n"
+        f"  JSON Schema: {result.json_schema}\n"
+        f"  Metadata: {result.metadata}\n"
+        f"  Bootstrap snippet: {result.bootstrap_snippet}\n"
+    )
+    if opts.dry_run:
+        sys.stdout.write("Dry-run only; no files were written.\n")
     return 0
 
 

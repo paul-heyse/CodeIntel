@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -25,6 +27,7 @@ from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
+    DatasetSchemaResponse,
     DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
@@ -225,6 +228,19 @@ def install_logging_middleware(app: FastAPI) -> None:
             dict(request.query_params),
         )
         return response
+
+
+def _compute_etag(payload: object) -> str:
+    """
+    Compute a weak ETag for a JSON-serializable payload.
+
+    Returns
+    -------
+    str
+        Weak ETag header value.
+    """
+    encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return f'W/"{hashlib.sha256(encoded).hexdigest()}"'
 
 
 def get_app_config(request: Request) -> ServingConfig:
@@ -869,7 +885,12 @@ def build_datasets_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/datasets", response_model=list[DatasetDescriptor], summary="List datasets")
-    def list_datasets(*, service: ServiceDep) -> list[DatasetDescriptor]:
+    def list_datasets(
+        *,
+        service: ServiceDep,
+        request: Request,
+        response: Response,
+    ) -> Response | list[DatasetDescriptor]:
         """
         Return dataset descriptors available through the backend.
 
@@ -879,6 +900,12 @@ def build_datasets_router() -> APIRouter:
             Dataset descriptors sorted by name.
         """
         datasets = service.list_datasets()
+        payload = [ds.model_dump() for ds in datasets]
+        etag = _compute_etag(payload)
+        response.headers["Cache-Control"] = "public, max-age=60"
+        response.headers["ETag"] = etag
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=response.headers)
         LOG.info("Listed %d datasets", len(datasets))
         return datasets
 
@@ -887,7 +914,12 @@ def build_datasets_router() -> APIRouter:
         response_model=list[DatasetSpecDescriptor],
         summary="Describe dataset contract",
     )
-    def list_dataset_specs(*, service: ServiceDep) -> list[DatasetSpecDescriptor]:
+    def list_dataset_specs(
+        *,
+        service: ServiceDep,
+        request: Request,
+        response: Response,
+    ) -> Response | list[DatasetSpecDescriptor]:
         """
         Return canonical dataset specs including filenames and schema IDs.
 
@@ -897,6 +929,12 @@ def build_datasets_router() -> APIRouter:
             Dataset specs sorted by name.
         """
         specs = service.dataset_specs()
+        payload = [spec.model_dump() for spec in specs]
+        etag = _compute_etag(payload)
+        response.headers["Cache-Control"] = "public, max-age=60"
+        response.headers["ETag"] = etag
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=response.headers)
         LOG.info("Listed %d dataset specs", len(specs))
         return specs
 
@@ -929,6 +967,29 @@ def build_datasets_router() -> APIRouter:
             len(resp.rows),
         )
         return resp
+
+    @router.get(
+        "/datasets/{dataset_name}/schema",
+        response_model=DatasetSchemaResponse,
+        summary="Describe dataset schema and samples",
+    )
+    def dataset_schema(
+        *,
+        service: ServiceDep,
+        dataset_name: str,
+        limit: int = 5,
+    ) -> DatasetSchemaResponse:
+        """
+        Return schema metadata, JSON Schema (when present), and sample rows for a dataset.
+
+        Returns
+        -------
+        DatasetSchemaResponse
+            Schema detail payload.
+        """
+        detail = service.dataset_schema(dataset_name=dataset_name, sample_limit=limit)
+        LOG.info("Returned schema detail for dataset=%s", dataset_name)
+        return detail
 
     return router
 

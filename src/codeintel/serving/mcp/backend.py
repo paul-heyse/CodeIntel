@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -16,6 +17,7 @@ from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
+    DatasetSchemaResponse,
     DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
@@ -49,6 +51,7 @@ from codeintel.storage.gateway import StorageGateway
 
 MAX_ROWS_LIMIT = BackendLimits().max_rows_per_call
 HTTP_ERROR_STATUS = 400
+RETRYABLE_MIN_STATUS = 500
 LOG = logging.getLogger("codeintel.serving.mcp.backend")
 
 
@@ -193,6 +196,70 @@ class QueryBackend(Protocol):
         """Return canonical dataset specs."""
         ...
 
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+        """Return schema details for a dataset."""
+        ...
+
+
+class DatasetBackendMixin:
+    """Common dataset helpers shared by backend implementations."""
+
+    service: QueryService
+
+    def list_datasets(self) -> list[DatasetDescriptor]:
+        """
+        List datasets exposed by the backend.
+
+        Returns
+        -------
+        list[DatasetDescriptor]
+            Dataset metadata entries.
+        """
+        return self.service.list_datasets()
+
+    def read_dataset_rows(
+        self,
+        *,
+        dataset_name: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> DatasetRowsResponse:
+        """
+        Read a slice of rows from a dataset.
+
+        Returns
+        -------
+        DatasetRowsResponse
+            Dataset slice payload with metadata.
+        """
+        return self.service.read_dataset_rows(
+            dataset_name=dataset_name,
+            limit=limit,
+            offset=offset,
+        )
+
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        """
+        Return canonical dataset specs.
+
+        Returns
+        -------
+        list[DatasetSpecDescriptor]
+            Dataset spec descriptors sorted by name.
+        """
+        return self.service.dataset_specs()
+
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+        """
+        Return schema details for a dataset.
+
+        Returns
+        -------
+        DatasetSchemaResponse
+            Composite schema response including sample rows.
+        """
+        return self.service.dataset_schema(dataset_name=dataset_name, sample_limit=sample_limit)
+
 
 def _require_identifier(
     *, urn: str | None = None, goid_h128: int | None = None, rel_path: str | None = None
@@ -231,7 +298,7 @@ def _validate_direction(direction: str) -> str:
 
 
 @dataclass
-class DuckDBBackend(QueryBackend):
+class DuckDBBackend(DatasetBackendMixin, QueryBackend):
     """
     DuckDB-backed implementation of QueryBackend.
 
@@ -522,52 +589,9 @@ class DuckDBBackend(QueryBackend):
             module_limit=module_limit,
         )
 
-    def list_datasets(self) -> list[DatasetDescriptor]:
-        """
-        List datasets exposed by the backend.
 
-        Returns
-        -------
-        list[DatasetDescriptor]
-            Dataset metadata entries.
-        """
-        return self.service.list_datasets()
-
-    def read_dataset_rows(
-        self,
-        *,
-        dataset_name: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> DatasetRowsResponse:
-        """
-        Read a slice of rows from a dataset.
-
-        Returns
-        -------
-        DatasetRowsResponse
-            Dataset slice payload with metadata.
-        """
-        return self.service.read_dataset_rows(
-            dataset_name=dataset_name,
-            limit=limit,
-            offset=offset,
-        )
-
-    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
-        """
-        Return canonical dataset specs from the backend.
-
-        Returns
-        -------
-        list[DatasetSpecDescriptor]
-            Dataset spec descriptors sorted by name.
-        """
-        return self.service.dataset_specs()
-
-
-@dataclass  # noqa: PLR0904
-class HttpBackend(QueryBackend):
+@dataclass
+class HttpBackend(DatasetBackendMixin, QueryBackend):
     """HTTP-backed QueryBackend that talks to the FastAPI server."""
 
     base_url: str
@@ -581,6 +605,13 @@ class HttpBackend(QueryBackend):
     observability: ServiceObservability | None = None
     service_override: HttpQueryService | None = None
     service: QueryService = field(init=False)
+    retry_attempts: int = 3
+    retry_backoff: float = 0.1
+    circuit_threshold: int = 5
+    circuit_cooldown_s: float = 30.0
+    consecutive_failures: int = field(init=False, default=0)
+    last_failure_ts: float | None = field(init=False, default=None)
+    last_retry_attempts: int = field(init=False, default=1)
 
     def __post_init__(self) -> None:
         """Initialize the HTTP client and verify server health."""
@@ -620,16 +651,48 @@ class HttpBackend(QueryBackend):
             raise errors.backend_failure(message)
         filtered_params = {k: v for k, v in params.items() if v is not None}
         normalized_params = {k: str(v) for k, v in filtered_params.items()}
+        now = time.monotonic()
+        if (
+            self.consecutive_failures >= self.circuit_threshold
+            and self.last_failure_ts is not None
+            and now - self.last_failure_ts < self.circuit_cooldown_s
+        ):
+            message = "HTTP circuit open; retry later"
+            raise errors.backend_failure(message)
+
+        attempt_error: Exception | None = None
+        attempts_used = 0
         client = self.client
-        if isinstance(client, httpx.AsyncClient):
-            response = anyio.run(_get_async, client, path, normalized_params)
-        else:
-            response = client.get(path, params=normalized_params)
-        if response.status_code >= HTTP_ERROR_STATUS:
-            payload = response.json()
-            problem = ProblemDetail.model_validate(payload)
-            raise errors.McpError(detail=problem)
-        return response.json()
+        for attempt in range(1, self.retry_attempts + 1):
+            attempts_used = attempt
+            try:
+                if isinstance(client, httpx.AsyncClient):
+                    response = anyio.run(_get_async, client, path, normalized_params)
+                else:
+                    response = client.get(path, params=normalized_params)
+            except httpx.RequestError as exc:  # pragma: no cover - network dependent
+                attempt_error = exc
+            else:
+                if response.status_code >= HTTP_ERROR_STATUS:
+                    payload = response.json()
+                    problem = ProblemDetail.model_validate(payload)
+                    attempt_error = errors.McpError(detail=problem)
+                    if response.status_code < RETRYABLE_MIN_STATUS:
+                        raise attempt_error
+                else:
+                    self.consecutive_failures = 0
+                    self.last_failure_ts = None
+                    self.last_retry_attempts = attempts_used
+                    return response.json()
+            time.sleep(self.retry_backoff * attempt)
+
+        self.consecutive_failures += 1
+        self.last_failure_ts = time.monotonic()
+        self.last_retry_attempts = attempts_used
+        if attempt_error is not None:
+            raise attempt_error
+        message = "HTTP request failed after retries"
+        raise errors.backend_failure(message)
 
     def request_json(self, path: str, params: dict[str, object]) -> object:
         """
@@ -893,49 +956,6 @@ class HttpBackend(QueryBackend):
             subsystem_id=subsystem_id,
             module_limit=module_limit,
         )
-
-    def list_datasets(self) -> list[DatasetDescriptor]:
-        """
-        List datasets available from the remote API.
-
-        Returns
-        -------
-        list[DatasetDescriptor]
-            Dataset descriptors provided by the API.
-        """
-        return self.service.list_datasets()
-
-    def read_dataset_rows(
-        self,
-        *,
-        dataset_name: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> DatasetRowsResponse:
-        """
-        Read dataset rows from the remote API.
-
-        Returns
-        -------
-        DatasetRowsResponse
-            Dataset slice payload with metadata.
-        """
-        return self.service.read_dataset_rows(
-            dataset_name=dataset_name,
-            limit=limit,
-            offset=offset,
-        )
-
-    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
-        """
-        Return canonical dataset specs from the remote API.
-
-        Returns
-        -------
-        list[DatasetSpecDescriptor]
-            Dataset spec descriptors sorted by name.
-        """
-        return self.service.dataset_specs()
 
 
 def create_backend(

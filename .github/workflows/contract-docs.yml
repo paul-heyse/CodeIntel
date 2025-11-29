@@ -1,0 +1,46 @@
+name: Contract Docs
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  contract-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Generate catalog and diffs
+        env:
+          CODEINTEL_REPO: ${{ github.repository }}
+          CODEINTEL_COMMIT: ${{ github.sha }}
+          CI_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: scripts/ci/contract_docs.sh
+
+      - name: Upload catalog artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-catalog
+          path: build/catalog
+
+      - name: Publish diff summary
+        if: always()
+        run: |
+          if [ -f build/catalog/contract_docs_summary.txt ]; then
+            echo "dataset_diff_summary<<'EOF'" >> $GITHUB_STEP_SUMMARY
+            cat build/catalog/contract_docs_summary.txt >> $GITHUB_STEP_SUMMARY
+            echo "EOF" >> $GITHUB_STEP_SUMMARY
+          fi

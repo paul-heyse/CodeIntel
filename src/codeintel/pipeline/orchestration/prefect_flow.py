@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from prefect import flow, get_run_logger, task
 from prefect.logging.configuration import setup_logging
@@ -71,6 +71,8 @@ class ExportArgs:
     validate_exports: bool = False
     export_schemas: list[str] | None = None
     export_datasets: tuple[str, ...] | None = None
+    export_validation_profile: Literal["strict", "lenient"] | None = None
+    force_full_export: bool = False
     history_commits: tuple[str, ...] | None = None
     history_db_dir: Path | None = None
     graph_backend: GraphBackendConfig | None = None
@@ -191,6 +193,8 @@ def _build_pipeline_context(
         function_parser=args.function_parser,
         extra=extra,
         export_datasets=args.export_datasets,
+        export_validation_profile=args.export_validation_profile,
+        force_full_export=args.force_full_export,
     )
 
 
@@ -379,7 +383,13 @@ def t_export_docs(
     """Create views and export Parquet/JSONL artifacts."""
     resolved_hooks = hooks or ExportTaskHooks()
     export_options = options or ExportOptions(
-        export=ExportCallOptions(validate_exports=False, schemas=None, datasets=None)
+        export=ExportCallOptions(
+            validate_exports=False,
+            schemas=None,
+            datasets=None,
+            validation_profile=None,
+            force_full_export=False,
+        )
     )
     export_options = replace(export_options, validator=resolved_hooks.validator)
     gateway = resolved_hooks.gateway_factory(db_path)

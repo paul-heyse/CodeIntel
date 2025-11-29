@@ -8,8 +8,9 @@ instead of issuing custom SELECTs.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Literal, cast
 
 import networkx as nx
 
@@ -18,6 +19,8 @@ from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetRowsResponse,
+    DatasetSchemaColumn,
+    DatasetSchemaResponse,
     DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
@@ -39,7 +42,13 @@ from codeintel.serving.mcp.models import (
     TestsForFunctionResponse,
     ViewRow,
 )
-from codeintel.storage.datasets import list_dataset_specs, load_dataset_registry
+from codeintel.storage.contract_validation import _schema_path
+from codeintel.storage.datasets import (
+    Dataset,
+    dataset_for_name,
+    list_dataset_specs,
+    load_dataset_registry,
+)
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.repositories import (
     DatasetReadRepository,
@@ -177,6 +186,82 @@ def _normalize_entrypoints_dict(row: RowDict | None) -> None:
         return
     if row.get("entrypoints_json") is None:
         row["entrypoints_json"] = []
+
+
+def _fetch_duckdb_schema(con: DuckDBConnection, table_key: str) -> list[DatasetSchemaColumn]:
+    """
+    Return column descriptors for a DuckDB table/view.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    table_key
+        Fully qualified table/view name.
+
+    Returns
+    -------
+    list[DatasetSchemaColumn]
+        Column descriptors derived from information_schema.
+    """
+    if "." not in table_key:
+        return []
+    schema_name, table_name = table_key.split(".", maxsplit=1)
+    rows = con.execute(
+        """
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = ? AND table_name = ?
+        ORDER BY ordinal_position
+        """,
+        [schema_name, table_name],
+    ).fetchall()
+    return [
+        DatasetSchemaColumn(
+            name=str(col_name),
+            type=str(col_type),
+            nullable=str(nullable).upper() == "YES",
+        )
+        for col_name, col_type, nullable in rows
+    ]
+
+
+def _load_json_schema(ds: Dataset) -> dict[str, object] | None:
+    """
+    Load a JSON Schema document for a dataset if present on disk.
+
+    Parameters
+    ----------
+    ds
+        Dataset metadata entry from the registry.
+
+    Returns
+    -------
+    dict[str, object] | None
+        Parsed JSON Schema when available.
+    """
+    if ds.json_schema_id is None:
+        return None
+    schema_path = _schema_path(ds.json_schema_id)
+    if not schema_path.exists():
+        return None
+    return json.loads(schema_path.read_text(encoding="utf-8"))
+
+
+def _normalize_validation_profile(
+    value: str | None,
+) -> Literal["strict", "lenient"] | None:
+    """
+    Restrict validation profile to supported literals.
+
+    Returns
+    -------
+    Literal["strict", "lenient"] | None
+        Normalized validation profile when valid.
+    """
+    if value in {"strict", "lenient"}:
+        return value
+    return None
 
 
 @dataclass  # noqa: PLR0904
@@ -1165,24 +1250,62 @@ class DuckDBQueryService:
         sorted_specs = sorted(specs, key=lambda spec: cast("str", spec["name"]))
         results: list[DatasetSpecDescriptor] = []
         for spec in sorted_specs:
-            name = cast("str", spec["name"])
-            table_key = cast("str", spec["table_key"])
-            schema_columns = list(cast("list[str]", spec["schema_columns"]))
-            jsonl_filename = cast("str | None", spec["jsonl_filename"])
-            parquet_filename = cast("str | None", spec["parquet_filename"])
-            json_schema_id = cast("str | None", spec["json_schema_id"])
-            description = cast("str | None", spec["description"])
-            results.append(
-                DatasetSpecDescriptor(
-                    name=name,
-                    table_key=table_key,
-                    is_view=bool(spec["is_view"]),
-                    schema_columns=schema_columns,
-                    jsonl_filename=jsonl_filename,
-                    parquet_filename=parquet_filename,
-                    has_row_binding=bool(spec["has_row_binding"]),
-                    json_schema_id=json_schema_id,
-                    description=description,
-                )
+            normalized: dict[str, object] = dict(spec)
+            normalized["schema_columns"] = list(cast("list[str]", spec["schema_columns"]))
+            normalized["upstream_dependencies"] = list(
+                cast("list[str]", spec.get("upstream_dependencies", []))
             )
+            normalized["capabilities"] = dict(cast("dict[str, bool]", spec.get("capabilities", {})))
+            normalized["validation_profile"] = _normalize_validation_profile(
+                cast("str | None", spec.get("validation_profile"))
+            )
+            results.append(DatasetSpecDescriptor.model_validate(normalized))
         return results
+
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+        """
+        Return a composite schema description for a dataset.
+
+        Parameters
+        ----------
+        dataset_name
+            Logical dataset name to describe.
+        sample_limit
+            Number of sample rows to include from dataset_rows.
+
+        Returns
+        -------
+        DatasetSchemaResponse
+            Composite schema payload with schemas and sample rows.
+
+        Raises
+        ------
+        errors.not_found
+            When the dataset is unknown.
+        """
+        registry = load_dataset_registry(self.gateway.con)
+        try:
+            ds = dataset_for_name(registry, dataset_name)
+        except KeyError as exc:
+            message = f"Unknown dataset: {dataset_name}"
+            raise errors.not_found(message) from exc
+        duckdb_schema = _fetch_duckdb_schema(self.gateway.con, ds.table_key)
+        sample_rows = self.datasets.read_dataset_rows(
+            table_key=ds.table_key,
+            limit=sample_limit,
+            offset=0,
+        )
+        return DatasetSchemaResponse(
+            dataset=dataset_name,
+            table_key=ds.table_key,
+            duckdb_schema=duckdb_schema,
+            json_schema=_load_json_schema(ds),
+            sample_rows=[ViewRow.model_validate(row) for row in sample_rows],
+            capabilities=ds.capabilities(),
+            owner=ds.owner,
+            freshness_sla=ds.freshness_sla,
+            retention_policy=ds.retention_policy,
+            schema_version=ds.schema_version,
+            stable_id=ds.stable_id,
+            validation_profile=_normalize_validation_profile(ds.validation_profile),
+        )
