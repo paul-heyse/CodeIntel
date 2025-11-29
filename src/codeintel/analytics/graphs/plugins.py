@@ -25,6 +25,65 @@ from codeintel.storage.gateway import StorageGateway
 log = logging.getLogger(__name__)
 
 
+@dataclass
+class GraphRuntimeScratch:
+    """Ephemeral scratch/cache store shared across plugin executions in a run."""
+
+    _store: dict[str, object] = field(default_factory=dict)
+    _cleanup: list[Callable[[], None]] = field(default_factory=list)
+
+    def declare(self, key: str, value: object) -> None:
+        """Record a value for later consumption."""
+        self._store[key] = value
+
+    def consume(self, key: str, default: object | None = None) -> object | None:
+        """
+        Retrieve a value populated by another plugin.
+
+        Returns
+        -------
+        object | None
+            Cached value or provided default.
+        """
+        return self._store.get(key, default)
+
+    def register_cleanup(self, callback: Callable[[], None]) -> None:
+        """Register a cleanup callback executed after the run completes."""
+        self._cleanup.append(callback)
+
+    def cleanup(self) -> None:
+        """Execute cleanup callbacks and clear stored values."""
+        for callback in reversed(self._cleanup):
+            try:
+                callback()
+            except Exception:
+                log.exception("scratch.cleanup_failed")
+        self._store.clear()
+        self._cleanup.clear()
+
+    def __len__(self) -> int:
+        """
+        Return the number of declared cache entries.
+
+        Returns
+        -------
+        int
+            Count of cached entries.
+        """
+        return len(self._store)
+
+    def keys(self) -> tuple[str, ...]:
+        """
+        Return declared cache keys.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Cache key names.
+        """
+        return tuple(self._store.keys())
+
+
 @dataclass(frozen=True)
 class GraphMetricExecutionContext:
     """
@@ -45,6 +104,52 @@ class GraphMetricExecutionContext:
     plugin_name: str | None = None
     run_id: str | None = None
     scope: GraphRunScope = field(default_factory=GraphRunScope)
+    scratch: GraphRuntimeScratch = field(default_factory=GraphRuntimeScratch)
+
+
+@dataclass(frozen=True)
+class GraphPluginResult:
+    """Optional structured result returned by graph metric plugins."""
+
+    row_counts: dict[str, int] | None = None
+    input_hash: str | None = None
+    options_hash: str | None = None
+
+
+def _row_counts_for_tables(
+    ctx: GraphMetricExecutionContext, tables: Sequence[str]
+) -> dict[str, int]:
+    """
+    Compute row counts for a set of tables scoped by repo/commit.
+
+    Parameters
+    ----------
+    ctx:
+        Plugin execution context containing gateway/repo/commit.
+    tables:
+        Iterable of table names to count.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping of table name to row count for the requested repo/commit.
+    """
+    counts: dict[str, int] = {}
+    connection = getattr(ctx.gateway, "con", None)
+    if connection is None:
+        return counts
+    for table in tables:
+        try:
+            escaped_repo = ctx.repo.replace("'", "''")
+            escaped_commit = ctx.commit.replace("'", "''")
+            relation = connection.table(table).filter(
+                f"repo = '{escaped_repo}' AND commit = '{escaped_commit}'"
+            )
+            row_count = relation.count().fetchone()[0]
+            counts[table] = int(row_count)
+        except Exception:  # noqa: BLE001 - defensive, counting must not break plugins
+            log.debug("row_count.failed table=%s repo=%s commit=%s", table, ctx.repo, ctx.commit)
+    return counts
 
 
 @dataclass(frozen=True)
@@ -88,7 +193,7 @@ class GraphMetricPlugin:
         "stats",
     ]
     enabled_by_default: bool
-    run: Callable[[GraphMetricExecutionContext], None]
+    run: Callable[[GraphMetricExecutionContext], GraphPluginResult | None]
     depends_on: tuple[str, ...] = ()
     provides: tuple[str, ...] = ()
     requires: tuple[str, ...] = ()
@@ -103,6 +208,11 @@ class GraphMetricPlugin:
     requires_isolation: bool = False
     isolation_kind: Literal["process", "thread"] | None = None
     config_schema_ref: str | None = None
+    row_count_tables: tuple[str, ...] = ()
+    description_ref: str | None = None
+    stage_rank: int | None = None
+    cache_populates: tuple[str, ...] = ()
+    cache_consumes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -136,8 +246,9 @@ class GraphMetricPluginMetadata:
     requires_isolation: bool
     isolation_kind: Literal["process", "thread"] | None
     config_schema_ref: str | None
-    description_ref: str | None = None
-    stage_rank: int | None = None
+    row_count_tables: tuple[str, ...] = ()
+    cache_populates: tuple[str, ...] = ()
+    cache_consumes: tuple[str, ...] = ()
 
 
 def graph_metric_plugin_metadata(plugin: GraphMetricPlugin) -> GraphMetricPluginMetadata:
@@ -173,6 +284,9 @@ def graph_metric_plugin_metadata(plugin: GraphMetricPlugin) -> GraphMetricPlugin
         requires_isolation=plugin.requires_isolation,
         isolation_kind=plugin.isolation_kind,
         config_schema_ref=plugin.config_schema_ref,
+        row_count_tables=plugin.row_count_tables,
+        cache_populates=plugin.cache_populates,
+        cache_consumes=plugin.cache_consumes,
     )
 
 
@@ -192,6 +306,7 @@ class GraphMetricPluginPlan:
 
 
 _PLUGINS: dict[str, GraphMetricPlugin] = {}
+_ENTRYPOINTS_LOADED_FLAG = [False]
 
 
 def _normalize_options_payload(options: object | None) -> dict[str, object]:
@@ -262,6 +377,7 @@ def get_graph_metric_plugin(name: str) -> GraphMetricPlugin:
     KeyError
         If no plugin is registered under the provided name.
     """
+    _ensure_entrypoint_plugins_loaded()
     plugin = _PLUGINS.get(name)
     if plugin is None:
         raise KeyError(name)
@@ -277,6 +393,7 @@ def list_graph_metric_plugins() -> tuple[GraphMetricPlugin, ...]:
     tuple[GraphMetricPlugin, ...]
         Registered plugins in insertion order.
     """
+    _ensure_entrypoint_plugins_loaded()
     return tuple(_PLUGINS.values())
 
 
@@ -291,6 +408,7 @@ class GraphMetricPluginSkip:
 def load_graph_metric_plugins_from_entrypoints(
     *,
     group: str = "codeintel.graph_metric_plugins",
+    force: bool = False,
 ) -> tuple[GraphMetricPlugin, ...]:
     """
     Discover and register graph metric plugins from entrypoints.
@@ -299,6 +417,8 @@ def load_graph_metric_plugins_from_entrypoints(
     ----------
     group :
         Entrypoint group to load plugins from.
+    force :
+        When True, load entrypoints even if discovery already ran.
 
     Returns
     -------
@@ -310,6 +430,8 @@ def load_graph_metric_plugins_from_entrypoints(
     TypeError
         If an entrypoint does not yield a GraphMetricPlugin.
     """
+    if _ENTRYPOINTS_LOADED_FLAG[0] and not force:
+        return ()
     discovered: list[GraphMetricPlugin] = []
     for entry_point in importlib.metadata.entry_points().select(group=group):
         plugin = entry_point.load()
@@ -323,6 +445,7 @@ def load_graph_metric_plugins_from_entrypoints(
             plugin.name,
             group,
         )
+    _ENTRYPOINTS_LOADED_FLAG[0] = True
     return tuple(discovered)
 
 
@@ -336,6 +459,12 @@ def list_graph_metric_plugin_metadata() -> tuple[GraphMetricPluginMetadata, ...]
         Ordered metadata matching the current registry contents.
     """
     return tuple(graph_metric_plugin_metadata(plugin) for plugin in list_graph_metric_plugins())
+
+
+def _ensure_entrypoint_plugins_loaded() -> None:
+    if _ENTRYPOINTS_LOADED_FLAG[0]:
+        return
+    load_graph_metric_plugins_from_entrypoints()
 
 
 def _validate_plugin_deps(
@@ -448,6 +577,7 @@ def plan_graph_metric_plugins(
     ValueError
         If a plugin name is unknown, duplicated, or a dependency is missing/cyclic.
     """
+    _ensure_entrypoint_plugins_loaded()
     selection, skipped = _resolve_requested_plugins(
         plugin_names=plugin_names,
         enabled=enabled,
@@ -559,7 +689,7 @@ def _ensure_graph_metrics_cfg(ctx: GraphMetricExecutionContext) -> GraphMetricsS
     return GraphMetricsStepConfig(snapshot=snapshot)
 
 
-def _plugin_core_graph_metrics(ctx: GraphMetricExecutionContext) -> None:
+def _plugin_core_graph_metrics(ctx: GraphMetricExecutionContext) -> GraphPluginResult | None:
     module = importlib.import_module("codeintel.analytics.graphs.graph_metrics")
 
     cfg = _ensure_graph_metrics_cfg(ctx)
@@ -570,6 +700,15 @@ def _plugin_core_graph_metrics(ctx: GraphMetricExecutionContext) -> None:
         filters=None,
     )
     module.compute_graph_metrics(ctx.gateway, cfg, deps=deps)
+    return GraphPluginResult(
+        row_counts=_row_counts_for_tables(
+            ctx,
+            (
+                "analytics.graph_metrics_functions",
+                "analytics.graph_metrics_modules",
+            ),
+        )
+    )
 
 
 register_graph_metric_plugin(
@@ -579,11 +718,17 @@ register_graph_metric_plugin(
         stage="core",
         enabled_by_default=True,
         run=_plugin_core_graph_metrics,
+        row_count_tables=(
+            "analytics.graph_metrics_functions",
+            "analytics.graph_metrics_modules",
+        ),
     )
 )
 
 
-def _plugin_graph_metrics_functions_ext(ctx: GraphMetricExecutionContext) -> None:
+def _plugin_graph_metrics_functions_ext(
+    ctx: GraphMetricExecutionContext,
+) -> GraphPluginResult | None:
     module = importlib.import_module("codeintel.analytics.graphs.graph_metrics_ext")
 
     cfg = _ensure_graph_metrics_cfg(ctx)
@@ -594,6 +739,12 @@ def _plugin_graph_metrics_functions_ext(ctx: GraphMetricExecutionContext) -> Non
         runtime=ctx.runtime,
         filters=None,
     )
+    return GraphPluginResult(
+        row_counts=_row_counts_for_tables(
+            ctx,
+            ("analytics.graph_metrics_functions_ext",),
+        )
+    )
 
 
 register_graph_metric_plugin(
@@ -603,11 +754,14 @@ register_graph_metric_plugin(
         stage="core",
         enabled_by_default=True,
         run=_plugin_graph_metrics_functions_ext,
+        row_count_tables=("analytics.graph_metrics_functions_ext",),
     )
 )
 
 
-def _plugin_graph_metrics_modules_ext(ctx: GraphMetricExecutionContext) -> None:
+def _plugin_graph_metrics_modules_ext(
+    ctx: GraphMetricExecutionContext,
+) -> GraphPluginResult | None:
     module = importlib.import_module("codeintel.analytics.graphs.module_graph_metrics_ext")
 
     cfg = _ensure_graph_metrics_cfg(ctx)
@@ -618,6 +772,12 @@ def _plugin_graph_metrics_modules_ext(ctx: GraphMetricExecutionContext) -> None:
         runtime=ctx.runtime,
         filters=None,
     )
+    return GraphPluginResult(
+        row_counts=_row_counts_for_tables(
+            ctx,
+            ("analytics.graph_metrics_modules_ext",),
+        )
+    )
 
 
 register_graph_metric_plugin(
@@ -627,6 +787,7 @@ register_graph_metric_plugin(
         stage="core",
         enabled_by_default=True,
         run=_plugin_graph_metrics_modules_ext,
+        row_count_tables=("analytics.graph_metrics_modules_ext",),
     )
 )
 
@@ -675,7 +836,7 @@ register_graph_metric_plugin(
 )
 
 
-def _plugin_test_graph_metrics(ctx: GraphMetricExecutionContext) -> None:
+def _plugin_test_graph_metrics(ctx: GraphMetricExecutionContext) -> GraphPluginResult | None:
     module = importlib.import_module("codeintel.analytics.tests.graph_metrics")
 
     module.compute_test_graph_metrics(
@@ -683,6 +844,15 @@ def _plugin_test_graph_metrics(ctx: GraphMetricExecutionContext) -> None:
         repo=ctx.repo,
         commit=ctx.commit,
         runtime=ctx.runtime,
+    )
+    return GraphPluginResult(
+        row_counts=_row_counts_for_tables(
+            ctx,
+            (
+                "analytics.test_graph_metrics_tests",
+                "analytics.test_graph_metrics_functions",
+            ),
+        )
     )
 
 
@@ -693,11 +863,17 @@ register_graph_metric_plugin(
         stage="test",
         enabled_by_default=True,
         run=_plugin_test_graph_metrics,
+        row_count_tables=(
+            "analytics.test_graph_metrics_tests",
+            "analytics.test_graph_metrics_functions",
+        ),
     )
 )
 
 
-def _plugin_symbol_graph_metrics_modules(ctx: GraphMetricExecutionContext) -> None:
+def _plugin_symbol_graph_metrics_modules(
+    ctx: GraphMetricExecutionContext,
+) -> GraphPluginResult | None:
     module = importlib.import_module("codeintel.analytics.graphs.symbol_graph_metrics")
 
     module.compute_symbol_graph_metrics_modules(
@@ -705,6 +881,12 @@ def _plugin_symbol_graph_metrics_modules(ctx: GraphMetricExecutionContext) -> No
         repo=ctx.repo,
         commit=ctx.commit,
         runtime=ctx.runtime,
+    )
+    return GraphPluginResult(
+        row_counts=_row_counts_for_tables(
+            ctx,
+            ("analytics.symbol_graph_metrics_modules",),
+        )
     )
 
 
@@ -715,11 +897,14 @@ register_graph_metric_plugin(
         stage="symbol",
         enabled_by_default=True,
         run=_plugin_symbol_graph_metrics_modules,
+        row_count_tables=("analytics.symbol_graph_metrics_modules",),
     )
 )
 
 
-def _plugin_symbol_graph_metrics_functions(ctx: GraphMetricExecutionContext) -> None:
+def _plugin_symbol_graph_metrics_functions(
+    ctx: GraphMetricExecutionContext,
+) -> GraphPluginResult | None:
     module = importlib.import_module("codeintel.analytics.graphs.symbol_graph_metrics")
 
     module.compute_symbol_graph_metrics_functions(
@@ -727,6 +912,12 @@ def _plugin_symbol_graph_metrics_functions(ctx: GraphMetricExecutionContext) -> 
         repo=ctx.repo,
         commit=ctx.commit,
         runtime=ctx.runtime,
+    )
+    return GraphPluginResult(
+        row_counts=_row_counts_for_tables(
+            ctx,
+            ("analytics.symbol_graph_metrics_functions",),
+        )
     )
 
 
@@ -737,11 +928,14 @@ register_graph_metric_plugin(
         stage="symbol",
         enabled_by_default=True,
         run=_plugin_symbol_graph_metrics_functions,
+        row_count_tables=("analytics.symbol_graph_metrics_functions",),
     )
 )
 
 
-def _plugin_subsystem_graph_metrics(ctx: GraphMetricExecutionContext) -> None:
+def _plugin_subsystem_graph_metrics(
+    ctx: GraphMetricExecutionContext,
+) -> GraphPluginResult | None:
     module = importlib.import_module("codeintel.analytics.graphs.subsystem_graph_metrics")
 
     module.compute_subsystem_graph_metrics(
@@ -750,6 +944,9 @@ def _plugin_subsystem_graph_metrics(ctx: GraphMetricExecutionContext) -> None:
         commit=ctx.commit,
         runtime=ctx.runtime,
         filters=None,
+    )
+    return GraphPluginResult(
+        row_counts=_row_counts_for_tables(ctx, ("analytics.subsystem_graph_metrics",))
     )
 
 
@@ -760,11 +957,12 @@ register_graph_metric_plugin(
         stage="subsystem",
         enabled_by_default=True,
         run=_plugin_subsystem_graph_metrics,
+        row_count_tables=("analytics.subsystem_graph_metrics",),
     )
 )
 
 
-def _plugin_config_graph_metrics(ctx: GraphMetricExecutionContext) -> None:
+def _plugin_config_graph_metrics(ctx: GraphMetricExecutionContext) -> GraphPluginResult | None:
     module = importlib.import_module("codeintel.analytics.graphs.config_graph_metrics")
 
     module.compute_config_graph_metrics(
@@ -772,6 +970,17 @@ def _plugin_config_graph_metrics(ctx: GraphMetricExecutionContext) -> None:
         repo=ctx.repo,
         commit=ctx.commit,
         runtime=ctx.runtime,
+    )
+    return GraphPluginResult(
+        row_counts=_row_counts_for_tables(
+            ctx,
+            (
+                "analytics.config_graph_metrics_keys",
+                "analytics.config_graph_metrics_modules",
+                "analytics.config_projection_key_edges",
+                "analytics.config_projection_module_edges",
+            ),
+        )
     )
 
 
@@ -782,11 +991,17 @@ register_graph_metric_plugin(
         stage="config",
         enabled_by_default=True,
         run=_plugin_config_graph_metrics,
+        row_count_tables=(
+            "analytics.config_graph_metrics_keys",
+            "analytics.config_graph_metrics_modules",
+            "analytics.config_projection_key_edges",
+            "analytics.config_projection_module_edges",
+        ),
     )
 )
 
 
-def _plugin_graph_stats(ctx: GraphMetricExecutionContext) -> None:
+def _plugin_graph_stats(ctx: GraphMetricExecutionContext) -> GraphPluginResult | None:
     module = importlib.import_module("codeintel.analytics.graphs.graph_stats")
 
     module.compute_graph_stats(
@@ -795,6 +1010,7 @@ def _plugin_graph_stats(ctx: GraphMetricExecutionContext) -> None:
         commit=ctx.commit,
         runtime=ctx.runtime,
     )
+    return GraphPluginResult(row_counts=_row_counts_for_tables(ctx, ("analytics.graph_stats",)))
 
 
 register_graph_metric_plugin(
@@ -804,6 +1020,31 @@ register_graph_metric_plugin(
         stage="stats",
         enabled_by_default=True,
         run=_plugin_graph_stats,
+        row_count_tables=("analytics.graph_stats",),
+    )
+)
+
+
+def _plugin_subsystem_agreement(ctx: GraphMetricExecutionContext) -> GraphPluginResult | None:
+    module = importlib.import_module("codeintel.analytics.graphs.subsystem_agreement")
+
+    module.compute_subsystem_agreement(
+        ctx.gateway,
+        repo=ctx.repo,
+        commit=ctx.commit,
+    )
+    return GraphPluginResult(row_counts=_row_counts_for_tables(ctx, ("analytics.subsystem_agreement",)))
+
+
+register_graph_metric_plugin(
+    GraphMetricPlugin(
+        name="subsystem_agreement",
+        description="Check agreement between subsystem labels and import communities.",
+        stage="subsystem",
+        enabled_by_default=True,
+        run=_plugin_subsystem_agreement,
+        depends_on=("subsystem_graph_metrics", "graph_metrics_modules_ext"),
+        row_count_tables=("analytics.subsystem_agreement",),
     )
 )
 
@@ -819,5 +1060,6 @@ DEFAULT_GRAPH_METRIC_PLUGINS: tuple[str, ...] = (
     "symbol_graph_metrics_functions",
     "config_graph_metrics",
     "subsystem_graph_metrics",
+    "subsystem_agreement",
     "graph_stats",
 )

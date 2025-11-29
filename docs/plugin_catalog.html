@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Graph Plugin Catalog</title>
+</head>
+<body>
+<h1>Graph Plugin Catalog</h1>
+<p>Generated at: 2025-11-29T21:26:54.422328+00:00 | Plugin count: 12</p>
+<table border="1" cellpadding="4" cellspacing="0">
+<tr><th>Name</th><th>Stage</th><th>Severity</th><th>Enabled</th><th>Isolation</th><th>Scope-aware</th><th>Depends</th><th>Provides</th><th>Requires</th></tr>
+<tr><td>cfg_metrics</td><td>cfg</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>config_graph_metrics</td><td>config</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>core_graph_metrics</td><td>core</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>dfg_metrics</td><td>dfg</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>graph_metrics_functions_ext</td><td>core</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>graph_metrics_modules_ext</td><td>core</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>graph_stats</td><td>stats</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>subsystem_agreement</td><td>subsystem</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>subsystem_graph_metrics, graph_metrics_modules_ext</td><td>-</td><td>-</td></tr>
+<tr><td>subsystem_graph_metrics</td><td>subsystem</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>symbol_graph_metrics_functions</td><td>symbol</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>symbol_graph_metrics_modules</td><td>symbol</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td>test_graph_metrics</td><td>test</td><td>fatal</td><td>yes</td><td>no</td><td>no</td><td>-</td><td>-</td><td>-</td></tr>
+</table>
+<h2>Plugin Details</h2>
+<h3>cfg_metrics</h3>
+<ul>
+<li>Description: Control-flow graph metrics for functions and blocks.</li>
+<li>Stage: cfg (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: -</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>config_graph_metrics</h3>
+<ul>
+<li>Description: Config bipartite/projection graph metrics.</li>
+<li>Stage: config (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.config_graph_metrics_keys, analytics.config_graph_metrics_modules, analytics.config_projection_key_edges, analytics.config_projection_module_edges</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>core_graph_metrics</h3>
+<ul>
+<li>Description: Core function/module graph metrics (centrality, neighbors, components).</li>
+<li>Stage: core (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.graph_metrics_functions, analytics.graph_metrics_modules</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>dfg_metrics</h3>
+<ul>
+<li>Description: Data-flow graph metrics for functions and blocks.</li>
+<li>Stage: dfg (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: -</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>graph_metrics_functions_ext</h3>
+<ul>
+<li>Description: Extended call graph metrics for functions.</li>
+<li>Stage: core (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.graph_metrics_functions_ext</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>graph_metrics_modules_ext</h3>
+<ul>
+<li>Description: Extended import graph metrics for modules.</li>
+<li>Stage: core (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.graph_metrics_modules_ext</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>graph_stats</h3>
+<ul>
+<li>Description: Global graph statistics for core graphs.</li>
+<li>Stage: stats (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.graph_stats</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>subsystem_agreement</h3>
+<ul>
+<li>Description: Check agreement between subsystem labels and import communities.</li>
+<li>Stage: subsystem (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: subsystem_graph_metrics, graph_metrics_modules_ext; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.subsystem_agreement</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>subsystem_graph_metrics</h3>
+<ul>
+<li>Description: Subsystem-level condensed import graph metrics.</li>
+<li>Stage: subsystem (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.subsystem_graph_metrics</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>symbol_graph_metrics_functions</h3>
+<ul>
+<li>Description: Symbol graph metrics at the function level.</li>
+<li>Stage: symbol (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.symbol_graph_metrics_functions</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>symbol_graph_metrics_modules</h3>
+<ul>
+<li>Description: Symbol graph metrics at the module level.</li>
+<li>Stage: symbol (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.symbol_graph_metrics_modules</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h3>test_graph_metrics</h3>
+<ul>
+<li>Description: Metrics over the test <-> function bipartite graph.</li>
+<li>Stage: test (severity: fatal); Enabled by default: yes</li>
+<li>Isolation: no (none)</li>
+<li>Scope-aware: no (supports: -)</li>
+<li>Depends on: -; Provides: -; Requires data: -</li>
+<li>Resource hints: none; Row count tables: analytics.test_graph_metrics_tests, analytics.test_graph_metrics_functions</li>
+<li>Options model: none (default: None)</li>
+<li>Config schema ref: none; Contracts: 0</li>
+<li>Version hash: n/a</li>
+</ul>
+<h2>Plan Output Examples</h2>
+<p>Plan responses include ordered plugins, skip reasons, dependency graph, and enriched metadata.</p>
+<pre>
+{
+  "plan_id": "example-plan-id",
+  "ordered_plugins": [
+    "core_graph_metrics",
+    "graph_metrics_modules_ext"
+  ],
+  "skipped_plugins": [
+    {
+      "name": "graph_stats",
+      "reason": "disabled"
+    }
+  ],
+  "dep_graph": {
+    "core_graph_metrics": [],
+    "graph_metrics_modules_ext": []
+  },
+  "plugin_metadata": {
+    "core_graph_metrics": {
+      "stage": "core",
+      "severity": "fatal",
+      "requires_isolation": false,
+      "isolation_kind": null,
+      "scope_aware": false,
+      "supported_scopes": [],
+      "depends_on": [],
+      "provides": [],
+      "requires": []
+    }
+  }
+}
+</pre>
+<p>Manifest excerpts carry run/scope IDs, isolation flags, and row counts:</p>
+<pre>
+{
+  "run_id": "example-run-id",
+  "scope": {
+    "paths": [
+      "src/"
+    ],
+    "modules": [],
+    "time_window": null
+  },
+  "plugins": [
+    {
+      "name": "core_graph_metrics",
+      "status": "ok",
+      "requires_isolation": false,
+      "row_counts": {
+        "analytics.graph_metrics_functions": 42
+      },
+      "contracts": []
+    }
+  ]
+}
+</pre>
+<p>
+Regenerate: uv run python scripts/render_graph_plugin_catalog.py (JSON + Markdown + HTML).
+</p>
+</body>
+</html>

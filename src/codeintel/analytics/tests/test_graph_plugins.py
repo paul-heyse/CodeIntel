@@ -266,7 +266,7 @@ def test_load_graph_metric_plugins_from_entrypoints(monkeypatch: pytest.MonkeyPa
     dummy_ep = _DummyEntryPoint(plugin)
     monkeypatch.setattr("importlib.metadata.entry_points", lambda: _DummyEntrypoints(dummy_ep))
     try:
-        loaded = load_graph_metric_plugins_from_entrypoints()
+        loaded = load_graph_metric_plugins_from_entrypoints(force=True)
         if not loaded or loaded[0].name != "entrypoint_plugin":
             pytest.fail("Entrypoint loader should return discovered plugin")
     finally:

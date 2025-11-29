@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-11-29T19:46:21.267297+00:00",
-  "overall_status": "failed",
-  "duration_seconds": 71.097104,
+  "generated_at": "2025-11-29T21:45:38.717677+00:00",
+  "overall_status": "passed",
+  "duration_seconds": 67.879214,
   "results": [
     {
       "name": "ruff_check",
@@ -13,16 +13,13 @@
         "check",
         "--fix"
       ],
-      "status": "failed",
-      "return_code": 1,
-      "started_at": "2025-11-29T19:45:10.161182+00:00",
-      "ended_at": "2025-11-29T19:45:10.189428+00:00",
-      "duration_seconds": 0.028246,
+      "status": "passed",
+      "return_code": 0,
+      "started_at": "2025-11-29T21:44:30.829435+00:00",
+      "ended_at": "2025-11-29T21:44:30.854333+00:00",
+      "duration_seconds": 0.024898,
       "stdout": [
-        "src/codeintel/analytics/graph_service_runtime.py:",
-        "  1242:5 PLR0911 Too many return statements (7 > 6)",
-        "",
-        "Found 1 error."
+        "All checks passed!"
       ],
       "stderr": []
     },
@@ -37,9 +34,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-11-29T19:45:10.189444+00:00",
-      "ended_at": "2025-11-29T19:45:16.441374+00:00",
-      "duration_seconds": 6.25193,
+      "started_at": "2025-11-29T21:44:30.854353+00:00",
+      "ended_at": "2025-11-29T21:44:37.295719+00:00",
+      "duration_seconds": 6.441366,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -55,9 +52,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-11-29T19:45:16.441396+00:00",
-      "ended_at": "2025-11-29T19:45:16.888339+00:00",
-      "duration_seconds": 0.446943,
+      "started_at": "2025-11-29T21:44:37.295738+00:00",
+      "ended_at": "2025-11-29T21:44:37.763561+00:00",
+      "duration_seconds": 0.467823,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",
@@ -74,20 +71,20 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-11-29T19:45:16.888358+00:00",
-      "ended_at": "2025-11-29T19:46:21.258286+00:00",
-      "duration_seconds": 64.369928,
+      "started_at": "2025-11-29T21:44:37.763579+00:00",
+      "ended_at": "2025-11-29T21:45:38.708649+00:00",
+      "duration_seconds": 60.94507,
       "stdout": [
         "bringing up nodes...",
         "bringing up nodes...",
         "",
-        "........................................................................ [ 16%]",
-        "........................................................................ [ 33%]",
-        "...................................................................s.... [ 49%]",
-        "........................................................................ [ 66%]",
-        "................................................s....................... [ 82%]",
-        "...................................................................x.... [ 99%]",
-        "....                                                                     [100%]",
+        "........................................................................ [ 15%]",
+        "........................................................................ [ 31%]",
+        "....................................................s................... [ 46%]",
+        "........................................................................ [ 62%]",
+        "..............................................s......................... [ 78%]",
+        "......................................................................x. [ 93%]",
+        ".............................                                            [100%]",
         "=============================== warnings summary ===============================",
         "src/codeintel/storage/rows.py:1485: 16 warnings",
         "  /home/paul/CodeIntel/src/codeintel/storage/rows.py:1485: PytestCollectionWarning: cannot collect test class 'ProfileRowModel' because it has a __init__ constructor (from: tests/analytics/test_function_profile_contract.py)",
@@ -106,19 +103,29 @@
         "    class TestCoverageEdgeRow(TypedDict):",
         "",
         "tests/analytics/test_graph_plugin_policy_runtime.py::test_isolated_plugin_executes_in_subprocess",
-        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=2734701) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3261869) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+        "    self.pid = os.fork()",
+        "",
+        "tests/analytics/test_plugin_scope_isolation.py::test_isolation_flag_in_run_record",
+        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3262046) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+        "    self.pid = os.fork()",
+        "",
+        "tests/analytics/test_graph_plugin_cache.py::test_isolation_plugin_runs_with_scratch",
+        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3261835) is multi-threaded, use of fork() may lead to deadlocks in the child.",
         "    self.pid = os.fork()",
         "",
         "tests/analytics/test_entrypoints_and_dependencies.py: 16 warnings",
-        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
         "    self.pid = os.fork()",
         "",
-        "tests/orchestration/test_pipeline_catalog_reuse.py: 16 warnings",
-        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+        "tests/analytics/test_plugin_scope_isolation.py::test_isolation_worker_returns_row_counts_and_contracts",
+        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3261795) is multi-threaded, use of fork() may lead to deadlocks in the child.",
         "    self.pid = os.fork()",
         "",
+        "tests/analytics/test_manifest_fields.py: 1 warning",
         "tests/orchestration/test_pipeline_catalog_entrypoint.py: 16 warnings",
-        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+        "tests/orchestration/test_pipeline_catalog_reuse.py: 16 warnings",
+        "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
         "    self.pid = os.fork()",
         "",
         "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
@@ -161,8 +168,9 @@
         "src/codeintel/analytics/graph_rows/symbol_graph_metrics.py         31      1    97%   81",
         "src/codeintel/analytics/graph_runtime.py                          250     30    88%   131-136, 237-238, 260, 269, 273-274, 297-298, 304-306, 353-354, 385, 387, 389, 391, 441, 470-471, 498-499, 530-531",
         "src/codeintel/analytics/graph_service.py                            4      0   100%",
-        "src/codeintel/analytics/graph_service_runtime.py                  507     74    85%   141, 145-146, 150, 223, 375-379, 491, 496-497, 587, 592, 599, 606, 610, 642, 686, 720, 722, 724, 726, 728, 733, 735, 737, 742, 751, 771-777, 855-857, 895-940, 979-981, 985-986, 989, 991, 1019, 1048-1049, 1058, 1062-1082, 1224-1225, 1249, 1254, 1256, 1258, 1262",
+        "src/codeintel/analytics/graph_service_runtime.py                  539     72    87%   143, 147-148, 152, 379-383, 500-501, 621, 665, 699, 701, 703, 705, 707, 712, 714, 716, 721, 730, 750-756, 833-835, 873-920, 965-967, 971-972, 975, 977, 1009, 1051, 1055-1075, 1226-1227, 1249-1254, 1262, 1264, 1270, 1272, 1283, 1287, 1297-1298, 1323, 1331",
         "src/codeintel/analytics/graphs/__init__.py                         35      2    94%   99-100",
+        "src/codeintel/analytics/graphs/catalog.py                         136     61    55%   21, 82-84, 262-264, 281-431, 445-447",
         "src/codeintel/analytics/graphs/config_data_flow.py                223     40    82%   94, 98-102, 113, 118-120, 128, 141, 147, 168, 174, 179, 185, 191, 193, 198, 206, 226, 230-233, 235, 278, 282, 287-289, 291, 332-337, 355-361, 363-366, 368, 428",
         "src/codeintel/analytics/graphs/config_graph_metrics.py             62      4    94%   164, 187-194",
         "src/codeintel/analytics/graphs/contracts.py                       100     64    36%   116-117, 121-123, 142-151, 172-182, 200-218, 239-254, 267-276, 289-292, 307-315, 334-345",
@@ -170,7 +178,7 @@
         "src/codeintel/analytics/graphs/graph_metrics_ext.py                79      7    91%   66-67, 90-94",
         "src/codeintel/analytics/graphs/graph_stats.py                      37      0   100%",
         "src/codeintel/analytics/graphs/module_graph_metrics_ext.py         78      6    92%   66, 90-94",
-        "src/codeintel/analytics/graphs/plugins.py                         285     53    81%   157, 214, 217-218, 224-226, 239-240, 267, 280, 313-326, 338, 348-353, 362, 373-393, 404, 414-415, 460-461, 473, 475-476, 480, 506, 553-559",
+        "src/codeintel/analytics/graphs/plugins.py                         359     39    89%   59-60, 73, 84, 140, 149, 329, 332-333, 339-341, 354-355, 383, 434, 437-443, 461, 478-482, 510, 514-522, 533, 590-591, 636, 683-689",
         "src/codeintel/analytics/graphs/subsystem_agreement.py              24      0   100%",
         "src/codeintel/analytics/graphs/subsystem_graph_metrics.py          83      9    89%   36, 45, 87, 90, 132, 141-145, 155-159",
         "src/codeintel/analytics/graphs/symbol_graph_metrics.py             66     10    85%   71, 169, 184-219",
@@ -212,7 +220,7 @@
         "src/codeintel/analytics/tests_profiles/rows.py                     61      3    95%   300, 307, 309",
         "src/codeintel/analytics/tests_profiles/types.py                    93      0   100%",
         "src/codeintel/cli/__init__.py                                       0      0   100%",
-        "src/codeintel/cli/main.py                                         800    382    52%   100-103, 181-193, 205-210, 926, 928, 945-952, 1025-1030, 1041-1090, 1175, 1182, 1195-1253, 1257-1279, 1283-1304, 1308-1329, 1333-1350, 1354-1371, 1375-1393, 1405-1435, 1468-1469, 1559-1574, 1594-1602, 1614-1618, 1630-1675, 1687-1699, 1711-1717, 1729-1747, 1759-1772, 1789, 1805-1825, 1874-1875, 1878-1890, 1896-1902, 1931-1952, 1964-1998, 2026-2032, 2047-2060, 2088-2089, 2094-2102, 2106",
+        "src/codeintel/cli/main.py                                         802    365    54%   100-103, 181-193, 205-210, 929, 931, 948-955, 1028-1033, 1044-1093, 1178, 1185, 1210-1212, 1240-1252, 1299-1303, 1307-1329, 1333-1354, 1358-1379, 1383-1400, 1404-1421, 1425-1443, 1455-1485, 1518-1519, 1609-1624, 1644-1652, 1664-1668, 1680-1725, 1737-1749, 1761-1767, 1779-1797, 1809-1822, 1839, 1855-1875, 1924-1925, 1928-1940, 1946-1952, 1981-2002, 2014-2048, 2076-2082, 2097-2110, 2138-2139, 2144-2152, 2156",
         "src/codeintel/cli/nx_backend.py                                     7      0   100%",
         "src/codeintel/config/__init__.py                                    7      0   100%",
         "src/codeintel/config/builder.py                                    98     12    88%   181, 195, 248, 274, 285, 345, 373, 430, 467, 488, 530, 548",
@@ -284,7 +292,7 @@
         "src/codeintel/pipeline/orchestration/prefect_flow.py              184      8    96%   182, 228-229, 254, 268, 322, 447-448",
         "src/codeintel/pipeline/orchestration/registry.py                   94      6    94%   238-239, 288-290, 346",
         "src/codeintel/pipeline/orchestration/steps.py                      17      0   100%",
-        "src/codeintel/pipeline/orchestration/steps_analytics.py           318    107    66%   75-82, 101, 103, 106, 138-141, 155-158, 172-191, 210-222, 244-248, 268-272, 292-294, 308-312, 332-336, 350-354, 368-372, 632-637, 657-661, 680-692, 711-715, 735-748, 770-776",
+        "src/codeintel/pipeline/orchestration/steps_analytics.py           317    107    66%   72-79, 98, 100, 103, 135-138, 152-155, 169-188, 207-219, 241-245, 265-269, 289-291, 305-309, 329-333, 347-351, 365-369, 628-633, 653-657, 676-688, 707-711, 731-744, 766-772",
         "src/codeintel/pipeline/orchestration/steps_export.py               28      9    68%   69-90",
         "src/codeintel/pipeline/orchestration/steps_graphs.py               88     11    88%   94-97, 116-117, 133-137",
         "src/codeintel/pipeline/orchestration/steps_ingestion.py           104     19    82%   43, 73-78, 96-97, 126-127, 141-142, 156-157, 171-172, 186-187",
@@ -296,9 +304,9 @@
         "src/codeintel/serving/mcp/__main__.py                               3      3     0%   3-6",
         "src/codeintel/serving/mcp/backend.py                              264     72    73%   61, 256, 267, 346-347, 407, 476, 490, 501, 512, 523, 534, 547, 558, 569, 580, 593, 606, 638-640, 647-648, 658-665, 669-670, 679-680, 696-700, 706-714, 732, 745-747, 789, 858-859, 872, 883, 894, 975, 988, 1022-1053",
         "src/codeintel/serving/mcp/errors.py                                14      1    93%   75",
-        "src/codeintel/serving/mcp/models.py                               400      8    98%   42, 84-85, 160, 163, 171-174",
+        "src/codeintel/serving/mcp/models.py                               422      8    98%   42, 84-85, 186, 189, 197-200",
         "src/codeintel/serving/mcp/query_service.py                        367     62    83%   208-220, 244-249, 265-267, 307, 309-310, 366, 395-397, 430-431, 457-470, 516, 563-564, 577, 632-640, 651, 710, 802, 866-876, 904-914, 948, 970-980, 998, 1029, 1082, 1113, 1146, 1179-1180, 1195, 1198-1199, 1225, 1340, 1403-1415",
-        "src/codeintel/serving/mcp/registry.py                             119    105    12%   43-49, 55-118, 124-140, 146-241, 247-264, 278-281",
+        "src/codeintel/serving/mcp/registry.py                             120    106    12%   44-50, 56-119, 125-141, 147-275, 281-298, 312-315",
         "src/codeintel/serving/mcp/server.py                                34      9    74%   49-50, 55, 57, 74-78, 82",
         "src/codeintel/serving/mcp/tools.py                                  3      3     0%   3-7",
         "src/codeintel/serving/mcp/view_utils.py                            35      4    89%   23-24, 49, 66",
@@ -316,7 +324,7 @@
         "src/codeintel/storage/data_models.py                              176     39    78%   21-25, 29-33, 38, 44-46, 52, 56, 60, 78, 245-291, 319-368, 411, 415, 452, 456, 520",
         "src/codeintel/storage/datasets.py                                 121     17    86%   154, 191, 211-215, 726-730, 747-751",
         "src/codeintel/storage/docs_view_profiling.py                       41     41     0%   3-108",
-        "src/codeintel/storage/gateway.py                                  199     31    84%   90, 101, 112, 191, 233, 258, 284, 312-316, 377, 388, 399, 417, 428, 439, 483, 508, 550, 863, 874, 910-917, 981",
+        "src/codeintel/storage/gateway.py                                  199     30    85%   90, 101, 112, 191, 233, 258, 284, 312-316, 377, 388, 399, 417, 428, 439, 483, 508, 550, 874, 910-917, 981",
         "src/codeintel/storage/ingest_helpers.py                            35      7    80%   30, 32-33, 39-40, 45-46",
         "src/codeintel/storage/metadata_bootstrap.py                       212     70    67%   87-90, 118-121, 138-151, 231-232, 773, 782-784, 794, 806-807, 810-812, 823, 846-851, 864-884, 896-911, 923-939, 960-961, 967, 982-983",
         "src/codeintel/storage/module_index.py                              19      2    89%   51-52",
@@ -346,10 +354,10 @@
         "src/codeintel/storage/views/subsystem_views.py                      9      0   100%",
         "src/codeintel/storage/views/test_views.py                           7      0   100%",
         "---------------------------------------------------------------------------------------------",
-        "TOTAL                                                           22360   5596    75%",
+        "TOTAL                                                           22626   5624    75%",
         "Coverage XML written to file build/coverage/coverage.xml",
         "Coverage JSON written to file build/coverage/coverage.json",
-        "433 passed, 2 skipped, 1 xfailed, 113 warnings in 63.46s (0:01:03)"
+        "458 passed, 2 skipped, 1 xfailed, 117 warnings in 59.96s"
       ],
       "stderr": [],
       "details": {
@@ -358,13 +366,13 @@
             "bringing up nodes...",
             "bringing up nodes...",
             "",
-            "........................................................................ [ 16%]",
-            "........................................................................ [ 33%]",
-            "...................................................................s.... [ 49%]",
-            "........................................................................ [ 66%]",
-            "................................................s....................... [ 82%]",
-            "...................................................................x.... [ 99%]",
-            "....                                                                     [100%]",
+            "........................................................................ [ 15%]",
+            "........................................................................ [ 31%]",
+            "....................................................s................... [ 46%]",
+            "........................................................................ [ 62%]",
+            "..............................................s......................... [ 78%]",
+            "......................................................................x. [ 93%]",
+            ".............................                                            [100%]",
             "=============================== warnings summary ===============================",
             "src/codeintel/storage/rows.py:1485: 16 warnings",
             "  /home/paul/CodeIntel/src/codeintel/storage/rows.py:1485: PytestCollectionWarning: cannot collect test class 'ProfileRowModel' because it has a __init__ constructor (from: tests/analytics/test_function_profile_contract.py)",
@@ -383,19 +391,29 @@
             "    class TestCoverageEdgeRow(TypedDict):",
             "",
             "tests/analytics/test_graph_plugin_policy_runtime.py::test_isolated_plugin_executes_in_subprocess",
-            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=2734701) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3261869) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+            "    self.pid = os.fork()",
+            "",
+            "tests/analytics/test_plugin_scope_isolation.py::test_isolation_flag_in_run_record",
+            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3262046) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+            "    self.pid = os.fork()",
+            "",
+            "tests/analytics/test_graph_plugin_cache.py::test_isolation_plugin_runs_with_scratch",
+            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3261835) is multi-threaded, use of fork() may lead to deadlocks in the child.",
             "    self.pid = os.fork()",
             "",
             "tests/analytics/test_entrypoints_and_dependencies.py: 16 warnings",
-            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
             "    self.pid = os.fork()",
             "",
-            "tests/orchestration/test_pipeline_catalog_reuse.py: 16 warnings",
-            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+            "tests/analytics/test_plugin_scope_isolation.py::test_isolation_worker_returns_row_counts_and_contracts",
+            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3261795) is multi-threaded, use of fork() may lead to deadlocks in the child.",
             "    self.pid = os.fork()",
             "",
+            "tests/analytics/test_manifest_fields.py: 1 warning",
             "tests/orchestration/test_pipeline_catalog_entrypoint.py: 16 warnings",
-            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+            "tests/orchestration/test_pipeline_catalog_reuse.py: 16 warnings",
+            "  /home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
             "    self.pid = os.fork()",
             "",
             "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html"
@@ -440,8 +458,9 @@
             "src/codeintel/analytics/graph_rows/symbol_graph_metrics.py         31      1    97%   81",
             "src/codeintel/analytics/graph_runtime.py                          250     30    88%   131-136, 237-238, 260, 269, 273-274, 297-298, 304-306, 353-354, 385, 387, 389, 391, 441, 470-471, 498-499, 530-531",
             "src/codeintel/analytics/graph_service.py                            4      0   100%",
-            "src/codeintel/analytics/graph_service_runtime.py                  507     74    85%   141, 145-146, 150, 223, 375-379, 491, 496-497, 587, 592, 599, 606, 610, 642, 686, 720, 722, 724, 726, 728, 733, 735, 737, 742, 751, 771-777, 855-857, 895-940, 979-981, 985-986, 989, 991, 1019, 1048-1049, 1058, 1062-1082, 1224-1225, 1249, 1254, 1256, 1258, 1262",
+            "src/codeintel/analytics/graph_service_runtime.py                  539     72    87%   143, 147-148, 152, 379-383, 500-501, 621, 665, 699, 701, 703, 705, 707, 712, 714, 716, 721, 730, 750-756, 833-835, 873-920, 965-967, 971-972, 975, 977, 1009, 1051, 1055-1075, 1226-1227, 1249-1254, 1262, 1264, 1270, 1272, 1283, 1287, 1297-1298, 1323, 1331",
             "src/codeintel/analytics/graphs/__init__.py                         35      2    94%   99-100",
+            "src/codeintel/analytics/graphs/catalog.py                         136     61    55%   21, 82-84, 262-264, 281-431, 445-447",
             "src/codeintel/analytics/graphs/config_data_flow.py                223     40    82%   94, 98-102, 113, 118-120, 128, 141, 147, 168, 174, 179, 185, 191, 193, 198, 206, 226, 230-233, 235, 278, 282, 287-289, 291, 332-337, 355-361, 363-366, 368, 428",
             "src/codeintel/analytics/graphs/config_graph_metrics.py             62      4    94%   164, 187-194",
             "src/codeintel/analytics/graphs/contracts.py                       100     64    36%   116-117, 121-123, 142-151, 172-182, 200-218, 239-254, 267-276, 289-292, 307-315, 334-345",
@@ -449,7 +468,7 @@
             "src/codeintel/analytics/graphs/graph_metrics_ext.py                79      7    91%   66-67, 90-94",
             "src/codeintel/analytics/graphs/graph_stats.py                      37      0   100%",
             "src/codeintel/analytics/graphs/module_graph_metrics_ext.py         78      6    92%   66, 90-94",
-            "src/codeintel/analytics/graphs/plugins.py                         285     53    81%   157, 214, 217-218, 224-226, 239-240, 267, 280, 313-326, 338, 348-353, 362, 373-393, 404, 414-415, 460-461, 473, 475-476, 480, 506, 553-559",
+            "src/codeintel/analytics/graphs/plugins.py                         359     39    89%   59-60, 73, 84, 140, 149, 329, 332-333, 339-341, 354-355, 383, 434, 437-443, 461, 478-482, 510, 514-522, 533, 590-591, 636, 683-689",
             "src/codeintel/analytics/graphs/subsystem_agreement.py              24      0   100%",
             "src/codeintel/analytics/graphs/subsystem_graph_metrics.py          83      9    89%   36, 45, 87, 90, 132, 141-145, 155-159",
             "src/codeintel/analytics/graphs/symbol_graph_metrics.py             66     10    85%   71, 169, 184-219",
@@ -491,7 +510,7 @@
             "src/codeintel/analytics/tests_profiles/rows.py                     61      3    95%   300, 307, 309",
             "src/codeintel/analytics/tests_profiles/types.py                    93      0   100%",
             "src/codeintel/cli/__init__.py                                       0      0   100%",
-            "src/codeintel/cli/main.py                                         800    382    52%   100-103, 181-193, 205-210, 926, 928, 945-952, 1025-1030, 1041-1090, 1175, 1182, 1195-1253, 1257-1279, 1283-1304, 1308-1329, 1333-1350, 1354-1371, 1375-1393, 1405-1435, 1468-1469, 1559-1574, 1594-1602, 1614-1618, 1630-1675, 1687-1699, 1711-1717, 1729-1747, 1759-1772, 1789, 1805-1825, 1874-1875, 1878-1890, 1896-1902, 1931-1952, 1964-1998, 2026-2032, 2047-2060, 2088-2089, 2094-2102, 2106",
+            "src/codeintel/cli/main.py                                         802    365    54%   100-103, 181-193, 205-210, 929, 931, 948-955, 1028-1033, 1044-1093, 1178, 1185, 1210-1212, 1240-1252, 1299-1303, 1307-1329, 1333-1354, 1358-1379, 1383-1400, 1404-1421, 1425-1443, 1455-1485, 1518-1519, 1609-1624, 1644-1652, 1664-1668, 1680-1725, 1737-1749, 1761-1767, 1779-1797, 1809-1822, 1839, 1855-1875, 1924-1925, 1928-1940, 1946-1952, 1981-2002, 2014-2048, 2076-2082, 2097-2110, 2138-2139, 2144-2152, 2156",
             "src/codeintel/cli/nx_backend.py                                     7      0   100%",
             "src/codeintel/config/__init__.py                                    7      0   100%",
             "src/codeintel/config/builder.py                                    98     12    88%   181, 195, 248, 274, 285, 345, 373, 430, 467, 488, 530, 548",
@@ -563,7 +582,7 @@
             "src/codeintel/pipeline/orchestration/prefect_flow.py              184      8    96%   182, 228-229, 254, 268, 322, 447-448",
             "src/codeintel/pipeline/orchestration/registry.py                   94      6    94%   238-239, 288-290, 346",
             "src/codeintel/pipeline/orchestration/steps.py                      17      0   100%",
-            "src/codeintel/pipeline/orchestration/steps_analytics.py           318    107    66%   75-82, 101, 103, 106, 138-141, 155-158, 172-191, 210-222, 244-248, 268-272, 292-294, 308-312, 332-336, 350-354, 368-372, 632-637, 657-661, 680-692, 711-715, 735-748, 770-776",
+            "src/codeintel/pipeline/orchestration/steps_analytics.py           317    107    66%   72-79, 98, 100, 103, 135-138, 152-155, 169-188, 207-219, 241-245, 265-269, 289-291, 305-309, 329-333, 347-351, 365-369, 628-633, 653-657, 676-688, 707-711, 731-744, 766-772",
             "src/codeintel/pipeline/orchestration/steps_export.py               28      9    68%   69-90",
             "src/codeintel/pipeline/orchestration/steps_graphs.py               88     11    88%   94-97, 116-117, 133-137",
             "src/codeintel/pipeline/orchestration/steps_ingestion.py           104     19    82%   43, 73-78, 96-97, 126-127, 141-142, 156-157, 171-172, 186-187",
@@ -575,9 +594,9 @@
             "src/codeintel/serving/mcp/__main__.py                               3      3     0%   3-6",
             "src/codeintel/serving/mcp/backend.py                              264     72    73%   61, 256, 267, 346-347, 407, 476, 490, 501, 512, 523, 534, 547, 558, 569, 580, 593, 606, 638-640, 647-648, 658-665, 669-670, 679-680, 696-700, 706-714, 732, 745-747, 789, 858-859, 872, 883, 894, 975, 988, 1022-1053",
             "src/codeintel/serving/mcp/errors.py                                14      1    93%   75",
-            "src/codeintel/serving/mcp/models.py                               400      8    98%   42, 84-85, 160, 163, 171-174",
+            "src/codeintel/serving/mcp/models.py                               422      8    98%   42, 84-85, 186, 189, 197-200",
             "src/codeintel/serving/mcp/query_service.py                        367     62    83%   208-220, 244-249, 265-267, 307, 309-310, 366, 395-397, 430-431, 457-470, 516, 563-564, 577, 632-640, 651, 710, 802, 866-876, 904-914, 948, 970-980, 998, 1029, 1082, 1113, 1146, 1179-1180, 1195, 1198-1199, 1225, 1340, 1403-1415",
-            "src/codeintel/serving/mcp/registry.py                             119    105    12%   43-49, 55-118, 124-140, 146-241, 247-264, 278-281",
+            "src/codeintel/serving/mcp/registry.py                             120    106    12%   44-50, 56-119, 125-141, 147-275, 281-298, 312-315",
             "src/codeintel/serving/mcp/server.py                                34      9    74%   49-50, 55, 57, 74-78, 82",
             "src/codeintel/serving/mcp/tools.py                                  3      3     0%   3-7",
             "src/codeintel/serving/mcp/view_utils.py                            35      4    89%   23-24, 49, 66",
@@ -595,7 +614,7 @@
             "src/codeintel/storage/data_models.py                              176     39    78%   21-25, 29-33, 38, 44-46, 52, 56, 60, 78, 245-291, 319-368, 411, 415, 452, 456, 520",
             "src/codeintel/storage/datasets.py                                 121     17    86%   154, 191, 211-215, 726-730, 747-751",
             "src/codeintel/storage/docs_view_profiling.py                       41     41     0%   3-108",
-            "src/codeintel/storage/gateway.py                                  199     31    84%   90, 101, 112, 191, 233, 258, 284, 312-316, 377, 388, 399, 417, 428, 439, 483, 508, 550, 863, 874, 910-917, 981",
+            "src/codeintel/storage/gateway.py                                  199     30    85%   90, 101, 112, 191, 233, 258, 284, 312-316, 377, 388, 399, 417, 428, 439, 483, 508, 550, 874, 910-917, 981",
             "src/codeintel/storage/ingest_helpers.py                            35      7    80%   30, 32-33, 39-40, 45-46",
             "src/codeintel/storage/metadata_bootstrap.py                       212     70    67%   87-90, 118-121, 138-151, 231-232, 773, 782-784, 794, 806-807, 810-812, 823, 846-851, 864-884, 896-911, 923-939, 960-961, 967, 982-983",
             "src/codeintel/storage/module_index.py                              19      2    89%   51-52",
@@ -625,21 +644,21 @@
             "src/codeintel/storage/views/subsystem_views.py                      9      0   100%",
             "src/codeintel/storage/views/test_views.py                           7      0   100%",
             "---------------------------------------------------------------------------------------------",
-            "TOTAL                                                           22360   5596    75%",
+            "TOTAL                                                           22626   5624    75%",
             "Coverage XML written to file build/coverage/coverage.xml",
             "Coverage JSON written to file build/coverage/coverage.json",
-            "433 passed, 2 skipped, 1 xfailed, 113 warnings in 63.46s (0:01:03)"
+            "458 passed, 2 skipped, 1 xfailed, 117 warnings in 59.96s"
           ]
         },
         "results": {
           "summary": {
-            "collected": 436,
-            "passed": 433,
+            "collected": 461,
+            "passed": 458,
             "failed": 0,
             "skipped": 2,
             "xfailed": 1,
             "xpassed": 0,
-            "duration_seconds": 62.17073893547058,
+            "duration_seconds": 58.703444719314575,
             "exitcode": 0
           },
           "failures": [
@@ -648,24 +667,24 @@
               "phase": "call",
               "outcome": "skipped",
               "lineno": 14,
-              "duration_seconds": 2.5013695679954253,
-              "longrepr": "[gw12] linux -- Python 3.13.9 /home/paul/CodeIntel/.venv/bin/python\n('/home/paul/CodeIntel/tests/ingestion/test_scip_ingest.py', 56, \"Skipped: SCIP ingestion not successful in test environment: Tool scip-python failed (code=127)\\nArgs: ('index', '/tmp/pytest-of-paul/pytest-245/popen-gw12/test_ingest_scip_produces_arti0/repo', '--output', '/tmp/pytest-of-paul/pytest-245/popen-gw12/test_ingest_scip_produces_arti0/repo/build/scip/index.scip')\\nstderr: /usr/bin/env: 'node': No such file or directory\")"
+              "duration_seconds": 2.60856127399893,
+              "longrepr": "[gw5] linux -- Python 3.13.9 /home/paul/CodeIntel/.venv/bin/python\n('/home/paul/CodeIntel/tests/ingestion/test_scip_ingest.py', 56, \"Skipped: SCIP ingestion not successful in test environment: Tool scip-python failed (code=127)\\nArgs: ('index', '/tmp/pytest-of-paul/pytest-282/popen-gw5/test_ingest_scip_produces_arti0/repo', '--output', '/tmp/pytest-of-paul/pytest-282/popen-gw5/test_ingest_scip_produces_arti0/repo/build/scip/index.scip')\\nstderr: /usr/bin/env: 'node': No such file or directory\")"
             },
             {
               "nodeid": "tests/services/test_query_service.py::test_mcp_tool_delegation",
               "phase": "call",
               "outcome": "skipped",
               "lineno": 533,
-              "duration_seconds": 0.6532463140028995,
-              "longrepr": "[gw11] linux -- Python 3.13.9 /home/paul/CodeIntel/.venv/bin/python\n('/home/paul/CodeIntel/tests/services/test_query_service.py', 575, 'Skipped: FastMCP tools registry not available')"
+              "duration_seconds": 0.6589587030030088,
+              "longrepr": "[gw8] linux -- Python 3.13.9 /home/paul/CodeIntel/.venv/bin/python\n('/home/paul/CodeIntel/tests/services/test_query_service.py', 575, 'Skipped: FastMCP tools registry not available')"
             },
             {
               "nodeid": "tests/test_pipeline_smoke.py::test_pipeline_export_docs_smoke",
               "phase": "call",
               "outcome": "skipped",
               "lineno": 13,
-              "duration_seconds": 0.0003188410046277568,
-              "longrepr": "[gw10] linux -- Python 3.13.9 /home/paul/CodeIntel/.venv/bin/python\n\ntmp_path = PosixPath('/tmp/pytest-of-paul/pytest-245/popen-gw10/test_pipeline_export_docs_smok0')\n\n    def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:\n        \"\"\"\n        Build a minimal repo, run export_docs, and verify GOID export exists.\n    \n        Raises\n        ------\n        RuntimeError\n            If the pipeline run fails or GOID export is missing.\n        \"\"\"\n        repo_root = tmp_path / \"repo\"\n        (repo_root / \"pkg\").mkdir(parents=True, exist_ok=True)\n        (repo_root / \"pkg\" / \"__init__.py\").write_text(\"\", encoding=\"utf8\")\n        (repo_root / \"pkg\" / \"mod.py\").write_text(\n            'def hello(name: str) -> str:\\n    \"\"\"Return a greeting.\"\"\"\\n    return f\"hi {name}\"\\n',\n            encoding=\"utf8\",\n        )\n    \n        db_path = repo_root / \"build\" / \"db\" / \"codeintel.duckdb\"\n        build_dir = repo_root / \"build\"\n    \n        os.environ[\"CODEINTEL_SKIP_SCIP\"] = \"true\"\n>       pytest.xfail(\"Pipeline export_docs currently fails in function_effects catalog integration\")\nE       _pytest.outcomes.XFailed: Pipeline export_docs currently fails in function_effects catalog integration\n\ntests/test_pipeline_smoke.py:35: XFailed"
+              "duration_seconds": 0.0003699839871842414,
+              "longrepr": "[gw14] linux -- Python 3.13.9 /home/paul/CodeIntel/.venv/bin/python\n\ntmp_path = PosixPath('/tmp/pytest-of-paul/pytest-282/popen-gw14/test_pipeline_export_docs_smok0')\n\n    def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:\n        \"\"\"\n        Build a minimal repo, run export_docs, and verify GOID export exists.\n    \n        Raises\n        ------\n        RuntimeError\n            If the pipeline run fails or GOID export is missing.\n        \"\"\"\n        repo_root = tmp_path / \"repo\"\n        (repo_root / \"pkg\").mkdir(parents=True, exist_ok=True)\n        (repo_root / \"pkg\" / \"__init__.py\").write_text(\"\", encoding=\"utf8\")\n        (repo_root / \"pkg\" / \"mod.py\").write_text(\n            'def hello(name: str) -> str:\\n    \"\"\"Return a greeting.\"\"\"\\n    return f\"hi {name}\"\\n',\n            encoding=\"utf8\",\n        )\n    \n        db_path = repo_root / \"build\" / \"db\" / \"codeintel.duckdb\"\n        build_dir = repo_root / \"build\"\n    \n        os.environ[\"CODEINTEL_SKIP_SCIP\"] = \"true\"\n>       pytest.xfail(\"Pipeline export_docs currently fails in function_effects catalog integration\")\nE       _pytest.outcomes.XFailed: Pipeline export_docs currently fails in function_effects catalog integration\n\ntests/test_pipeline_smoke.py:35: XFailed"
             }
           ],
           "warnings": [
@@ -1118,343 +1137,371 @@
               "when": "collect"
             },
             {
-              "message": "This process (pid=2734701) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261869) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262046) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261835) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734544) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261786) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3261795) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734553) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
               "when": "runtest"
             },
             {
-              "message": "This process (pid=2734550) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "category": "DeprecationWarning",
+              "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
+              "lineno": 67,
+              "when": "runtest"
+            },
+            {
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "category": "DeprecationWarning",
+              "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
+              "lineno": 67,
+              "when": "runtest"
+            },
+            {
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "category": "DeprecationWarning",
+              "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
+              "lineno": 67,
+              "when": "runtest"
+            },
+            {
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
+              "category": "DeprecationWarning",
+              "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
+              "lineno": 67,
+              "when": "runtest"
+            },
+            {
+              "message": "This process (pid=3262012) is multi-threaded, use of fork() may lead to deadlocks in the child.",
               "category": "DeprecationWarning",
               "filename": "/home/paul/.local/share/uv/python/cpython-3.13.9-linux-x86_64-gnu/lib/python3.13/multiprocessing/popen_fork.py",
               "lineno": 67,
@@ -1468,13 +1515,13 @@
         },
         "coverage": {
           "totals": {
-            "covered_lines": 16764,
-            "num_statements": 22360,
-            "percent_covered": 74.97316636851521,
+            "covered_lines": 17002,
+            "num_statements": 22626,
+            "percent_covered": 75.14364006010784,
             "percent_covered_display": "75",
-            "missing_lines": 5596,
+            "missing_lines": 5624,
             "excluded_lines": 320,
-            "percent_statements_covered": 74.97316636851521,
+            "percent_statements_covered": 75.14364006010784,
             "percent_statements_covered_display": "75"
           },
           "files_missing": [
@@ -1534,9 +1581,9 @@
             },
             {
               "path": "src/codeintel/serving/mcp/registry.py",
-              "percent_covered": 11.764705882352942,
-              "missing_lines": 105,
-              "num_statements": 119
+              "percent_covered": 11.666666666666666,
+              "missing_lines": 106,
+              "num_statements": 120
             },
             {
               "path": "src/codeintel/analytics/functions/function_contracts.py",
@@ -1641,16 +1688,22 @@
               "num_statements": 91
             },
             {
-              "path": "src/codeintel/cli/main.py",
-              "percent_covered": 52.25,
-              "missing_lines": 382,
-              "num_statements": 800
-            },
-            {
               "path": "src/codeintel/analytics/profiles/utils.py",
               "percent_covered": 53.333333333333336,
               "missing_lines": 28,
               "num_statements": 60
+            },
+            {
+              "path": "src/codeintel/cli/main.py",
+              "percent_covered": 54.48877805486284,
+              "missing_lines": 365,
+              "num_statements": 802
+            },
+            {
+              "path": "src/codeintel/analytics/graphs/catalog.py",
+              "percent_covered": 55.14705882352941,
+              "missing_lines": 61,
+              "num_statements": 136
             },
             {
               "path": "src/codeintel/ingestion/coverage_ingest.py",
@@ -1713,16 +1766,16 @@
               "num_statements": 194
             },
             {
+              "path": "src/codeintel/pipeline/orchestration/steps_analytics.py",
+              "percent_covered": 66.24605678233438,
+              "missing_lines": 107,
+              "num_statements": 317
+            },
+            {
               "path": "src/codeintel/analytics/entrypoint_detectors.py",
               "percent_covered": 66.28440366972477,
               "missing_lines": 147,
               "num_statements": 436
-            },
-            {
-              "path": "src/codeintel/pipeline/orchestration/steps_analytics.py",
-              "percent_covered": 66.35220125786164,
-              "missing_lines": 107,
-              "num_statements": 318
             },
             {
               "path": "src/codeintel/storage/metadata_bootstrap.py",
@@ -1911,12 +1964,6 @@
               "num_statements": 59
             },
             {
-              "path": "src/codeintel/analytics/graphs/plugins.py",
-              "percent_covered": 81.40350877192982,
-              "missing_lines": 53,
-              "num_statements": 285
-            },
-            {
               "path": "src/codeintel/graphs/import_resolver.py",
               "percent_covered": 81.48148148148148,
               "missing_lines": 20,
@@ -2013,12 +2060,6 @@
               "num_statements": 51
             },
             {
-              "path": "src/codeintel/storage/gateway.py",
-              "percent_covered": 84.42211055276383,
-              "missing_lines": 31,
-              "num_statements": 199
-            },
-            {
               "path": "src/codeintel/analytics/functions/parsing.py",
               "percent_covered": 84.61538461538461,
               "missing_lines": 2,
@@ -2037,6 +2078,12 @@
               "num_statements": 66
             },
             {
+              "path": "src/codeintel/storage/gateway.py",
+              "percent_covered": 84.92462311557789,
+              "missing_lines": 30,
+              "num_statements": 199
+            },
+            {
               "path": "src/codeintel/graphs/call_ast.py",
               "percent_covered": 85.0,
               "missing_lines": 9,
@@ -2053,12 +2100,6 @@
               "percent_covered": 85.33333333333333,
               "missing_lines": 11,
               "num_statements": 75
-            },
-            {
-              "path": "src/codeintel/analytics/graph_service_runtime.py",
-              "percent_covered": 85.4043392504931,
-              "missing_lines": 74,
-              "num_statements": 507
             },
             {
               "path": "src/codeintel/ingestion/common.py",
@@ -2089,6 +2130,12 @@
               "percent_covered": 86.53846153846153,
               "missing_lines": 7,
               "num_statements": 52
+            },
+            {
+              "path": "src/codeintel/analytics/graph_service_runtime.py",
+              "percent_covered": 86.64192949907236,
+              "missing_lines": 72,
+              "num_statements": 539
             },
             {
               "path": "src/codeintel/analytics/entrypoints.py",
@@ -2179,6 +2226,12 @@
               "percent_covered": 89.1304347826087,
               "missing_lines": 10,
               "num_statements": 92
+            },
+            {
+              "path": "src/codeintel/analytics/graphs/plugins.py",
+              "percent_covered": 89.13649025069638,
+              "missing_lines": 39,
+              "num_statements": 359
             },
             {
               "path": "src/codeintel/analytics/graphs/subsystem_graph_metrics.py",
@@ -2410,9 +2463,9 @@
             },
             {
               "path": "src/codeintel/serving/mcp/models.py",
-              "percent_covered": 98.0,
+              "percent_covered": 98.10426540284361,
               "missing_lines": 8,
-              "num_statements": 400
+              "num_statements": 422
             },
             {
               "path": "src/codeintel/graphs/function_catalog.py",

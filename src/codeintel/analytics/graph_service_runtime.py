@@ -30,6 +30,8 @@ from codeintel.analytics.graphs.plugins import (
     GraphMetricExecutionContext,
     GraphMetricPlugin,
     GraphMetricPluginSkip,
+    GraphPluginResult,
+    GraphRuntimeScratch,
     get_graph_metric_plugin,
     plan_graph_metric_plugins,
     register_graph_metric_plugin,
@@ -284,6 +286,8 @@ class _IsolationResult:
     error: str | None
     contracts: tuple[PluginContractResult, ...]
     row_counts: dict[str, int] | None = None
+    input_hash: str | None = None
+    options_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -518,6 +522,7 @@ class GraphServiceRuntime:
             runtime_options=(run_options.plugin_options if run_options is not None else {}) or {},
         )
         records: list[GraphPluginRunRecord] = []
+        scratch = GraphRuntimeScratch()
 
         def _run_single_plugin(plugin: GraphMetricPlugin) -> GraphPluginRunRecord:
             options = resolved_options.get(plugin.name)
@@ -549,6 +554,7 @@ class GraphServiceRuntime:
                 plugin_name=plugin.name,
                 scope=resolved_scope,
                 run_id=execution_plan.run_id,
+                scratch=scratch,
             )
             return _execute_planned_plugin(
                 plugin=plugin,
@@ -557,13 +563,16 @@ class GraphServiceRuntime:
                 plan=execution_plan,
             )
 
-        for plugin in plugins:
-            try:
-                record = _run_single_plugin(plugin)
-            except _PluginFatalError as exc:
-                records.append(exc.record)
-                raise
-            records.append(record)
+        try:
+            for plugin in plugins:
+                try:
+                    record = _run_single_plugin(plugin)
+                except _PluginFatalError as exc:
+                    records.append(exc.record)
+                    raise
+                records.append(record)
+        finally:
+            scratch.cleanup()
         report = GraphPluginRunReport(
             repo=resolved_target[0],
             commit=resolved_target[1],
@@ -578,36 +587,6 @@ class GraphServiceRuntime:
         if manifest_path is not None:
             _write_plugin_manifest(manifest_path, report)
         return report
-
-    def compute_graph_metrics(
-        self, cfg: GraphMetricsStepConfig, *, filters: object | None = None
-    ) -> None:
-        """Compute core function/module graph metrics."""
-        if filters is not None:
-            log.debug("Graph metric filters are ignored in plugin-driven execution.")
-        self.run_plugins(("core_graph_metrics",), cfg=cfg)
-
-    def compute_graph_metrics_ext(self, *, repo: str, commit: str) -> None:
-        """Compute extended function and module graph metrics."""
-        self.run_plugins(
-            ("graph_metrics_functions_ext", "graph_metrics_modules_ext"),
-            target=(repo, commit),
-        )
-
-    def compute_symbol_metrics(self, *, repo: str, commit: str) -> None:
-        """Compute symbol graph metrics for modules and functions."""
-        self.run_plugins(
-            ("symbol_graph_metrics_modules", "symbol_graph_metrics_functions"),
-            target=(repo, commit),
-        )
-
-    def compute_subsystem_metrics(self, *, repo: str, commit: str) -> None:
-        """Compute subsystem-level graph metrics."""
-        self.run_plugins(("subsystem_graph_metrics",), target=(repo, commit))
-
-    def compute_graph_stats(self, *, repo: str, commit: str) -> None:
-        """Compute global graph statistics."""
-        self.run_plugins(("graph_stats",), target=(repo, commit))
 
 
 def build_graph_context(
@@ -797,9 +776,9 @@ def _execute_planned_plugin(
         record = _dry_run_record(plugin, settings, ctx.options, plan.run_id)
     elif plan.policy.skip_on_unchanged and _is_unchanged(
         plan.prior_manifest or {},
-        plugin.name,
-        settings.input_hash,
-        settings.options_hash,
+        plugin,
+        settings,
+        ctx,
     ):
         record = _skip_record(plugin, settings, ctx.options, reason="unchanged", run_id=plan.run_id)
     else:
@@ -834,17 +813,16 @@ def _execute_planned_plugin(
 
 
 def _run_with_timeout(
-    func: Callable[[GraphMetricExecutionContext], None],
+    func: Callable[[GraphMetricExecutionContext], object | None],
     ctx: GraphMetricExecutionContext,
     timeout_ms: int | None,
-) -> None:
+) -> object | None:
     if timeout_ms is None:
-        func(ctx)
-        return
+        return func(ctx)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(func, ctx)
         try:
-            future.result(timeout=timeout_ms / 1000)
+            return future.result(timeout=timeout_ms / 1000)
         except FuturesTimeout as exc:
             future.cancel()
             message = f"Graph plugin timed out after {timeout_ms} ms"
@@ -926,14 +904,16 @@ def _run_isolation_worker(
             scope=envelope.scope,
             run_id=envelope.run_id,
         )
-        plugin.run(ctx)
+        plugin_result = _coerce_plugin_result(plugin.run(ctx), plugin.name)
         contracts = run_contract_checkers(ctx=ctx, checkers=plugin.contract_checkers)
         result_queue.put(
             _IsolationResult(
                 status="succeeded",
                 error=None,
                 contracts=contracts,
-                row_counts=None,
+                row_counts=plugin_result.row_counts if plugin_result is not None else None,
+                input_hash=plugin_result.input_hash if plugin_result is not None else None,
+                options_hash=plugin_result.options_hash if plugin_result is not None else None,
             )
         )
     except Exception as exc:  # noqa: BLE001 pragma: no cover - defensive
@@ -943,6 +923,8 @@ def _run_isolation_worker(
                 error=repr(exc),
                 contracts=(),
                 row_counts=None,
+                input_hash=None,
+                options_hash=None,
             )
         )
 
@@ -970,11 +952,15 @@ def _execute_plugin_isolated(
     result_queue: multiprocessing.Queue[_IsolationResult] = mp_ctx.queue()
     process = mp_ctx.process(target=_run_isolation_worker, args=(envelope, result_queue))
     process.start()
-    timeout_sec = settings.timeout_ms / 1000 if settings.timeout_ms is not None else None
-    process.join(timeout=timeout_sec)
+    process.join(timeout=(settings.timeout_ms / 1000) if settings.timeout_ms is not None else None)
     result: _IsolationResult | None = None
     status: Literal["succeeded", "failed", "skipped"] = "failed"
     error_message: str | None = None
+    hashes: dict[str, str | None] = {
+        "input": settings.input_hash,
+        "options": settings.options_hash,
+    }
+    row_counts: dict[str, int] | None = None
     if process.is_alive():
         process.terminate()
         process.join()
@@ -989,6 +975,10 @@ def _execute_plugin_isolated(
             error_message = "no_result"
         elif result.error is not None:
             error_message = result.error
+        else:
+            hashes["input"] = result.input_hash or hashes["input"]
+            hashes["options"] = result.options_hash or hashes["options"]
+            row_counts = result.row_counts
     duration_ms = round((time.perf_counter() - start) * 1000, 2)
     partial = status != "succeeded"
     record = GraphPluginRunRecord(
@@ -1005,11 +995,11 @@ def _execute_plugin_isolated(
         run_id=run_id,
         error=error_message,
         options=ctx.options,
-        input_hash=settings.input_hash,
-        options_hash=settings.options_hash,
+        input_hash=hashes["input"],
+        options_hash=hashes["options"],
         version_hash=settings.version_hash,
         skipped_reason=None,
-        row_counts=result.row_counts if result is not None else None,
+        row_counts=row_counts,
         contracts=result.contracts if result is not None else (),
         requires_isolation=True,
         isolation_kind=plugin.isolation_kind,
@@ -1034,11 +1024,14 @@ def _execute_plugin(
     attempts = 0
     status: Literal["succeeded", "failed", "skipped"] = "succeeded"
     error_message: str | None = None
-    max_attempts = max(settings.retry_cfg.max_attempts, 1)
-    while attempts < max_attempts:
+    plugin_result: GraphPluginResult | None = None
+    while attempts < max(settings.retry_cfg.max_attempts, 1):
         attempts += 1
         try:
-            _run_with_timeout(plugin.run, ctx, settings.timeout_ms)
+            plugin_result = _coerce_plugin_result(
+                _run_with_timeout(plugin.run, ctx, settings.timeout_ms),
+                plugin.name,
+            )
             status = "succeeded"
             error_message = None
             break
@@ -1047,12 +1040,12 @@ def _execute_plugin(
             if settings.severity == "skip_on_error":
                 status = "skipped"
                 break
-            if attempts < max_attempts:
+            if attempts < max(settings.retry_cfg.max_attempts, 1):
                 log.warning(
                     "graph_runtime.plugin.retry name=%s attempt=%d/%d",
                     plugin.name,
                     attempts,
-                    max_attempts,
+                    max(settings.retry_cfg.max_attempts, 1),
                 )
                 if settings.retry_cfg.backoff_ms > 0:
                     time.sleep(settings.retry_cfg.backoff_ms / 1000)
@@ -1081,17 +1074,25 @@ def _execute_plugin(
                 )
                 raise _PluginFatalError(record, exc) from exc
             break
-    duration_ms = round((time.perf_counter() - start) * 1000, 2)
-    ended_at = datetime.now(tz=UTC)
-    partial = status != "succeeded"
     contracts = _run_contracts(settings.contract_checkers, ctx, status)
-    contract_failure = any(result.status == "failed" for result in contracts)
-    contract_soft_failure = any(result.status == "soft_failed" for result in contracts)
-    if status == "succeeded" and (contract_failure or contract_soft_failure):
+    contract_statuses = {result.status for result in contracts}
+    input_hash = (
+        plugin_result.input_hash
+        if plugin_result is not None and plugin_result.input_hash is not None
+        else settings.input_hash
+    )
+    options_hash = (
+        plugin_result.options_hash
+        if plugin_result is not None and plugin_result.options_hash is not None
+        else settings.options_hash
+    )
+    row_counts = plugin_result.row_counts if plugin_result is not None else None
+    if status == "succeeded" and (
+        "failed" in contract_statuses or "soft_failed" in contract_statuses
+    ):
         status = "failed"
-        partial = True
         error_message = "contract_failed"
-        if contract_failure and settings.severity == "fatal" and settings.fail_fast:
+        if "failed" in contract_statuses and settings.severity == "fatal" and settings.fail_fast:
             record = GraphPluginRunRecord(
                 name=plugin.name,
                 stage=plugin.stage,
@@ -1100,23 +1101,24 @@ def _execute_plugin(
                 attempts=attempts,
                 timeout_ms=settings.timeout_ms,
                 started_at=started_at,
-                ended_at=ended_at,
-                duration_ms=duration_ms,
-                partial=partial,
+                ended_at=datetime.now(tz=UTC),
+                duration_ms=round((time.perf_counter() - start) * 1000, 2),
+                partial=True,
                 run_id=run_id,
                 error=error_message,
                 options=ctx.options,
-                input_hash=settings.input_hash,
-                options_hash=settings.options_hash,
+                input_hash=input_hash,
+                options_hash=options_hash,
                 version_hash=settings.version_hash,
                 skipped_reason=None,
-                row_counts=None,
+                row_counts=row_counts,
                 contracts=contracts,
                 requires_isolation=plugin.requires_isolation,
                 isolation_kind=plugin.isolation_kind,
                 policy_fail_fast=settings.fail_fast,
             )
             raise _PluginFatalError(record, RuntimeError("Contract failure"))
+    ended_at = datetime.now(tz=UTC)
     return GraphPluginRunRecord(
         name=plugin.name,
         stage=plugin.stage,
@@ -1126,16 +1128,16 @@ def _execute_plugin(
         timeout_ms=settings.timeout_ms,
         started_at=started_at,
         ended_at=ended_at,
-        duration_ms=duration_ms,
-        partial=partial,
+        duration_ms=round((time.perf_counter() - start) * 1000, 2),
+        partial=status != "succeeded",
         run_id=run_id,
         error=error_message,
         options=ctx.options,
-        input_hash=settings.input_hash,
-        options_hash=settings.options_hash,
+        input_hash=input_hash,
+        options_hash=options_hash,
         version_hash=settings.version_hash,
         skipped_reason=None,
-        row_counts=None,
+        row_counts=row_counts,
         contracts=contracts,
         requires_isolation=plugin.requires_isolation,
         isolation_kind=plugin.isolation_kind,
@@ -1239,13 +1241,73 @@ def _compute_input_hash(
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def _coerce_plugin_result(result: object | None, plugin_name: str) -> GraphPluginResult | None:
+    if result is None:
+        return None
+    if isinstance(result, GraphPluginResult):
+        return result
+    log.debug(
+        "graph_runtime.plugin.result.unrecognized name=%s result_type=%s",
+        plugin_name,
+        type(result).__name__,
+    )
+    return None
+
+
+def _row_counts_equal(
+    current: dict[str, int] | None,
+    prior: object,
+) -> bool:
+    if current is None:
+        return True
+    if not isinstance(prior, dict):
+        return True
+    for table, count in current.items():
+        if prior.get(table) != count:
+            return False
+    for table, count in prior.items():
+        if not isinstance(count, int):
+            return False
+        if table not in current or current[table] != count:
+            return False
+    return True
+
+
+def _current_row_counts(
+    gateway: StorageGateway | None,
+    tables: Sequence[str],
+    repo: str,
+    commit: str,
+) -> dict[str, int] | None:
+    if gateway is None or not tables:
+        return None
+    counts: dict[str, int] = {}
+    connection = getattr(gateway, "con", None)
+    if connection is None:
+        return None
+    for table in tables:
+        try:
+            escaped_repo = repo.replace("'", "''")
+            escaped_commit = commit.replace("'", "''")
+            relation = connection.table(table).filter(
+                f"repo = '{escaped_repo}' AND commit = '{escaped_commit}'"
+            )
+            count = relation.aggregate("count(*)").fetchone()[0]
+            counts[table] = int(count)
+        except Exception:  # noqa: BLE001 - defensive, should not block skip logic
+            return None
+    return counts
+
+
 def _is_unchanged(
     prior_manifest: dict[str, dict[str, object]],
-    plugin_name: str,
-    input_hash: str | None,
-    options_hash: str | None,
+    plugin: GraphMetricPlugin,
+    settings: _PluginExecutionSettings,
+    ctx: GraphMetricExecutionContext,
 ) -> bool:
-    prior = prior_manifest.get(plugin_name)
+    input_hash = settings.input_hash
+    options_hash = settings.options_hash
+    prior = prior_manifest.get(plugin.name)
     if not (
         input_hash is not None
         and prior is not None
@@ -1254,10 +1316,20 @@ def _is_unchanged(
         and (options_hash is None or prior.get("options_hash") == options_hash)
     ):
         return False
+    if not plugin.row_count_tables:
+        return True
     prior_rows = prior.get("row_counts")
     if prior_rows is None:
         return True
-    return isinstance(prior_rows, dict)
+    current_rows = _current_row_counts(
+        ctx.gateway,
+        plugin.row_count_tables,
+        ctx.repo,
+        ctx.commit,
+    )
+    if current_rows is None:
+        return True
+    return _row_counts_equal(current_rows, prior_rows)
 
 
 def _dry_run_record(

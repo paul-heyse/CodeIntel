@@ -137,6 +137,31 @@ class GraphPlanSkipped(BaseModel):
     reason: Literal["disabled"]
 
 
+class GraphPlanPluginMetadata(BaseModel):
+    """Metadata for a plugin included in a plan response."""
+
+    stage: str
+    severity: str
+    requires_isolation: bool
+    isolation_kind: str | None = None
+    scope_aware: bool = False
+    supported_scopes: tuple[str, ...] = ()
+    description: str | None = None
+    enabled_by_default: bool | None = None
+    depends_on: tuple[str, ...] = ()
+    provides: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ()
+    resource_hints: dict[str, int | None] | None = None
+    options_model: str | None = None
+    options_default: object | None = None
+    version_hash: str | None = None
+    contract_checkers: int | None = None
+    config_schema_ref: str | None = None
+    row_count_tables: tuple[str, ...] = ()
+    cache_populates: tuple[str, ...] = ()
+    cache_consumes: tuple[str, ...] = ()
+
+
 class GraphPlanResponse(BaseModel):
     """Resolved graph metric plan including ordering and dependency graph."""
 
@@ -144,6 +169,7 @@ class GraphPlanResponse(BaseModel):
     ordered_plugins: tuple[str, ...]
     skipped_plugins: tuple[GraphPlanSkipped, ...]
     dep_graph: dict[str, tuple[str, ...]]
+    plugin_metadata: dict[str, GraphPlanPluginMetadata]
 
 
 class GraphScopePayload(BaseModel):
