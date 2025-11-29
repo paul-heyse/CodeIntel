@@ -40,7 +40,7 @@ PIN_PYTHON="${PIN_PYTHON:-1}"             # 1=uv python pin <ver>
 GENERATE_PATH_MAP="${GENERATE_PATH_MAP:-1}" # 1=create docs/_build/path_map.txt if in container
 USE_LOCK="${USE_LOCK:-no}"                 # yes|no|auto -> --locked only when explicitly requested
 EDITOR_URI_TEMPLATE_DEFAULT='vscode-remote://dev-container+{container_id}{path}:{line}'
-UV_MIN_VERSION="${UV_MIN_VERSION:-0.9.10}"  # Require uv version >= 0.9.6
+UV_MIN_VERSION="${UV_MIN_VERSION:-0.9.13}"  # Require uv version >= 0.9.13
 INCLUDE_EXTRAS="${INCLUDE_EXTRAS:-${UV_EXTRAS:-}}" # comma/space-separated extras to include
 
 # ------------- CLI flags -------------

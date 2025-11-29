@@ -3,7 +3,7 @@
 These utilities read the tables created by metadata_bootstrap (e.g., the
 schema registry and the actual table definitions in the catalog) and expose
 lightweight contracts that can be used to generate ingestion DDL or column
-lists without relying on the legacy Python schema definitions.
+lists without pulling in Python-side schema definitions.
 """
 
 from __future__ import annotations

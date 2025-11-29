@@ -66,7 +66,7 @@ def build_backend_resource(
     """
     Construct a backend and shared service with unified wiring.
 
-    Requires a ``StorageGateway`` for local_db mode; legacy connection paths are removed.
+    Requires a ``StorageGateway`` for local_db mode; direct connection paths are removed.
 
     Parameters
     ----------

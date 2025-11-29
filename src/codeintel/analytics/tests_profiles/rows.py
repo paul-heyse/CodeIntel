@@ -2,23 +2,34 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import cast
 
-from codeintel.analytics.profiles.utils import (
-    optional_bool,
-    optional_float,
-    optional_int,
-    optional_str,
-)
+from codeintel.analytics.profiles.utils import optional_int
 from codeintel.analytics.profiles.writer_guard import (
     SerializeRow,
     WriterContext,
     write_rows_with_registry_guard,
 )
-from codeintel.analytics.tests_profiles.legacy import legacy
-from codeintel.analytics.tests_profiles.types import TestProfileContext, TestRecord
+from codeintel.analytics.tests_profiles.coverage_inputs import (
+    FunctionCoverageEntry,
+    SubsystemCoverageEntry,
+    TestGraphMetrics,
+)
+from codeintel.analytics.tests_profiles.importance import (
+    compute_flakiness_score,
+    compute_importance_score,
+)
+from codeintel.analytics.tests_profiles.types import (
+    FunctionCoverageEntryProtocol,
+    ImportanceInputs,
+    SubsystemCoverageEntryProtocol,
+    TestAstInfo,
+    TestGraphMetricsProtocol,
+    TestProfileContext,
+    TestRecord,
+)
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.config.schemas.registry_adapter import load_registry_columns
 from codeintel.storage.gateway import StorageGateway
@@ -33,79 +44,145 @@ from codeintel.storage.rows import (
 from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
 
 
+def build_test_profile_context(
+    *,
+    cfg: TestProfileStepConfig,
+    functions_covered: Mapping[str, FunctionCoverageEntryProtocol],
+    subsystems_covered: Mapping[str, SubsystemCoverageEntryProtocol],
+    tg_metrics: Mapping[str, TestGraphMetricsProtocol],
+    ast_info: Mapping[str, TestAstInfo],
+) -> TestProfileContext:
+    """
+    Construct the shared context required for test_profile row assembly.
+
+    Returns
+    -------
+    TestProfileContext
+        Snapshot-scoped context used when building test profile rows.
+    """
+    max_function_count = max((entry.count for entry in functions_covered.values()), default=0)
+    max_weighted_degree = max(
+        (metrics.weighted_degree or 0.0 for metrics in tg_metrics.values()), default=0.0
+    )
+    max_subsystem_risk = max(
+        (entry.max_risk_score or 0.0 for entry in subsystems_covered.values()),
+        default=0.0,
+    )
+    return TestProfileContext(
+        cfg=cfg,
+        now=datetime.now(tz=UTC),
+        max_function_count=max_function_count,
+        max_weighted_degree=max_weighted_degree,
+        max_subsystem_risk=max_subsystem_risk,
+        functions_covered=functions_covered,
+        subsystems_covered=subsystems_covered,
+        tg_metrics=tg_metrics,
+        ast_info=ast_info,
+    )
+
+
 def build_test_profile_rows(
     tests: Iterable[TestRecord],
     ctx: TestProfileContext,
 ) -> list[TestProfileRowModel]:
     """
-    Build test_profile row models using legacy row construction.
+    Build test_profile row models using the current helpers.
 
     Returns
     -------
     list[TestProfileRowModel]
         Row models ready for insertion.
     """
-    rows: list[TestProfileRowModel] = []
-
-    for test in tests:
-        row_tuple = legacy.build_test_profile_row(test, ctx)
-        rows.append(_tuple_to_test_profile_model(row_tuple))
-    return rows
+    return [_build_test_profile_model(test, ctx) for test in tests]
 
 
-def _tuple_to_test_profile_model(row: tuple[object, ...]) -> TestProfileRowModel:
-    """
-    Convert the legacy tuple order into a TestProfileRowModel.
-
-    This keeps the writers strongly typed and aligned with table schema.
-
-    Returns
-    -------
-    TestProfileRowModel
-        Row model with normalized types for analytics.test_profile.
-    """
-    created_at = row[39] if isinstance(row[39], datetime) else datetime.now(tz=UTC)
+def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> TestProfileRowModel:
+    markers = _normalize_markers(test.markers)
+    ast_details = ctx.ast_info.get(test.test_id, TestAstInfo())
+    cov_entry = ctx.functions_covered.get(
+        test.test_id,
+        FunctionCoverageEntry(functions=[], count=0, primary=[]),
+    )
+    subs_entry = ctx.subsystems_covered.get(
+        test.test_id,
+        SubsystemCoverageEntry(
+            subsystems=[],
+            count=0,
+            primary_subsystem_id=None,
+            max_risk_score=0.0,
+        ),
+    )
+    tg_entry = ctx.tg_metrics.get(
+        test.test_id,
+        TestGraphMetrics(
+            degree=None,
+            weighted_degree=None,
+            proj_degree=None,
+            proj_weight=None,
+            proj_clustering=None,
+            proj_betweenness=None,
+        ),
+    )
+    uses_parametrize = _uses_parametrize(test, markers)
+    uses_fixtures = ast_details.uses_fixtures or _markers_use_fixtures(markers)
+    flakiness = compute_flakiness_score(
+        status=test.status,
+        markers=markers,
+        duration_ms=test.duration_ms,
+        io_flags=ast_details.io_flags,
+        slow_test_threshold_ms=ctx.cfg.slow_test_threshold_ms,
+    )
+    importance_inputs = ImportanceInputs(
+        functions_covered_count=cov_entry.count,
+        weighted_degree=tg_entry.weighted_degree,
+        max_function_count=ctx.max_function_count,
+        max_weighted_degree=ctx.max_weighted_degree,
+        subsystem_risk=subs_entry.max_risk_score,
+        max_subsystem_risk=ctx.max_subsystem_risk,
+    )
+    importance = compute_importance_score(importance_inputs)
+    now = ctx.now
     return TestProfileRowModel(
-        repo=str(row[0]),
-        commit=str(row[1]),
-        test_id=str(row[2]),
-        test_goid_h128=optional_int(row[3]),
-        urn=optional_str(row[4]),
-        rel_path=str(row[5]),
-        module=optional_str(row[6]),
-        qualname=optional_str(row[7]),
-        language=optional_str(row[8]),
-        kind=optional_str(row[9]),
-        status=optional_str(row[10]),
-        duration_ms=optional_float(row[11]),
-        markers=row[12],
-        flaky=optional_bool(row[13]),
-        last_run_at=row[14] if isinstance(row[14], datetime) else None,
-        functions_covered=row[15],
-        functions_covered_count=optional_int(row[16]),
-        primary_function_goids=row[17],
-        subsystems_covered=row[18],
-        subsystems_covered_count=optional_int(row[19]),
-        primary_subsystem_id=optional_str(row[20]),
-        assert_count=optional_int(row[21]),
-        raise_count=optional_int(row[22]),
-        uses_parametrize=optional_bool(row[23]),
-        uses_fixtures=optional_bool(row[24]),
-        io_bound=optional_bool(row[25]),
-        uses_network=optional_bool(row[26]),
-        uses_db=optional_bool(row[27]),
-        uses_filesystem=optional_bool(row[28]),
-        uses_subprocess=optional_bool(row[29]),
-        flakiness_score=optional_float(row[30]),
-        importance_score=optional_float(row[31]),
-        notes=optional_str(row[32]),
-        tg_degree=optional_int(row[33]),
-        tg_weighted_degree=optional_float(row[34]),
-        tg_proj_degree=optional_int(row[35]),
-        tg_proj_weight=optional_float(row[36]),
-        tg_proj_clustering=optional_float(row[37]),
-        tg_proj_betweenness=optional_float(row[38]),
-        created_at=created_at,
+        repo=ctx.cfg.repo,
+        commit=ctx.cfg.commit,
+        test_id=test.test_id,
+        test_goid_h128=test.test_goid_h128,
+        urn=test.urn,
+        rel_path=test.rel_path,
+        module=test.module,
+        qualname=test.qualname,
+        language=test.language or "python",
+        kind=test.kind,
+        status=test.status,
+        duration_ms=test.duration_ms,
+        markers=markers,
+        flaky=test.flaky,
+        last_run_at=now,
+        functions_covered=list(cov_entry.functions),
+        functions_covered_count=cov_entry.count,
+        primary_function_goids=list(cov_entry.primary),
+        subsystems_covered=list(subs_entry.subsystems),
+        subsystems_covered_count=subs_entry.count,
+        primary_subsystem_id=subs_entry.primary_subsystem_id,
+        assert_count=ast_details.assert_count,
+        raise_count=ast_details.raise_count,
+        uses_parametrize=uses_parametrize,
+        uses_fixtures=uses_fixtures,
+        io_bound=ast_details.io_flags.io_bound,
+        uses_network=ast_details.io_flags.uses_network,
+        uses_db=ast_details.io_flags.uses_db,
+        uses_filesystem=ast_details.io_flags.uses_filesystem,
+        uses_subprocess=ast_details.io_flags.uses_subprocess,
+        flakiness_score=flakiness,
+        importance_score=importance,
+        notes=None,
+        tg_degree=tg_entry.degree,
+        tg_weighted_degree=tg_entry.weighted_degree,
+        tg_proj_degree=tg_entry.proj_degree,
+        tg_proj_weight=tg_entry.proj_weight,
+        tg_proj_clustering=tg_entry.proj_clustering,
+        tg_proj_betweenness=tg_entry.proj_betweenness,
+        created_at=now,
     )
 
 
@@ -144,7 +221,7 @@ def build_behavioral_coverage_rows(
     rows: Iterable[tuple[object, ...]],
 ) -> list[BehavioralCoverageRowModel]:
     """
-    Build BehavioralCoverageRowModel entries from tuples returned by legacy builder.
+    Build BehavioralCoverageRowModel entries from tuples returned by the behavior helper.
 
     Returns
     -------
@@ -216,3 +293,23 @@ def write_behavioral_coverage_rows(
             prepared_statements_fn=prepared_statements_dynamic,
         ),
     )
+
+
+def _normalize_markers(markers: list[str] | None) -> list[str]:
+    if markers is None:
+        return []
+    return [str(marker) for marker in markers]
+
+
+def _uses_parametrize(test: TestRecord, markers: Iterable[str]) -> bool:
+    markers_lower = [marker.lower() for marker in markers]
+    if test.kind == "parametrized_case":
+        return True
+    if any("parametrize" in marker for marker in markers_lower):
+        return True
+    qual = test.qualname or ""
+    return "[" in qual and "]" in qual
+
+
+def _markers_use_fixtures(markers: Iterable[str]) -> bool:
+    return any("usefixtures" in marker.lower() for marker in markers)

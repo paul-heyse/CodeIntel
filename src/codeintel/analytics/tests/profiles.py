@@ -10,18 +10,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from codeintel.analytics.tests_profiles.behavioral_tags import build_behavior_rows
-from codeintel.analytics.tests_profiles.coverage_inputs import (
-    aggregate_test_coverage_by_function,
-    aggregate_test_coverage_by_subsystem,
-    load_test_graph_metrics,
-    load_test_records,
+from codeintel.analytics.tests_profiles.behavioral_tags import (
+    CONCURRENCY_LIBS as _CONCURRENCY_LIBS,
+)
+from codeintel.analytics.tests_profiles.behavioral_tags import (
+    DEFAULT_IO_SPEC as _DEFAULT_IO_SPEC,
+)
+from codeintel.analytics.tests_profiles.behavioral_tags import (
+    build_behavior_rows,
 )
 from codeintel.analytics.tests_profiles.importance import (
     compute_importance_score as compute_importance_score_new,
 )
 from codeintel.analytics.tests_profiles.rows import (
     build_behavioral_coverage_rows,
+    build_test_profile_context,
     build_test_profile_rows,
     write_behavioral_coverage_rows,
     write_test_profile_rows,
@@ -44,33 +47,8 @@ from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 
-DEFAULT_IO_SPEC: dict[str, dict[str, list[str]]] = {
-    "network": {
-        "libs": ["requests", "httpx", "urllib3", "aiohttp", "socket", "boto3", "paramiko"],
-        "funcs": ["get", "post", "put", "delete", "request", "send"],
-    },
-    "db": {
-        "libs": ["sqlalchemy", "psycopg2", "asyncpg", "pymysql", "pymongo", "redis"],
-        "funcs": ["execute", "session", "commit", "query"],
-    },
-    "filesystem": {
-        "libs": ["pathlib", "os", "shutil"],
-        "funcs": ["open", "unlink", "remove", "rmtree", "rename"],
-    },
-    "subprocess": {
-        "libs": ["subprocess"],
-        "funcs": ["run", "popen", "call", "check_call"],
-    },
-}
-
-CONCURRENCY_LIBS: set[str] = {
-    "asyncio",
-    "anyio",
-    "trio",
-    "threading",
-    "concurrent",
-    "multiprocessing",
-}
+DEFAULT_IO_SPEC: dict[str, dict[str, list[str]]] = _DEFAULT_IO_SPEC
+CONCURRENCY_LIBS: set[str] = set(_CONCURRENCY_LIBS)
 
 PRIMARY_COVERAGE_THRESHOLD = 0.4
 
@@ -147,26 +125,21 @@ def build_test_profile(gateway: StorageGateway, cfg: TestProfileStepConfig) -> N
     """
     con = gateway.con
     ensure_schema(con, "analytics.test_profile")
-    tests: list[TestRecord] = list(load_test_records(con, cfg))
+    tests: list[TestRecord] = _load_test_records(con, cfg.repo, cfg.commit)
     if not tests:
         log.info("No tests found for %s@%s; skipping test_profile", cfg.repo, cfg.commit)
         return
 
-    functions_covered = aggregate_test_coverage_by_function(con, cfg)
-    subsystems_covered = aggregate_test_coverage_by_subsystem(
-        con,
-        BehavioralCoverageStepConfig(snapshot=cfg.snapshot),
-    )
-    tg_metrics = load_test_graph_metrics(con, cfg)
-    ctx = _build_profile_context(
-        con=con,
+    functions_covered = _load_functions_covered(con, cfg.repo, cfg.commit)
+    subsystems_covered = _load_subsystems_covered(con, cfg.repo, cfg.commit)
+    tg_metrics = _load_test_graph_metrics(con, cfg.repo, cfg.commit)
+    ast_info = _build_test_ast_index(cfg.repo_root, tests, DEFAULT_IO_SPEC, CONCURRENCY_LIBS)
+    ctx = build_test_profile_context(
         cfg=cfg,
-        tests=tests,
-        precomputed={
-            "functions_covered": functions_covered,
-            "subsystems_covered": subsystems_covered,
-            "tg_metrics": tg_metrics,
-        },
+        functions_covered=functions_covered,
+        subsystems_covered=subsystems_covered,
+        tg_metrics=tg_metrics,
+        ast_info=ast_info,
     )
     rows = build_test_profile_rows(tests, ctx)
     inserted = write_test_profile_rows(gateway, cfg, rows)
