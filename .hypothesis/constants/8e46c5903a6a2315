@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/backend/limits.py
+# hypothesis_version: 6.148.3
+
+[500, 'applied', 'default_limit', 'error', 'limit_clamped', 'limit_invalid', 'max', 'max_rows_per_call', 'offset_invalid', 'requested', 'warning']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/wiring.py
+# hypothesis_version: 6.148.3
+
+['BackendResource', 'local_db', 'logging', 'new', 'pool', 'provided', 'remote_api']
