@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codeintel.analytics.tests import profiles as legacy
+from codeintel.analytics.tests_profiles.legacy import legacy
 from codeintel.analytics.tests_profiles.types import ImportanceInputs, IoFlags
 
 
@@ -22,13 +22,14 @@ def compute_flakiness_score(
     float
         Flakiness score between 0.0 and 1.0.
     """
-    return legacy.compute_flakiness_score(
+    score = legacy.compute_flakiness_score(
         status=status,
         markers=markers,
         duration_ms=duration_ms,
         io_flags=io_flags,
         slow_test_threshold_ms=slow_test_threshold_ms,
     )
+    return 0.0 if score is None else score
 
 
 def compute_importance_score(inputs: ImportanceInputs) -> float | None:

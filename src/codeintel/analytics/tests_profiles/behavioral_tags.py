@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
+from typing import cast
 
-from codeintel.analytics.tests import profiles as legacy
+from codeintel.analytics.tests_profiles.legacy import legacy
 from codeintel.analytics.tests_profiles.types import (
     BehavioralLLMRunner,
     IoFlags,
@@ -88,4 +89,7 @@ def load_behavioral_context(
     Mapping[str, dict[str, object]]
         Context keyed by ``test_id``.
     """
-    return legacy.load_test_profile_context(con, cfg.repo, cfg.commit)
+    return cast(
+        "Mapping[str, dict[str, object]]",
+        legacy.load_test_profile_context(con, cfg.repo, cfg.commit),
+    )

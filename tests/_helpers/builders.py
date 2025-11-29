@@ -777,6 +777,7 @@ class RiskFactorRow:
 class TestCatalogRow:
     """Row for analytics.test_catalog."""
 
+    __test__ = False
     test_id: str
     repo: str
     commit: str
@@ -832,6 +833,7 @@ class TestCatalogRow:
 class TestCoverageEdgeRow:
     """Row for analytics.test_coverage_edges."""
 
+    __test__ = False
     test_id: str
     function_goid_h128: int
     urn: str

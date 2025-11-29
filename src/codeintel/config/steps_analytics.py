@@ -129,6 +129,7 @@ class TestCoverageStepConfig:
     snapshot: SnapshotRef
     coverage_file: Path | None = None
     coverage_loader: Callable[[TestCoverageStepConfig], Coverage | None] | None = None
+    __test__ = False
 
     @property
     def repo(self) -> str:
@@ -153,6 +154,7 @@ class TestProfileStepConfig:
     snapshot: SnapshotRef
     slow_test_threshold_ms: float = 2000.0
     io_spec: dict[str, object] | None = None
+    __test__ = False
 
     @property
     def repo(self) -> str:

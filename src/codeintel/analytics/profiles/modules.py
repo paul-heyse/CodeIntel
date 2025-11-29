@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import cast
 
 from codeintel.analytics.profiles.types import ModuleProfileInputs
 from codeintel.analytics.profiles.utils import (
@@ -13,10 +14,20 @@ from codeintel.analytics.profiles.utils import (
     optional_int,
     optional_str,
 )
+from codeintel.analytics.profiles.writer_guard import (
+    SerializeRow,
+    WriterContext,
+    write_rows_with_registry_guard,
+)
 from codeintel.config import ProfilesAnalyticsStepConfig
+from codeintel.config.schemas.registry_adapter import load_registry_columns
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import ModuleProfileRowModel, module_profile_row_to_tuple
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.rows import (
+    MODULE_PROFILE_COLUMNS,
+    ModuleProfileRowModel,
+    module_profile_row_to_tuple,
+)
+from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
 
 
 def compute_module_profile_inputs(
@@ -291,65 +302,36 @@ def write_module_profile_rows(
     gateway: StorageGateway, rows: Iterable[ModuleProfileRowModel]
 ) -> int:
     """
-    Insert rows into analytics.module_profile.
+    Insert rows into analytics.module_profile with registry alignment checks.
 
     Returns
     -------
     int
-        Number of rows inserted.
+        Number of inserted rows.
     """
-    rows = list(rows)
-    if not rows:
+    rows_list = list(rows)
+    if not rows_list:
         return 0
-    repo = rows[0]["repo"]
-    commit = rows[0]["commit"]
-    con = gateway.con
-    ensure_schema(con, "analytics.module_profile")
-    con.execute(
-        "DELETE FROM analytics.module_profile WHERE repo = ? AND commit = ?",
-        [repo, commit],
+
+    repo = rows_list[0]["repo"]
+    commit = rows_list[0]["commit"]
+    context = WriterContext(
+        table_key="analytics.module_profile",
+        columns=MODULE_PROFILE_COLUMNS,
+        serialize_row=cast("SerializeRow", module_profile_row_to_tuple),
+        repo=repo,
+        commit=commit,
+        delete_sql="DELETE FROM analytics.module_profile WHERE repo = ? AND commit = ?",
+        ensure_schema_fn=ensure_schema,
+        load_registry_columns_fn=load_registry_columns,
+        prepared_statements_fn=prepared_statements_dynamic,
     )
-    tuples = [module_profile_row_to_tuple(row) for row in rows]
-    con.executemany(
-        """
-        INSERT INTO analytics.module_profile (
-            repo,
-            commit,
-            module,
-            path,
-            language,
-            file_count,
-            total_loc,
-            total_logical_loc,
-            function_count,
-            class_count,
-            avg_file_complexity,
-            max_file_complexity,
-            high_risk_function_count,
-            medium_risk_function_count,
-            low_risk_function_count,
-            max_risk_score,
-            avg_risk_score,
-            module_coverage_ratio,
-            tested_function_count,
-            untested_function_count,
-            import_fan_in,
-            import_fan_out,
-            cycle_group,
-            in_cycle,
-            role,
-            role_confidence,
-            role_sources_json,
-            tags,
-            owners,
-            created_at
-        ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        )
-        """,
-        tuples,
+    return write_rows_with_registry_guard(
+        gateway.con,
+        rows=rows_list,
+        context=context,
+        delete_on_empty=False,
     )
-    return len(tuples)
 
 
 def build_module_profile(

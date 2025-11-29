@@ -6,6 +6,7 @@ import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
 from codeintel.analytics.profiles.types import (
@@ -27,6 +28,11 @@ from codeintel.analytics.profiles.utils import (
     optional_float,
     optional_int,
     optional_str,
+)
+from codeintel.analytics.profiles.writer_guard import (
+    SerializeRow,
+    WriterContext,
+    write_rows_with_registry_guard,
 )
 from codeintel.config import ProfilesAnalyticsStepConfig
 from codeintel.config.schemas.registry_adapter import load_registry_columns
@@ -793,40 +799,36 @@ def write_function_profile_rows(
     rows: Iterable[FunctionProfileRowModel],
 ) -> int:
     """
-    Insert rows into analytics.function_profile.
+    Insert rows into analytics.function_profile with registry alignment checks.
 
     Returns
     -------
     int
-        Number of rows inserted.
-
-    Raises
-    ------
-    RuntimeError
-        If registry column order drifts from serializer constants.
+        Number of inserted rows.
     """
-    rows = list(rows)
-    if not rows:
+    rows_list = list(rows)
+    if not rows_list:
         return 0
 
-    repo = rows[0]["repo"]
-    commit = rows[0]["commit"]
-    con = gateway.con
-    ensure_schema(con, "analytics.function_profile")
-    registry_cols = load_registry_columns(con).get("analytics.function_profile")
-    if registry_cols is None or tuple(registry_cols) != FUNCTION_PROFILE_COLUMNS:
-        message = (
-            "Registry columns for analytics.function_profile differ from serializer constants."
-        )
-        raise RuntimeError(message)
-    stmt = prepared_statements_dynamic(con, "analytics.function_profile")
-    con.execute(
-        "DELETE FROM analytics.function_profile WHERE repo = ? AND commit = ?",
-        [repo, commit],
+    repo = rows_list[0]["repo"]
+    commit = rows_list[0]["commit"]
+    context = WriterContext(
+        table_key="analytics.function_profile",
+        columns=FUNCTION_PROFILE_COLUMNS,
+        serialize_row=cast("SerializeRow", function_profile_row_to_tuple),
+        repo=repo,
+        commit=commit,
+        delete_sql="DELETE FROM analytics.function_profile WHERE repo = ? AND commit = ?",
+        ensure_schema_fn=ensure_schema,
+        load_registry_columns_fn=load_registry_columns,
+        prepared_statements_fn=prepared_statements_dynamic,
     )
-    tuples = [function_profile_row_to_tuple(row) for row in rows]
-    con.executemany(stmt.insert_sql, tuples)
-    return len(tuples)
+    return write_rows_with_registry_guard(
+        gateway.con,
+        rows=rows_list,
+        context=context,
+        delete_on_empty=False,
+    )
 
 
 def build_function_profile_recipe(
