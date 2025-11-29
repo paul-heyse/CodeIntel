@@ -134,9 +134,7 @@ def collect_contract_issues(
     registry = load_dataset_registry(con)
     issues: list[str] = []
     issues.extend(_validate_schema_files(registry, base_dir=schema_base_dir))
-    issues.extend(
-        _validate_row_bindings(registry)
-    )
+    issues.extend(_validate_row_bindings(registry))
     issues.extend(_validate_schema_alignment(registry))
     issues.extend(_validate_table_columns(con, registry))
     issues.extend(_validate_dependencies(registry))

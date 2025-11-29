@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from codeintel.analytics.context import (
     AnalyticsContext,
@@ -130,6 +130,8 @@ class PipelineContext:
     tools: ToolsConfig | None = None
     graph_runtime: GraphRuntime | None = None
     export_datasets: tuple[str, ...] | None = None
+    export_validation_profile: Literal["strict", "lenient"] | None = None
+    force_full_export: bool = False
 
     @property
     def document_output_dir(self) -> Path:

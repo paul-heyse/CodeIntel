@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast
 
 from duckdb import DuckDBPyConnection
 
@@ -77,6 +77,7 @@ class Dataset:
     stable_id: str | None = None
     schema_version: str | None = None
     upstream_dependencies: tuple[str, ...] = ()
+    validation_profile: str = "strict"
 
     def has_row_binding(self) -> bool:
         """
@@ -207,6 +208,7 @@ def _metadata_for_name(name: str) -> dict[str, object]:
         "upstream_dependencies": DEPENDENCIES_BY_DATASET_NAME.get(name, ()),
         "stable_id": STABLE_ID_BY_DATASET_NAME.get(name, name),
         "schema_version": SCHEMA_VERSION_BY_DATASET_NAME.get(name, "1"),
+        "validation_profile": VALIDATION_PROFILE_BY_DATASET_NAME.get(name, "strict"),
     }
 
 
@@ -388,6 +390,7 @@ RETENTION_BY_DATASET_NAME: dict[str, str] = {
 
 STABLE_ID_BY_DATASET_NAME: dict[str, str] = {}
 SCHEMA_VERSION_BY_DATASET_NAME: dict[str, str] = {}
+VALIDATION_PROFILE_BY_DATASET_NAME: dict[str, Literal["strict", "lenient"]] = {}
 
 DEPENDENCIES_BY_DATASET_NAME: dict[str, tuple[str, ...]] = {
     "function_profile": ("call_graph_edges", "symbol_use_edges"),
@@ -611,6 +614,7 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
             stable_id=cast("str | None", meta["stable_id"]),
             schema_version=cast("str | None", meta["schema_version"]),
             upstream_dependencies=cast("tuple[str, ...]", meta["upstream_dependencies"]),
+            validation_profile=cast("Literal['strict', 'lenient']", meta["validation_profile"]),
         )
         by_name[name] = ds
         by_table[table_key] = ds
@@ -696,6 +700,7 @@ def describe_dataset(ds: Dataset) -> dict[str, object]:
         "stable_id": ds.stable_id,
         "schema_version": ds.schema_version,
         "upstream_dependencies": list(ds.upstream_dependencies),
+        "validation_profile": ds.validation_profile,
         "capabilities": ds.capabilities(),
     }
 

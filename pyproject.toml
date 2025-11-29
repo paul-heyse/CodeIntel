@@ -50,6 +50,7 @@ dependencies = [
     "networkx>=3.6",
     "scipy>=1.16.3",
     "nx-cugraph-cu12>=25.10.0",
+    "hypothesis>=6.148.3",
 ]
 
 [project.scripts]

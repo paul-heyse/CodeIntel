@@ -71,15 +71,21 @@ class ExportDocsStep:
         create_all_views(con)
         validate_dataset_registry(ctx.gateway)
         datasets = list(ctx.export_datasets) if ctx.export_datasets is not None else None
+        export_opts = ExportCallOptions(
+            validate_exports=False,
+            datasets=datasets,
+            validation_profile=ctx.export_validation_profile,
+            force_full_export=ctx.force_full_export,
+        )
         export_all_parquet(
             ctx.gateway,
             ctx.document_output_dir,
-            options=ExportCallOptions(validate_exports=False, datasets=datasets),
+            options=export_opts,
         )
         export_all_jsonl(
             ctx.gateway,
             ctx.document_output_dir,
-            options=ExportCallOptions(validate_exports=False, datasets=datasets),
+            options=export_opts,
         )
         log.info("Document Output refreshed at %s", ctx.document_output_dir)
 

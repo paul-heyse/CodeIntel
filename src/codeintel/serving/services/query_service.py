@@ -6,13 +6,14 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from codeintel.serving.http.datasets import describe_dataset
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
+    DatasetSchemaResponse,
     DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
@@ -38,6 +39,7 @@ from codeintel.serving.mcp.query_service import (
     clamp_limit_value,
     clamp_offset_value,
 )
+from codeintel.storage.datasets import Dataset, load_dataset_registry
 
 LOG = logging.getLogger("codeintel.serving.services.query")
 
@@ -54,6 +56,17 @@ class ServiceCallMetrics:
     messages: int | None = None
     error: str | None = None
     truncated: bool | None = None
+    schema_version: str | None = None
+    retries: int | None = None
+
+
+@dataclass
+class ServiceCallContext:
+    """Context propagated into observability signals."""
+
+    dataset: str | None = None
+    schema_version: str | None = None
+    retries: int | None = None
 
 
 @dataclass
@@ -89,6 +102,10 @@ class ServiceObservability:
             payload["error"] = metrics.error
         if metrics.truncated is not None:
             payload["truncated"] = metrics.truncated
+        if metrics.schema_version is not None:
+            payload["schema_version"] = metrics.schema_version
+        if metrics.retries is not None:
+            payload["retries"] = metrics.retries
         self.logger.info("service_call %s", payload)
 
 
@@ -154,12 +171,28 @@ def _extract_truncated(result: object) -> bool | None:
     return bool(truncated) if truncated is not None else None
 
 
+def _normalize_validation_profile(
+    value: str | None,
+) -> Literal["strict", "lenient"] | None:
+    """
+    Normalize validation profile strings to allowed literal values.
+
+    Returns
+    -------
+    Literal["strict", "lenient"] | None
+        Normalized validation profile when valid.
+    """
+    if value in {"strict", "lenient"}:
+        return value
+    return None
+
+
 def _observe_call[T](
     observability: ServiceObservability | None,
     *,
     transport: str,
     name: str,
-    dataset: str | None,
+    context: ServiceCallContext | None,
     func: Callable[[], T],
 ) -> T:
     """
@@ -181,7 +214,9 @@ def _observe_call[T](
                     name=name,
                     transport=transport,
                     duration_ms=duration_ms,
-                    dataset=dataset,
+                    dataset=context.dataset if context is not None else None,
+                    schema_version=context.schema_version if context is not None else None,
+                    retries=context.retries if context is not None else None,
                     error=exc.__class__.__name__,
                 )
             )
@@ -194,9 +229,11 @@ def _observe_call[T](
                 transport=transport,
                 duration_ms=duration_ms,
                 rows=_extract_row_count(result),
-                dataset=dataset,
+                dataset=context.dataset if context is not None else None,
                 messages=_extract_message_count(result),
                 truncated=_extract_truncated(result),
+                schema_version=context.schema_version if context is not None else None,
+                retries=context.retries if context is not None else None,
             )
         )
     return result
@@ -347,6 +384,10 @@ class DatasetQueryApi(Protocol):
         offset: int = 0,
     ) -> DatasetRowsResponse:
         """Read rows from a dataset."""
+        ...
+
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+        """Return schema and samples for a dataset."""
         ...
 
 
@@ -562,6 +603,8 @@ class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _Subsys
         func: Callable[[], T],
         *,
         dataset: str | None = None,
+        schema_version: str | None = None,
+        retries: int | None = None,
     ) -> T:
         """
         Invoke a query with observability tracking.
@@ -576,7 +619,11 @@ class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _Subsys
             self.observability,
             transport="local",
             name=name,
-            dataset=dataset,
+            context=ServiceCallContext(
+                dataset=dataset,
+                schema_version=schema_version,
+                retries=retries,
+            ),
             func=func,
         )
 
@@ -592,17 +639,34 @@ class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _Subsys
 
         def _list() -> list[DatasetDescriptor]:
             mapping: dict[str, str] = self.dataset_tables or {}
+            registry = None
             if not mapping:
                 query_gateway = getattr(self.query, "gateway", None)
-                mapping = query_gateway.datasets.mapping if query_gateway is not None else {}
-            return [
-                DatasetDescriptor(
-                    name=name,
-                    table=table,
-                    description=self.describe_dataset_fn(name, table),
+                if query_gateway is not None:
+                    mapping = query_gateway.datasets.mapping
+                    registry = load_dataset_registry(query_gateway.con)
+            if registry is None:
+                registry = load_dataset_registry(self.query.gateway.con)
+            results: list[DatasetDescriptor] = []
+            for name, table in sorted(mapping.items()):
+                ds: Dataset | None = registry.by_name.get(name) if registry is not None else None
+                results.append(
+                    DatasetDescriptor(
+                        name=name,
+                        table=table,
+                        description=self.describe_dataset_fn(name, table),
+                        owner=ds.owner if ds is not None else None,
+                        freshness_sla=ds.freshness_sla if ds is not None else None,
+                        retention_policy=ds.retention_policy if ds is not None else None,
+                        schema_version=ds.schema_version if ds is not None else None,
+                        stable_id=ds.stable_id if ds is not None else None,
+                        validation_profile=_normalize_validation_profile(
+                            ds.validation_profile if ds is not None else None
+                        ),
+                        capabilities=ds.capabilities() if ds is not None else {},
+                    )
                 )
-                for name, table in sorted(mapping.items())
-            ]
+            return results
 
         return self._call("list_datasets", _list)
 
@@ -621,6 +685,30 @@ class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _Subsys
 
         return self._call("dataset_specs", _list_specs)
 
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+        """
+        Return DuckDB + JSON Schema details and sample rows for a dataset.
+
+        Returns
+        -------
+        DatasetSchemaResponse
+            Composite schema and sample payload.
+        """
+
+        def _schema() -> DatasetSchemaResponse:
+            return self.query.dataset_schema(dataset_name=dataset_name, sample_limit=sample_limit)
+
+        registry = load_dataset_registry(self.query.gateway.con)
+        schema_version = None
+        if dataset_name in registry.by_name:
+            schema_version = registry.by_name[dataset_name].schema_version
+        return self._call(
+            "dataset_schema",
+            _schema,
+            dataset=dataset_name,
+            schema_version=schema_version,
+        )
+
     def read_dataset_rows(
         self,
         *,
@@ -637,6 +725,10 @@ class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _Subsys
             Dataset slice and metadata for truncation/messaging.
         """
         applied_limit = self.query.limits.default_limit if limit is None else limit
+        registry = load_dataset_registry(self.query.gateway.con)
+        schema_version = None
+        if dataset_name in registry.by_name:
+            schema_version = registry.by_name[dataset_name].schema_version
         return self._call(
             "read_dataset_rows",
             lambda: self.query.read_dataset_rows(
@@ -645,6 +737,7 @@ class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _Subsys
                 offset=offset,
             ),
             dataset=dataset_name,
+            schema_version=schema_version,
         )
 
 
@@ -659,14 +752,33 @@ class _HttpTransportMixin:
         func: Callable[[], T],
         *,
         dataset: str | None = None,
+        schema_version: str | None = None,
     ) -> T:
-        return _observe_call(
+        backend = getattr(self.request_json, "__self__", None)
+        retries = getattr(backend, "last_retry_attempts", None)
+        result = _observe_call(
             self.observability,
             transport="http",
             name=name,
-            dataset=dataset,
+            context=ServiceCallContext(
+                dataset=dataset,
+                schema_version=schema_version,
+                retries=retries if isinstance(retries, int) else None,
+            ),
             func=func,
         )
+        if retries and self.observability is not None:
+            self.observability.record(
+                ServiceCallMetrics(
+                    name=f"{name}_retries",
+                    transport="http",
+                    duration_ms=0.0,
+                    dataset=dataset,
+                    retries=retries,
+                    schema_version=schema_version,
+                )
+            )
+        return result
 
 
 class _HttpFunctionQueryMixin(_HttpTransportMixin):
@@ -1038,6 +1150,16 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
             return response.model_copy(update={"meta": merged_meta})
 
         return self._http_call("read_dataset_rows", _run, dataset=dataset_name)
+
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+        def _run() -> DatasetSchemaResponse:
+            data = self.request_json(
+                f"/datasets/{dataset_name}/schema",
+                {"limit": sample_limit},
+            )
+            return DatasetSchemaResponse.model_validate(data)
+
+        return self._http_call("dataset_schema", _run, dataset=dataset_name)
 
 
 @dataclass

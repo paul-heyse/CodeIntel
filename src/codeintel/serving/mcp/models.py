@@ -221,6 +221,13 @@ class DatasetDescriptor(BaseModel):
     name: str
     table: str
     description: str
+    owner: str | None = None
+    freshness_sla: str | None = None
+    retention_policy: str | None = None
+    schema_version: str | None = None
+    stable_id: str | None = None
+    validation_profile: Literal["strict", "lenient"] | None = None
+    capabilities: dict[str, bool] = Field(default_factory=dict)
 
 
 class DatasetSpecDescriptor(BaseModel):
@@ -235,6 +242,39 @@ class DatasetSpecDescriptor(BaseModel):
     has_row_binding: bool
     json_schema_id: str | None = None
     description: str | None = None
+    owner: str | None = None
+    freshness_sla: str | None = None
+    retention_policy: str | None = None
+    schema_version: str | None = None
+    stable_id: str | None = None
+    validation_profile: Literal["strict", "lenient"] | None = None
+    upstream_dependencies: list[str] = Field(default_factory=list)
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+
+
+class DatasetSchemaColumn(BaseModel):
+    """DuckDB column descriptor for dataset schemas."""
+
+    name: str
+    type: str
+    nullable: bool
+
+
+class DatasetSchemaResponse(BaseModel):
+    """Composite schema detail payload for datasets."""
+
+    dataset: str
+    table_key: str
+    duckdb_schema: list[DatasetSchemaColumn] = Field(default_factory=list)
+    json_schema: dict[str, object] | None = None
+    sample_rows: list[ViewRow] = Field(default_factory=list)
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    owner: str | None = None
+    freshness_sla: str | None = None
+    retention_policy: str | None = None
+    schema_version: str | None = None
+    stable_id: str | None = None
+    validation_profile: Literal["strict", "lenient"] | None = None
 
 
 class DatasetRowsResponse(BaseModel):
