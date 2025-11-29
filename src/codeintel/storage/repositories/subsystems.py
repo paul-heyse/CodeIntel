@@ -153,3 +153,89 @@ class SubsystemRepository(BaseRepository):
               AND module = ?
         """
         return fetch_all_dicts(self.con, sql, [self.repo, self.commit, module])
+
+    def list_subsystem_profiles(self, *, limit: int) -> list[RowDict]:
+        """
+        Return subsystem profile rows from docs views.
+
+        Returns
+        -------
+        list[RowDict]
+            Profile rows ordered by module count then subsystem_id.
+        """
+        sql = """
+            SELECT 1
+            FROM analytics.subsystem_profile_cache
+            WHERE repo = ?
+              AND commit = ?
+            LIMIT 1
+        """
+        has_cache = fetch_one_dict(self.con, sql, [self.repo, self.commit]) is not None
+        if has_cache:
+            return fetch_all_dicts(
+                self.con,
+                """
+                SELECT *
+                FROM analytics.subsystem_profile_cache
+                WHERE repo = ?
+                  AND commit = ?
+                ORDER BY module_count DESC, subsystem_id
+                LIMIT ?
+                """,
+                [self.repo, self.commit, limit],
+            )
+        return fetch_all_dicts(
+            self.con,
+            """
+            SELECT *
+            FROM docs.v_subsystem_profile
+            WHERE repo = ?
+              AND commit = ?
+            ORDER BY module_count DESC, subsystem_id
+            LIMIT ?
+            """,
+            [self.repo, self.commit, limit],
+        )
+
+    def list_subsystem_coverage(self, *, limit: int) -> list[RowDict]:
+        """
+        Return subsystem coverage rollups from docs views.
+
+        Returns
+        -------
+        list[RowDict]
+            Coverage rows ordered by test count then subsystem_id.
+        """
+        sql = """
+            SELECT 1
+            FROM analytics.subsystem_coverage_cache
+            WHERE repo = ?
+              AND commit = ?
+            LIMIT 1
+        """
+        has_cache = fetch_one_dict(self.con, sql, [self.repo, self.commit]) is not None
+        if has_cache:
+            return fetch_all_dicts(
+                self.con,
+                """
+                SELECT *
+                FROM analytics.subsystem_coverage_cache
+                WHERE repo = ?
+                  AND commit = ?
+                ORDER BY test_count DESC NULLS LAST, subsystem_id
+                LIMIT ?
+                """,
+                [self.repo, self.commit, limit],
+            )
+        return fetch_all_dicts(
+            self.con,
+            """
+            SELECT *
+            FROM docs.v_subsystem_coverage
+            WHERE repo = ?
+              AND commit = ?
+            ORDER BY test_count DESC NULLS LAST, subsystem_id
+            LIMIT ?
+            """,
+            [self.repo, self.commit, limit],
+        )

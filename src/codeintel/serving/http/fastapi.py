@@ -42,7 +42,9 @@ from codeintel.serving.mcp.models import (
     ModuleProfileResponse,
     ModuleSubsystemResponse,
     ProblemDetail,
+    SubsystemCoverageResponse,
     SubsystemModulesResponse,
+    SubsystemProfileResponse,
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
@@ -743,6 +745,20 @@ def build_architecture_router() -> APIRouter:
             raise errors.not_found(message)
         return response
 
+    return router
+
+
+def build_subsystem_router() -> APIRouter:
+    """
+    Construct the router for subsystem endpoints.
+
+    Returns
+    -------
+    APIRouter
+        Router exposing subsystem docs views and membership helpers.
+    """
+    router = APIRouter()
+
     @router.get(
         "/architecture/subsystems",
         response_model=SubsystemSummaryResponse,
@@ -764,6 +780,46 @@ def build_architecture_router() -> APIRouter:
             Subsystem rows and metadata.
         """
         return service.list_subsystems(limit=limit, role=role, q=q)
+
+    @router.get(
+        "/architecture/subsystem-profiles",
+        response_model=SubsystemProfileResponse,
+        summary="List subsystem profiles",
+    )
+    def list_subsystem_profiles(
+        *,
+        service: ServiceDep,
+        limit: int | None = None,
+    ) -> SubsystemProfileResponse:
+        """
+        List subsystem profiles backed by docs views.
+
+        Returns
+        -------
+        SubsystemProfileResponse
+            Profile rows with metadata.
+        """
+        return service.list_subsystem_profiles(limit=limit)
+
+    @router.get(
+        "/architecture/subsystem-coverage",
+        response_model=SubsystemCoverageResponse,
+        summary="List subsystem coverage rollups",
+    )
+    def list_subsystem_coverage(
+        *,
+        service: ServiceDep,
+        limit: int | None = None,
+    ) -> SubsystemCoverageResponse:
+        """
+        List subsystem coverage rollups derived from test profiles.
+
+        Returns
+        -------
+        SubsystemCoverageResponse
+            Coverage rows with metadata.
+        """
+        return service.list_subsystem_coverage(limit=limit)
 
     @router.get(
         "/architecture/module-subsystems",
@@ -1064,6 +1120,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(build_functions_router())
     app.include_router(build_profiles_router())
     app.include_router(build_architecture_router())
+    app.include_router(build_subsystem_router())
     app.include_router(build_ide_router())
     app.include_router(build_datasets_router())
     app.include_router(build_health_router())

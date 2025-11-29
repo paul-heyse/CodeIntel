@@ -11,8 +11,6 @@ MODULE_VIEW_NAMES: tuple[str, ...] = (
     "docs.v_entrypoints",
     "docs.v_external_dependencies",
     "docs.v_external_dependency_calls",
-    "docs.v_file_profile",
-    "docs.v_module_profile",
 )
 
 
@@ -271,21 +269,5 @@ def create_module_views(con: DuckDBPyConnection) -> None:
             evidence_json,
             created_at
         FROM analytics.external_dependency_calls;
-        """
-    )
-
-    con.execute(
-        """
-        CREATE OR REPLACE VIEW docs.v_file_profile AS
-        SELECT *
-        FROM analytics.file_profile;
-        """
-    )
-
-    con.execute(
-        """
-        CREATE OR REPLACE VIEW docs.v_module_profile AS
-        SELECT *
-        FROM analytics.module_profile;
         """
     )

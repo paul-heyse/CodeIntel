@@ -84,7 +84,7 @@ class ModuleRepository(BaseRepository):
         """
         sql = """
             SELECT *
-            FROM docs.v_module_profile
+            FROM analytics.module_profile
             WHERE repo = ?
               AND commit = ?
               AND module = ?
@@ -103,7 +103,7 @@ class ModuleRepository(BaseRepository):
         """
         sql = """
             SELECT *
-            FROM docs.v_file_profile
+            FROM analytics.file_profile
             WHERE repo = ?
               AND commit = ?
               AND rel_path = ?

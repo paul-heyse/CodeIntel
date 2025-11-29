@@ -9,7 +9,6 @@ FUNCTION_VIEW_NAMES: tuple[str, ...] = (
     "docs.v_function_architecture",
     "docs.v_function_history",
     "docs.v_function_history_timeseries",
-    "docs.v_function_profile",
     "docs.v_cfg_block_architecture",
     "docs.v_dfg_block_architecture",
 )
@@ -292,14 +291,6 @@ def create_function_views(con: DuckDBPyConnection) -> None:
             h.bucket_label
         FROM analytics.history_timeseries h
         WHERE h.entity_kind = 'function';
-        """
-    )
-
-    con.execute(
-        """
-        CREATE OR REPLACE VIEW docs.v_function_profile AS
-        SELECT *
-        FROM analytics.function_profile;
         """
     )
 

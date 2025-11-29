@@ -160,7 +160,7 @@ class FunctionRepository(BaseRepository):
         """
         sql = """
             SELECT *
-            FROM docs.v_function_profile
+            FROM analytics.function_profile
             WHERE repo = ?
               AND commit = ?
               AND function_goid_h128 = ?

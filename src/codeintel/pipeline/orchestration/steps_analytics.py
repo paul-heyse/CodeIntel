@@ -38,7 +38,7 @@ from codeintel.analytics.profiles import (
     build_module_profile,
 )
 from codeintel.analytics.semantic_roles import compute_semantic_roles
-from codeintel.analytics.subsystems import build_subsystems
+from codeintel.analytics.subsystems import build_subsystems, refresh_subsystem_caches
 from codeintel.analytics.tests import (
     build_behavioral_coverage,
     build_test_profile,
@@ -644,6 +644,12 @@ class TestProfileStep:
         _log_step(self.name)
         cfg = ctx.config_builder().test_profile()
         build_test_profile(ctx.gateway, cfg)
+        if cfg.refresh_subsystem_cache:
+            refresh_subsystem_caches(
+                ctx.gateway,
+                repo=cfg.repo,
+                commit=cfg.commit,
+            )
 
 
 @dataclass

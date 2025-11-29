@@ -7,10 +7,6 @@ from duckdb import DuckDBPyConnection
 GRAPH_VIEW_NAMES: tuple[str, ...] = (
     "docs.v_call_graph_enriched",
     "docs.v_symbol_module_graph",
-    "docs.v_config_graph_metrics_keys",
-    "docs.v_config_graph_metrics_modules",
-    "docs.v_config_projection_key_edges",
-    "docs.v_config_projection_module_edges",
     "docs.v_validation_summary",
 )
 
@@ -84,34 +80,6 @@ def create_graph_views(con: DuckDBPyConnection) -> None:
             symbol_component_size,
             created_at
         FROM analytics.symbol_graph_metrics_modules;
-        """
-    )
-
-    con.execute(
-        """
-        CREATE OR REPLACE VIEW docs.v_config_graph_metrics_keys AS
-        SELECT * FROM analytics.config_graph_metrics_keys;
-        """
-    )
-
-    con.execute(
-        """
-        CREATE OR REPLACE VIEW docs.v_config_graph_metrics_modules AS
-        SELECT * FROM analytics.config_graph_metrics_modules;
-        """
-    )
-
-    con.execute(
-        """
-        CREATE OR REPLACE VIEW docs.v_config_projection_key_edges AS
-        SELECT * FROM analytics.config_projection_key_edges;
-        """
-    )
-
-    con.execute(
-        """
-        CREATE OR REPLACE VIEW docs.v_config_projection_module_edges AS
-        SELECT * FROM analytics.config_projection_module_edges;
         """
     )
 
