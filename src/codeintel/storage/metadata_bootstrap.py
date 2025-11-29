@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from duckdb import DuckDBPyConnection
 
@@ -12,8 +13,9 @@ from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.storage.datasets import (
     DEFAULT_JSONL_FILENAMES,
     DEFAULT_PARQUET_FILENAMES,
+    DESCRIPTION_BY_DATASET_NAME,
 )
-from codeintel.storage.views import DOCS_VIEWS
+from codeintel.storage.views import DERIVED_DOCS_VIEWS
 
 DATASET_ROWS_ONLY: tuple[str, ...] = (
     "analytics.config_graph_metrics_keys",
@@ -32,6 +34,8 @@ DATASET_ROWS_ONLY: tuple[str, ...] = (
     "analytics.graph_stats",
     "analytics.hotspots",
     "analytics.module_profile",
+    "analytics.subsystem_profile_cache",
+    "analytics.subsystem_coverage_cache",
     "analytics.semantic_roles_modules",
     "analytics.static_diagnostics",
     "analytics.subsystem_agreement",
@@ -264,8 +268,16 @@ METADATA_SCHEMA_DDL_REST: tuple[str, ...] = (
         name             TEXT NOT NULL,
         is_view          BOOLEAN NOT NULL,
         jsonl_filename   TEXT,
-        parquet_filename TEXT
+        parquet_filename TEXT,
+        family           TEXT,
+        description      TEXT
     );
+    """,
+    """
+    ALTER TABLE metadata.datasets ADD COLUMN IF NOT EXISTS family TEXT;
+    """,
+    """
+    ALTER TABLE metadata.datasets ADD COLUMN IF NOT EXISTS description TEXT;
     """,
     """
     CREATE OR REPLACE MACRO metadata.dataset_rows(
@@ -971,26 +983,49 @@ def validate_normalized_macro_schemas(con: DuckDBPyConnection) -> None:
         raise RuntimeError(message)
 
 
-def _upsert_dataset_row(
-    con: DuckDBPyConnection,
-    *,
-    table_key: str,
-    name: str,
-    is_view: bool,
-    filenames: tuple[str | None, str | None],
-) -> None:
-    jsonl_filename, parquet_filename = filenames
+@dataclass(frozen=True)
+class _DatasetUpsert:
+    table_key: str
+    name: str
+    is_view: bool
+    jsonl_filename: str | None
+    parquet_filename: str | None
+    family: str | None
+    description: str | None
+
+
+def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> None:
+    jsonl_filename = payload.jsonl_filename
+    parquet_filename = payload.parquet_filename
     con.execute(
         """
-        INSERT INTO metadata.datasets (table_key, name, is_view, jsonl_filename, parquet_filename)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO metadata.datasets (
+            table_key,
+            name,
+            is_view,
+            jsonl_filename,
+            parquet_filename,
+            family,
+            description
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(table_key) DO UPDATE SET
             name             = excluded.name,
             is_view          = excluded.is_view,
             jsonl_filename   = excluded.jsonl_filename,
-            parquet_filename = excluded.parquet_filename;
+            parquet_filename = excluded.parquet_filename,
+            family           = excluded.family,
+            description      = excluded.description;
         """,
-        [table_key, name, is_view, jsonl_filename, parquet_filename],
+        [
+            payload.table_key,
+            payload.name,
+            payload.is_view,
+            jsonl_filename,
+            parquet_filename,
+            payload.family,
+            payload.description,
+        ],
     )
 
 
@@ -1023,22 +1058,34 @@ def bootstrap_metadata_datasets(
     parquet_mapping = dict(parquet_filenames or DEFAULT_PARQUET_FILENAMES)
 
     for table_key in sorted(TABLE_SCHEMAS.keys()):
-        _, name = table_key.split(".", maxsplit=1)
+        schema_prefix, name = table_key.split(".", maxsplit=1)
+        description = DESCRIPTION_BY_DATASET_NAME.get(name)
         _upsert_dataset_row(
             con,
-            table_key=table_key,
-            name=name,
-            is_view=False,
-            filenames=(jsonl_mapping.get(table_key), parquet_mapping.get(table_key)),
+            _DatasetUpsert(
+                table_key=table_key,
+                name=name,
+                is_view=False,
+                jsonl_filename=jsonl_mapping.get(table_key),
+                parquet_filename=parquet_mapping.get(table_key),
+                family=schema_prefix,
+                description=description,
+            ),
         )
 
     if include_views:
-        for view_key in DOCS_VIEWS:
-            _, name = view_key.split(".", maxsplit=1)
+        for view_key in DERIVED_DOCS_VIEWS:
+            schema_prefix, name = view_key.split(".", maxsplit=1)
+            description = DESCRIPTION_BY_DATASET_NAME.get(name)
             _upsert_dataset_row(
                 con,
-                table_key=view_key,
-                name=name,
-                is_view=True,
-                filenames=(jsonl_mapping.get(view_key), parquet_mapping.get(view_key)),
+                _DatasetUpsert(
+                    table_key=view_key,
+                    name=name,
+                    is_view=True,
+                    jsonl_filename=jsonl_mapping.get(view_key),
+                    parquet_filename=parquet_mapping.get(view_key),
+                    family=schema_prefix,
+                    description=description,
+                ),
             )

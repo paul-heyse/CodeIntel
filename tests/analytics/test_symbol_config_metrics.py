@@ -97,8 +97,8 @@ def test_symbol_and_config_metrics_populate_and_views_create(
         pytest.fail(f"Unexpected config modules: {modules}")
     # Views created
     con.execute("SELECT * FROM docs.v_symbol_module_graph")
-    con.execute("SELECT * FROM docs.v_config_graph_metrics_keys")
-    con.execute("SELECT * FROM docs.v_config_projection_module_edges")
+    con.execute("SELECT * FROM analytics.config_graph_metrics_keys")
+    con.execute("SELECT * FROM analytics.config_projection_module_edges")
 
 
 def test_subsystem_agreement_exposed_in_views(

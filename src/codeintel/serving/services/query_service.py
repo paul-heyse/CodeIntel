@@ -28,7 +28,9 @@ from codeintel.serving.mcp.models import (
     ModuleProfileResponse,
     ModuleSubsystemResponse,
     ResponseMeta,
+    SubsystemCoverageResponse,
     SubsystemModulesResponse,
+    SubsystemProfileResponse,
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
@@ -118,26 +120,25 @@ def _extract_row_count(result: object) -> int | None:
     int | None
         Row count when inferrable; otherwise ``None``.
     """
-    count: int | None = None
-    if isinstance(result, DatasetRowsResponse):
-        count = len(result.rows)
-    elif isinstance(result, HighRiskFunctionsResponse):
-        count = len(result.functions)
-    elif isinstance(result, CallGraphNeighborsResponse):
-        count = len(result.outgoing) + len(result.incoming)
-    elif isinstance(result, TestsForFunctionResponse):
-        count = len(result.tests)
-    elif isinstance(result, SubsystemSummaryResponse):
-        count = len(result.subsystems)
-    elif isinstance(result, ModuleSubsystemResponse):
-        count = len(result.memberships)
-    elif isinstance(result, FileHintsResponse):
-        count = len(result.hints)
-    elif isinstance(result, SubsystemModulesResponse):
-        count = len(result.modules)
-    elif isinstance(result, SubsystemSearchResponse):
-        count = len(result.subsystems)
-    return count
+    attr_counts: list[tuple[type, str]] = [
+        (DatasetRowsResponse, "rows"),
+        (HighRiskFunctionsResponse, "functions"),
+        (TestsForFunctionResponse, "tests"),
+        (SubsystemSummaryResponse, "subsystems"),
+        (ModuleSubsystemResponse, "memberships"),
+        (FileHintsResponse, "hints"),
+        (SubsystemModulesResponse, "modules"),
+        (SubsystemSearchResponse, "subsystems"),
+        (SubsystemProfileResponse, "profiles"),
+        (SubsystemCoverageResponse, "coverage"),
+    ]
+    if isinstance(result, CallGraphNeighborsResponse):
+        return len(result.outgoing) + len(result.incoming)
+    for response_type, attr in attr_counts:
+        if isinstance(result, response_type):
+            typed_result = cast("Any", result)
+            return len(getattr(typed_result, attr))
+    return None
 
 
 def _extract_message_count(result: object) -> int | None:
@@ -182,8 +183,10 @@ def _normalize_validation_profile(
     Literal["strict", "lenient"] | None
         Normalized validation profile when valid.
     """
-    if value in {"strict", "lenient"}:
-        return value
+    if value == "strict":
+        return "strict"
+    if value == "lenient":
+        return "lenient"
     return None
 
 
@@ -362,6 +365,14 @@ class SubsystemQueryApi(Protocol):
         self, *, subsystem_id: str, module_limit: int | None = None
     ) -> SubsystemModulesResponse:
         """Summarize a subsystem with optional module limit."""
+        ...
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        """List subsystem profiles from docs views."""
+        ...
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        """List subsystem coverage rollups from docs views."""
         ...
 
 
@@ -580,6 +591,20 @@ class _SubsystemQueryDelegates:
             ),
         )
 
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        return self._call(
+            "list_subsystem_profiles",
+            lambda: self.query.list_subsystem_profiles(limit=limit),
+            dataset="docs.v_subsystem_profile",
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        return self._call(
+            "list_subsystem_coverage",
+            lambda: self.query.list_subsystem_coverage(limit=limit),
+            dataset="docs.v_subsystem_coverage",
+        )
+
 
 @dataclass
 class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _SubsystemQueryDelegates):
@@ -650,11 +675,17 @@ class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _Subsys
             results: list[DatasetDescriptor] = []
             for name, table in sorted(mapping.items()):
                 ds: Dataset | None = registry.by_name.get(name) if registry is not None else None
+                description = (
+                    ds.description
+                    if ds is not None and ds.description is not None
+                    else self.describe_dataset_fn(name, table)
+                )
                 results.append(
                     DatasetDescriptor(
                         name=name,
                         table=table,
-                        description=self.describe_dataset_fn(name, table),
+                        family=ds.family if ds is not None else None,
+                        description=description,
                         owner=ds.owner if ds is not None else None,
                         freshness_sla=ds.freshness_sla if ds is not None else None,
                         retention_policy=ds.retention_policy if ds is not None else None,
@@ -1085,6 +1116,48 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
             subsystem=detail.subsystem,
             modules=detail.modules[:module_limit],
             meta=detail.meta,
+        )
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        def _run() -> SubsystemProfileResponse:
+            applied_limit = self.limits.default_limit if limit is None else limit
+            clamp = clamp_limit_value(
+                applied_limit, default=applied_limit, max_limit=self.limits.max_rows_per_call
+            )
+            if clamp.has_error:
+                return SubsystemProfileResponse(profiles=[], meta=ResponseMeta())
+            return SubsystemProfileResponse.model_validate(
+                self.request_json(
+                    "/architecture/subsystem-profiles",
+                    {"limit": clamp.applied},
+                )
+            )
+
+        return self._http_call(
+            "list_subsystem_profiles",
+            _run,
+            dataset="docs.v_subsystem_profile",
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        def _run() -> SubsystemCoverageResponse:
+            applied_limit = self.limits.default_limit if limit is None else limit
+            clamp = clamp_limit_value(
+                applied_limit, default=applied_limit, max_limit=self.limits.max_rows_per_call
+            )
+            if clamp.has_error:
+                return SubsystemCoverageResponse(coverage=[], meta=ResponseMeta())
+            return SubsystemCoverageResponse.model_validate(
+                self.request_json(
+                    "/architecture/subsystem-coverage",
+                    {"limit": clamp.applied},
+                )
+            )
+
+        return self._http_call(
+            "list_subsystem_coverage",
+            _run,
+            dataset="docs.v_subsystem_coverage",
         )
 
 

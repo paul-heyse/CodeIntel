@@ -52,7 +52,7 @@ def _seed_modules(gateway: StorageGateway) -> None:
 def test_graph_views_exist(graph_ready_gateway: ProvisionedGateway) -> None:
     """Strict graph-ready provisioning should expose graph metric views."""
     graph_ready_gateway.gateway.con.execute(
-        "SELECT * FROM docs.v_config_graph_metrics_keys LIMIT 0"
+        "SELECT * FROM analytics.config_graph_metrics_keys LIMIT 0"
     )
 
 

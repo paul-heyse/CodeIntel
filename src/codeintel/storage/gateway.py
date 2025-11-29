@@ -389,14 +389,14 @@ class DocsViews:
 
     def function_profile(self) -> DuckDBRelation:
         """
-        Return relation for docs.v_function_profile.
+        Return relation for analytics.function_profile.
 
         Returns
         -------
         DuckDBRelation
-            Relation selecting docs.v_function_profile.
+            Relation selecting analytics.function_profile.
         """
-        return self.con.table("docs.v_function_profile")
+        return self.con.table("analytics.function_profile")
 
 
 @dataclass(frozen=True)

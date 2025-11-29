@@ -20,6 +20,11 @@ from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import QueryBackend
 from codeintel.serving.mcp.models import (
     FunctionSummaryResponse,
+    ResponseMeta,
+    SubsystemCoverageResponse,
+    SubsystemCoverageRow,
+    SubsystemProfileResponse,
+    SubsystemProfileRow,
 )
 from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
 from codeintel.serving.services.query_service import (
@@ -95,6 +100,36 @@ class RecordingObservability(ServiceObservability):
     def record(self, metrics: ServiceCallMetrics) -> None:
         """Capture a recorded metrics payload."""
         self.records.append(metrics)
+
+
+class _StubSubsystemQuery:
+    """Minimal query stub for subsystem docs observability tests."""
+
+    def __init__(self) -> None:
+        self.profile = SubsystemProfileRow(
+            repo="demo/repo",
+            commit="deadbeef",
+            subsystem_id="subsysdemo",
+            name="Subsystem Demo",
+        )
+        self.coverage = SubsystemCoverageRow(
+            repo="demo/repo",
+            commit="deadbeef",
+            subsystem_id="subsysdemo",
+            test_count=2,
+        )
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        return SubsystemProfileResponse(
+            profiles=[self.profile],
+            meta=ResponseMeta(requested_limit=limit, applied_limit=limit),
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        return SubsystemCoverageResponse(
+            coverage=[self.coverage],
+            meta=ResponseMeta(requested_limit=limit, applied_limit=limit),
+        )
 
 
 def _build_http_adapter_from_local(
@@ -205,7 +240,55 @@ def _build_http_adapter_from_local(
         message = f"Unhandled HTTP path: {path} params={params}"
         raise AssertionError(message)
 
-    return HttpQueryService(request_json=request_json, limits=limits)
+    return HttpQueryService(
+        request_json=request_json,
+        limits=limits,
+        observability=local.observability,
+    )
+
+
+def test_observability_tracks_subsystem_profile_calls() -> None:
+    """Subsystem profile listing should record dataset and row count."""
+    obs = RecordingObservability()
+    local = LocalQueryService(
+        query=cast("DuckDBQueryService", _StubSubsystemQuery()),
+        dataset_tables={},
+        observability=obs,
+    )
+
+    resp = local.list_subsystem_profiles(limit=3)
+
+    if not resp.profiles:
+        pytest.fail("Expected subsystem profiles in response")
+    metrics = obs.records[-1]
+    if metrics.dataset != "docs.v_subsystem_profile":
+        pytest.fail("Expected dataset to be set for subsystem profile call")
+    if metrics.rows != 1:
+        pytest.fail("Expected row count to be recorded for subsystem profile call")
+    if metrics.transport != "local":
+        pytest.fail("Expected transport to be local")
+
+
+def test_observability_tracks_subsystem_coverage_calls() -> None:
+    """Subsystem coverage listing should record dataset and row count."""
+    obs = RecordingObservability()
+    local = LocalQueryService(
+        query=cast("DuckDBQueryService", _StubSubsystemQuery()),
+        dataset_tables={},
+        observability=obs,
+    )
+
+    resp = local.list_subsystem_coverage(limit=2)
+
+    if not resp.coverage:
+        pytest.fail("Expected subsystem coverage in response")
+    metrics = obs.records[-1]
+    if metrics.dataset != "docs.v_subsystem_coverage":
+        pytest.fail("Expected dataset to be set for subsystem coverage call")
+    if metrics.rows != 1:
+        pytest.fail("Expected row count to be recorded for subsystem coverage call")
+    if metrics.transport != "local":
+        pytest.fail("Expected transport to be local")
 
 
 def _build_local_service(

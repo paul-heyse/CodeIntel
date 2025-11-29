@@ -449,6 +449,7 @@ class ConfigBuilder:
         *,
         slow_test_threshold_ms: float = 2000.0,
         io_spec: dict[str, object] | None = None,
+        refresh_subsystem_cache: bool = True,
     ) -> TestProfileStepConfig:
         """
         Build test profile configuration.
@@ -461,6 +462,7 @@ class ConfigBuilder:
         return self.analytics.test_profile(
             slow_test_threshold_ms=slow_test_threshold_ms,
             io_spec=io_spec,
+            refresh_subsystem_cache=refresh_subsystem_cache,
         )
 
     def behavioral_coverage(

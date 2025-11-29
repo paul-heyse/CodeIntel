@@ -46,6 +46,9 @@ class Dataset:
         True when this dataset is a docs.* view instead of a base table.
     description
         Optional human-readable description of the dataset's purpose.
+    family
+        Optional dataset family inferred from the schema prefix (e.g., "core",
+        "analytics", "docs").
     json_schema_id
         Optional JSON Schema identifier (without .json) used for export validation.
     owner
@@ -70,6 +73,7 @@ class Dataset:
     parquet_filename: str | None = None
     is_view: bool = False
     description: str | None = None
+    family: str | None = None
     json_schema_id: str | None = None
     owner: str | None = None
     freshness_sla: str | None = None
@@ -170,6 +174,21 @@ class DatasetRegistry:
             for name, ds in self.by_name.items()
             if ds.upstream_dependencies
         }
+
+    def docs_dataset_names(self) -> tuple[str, ...]:
+        """
+        Return dataset names backed by docs.* views.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Dataset names for docs schema views.
+        """
+        return tuple(
+            name
+            for name, ds in self.by_name.items()
+            if ds.is_view and ds.table_key.startswith("docs.")
+        )
 
     def resolve_table_key(self, name: str) -> str:
         """
@@ -340,6 +359,10 @@ DESCRIPTION_BY_DATASET_NAME: dict[str, str] = {
     "function_profile": "Function-level profile combining metrics, risk, and topology.",
     "file_profile": "File-level profile with coverage, hotspots, and ownership signals.",
     "module_profile": "Module-level profile aggregating functions, imports, and risk.",
+    "v_subsystem_profile": "Subsystem-level profile combining risk, connectivity, and metadata.",
+    "v_subsystem_coverage": "Subsystem coverage rollup derived from test profiles.",
+    "subsystem_profile_cache": "Materialized subsystem profile cache for docs views.",
+    "subsystem_coverage_cache": "Materialized subsystem coverage cache for docs views.",
     "call_graph_edges": "Directed call graph edges across the codebase.",
     "symbol_use_edges": "Symbol use edges linking definitions to references.",
     "test_coverage_edges": "Test-to-target coverage edges for tracing impacts.",
@@ -582,7 +605,14 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
     """
     rows = con.execute(
         """
-        SELECT table_key, name, is_view, jsonl_filename, parquet_filename
+        SELECT
+            table_key,
+            name,
+            is_view,
+            jsonl_filename,
+            parquet_filename,
+            family,
+            description
         FROM metadata.datasets
         ORDER BY table_key
         """
@@ -593,11 +623,22 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
     jsonl_map: dict[str, str] = {}
     parquet_map: dict[str, str] = {}
 
-    for table_key, name, is_view, jsonl_filename, parquet_filename in rows:
+    for (
+        table_key,
+        name,
+        is_view,
+        jsonl_filename,
+        parquet_filename,
+        db_family,
+        db_description,
+    ) in rows:
         schema: TableSchema | None = None if is_view else TABLE_SCHEMAS.get(table_key)
         row_binding = ROW_BINDINGS_BY_TABLE_KEY.get(table_key)
         json_schema_id = JSON_SCHEMA_BY_DATASET_NAME.get(name)
         meta = _metadata_for_name(name)
+        inferred_family = table_key.split(".", maxsplit=1)[0] if "." in table_key else None
+        family = db_family if db_family is not None else inferred_family
+        description = db_description if db_description is not None else meta["description"]
         ds = Dataset(
             table_key=table_key,
             name=name,
@@ -607,7 +648,8 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
             parquet_filename=parquet_filename,
             is_view=bool(is_view),
             json_schema_id=json_schema_id,
-            description=cast("str | None", meta["description"]),
+            description=cast("str | None", description),
+            family=family,
             owner=cast("str | None", meta["owner"]),
             freshness_sla=cast("str | None", meta["freshness_sla"]),
             retention_policy=cast("str | None", meta["retention_policy"]),
@@ -694,6 +736,7 @@ def describe_dataset(ds: Dataset) -> dict[str, object]:
         "has_row_binding": ds.row_binding is not None,
         "json_schema_id": ds.json_schema_id,
         "description": ds.description,
+        "family": ds.family,
         "owner": ds.owner,
         "freshness_sla": ds.freshness_sla,
         "retention_policy": ds.retention_policy,

@@ -250,6 +250,85 @@ def _build_rows(
     return subsystem_rows, membership_rows
 
 
+def refresh_subsystem_profile_cache(gateway: StorageGateway, *, repo: str, commit: str) -> None:
+    """
+    Materialize docs.v_subsystem_profile rows into the cache table.
+
+    Parameters
+    ----------
+    gateway:
+        Storage gateway backing the analytics tables.
+    repo:
+        Repository identifier.
+    commit:
+        Commit identifier.
+    """
+    con = gateway.con
+    ensure_schema(con, "analytics.subsystem_profile_cache")
+    con.execute(
+        "DELETE FROM analytics.subsystem_profile_cache WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    )
+    con.execute(
+        """
+        INSERT INTO analytics.subsystem_profile_cache
+        SELECT *
+        FROM docs.v_subsystem_profile
+        WHERE repo = ?
+          AND commit = ?
+        """,
+        [repo, commit],
+    )
+
+
+def refresh_subsystem_coverage_cache(gateway: StorageGateway, *, repo: str, commit: str) -> None:
+    """
+    Materialize docs.v_subsystem_coverage rows into the cache table.
+
+    Parameters
+    ----------
+    gateway:
+        Storage gateway backing the analytics tables.
+    repo:
+        Repository identifier.
+    commit:
+        Commit identifier.
+    """
+    con = gateway.con
+    ensure_schema(con, "analytics.subsystem_coverage_cache")
+    con.execute(
+        "DELETE FROM analytics.subsystem_coverage_cache WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    )
+    con.execute(
+        """
+        INSERT INTO analytics.subsystem_coverage_cache
+        SELECT *
+        FROM docs.v_subsystem_coverage
+        WHERE repo = ?
+          AND commit = ?
+        """,
+        [repo, commit],
+    )
+
+
+def refresh_subsystem_caches(gateway: StorageGateway, *, repo: str, commit: str) -> None:
+    """
+    Refresh both subsystem cache tables for a repo/commit.
+
+    Parameters
+    ----------
+    gateway:
+        Storage gateway backing the analytics tables.
+    repo:
+        Repository identifier.
+    commit:
+        Commit identifier.
+    """
+    refresh_subsystem_profile_cache(gateway, repo=repo, commit=commit)
+    refresh_subsystem_coverage_cache(gateway, repo=repo, commit=commit)
+
+
 def _subsystem_id(repo: str, modules: list[str]) -> str:
     raw = f"{repo}:{','.join(sorted(modules))}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()

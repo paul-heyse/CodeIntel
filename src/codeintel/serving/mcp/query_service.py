@@ -17,6 +17,7 @@ import networkx as nx
 from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
+    CallGraphEdgeRow,
     CallGraphNeighborsResponse,
     DatasetRowsResponse,
     DatasetSchemaColumn,
@@ -25,22 +26,35 @@ from codeintel.serving.mcp.models import (
     FileHintsResponse,
     FileProfileResponse,
     FileSummaryResponse,
+    FileSummaryRow,
     FunctionArchitectureResponse,
     FunctionProfileResponse,
     FunctionSummaryResponse,
+    FunctionSummaryRow,
     GraphNeighborhoodResponse,
     HighRiskFunctionsResponse,
     ImportBoundaryResponse,
     Message,
     ModuleArchitectureResponse,
+    ModuleArchitectureRow,
     ModuleProfileResponse,
     ModuleSubsystemResponse,
+    ModuleWithSubsystemRow,
     ResponseMeta,
+    SubsystemCoverageResponse,
+    SubsystemCoverageRow,
     SubsystemModulesResponse,
+    SubsystemProfileResponse,
+    SubsystemProfileRow,
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
+    SubsystemSummaryRow,
     TestsForFunctionResponse,
     ViewRow,
+)
+from codeintel.serving.mcp.view_utils import (
+    normalize_entrypoints_row,
+    normalize_entrypoints_rows,
 )
 from codeintel.storage.contract_validation import _schema_path
 from codeintel.storage.datasets import (
@@ -58,7 +72,6 @@ from codeintel.storage.repositories import (
     SubsystemRepository,
     TestRepository,
 )
-from codeintel.storage.repositories.base import RowDict
 
 
 @dataclass(frozen=True)
@@ -173,21 +186,6 @@ def clamp_offset_value(offset: int) -> ClampResult:
     return ClampResult(applied=offset)
 
 
-def _normalize_entrypoints(rows: list[RowDict]) -> None:
-    """Ensure entrypoints_json is always a list for downstream consumers."""
-    for row in rows:
-        if row.get("entrypoints_json") is None:
-            row["entrypoints_json"] = []
-
-
-def _normalize_entrypoints_dict(row: RowDict | None) -> None:
-    """Ensure a single row has a non-null entrypoints_json list."""
-    if row is None:
-        return
-    if row.get("entrypoints_json") is None:
-        row["entrypoints_json"] = []
-
-
 def _fetch_duckdb_schema(con: DuckDBConnection, table_key: str) -> list[DatasetSchemaColumn]:
     """
     Return column descriptors for a DuckDB table/view.
@@ -259,8 +257,10 @@ def _normalize_validation_profile(
     Literal["strict", "lenient"] | None
         Normalized validation profile when valid.
     """
-    if value in {"strict", "lenient"}:
-        return value
+    if value == "strict":
+        return "strict"
+    if value == "lenient":
+        return "lenient"
     return None
 
 
@@ -439,11 +439,8 @@ class DuckDBQueryService:
             )
             return FunctionSummaryResponse(found=False, summary=None, meta=meta)
 
-        return FunctionSummaryResponse(
-            found=True,
-            summary=ViewRow.model_validate(row),
-            meta=meta,
-        )
+        summary = FunctionSummaryRow.model_validate(row)
+        return FunctionSummaryResponse(found=True, summary=summary, meta=meta)
 
     def list_high_risk_functions(
         self,
@@ -538,16 +535,16 @@ class DuckDBQueryService:
         )
         if clamp.has_error:
             return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=meta)
-        outgoing: list[ViewRow] = []
-        incoming: list[ViewRow] = []
+        outgoing: list[CallGraphEdgeRow] = []
+        incoming: list[CallGraphEdgeRow] = []
 
         if direction in {"out", "both"}:
             out_rows = self.graphs.get_outgoing_callgraph_neighbors(goid_h128, limit=clamp.applied)
-            outgoing = [ViewRow.model_validate(r) for r in out_rows]
+            outgoing = [CallGraphEdgeRow.model_validate(r) for r in out_rows]
 
         if direction in {"in", "both"}:
             in_rows = self.graphs.get_incoming_callgraph_neighbors(goid_h128, limit=clamp.applied)
-            incoming = [ViewRow.model_validate(r) for r in in_rows]
+            incoming = [CallGraphEdgeRow.model_validate(r) for r in in_rows]
 
         meta.truncated = clamp.applied > 0 and (
             len(outgoing) == clamp.applied or len(incoming) == clamp.applied
@@ -832,16 +829,17 @@ class DuckDBQueryService:
 
         funcs = self.functions.list_function_summaries_for_file(rel_path)
         file_payload = dict(file_row)
-        file_payload["functions"] = [ViewRow.model_validate(r) for r in funcs]
+        file_payload["functions"] = [FunctionSummaryRow.model_validate(r) for r in funcs]
+        file_model = FileSummaryRow.model_validate(file_payload)
         return FileSummaryResponse(
             found=True,
-            file=ViewRow.model_validate(file_payload),
+            file=file_model,
             meta=ResponseMeta(),
         )
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """
-        Return a function profile from docs.v_function_profile.
+        Return a function profile from analytics.function_profile.
 
         Parameters
         ----------
@@ -874,7 +872,7 @@ class DuckDBQueryService:
 
     def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
         """
-        Return a file profile from docs.v_file_profile.
+        Return a file profile from analytics.file_profile.
 
         Parameters
         ----------
@@ -907,7 +905,7 @@ class DuckDBQueryService:
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
         """
-        Return a module profile from docs.v_module_profile.
+        Return a module profile from analytics.module_profile.
 
         Parameters
         ----------
@@ -996,7 +994,7 @@ class DuckDBQueryService:
             )
         return ModuleArchitectureResponse(
             found=True,
-            architecture=ViewRow.model_validate(row),
+            architecture=ModuleArchitectureRow.model_validate(row),
             meta=ResponseMeta(),
         )
 
@@ -1013,9 +1011,9 @@ class DuckDBQueryService:
         """
         limit_value = limit if limit is not None else self.limits.default_limit
         rows = self.subsystems.list_subsystems(limit=limit_value, role=role, query=q)
-        _normalize_entrypoints(rows)
+        normalize_entrypoints_rows(rows)
         return SubsystemSummaryResponse(
-            subsystems=[ViewRow.model_validate(r) for r in rows],
+            subsystems=[SubsystemSummaryRow.model_validate(r) for r in rows],
             meta=ResponseMeta(
                 applied_limit=limit_value,
                 requested_limit=limit,
@@ -1049,7 +1047,7 @@ class DuckDBQueryService:
             )
         return ModuleSubsystemResponse(
             found=True,
-            memberships=[ViewRow.model_validate(r) for r in rows],
+            memberships=[ModuleWithSubsystemRow.model_validate(r) for r in rows],
             meta=ResponseMeta(),
         )
 
@@ -1094,7 +1092,7 @@ class DuckDBQueryService:
             Subsystem detail and module rows.
         """
         subsystem_row = self.subsystems.get_subsystem_summary(subsystem_id)
-        _normalize_entrypoints_dict(subsystem_row)
+        normalize_entrypoints_row(subsystem_row)
         modules = self.subsystems.list_subsystem_modules(subsystem_id)
         if subsystem_row is None:
             return SubsystemModulesResponse(
@@ -1114,8 +1112,8 @@ class DuckDBQueryService:
             )
         return SubsystemModulesResponse(
             found=True,
-            subsystem=ViewRow.model_validate(subsystem_row),
-            modules=[ViewRow.model_validate(r) for r in modules],
+            subsystem=SubsystemSummaryRow.model_validate(subsystem_row),
+            modules=[ModuleWithSubsystemRow.model_validate(r) for r in modules],
             meta=ResponseMeta(),
         )
 
@@ -1155,6 +1153,77 @@ class DuckDBQueryService:
             subsystem=detail.subsystem,
             modules=limited_modules,
             meta=detail.meta,
+        )
+
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+        """
+        List subsystem profile rows from docs views.
+
+        Parameters
+        ----------
+        limit:
+            Optional clamp applied to the returned rows.
+
+        Returns
+        -------
+        SubsystemProfileResponse
+            Typed profile rows with metadata.
+        """
+        limit_value = limit if limit is not None else self.limits.default_limit
+        rows = self.subsystems.list_subsystem_profiles(limit=limit_value)
+        normalize_entrypoints_rows(rows)
+        messages: list[Message] = []
+        if not rows:
+            messages.append(
+                Message(
+                    code="not_found",
+                    severity="info",
+                    detail="No subsystem profiles found",
+                    context={"repo": self.repo, "commit": self.commit},
+                )
+            )
+        return SubsystemProfileResponse(
+            profiles=[SubsystemProfileRow.model_validate(row) for row in rows],
+            meta=ResponseMeta(
+                applied_limit=limit_value,
+                requested_limit=limit,
+                messages=messages,
+            ),
+        )
+
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+        """
+        List subsystem coverage rollups from docs views.
+
+        Parameters
+        ----------
+        limit:
+            Optional clamp applied to the returned rows.
+
+        Returns
+        -------
+        SubsystemCoverageResponse
+            Typed coverage rows with metadata.
+        """
+        limit_value = limit if limit is not None else self.limits.default_limit
+        rows = self.subsystems.list_subsystem_coverage(limit=limit_value)
+        messages: list[Message] = []
+        if not rows:
+            messages.append(
+                Message(
+                    code="not_found",
+                    severity="info",
+                    detail="No subsystem coverage found",
+                    context={"repo": self.repo, "commit": self.commit},
+                )
+            )
+        return SubsystemCoverageResponse(
+            coverage=[SubsystemCoverageRow.model_validate(row) for row in rows],
+            meta=ResponseMeta(
+                applied_limit=limit_value,
+                requested_limit=limit,
+                messages=messages,
+            ),
         )
 
     def read_dataset_rows(

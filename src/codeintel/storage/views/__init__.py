@@ -20,6 +20,16 @@ from codeintel.storage.views.subsystem_views import (
 )
 from codeintel.storage.views.test_views import TEST_VIEW_NAMES, create_test_views
 
+ALIAS_DOCS_VIEWS: dict[str, str] = {
+    "docs.v_function_profile": "analytics.function_profile",
+    "docs.v_file_profile": "analytics.file_profile",
+    "docs.v_module_profile": "analytics.module_profile",
+    "docs.v_config_graph_metrics_keys": "analytics.config_graph_metrics_keys",
+    "docs.v_config_graph_metrics_modules": "analytics.config_graph_metrics_modules",
+    "docs.v_config_projection_key_edges": "analytics.config_projection_key_edges",
+    "docs.v_config_projection_module_edges": "analytics.config_projection_module_edges",
+}
+
 DOCS_VIEWS: tuple[str, ...] = (
     *FUNCTION_VIEW_NAMES,
     *MODULE_VIEW_NAMES,
@@ -28,6 +38,10 @@ DOCS_VIEWS: tuple[str, ...] = (
     *GRAPH_VIEW_NAMES,
     *IDE_VIEW_NAMES,
     *DATA_MODEL_VIEW_NAMES,
+)
+
+DERIVED_DOCS_VIEWS: tuple[str, ...] = tuple(
+    view for view in DOCS_VIEWS if view not in ALIAS_DOCS_VIEWS
 )
 
 _VIEW_CREATORS: tuple[Callable[[DuckDBPyConnection], None], ...] = (
@@ -47,4 +61,4 @@ def create_all_views(con: DuckDBPyConnection) -> None:
         create(con)
 
 
-__all__ = ["DOCS_VIEWS", "create_all_views"]
+__all__ = ["ALIAS_DOCS_VIEWS", "DERIVED_DOCS_VIEWS", "DOCS_VIEWS", "create_all_views"]

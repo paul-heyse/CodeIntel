@@ -10,6 +10,16 @@ Split across focused submodules:
 
 from __future__ import annotations
 
-from codeintel.analytics.subsystems.materialize import build_subsystems
+from codeintel.analytics.subsystems.materialize import (
+    build_subsystems,
+    refresh_subsystem_caches,
+    refresh_subsystem_coverage_cache,
+    refresh_subsystem_profile_cache,
+)
 
-__all__ = ["build_subsystems"]
+__all__ = [
+    "build_subsystems",
+    "refresh_subsystem_caches",
+    "refresh_subsystem_coverage_cache",
+    "refresh_subsystem_profile_cache",
+]
