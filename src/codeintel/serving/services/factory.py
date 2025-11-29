@@ -9,12 +9,12 @@ from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions,
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.graphs.engine import GraphEngine
-from codeintel.serving.http.datasets import (
+from codeintel.serving.backend import BackendLimits, DuckDBQueryService
+from codeintel.serving.backend.datasets import (
     build_registry_and_limits,
     describe_dataset,
     validate_dataset_registry,
 )
-from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
 from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,

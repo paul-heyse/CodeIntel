@@ -8,11 +8,13 @@ from codeintel.ingestion.paths import (
 )
 from codeintel.ingestion.runner import (
     IngestionContext,
+    list_ingest_steps,
     run_ast_extract,
     run_config_ingest,
     run_coverage_ingest,
     run_cst_extract,
     run_docstrings_ingest,
+    run_ingest_steps,
     run_repo_scan,
     run_scip_ingest,
     run_tests_ingest,
@@ -22,6 +24,7 @@ from codeintel.ingestion.runner import (
 __all__ = [
     "IngestionContext",
     "ensure_repo_root",
+    "list_ingest_steps",
     "normalize_rel_path",
     "relpath_to_module",
     "repo_relpath",
@@ -30,6 +33,7 @@ __all__ = [
     "run_coverage_ingest",
     "run_cst_extract",
     "run_docstrings_ingest",
+    "run_ingest_steps",
     "run_repo_scan",
     "run_scip_ingest",
     "run_tests_ingest",

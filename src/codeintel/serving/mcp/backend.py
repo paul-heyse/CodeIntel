@@ -12,6 +12,7 @@ import httpx
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.graphs.engine import GraphEngine
+from codeintel.serving.backend import BackendLimits, DuckDBQueryService
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -36,7 +37,6 @@ from codeintel.serving.mcp.models import (
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
-from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
 from codeintel.serving.services.factory import (
     ServiceBuildOptions,
     build_service_from_config,

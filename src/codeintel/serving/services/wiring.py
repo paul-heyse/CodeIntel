@@ -20,8 +20,8 @@ from codeintel.analytics.graph_runtime import (
 )
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
-from codeintel.serving.http.datasets import build_registry_and_limits
-from codeintel.serving.mcp.query_service import BackendLimits
+from codeintel.serving.backend import BackendLimits
+from codeintel.serving.backend.datasets import build_registry_and_limits
 from codeintel.serving.services.query_service import (
     LocalQueryService,
     QueryService,
