@@ -22,7 +22,7 @@ from codeintel.graphs.function_catalog_service import (
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import TestCoverageEdgeRow, test_coverage_edge_to_tuple
+from codeintel.storage.rows import TestCoverageEdgeRow, serialize_test_coverage_edge
 from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
@@ -372,7 +372,7 @@ def compute_test_coverage_edges(
     run_batch(
         gateway,
         "analytics.test_coverage_edges",
-        [test_coverage_edge_to_tuple(row) for row in insert_rows],
+        [serialize_test_coverage_edge(row) for row in insert_rows],
         delete_params=[cfg.repo, cfg.commit],
         scope=f"{cfg.repo}@{cfg.commit}",
     )
