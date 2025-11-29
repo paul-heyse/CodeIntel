@@ -14,7 +14,7 @@ class ViewRow(BaseModel):
 
     def __getitem__(self, key: str) -> object:
         """
-        Allow dict-style access for compatibility with legacy code/tests.
+        Allow dict-style access for compatibility with callers expecting mapping semantics.
 
         Parameters
         ----------

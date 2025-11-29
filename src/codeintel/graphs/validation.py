@@ -863,7 +863,7 @@ def _append_log(message: str) -> None:
         f.write(f"{timestamp} {message}\n")
 
 
-# Backwards-compatible alias for legacy imports.
+# Backwards-compatible aliases for external callers.
 _warn_graph_structure = warn_graph_structure
 apply_severity_overrides = _apply_severity_overrides
 resolve_validation_options = _resolve_validation_options

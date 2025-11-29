@@ -1,7 +1,7 @@
 """
 Subsystem analytics orchestrator and helpers.
 
-The legacy `analytics.subsystems` module has been split into focused submodules:
+Split across focused submodules:
 - affinity: module graphs and clustering
 - edge_stats: fan-in/out and edge counts per subsystem
 - risk: risk aggregation utilities
