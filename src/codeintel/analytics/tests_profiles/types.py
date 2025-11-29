@@ -159,6 +159,7 @@ type BehavioralLLMRunner = Callable[[BehavioralLLMRequest], BehavioralLLMResult]
 class TestProfileContext:
     """Shared inputs for building test_profile rows."""
 
+    __test__ = False
     cfg: TestProfileStepConfig
     now: datetime
     max_function_count: int

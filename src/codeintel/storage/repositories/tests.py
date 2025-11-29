@@ -11,6 +11,8 @@ from codeintel.storage.repositories.base import BaseRepository, RowDict, fetch_a
 class TestRepository(BaseRepository):
     """Read test coverage and profile data."""
 
+    __test__ = False
+
     def get_tests_for_function(self, goid_h128: int, *, limit: int) -> list[RowDict]:
         """
         List tests covering a function.

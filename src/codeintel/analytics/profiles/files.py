@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import cast
 
 from codeintel.analytics.profiles.types import FileProfileInputs
 from codeintel.analytics.profiles.utils import (
@@ -13,10 +14,20 @@ from codeintel.analytics.profiles.utils import (
     optional_int,
     optional_str,
 )
+from codeintel.analytics.profiles.writer_guard import (
+    SerializeRow,
+    WriterContext,
+    write_rows_with_registry_guard,
+)
 from codeintel.config import ProfilesAnalyticsStepConfig
+from codeintel.config.schemas.registry_adapter import load_registry_columns
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import FileProfileRowModel, file_profile_row_to_tuple
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.rows import (
+    FILE_PROFILE_COLUMNS,
+    FileProfileRowModel,
+    file_profile_row_to_tuple,
+)
+from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
 
 
 def compute_file_profile_inputs(
@@ -279,73 +290,36 @@ def _row_to_file_profile_model(
 
 def write_file_profile_rows(gateway: StorageGateway, rows: Iterable[FileProfileRowModel]) -> int:
     """
-    Insert rows into analytics.file_profile.
+    Insert rows into analytics.file_profile with registry alignment checks.
 
     Returns
     -------
     int
-        Number of rows inserted.
+        Number of inserted rows.
     """
-    rows = list(rows)
-    if not rows:
+    rows_list = list(rows)
+    if not rows_list:
         return 0
-    repo = rows[0]["repo"]
-    commit = rows[0]["commit"]
-    con = gateway.con
-    ensure_schema(con, "analytics.file_profile")
-    con.execute(
-        "DELETE FROM analytics.file_profile WHERE repo = ? AND commit = ?",
-        [repo, commit],
+
+    repo = rows_list[0]["repo"]
+    commit = rows_list[0]["commit"]
+    context = WriterContext(
+        table_key="analytics.file_profile",
+        columns=FILE_PROFILE_COLUMNS,
+        serialize_row=cast("SerializeRow", file_profile_row_to_tuple),
+        repo=repo,
+        commit=commit,
+        delete_sql="DELETE FROM analytics.file_profile WHERE repo = ? AND commit = ?",
+        ensure_schema_fn=ensure_schema,
+        load_registry_columns_fn=load_registry_columns,
+        prepared_statements_fn=prepared_statements_dynamic,
     )
-    tuples = [file_profile_row_to_tuple(row) for row in rows]
-    con.executemany(
-        """
-        INSERT INTO analytics.file_profile (
-            repo,
-            commit,
-            rel_path,
-            module,
-            language,
-            node_count,
-            function_count,
-            class_count,
-            avg_depth,
-            max_depth,
-            ast_complexity,
-            hotspot_score,
-            commit_count,
-            author_count,
-            lines_added,
-            lines_deleted,
-            annotation_ratio,
-            untyped_defs,
-            overlay_needed,
-            type_error_count,
-            static_error_count,
-            has_static_errors,
-            total_functions,
-            public_functions,
-            avg_loc,
-            max_loc,
-            avg_cyclomatic_complexity,
-            max_cyclomatic_complexity,
-            high_risk_function_count,
-            medium_risk_function_count,
-            max_risk_score,
-            file_coverage_ratio,
-            tested_function_count,
-            untested_function_count,
-            tests_touching,
-            tags,
-            owners,
-            created_at
-        ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        )
-        """,
-        tuples,
+    return write_rows_with_registry_guard(
+        gateway.con,
+        rows=rows_list,
+        context=context,
+        delete_on_empty=False,
     )
-    return len(tuples)
 
 
 def build_file_profile(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import cast
 
 from codeintel.analytics.profiles.utils import (
     optional_bool,
@@ -11,7 +12,12 @@ from codeintel.analytics.profiles.utils import (
     optional_int,
     optional_str,
 )
-from codeintel.analytics.tests import profiles as legacy
+from codeintel.analytics.profiles.writer_guard import (
+    SerializeRow,
+    WriterContext,
+    write_rows_with_registry_guard,
+)
+from codeintel.analytics.tests_profiles.legacy import legacy
 from codeintel.analytics.tests_profiles.types import TestProfileContext, TestRecord
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.config.schemas.registry_adapter import load_registry_columns
@@ -109,35 +115,29 @@ def write_test_profile_rows(
     rows: Iterable[TestProfileRowModel],
 ) -> int:
     """
-    Insert rows into analytics.test_profile.
+    Insert rows into analytics.test_profile with registry alignment checks.
 
     Returns
     -------
     int
-        Number of rows inserted.
-
-    Raises
-    ------
-    RuntimeError
-        If registry column order drifts from serializer constants.
+        Number of inserted rows.
     """
-    rows = list(rows)
-    con = gateway.con
-    ensure_schema(con, "analytics.test_profile")
-    registry_cols = load_registry_columns(con).get("analytics.test_profile")
-    if registry_cols is None or tuple(registry_cols) != TEST_PROFILE_COLUMNS:
-        message = "Registry columns for analytics.test_profile differ from serializer constants."
-        raise RuntimeError(message)
-    stmt = prepared_statements_dynamic(con, "analytics.test_profile")
-    con.execute(
-        "DELETE FROM analytics.test_profile WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
+    rows_list = list(rows)
+    return write_rows_with_registry_guard(
+        gateway.con,
+        rows=rows_list,
+        context=WriterContext(
+            table_key="analytics.test_profile",
+            columns=TEST_PROFILE_COLUMNS,
+            serialize_row=cast("SerializeRow", serialize_test_profile_row),
+            repo=cfg.repo,
+            commit=cfg.commit,
+            delete_sql="DELETE FROM analytics.test_profile WHERE repo = ? AND commit = ?",
+            ensure_schema_fn=ensure_schema,
+            load_registry_columns_fn=load_registry_columns,
+            prepared_statements_fn=prepared_statements_dynamic,
+        ),
     )
-    if not rows:
-        return 0
-    tuples = [serialize_test_profile_row(row) for row in rows]
-    con.executemany(stmt.insert_sql, tuples)
-    return len(rows)
 
 
 def build_behavioral_coverage_rows(
@@ -193,34 +193,26 @@ def write_behavioral_coverage_rows(
     rows: Iterable[BehavioralCoverageRowModel],
 ) -> int:
     """
-    Insert rows into analytics.behavioral_coverage.
+    Insert rows into analytics.behavioral_coverage with registry alignment checks.
 
     Returns
     -------
     int
-        Number of rows inserted.
-
-    Raises
-    ------
-    RuntimeError
-        If registry column order drifts from serializer constants.
+        Number of inserted rows.
     """
-    rows = list(rows)
-    con = gateway.con
-    ensure_schema(con, "analytics.behavioral_coverage")
-    registry_cols = load_registry_columns(con).get("analytics.behavioral_coverage")
-    if registry_cols is None or tuple(registry_cols) != BEHAVIORAL_COVERAGE_COLUMNS:
-        message = (
-            "Registry columns for analytics.behavioral_coverage differ from serializer constants."
-        )
-        raise RuntimeError(message)
-    stmt = prepared_statements_dynamic(con, "analytics.behavioral_coverage")
-    con.execute(
-        "DELETE FROM analytics.behavioral_coverage WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
+    rows_list = list(rows)
+    return write_rows_with_registry_guard(
+        gateway.con,
+        rows=rows_list,
+        context=WriterContext(
+            table_key="analytics.behavioral_coverage",
+            columns=BEHAVIORAL_COVERAGE_COLUMNS,
+            serialize_row=cast("SerializeRow", behavioral_coverage_row_to_tuple),
+            repo=cfg.repo,
+            commit=cfg.commit,
+            delete_sql=("DELETE FROM analytics.behavioral_coverage WHERE repo = ? AND commit = ?"),
+            ensure_schema_fn=ensure_schema,
+            load_registry_columns_fn=load_registry_columns,
+            prepared_statements_fn=prepared_statements_dynamic,
+        ),
     )
-    if not rows:
-        return 0
-    tuples = [behavioral_coverage_row_to_tuple(row) for row in rows]
-    con.executemany(stmt.insert_sql, tuples)
-    return len(rows)

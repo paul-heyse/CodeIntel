@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from codeintel.analytics.tests import profiles as legacy
-from codeintel.analytics.tests_profiles.types import TestRecord
+from codeintel.analytics.tests_profiles.legacy import legacy
+from codeintel.analytics.tests_profiles.types import (
+    FunctionCoverageEntryProtocol,
+    SubsystemCoverageEntryProtocol,
+    TestGraphMetricsProtocol,
+    TestRecord,
+)
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.storage.gateway import DuckDBConnection
 
@@ -13,7 +18,7 @@ from codeintel.storage.gateway import DuckDBConnection
 def aggregate_test_coverage_by_function(
     con: DuckDBConnection,
     cfg: TestProfileStepConfig,
-) -> Mapping[str, legacy.FunctionCoverageEntry]:
+) -> Mapping[str, FunctionCoverageEntryProtocol]:
     """
     Aggregate coverage signals per test→function edge.
 
@@ -28,7 +33,7 @@ def aggregate_test_coverage_by_function(
 def aggregate_test_coverage_by_subsystem(
     con: DuckDBConnection,
     cfg: BehavioralCoverageStepConfig,
-) -> Mapping[str, legacy.SubsystemCoverageEntry]:
+) -> Mapping[str, SubsystemCoverageEntryProtocol]:
     """
     Aggregate subsystem coverage signals per test.
 
@@ -43,7 +48,7 @@ def aggregate_test_coverage_by_subsystem(
 def load_test_graph_metrics(
     con: DuckDBConnection,
     cfg: TestProfileStepConfig,
-) -> Mapping[str, legacy.TestGraphMetrics]:
+) -> Mapping[str, TestGraphMetricsProtocol]:
     """
     Load test graph metrics used in importance calculations.
 
