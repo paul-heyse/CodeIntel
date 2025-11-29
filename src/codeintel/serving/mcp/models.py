@@ -8,7 +8,10 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.serving.mcp.view_utils import normalize_entrypoints_payload
+
+_TIME_WINDOW_LEN = 2
 
 
 class MappingModel(BaseModel):
@@ -111,6 +114,88 @@ class ResponseMeta(BaseModel):
     applied_offset: int | None = None
     truncated: bool = False
     messages: list[Message] = Field(default_factory=list)
+
+
+class GraphPluginDescriptor(BaseModel):
+    """Descriptor for available graph metric plugins."""
+
+    name: str
+    stage: str
+    description: str
+    enabled_by_default: bool
+    scope_aware: bool | None = None
+    supported_scopes: tuple[str, ...] = ()
+    requires_isolation: bool | None = None
+    isolation_kind: str | None = None
+    scope: object | None = None
+
+
+class GraphPlanSkipped(BaseModel):
+    """Skipped plugin entry returned by plan endpoint."""
+
+    name: str
+    reason: Literal["disabled"]
+
+
+class GraphPlanResponse(BaseModel):
+    """Resolved graph metric plan including ordering and dependency graph."""
+
+    plan_id: str
+    ordered_plugins: tuple[str, ...]
+    skipped_plugins: tuple[GraphPlanSkipped, ...]
+    dep_graph: dict[str, tuple[str, ...]]
+
+
+class GraphScopePayload(BaseModel):
+    """Client-provided scope payload parsed into GraphRunScope."""
+
+    paths: tuple[str, ...] = ()
+    modules: tuple[str, ...] = ()
+    time_window: tuple[datetime, datetime] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_time_window(cls, values: object) -> object:
+        if not isinstance(values, dict):
+            return values
+        window = values.get("time_window")
+        if window is None:
+            return values
+        if isinstance(window, (list, tuple)) and len(window) == _TIME_WINDOW_LEN:
+            try:
+                start = (
+                    datetime.fromisoformat(window[0]) if isinstance(window[0], str) else window[0]
+                )
+                end = datetime.fromisoformat(window[1]) if isinstance(window[1], str) else window[1]
+                values["time_window"] = (start, end)
+            except (TypeError, ValueError):
+                values["time_window"] = None
+        else:
+            values["time_window"] = None
+        return values
+
+
+def parse_graph_scope(scope: GraphScopePayload | None) -> GraphRunScope | None:
+    """
+    Convert a GraphScopePayload into a GraphRunScope.
+
+    Parameters
+    ----------
+    scope:
+        Optional scope payload from MCP requests.
+
+    Returns
+    -------
+    GraphRunScope | None
+        Parsed scope or ``None`` when not provided.
+    """
+    if scope is None:
+        return None
+    return GraphRunScope(
+        paths=tuple(scope.paths),
+        modules=tuple(scope.modules),
+        time_window=scope.time_window,
+    )
 
 
 class FunctionSummaryRow(MappingModel):

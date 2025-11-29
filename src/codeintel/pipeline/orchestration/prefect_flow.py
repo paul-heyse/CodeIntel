@@ -15,7 +15,7 @@ from prefect.logging.configuration import setup_logging
 from prefect.logging.handlers import PrefectConsoleHandler
 
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.config import ConfigBuilder, ScanProfiles, SnapshotRef
+from codeintel.config import ConfigBuilder, GraphRunScope, ScanProfiles, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig
@@ -76,6 +76,7 @@ class ExportArgs:
     history_commits: tuple[str, ...] | None = None
     history_db_dir: Path | None = None
     graph_backend: GraphBackendConfig | None = None
+    graph_scope: GraphRunScope | None = None
 
     def snapshot_config(self) -> SnapshotRef:
         """
@@ -195,6 +196,7 @@ def _build_pipeline_context(
         export_datasets=args.export_datasets,
         export_validation_profile=args.export_validation_profile,
         force_full_export=args.force_full_export,
+        graph_scope=args.graph_scope,
     )
 
 

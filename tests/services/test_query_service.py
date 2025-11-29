@@ -20,6 +20,7 @@ from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import QueryBackend
 from codeintel.serving.mcp.models import (
     FunctionSummaryResponse,
+    GraphScopePayload,
     ResponseMeta,
     SubsystemCoverageResponse,
     SubsystemCoverageRow,
@@ -433,7 +434,7 @@ def test_http_high_risk_clamps_using_limits() -> None:
 
     service = HttpQueryService(request_json=capture, limits=limits)
     _resp = service.list_high_risk_functions(limit=20)
-    expected_params = {"min_risk": 0.7, "limit": 5, "tested_only": False}
+    expected_params = {"min_risk": 0.7, "limit": 5, "tested_only": False, "scope": None}
     if requested.get("path") != "/functions/high-risk":
         pytest.fail(f"Unexpected path: {requested}")
     if requested.get("params") != expected_params:
@@ -466,6 +467,7 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
             goid_h128: int | None = None,
             rel_path: str | None = None,
             qualname: str | None = None,
+            scope: GraphScopePayload | None = None,
         ) -> FunctionSummaryResponse:
             _ = (goid_h128, rel_path)
             calls.append("get_function_summary")
@@ -474,6 +476,7 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
                 goid_h128=goid_h128,
                 rel_path=rel_path,
                 qualname=qualname,
+                scope=scope,
             )
 
     service = RecordingService()

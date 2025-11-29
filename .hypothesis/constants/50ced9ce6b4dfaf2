@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/query_service.py
+# hypothesis_version: 6.148.3
+
+[0.7, 100, 500, '.', 'File not found', 'Function not found', 'Subsystem not found', 'YES', 'applied', 'both', 'capabilities', 'commit', 'dataset', 'dataset_empty', 'default_limit', 'dict[str, bool]', 'dst', 'dst_sub', 'error', 'functions', 'goid_h128', 'id', 'in', 'in_degree', 'info', 'lenient', 'limit_clamped', 'limit_invalid', 'list[str]', 'max', 'max_edges', 'max_nodes', 'max_rows_per_call', 'module', 'name', 'not_found', 'offset', 'offset_invalid', 'out', 'out_degree', 'qualname', 'rel_path', 'repo', 'requested', 'schema_columns', 'src', 'src_sub', 'str', 'str | None', 'strict', 'subsystem_id', 'truncated', 'urn', 'utf-8', 'validation_profile', 'warning', 'weight']

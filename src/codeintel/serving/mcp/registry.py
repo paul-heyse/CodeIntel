@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from mcp.server.fastmcp import FastMCP
 
+from codeintel.analytics.graphs.plugins import plan_graph_metric_plugins
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import QueryBackend
 from codeintel.serving.mcp.models import (
@@ -15,6 +16,8 @@ from codeintel.serving.mcp.models import (
     FileSummaryResponse,
     FunctionArchitectureResponse,
     FunctionSummaryResponse,
+    GraphPlanResponse,
+    GraphPlanSkipped,
     HighRiskFunctionsResponse,
     ModuleArchitectureResponse,
     ModuleSubsystemResponse,
@@ -139,6 +142,46 @@ def _register_profile_tools(mcp: FastMCP, backend: QueryBackend | QueryService) 
 
 def _register_architecture_tools(mcp: FastMCP, backend: QueryBackend | QueryService) -> None:
     """Register architecture and subsystem MCP tools."""
+
+    @mcp.tool()
+    @_wrap
+    def graph_plugin_plan(
+        names: list[str] | None = None,
+        enable: list[str] | None = None,
+        disable: list[str] | None = None,
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
+        """
+        Compute graph metric plugin execution plan with ordering and dep graph.
+
+        Parameters
+        ----------
+        names:
+            Explicit plugin names to plan (used when enable is not provided).
+        enable:
+            Ordered list of plugins to enable (overrides defaults when provided).
+        disable:
+            Plugins to drop from the selected set.
+
+        Returns
+        -------
+        dict[str, object] | dict[str, ProblemDetail]
+            Plan payload with ordering, skips, and dependency graph or an error detail.
+        """
+        plan = plan_graph_metric_plugins(
+            plugin_names=tuple(names) if names else None,
+            enabled=tuple(enable) if enable else None,
+            disabled=tuple(disable) if disable else None,
+        )
+        resp = GraphPlanResponse(
+            plan_id=plan.plan_id,
+            ordered_plugins=plan.ordered_names,
+            skipped_plugins=tuple(
+                GraphPlanSkipped(name=skipped.name, reason=skipped.reason)
+                for skipped in plan.skipped_plugins
+            ),
+            dep_graph={name: tuple(deps) for name, deps in plan.dep_graph.items()},
+        )
+        return resp.model_dump()
 
     @mcp.tool()
     @_wrap

@@ -22,6 +22,7 @@ from codeintel.serving.mcp.models import (
     FunctionProfileResponse,
     FunctionSummaryResponse,
     GraphNeighborhoodResponse,
+    GraphScopePayload,
     HighRiskFunctionsResponse,
     ImportBoundaryResponse,
     ModuleArchitectureResponse,
@@ -34,6 +35,7 @@ from codeintel.serving.mcp.models import (
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
+    parse_graph_scope,
 )
 from codeintel.serving.mcp.query_service import (
     BackendLimits,
@@ -252,6 +254,7 @@ class FunctionQueryApi(Protocol):
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> FunctionSummaryResponse:
         """Return a function summary for an identifier."""
         ...
@@ -262,6 +265,7 @@ class FunctionQueryApi(Protocol):
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
+        scope: GraphScopePayload | None = None,
     ) -> HighRiskFunctionsResponse:
         """List high-risk functions."""
         ...
@@ -272,6 +276,7 @@ class FunctionQueryApi(Protocol):
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> CallGraphNeighborsResponse:
         """Return call graph neighbors for a function."""
         ...
@@ -282,6 +287,7 @@ class FunctionQueryApi(Protocol):
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> TestsForFunctionResponse:
         """List tests that exercise a function."""
         ...
@@ -305,7 +311,9 @@ class FunctionQueryApi(Protocol):
         """Return import edges crossing a subsystem boundary."""
         ...
 
-    def get_file_summary(self, *, rel_path: str) -> FileSummaryResponse:
+    def get_file_summary(
+        self, *, rel_path: str, scope: GraphScopePayload | None = None
+    ) -> FileSummaryResponse:
         """Return a file summary."""
         ...
 
@@ -432,11 +440,16 @@ class _FunctionQueryDelegates:
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> FunctionSummaryResponse:
         return self._call(
             "get_function_summary",
             lambda: self.query.get_function_summary(
-                urn=urn, goid_h128=goid_h128, rel_path=rel_path, qualname=qualname
+                urn=urn,
+                goid_h128=goid_h128,
+                rel_path=rel_path,
+                qualname=qualname,
+                scope=parse_graph_scope(scope),
             ),
         )
 
@@ -446,11 +459,15 @@ class _FunctionQueryDelegates:
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
+        scope: GraphScopePayload | None = None,
     ) -> HighRiskFunctionsResponse:
         return self._call(
             "list_high_risk_functions",
             lambda: self.query.list_high_risk_functions(
-                min_risk=min_risk, limit=limit, tested_only=tested_only
+                min_risk=min_risk,
+                limit=limit,
+                tested_only=tested_only,
+                scope=parse_graph_scope(scope),
             ),
         )
 
@@ -460,11 +477,15 @@ class _FunctionQueryDelegates:
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> CallGraphNeighborsResponse:
         return self._call(
             "get_callgraph_neighbors",
             lambda: self.query.get_callgraph_neighbors(
-                goid_h128=goid_h128, direction=direction, limit=limit
+                goid_h128=goid_h128,
+                direction=direction,
+                limit=limit,
+                scope=parse_graph_scope(scope),
             ),
         )
 
@@ -474,10 +495,16 @@ class _FunctionQueryDelegates:
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> TestsForFunctionResponse:
         return self._call(
             "get_tests_for_function",
-            lambda: self.query.get_tests_for_function(goid_h128=goid_h128, urn=urn, limit=limit),
+            lambda: self.query.get_tests_for_function(
+                goid_h128=goid_h128,
+                urn=urn,
+                limit=limit,
+                scope=parse_graph_scope(scope),
+            ),
         )
 
     def get_callgraph_neighborhood(
@@ -507,9 +534,15 @@ class _FunctionQueryDelegates:
             dataset="import_graph_edges",
         )
 
-    def get_file_summary(self, *, rel_path: str) -> FileSummaryResponse:
+    def get_file_summary(
+        self, *, rel_path: str, scope: GraphScopePayload | None = None
+    ) -> FileSummaryResponse:
         return self._call(
-            "get_file_summary", lambda: self.query.get_file_summary(rel_path=rel_path)
+            "get_file_summary",
+            lambda: self.query.get_file_summary(
+                rel_path=rel_path,
+                scope=parse_graph_scope(scope),
+            ),
         )
 
 
@@ -819,6 +852,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
+        scope: GraphScopePayload | None = None,
     ) -> HighRiskFunctionsResponse:
         def _run() -> HighRiskFunctionsResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
@@ -840,6 +874,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
                         "min_risk": min_risk,
                         "limit": clamp.applied,
                         "tested_only": tested_only,
+                        "scope": scope.model_dump() if scope is not None else None,
                     },
                 )
             )
@@ -853,6 +888,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> FunctionSummaryResponse:
         def _run() -> FunctionSummaryResponse:
             return FunctionSummaryResponse.model_validate(
@@ -863,6 +899,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
                         "goid_h128": goid_h128,
                         "rel_path": rel_path,
                         "qualname": qualname,
+                        "scope": scope.model_dump() if scope is not None else None,
                     },
                 )
             )
@@ -875,6 +912,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> CallGraphNeighborsResponse:
         def _run() -> CallGraphNeighborsResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
@@ -888,7 +926,12 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
             return CallGraphNeighborsResponse.model_validate(
                 self.request_json(
                     "/function/callgraph",
-                    {"goid_h128": goid_h128, "direction": direction, "limit": clamp.applied},
+                    {
+                        "goid_h128": goid_h128,
+                        "direction": direction,
+                        "limit": clamp.applied,
+                        "scope": scope.model_dump() if scope is not None else None,
+                    },
                 )
             )
 
@@ -957,6 +1000,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> TestsForFunctionResponse:
         def _run() -> TestsForFunctionResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
@@ -970,16 +1014,29 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
             return TestsForFunctionResponse.model_validate(
                 self.request_json(
                     "/function/tests",
-                    {"goid_h128": goid_h128, "urn": urn, "limit": clamp.applied},
+                    {
+                        "goid_h128": goid_h128,
+                        "urn": urn,
+                        "limit": clamp.applied,
+                        "scope": scope.model_dump() if scope is not None else None,
+                    },
                 )
             )
 
         return self._http_call("get_tests_for_function", _run)
 
-    def get_file_summary(self, *, rel_path: str) -> FileSummaryResponse:
+    def get_file_summary(
+        self, *, rel_path: str, scope: GraphScopePayload | None = None
+    ) -> FileSummaryResponse:
         def _run() -> FileSummaryResponse:
             return FileSummaryResponse.model_validate(
-                self.request_json("/file/summary", {"rel_path": rel_path})
+                self.request_json(
+                    "/file/summary",
+                    {
+                        "rel_path": rel_path,
+                        "scope": scope.model_dump() if scope is not None else None,
+                    },
+                )
             )
 
         return self._http_call("get_file_summary", _run)
