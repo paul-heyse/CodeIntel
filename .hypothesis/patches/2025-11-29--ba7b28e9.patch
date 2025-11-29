@@ -1,0 +1,45 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.148.3 <no-reply@hypothesis.works>
+Date: Sat, 29 Nov 2025 13:50:07
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/storage/test_schema_roundtrip.py
++++ ./tests/storage/test_schema_roundtrip.py
+@@ -33,6 +33,20 @@
+ 
+ @settings(max_examples=15)
+ @given(st.from_type(CallGraphEdgeRow))
++@example(
++    row={'repo': '',
++     'commit': '',
++     'caller_goid_h128': 0,
++     'callee_goid_h128': None,
++     'callsite_path': '',
++     'callsite_line': 0,
++     'callsite_col': 0,
++     'language': '',
++     'kind': '',
++     'resolved_via': None,
++     'confidence': None,
++     'evidence_json': None},  # or any other generated value
++).via('discovered failure')
+ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
+     """Generated schemas from TypedDict should validate generated call graph edges."""
+     schema = json_schema_from_typeddict(CallGraphEdgeRow)
+@@ -45,6 +59,15 @@
+ 
+ @settings(max_examples=15)
+ @given(st.from_type(SymbolUseRow))
++@example(
++    row={'symbol': '',
++     'def_path': '',
++     'use_path': '',
++     'same_file': False,
++     'same_module': False,
++     'def_goid_h128': None,
++     'use_goid_h128': None},  # or any other generated value
++).via('discovered failure')
+ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
+     """Generated schemas should align with symbol use TypedDict and serializer."""
+     schema = json_schema_from_typeddict(SymbolUseRow)

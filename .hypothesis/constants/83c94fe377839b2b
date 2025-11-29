@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/sql_helpers.py
+# hypothesis_version: 6.148.3
+
+[', ', '.', '?', 'PreparedStatements', 'ensure_schema']

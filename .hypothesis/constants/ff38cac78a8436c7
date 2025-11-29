@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/history/git_history.py
+# hypothesis_version: 6.148.3
+
+[500, '+', ',', '-', '--', '--date=iso-strict', '--follow', '--no-renames', '--patch', '--unified=0', '.tool_cache', '1', '@@', '@@ ', '@@@', 'Binary files', 'build', 'diff --git', 'git', 'log']

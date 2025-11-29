@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/entrypoints.py
+# hypothesis_version: 6.148.3
+
+[':', 'all_passing', 'error', 'failed', 'passed', 'some_failing', 'unknown', 'untested', 'utf-8']

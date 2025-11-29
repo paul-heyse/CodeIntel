@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/cfg_dfg/dfg_core.py
+# hypothesis_version: 6.148.3
+
+[0.0, 100, 200, 1000, 'block', 'data-flow', 'in', 'intra-block', 'out', 'phi', 'use_kind', 'via_phi']

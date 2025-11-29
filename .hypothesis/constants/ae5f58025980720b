@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/cfg_dfg/__init__.py
+# hypothesis_version: 6.148.3
+
+['compute_cfg_metrics', 'compute_dfg_metrics']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/nx_views.py
+# hypothesis_version: 6.148.3
+
+[0.0, 'c', 'component_size', 'cycle_group', 'f', 'kind', 'layer', 'm', 'nx.DiGraph', 'nx_cugraph', 'scc_id', 't', 'utf-8', 'weight']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/pipeline/export/export_jsonl.py
+# hypothesis_version: 6.148.3
+
+[9223372036854775807, '1', 'Exporting %s -> %s', 'a', 'can_export_jsonl', 'commit', 'count(*)', 'dataset_registry', 'duration_s', 'error_types', 'false', 'files', 'generated_at', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'index.json', 'iso', 'isoformat', 'lenient', 'macro', 'message', 'modules', 'on', 'output', 'overlays', 'parse_failed', 'records', 'repo', 'repo_map.json', 'rows', 'schema', 'schema mismatches', 'schema_version', 'span_not_found', 'stage', 'strict', 'table', 'true', 'unknown_function', 'utf-8', 'write_json', 'yes']

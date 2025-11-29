@@ -23,5 +23,9 @@ This repo follows a three-layer structure to keep dependencies flowing in one di
 
 ## Enforcement
 
-The optional `tools/check_layering.py` script reports violations by scanning imports. Run it from
-the repo root to confirm module boundaries before landing changes.
+The optional `codeintel.config.layering_checks` script reports violations by scanning imports. Run
+it from the repo root to confirm module boundaries before landing changes:
+
+```bash
+uv run python -m codeintel.config.layering_checks
+```

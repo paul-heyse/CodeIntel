@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/parsing/function_parsing.py
+# hypothesis_version: 6.148.3
+
+['.', 'Any', 'col_offset', 'end_col_offset', 'end_lineno', 'lineno', 'utf-8']

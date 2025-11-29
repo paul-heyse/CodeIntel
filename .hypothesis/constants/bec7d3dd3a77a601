@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/parsing/validation.py
+# hypothesis_version: 6.148.3
+
+['RowT', 'commit', 'created_at', 'detail', 'entity_id', 'function_goid_h128', 'graph_name', 'issue', 'metadata', 'parse_failed', 'qualname', 'rel_path', 'repo', 'severity', 'span_not_found', 'str | None', 'unknown_function']

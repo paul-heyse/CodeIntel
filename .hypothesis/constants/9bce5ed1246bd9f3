@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/serving_models.py
+# hypothesis_version: 6.148.3
+
+[10.0, 500, '.', '0', '10.0', '50', '500', 'CODEINTEL_COMMIT', 'CODEINTEL_DB_PATH', 'CODEINTEL_MCP_MODE', 'CODEINTEL_REPO', 'CODEINTEL_REPO_ROOT', 'HEAD', 'ServingConfig', 'ServingMode', 'after', 'build', 'codeintel.duckdb', 'db', 'false', 'local_db', 'no', 'off', 'remote_api', 'verify_db_identity']

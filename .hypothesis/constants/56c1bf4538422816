@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graph_rows/graph_metrics.py
+# hypothesis_version: 6.148.3
+
+['betweenness', 'closeness', 'component_id', 'in_cycle', 'layer', 'pagerank']

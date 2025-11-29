@@ -626,7 +626,7 @@ This doubles as a guide for agents.
 
 ### 4.2. Add a simple import-layer checker (optional but powerful)
 
-Add a small script under `tools/check_layering.py`:
+Add a small script under `src/codeintel/config/layering_checks.py`:
 
 ```python
 #!/usr/bin/env python
@@ -701,6 +701,12 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+```
+
+Run it from the repo root:
+
+```bash
+uv run python -m codeintel.config.layering_checks
 ```
 
 Wire this into CI / pre-commit, maybe with a `make check-layering` target.
@@ -1152,4 +1158,3 @@ def test_registry_and_helpers_agree(gateway: StorageGateway) -> None:
 You can add more tables (especially any you touch in ingestion) to this test over time.
 
 ---
-

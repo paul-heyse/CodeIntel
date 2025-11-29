@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/graph_stats.py
+# hypothesis_version: 6.148.3
+
+['bipartite', 'call_graph', 'config_keys', 'config_modules', 'import_graph', 'symbol_module_graph']

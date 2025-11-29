@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/cst_extract.py
+# hypothesis_version: 6.148.3
+
+[200, 10000, '.py', 'AsyncFunctionDef', 'Flushed %d CST rows', 'core.cst_nodes', 'process']

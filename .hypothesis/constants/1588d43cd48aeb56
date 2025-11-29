@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/entrypoint_detectors.py
+# hypothesis_version: 6.148.3
+
+['.', 'APIRouter', 'Blueprint', 'Celery', 'FastAPI', 'Flask', 'GET', 'Group', 'Typer', 'add_route', 'add_url_rule', 'airflow', 'annotation', 'argument', 'arguments', 'auth', 'celery', 'cli', 'click', 'cls', 'command', 'cron', 'dag', 'dag_id', 'decorator', 'default', 'delete', 'django', 'end_lineno', 'event', 'fastapi', 'flags', 'flask', 'generic', 'generic_route', 'get', 'group', 'head', 'http', 'interval', 'kind', 'lineno', 'login', 'methods', 'name', 'on_event', 'option', 'options', 'params', 'patch', 'path', 'post', 'put', 'queue', 're_path', 'required', 'route', 'scheduled_job', 'scheduler', 'self', 'shared_task', 'status_code', 'task', 'task_id', 'type', 'typer', 'url', 'urlpatterns']

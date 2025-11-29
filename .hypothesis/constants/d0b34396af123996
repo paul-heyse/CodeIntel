@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/symbol_graph_metrics.py
+# hypothesis_version: 6.148.3
+
+[1000, 5000, 'betweenness', 'closeness', 'community_id', 'constraint', 'core_number', 'effective_size', 'eigenvector', 'harmonic', 'symbol_module_graph', 'weight']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/typedness.py
+# hypothesis_version: 6.148.3
+
+[1.0, 'annotations', 'cls', 'id', 'partial', 'posonlyargs', 'returns', 'self', 'typed', 'unknown', 'untyped']

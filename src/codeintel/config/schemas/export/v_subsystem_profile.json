@@ -1,0 +1,107 @@
+{
+  "$id": "https://schemas.codeintel.dev/export/v_subsystem_profile.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "avg_risk_score": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "entrypoints_json": {
+      "type": "string"
+    },
+    "external_edge_count": {
+      "type": "string"
+    },
+    "fan_in": {
+      "type": "string"
+    },
+    "fan_out": {
+      "type": "string"
+    },
+    "function_count": {
+      "type": "string"
+    },
+    "high_risk_function_count": {
+      "type": "string"
+    },
+    "import_betweenness": {
+      "type": "string"
+    },
+    "import_closeness": {
+      "type": "string"
+    },
+    "import_in_degree": {
+      "type": "string"
+    },
+    "import_layer": {
+      "type": "string"
+    },
+    "import_out_degree": {
+      "type": "string"
+    },
+    "import_pagerank": {
+      "type": "string"
+    },
+    "internal_edge_count": {
+      "type": "string"
+    },
+    "max_risk_score": {
+      "type": "string"
+    },
+    "module_count": {
+      "type": "string"
+    },
+    "modules_json": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "risk_level": {
+      "type": "string"
+    },
+    "subsystem_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "avg_risk_score",
+    "commit",
+    "created_at",
+    "description",
+    "entrypoints_json",
+    "external_edge_count",
+    "fan_in",
+    "fan_out",
+    "function_count",
+    "high_risk_function_count",
+    "import_betweenness",
+    "import_closeness",
+    "import_in_degree",
+    "import_layer",
+    "import_out_degree",
+    "import_pagerank",
+    "internal_edge_count",
+    "max_risk_score",
+    "module_count",
+    "modules_json",
+    "name",
+    "repo",
+    "risk_level",
+    "subsystem_id"
+  ],
+  "title": "v_subsystem_profile export",
+  "type": "object"
+}

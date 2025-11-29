@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/function_contracts.py
+# hypothesis_version: 6.148.3
+
+[0.0, 0.3, 1.0, '.', 'Exception', 'assert', 'bool', 'cls', 'confidence', 'desc', 'exception', 'falsey', 'ge', 'guard', 'has_', 'instance_of', 'is_', 'isinstance', 'kind', 'len', 'len_gt', 'line', 'lineno', 'may be none', 'message_snippet', 'must not be none', 'name', 'non_null', 'none', 'null', 'nullable', 'optional', 'param', 'param_nullability', 'param_types', 'params', 'posonlyargs', 'postconditions', 'preconditions', 'raise', 'raises', 'rel_path', 'required', 'return', 'return_nullability', 'return_type', 'returns', 'self', 'should_', 'source', 'truthy', 'type_hint', 'unknown', 'value', '|none']

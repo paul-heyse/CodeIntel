@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/pipeline/export/manifest.py
+# hypothesis_version: 6.148.3
+
+[8192, '.manifest.json', '.marker.json', 'artifact', 'completed_at', 'data_hash', 'dataset', 'datasets', 'exported_at', 'extras', 'jsonl', 'name', 'parquet', 'rb', 'row_count', 'schema_digest', 'schema_id', 'schema_version', 'selected', 'started_at', 'table', 'utf-8', 'validation_profile']

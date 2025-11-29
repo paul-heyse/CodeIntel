@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/repositories/subsystems.py
+# hypothesis_version: 6.148.3
+
+[' AND ', 'LIMIT ?', 'SELECT *', 'WHERE ', 's.commit = ?', 's.repo = ?']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/pipeline/orchestration/registry.py
+# hypothesis_version: 6.148.3
+
+['StepRegistry', 'build_registry']

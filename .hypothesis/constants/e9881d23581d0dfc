@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/http/fastapi.py
+# hypothesis_version: 6.148.3
+
+[0.7, 1000, '/architecture/module', '/datasets', '/datasets/specs', '/file/summary', '/function/callgraph', '/function/summary', '/function/tests', '/functions/high-risk', '/health', '/ide/hints', '/profiles/file', '/profiles/function', '/profiles/module', '0.1.0', ':memory:', 'Backend failure', 'Cache-Control', 'ETag', 'File not found', 'Function not found', 'Get a file profile', 'Get a module profile', 'Get function summary', 'Invalid request', 'List datasets', 'SELECT 1;', 'Subsystem not found', '_gateway', 'backend', 'both', 'commit', 'config', 'default_limit', 'docs_view', 'errors', 'exclude', 'gateway', 'http', 'if-none-match', 'in', 'include', 'limits', 'local_db', 'max_rows_per_call', 'ok', 'only', 'out', 'public, max-age=60', 'query', 'rb', 'read_only', 'repo', 'service', 'status', 'unknown', 'utf-8']

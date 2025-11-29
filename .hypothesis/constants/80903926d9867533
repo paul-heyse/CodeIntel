@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/config_ingest.py
+# hypothesis_version: 6.148.3
+
+['#', '.cfg', '.env', '.ini', '.json', '.toml', '.yaml', '.yml', '=', 'dict[str, object]', 'env', 'ini', 'json', 'other', 'toml', 'utf8', 'yaml']

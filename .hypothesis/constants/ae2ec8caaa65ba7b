@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/metadata_bootstrap.py
+# hypothesis_version: 6.148.3
+
+[', ', '.', '; ', 'BIGINT', 'DATE', 'DECIMAL', 'SELECT ? AS warning', 'TIMESTAMP', 'VARCHAR', '_1', 'analytics.hotspots', 'analytics.subsystems', 'analytics.tags_index', 'analytics.typedness', 'core.ast_metrics', 'core.ast_nodes', 'core.cst_nodes', 'core.docstrings', 'core.file_state', 'core.goid_crosswalk', 'core.goids', 'core.modules', 'core.repo_map', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'graph.import_modules', 'metadata.', 'utf-8', '|']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tool_service.py
+# hypothesis_version: 6.148.3
+
+['--count-errors=0', '--json', '--json-report', '--output', '--output-format', '--outputjson', '--quiet', '--summary', '--target-only', '-o', 'check', 'coverage.json', 'error', 'errors', 'executed_lines', 'file', 'filename', 'files', 'generalDiagnostics', 'index', 'json', 'missing_lines', 'none', 'path', 'print', 'pyrefly.json', 'severity', 'src', 'utf8']

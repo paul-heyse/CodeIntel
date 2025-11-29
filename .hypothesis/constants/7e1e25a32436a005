@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/call_resolution.py
+# hypothesis_version: 6.148.3
+
+[0.0, 0.55, 0.6, 0.7, 0.75, 0.8, '.', 'attr_chain', 'callee_name', 'global_name', 'import_alias', 'local_attr', 'local_name', 'resolved_via', 'scip_candidates', 'scip_def_path', 'unresolved']

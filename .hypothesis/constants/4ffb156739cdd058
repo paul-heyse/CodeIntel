@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/evidence.py
+# hypothesis_version: 6.148.3
+
+['$schema', 'EvidenceCollection', 'EvidenceSample', 'additionalProperties', 'array', 'details', 'end_lineno', 'integer', 'items', 'lineno', 'null', 'object', 'path', 'properties', 'required', 'samples', 'snippet', 'string', 'tags', 'title', 'type']

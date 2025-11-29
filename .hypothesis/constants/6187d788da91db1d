@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/history/history_timeseries.py
+# hypothesis_version: 6.148.3
+
+[500, '--format=%cI', '-s', '.tool_cache', 'both', 'build', 'function', 'git', 'module', 'show', 'utf-8']

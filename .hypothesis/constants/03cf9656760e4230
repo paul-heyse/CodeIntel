@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/nx_backend.py
+# hypothesis_version: 6.148.3
+
+['BackendEnablement', 'True', 'auto', 'cpu', 'maybe_enable_nx_gpu', 'nx-cugraph', 'nx_cugraph']

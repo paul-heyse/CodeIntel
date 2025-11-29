@@ -938,6 +938,26 @@ def build_datasets_router() -> APIRouter:
     APIRouter
         Router exposing dataset discovery and access endpoints.
     """
+
+    def _filter_datasets(
+        datasets: list[DatasetDescriptor],
+        *,
+        docs_view: Literal["include", "exclude", "only"],
+        read_only: Literal["include", "exclude", "only"],
+    ) -> list[DatasetDescriptor]:
+        filtered: list[DatasetDescriptor] = []
+        for ds in datasets:
+            caps = ds.capabilities or {}
+            is_docs = bool(caps.get("docs_view"))
+            is_read_only = bool(caps.get("read_only"))
+            docs_ok = (docs_view != "only" or is_docs) and (docs_view != "exclude" or not is_docs)
+            read_only_ok = (read_only != "only" or is_read_only) and (
+                read_only != "exclude" or not is_read_only
+            )
+            if docs_ok and read_only_ok:
+                filtered.append(ds)
+        return filtered
+
     router = APIRouter()
 
     @router.get("/datasets", response_model=list[DatasetDescriptor], summary="List datasets")
@@ -946,6 +966,8 @@ def build_datasets_router() -> APIRouter:
         service: ServiceDep,
         request: Request,
         response: Response,
+        docs_view: Literal["include", "exclude", "only"] = "include",
+        read_only: Literal["include", "exclude", "only"] = "include",
     ) -> Response | list[DatasetDescriptor]:
         """
         Return dataset descriptors available through the backend.
@@ -956,14 +978,21 @@ def build_datasets_router() -> APIRouter:
             Dataset descriptors sorted by name.
         """
         datasets = service.list_datasets()
-        payload = [ds.model_dump() for ds in datasets]
+        filtered = _filter_datasets(
+            datasets,
+            docs_view=docs_view,
+            read_only=read_only,
+        )
+        payload = [ds.model_dump() for ds in filtered]
         etag = _compute_etag(payload)
         response.headers["Cache-Control"] = "public, max-age=60"
         response.headers["ETag"] = etag
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=response.headers)
-        LOG.info("Listed %d datasets", len(datasets))
-        return datasets
+        LOG.info(
+            "Listed %d datasets (docs_view=%s read_only=%s)", len(filtered), docs_view, read_only
+        )
+        return filtered
 
     @router.get(
         "/datasets/specs",

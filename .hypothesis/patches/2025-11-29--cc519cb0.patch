@@ -1,0 +1,29 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.148.3 <no-reply@hypothesis.works>
+Date: Sat, 29 Nov 2025 13:53:19
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/storage/test_schema_roundtrip.py
++++ ./tests/storage/test_schema_roundtrip.py
+@@ -33,6 +33,20 @@
+ 
+ @settings(max_examples=15)
+ @given(st.from_type(CallGraphEdgeRow))
++@example(
++    row={'repo': '',
++     'commit': '',
++     'caller_goid_h128': 0,
++     'callee_goid_h128': None,
++     'callsite_path': '',
++     'callsite_line': 0,
++     'callsite_col': 0,
++     'language': '',
++     'kind': '',
++     'resolved_via': None,
++     'confidence': None,
++     'evidence_json': environ({'CHROME_DESKTOP': 'cursor.desktop', 'CLUTTER_DISABLE_MIPMAPPED_TEXT': '1', 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE': 'codex_vscode', 'CONDA_SHLVL': '0', 'CUDA_HOME': '/usr/local/cuda', 'CURSOR_SPAWNED_BY_EXTENSION_ID': 'openai.chatgpt', 'CURSOR_SPAWN_CHAIN': 'openai.chatgpt', 'CURSOR_TRACE_ID': 'c842a60ae5434ccd9b4c8d370d73ea6a', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus', 'DEBUGINFOD_URLS': 'https://debuginfod.ubuntu.com ', 'DESKTOP_SESSION': 'ubuntu', 'DISPLAY': ':1', 'ELECTRON_RUN_AS_NODE': '1', 'GDK_BACKEND': 'x11', 'GDMSESSION': 'ubuntu', 'GIO_LAUNCHED_DESKTOP_FILE': '/usr/share/applications/cursor.desktop', 'GIO_LAUNCHED_DESKTOP_FILE_PID': '663062', 'GJS_DEBUG_OUTPUT': 'stderr', 'GJS_DEBUG_TOPICS': 'JS ERROR;JS LOG', 'GNOME_DESKTOP_SESSION_ID': 'this-is-deprecated', 'GNOME_SHELL_SESSION_MODE': 'ubuntu', 'GPG_AGENT_INFO': '/run/user/1000/gnupg/S.gpg-agent:0:1', 'GSM_SKIP_SSH_AGENT_WORKAROUND': 'true', 'GTK3_MODULES': 'xapp-gtk3-module', 'GTK_MODULES': 'gail:atk-bridge', 'HOME': '/home/paul', 'HOMEBREW_CELLAR': '/home/linuxbrew/.linuxbrew/Cellar', 'HOMEBREW_PREFIX': '/home/linuxbrew/.linuxbrew', 'HOMEBREW_REPOSITORY': '/home/linuxbrew/.linuxbrew/Homebrew', 'INFOPATH': '/home/linuxbrew/.linuxbrew/share/info:', 'INVOCATION_ID': '8181b439921a4466bb0fff18775f464e', 'JAVA_HOME': '/usr/lib/jvm/java-21-openjdk-amd64', 'JOURNAL_STREAM': '9:15215', 'LANG': 'en_US.UTF-8', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'LESSOPEN': '| /usr/bin/lesspipe %s', 'LOGNAME': 'paul', 'MAMBA_EXE': '/home/paul/.local/bin/micromamba', 'MAMBA_ROOT_PREFIX': '/home/paul/micromamba', 'MANAGERPID': '3514', 'MEMORY_PRESSURE_WATCH': '/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/session.slice/org.gnome.Shell@x11.service/memory.pressure', 'MEMORY_PRESSURE_WRITE': 'c29tZSAyMDAwMDAgMjAwMDAwMAA=', 'NVM_BIN': '/home/paul/.nvm/versions/node/v22.21.0/bin', 'NVM_DIR': '/home/paul/.nvm', 'NVM_INC': '/home/paul/.nvm/versions/node/v22.21.0/include/node', 'OLDPWD': '/home/paul/CodeIntel', 'ORIGINAL_XDG_CURRENT_DESKTOP': 'ubuntu:GNOME', 'PATH': '/home/paul/CodeIntel/.venv/bin:/home/paul/CodeIntel/.venv/bin:/usr/local/cuda/bin:/tmp/.tmpMubZf0:/opt/curl-http3/curl/bin:/opt/curl-http3/curl/bin:/usr/lib/jvm/java-21-openjdk-amd64/bin:/home/paul/.local/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/local/cuda/bin:/home/paul/.nvm/versions/node/v22.21.0/bin:/home/paul/micromamba/condabin:/home/paul/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/paul/.cursor/extensions/openai.chatgpt-0.4.46-universal/bin/linux-x86_64', 'PWD': '/home/paul/CodeIntel', 'QT_ACCESSIBILITY': '1', 'QT_IM_MODULE': 'ibus', 'RUST_LOG': 'warn', 'SBX_CHROME_API_RQ': '1', 'SESSION_MANAGER': 'local/paul-X870-AORUS-ELITE-WIFI7:@/tmp/.ICE-unix/3820,unix/paul-X870-AORUS-ELITE-WIFI7:/tmp/.ICE-unix/3820', 'SHELL': '/bin/bash', 'SHLVL': '0', 'SSH_AUTH_SOCK': '/run/user/1000/keyring/ssh', 'SYSTEMD_EXEC_PID': '3845', 'USER': 'paul', 'USERNAME': 'paul', 'UV': '/home/paul/CodeIntel/.venv/bin/uv', 'UV_RUN_RECURSION_DEPTH': '2', 'VIRTUAL_ENV': '/home/paul/CodeIntel/.venv', 'VSCODE_CODE_CACHE_PATH': '/home/paul/.config/Cursor/CachedData/60d42bed27e5775c43ec0428d8c653c49e58e260', 'VSCODE_CRASH_REPORTER_PROCESS_TYPE': 'extensionHost', 'VSCODE_CWD': '/home/paul', 'VSCODE_ESM_ENTRYPOINT': 'vs/workbench/api/node/extensionHostProcess', 'VSCODE_HANDLES_UNCAUGHT_ERRORS': 'true', 'VSCODE_IPC_HOOK': '/run/user/1000/vscode-ce02cf35-2.1.-main.sock', 'VSCODE_NLS_CONFIG': '{"userLocale":"en-us","osLocale":"en-us","resolvedLanguage":"en","defaultMessagesFile":"/usr/share/cursor/resources/app/out/nls.messages.json","locale":"en-us","availableLanguages":{}}', 'VSCODE_PID': '663062', 'VSCODE_PROCESS_TITLE': 'extension-host  [1-2]', 'WINDOWPATH': '2', 'XAUTHORITY': '/run/user/1000/gdm/Xauthority', 'XDG_CONFIG_DIRS': '/etc/xdg/xdg-ubuntu:/etc/xdg', 'XDG_CURRENT_DESKTOP': 'Unity', 'XDG_DATA_DIRS': '/usr/share/ubuntu:/usr/share/gnome:/home/paul/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share/:/usr/share/:/var/lib/snapd/desktop', 'XDG_MENU_PREFIX': 'gnome-', 'XDG_RUNTIME_DIR': '/run/user/1000', 'XDG_SESSION_CLASS': 'user', 'XDG_SESSION_DESKTOP': 'ubuntu', 'XDG_SESSION_TYPE': 'x11', 'XMODIFIERS': '@im=ibus', '_': '/home/paul/.local/bin/uv', 'PYTEST_VERSION': '9.0.1', 'PYTEST_XDIST_TESTRUNUID': 'f34bf49f103147119aadd1c7244320c1', 'PYTEST_XDIST_WORKER': 'gw10', 'PYTEST_XDIST_WORKER_COUNT': '16', 'PREFECT_LOGGING_SETTINGS_PATH': '/home/paul/CodeIntel/src/codeintel/pipeline/orchestration/prefect_logging.yml', 'PYTEST_CURRENT_TEST': 'tests/storage/test_schema_roundtrip.py::test_call_graph_edge_round_trip (call)'})},
++).via('discovered failure')
+ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
+     """Generated schemas from TypedDict should validate generated call graph edges."""
+     schema = json_schema_from_typeddict(CallGraphEdgeRow)

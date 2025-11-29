@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/profiles/modules.py
+# hypothesis_version: 6.148.3
+
+[0.0, 'SerializeRow', '[]', 'avg_file_complexity', 'avg_risk_score', 'class_count', 'commit', 'core.modules', 'created_at', 'cycle_group', 'file_count', 'function_count', 'import_fan_in', 'import_fan_out', 'in_cycle', 'language', 'max_file_complexity', 'max_risk_score', 'module', 'owners', 'path', 'repo', 'role', 'role_confidence', 'role_sources_json', 'tags', 'total_loc', 'total_logical_loc']

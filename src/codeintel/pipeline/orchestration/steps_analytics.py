@@ -649,6 +649,7 @@ class TestProfileStep:
                 ctx.gateway,
                 repo=cfg.repo,
                 commit=cfg.commit,
+                benchmark=cfg.benchmark_subsystem_cache,
             )
 
 

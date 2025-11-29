@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/builder.py
+# hypothesis_version: 6.148.3
+
+[0.3, 0.5, 1.0, 2000.0, 200, 365, 500, 2000, 'CFGBuilderStepConfig', 'CallGraphStepConfig', 'ConfigBuilder', 'DataModelsStepConfig', 'DocstringStepConfig', 'EntryPointToggles', 'HEAD', 'HotspotsStepConfig', 'RepoScanStepConfig', 'ScipIngestStepConfig', 'SubsystemsStepConfig', 'SymbolUsesStepConfig', 'function', 'python', 'risk_score', 'weight']

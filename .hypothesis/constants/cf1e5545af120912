@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/validation.py
+# hypothesis_version: 6.148.3
+
+[0.0, 0.05, 0.1, 0.25, 200, '*', ', ', '.', 'a', 'bipartite', 'bridges', 'call_edges', 'call_graph_large_scc', 'call_nodes', 'callsite_line', 'check_name', 'class', 'class_goids', 'commit', 'communities', 'context', 'detail', 'end_line', 'entity_id', 'error', 'function_count', 'function_goids', 'goid_count', 'goids', 'graph_name', 'graph_validation', 'hubs', 'import_graph_bridges', 'info', 'int', 'isolated_nodes', 'issue', 'keys', 'kind', 'largest_cluster', 'largest_cycle', 'layer', 'metadata', 'module', 'module has no GOIDs', 'module_goids', 'modules', 'orphan_module', 'path', 'rel_path', 'repo', 'sample_cycle', 'sample_edges', 'severity', 'start_line', 'symbol_graph_hubs', 'utf-8', 'warning']

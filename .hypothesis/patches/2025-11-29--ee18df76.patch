@@ -1,0 +1,88 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.148.3 <no-reply@hypothesis.works>
+Date: Sat, 29 Nov 2025 13:50:17
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/storage/test_schema_roundtrip.py
++++ ./tests/storage/test_schema_roundtrip.py
+@@ -33,6 +33,20 @@
+ 
+ @settings(max_examples=15)
+ @given(st.from_type(CallGraphEdgeRow))
++@example(
++    row={'repo': '',
++     'commit': '',
++     'caller_goid_h128': 0,
++     'callee_goid_h128': None,
++     'callsite_path': '',
++     'callsite_line': 0,
++     'callsite_col': 0,
++     'language': '',
++     'kind': '',
++     'resolved_via': None,
++     'confidence': None,
++     'evidence_json': None},  # or any other generated value
++).via('discovered failure')
+ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
+     """Generated schemas from TypedDict should validate generated call graph edges."""
+     schema = json_schema_from_typeddict(CallGraphEdgeRow)
+@@ -45,6 +59,15 @@
+ 
+ @settings(max_examples=15)
+ @given(st.from_type(SymbolUseRow))
++@example(
++    row={'symbol': '',
++     'def_path': '',
++     'use_path': '',
++     'same_file': False,
++     'same_module': False,
++     'def_goid_h128': None,
++     'use_goid_h128': None},  # or any other generated value
++).via('discovered failure')
+ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
+     """Generated schemas should align with symbol use TypedDict and serializer."""
+     schema = json_schema_from_typeddict(SymbolUseRow)
+@@ -57,6 +80,21 @@
+ 
+ @settings(max_examples=15)
+ @given(st.from_type(TestCoverageEdgeRow))
++@example(
++    row={'test_id': '',
++     'test_goid_h128': None,
++     'function_goid_h128': 0,
++     'urn': None,
++     'repo': '',
++     'commit': '',
++     'rel_path': '',
++     'qualname': None,
++     'covered_lines': 0,
++     'executable_lines': 0,
++     'coverage_ratio': 0.0,
++     'last_status': '',
++     'created_at': datetime.datetime(2000, 1, 1, 0, 0)},  # or any other generated value
++).via('discovered failure')
+ def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
+     """Generated schemas should align with test coverage edge TypedDict and serializer."""
+     schema = json_schema_from_typeddict(TestCoverageEdgeRow)
+@@ -69,6 +107,20 @@
+ 
+ @settings(max_examples=15)
+ @given(st.from_type(BehavioralCoverageRowModel))
++@example(
++    row={'repo': '',
++     'commit': '',
++     'test_id': '',
++     'test_goid_h128': None,
++     'rel_path': '',
++     'qualname': None,
++     'behavior_tags': None,
++     'tag_source': '',
++     'heuristic_version': None,
++     'llm_model': None,
++     'llm_run_id': None,
++     'created_at': datetime.datetime(2000, 1, 1, 0, 0)},  # or any other generated value
++).via('discovered failure')
+ def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None:
+     """Generated schemas should align with behavioral coverage TypedDict and serializer."""
+     schema = json_schema_from_typeddict(BehavioralCoverageRowModel)

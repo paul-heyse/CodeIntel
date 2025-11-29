@@ -1,0 +1,30 @@
+From HEAD Mon Sep 17 00:00:00 2001
+From: Hypothesis 6.148.3 <no-reply@hypothesis.works>
+Date: Sat, 29 Nov 2025 13:50:07
+Subject: [PATCH] Hypothesis: add explicit examples
+
+---
+--- ./tests/storage/test_schema_roundtrip.py
++++ ./tests/storage/test_schema_roundtrip.py
+@@ -57,6 +57,21 @@
+ 
+ @settings(max_examples=15)
+ @given(st.from_type(TestCoverageEdgeRow))
++@example(
++    row={'test_id': '',
++     'test_goid_h128': None,
++     'function_goid_h128': 0,
++     'urn': None,
++     'repo': '',
++     'commit': '',
++     'rel_path': '',
++     'qualname': None,
++     'covered_lines': 0,
++     'executable_lines': 0,
++     'coverage_ratio': 0.0,
++     'last_status': '',
++     'created_at': datetime.datetime(2000, 1, 1, 0, 0)},  # or any other generated value
++).via('discovered failure')
+ def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
+     """Generated schemas should align with test coverage edge TypedDict and serializer."""
+     schema = json_schema_from_typeddict(TestCoverageEdgeRow)

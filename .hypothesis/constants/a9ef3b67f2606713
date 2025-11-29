@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/repositories/__init__.py
+# hypothesis_version: 6.148.3
+
+['BaseRepository', 'DataModelRepository', 'FunctionRepository', 'GraphRepository', 'ModuleRepository', 'RowDict', 'SubsystemRepository', 'TestRepository']

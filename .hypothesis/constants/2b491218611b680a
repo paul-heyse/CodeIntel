@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/engine_factory.py
+# hypothesis_version: 6.148.3
+
+['auto', 'config_module_graph', 'cpu', 'nx-cugraph', 'test_function_graph']

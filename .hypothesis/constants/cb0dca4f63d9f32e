@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/ingest_service.py
+# hypothesis_version: 6.148.3
+
+[', ', '.', '?', 'INGEST_MACRO_TABLES', 'ensure_schema', 'ingest_via_macro', 'macro_exists', 'metadata.', 'temp_ingest_values']

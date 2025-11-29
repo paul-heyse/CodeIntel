@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/config_graph_metrics.py
+# hypothesis_version: 6.148.3
+
+[0.0, 1.0, 1000, 'bipartite', 'config_keys', 'config_modules', 'config_projection', 'missing partition', 'weight']

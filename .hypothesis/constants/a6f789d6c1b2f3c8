@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/factory.py
+# hypothesis_version: 6.148.3
+
+['.', 'BackendResource', 'ServiceBuildOptions', 'ServiceObservability', 'enable_observability', 'local_db', 'remote_api']

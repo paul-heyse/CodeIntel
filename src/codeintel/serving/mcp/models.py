@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from codeintel.serving.mcp.view_utils import normalize_entrypoints_payload
 
 
 class MappingModel(BaseModel):
@@ -250,6 +253,14 @@ class SubsystemSummaryRow(MappingModel):
     created_at: str | datetime | None = None
 
 
+class RiskLevel(StrEnum):
+    """Risk level categories for analytics payloads."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class SubsystemProfileRow(MappingModel):
     """Profile row for ``docs.v_subsystem_profile``."""
 
@@ -260,7 +271,7 @@ class SubsystemProfileRow(MappingModel):
     description: str | None = None
     module_count: Annotated[int | None, Field(ge=0)] = None
     modules_json: object | None = None
-    entrypoints_json: list[object] | dict[str, object] | None = Field(default_factory=list)
+    entrypoints_json: list[dict[str, str | list[str]]] = Field(default_factory=list)
     internal_edge_count: Annotated[int | None, Field(ge=0)] = None
     external_edge_count: Annotated[int | None, Field(ge=0)] = None
     fan_in: Annotated[int | None, Field(ge=0)] = None
@@ -269,14 +280,40 @@ class SubsystemProfileRow(MappingModel):
     avg_risk_score: float | None = None
     max_risk_score: float | None = None
     high_risk_function_count: Annotated[int | None, Field(ge=0)] = None
-    risk_level: str | None = None
-    import_in_degree: float | None = None
-    import_out_degree: float | None = None
-    import_pagerank: float | None = None
-    import_betweenness: float | None = None
-    import_closeness: float | None = None
+    risk_level: RiskLevel | None = None
+    import_in_degree: Annotated[float | None, Field(ge=0)] = None
+    import_out_degree: Annotated[float | None, Field(ge=0)] = None
+    import_pagerank: Annotated[float | None, Field(ge=0)] = None
+    import_betweenness: Annotated[float | None, Field(ge=0)] = None
+    import_closeness: Annotated[float | None, Field(ge=0)] = None
     import_layer: Annotated[int | None, Field(ge=0)] = None
     created_at: str | datetime | None = None
+
+    @classmethod
+    def _normalize_entrypoints(cls, value: object) -> list[dict[str, str | list[str]]]:
+        return normalize_entrypoints_payload(value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_entrypoints(
+        cls,
+        value: dict[str, object] | list[object] | str | SubsystemProfileRow | None,
+    ) -> object:
+        """
+        Coerce entrypoints_json payloads into a normalized list of dicts.
+
+        Returns
+        -------
+        object
+            Original payload with entrypoints_json normalized when present.
+        """
+        if isinstance(value, dict) and "entrypoints_json" in value:
+            normalized = dict(value)
+            normalized["entrypoints_json"] = cls._normalize_entrypoints(
+                value.get("entrypoints_json")
+            )
+            return normalized
+        return value
 
 
 class SubsystemCoverageRow(MappingModel):
@@ -289,7 +326,7 @@ class SubsystemCoverageRow(MappingModel):
     description: str | None = None
     module_count: Annotated[int | None, Field(ge=0)] = None
     function_count: Annotated[int | None, Field(ge=0)] = None
-    risk_level: str | None = None
+    risk_level: RiskLevel | None = None
     avg_risk_score: float | None = None
     max_risk_score: float | None = None
     test_count: Annotated[int | None, Field(ge=0)] = None
@@ -299,10 +336,10 @@ class SubsystemCoverageRow(MappingModel):
     xfail_test_count: Annotated[int | None, Field(ge=0)] = None
     flaky_test_count: Annotated[int | None, Field(ge=0)] = None
     total_functions_covered: Annotated[int | None, Field(ge=0)] = None
-    avg_functions_covered: float | None = None
-    max_functions_covered: float | None = None
-    min_functions_covered: float | None = None
-    function_coverage_ratio: float | None = None
+    avg_functions_covered: Annotated[float | None, Field(ge=0)] = None
+    max_functions_covered: Annotated[float | None, Field(ge=0)] = None
+    min_functions_covered: Annotated[float | None, Field(ge=0)] = None
+    function_coverage_ratio: Annotated[float | None, Field(ge=0)] = None
     created_at: str | datetime | None = None
 
 
@@ -488,7 +525,10 @@ class DatasetDescriptor(BaseModel):
     schema_version: str | None = None
     stable_id: str | None = None
     validation_profile: Literal["strict", "lenient"] | None = None
-    capabilities: dict[str, bool] = Field(default_factory=dict)
+    capabilities: dict[str, bool] = Field(
+        default_factory=dict,
+        description="Capability flags (validation, export, docs_view, read_only).",
+    )
 
 
 class DatasetSpecDescriptor(BaseModel):
@@ -510,7 +550,10 @@ class DatasetSpecDescriptor(BaseModel):
     stable_id: str | None = None
     validation_profile: Literal["strict", "lenient"] | None = None
     upstream_dependencies: list[str] = Field(default_factory=list)
-    capabilities: dict[str, bool] = Field(default_factory=dict)
+    capabilities: dict[str, bool] = Field(
+        default_factory=dict,
+        description="Capability flags (validation, export, docs_view, read_only).",
+    )
 
 
 class DatasetSchemaColumn(BaseModel):

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/function_history.py
+# hypothesis_version: 6.148.3
+
+[0.2, 0.5, 1.0, 10.0, 365, 'churning', 'legacy_hot', 'new_hot', 'stable', 'unknown']

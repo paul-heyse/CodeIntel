@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/data_models.py
+# hypothesis_version: 6.148.3
+
+['constraints', 'created_at', 'default_expr', 'evidence', 'field', 'field_name', 'field_type', 'has_default', 'kind', 'lineno', 'multiplicity', 'name', 'qualname', 'rel_path', 'relationship_kind', 'required', 'source', 'target_model_id', 'target_model_name', 'target_module', 'type', 'via']

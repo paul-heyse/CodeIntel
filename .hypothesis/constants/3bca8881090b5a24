@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/repositories/tests.py
+# hypothesis_version: 6.148.3
+
+[' AND ', 'LIMIT ?', 'ORDER BY test_id', 'SELECT *', 'TRUE', 'WHERE ', 'commit', 'repo', 'test_commit', 'test_repo']

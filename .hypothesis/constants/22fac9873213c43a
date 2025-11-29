@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/subsystems/risk.py
+# hypothesis_version: 6.148.3
+
+[0.0, 0.4, 'high', 'low', 'medium']

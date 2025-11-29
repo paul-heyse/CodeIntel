@@ -120,28 +120,28 @@ def create_subsystem_views(con: DuckDBPyConnection) -> None:
             s.subsystem_id,
             coalesce(c.name, s.name) AS name,
             coalesce(c.description, s.description) AS description,
-            coalesce(c.module_count, s.module_count) AS module_count,
+            GREATEST(coalesce(c.module_count, s.module_count, 0), 0) AS module_count,
             coalesce(c.modules_json, s.modules_json) AS modules_json,
             coalesce(c.entrypoints_json, s.entrypoints_json, '[]') AS entrypoints_json,
-            coalesce(c.internal_edge_count, s.internal_edge_count, 0) AS internal_edge_count,
-            coalesce(c.external_edge_count, s.external_edge_count, 0) AS external_edge_count,
-            coalesce(c.fan_in, s.fan_in, 0) AS fan_in,
-            coalesce(c.fan_out, s.fan_out, 0) AS fan_out,
-            coalesce(c.function_count, s.function_count, 0) AS function_count,
+            GREATEST(coalesce(c.internal_edge_count, s.internal_edge_count, 0), 0) AS internal_edge_count,
+            GREATEST(coalesce(c.external_edge_count, s.external_edge_count, 0), 0) AS external_edge_count,
+            GREATEST(coalesce(c.fan_in, s.fan_in, 0), 0) AS fan_in,
+            GREATEST(coalesce(c.fan_out, s.fan_out, 0), 0) AS fan_out,
+            GREATEST(coalesce(c.function_count, s.function_count, 0), 0) AS function_count,
             coalesce(c.avg_risk_score, s.avg_risk_score) AS avg_risk_score,
             coalesce(c.max_risk_score, s.max_risk_score) AS max_risk_score,
-            coalesce(
+            GREATEST(coalesce(
                 c.high_risk_function_count,
                 s.high_risk_function_count,
                 0
-            ) AS high_risk_function_count,
+            ), 0) AS high_risk_function_count,
             coalesce(c.risk_level, s.risk_level) AS risk_level,
             coalesce(c.import_in_degree, gm.import_in_degree) AS import_in_degree,
             coalesce(c.import_out_degree, gm.import_out_degree) AS import_out_degree,
             coalesce(c.import_pagerank, gm.import_pagerank) AS import_pagerank,
             coalesce(c.import_betweenness, gm.import_betweenness) AS import_betweenness,
             coalesce(c.import_closeness, gm.import_closeness) AS import_closeness,
-            coalesce(c.import_layer, gm.import_layer, 0) AS import_layer,
+            GREATEST(coalesce(c.import_layer, gm.import_layer, 0), 0) AS import_layer,
             coalesce(c.created_at, s.created_at) AS created_at
         FROM analytics.subsystems s
         LEFT JOIN analytics.subsystem_profile_cache c
@@ -185,29 +185,29 @@ def create_subsystem_views(con: DuckDBPyConnection) -> None:
             s.subsystem_id,
             coalesce(cc.name, s.name) AS name,
             coalesce(cc.description, s.description) AS description,
-            coalesce(cc.module_count, s.module_count) AS module_count,
-            coalesce(cc.function_count, s.function_count) AS function_count,
+            GREATEST(coalesce(cc.module_count, s.module_count, 0), 0) AS module_count,
+            GREATEST(coalesce(cc.function_count, s.function_count, 0), 0) AS function_count,
             coalesce(cc.risk_level, s.risk_level) AS risk_level,
             coalesce(cc.avg_risk_score, s.avg_risk_score) AS avg_risk_score,
             coalesce(cc.max_risk_score, s.max_risk_score) AS max_risk_score,
-            coalesce(cc.test_count, c.test_count, 0) AS test_count,
-            coalesce(cc.passed_test_count, c.passed_test_count, 0) AS passed_test_count,
-            coalesce(cc.failed_test_count, c.failed_test_count, 0) AS failed_test_count,
-            coalesce(cc.skipped_test_count, c.skipped_test_count, 0) AS skipped_test_count,
-            coalesce(cc.xfail_test_count, c.xfail_test_count, 0) AS xfail_test_count,
-            coalesce(cc.flaky_test_count, c.flaky_test_count, 0) AS flaky_test_count,
-            coalesce(
+            GREATEST(coalesce(cc.test_count, c.test_count, 0), 0) AS test_count,
+            GREATEST(coalesce(cc.passed_test_count, c.passed_test_count, 0), 0) AS passed_test_count,
+            GREATEST(coalesce(cc.failed_test_count, c.failed_test_count, 0), 0) AS failed_test_count,
+            GREATEST(coalesce(cc.skipped_test_count, c.skipped_test_count, 0), 0) AS skipped_test_count,
+            GREATEST(coalesce(cc.xfail_test_count, c.xfail_test_count, 0), 0) AS xfail_test_count,
+            GREATEST(coalesce(cc.flaky_test_count, c.flaky_test_count, 0), 0) AS flaky_test_count,
+            GREATEST(coalesce(
                 cc.total_functions_covered,
                 c.total_functions_covered,
                 0
-            ) AS total_functions_covered,
-            coalesce(cc.avg_functions_covered, c.avg_functions_covered, 0) AS avg_functions_covered,
-            coalesce(cc.max_functions_covered, c.max_functions_covered, 0) AS max_functions_covered,
-            coalesce(cc.min_functions_covered, c.min_functions_covered, 0) AS min_functions_covered,
+            ), 0) AS total_functions_covered,
+            GREATEST(coalesce(cc.avg_functions_covered, c.avg_functions_covered, 0), 0) AS avg_functions_covered,
+            GREATEST(coalesce(cc.max_functions_covered, c.max_functions_covered, 0), 0) AS max_functions_covered,
+            GREATEST(coalesce(cc.min_functions_covered, c.min_functions_covered, 0), 0) AS min_functions_covered,
             CASE
-                WHEN coalesce(cc.function_count, s.function_count, 0) = 0 THEN NULL
-                ELSE coalesce(cc.total_functions_covered, c.total_functions_covered, 0) * 1.0
-                     / coalesce(cc.function_count, s.function_count)
+                WHEN GREATEST(coalesce(cc.function_count, s.function_count, 0), 0) = 0 THEN NULL
+                ELSE GREATEST(coalesce(cc.total_functions_covered, c.total_functions_covered, 0), 0) * 1.0
+                     / GREATEST(coalesce(cc.function_count, s.function_count, 0), 0)
             END AS function_coverage_ratio,
             coalesce(cc.created_at, s.created_at) AS created_at
         FROM analytics.subsystems s

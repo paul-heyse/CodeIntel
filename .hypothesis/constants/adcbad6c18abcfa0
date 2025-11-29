@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/schemas.py
+# hypothesis_version: 6.148.3
+
+[' NOT NULL', '"', '""', ',\n', ', ', '; ', 'UNIQUE ', 'analytics', 'core', 'docs', 'graph']

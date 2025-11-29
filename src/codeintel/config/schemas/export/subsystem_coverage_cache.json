@@ -1,0 +1,99 @@
+{
+  "$id": "https://schemas.codeintel.dev/export/subsystem_coverage_cache.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "avg_functions_covered": {
+      "type": "string"
+    },
+    "avg_risk_score": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "failed_test_count": {
+      "type": "string"
+    },
+    "flaky_test_count": {
+      "type": "string"
+    },
+    "function_count": {
+      "type": "string"
+    },
+    "function_coverage_ratio": {
+      "type": "string"
+    },
+    "max_functions_covered": {
+      "type": "string"
+    },
+    "max_risk_score": {
+      "type": "string"
+    },
+    "min_functions_covered": {
+      "type": "string"
+    },
+    "module_count": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "passed_test_count": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "risk_level": {
+      "type": "string"
+    },
+    "skipped_test_count": {
+      "type": "string"
+    },
+    "subsystem_id": {
+      "type": "string"
+    },
+    "test_count": {
+      "type": "string"
+    },
+    "total_functions_covered": {
+      "type": "string"
+    },
+    "xfail_test_count": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "avg_functions_covered",
+    "avg_risk_score",
+    "commit",
+    "created_at",
+    "description",
+    "failed_test_count",
+    "flaky_test_count",
+    "function_count",
+    "function_coverage_ratio",
+    "max_functions_covered",
+    "max_risk_score",
+    "min_functions_covered",
+    "module_count",
+    "name",
+    "passed_test_count",
+    "repo",
+    "risk_level",
+    "skipped_test_count",
+    "subsystem_id",
+    "test_count",
+    "total_functions_covered",
+    "xfail_test_count"
+  ],
+  "title": "subsystem_coverage_cache export",
+  "type": "object"
+}
