@@ -22,18 +22,29 @@ See `codeintel.config.compat` for converters between old and new configs.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from codeintel.config.primitives import BuildPaths, GraphBackendConfig
+from codeintel.config.primitives import BuildPaths, GraphBackendConfig, GraphFeatureFlags
 
 if TYPE_CHECKING:
     from codeintel.ingestion.tool_runner import ToolName
 
 
 DEFAULT_TOOL_TIMEOUT_S = 300.0
+
+
+@dataclass(frozen=True)
+class CliConfigOptions:
+    """Optional inputs for constructing CodeIntelConfig."""
+
+    tools_cfg: ToolsConfig | None = None
+    default_targets: list[str] | None = None
+    graph_backend: GraphBackendConfig | None = None
+    graph_features: GraphFeatureFlags | None = None
 
 
 class RepoConfig(BaseModel):
@@ -340,6 +351,7 @@ class CodeIntelConfig(BaseModel):
         description="Default pipeline target(s) when none are specified",
     )
     graph_backend: GraphBackendConfig = Field(default_factory=GraphBackendConfig)
+    graph_features: GraphFeatureFlags = Field(default_factory=GraphFeatureFlags)
 
     @property
     def document_output_dir(self) -> Path:
@@ -380,9 +392,7 @@ class CodeIntelConfig(BaseModel):
         *,
         repo_cfg: RepoConfig,
         paths_cfg: CliPathsInput,
-        tools_cfg: ToolsConfig | None = None,
-        default_targets: list[str] | None = None,
-        graph_backend: GraphBackendConfig | None = None,
+        options: CliConfigOptions | None = None,
     ) -> CodeIntelConfig:
         """
         Build a CodeIntelConfig from pre-parsed CLI models.
@@ -393,22 +403,20 @@ class CodeIntelConfig(BaseModel):
             Repository identity (slug and commit).
         paths_cfg : CliPathsInput
             Normalized filesystem layout.
-        tools_cfg : ToolsConfig | None
-            Optional external tool configuration; defaults to ToolsConfig().
-        default_targets : list[str] | None
-            Optional override for default pipeline targets.
-        graph_backend : GraphBackendConfig | None
-            Optional NetworkX backend selection.
+        options :
+            Optional container for feature toggles, backend selection, and targets.
 
         Returns
         -------
         CodeIntelConfig
             Fully constructed configuration model.
         """
+        opts = options or CliConfigOptions()
         return cls(
             repo=repo_cfg,
             paths=paths_cfg,
-            tools=tools_cfg or ToolsConfig.default(),
-            default_targets=default_targets or ["export_docs"],
-            graph_backend=graph_backend or GraphBackendConfig(),
+            tools=opts.tools_cfg or ToolsConfig.default(),
+            default_targets=opts.default_targets or ["export_docs"],
+            graph_backend=opts.graph_backend or GraphBackendConfig(),
+            graph_features=opts.graph_features or GraphFeatureFlags(),
         )

@@ -741,6 +741,7 @@ def structural_metrics(
     graph: nx.Graph,
     *,
     weight: str | None = "weight",
+    community_limit: int | None = None,
 ) -> StructuralMetrics:
     """
     Compute structural metrics for undirected graphs.
@@ -751,6 +752,8 @@ def structural_metrics(
         Undirected graph to evaluate.
     weight :
         Edge attribute storing weight. Defaults to "weight".
+    community_limit :
+        Optional cap on node count beyond which community detection is skipped.
 
     Returns
     -------
@@ -758,7 +761,8 @@ def structural_metrics(
         Structural hole and core metrics.
     """
     weight_attr = weight or "weight"
-    if graph.number_of_nodes() == 0:
+    node_count = graph.number_of_nodes()
+    if node_count == 0:
         return StructuralMetrics(
             clustering={},
             triangles={},
@@ -774,7 +778,9 @@ def structural_metrics(
     triangles = triangles_val if isinstance(triangles_val, dict) else {}
     constraint_vals = structuralholes.constraint(graph, weight=weight_attr)
     effective_size = structuralholes.effective_size(graph, weight=weight_attr)
-    community_id = community_ids(graph, weight=weight_attr)
+    community_id: dict[Any, int] = {}
+    if community_limit is None or node_count <= community_limit:
+        community_id = community_ids(graph, weight=weight_attr)
     return StructuralMetrics(
         clustering=clustering,
         triangles=triangles,

@@ -20,7 +20,9 @@ from codeintel.analytics.graph_runtime import (
 )
 from codeintel.analytics.graph_service import GraphContext, centrality_directed
 from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.config.primitives import SnapshotRef
+from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 from codeintel.storage.sql_helpers import ensure_schema
@@ -97,12 +99,15 @@ def compute_subsystem_graph_metrics(
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    filters: GraphMetricFilters | None = None,
 ) -> None:
     """Build subsystem-level condensed import graph metrics."""
     runtime_opts = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )
     snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    cfg = GraphMetricsStepConfig(snapshot=snapshot)
+    active_filters = filters or build_graph_metric_filters(gateway, cfg)
     resolved_runtime = resolve_graph_runtime(
         gateway,
         snapshot,
@@ -117,6 +122,7 @@ def compute_subsystem_graph_metrics(
             commit=commit,
             use_gpu=resolved_runtime.backend.use_gpu,
             now=datetime.now(UTC),
+            community_detection_limit=runtime_opts.features.community_detection_limit,
         )
     )
 
@@ -130,6 +136,7 @@ def compute_subsystem_graph_metrics(
         (str(row["subsystem_id"]), str(row["module"]))
         for row in repository.list_subsystem_memberships()
     ]
+    membership_rows = active_filters.filter_subsystem_memberships(membership_rows)
     if not membership_rows:
         con.execute(
             "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
@@ -138,10 +145,11 @@ def compute_subsystem_graph_metrics(
         return
 
     subsystem_graph = _build_subsystem_graph(
-        resolved_runtime.ensure_import_graph(),
+        active_filters.filter_import_graph(resolved_runtime.ensure_import_graph()),
         membership_rows,
         graph_ctx,
     )
+    subsystem_graph = active_filters.filter_subsystem_graph(subsystem_graph)
 
     if subsystem_graph.number_of_nodes() == 0:
         con.execute(

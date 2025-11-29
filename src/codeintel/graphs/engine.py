@@ -155,6 +155,7 @@ class NxGraphEngine:
     gateway: StorageGateway
     snapshot: SnapshotRef
     use_gpu: bool = False
+    effective_use_gpu: bool = False
     backend_info: BackendEnablement | None = None
     _cache: dict[GraphKind, nx.Graph] = field(default_factory=dict)
 
@@ -196,7 +197,7 @@ class NxGraphEngine:
                 self.gateway,
                 self.repo,
                 self.commit,
-                use_gpu=self.use_gpu,
+                use_gpu=self.effective_use_gpu,
             ),
         )
         return cast("nx.DiGraph", graph)
@@ -227,7 +228,7 @@ class NxGraphEngine:
                 self.gateway,
                 self.repo,
                 self.commit,
-                use_gpu=self.use_gpu,
+                use_gpu=self.effective_use_gpu,
             ),
         )
         return cast("nx.DiGraph", graph)
@@ -258,7 +259,7 @@ class NxGraphEngine:
                 self.gateway,
                 self.repo,
                 self.commit,
-                use_gpu=self.use_gpu,
+                use_gpu=self.effective_use_gpu,
             ),
         )
 
@@ -288,7 +289,7 @@ class NxGraphEngine:
                 self.gateway,
                 self.repo,
                 self.commit,
-                use_gpu=self.use_gpu,
+                use_gpu=self.effective_use_gpu,
             ),
         )
 
@@ -318,7 +319,7 @@ class NxGraphEngine:
                 self.gateway,
                 self.repo,
                 self.commit,
-                use_gpu=self.use_gpu,
+                use_gpu=self.effective_use_gpu,
             ),
         )
 
@@ -348,7 +349,7 @@ class NxGraphEngine:
                 self.gateway,
                 self.repo,
                 self.commit,
-                use_gpu=self.use_gpu,
+                use_gpu=self.effective_use_gpu,
             ),
         )
 

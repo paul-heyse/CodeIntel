@@ -62,6 +62,7 @@ def compute_symbol_graph_metrics_modules(
             betweenness_cap=MAX_BETWEENNESS_NODES,
             pagerank_weight="weight",
             betweenness_weight="weight",
+            community_detection_limit=runtime_opts.features.community_detection_limit,
         )
     )
     if runtime_opts.context is not None and (
@@ -83,7 +84,11 @@ def compute_symbol_graph_metrics_modules(
         return
 
     centrality = centrality_undirected(graph, ctx)
-    structure = structural_metrics(graph, weight=ctx.pagerank_weight)
+    structure = structural_metrics(
+        graph,
+        weight=ctx.pagerank_weight,
+        community_limit=ctx.community_detection_limit,
+    )
     community_map = structure.community_id if graph.number_of_nodes() <= MAX_COMMUNITY_NODES else {}
     comp_id, comp_size = component_ids_undirected(graph)
 
@@ -155,6 +160,7 @@ def compute_symbol_graph_metrics_functions(
             betweenness_cap=MAX_BETWEENNESS_NODES,
             pagerank_weight="weight",
             betweenness_weight="weight",
+            community_detection_limit=runtime_opts.features.community_detection_limit,
         )
     )
     if runtime_opts.context is not None and (
@@ -176,7 +182,11 @@ def compute_symbol_graph_metrics_functions(
         return
 
     centrality = centrality_undirected(graph, ctx)
-    structure = structural_metrics(graph, weight=ctx.pagerank_weight)
+    structure = structural_metrics(
+        graph,
+        weight=ctx.pagerank_weight,
+        community_limit=ctx.community_detection_limit,
+    )
     community_map = structure.community_id if graph.number_of_nodes() <= MAX_COMMUNITY_NODES else {}
     comp_id, comp_size = component_ids_undirected(graph)
 

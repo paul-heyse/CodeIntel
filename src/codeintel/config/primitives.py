@@ -435,10 +435,33 @@ class GraphBackendConfig:
     strict: bool = False
 
 
+@dataclass(frozen=True)
+class GraphFeatureFlags:
+    """Optional feature toggles for graph runtime behaviors."""
+
+    eager_hydration: bool | None = None
+    community_detection_limit: int | None = None
+    validation_strict: bool | None = None
+
+    def validate(self) -> None:
+        """
+        Validate flag values for correctness.
+
+        Raises
+        ------
+        ValueError
+            If community_detection_limit is non-positive.
+        """
+        if self.community_detection_limit is not None and self.community_detection_limit <= 0:
+            message = "community_detection_limit must be positive when provided"
+            raise ValueError(message)
+
+
 __all__ = [
     "BuildPaths",
     "ExecutionOptions",
     "GraphBackendConfig",
+    "GraphFeatureFlags",
     "ScanProfiles",
     "SnapshotRef",
     "StepConfig",

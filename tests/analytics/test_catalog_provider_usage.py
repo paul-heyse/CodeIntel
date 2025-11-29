@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.analytics.graphs import compute_graph_metrics
+from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_graph_metrics
 from codeintel.analytics.profiles import build_function_profile, build_module_profile
 from codeintel.config import ConfigBuilder
 from codeintel.graphs.function_catalog import FunctionCatalog
@@ -155,7 +155,11 @@ def test_graph_metrics_uses_catalog_for_symbol_modules(
     provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path().resolve())
     cfg = builder.graph_metrics()
-    compute_graph_metrics(gateway, cfg, catalog_provider=provider)
+    compute_graph_metrics(
+        gateway,
+        cfg,
+        deps=GraphMetricsDeps(catalog_provider=provider),
+    )
 
     modules = {
         row[0]

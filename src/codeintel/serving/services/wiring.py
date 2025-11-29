@@ -107,6 +107,7 @@ def build_backend_resource(
                 registry=registry_opts,
                 observability=resolved_observability,
                 graph_runtime=resolved_options.graph_runtime,
+                runtime_pool=resolved_options.runtime_pool,
             ),
             limits=limits,
         )
@@ -160,11 +161,16 @@ def _build_local_resource(
     from codeintel.serving.services.factory import build_service_from_config  # noqa: PLC0415
 
     snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
-    runtime_opts = GraphRuntimeOptions(snapshot=snapshot, backend=GraphBackendConfig())
+    runtime_opts = GraphRuntimeOptions(
+        snapshot=snapshot, backend=GraphBackendConfig(), features=cfg.graph_features
+    )
+    runtime_source = "new"
     if options.graph_runtime is not None:
         active_runtime = options.graph_runtime
+        runtime_source = "provided"
     elif options.runtime_pool is not None:
         active_runtime = options.runtime_pool.get(gateway, runtime_opts)
+        runtime_source = "pool"
     else:
         active_runtime = build_graph_runtime(
             gateway,
@@ -190,6 +196,22 @@ def _build_local_resource(
         query_engine=active_runtime.engine,
         service_override=service if isinstance(service, LocalQueryService) else None,
     )
+    log = __import__("logging").getLogger(__name__)
+    log.info(
+        "serving.backend wired repo=%s commit=%s runtime_source=%s backend=%s use_gpu=%s features=%s",
+        cfg.repo,
+        cfg.commit,
+        runtime_source,
+        active_runtime.backend.backend,
+        active_runtime.backend.use_gpu,
+        active_runtime.options.features,
+    )
+    if options.graph_runtime is not None:
+        log.info(
+            "serving.backend using provided runtime with engine=%s cache_key=%s",
+            type(active_runtime.engine).__name__,
+            active_runtime.options.cache_key,
+        )
 
     def _close() -> None:
         if gateway is not None:
