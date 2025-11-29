@@ -9,6 +9,7 @@ from __future__ import annotations
 from codeintel.serving.backend.datasets import (
     DOCS_VIEWS,
     PREVIEW_COLUMN_COUNT,
+    build_dataset_registry,
     build_registry_and_limits,
     describe_dataset,
     validate_dataset_registry,
@@ -17,6 +18,7 @@ from codeintel.serving.backend.datasets import (
 __all__ = [
     "DOCS_VIEWS",
     "PREVIEW_COLUMN_COUNT",
+    "build_dataset_registry",
     "build_registry_and_limits",
     "describe_dataset",
     "validate_dataset_registry",

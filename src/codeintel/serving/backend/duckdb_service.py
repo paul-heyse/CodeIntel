@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal, cast
 
 import networkx as nx
@@ -16,11 +17,7 @@ import networkx as nx
 from codeintel.analytics.graphs.plugins import list_graph_metric_plugins
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.engine import GraphEngine
-from codeintel.serving.backend.limits import (
-    BackendLimits,
-    clamp_limit_value,
-    clamp_offset_value,
-)
+from codeintel.serving.backend.limits import BackendLimits, clamp_limit_value, clamp_offset_value
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphEdgeRow,
@@ -63,7 +60,6 @@ from codeintel.serving.mcp.view_utils import (
     normalize_entrypoints_row,
     normalize_entrypoints_rows,
 )
-from codeintel.storage.contract_validation import _schema_path
 from codeintel.storage.datasets import (
     Dataset,
     dataset_for_name,
@@ -139,6 +135,24 @@ def _load_json_schema(ds: Dataset) -> dict[str, object] | None:
     if not schema_path.exists():
         return None
     return json.loads(schema_path.read_text(encoding="utf-8"))
+
+
+def _schema_path(schema_id: str) -> Path:
+    """
+    Return the on-disk path for a dataset JSON Schema identifier.
+
+    Parameters
+    ----------
+    schema_id:
+        Identifier without the ``.json`` suffix.
+
+    Returns
+    -------
+    Path
+        Filesystem path to the JSON Schema document.
+    """
+    root = Path("src/codeintel/config/schemas/export")
+    return root / f"{schema_id}.json"
 
 
 def _normalize_validation_profile(

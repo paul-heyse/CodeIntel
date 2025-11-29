@@ -2341,3 +2341,983 @@ If you’d like, next step I can:
 * Help you refactor the `is_unchanged` + row-count helpers into the dedicated `manifest.py` you sketched in Epic 1 so analytics and non-graph plugins can reuse the same pattern.
 
 # zoom in on `is_unchanged` + row-count helpers into the dedicated `manifest.py` #
+
+Perfect, let’s make `manifest.py` real and **pull the “unchanged detection” + row-count logic into a generic module** you can use for graphs *and* future non-graph analytics.
+
+I’ll do this in three pieces:
+
+1. **Design & implement `analytics/graphs/runtime/manifest.py`** (generic hashing, row-counts, `is_unchanged`, manifest load/write).
+2. **Show how to wire graphs to it** (updates to `planning.py` and `execution.py` from the previous answer).
+3. **Explain how non-graph analytics plugins can reuse it** (what you’d pass in from a future `AnalyticsPlugin` harness).
+
+I’ll reuse your *existing semantics* as directly as possible so behavior stays the same.
+
+---
+
+## 1. New `analytics/graphs/runtime/manifest.py`
+
+This module is the shared “manifest + unchanged detection” logic.
+
+It keeps *no* dependency on graph-specific types like `GraphMetricPlugin` or `GraphMetricExecutionContext`. Instead, functions take primitives (`plugin_name`, `row_count_tables`, `repo`, `commit`, `input_hash`, `options_hash`) so you can call them from any analytics plugin harness.
+
+```python
+# analytics/graphs/runtime/manifest.py
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Mapping, Sequence, Any
+
+from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.storage.gateway import StorageGateway
+
+
+# ---------- Generic hashing helpers ----------
+
+
+def hash_json(payload: object) -> str:
+    """
+    Stable JSON hash helper.
+
+    * Uses sort_keys=True and default=str so it's deterministic.
+    * Used for input/options hashes and scope hashes.
+    """
+    serialized = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def compute_options_hash(options: object | None) -> str | None:
+    """
+    Compute a stable hash for plugin options payloads.
+
+    Returns a hex digest or None if options is None.
+    """
+    if options is None:
+        return None
+    return hash_json(options)
+
+
+def compute_input_hash(
+    *,
+    repo: str,
+    commit: str,
+    plugin_name: str,
+    version_hash: str | None,
+    options: object | None,
+    extra_scope: object | None = None,
+) -> str:
+    """
+    Compute a stable hash for plugin *inputs*.
+
+    Mirrors your existing `_compute_input_hash` but allows an optional
+    `extra_scope` field for future reuse (e.g. graph scope, history scope).
+    """
+    parts: dict[str, object | None] = {
+        "repo": repo,
+        "commit": commit,
+        "plugin": plugin_name,
+        "version_hash": version_hash or "0",
+        "options": options,
+    }
+    if extra_scope is not None:
+        parts["scope"] = extra_scope
+    serialized = json.dumps(parts, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+# ---------- Row-count helpers ----------
+
+
+def row_counts_equal(
+    current: dict[str, int] | None,
+    prior: object,
+) -> bool:
+    """
+    Compare row-count dictionaries, tolerating minor shape mismatches.
+
+    This is a direct lift of your existing `_row_counts_equal`.
+    """
+    if current is None:
+        return True
+    if not isinstance(prior, dict):
+        return True
+    for table, count in current.items():
+        if prior.get(table) != count:
+            return False
+    for table, count in prior.items():
+        if not isinstance(count, int):
+            return False
+        if table not in current or current[table] != count:
+            return False
+    return True
+
+
+def current_row_counts(
+    gateway: StorageGateway | None,
+    tables: Sequence[str],
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, int] | None:
+    """
+    Compute row counts for tables scoped by (repo, commit).
+
+    Exactly the same logic as your `_current_row_counts`, but generic and
+    parameterized on repo/commit.
+    """
+    if gateway is None or not tables:
+        return None
+
+    counts: dict[str, int] = {}
+    connection = getattr(gateway, "con", None)
+    if connection is None:
+        return None
+
+    for table in tables:
+        try:
+            escaped_repo = repo.replace("'", "''")
+            escaped_commit = commit.replace("'", "''")
+            relation = connection.table(table).filter(
+                f"repo = '{escaped_repo}' AND commit = '{escaped_commit}'"
+            )
+            count = relation.aggregate("count(*)").fetchone()[0]
+            counts[table] = int(count)
+        except Exception:  # noqa: BLE001 - defensive, should not block skip logic
+            return None
+    return counts
+
+
+# ---------- Manifest load/write helpers ----------
+
+
+def load_prior_manifest(path: Path | None) -> dict[str, dict[str, object]] | None:
+    """
+    Load a plugin-manifest JSON and return a mapping name -> record dict.
+
+    Same semantics as your `_load_prior_manifest`.
+    """
+    if path is None or not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        records = payload.get("records", [])
+        return {
+            record.get("name", "unknown"): record  # type: ignore[union-attr]
+            for record in records
+            if isinstance(record, dict)
+        }
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _report_to_payload(
+    *,
+    repo: str,
+    commit: str,
+    run_id: str,
+    plan_id: str,
+    ordered_plugins: Sequence[str],
+    skipped_plugins: Sequence[dict[str, object]],
+    dep_graph: Mapping[str, Sequence[str]],
+    scope: GraphRunScope,
+    records: Sequence[dict[str, object]],
+) -> dict[str, object]:
+    """
+    Generic manifest encoder.
+
+    Instead of hard-coding GraphPluginRunRecord here, we accept pre-built
+    dicts for records and skipped plugins so this can be reused by other
+    analytics runtimes.
+    """
+    return {
+        "repo": repo,
+        "commit": commit,
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "run_id": run_id,
+        "plan": {
+            "plan_id": plan_id,
+            "ordered_plugins": list(ordered_plugins),
+            "skipped_plugins": list(skipped_plugins),
+            "dep_graph": {name: list(deps) for name, deps in dep_graph.items()},
+        },
+        "scope": {
+            "paths": list(scope.paths),
+            "modules": list(scope.modules),
+            "time_window": (
+                (
+                    scope.time_window[0].isoformat(),
+                    scope.time_window[1].isoformat(),
+                )
+                if scope.time_window is not None
+                else None
+            ),
+        },
+        "records": list(records),
+    }
+
+
+def write_manifest(path: Path, payload: dict[str, object]) -> None:
+    """
+    Write a manifest payload to disk.
+
+    Graph runtime can build the payload via `_report_to_payload` and call
+    this function; other analytics runtimes can do the same with their own
+    record format.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+# ---------- Unchanged detection ----------
+
+
+def is_unchanged(
+    *,
+    prior_manifest: Mapping[str, Mapping[str, object]],
+    plugin_name: str,
+    row_count_tables: Sequence[str],
+    gateway: StorageGateway | None,
+    repo: str,
+    commit: str,
+    input_hash: str | None,
+    options_hash: str | None,
+) -> bool:
+    """
+    Generic "unchanged input" test used by analytics runtimes.
+
+    Matches the behavior of your original `_is_unchanged`:
+
+    - Look up prior manifest record by plugin_name.
+    - Require:
+        * current input_hash is not None
+        * prior.record.status == "succeeded"
+        * prior.input_hash == current input_hash
+        * if options_hash is not None, prior.options_hash == options_hash
+    - If plugin doesn't specify row_count_tables => unchanged.
+    - Else, compare row counts in DB vs prior.row_counts via row_counts_equal().
+    """
+    prior = prior_manifest.get(plugin_name)
+    if input_hash is None or prior is None:
+        return False
+    if prior.get("status") != "succeeded":
+        return False
+    if prior.get("input_hash") != input_hash:
+        return False
+    if options_hash is not None and prior.get("options_hash") != options_hash:
+        return False
+
+    # No row-count tables => rely purely on hashes
+    if not row_count_tables:
+        return True
+
+    prior_rows = prior.get("row_counts")
+    if prior_rows is None:
+        return True
+
+    current_rows = current_row_counts(
+        gateway=gateway,
+        tables=row_count_tables,
+        repo=repo,
+        commit=commit,
+    )
+    if current_rows is None:
+        return True
+    return row_counts_equal(current_rows, prior_rows)
+```
+
+> For now I kept `_report_to_payload` as a “helper” that graphs will use. If you later have an analytics-wide `AnalyticsRunReport`, you can move this up a level and have each runtime call it with its own record dicts.
+
+---
+
+## 2. Wiring graphs to the new `manifest.py`
+
+Now we update the **graph runtime planning & execution** to use `manifest.py` and delete the old helpers from `graph_service_runtime.py`.
+
+### 2.1 `planning.py`: use `compute_input_hash` / `compute_options_hash`
+
+In the planning code from the previous message, update imports and the actual call:
+
+```python
+# analytics/graphs/runtime/planning.py
+
+from codeintel.analytics.graphs.runtime.manifest import (
+    compute_input_hash,
+    compute_options_hash,
+)
+
+# ...
+
+for plugin in plugins:
+    options = options_by_plugin.get(plugin.name)
+    severity = _effective_severity(plugin, policy)
+    retry_cfg = policy.retries.get(plugin.name, GraphPluginRetryPolicy())
+    timeout_ms = _effective_timeout(plugin, policy)
+
+    input_hash = compute_input_hash(
+        repo=repo,
+        commit=commit,
+        plugin_name=plugin.name,
+        version_hash=plugin.version_hash,
+        options=options,
+        extra_scope=None,  # or pass a serialized form of GraphRunScope if desired
+    )
+    options_hash = compute_options_hash(options)
+
+    settings_by_plugin[plugin.name] = PluginExecutionSettings(
+        name=plugin.name,
+        severity=severity,
+        retry_cfg=retry_cfg,
+        timeout_ms=timeout_ms,
+        fail_fast=policy.fail_fast,
+        input_hash=input_hash,
+        options_hash=options_hash,
+        version_hash=plugin.version_hash,
+        contract_checkers=plugin.contract_checkers,
+    )
+```
+
+This replaces your old `_compute_input_hash` / `_compute_options_hash` calls.
+
+### 2.2 `execution.py`: use `is_unchanged` and `current_row_counts`
+
+In `_execute_planned_plugin` we replace the inline logic with a call to `manifest.is_unchanged`:
+
+```python
+# analytics/graphs/runtime/execution.py
+
+from codeintel.analytics.graphs.runtime.manifest import (
+    is_unchanged,
+)
+
+# ...
+
+def _execute_planned_plugin(
+    plugin: GraphMetricPlugin,
+    ctx: GraphMetricExecutionContext,
+    settings: PluginExecutionSettings,
+    plan: PluginExecutionPlan,
+) -> GraphPluginRunRecord:
+    span = plan.telemetry.start_plugin(plugin, plan.run_id, ctx)
+
+    if plan.policy.dry_run:
+        record = dry_run_record(plugin, settings, ctx.options, plan.run_id)
+    elif plan.policy.skip_on_unchanged and is_unchanged(
+        prior_manifest=plan.prior_manifest or {},
+        plugin_name=plugin.name,
+        row_count_tables=plugin.row_count_tables,
+        gateway=ctx.gateway,
+        repo=ctx.repo,
+        commit=ctx.commit,
+        input_hash=settings.input_hash,
+        options_hash=settings.options_hash,
+    ):
+        record = skip_record(
+            plugin=plugin,
+            settings=settings,
+            options=ctx.options,
+            reason="unchanged",
+            run_id=plan.run_id,
+        )
+    else:
+        record = _execute_plugin(plugin, ctx, settings, plan.run_id)
+
+    plan.telemetry.finish_plugin(span, record)
+    plan.telemetry.record_metrics(record, plan.scope)
+    return record
+```
+
+Now `execution.py` no longer needs its own `_row_counts_equal`, `_current_row_counts`, `_is_unchanged`.
+
+### 2.3 `graph_service_runtime.py`: use `load_prior_manifest` / `write_manifest`
+
+Inside `GraphServiceRuntime.run_plugins`, swap your old `_load_prior_manifest` / `_write_plugin_manifest` with the new helpers:
+
+```python
+# analytics/graph_service_runtime.py
+
+from codeintel.analytics.graphs.runtime.manifest import (
+    load_prior_manifest,
+    write_manifest,
+    _report_to_payload,  # or re-export a wrapper for graphs
+)
+
+# ...
+
+manifest_path = run_options.manifest_path if run_options is not None else None
+prior_manifest = load_prior_manifest(manifest_path)
+
+# Build plan...
+plan = plan_graph_plugin_run(
+    plugin_names=plugin_names,
+    cfg_snapshot=cfg.snapshot if cfg is not None else None,
+    runtime_snapshot=self.runtime.options.snapshot,
+    explicit_target=target,
+    policy=policy,
+    prior_manifest=prior_manifest,
+    telemetry=self.telemetry or OtelGraphRuntimeTelemetry(),
+    scope=resolved_scope,
+    cfg_options=cfg.plugin_options if cfg is not None else {},
+    runtime_options=(run_options.plugin_options if run_options is not None else {}) or {},
+)
+
+# Execute...
+records = run_graph_plugin_batch(
+    plan=plan,
+    gateway=self.gateway,
+    runtime=self.runtime,
+    cfg=cfg,
+    analytics_context=self.analytics_context,
+    catalog_provider=self.catalog_provider,
+)
+
+report = GraphPluginRunReport(
+    repo=plan.repo,
+    commit=plan.commit,
+    records=tuple(records),
+    scope=plan.scope,
+    run_id=plan.run_id,
+    plan_id=plan.plan_id,
+    ordered_plugins=plan.ordered_names,
+    skipped_plugins=plan.skipped_plugins,
+    dep_graph=plan.dep_graph,
+)
+
+if manifest_path is not None:
+    payload = _report_to_payload(
+        repo=report.repo,
+        commit=report.commit,
+        run_id=report.run_id,
+        plan_id=report.plan_id,
+        ordered_plugins=report.ordered_plugins,
+        skipped_plugins=[
+            {"name": s.name, "reason": s.reason} for s in report.skipped_plugins
+        ],
+        dep_graph=report.dep_graph,
+        scope=report.scope,
+        records=[
+            {
+                "name": r.name,
+                "stage": r.stage,
+                "severity": r.severity,
+                "status": r.status,
+                "attempts": r.attempts,
+                "timeout_ms": r.timeout_ms,
+                "started_at": r.started_at.isoformat(),
+                "ended_at": r.ended_at.isoformat(),
+                "duration_ms": r.duration_ms,
+                "partial": r.partial,
+                "run_id": r.run_id,
+                "error": r.error,
+                "input_hash": r.input_hash,
+                "options_hash": r.options_hash,
+                "version_hash": r.version_hash,
+                "skipped_reason": r.skipped_reason,
+                "row_counts": r.row_counts,
+                "requires_isolation": r.requires_isolation,
+                "isolation_kind": r.isolation_kind,
+                "contracts": [
+                    {
+                        "name": c.name,
+                        "status": c.status,
+                        "message": c.message,
+                    }
+                    for c in r.contracts
+                ],
+                "policy_fail_fast": r.policy_fail_fast,
+            }
+            for r in report.records
+        ],
+    )
+    write_manifest(manifest_path, payload)
+```
+
+At this point:
+
+* `graph_service_runtime.py` has **no** `_compute_input_hash`, `_compute_options_hash`, `_row_counts_equal`, `_current_row_counts`, `_is_unchanged`, `_load_prior_manifest`, or `_write_plugin_manifest`.
+* They all live in `manifest.py` and are reusable.
+
+---
+
+## 3. Reusing the pattern for non-graph analytics plugins
+
+Once you introduce a generic `AnalyticsPlugin` (from Epic 2), the **exact same manifest logic** applies:
+
+* Each plugin has:
+
+  * `name: str`
+  * `row_count_tables: Sequence[str]` (or similar)
+  * `version_hash: str | None`
+  * plugin-specific options.
+
+* Each execution plan has:
+
+  * `repo`, `commit`
+  * `prior_manifest: Mapping[str, Mapping[str, object]] | None`
+  * settings with `input_hash`, `options_hash`.
+
+Then your non-graph harness can do:
+
+```python
+from codeintel.analytics.runtime.manifest import (
+    compute_input_hash,
+    compute_options_hash,
+    is_unchanged,
+)
+
+# planning:
+for plugin in plugins:
+    options = options_by_plugin.get(plugin.name)
+    input_hash = compute_input_hash(
+        repo=repo,
+        commit=commit,
+        plugin_name=plugin.name,
+        version_hash=plugin.version_hash,
+        options=options,
+        extra_scope=None,  # or a serialized AnalyticsRunScope
+    )
+    options_hash = compute_options_hash(options)
+    # store in PluginExecutionSettings...
+
+# execution:
+if policy.skip_on_unchanged and is_unchanged(
+    prior_manifest=plan.prior_manifest or {},
+    plugin_name=plugin.name,
+    row_count_tables=plugin.row_count_tables,
+    gateway=ctx.gateway,
+    repo=ctx.repo,
+    commit=ctx.commit,
+    input_hash=settings.input_hash,
+    options_hash=settings.options_hash,
+):
+    record = make_skip_record(...)   # your non-graph variant
+else:
+    record = execute_plugin(...)
+```
+
+All the “hard part” of unchanged detection (hashing, manifest read, row count comparison) is **now shared**; the only per-domain differences are:
+
+* What a “run record” looks like (graph vs function vs test).
+* How you build row-count tables for each plugin (the `row_count_tables` attribute).
+
+---
+
+If you’d like, I can next:
+
+* Draft a **generic `AnalyticsManifest` abstraction** (e.g. `AnalyticsRunReport` + manifest encoder) you can use for both graphs and non-graphs, or
+* Show a **minimal patch diff** (e.g. `git diff`-style chunks) for the three files we’ve touched: `manifest.py`, `planning.py`, `execution.py` / `graph_service_runtime.py`.
+
+
+# draft of a **generic `AnalyticsManifest` abstraction** (e.g. `AnalyticsRunReport` + manifest encoder) #
+
+Here’s a concrete way to introduce a **generic analytics manifest** that works for graphs *and* future non-graph analytics, without blowing up what you already have.
+
+I’ll give you:
+
+1. A new module `analytics/runtime_manifest.py` with:
+
+   * `AnalyticsScope`
+   * `AnalyticsSkippedStep`
+   * `AnalyticsPlanInfo`
+   * `AnalyticsRunRecord`
+   * `AnalyticsRunReport`
+   * `encode_manifest(report) -> dict`
+2. A helper to map a **graph** run (`GraphPluginRunReport`) into `AnalyticsRunReport`, so graphs can “opt in” with almost no disruption.
+3. Notes on how non-graph analytics would plug in.
+
+---
+
+## 1. Generic manifest types: `analytics/runtime_manifest.py`
+
+This is the “unifying” abstraction. It doesn’t know anything about graphs, functions, tests, etc; it just knows “steps in a run”.
+
+```python
+# analytics/runtime_manifest.py
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any, Mapping, Sequence, Literal
+
+
+@dataclass(frozen=True)
+class AnalyticsScope:
+    """
+    Generic analytics "scope" for a run.
+
+    It intentionally looks like GraphRunScope but is decoupled from graphs,
+    so other runtimes can add their own semantics via `labels`.
+    """
+
+    paths: tuple[str, ...] = ()
+    modules: tuple[str, ...] = ()
+    time_window: tuple[datetime, datetime] | None = None
+    labels: Mapping[str, str] = field(default_factory=dict)
+    # e.g. {"runtime": "graph"} or {"runtime": "functions", "subset": "subsystem:foo"}
+
+
+@dataclass(frozen=True)
+class AnalyticsSkippedStep:
+    """Reasoned skip for a single step / plugin in a run."""
+
+    name: str
+    reason: str
+    kind: str | None = None  # "graph_plugin", "function_analytics", etc.
+
+
+@dataclass(frozen=True)
+class AnalyticsPlanInfo:
+    """
+    Optional planning metadata for a run.
+
+    This mirrors the "plan" section in your existing graph manifests.
+    """
+
+    plan_id: str | None = None
+    ordered_steps: tuple[str, ...] = ()
+    skipped_steps: tuple[AnalyticsSkippedStep, ...] = ()
+    dep_graph: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+AnalyticsStatus = Literal["succeeded", "failed", "skipped"]
+
+
+@dataclass(frozen=True)
+class AnalyticsRunRecord:
+    """
+    Per-step execution record.
+
+    Everything runtime-specific (severity, hashes, contracts, row_counts,
+    isolation, etc.) goes into `meta`.
+    """
+
+    name: str
+    kind: str                          # "graph_plugin", "function_profile", ...
+    status: AnalyticsStatus
+    started_at: datetime
+    ended_at: datetime
+    duration_ms: float
+    attempts: int = 1
+    partial: bool = False
+    error: str | None = None
+    meta: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AnalyticsRunReport:
+    """
+    Generic manifest-ready view of an analytics run.
+
+    Any runtime (graphs, functions, tests) can map its internal run-report
+    into this shape, then use `encode_manifest` to produce a JSON-able payload.
+    """
+
+    repo: str
+    commit: str
+    run_id: str
+    scope: AnalyticsScope
+    records: tuple[AnalyticsRunRecord, ...]
+    plan: AnalyticsPlanInfo
+    tags: Mapping[str, str] = field(default_factory=dict)  # free-form metadata
+
+
+def encode_manifest(report: AnalyticsRunReport) -> dict[str, object]:
+    """
+    Encode an AnalyticsRunReport into a manifest payload.
+
+    The structure matches your current graph manifest closely:
+      - top-level repo/commit/run_id/generated_at
+      - plan {plan_id, ordered_steps, skipped_steps, dep_graph}
+      - scope {paths, modules, time_window, labels}
+      - tags (free-form)
+      - records[ ... ]
+    """
+    return {
+        "repo": report.repo,
+        "commit": report.commit,
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "run_id": report.run_id,
+        "plan": {
+            "plan_id": report.plan.plan_id,
+            "ordered_steps": list(report.plan.ordered_steps),
+            "skipped_steps": [
+                {
+                    "name": skipped.name,
+                    "reason": skipped.reason,
+                    "kind": skipped.kind,
+                }
+                for skipped in report.plan.skipped_steps
+            ],
+            "dep_graph": {
+                name: list(deps) for name, deps in report.plan.dep_graph.items()
+            },
+        },
+        "scope": {
+            "paths": list(report.scope.paths),
+            "modules": list(report.scope.modules),
+            "time_window": (
+                (
+                    report.scope.time_window[0].isoformat(),
+                    report.scope.time_window[1].isoformat(),
+                )
+                if report.scope.time_window is not None
+                else None
+            ),
+            "labels": dict(report.scope.labels),
+        },
+        "tags": dict(report.tags),
+        "records": [
+            {
+                "name": rec.name,
+                "kind": rec.kind,
+                "status": rec.status,
+                "attempts": rec.attempts,
+                "started_at": rec.started_at.isoformat(),
+                "ended_at": rec.ended_at.isoformat(),
+                "duration_ms": rec.duration_ms,
+                "partial": rec.partial,
+                "error": rec.error,
+                "meta": dict(rec.meta),
+            }
+            for rec in report.records
+        ],
+    }
+```
+
+This file is **totally graph-agnostic**. Graphs (and later, other analytics runtimes) just need to provide a mapping into this structure.
+
+---
+
+## 2. Mapping graphs → `AnalyticsRunReport`
+
+Now we add a small adapter that turns your existing graph run reporting into this generic form.
+
+I’d put it in something like `analytics/graphs/runtime/analytics_adapter.py`:
+
+```python
+# analytics/graphs/runtime/analytics_adapter.py
+
+from __future__ import annotations
+
+from typing import Any, Mapping
+
+from codeintel.analytics.runtime_manifest import (
+    AnalyticsScope,
+    AnalyticsSkippedStep,
+    AnalyticsPlanInfo,
+    AnalyticsRunRecord,
+    AnalyticsRunReport,
+)
+from codeintel.analytics.graph_service_runtime import (
+    GraphPluginRunRecord,
+    GraphPluginRunReport,
+)
+from codeintel.config.steps_graphs import GraphRunScope
+
+
+def _scope_from_graph(scope: GraphRunScope) -> AnalyticsScope:
+    """
+    Convert GraphRunScope → AnalyticsScope.
+
+    Labels are where we mark this as a graph run (and potentially more detail).
+    """
+    return AnalyticsScope(
+        paths=scope.paths,
+        modules=scope.modules,
+        time_window=scope.time_window,
+        labels={"runtime": "graph"},
+    )
+
+
+def _plan_from_graph(report: GraphPluginRunReport) -> AnalyticsPlanInfo:
+    """
+    Convert the plan section of GraphPluginRunReport into AnalyticsPlanInfo.
+    """
+    return AnalyticsPlanInfo(
+        plan_id=report.plan_id,
+        ordered_steps=report.ordered_plugins,
+        skipped_steps=tuple(
+            AnalyticsSkippedStep(
+                name=skipped.name,
+                reason=skipped.reason,
+                kind="graph_plugin",
+            )
+            for skipped in report.skipped_plugins
+        ),
+        dep_graph=report.dep_graph,
+    )
+
+
+def _meta_from_graph_record(rec: GraphPluginRunRecord) -> dict[str, Any]:
+    """
+    Pack graph-specific details into the generic `meta` field.
+
+    This keeps AnalyticsRunRecord stable while letting graph evolve.
+    """
+    return {
+        # useful for debugging / analysis
+        "stage": rec.stage,
+        "severity": rec.severity,
+        "timeout_ms": rec.timeout_ms,
+        "input_hash": rec.input_hash,
+        "options_hash": rec.options_hash,
+        "version_hash": rec.version_hash,
+        "skipped_reason": rec.skipped_reason,
+        "row_counts": rec.row_counts,
+        "requires_isolation": rec.requires_isolation,
+        "isolation_kind": rec.isolation_kind,
+        "policy_fail_fast": rec.policy_fail_fast,
+        # whether we actually had options at all
+        "options_present": rec.options is not None,
+        # contracts as lightweight dicts
+        "contracts": [
+            {
+                "name": c.name,
+                "status": c.status,
+                "message": c.message,
+            }
+            for c in rec.contracts
+        ],
+    }
+
+
+def graph_run_to_analytics(report: GraphPluginRunReport) -> AnalyticsRunReport:
+    """
+    Adapter: GraphPluginRunReport → AnalyticsRunReport.
+
+    After this, `encode_manifest(...)` + `write_manifest(...)` can be used
+    just like any other analytics runtime.
+    """
+    scope = _scope_from_graph(report.scope)
+    plan = _plan_from_graph(report)
+
+    records = tuple(
+        AnalyticsRunRecord(
+            name=rec.name,
+            kind="graph_plugin",
+            status=rec.status,  # Literal-compatible
+            started_at=rec.started_at,
+            ended_at=rec.ended_at,
+            duration_ms=rec.duration_ms,
+            attempts=rec.attempts,
+            partial=rec.partial,
+            error=rec.error,
+            meta=_meta_from_graph_record(rec),
+        )
+        for rec in report.records
+    )
+
+    return AnalyticsRunReport(
+        repo=report.repo,
+        commit=report.commit,
+        run_id=report.run_id,
+        scope=scope,
+        records=records,
+        plan=plan,
+        tags={"runtime": "graph"},
+    )
+```
+
+With that in place, **graph manifest writing becomes:**
+
+```python
+# inside GraphServiceRuntime.run_plugins, after you build `report: GraphPluginRunReport`
+
+from codeintel.analytics.runtime_manifest import encode_manifest
+from codeintel.analytics.graphs.runtime.analytics_adapter import graph_run_to_analytics
+from codeintel.analytics.graphs.runtime.manifest import write_manifest  # low-level IO
+
+if manifest_path is not None:
+    analytics_report = graph_run_to_analytics(report)
+    payload = encode_manifest(analytics_report)
+    write_manifest(manifest_path, payload)
+```
+
+So the “graph world” still uses `GraphPluginRunReport` internally, but the thing you put on disk / ship around is now **analytics-generic**.
+
+---
+
+## 3. How non-graph analytics would reuse this
+
+Once you introduce a generic `AnalyticsPlugin` + harness (Epic 2), each runtime can:
+
+1. Produce its own internal run-report (e.g. `FunctionAnalyticsRunReport`).
+2. Map it into `AnalyticsRunReport` with the same pattern as `graph_run_to_analytics`:
+
+   * Decide its own `kind` string (`"function_profile"`, `"test_profile"`, etc.).
+   * Map its own scope into `AnalyticsScope` (you can reuse `paths/modules/time_window` and add e.g. `labels={"runtime": "functions", "subsystem": "foo"}`).
+   * Pack runtime-specific detail into `.meta`.
+
+For example, for a function analytics runtime:
+
+```python
+# pseudo-code sketch
+
+def function_run_to_analytics(report: FunctionAnalyticsRunReport) -> AnalyticsRunReport:
+    scope = AnalyticsScope(
+        paths=report.scope.paths,
+        modules=report.scope.modules,
+        time_window=None,
+        labels={"runtime": "functions"},
+    )
+    plan = AnalyticsPlanInfo(
+        plan_id=report.plan_id,
+        ordered_steps=report.ordered_steps,
+        skipped_steps=tuple(
+            AnalyticsSkippedStep(
+                name=s.name,
+                reason=s.reason,
+                kind="function_analytics",
+            )
+            for s in report.skipped_steps
+        ),
+        dep_graph=report.dep_graph,
+    )
+    records = tuple(
+        AnalyticsRunRecord(
+            name=r.name,
+            kind="function_analytics",
+            status=r.status,
+            started_at=r.started_at,
+            ended_at=r.ended_at,
+            duration_ms=r.duration_ms,
+            attempts=r.attempts,
+            partial=r.partial,
+            error=r.error,
+            meta={
+                "subsystem": r.subsystem,
+                "functions_affected": r.functions_affected,
+                "rows_written": r.rows_written,
+                # ...anything else useful...
+            },
+        )
+        for r in report.records
+    )
+    return AnalyticsRunReport(
+        repo=report.repo,
+        commit=report.commit,
+        run_id=report.run_id,
+        scope=scope,
+        records=records,
+        plan=plan,
+        tags={"runtime": "functions"},
+    )
+```
+
+Then:
+
+* **All** analytics manifests (graphs, functions, tests, subsystems) have the same top-level JSON shape.
+* Tooling / UIs / MCP / agents can:
+
+  * Load any manifest.
+  * Read `tags.runtime` to see where it came from.
+  * Iterate over records and inspect `meta` for runtime-specific detail.
+
+In other words: you get a **single, extensible manifest schema** without forcing all runtimes to share identical internal types.
+
+---
+
