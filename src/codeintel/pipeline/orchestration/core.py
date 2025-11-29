@@ -23,6 +23,7 @@ from codeintel.analytics.graph_runtime import (
 from codeintel.config import (
     ConfigBuilder,
     GraphBackendConfig,
+    GraphRunScope,
     ScanProfiles,
     SnapshotRef,
     ToolsConfig,
@@ -123,6 +124,7 @@ class PipelineContext:
     artifact_writer: Callable[[Path, Path, Path], None] | None = None
     function_catalog: FunctionCatalogProvider | None = None
     extra: dict[str, object] = field(default_factory=dict)
+    graph_scope: GraphRunScope | None = None
     function_fail_on_missing_spans: bool = False
     function_parser: FunctionParserKind | None = None
     analytics_context: AnalyticsContext | None = None

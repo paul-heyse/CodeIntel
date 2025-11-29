@@ -40,7 +40,11 @@ from codeintel.config.steps_graphs import (
     ConfigDataFlowStepConfig,
     ExternalDependenciesStepConfig,
     GoidBuilderStepConfig,
+    GraphMetricPluginOverrides,
     GraphMetricsStepConfig,
+    GraphMetricsTuning,
+    GraphPluginPolicy,
+    GraphRunScope,
     GraphStepBuilder,
     ImportGraphStepConfig,
     SymbolUsesStepConfig,
@@ -567,11 +571,10 @@ class ConfigBuilder:
     def graph_metrics(
         self,
         *,
-        max_betweenness_sample: int | None = 200,
-        eigen_max_iter: int = 200,
-        pagerank_weight: str | None = "weight",
-        betweenness_weight: str | None = "weight",
-        seed: int = 0,
+        tuning: GraphMetricsTuning | None = None,
+        plugin_overrides: GraphMetricPluginOverrides | None = None,
+        plugin_policy: GraphPluginPolicy | None = None,
+        scope: GraphRunScope | None = None,
     ) -> GraphMetricsStepConfig:
         """
         Build graph metrics analytics configuration.
@@ -582,11 +585,10 @@ class ConfigBuilder:
             Configuration for graph centrality metrics.
         """
         return self.graphs.graph_metrics(
-            max_betweenness_sample=max_betweenness_sample,
-            eigen_max_iter=eigen_max_iter,
-            pagerank_weight=pagerank_weight,
-            betweenness_weight=betweenness_weight,
-            seed=seed,
+            tuning=tuning,
+            plugin_overrides=plugin_overrides,
+            plugin_policy=plugin_policy,
+            scope=scope,
         )
 
     # Data Model Steps ------------------------------------------------------

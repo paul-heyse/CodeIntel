@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/contracts.py
+# hypothesis_version: 6.148.3
+
+[0.0, '.', 'analytics', 'betweenness', 'closeness', 'commit', 'degree', 'eccentricity', 'failed', 'fan_in', 'fan_out', 'in_degree', 'is_sink', 'metric', 'module', 'node_id', 'out_degree', 'pagerank', 'passed', 'repo', 'soft_failed', 'updated_at', 'value']

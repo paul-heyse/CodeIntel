@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/models.py
+# hypothesis_version: 6.148.3
+
+['about:blank', 'allow', 'before', 'entrypoints_json', 'error', 'high', 'ignore', 'info', 'lenient', 'low', 'medium', 'strict', 'warning']

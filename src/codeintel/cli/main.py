@@ -9,12 +9,19 @@ import os
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
+from textwrap import indent
 from typing import Literal, Protocol, cast
 
 from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions, build_graph_runtime
+from codeintel.analytics.graphs.plugins import (
+    DEFAULT_GRAPH_METRIC_PLUGINS,
+    list_graph_metric_plugins,
+    plan_graph_metric_plugins,
+)
 from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.config import ConfigBuilder
+from codeintel.config import ConfigBuilder, GraphRunScope
 from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags, SnapshotRef
@@ -157,6 +164,52 @@ def _add_graph_backend_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _parse_time_window(raw: list[str] | tuple[str, ...] | None) -> tuple[datetime, datetime] | None:
+    """
+    Parse a time window argument into aware datetimes.
+
+    Returns
+    -------
+    tuple[datetime, datetime] | None
+        Parsed (start, end) window or None when not provided.
+
+    Raises
+    ------
+    ValueError
+        When the time window does not contain exactly two timestamps or cannot be parsed.
+    """
+    expected_tokens = 2
+    if raw is None or len(raw) == 0:
+        return None
+    if len(raw) != expected_tokens:
+        message = "--scope-time-window requires two ISO8601 timestamps (start end)"
+        raise ValueError(message)
+    start = datetime.fromisoformat(raw[0])
+    end = datetime.fromisoformat(raw[1])
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=UTC)
+    return start, end
+
+
+def _parse_scope_args(args: argparse.Namespace) -> GraphRunScope | None:
+    """
+    Build GraphRunScope from CLI arguments when provided.
+
+    Returns
+    -------
+    GraphRunScope | None
+        Scope override when any scope flags are set.
+    """
+    paths = tuple(getattr(args, "scope_paths", []) or ())
+    modules = tuple(getattr(args, "scope_modules", []) or ())
+    time_window = _parse_time_window(getattr(args, "scope_time_window", None))
+    if not paths and not modules and time_window is None:
+        return None
+    return GraphRunScope(paths=paths, modules=modules, time_window=time_window)
+
+
 def _add_subsystem_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -268,6 +321,25 @@ def _add_pipeline_run_subparser(
         "--export-validation-profile",
         choices=["strict", "lenient"],
         help="Override validation profile for exports (default: dataset contract default).",
+    )
+    p_run.add_argument(
+        "--scope-path",
+        dest="scope_paths",
+        action="append",
+        help="Limit graph metrics to one or more relative paths (repeatable).",
+    )
+    p_run.add_argument(
+        "--scope-module",
+        dest="scope_modules",
+        action="append",
+        help="Limit graph metrics to one or more module names (repeatable).",
+    )
+    p_run.add_argument(
+        "--scope-time-window",
+        dest="scope_time_window",
+        nargs=2,
+        metavar=("START", "END"),
+        help="Limit graph metrics to commits between START and END (ISO8601).",
     )
     p_run.add_argument(
         "--force-full-export",
@@ -737,6 +809,46 @@ def _register_dataset_commands(
     _register_scaffold_parser(ds_sub)
 
 
+def _register_graph_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register graph analytics helper commands."""
+    graph_parser = subparsers.add_parser("graph", help="Graph analytics helpers")
+    graph_sub = graph_parser.add_subparsers(dest="subcommand", required=True)
+
+    p_plugins = graph_sub.add_parser(
+        "plugins",
+        help="List available graph metric plugins.",
+    )
+    p_plugins.add_argument(
+        "--plan",
+        action="store_true",
+        help="Show planned execution order instead of full descriptors.",
+    )
+    p_plugins.add_argument(
+        "--names",
+        nargs="+",
+        help="Explicit plugin names to plan/list (defaults to built-in defaults).",
+    )
+    p_plugins.add_argument(
+        "--enable",
+        nargs="+",
+        help="Ordered list of plugins to enable (overrides defaults when provided).",
+    )
+    p_plugins.add_argument(
+        "--disable",
+        nargs="+",
+        help="Plugins to disable/filter out from the selected set.",
+    )
+    p_plugins.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Emit JSON payload for scripting.",
+    )
+    p_plugins.set_defaults(func=_cmd_graph_plugins)
+
+
 def _make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="codeintel",
@@ -753,6 +865,7 @@ def _make_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     _register_pipeline_commands(subparsers)
+    _register_graph_commands(subparsers)
     _register_docs_commands(subparsers)
     _register_storage_commands(subparsers)
     _register_history_commands(subparsers)
@@ -938,6 +1051,11 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
         os.environ["CODEINTEL_SKIP_SCIP"] = "true"
 
     targets = list(args.target) if args.target else None
+    try:
+        graph_scope = _parse_scope_args(args)
+    except ValueError:
+        LOG.exception("Invalid scope arguments")
+        return 1
     LOG.info(
         "Running Prefect export_docs_flow for repo=%s commit=%s targets=%s",
         cfg.repo.repo,
@@ -965,6 +1083,7 @@ def _cmd_pipeline_run(args: argparse.Namespace) -> int:
             export_datasets=tuple(args.export_datasets) if args.export_datasets else None,
             export_validation_profile=getattr(args, "export_validation_profile", None),
             force_full_export=bool(getattr(args, "force_full_export", False)),
+            graph_scope=graph_scope,
         ),
         targets=targets,
     )
@@ -1061,6 +1180,76 @@ def _cmd_pipeline_deps(args: argparse.Namespace) -> int:
                 sys.stdout.write(f"  - {dep}\n")
         else:
             sys.stdout.write("  (none)\n")
+    return 0
+
+
+def _cmd_graph_plugins(args: argparse.Namespace) -> int:
+    """
+    List registered graph metric plugins or show a planned execution order.
+
+    Returns
+    -------
+    int
+        Exit code.
+    """
+    enabled = tuple(args.enable) if args.enable else None
+    names = tuple(args.names) if args.names else None
+    disabled = tuple(args.disable) if args.disable else ()
+    requested = names if names is not None else DEFAULT_GRAPH_METRIC_PLUGINS
+    if args.plan:
+        try:
+            plan = plan_graph_metric_plugins(
+                plugin_names=requested if enabled is None else None,
+                enabled=enabled,
+                disabled=disabled,
+                defaults=DEFAULT_GRAPH_METRIC_PLUGINS,
+            )
+        except ValueError:
+            LOG.exception("Invalid graph plugin plan for names=%s", requested)
+            return 1
+        ordered = plan.ordered_names
+        if args.output_json:
+            payload = {
+                "plan_id": plan.plan_id,
+                "ordered_plugins": list(ordered),
+                "skipped_plugins": [
+                    {"name": skipped.name, "reason": skipped.reason}
+                    for skipped in plan.skipped_plugins
+                ],
+                "dep_graph": {name: list(deps) for name, deps in plan.dep_graph.items()},
+            }
+            sys.stdout.write(json.dumps(payload, indent=2))
+            sys.stdout.write("\n")
+        else:
+            sys.stdout.write(f"Plan ID: {plan.plan_id}\n")
+            sys.stdout.write("Execution order:\n")
+            for name in ordered:
+                sys.stdout.write(f"  - {name}\n")
+            if plan.skipped_plugins:
+                sys.stdout.write("Skipped:\n")
+                for skipped in plan.skipped_plugins:
+                    sys.stdout.write(f"  - {skipped.name} ({skipped.reason})\n")
+        return 0
+
+    plugins = list_graph_metric_plugins()
+    if args.output_json:
+        payload = [
+            {
+                "name": plugin.name,
+                "stage": plugin.stage,
+                "description": plugin.description,
+                "enabled_by_default": plugin.enabled_by_default,
+            }
+            for plugin in plugins
+        ]
+        sys.stdout.write(json.dumps(payload, indent=2))
+        sys.stdout.write("\n")
+        return 0
+
+    for plugin in plugins:
+        sys.stdout.write(f"- {plugin.name} [{plugin.stage}]\n")
+        sys.stdout.write(indent(plugin.description, "    "))
+        sys.stdout.write("\n")
     return 0
 
 

@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.analytics.ast_metrics import build_hotspots
-from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
 from codeintel.analytics.data_model_usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
@@ -25,11 +24,14 @@ from codeintel.analytics.functions import (
     compute_function_history,
     compute_function_metrics_and_types,
 )
-from codeintel.analytics.graph_service_runtime import GraphServiceRuntime
+from codeintel.analytics.graph_service_runtime import GraphPluginRunOptions, GraphServiceRuntime
 from codeintel.analytics.graphs import (
     compute_config_data_flow,
-    compute_config_graph_metrics,
     compute_subsystem_agreement,
+)
+from codeintel.analytics.graphs.plugins import (
+    DEFAULT_GRAPH_METRIC_PLUGINS,
+    plan_graph_metric_plugins,
 )
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.analytics.profiles import (
@@ -43,8 +45,8 @@ from codeintel.analytics.tests import (
     build_behavioral_coverage,
     build_test_profile,
     compute_test_coverage_edges,
-    compute_test_graph_metrics,
 )
+from codeintel.config import GraphMetricsStepConfig
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
@@ -520,6 +522,30 @@ class RiskFactorsStep:
         log.info("risk_factors populated: %d rows for %s@%s", n, ctx.repo, ctx.commit)
 
 
+def _resolve_graph_plugins(
+    cfg: GraphMetricsStepConfig,
+    default_plugins: Sequence[str],
+) -> tuple[str, ...]:
+    """
+    Resolve effective graph metric plugins from config and defaults.
+
+    Rules:
+    - If cfg.enabled_plugins is non-empty, use that list exactly (in order).
+    - Otherwise, start from default_plugins and drop any in cfg.disabled_plugins.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Ordered plugin names to execute.
+    """
+    plan = plan_graph_metric_plugins(
+        enabled=cfg.enabled_plugins or None,
+        disabled=cfg.disabled_plugins,
+        defaults=default_plugins,
+    )
+    return plan.ordered_names
+
+
 @dataclass
 class GraphMetricsStep:
     """Compute graph metrics for functions and modules."""
@@ -533,7 +559,8 @@ class GraphMetricsStep:
         """Populate analytics.graph_metrics_* tables."""
         _log_step(self.name)
         gateway = ctx.gateway
-        cfg = ctx.config_builder().graph_metrics()
+        cfg_scope = ctx.graph_scope
+        cfg = ctx.config_builder().graph_metrics(scope=cfg_scope)
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
         service = GraphServiceRuntime(
@@ -542,36 +569,22 @@ class GraphMetricsStep:
             analytics_context=acx,
             catalog_provider=acx.catalog,
         )
-        service.compute_graph_metrics(cfg)
-        service.compute_graph_metrics_ext(repo=ctx.repo, commit=ctx.commit)
-        compute_test_graph_metrics(
-            gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            runtime=runtime,
+        plugin_names = _resolve_graph_plugins(cfg, DEFAULT_GRAPH_METRIC_PLUGINS)
+        log.info(
+            "graph_metrics.plugins repo=%s commit=%s plugins=%s",
+            ctx.repo,
+            ctx.commit,
+            plugin_names,
         )
-        compute_cfg_metrics(
-            gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            context=acx,
+        service.run_plugins(
+            plugin_names,
+            cfg=cfg,
+            run_options=GraphPluginRunOptions(
+                plugin_options=cfg.plugin_options,
+                scope=cfg_scope,
+            ),
         )
-        compute_dfg_metrics(
-            gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            context=acx,
-        )
-        service.compute_symbol_metrics(repo=ctx.repo, commit=ctx.commit)
-        compute_config_graph_metrics(
-            gateway,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            runtime=runtime,
-        )
-        service.compute_subsystem_metrics(repo=ctx.repo, commit=ctx.commit)
         compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)
-        service.compute_graph_stats(repo=ctx.repo, commit=ctx.commit)
 
 
 @dataclass

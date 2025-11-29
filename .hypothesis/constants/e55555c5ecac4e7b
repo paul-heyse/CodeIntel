@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/steps_graphs.py
+# hypothesis_version: 6.148.3
+
+[200, 'CFGBuilderStepConfig', 'CallGraphStepConfig', 'GraphMetricsTuning', 'GraphPluginPolicy', 'GraphRunScope', 'GraphStepBuilder', 'SymbolUsesStepConfig', 'fatal', 'index.scip.json', 'profiles', 'python', 'scip', 'skip_on_error', 'soft_fail', 'weight']

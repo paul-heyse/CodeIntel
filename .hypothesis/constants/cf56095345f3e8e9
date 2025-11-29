@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/plugins.py
+# hypothesis_version: 6.148.3
+
+[', ', 'cfg', 'cfg_metrics', 'config', 'config_graph_metrics', 'core', 'core_graph_metrics', 'dfg', 'dfg_metrics', 'fatal', 'graph_stats', 'modules', 'paths', 'process', 'skip_on_error', 'soft_fail', 'stats', 'subsystem', 'symbol', 'test', 'test_graph_metrics', 'thread', 'time_window']

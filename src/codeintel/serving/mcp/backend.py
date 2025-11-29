@@ -25,6 +25,7 @@ from codeintel.serving.mcp.models import (
     FunctionArchitectureResponse,
     FunctionProfileResponse,
     FunctionSummaryResponse,
+    GraphScopePayload,
     HighRiskFunctionsResponse,
     ModuleArchitectureResponse,
     ModuleProfileResponse,
@@ -86,6 +87,7 @@ class QueryBackend(Protocol):
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
+        scope: object | None = None,
     ) -> FunctionSummaryResponse:
         """Return a function summary from docs.v_function_summary."""
         ...
@@ -96,6 +98,7 @@ class QueryBackend(Protocol):
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
+        scope: object | None = None,
     ) -> HighRiskFunctionsResponse:
         """List high-risk functions from analytics.goid_risk_factors."""
         ...
@@ -106,6 +109,7 @@ class QueryBackend(Protocol):
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
+        scope: object | None = None,
     ) -> CallGraphNeighborsResponse:
         """Return incoming/outgoing call graph neighbors."""
         ...
@@ -116,6 +120,7 @@ class QueryBackend(Protocol):
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
+        scope: object | None = None,
     ) -> TestsForFunctionResponse:
         """List tests that exercised a function."""
         ...
@@ -124,6 +129,7 @@ class QueryBackend(Protocol):
         self,
         *,
         rel_path: str,
+        scope: object | None = None,
     ) -> FileSummaryResponse:
         """Return file summary plus function rows."""
         ...
@@ -362,6 +368,7 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
+        scope: object | None = None,
     ) -> FunctionSummaryResponse:
         """
         Return a function summary from the DuckDB-backed query service.
@@ -372,11 +379,13 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
             Summary payload with found flag and metadata.
         """
         _require_identifier(urn=urn, goid_h128=goid_h128, rel_path=rel_path)
+        scope_payload = scope if isinstance(scope, GraphScopePayload) else None
         return self.service.get_function_summary(
             urn=urn,
             goid_h128=goid_h128,
             rel_path=rel_path,
             qualname=qualname,
+            scope=scope_payload,
         )
 
     def list_high_risk_functions(
@@ -385,6 +394,7 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
+        scope: object | None = None,
     ) -> HighRiskFunctionsResponse:
         """
         List high-risk functions for the configured repo/commit.
@@ -398,6 +408,7 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
             min_risk=min_risk,
             limit=limit,
             tested_only=tested_only,
+            scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
 
     def get_callgraph_neighbors(
@@ -406,6 +417,7 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
+        scope: object | None = None,
     ) -> CallGraphNeighborsResponse:
         """
         Return call graph neighbors for a function GOID.
@@ -420,6 +432,7 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
             goid_h128=goid_h128,
             direction=direction,
             limit=limit,
+            scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
 
     def get_tests_for_function(
@@ -428,6 +441,7 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
+        scope: object | None = None,
     ) -> TestsForFunctionResponse:
         """
         Return tests linked to a function.
@@ -442,12 +456,14 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
             goid_h128=goid_h128,
             urn=urn,
             limit=limit,
+            scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
 
     def get_file_summary(
         self,
         *,
         rel_path: str,
+        scope: object | None = None,
     ) -> FileSummaryResponse:
         """
         Return file summary plus function rows.
@@ -457,7 +473,10 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         FileSummaryResponse
             File-level summary and nested function entries.
         """
-        return self.service.get_file_summary(rel_path=rel_path)
+        return self.service.get_file_summary(
+            rel_path=rel_path,
+            scope=scope if isinstance(scope, GraphScopePayload) else None,
+        )
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """
@@ -734,6 +753,7 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
+        scope: object | None = None,
     ) -> FunctionSummaryResponse:
         """
         Return a function summary from the remote API.
@@ -743,6 +763,7 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FunctionSummaryResponse
             Summary payload with found flag.
         """
+        _ = scope
         data = self._request_json(
             "/function/summary",
             {"urn": urn, "goid_h128": goid_h128, "rel_path": rel_path, "qualname": qualname},
@@ -755,6 +776,7 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
+        scope: object | None = None,
     ) -> HighRiskFunctionsResponse:
         """
         List high-risk functions from the remote API.
@@ -768,6 +790,7 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
             min_risk=min_risk,
             limit=limit,
             tested_only=tested_only,
+            scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
 
     def get_callgraph_neighbors(
@@ -776,6 +799,7 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
+        scope: object | None = None,
     ) -> CallGraphNeighborsResponse:
         """
         Return call graph neighbors for a function GOID.
@@ -785,10 +809,12 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         CallGraphNeighborsResponse
             Neighbor edges and metadata.
         """
+        _ = scope
         return self.service.get_callgraph_neighbors(
             goid_h128=goid_h128,
             direction=direction,
             limit=limit,
+            scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
 
     def get_tests_for_function(
@@ -797,6 +823,7 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
+        scope: object | None = None,
     ) -> TestsForFunctionResponse:
         """
         Return tests linked to a function.
@@ -806,16 +833,19 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         TestsForFunctionResponse
             Tests hitting the function plus messages.
         """
+        _ = scope
         return self.service.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
             limit=limit,
+            scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
 
     def get_file_summary(
         self,
         *,
         rel_path: str,
+        scope: object | None = None,
     ) -> FileSummaryResponse:
         """
         Return a file summary from the remote API.
@@ -825,7 +855,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FileSummaryResponse
             File-level summary payload with functions.
         """
-        return self.service.get_file_summary(rel_path=rel_path)
+        _ = scope
+        return self.service.get_file_summary(
+            rel_path=rel_path, scope=scope if isinstance(scope, GraphScopePayload) else None
+        )
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """

@@ -14,6 +14,8 @@ from typing import Literal, cast
 
 import networkx as nx
 
+from codeintel.analytics.graphs.plugins import list_graph_metric_plugins
+from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
@@ -32,6 +34,7 @@ from codeintel.serving.mcp.models import (
     FunctionSummaryResponse,
     FunctionSummaryRow,
     GraphNeighborhoodResponse,
+    GraphPluginDescriptor,
     HighRiskFunctionsResponse,
     ImportBoundaryResponse,
     Message,
@@ -350,6 +353,30 @@ class DuckDBQueryService:
             self._graphs = GraphRepository(self.gateway, self.repo, self.commit)
         return self._graphs
 
+    @staticmethod
+    def list_graph_plugins() -> list[GraphPluginDescriptor]:
+        """
+        List available graph metric plugins.
+
+        Returns
+        -------
+        list[GraphPluginDescriptor]
+            Registered plugin descriptors.
+        """
+        return [
+            GraphPluginDescriptor(
+                name=plugin.name,
+                stage=plugin.stage,
+                description=plugin.description,
+                enabled_by_default=plugin.enabled_by_default,
+                scope_aware=getattr(plugin, "scope_aware", False),
+                supported_scopes=tuple(getattr(plugin, "supported_scopes", ()) or ()),
+                requires_isolation=getattr(plugin, "requires_isolation", False),
+                isolation_kind=getattr(plugin, "isolation_kind", None),
+            )
+            for plugin in list_graph_metric_plugins()
+        ]
+
     def _resolve_function_goid(
         self,
         *,
@@ -376,6 +403,7 @@ class DuckDBQueryService:
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
+        scope: GraphRunScope | None = None,
     ) -> FunctionSummaryResponse:
         """
         Return a function summary row from docs.v_function_summary.
@@ -384,6 +412,8 @@ class DuckDBQueryService:
         ----------
         urn, goid_h128, rel_path, qualname :
             Identifiers used to locate the function.
+        scope :
+            Optional scope applied to upstream graph execution (unused in lookup).
 
         Returns
         -------
@@ -439,6 +469,7 @@ class DuckDBQueryService:
             )
             return FunctionSummaryResponse(found=False, summary=None, meta=meta)
 
+        _ = scope
         summary = FunctionSummaryRow.model_validate(row)
         return FunctionSummaryResponse(found=True, summary=summary, meta=meta)
 
@@ -448,6 +479,7 @@ class DuckDBQueryService:
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
+        scope: GraphRunScope | None = None,
     ) -> HighRiskFunctionsResponse:
         """
         List high-risk functions using analytics.goid_risk_factors.
@@ -460,12 +492,15 @@ class DuckDBQueryService:
             Maximum number of rows to return.
         tested_only:
             When True, restrict to functions with test coverage.
+        scope :
+            Optional scope applied to upstream graph execution (unused in lookup).
 
         Returns
         -------
         HighRiskFunctionsResponse
             Functions, truncation flag, and metadata.
         """
+        _ = scope
         applied_limit = self.limits.default_limit if limit is None else limit
         clamp = clamp_limit_value(
             applied_limit,
@@ -480,6 +515,7 @@ class DuckDBQueryService:
         if clamp.has_error:
             return HighRiskFunctionsResponse(functions=[], truncated=False, meta=meta)
 
+        _ = scope
         rows = self.functions.list_high_risk_functions(
             min_risk=min_risk,
             limit=clamp.applied,
@@ -496,6 +532,7 @@ class DuckDBQueryService:
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
+        scope: GraphRunScope | None = None,
     ) -> CallGraphNeighborsResponse:
         """
         Return incoming and outgoing call graph neighbors.
@@ -508,6 +545,8 @@ class DuckDBQueryService:
             Whether to fetch incoming, outgoing, or both edge directions.
         limit:
             Maximum number of rows per direction.
+        scope :
+            Optional scope applied to upstream graph execution (unused in lookup).
 
         Returns
         -------
@@ -519,6 +558,7 @@ class DuckDBQueryService:
         errors.invalid_argument
             If the direction argument is invalid.
         """
+        _ = scope
         if direction not in {"in", "out", "both"}:
             message = "direction must be one of {'in','out','both'}"
             raise errors.invalid_argument(message)
@@ -557,6 +597,7 @@ class DuckDBQueryService:
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
+        scope: GraphRunScope | None = None,
     ) -> TestsForFunctionResponse:
         """
         List tests that exercised a given function.
@@ -567,6 +608,8 @@ class DuckDBQueryService:
             Function identifiers.
         limit:
             Maximum number of test rows to return.
+        scope :
+            Optional scope applied to upstream graph execution (unused in lookup).
 
         Returns
         -------
@@ -583,6 +626,7 @@ class DuckDBQueryService:
             raise errors.invalid_argument(message)
 
         resolved = self._resolve_function_goid(goid_h128=goid_h128, urn=urn)
+        _ = scope
         meta = ResponseMeta(requested_limit=limit)
         if resolved is None:
             meta.messages.append(
@@ -799,6 +843,7 @@ class DuckDBQueryService:
         self,
         *,
         rel_path: str,
+        scope: GraphRunScope | None = None,
     ) -> FileSummaryResponse:
         """
         Return file summary plus function summaries for a path.
@@ -807,12 +852,15 @@ class DuckDBQueryService:
         ----------
         rel_path:
             Repo-relative path for the file.
+        scope :
+            Optional scope applied to upstream graph execution (unused in lookup).
 
         Returns
         -------
         FileSummaryResponse
             Summary payload indicating whether the file was found.
         """
+        _ = scope
         file_row = self.modules.get_file_summary(rel_path)
         if not file_row:
             meta = ResponseMeta(
