@@ -8,7 +8,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, cast
 
-from codeintel.serving.http.datasets import describe_dataset
+from codeintel.serving.backend import (
+    BackendLimits,
+    DuckDBQueryService,
+    clamp_limit_value,
+    clamp_offset_value,
+)
+from codeintel.serving.backend.datasets import describe_dataset
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
@@ -36,12 +42,6 @@ from codeintel.serving.mcp.models import (
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
     parse_graph_scope,
-)
-from codeintel.serving.mcp.query_service import (
-    BackendLimits,
-    DuckDBQueryService,
-    clamp_limit_value,
-    clamp_offset_value,
 )
 from codeintel.storage.datasets import Dataset, load_dataset_registry
 

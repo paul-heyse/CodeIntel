@@ -55,14 +55,9 @@
     - `uv run ruff check --fix` (lint + autofix for style/import issues).
     - `uv run pyright --warnings --pythonversion=3.13` (strict type checking with warnings).
     - `uv run pyrefly check` (additional type and contract validation).
-    - `uv run pytest -q` (unit/integration suites in quiet mode).
   - Report structure (LLM-friendly JSON):
     - Top-level: `suite`, `generated_at`, `overall_status`, `duration_seconds`, `output_path`, and `results`.
-    - Each `results` entry: `name`, `command`, `status`, `return_code`, `started_at`, `ended_at`, `duration_seconds`, `stdout`, `stderr`, optional `exception`, and optional `details`.
-    - Pytest-only `details`:
-      - `stdout_split`: `results_stdout` vs `coverage_stdout` (coverage table separated for parsing).
-      - `results`: `summary` (counts, duration, exitcode), `failures` (nodeid, phase, outcome, line, longrepr), `warnings` (message/category/file/line/when), `report_paths` (json + junit).
-      - `coverage`: `totals` (covered/missing/percent), `files_missing` (path, percent, missing_lines, num_statements, truncated flag when present), `coverage_json_path`.
+    - Each `results` entry: `name`, `command`, `status`, `return_code`, `started_at`, `ended_at`, `duration_seconds`, `stdout`, `stderr`, and optional `exception`.
 
 ### Quality checks (zero-error mandate)
 
