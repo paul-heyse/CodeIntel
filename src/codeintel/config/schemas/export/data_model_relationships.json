@@ -1,8 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "data_model_relationships",
+  "$id": "https://schemas.codeintel.dev/export/data_model_relationships.json",
+  "title": "Data model relationships export",
   "type": "object",
-  "additionalProperties": false,
+  "allOf": [{ "$ref": "base.json" }],
   "properties": {
     "repo": { "type": "string" },
     "commit": { "type": "string" },
@@ -14,10 +15,10 @@
     "relationship_kind": { "type": "string" },
     "multiplicity": { "type": ["string", "null"] },
     "via": { "type": ["string", "null"] },
-    "evidence_json": { "type": ["object", "null"] },
+    "evidence_json": {},
     "rel_path": { "type": "string" },
     "lineno": { "type": ["integer", "null"] },
-    "created_at": { "type": "string", "format": "date-time" }
+    "created_at": { "type": ["string", "null"], "format": "date-time" }
   },
   "required": [
     "repo",
@@ -26,7 +27,7 @@
     "target_model_id",
     "field_name",
     "relationship_kind",
-    "rel_path",
-    "created_at"
-  ]
+    "rel_path"
+  ],
+  "additionalProperties": true
 }

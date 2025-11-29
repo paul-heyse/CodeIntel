@@ -1,18 +1,29 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.codeintel.dev/export/call_graph_edges.json",
-  "title": "Call Graph Edges Export",
-  "allOf": [
-    { "$ref": "./base.json" },
-    {
-      "type": "object",
-      "properties": {
-        "caller_goid_h128": { "type": ["integer", "string", "null"] },
-        "callee_goid_h128": { "type": ["integer", "string", "null"] },
-        "callsite_path": { "type": ["string", "null"] },
-        "language": { "type": ["string", "null"] }
-      },
-      "required": ["repo", "commit"]
-    }
-  ]
+  "title": "Call graph edges export",
+  "type": "object",
+  "allOf": [{ "$ref": "base.json" }],
+  "properties": {
+    "repo": { "type": "string" },
+    "commit": { "type": "string" },
+    "caller_goid_h128": { "type": "integer" },
+    "callee_goid_h128": { "type": ["integer", "null"] },
+    "callsite_path": { "type": "string" },
+    "callsite_line": { "type": ["integer", "null"] },
+    "callsite_col": { "type": ["integer", "null"] },
+    "language": { "type": "string" },
+    "kind": { "type": ["string", "null"] },
+    "resolved_via": { "type": ["string", "null"] },
+    "confidence": { "type": ["number", "null"] },
+    "evidence_json": {}
+  },
+  "required": [
+    "repo",
+    "commit",
+    "caller_goid_h128",
+    "callsite_path",
+    "language"
+  ],
+  "additionalProperties": true
 }

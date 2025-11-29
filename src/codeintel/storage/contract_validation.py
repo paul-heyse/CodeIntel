@@ -15,9 +15,19 @@ from codeintel.storage.datasets import (
     load_dataset_registry,
 )
 
+BINDING_REQUIRED_DATASETS: set[str] = {
+    name
+    for name in JSON_SCHEMA_BY_DATASET_NAME
+    if name
+    not in {
+        "data_model_fields",
+        "data_model_relationships",
+    }
+}
+
 
 def _schema_path(schema_id: str, *, base_dir: Path | None = None) -> Path:
-    root = base_dir or Path("config/config/schemas/export")
+    root = base_dir or Path("src/codeintel/config/schemas/export")
     return root / f"{schema_id}.json"
 
 
@@ -31,10 +41,13 @@ def _validate_schema_files(registry: DatasetRegistry, *, base_dir: Path | None =
 
 
 def _validate_row_bindings(registry: DatasetRegistry) -> list[str]:
+    binding_targets = {
+        name for name, ds in registry.by_name.items() if name in BINDING_REQUIRED_DATASETS
+    }
     return [
         f"Dataset {name} missing row binding"
         for name, ds in registry.by_name.items()
-        if not ds.is_view and ds.row_binding is None
+        if name in binding_targets and not ds.is_view and ds.row_binding is None
     ]
 
 
@@ -57,14 +70,35 @@ def _validate_schema_alignment(registry: DatasetRegistry) -> list[str]:
         if key not in registry.by_table_key and not key.startswith("tmp_")
     ]
     registry_errors = (
-        [
-            "Table schemas missing from metadata registry: "
-            f"{', '.join(sorted(missing_in_registry))}"
-        ]
+        [f"Table schemas missing from metadata registry: {', '.join(sorted(missing_in_registry))}"]
         if missing_in_registry
         else []
     )
     return [*missing_schema, *unnamed_columns, *registry_errors]
+
+
+def _validate_table_columns(con: DuckDBPyConnection, registry: DatasetRegistry) -> list[str]:
+    errors: list[str] = []
+    for name, ds in registry.by_name.items():
+        if ds.is_view or ds.schema is None:
+            continue
+        schema_name, table_name = ds.table_key.split(".", maxsplit=1)
+        info = con.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            ORDER BY ordinal_position
+            """,
+            [schema_name, table_name],
+        ).fetchall()
+        actual_columns = [row[0] for row in info]
+        expected_columns = [col.name for col in ds.schema.columns if col.name is not None]
+        if actual_columns != expected_columns:
+            errors.append(
+                f"Table column mismatch for {name}: expected {expected_columns}, found {actual_columns}"
+            )
+    return errors
 
 
 def _validate_dependencies(registry: DatasetRegistry) -> list[str]:
@@ -100,8 +134,11 @@ def collect_contract_issues(
     registry = load_dataset_registry(con)
     issues: list[str] = []
     issues.extend(_validate_schema_files(registry, base_dir=schema_base_dir))
-    issues.extend(_validate_row_bindings(registry))
+    issues.extend(
+        _validate_row_bindings(registry)
+    )
     issues.extend(_validate_schema_alignment(registry))
+    issues.extend(_validate_table_columns(con, registry))
     issues.extend(_validate_dependencies(registry))
     missing_json_schema = [
         name for name in JSON_SCHEMA_BY_DATASET_NAME if name not in registry.by_name

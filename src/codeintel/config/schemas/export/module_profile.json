@@ -1,17 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.codeintel.dev/export/module_profile.json",
-  "title": "Module Profile Export",
-  "allOf": [
-    { "$ref": "./base.json" },
-    {
-      "type": "object",
-      "properties": {
-        "module": { "type": "string" },
-        "path": { "type": "string" },
-        "language": { "type": "string" }
-      },
-      "required": ["module", "path"]
-    }
-  ]
+  "title": "Module profile export",
+  "type": "object",
+  "allOf": [{ "$ref": "base.json" }],
+  "properties": {
+    "repo": { "type": "string" },
+    "commit": { "type": "string" },
+    "module": { "type": "string" },
+    "language": { "type": ["string", "null"] },
+    "call_edge_in_count": { "type": ["integer", "null"] },
+    "call_edge_out_count": { "type": ["integer", "null"] },
+    "risk_score": { "type": ["number", "null"] },
+    "owners": {},
+    "tags": {}
+  },
+  "required": ["repo", "commit", "module"],
+  "additionalProperties": true
 }

@@ -10,6 +10,7 @@ from typing import Protocol
 import duckdb
 
 from codeintel.storage.config import StorageConfig
+from codeintel.storage.contract_validation import validate_contract_or_raise
 from codeintel.storage.ingest_helpers import macro_insert_rows
 from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
 from codeintel.storage.registry_helpers import DatasetRegistry, build_dataset_registry
@@ -941,6 +942,7 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
     if not config.read_only:
         bootstrap_metadata_datasets(con)
     datasets = build_dataset_registry(con)
+    validate_contract_or_raise(con)
     return _DuckDBGateway(config=config, datasets=datasets, con=con)
 
 

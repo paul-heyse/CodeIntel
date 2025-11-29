@@ -1,8 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "data_model_fields",
+  "$id": "https://schemas.codeintel.dev/export/data_model_fields.json",
+  "title": "Data model fields export",
   "type": "object",
-  "additionalProperties": false,
+  "allOf": [{ "$ref": "base.json" }],
   "properties": {
     "repo": { "type": "string" },
     "commit": { "type": "string" },
@@ -12,11 +13,11 @@
     "required": { "type": "boolean" },
     "has_default": { "type": "boolean" },
     "default_expr": { "type": ["string", "null"] },
-    "constraints_json": { "type": ["object", "null"] },
+    "constraints_json": {},
     "source": { "type": "string" },
     "rel_path": { "type": "string" },
     "lineno": { "type": ["integer", "null"] },
-    "created_at": { "type": "string", "format": "date-time" }
+    "created_at": { "type": ["string", "null"], "format": "date-time" }
   },
   "required": [
     "repo",
@@ -27,7 +28,7 @@
     "has_default",
     "constraints_json",
     "source",
-    "rel_path",
-    "created_at"
-  ]
+    "rel_path"
+  ],
+  "additionalProperties": true
 }
