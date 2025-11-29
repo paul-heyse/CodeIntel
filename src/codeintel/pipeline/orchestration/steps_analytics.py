@@ -25,10 +25,7 @@ from codeintel.analytics.functions import (
     compute_function_metrics_and_types,
 )
 from codeintel.analytics.graph_service_runtime import GraphPluginRunOptions, GraphServiceRuntime
-from codeintel.analytics.graphs import (
-    compute_config_data_flow,
-    compute_subsystem_agreement,
-)
+from codeintel.analytics.graphs import compute_config_data_flow
 from codeintel.analytics.graphs.plugins import (
     DEFAULT_GRAPH_METRIC_PLUGINS,
     plan_graph_metric_plugins,
@@ -584,7 +581,6 @@ class GraphMetricsStep:
                 scope=cfg_scope,
             ),
         )
-        compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)
 
 
 @dataclass

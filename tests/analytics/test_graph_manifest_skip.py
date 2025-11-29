@@ -12,7 +12,9 @@ from codeintel.analytics.graph_runtime import GraphRuntimeOptions, resolve_graph
 from codeintel.analytics.graph_service_runtime import GraphPluginRunOptions, GraphServiceRuntime
 from codeintel.analytics.graphs.contracts import PluginContractResult
 from codeintel.analytics.graphs.plugins import (
+    GraphMetricExecutionContext,
     GraphMetricPlugin,
+    GraphPluginResult,
     register_graph_metric_plugin,
     unregister_graph_metric_plugin,
 )
@@ -206,3 +208,82 @@ def test_manifest_records_scope(
         pytest.fail("Scope time_window should be written to manifest")
     if time_window[1] != scope.time_window[1].isoformat():
         pytest.fail("Scope time_window upper bound should be written to manifest")
+
+
+def test_is_unchanged_respects_row_counts(tmp_path: Path) -> None:
+    """Skip-on-unchanged should fall back when table row counts differ."""
+
+    def _row_count_plugin(ctx: GraphMetricExecutionContext) -> GraphPluginResult:
+        ctx.gateway.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analytics.demo_row_counts (
+                repo TEXT,
+                commit TEXT,
+                value INT
+            )
+            """
+        )
+        ctx.gateway.execute(
+            "DELETE FROM analytics.demo_row_counts WHERE repo = ? AND commit = ?",
+            [ctx.repo, ctx.commit],
+        )
+        ctx.gateway.execute(
+            "INSERT INTO analytics.demo_row_counts VALUES (?, ?, ?)",
+            [ctx.repo, ctx.commit, 1],
+        )
+        row = ctx.gateway.execute(
+            "SELECT COUNT(*) FROM analytics.demo_row_counts WHERE repo = ? AND commit = ?",
+            [ctx.repo, ctx.commit],
+        ).fetchone()
+        count = 0 if row is None else int(row[0])
+        return GraphPluginResult(row_counts={"analytics.demo_row_counts": count})
+
+    register_graph_metric_plugin(
+        GraphMetricPlugin(
+            name="row_count_plugin",
+            description="demo",
+            stage="core",
+            enabled_by_default=False,
+            run=_row_count_plugin,
+            row_count_tables=("analytics.demo_row_counts",),
+        )
+    )
+    try:
+        snapshot = SnapshotRef(repo="demo/repo", commit="c0ffee", repo_root=Path())
+        service = _build_service(snapshot)
+        cfg = GraphMetricsStepConfig(
+            snapshot=snapshot,
+            enabled_plugins=("row_count_plugin",),
+            plugin_policy=GraphPluginPolicy(skip_on_unchanged=True),
+        )
+        manifest_path = tmp_path / "manifest-row-counts.json"
+        first_report = service.run_plugins(
+            ("row_count_plugin",),
+            cfg=cfg,
+            run_options=GraphPluginRunOptions(manifest_path=manifest_path),
+        )
+        if first_report.records[0].status != "succeeded":
+            pytest.fail("Initial run should succeed")
+        # Inflate table rows to force mismatch with manifest row_counts.
+        service.gateway.execute(
+            "INSERT INTO analytics.demo_row_counts VALUES (?, ?, ?)",
+            [snapshot.repo, snapshot.commit, 2],
+        )
+        second_report = service.run_plugins(
+            ("row_count_plugin",),
+            cfg=cfg,
+            run_options=GraphPluginRunOptions(manifest_path=manifest_path),
+        )
+        if second_report.records[0].status != "succeeded":
+            pytest.fail("Expected re-execution when row counts changed")
+        third_report = service.run_plugins(
+            ("row_count_plugin",),
+            cfg=cfg,
+            run_options=GraphPluginRunOptions(manifest_path=manifest_path),
+        )
+        if third_report.records[0].status != "skipped":
+            pytest.fail("Expected skip when row counts unchanged")
+        if third_report.records[0].skipped_reason != "unchanged":
+            pytest.fail("Skipped reason should be unchanged for matching row counts")
+    finally:
+        unregister_graph_metric_plugin("row_count_plugin")

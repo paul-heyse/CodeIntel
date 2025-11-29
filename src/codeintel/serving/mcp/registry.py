@@ -16,6 +16,7 @@ from codeintel.serving.mcp.models import (
     FileSummaryResponse,
     FunctionArchitectureResponse,
     FunctionSummaryResponse,
+    GraphPlanPluginMetadata,
     GraphPlanResponse,
     GraphPlanSkipped,
     HighRiskFunctionsResponse,
@@ -172,6 +173,38 @@ def _register_architecture_tools(mcp: FastMCP, backend: QueryBackend | QueryServ
             enabled=tuple(enable) if enable else None,
             disabled=tuple(disable) if disable else None,
         )
+        metadata = {
+            plugin.name: GraphPlanPluginMetadata(
+                stage=plugin.stage,
+                severity=plugin.severity,
+                requires_isolation=plugin.requires_isolation,
+                isolation_kind=plugin.isolation_kind,
+                scope_aware=plugin.scope_aware,
+                supported_scopes=plugin.supported_scopes,
+                description=plugin.description,
+                enabled_by_default=plugin.enabled_by_default,
+                depends_on=plugin.depends_on,
+                provides=plugin.provides,
+                requires=plugin.requires,
+                resource_hints=(
+                    {
+                        "max_runtime_ms": plugin.resource_hints.max_runtime_ms,
+                        "memory_mb_hint": plugin.resource_hints.memory_mb_hint,
+                    }
+                    if plugin.resource_hints is not None
+                    else None
+                ),
+                options_model=plugin.options_model.__name__ if plugin.options_model else None,
+                options_default=plugin.options_default,
+                version_hash=plugin.version_hash,
+                contract_checkers=len(plugin.contract_checkers),
+                config_schema_ref=plugin.config_schema_ref,
+                row_count_tables=plugin.row_count_tables,
+                cache_populates=plugin.cache_populates,
+                cache_consumes=plugin.cache_consumes,
+            )
+            for plugin in plan.plugins
+        }
         resp = GraphPlanResponse(
             plan_id=plan.plan_id,
             ordered_plugins=plan.ordered_names,
@@ -180,6 +213,7 @@ def _register_architecture_tools(mcp: FastMCP, backend: QueryBackend | QueryServ
                 for skipped in plan.skipped_plugins
             ),
             dep_graph={name: tuple(deps) for name, deps in plan.dep_graph.items()},
+            plugin_metadata=metadata,
         )
         return resp.model_dump()
 

@@ -23,13 +23,10 @@ def test_graph_metrics_reuse_provided_runtime(provisioned_repo: ProvisionedGatew
         commit=provisioned_repo.commit,
         repo_root=provisioned_repo.repo_root,
     )
-    runtime = build_graph_runtime(
-        gateway,
-        GraphRuntimeOptions(snapshot=snapshot),
-    )
+    runtime = build_graph_runtime(gateway, GraphRuntimeOptions(snapshot=snapshot))
 
     service = GraphServiceRuntime(gateway=gateway, runtime=runtime)
-    service.compute_graph_metrics(GraphMetricsStepConfig(snapshot=snapshot))
+    service.run_plugins(("core_graph_metrics",), cfg=GraphMetricsStepConfig(snapshot=snapshot))
 
     _expect(
         condition=runtime.engine is not None,

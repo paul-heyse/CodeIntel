@@ -818,12 +818,12 @@ def _register_graph_commands(
 
     p_plugins = graph_sub.add_parser(
         "plugins",
-        help="List available graph metric plugins.",
+        help="List graph metric plugins with metadata (deps, scopes, isolation).",
     )
     p_plugins.add_argument(
         "--plan",
         action="store_true",
-        help="Show planned execution order instead of full descriptors.",
+        help="Show planned execution order plus dependency graph and metadata.",
     )
     p_plugins.add_argument(
         "--names",
@@ -844,7 +844,10 @@ def _register_graph_commands(
         "--json",
         action="store_true",
         dest="output_json",
-        help="Emit JSON payload for scripting.",
+        help=(
+            "Emit JSON including stage/severity, deps/provides/requires, resource hints, options "
+            "schema/default, isolation/scope flags, and row_count_tables."
+        ),
     )
     p_plugins.set_defaults(func=_cmd_graph_plugins)
 
@@ -1217,14 +1220,32 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
                     for skipped in plan.skipped_plugins
                 ],
                 "dep_graph": {name: list(deps) for name, deps in plan.dep_graph.items()},
+                "plugin_metadata": {
+                    plugin.name: {
+                        "stage": plugin.stage,
+                        "severity": plugin.severity,
+                        "requires_isolation": plugin.requires_isolation,
+                        "isolation_kind": plugin.isolation_kind,
+                        "scope_aware": plugin.scope_aware,
+                        "supported_scopes": list(plugin.supported_scopes),
+                        "cache_populates": list(plugin.cache_populates),
+                        "cache_consumes": list(plugin.cache_consumes),
+                    }
+                    for plugin in plan.plugins
+                },
             }
             sys.stdout.write(json.dumps(payload, indent=2))
             sys.stdout.write("\n")
         else:
             sys.stdout.write(f"Plan ID: {plan.plan_id}\n")
-            sys.stdout.write("Execution order:\n")
-            for name in ordered:
-                sys.stdout.write(f"  - {name}\n")
+            sys.stdout.write("Execution order (stage | severity | isolation | scope-aware):\n")
+            for plugin in plan.plugins:
+                isolation = plugin.isolation_kind or ("yes" if plugin.requires_isolation else "no")
+                scope_flag = "yes" if plugin.scope_aware else "no"
+                sys.stdout.write(
+                    f"  - {plugin.name} [{plugin.stage} | {plugin.severity} | "
+                    f"{isolation} | {scope_flag}]\n"
+                )
             if plan.skipped_plugins:
                 sys.stdout.write("Skipped:\n")
                 for skipped in plan.skipped_plugins:
@@ -1233,15 +1254,44 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
 
     plugins = list_graph_metric_plugins()
     if args.output_json:
-        payload = [
-            {
-                "name": plugin.name,
-                "stage": plugin.stage,
-                "description": plugin.description,
-                "enabled_by_default": plugin.enabled_by_default,
-            }
-            for plugin in plugins
-        ]
+        payload = {
+            "count": len(plugins),
+            "plugins": {
+                plugin.name: {
+                    "name": plugin.name,
+                    "description": plugin.description,
+                    "stage": plugin.stage,
+                    "severity": plugin.severity,
+                    "enabled_by_default": plugin.enabled_by_default,
+                    "depends_on": list(plugin.depends_on),
+                    "provides": list(plugin.provides),
+                    "requires": list(plugin.requires),
+                    "resource_hints": (
+                        {
+                            "max_runtime_ms": plugin.resource_hints.max_runtime_ms,
+                            "memory_mb_hint": plugin.resource_hints.memory_mb_hint,
+                        }
+                        if plugin.resource_hints is not None
+                        else None
+                    ),
+                    "options_model": plugin.options_model.__name__
+                    if plugin.options_model
+                    else None,
+                    "options_default": plugin.options_default,
+                    "version_hash": plugin.version_hash,
+                    "contract_checkers": len(plugin.contract_checkers),
+                    "scope_aware": plugin.scope_aware,
+                    "supported_scopes": list(plugin.supported_scopes),
+                    "requires_isolation": plugin.requires_isolation,
+                    "isolation_kind": plugin.isolation_kind,
+                    "config_schema_ref": plugin.config_schema_ref,
+                    "row_count_tables": list(plugin.row_count_tables),
+                    "cache_populates": list(plugin.cache_populates),
+                    "cache_consumes": list(plugin.cache_consumes),
+                }
+                for plugin in plugins
+            },
+        }
         sys.stdout.write(json.dumps(payload, indent=2))
         sys.stdout.write("\n")
         return 0

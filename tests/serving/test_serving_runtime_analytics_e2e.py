@@ -62,8 +62,9 @@ def test_serving_runtime_analytics_reuses_engine(
     )
 
     runtime = pool.get(gateway, GraphRuntimeOptions(snapshot=snapshot))
-    GraphServiceRuntime(gateway=gateway, runtime=runtime).compute_graph_metrics(
-        GraphMetricsStepConfig(snapshot=snapshot)
+    GraphServiceRuntime(gateway=gateway, runtime=runtime).run_plugins(
+        ("core_graph_metrics",),
+        cfg=GraphMetricsStepConfig(snapshot=snapshot),
     )
 
     query_service = getattr(resource.backend, "service", None)
