@@ -54,12 +54,15 @@ def build_graph_engine(  # noqa: PLR0913
     """
     allowed_backends = {"auto", "cpu", "nx-cugraph"}
     enablement: BackendEnablement | None = None
+    use_gpu_preference = bool(graph_backend.use_gpu) if graph_backend is not None else False
     if graph_backend is not None:
         if graph_backend.backend not in allowed_backends:
             message = f"Unsupported graph backend: {graph_backend.backend}"
             raise ValueError(message)
         enablement = maybe_enable_nx_gpu(graph_backend, env=env, enabler=enabler)
-    use_gpu = bool(enablement.gpu_enabled) if enablement is not None else False
+    effective_use_gpu = (
+        bool(enablement.gpu_enabled) if enablement is not None else use_gpu_preference
+    )
     normalized_snapshot = (
         snapshot
         if isinstance(snapshot, SnapshotRef)
@@ -68,7 +71,8 @@ def build_graph_engine(  # noqa: PLR0913
     engine = NxGraphEngine(
         gateway=gateway,
         snapshot=normalized_snapshot,
-        use_gpu=use_gpu,
+        use_gpu=use_gpu_preference,
+        effective_use_gpu=effective_use_gpu,
         backend_info=enablement,
     )
     if (

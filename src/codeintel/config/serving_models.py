@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from codeintel.config.primitives import GraphFeatureFlags
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 ServingMode = Literal["local_db", "remote_api"]
@@ -82,6 +83,10 @@ class ServingConfig(BaseModel):
         default=True,
         description="Whether to open the DuckDB connection in read-only mode.",
     )
+    graph_features: GraphFeatureFlags = Field(
+        default_factory=GraphFeatureFlags,
+        description="Optional feature flags propagated to graph runtime construction.",
+    )
 
     @classmethod
     def from_env(cls) -> ServingConfig:
@@ -109,6 +114,23 @@ class ServingConfig(BaseModel):
         max_rows_per_call = int(os.environ.get("CODEINTEL_MCP_MAX_ROWS", "500"))
         timeout_seconds = float(os.environ.get("CODEINTEL_MCP_TIMEOUT_SEC", "10.0"))
         read_only = _parse_env_flag(os.environ.get("CODEINTEL_API_READ_ONLY"), default=True)
+        graph_features = GraphFeatureFlags(
+            eager_hydration=_parse_env_flag(
+                os.environ.get("CODEINTEL_GRAPH_EAGER"),
+                default=None,  # type: ignore[arg-type]
+            )
+            if "CODEINTEL_GRAPH_EAGER" in os.environ
+            else None,
+            community_detection_limit=int(os.environ["CODEINTEL_GRAPH_COMMUNITY_LIMIT"])
+            if "CODEINTEL_GRAPH_COMMUNITY_LIMIT" in os.environ
+            else None,
+            validation_strict=_parse_env_flag(
+                os.environ.get("CODEINTEL_GRAPH_VALIDATION_STRICT"),
+                default=None,  # type: ignore[arg-type]
+            )
+            if "CODEINTEL_GRAPH_VALIDATION_STRICT" in os.environ
+            else None,
+        )
 
         return cls(
             mode=mode,
@@ -121,6 +143,7 @@ class ServingConfig(BaseModel):
             max_rows_per_call=max_rows_per_call,
             timeout_seconds=timeout_seconds,
             read_only=read_only,
+            graph_features=graph_features,
         )
 
     @model_validator(mode="after")
@@ -160,6 +183,7 @@ class ServingConfig(BaseModel):
         if self.max_rows_per_call <= 0:
             message = "max_rows_per_call must be positive"
             raise ValueError(message)
+        self.graph_features.validate()
 
         return self
 

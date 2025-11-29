@@ -15,9 +15,9 @@ from typing import Literal, Protocol
 from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions, build_graph_runtime
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.config import ConfigBuilder
-from codeintel.config.models import CliPathsInput, CodeIntelConfig, RepoConfig
+from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.parser_types import FunctionParserKind
-from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
 from codeintel.ingestion.source_scanner import (
     default_code_profile,
@@ -471,6 +471,16 @@ def make_parser() -> argparse.ArgumentParser:
 
 def _build_config_from_args(args: argparse.Namespace) -> CodeIntelConfig:
     graph_backend = _build_graph_backend_config(args)
+    graph_features = _build_graph_feature_flags_from_env()
+    LOG.info(
+        "cli.runtime.config repo=%s commit=%s backend=%s use_gpu=%s features=%s filters=%s",
+        args.repo,
+        args.commit,
+        graph_backend.backend,
+        graph_backend.use_gpu,
+        graph_features,
+        "n/a",
+    )
     paths_cfg = CliPathsInput(
         repo_root=args.repo_root,
         build_dir=args.build_dir,
@@ -481,7 +491,7 @@ def _build_config_from_args(args: argparse.Namespace) -> CodeIntelConfig:
     return CodeIntelConfig.from_cli_args(
         repo_cfg=repo_cfg,
         paths_cfg=paths_cfg,
-        graph_backend=graph_backend,
+        options=CliConfigOptions(graph_backend=graph_backend, graph_features=graph_features),
     )
 
 
@@ -496,6 +506,56 @@ def _build_graph_backend_config(args: argparse.Namespace) -> GraphBackendConfig:
         use_gpu=bool(getattr(args, "nx_gpu", False)),
         backend=backend,
         strict=bool(getattr(args, "nx_gpu_strict", False)),
+    )
+
+
+def _parse_env_flag(value: str | None, *, default: bool | None = None) -> bool | None:
+    """
+    Parse a boolean-ish environment string.
+
+    Returns
+    -------
+    bool | None
+        Parsed boolean value or the provided default when parsing fails.
+    """
+    if value is None:
+        return default
+    lowered = value.strip().lower()
+    if lowered in {"1", "true", "yes", "y", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _build_graph_feature_flags_from_env() -> GraphFeatureFlags:
+    """
+    Construct GraphFeatureFlags from CODEINTEL_* environment variables.
+
+    Returns
+    -------
+    GraphFeatureFlags
+        Feature flags derived from environment variables.
+    """
+    eager = (
+        _parse_env_flag(os.environ.get("CODEINTEL_GRAPH_EAGER"))
+        if "CODEINTEL_GRAPH_EAGER" in os.environ
+        else None
+    )
+    community_limit = (
+        int(os.environ["CODEINTEL_GRAPH_COMMUNITY_LIMIT"])
+        if "CODEINTEL_GRAPH_COMMUNITY_LIMIT" in os.environ
+        else None
+    )
+    validation_strict = (
+        _parse_env_flag(os.environ.get("CODEINTEL_GRAPH_VALIDATION_STRICT"))
+        if "CODEINTEL_GRAPH_VALIDATION_STRICT" in os.environ
+        else None
+    )
+    return GraphFeatureFlags(
+        eager_hydration=eager,
+        community_detection_limit=community_limit,
+        validation_strict=validation_strict,
     )
 
 
@@ -545,7 +605,11 @@ def _build_runtime(cfg: CodeIntelConfig, gateway: StorageGateway) -> GraphRuntim
     )
     return build_graph_runtime(
         gateway,
-        GraphRuntimeOptions(snapshot=snapshot, backend=cfg.graph_backend),
+        GraphRuntimeOptions(
+            snapshot=snapshot,
+            backend=cfg.graph_backend,
+            features=cfg.graph_features,
+        ),
     )
 
 

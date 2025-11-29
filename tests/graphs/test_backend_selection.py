@@ -8,7 +8,7 @@ import pytest
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
-from codeintel.graphs.nx_backend import BackendEnablement, maybe_enable_nx_gpu
+from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
 
@@ -46,7 +46,9 @@ def test_maybe_enable_nx_gpu_fallback() -> None:
     status = maybe_enable_nx_gpu(cfg, enabler=_fail)
     _expect(condition=not status.gpu_enabled, detail="GPU should be disabled after fallback")
     _expect(condition=status.effective_backend == "cpu", detail="Expected CPU fallback")
-    _expect(condition=status.fallback_reason is not None, detail="Fallback reason should be populated")
+    _expect(
+        condition=status.fallback_reason is not None, detail="Fallback reason should be populated"
+    )
 
 
 def test_maybe_enable_nx_gpu_strict_raises() -> None:
@@ -63,26 +65,16 @@ def test_maybe_enable_nx_gpu_strict_raises() -> None:
 
 def test_build_graph_runtime_captures_backend_info(
     fresh_gateway: StorageGateway,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Runtime should expose backend metadata recorded during engine construction."""
     apply_all_schemas(fresh_gateway.con)
     snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path())
     cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=False)
 
-    def _fake_enable(_cfg: GraphBackendConfig, **_kwargs: object) -> BackendEnablement:
-        return BackendEnablement(
-            requested_backend=_cfg.backend,
-            requested_gpu=_cfg.use_gpu,
-            effective_backend="nx-cugraph",
-            gpu_enabled=True,
-            fallback_reason=None,
-        )
-
-    monkeypatch.setattr("codeintel.graphs.engine_factory.maybe_enable_nx_gpu", _fake_enable)
     runtime = build_graph_runtime(
         fresh_gateway,
         GraphRuntimeOptions(snapshot=snapshot, backend=cfg),
+        enabler=lambda: None,
     )
     info = runtime.backend_info
     _expect(condition=info is not None, detail="backend_info should be set on runtime")

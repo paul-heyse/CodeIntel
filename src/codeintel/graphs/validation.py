@@ -41,6 +41,27 @@ class GraphValidationOptions:
     max_findings_per_rule: int | None = None
 
 
+def _resolve_validation_options(
+    runtime: GraphRuntime | GraphRuntimeOptions,
+    options: GraphValidationOptions | None,
+) -> GraphValidationOptions:
+    """
+    Determine effective validation options, applying runtime feature flags.
+
+    Returns
+    -------
+    GraphValidationOptions
+        Options merged with any feature flag overrides.
+    """
+    if options is not None:
+        return options
+    features = runtime.options.features if isinstance(runtime, GraphRuntime) else runtime.features
+    strict = features.validation_strict if features is not None else None
+    if strict:
+        return GraphValidationOptions(severity_overrides={"*": "error"}, hard_fail=True)
+    return GraphValidationOptions()
+
+
 def _hub_threshold(node_count: int) -> int:
     """
     Compute a hub threshold that scales with graph size.
@@ -79,7 +100,7 @@ def run_graph_validations(
     RuntimeError
         When hard_fail is enabled and error-level findings are present.
     """
-    validation_opts = options or GraphValidationOptions()
+    validation_opts = _resolve_validation_options(runtime=runtime, options=options)
     active_log = logging.getLogger(__name__)
     repo = snapshot.repo
     commit = snapshot.commit
@@ -100,9 +121,7 @@ def run_graph_validations(
     findings.extend(_warn_callsite_span_mismatches(gateway, catalog, repo, commit, active_log))
     findings.extend(_warn_orphan_modules(gateway, repo, commit, active_log, catalog))
     findings.extend(warn_graph_structure(engine, repo, commit, active_log))
-    normalized_findings = _apply_severity_overrides(
-        findings, validation_opts.severity_overrides
-    )
+    normalized_findings = _apply_severity_overrides(findings, validation_opts.severity_overrides)
     capped_findings = _cap_findings(normalized_findings, validation_opts.max_findings_per_rule)
     _persist_findings(gateway, capped_findings, repo, commit)
     active_log.info(
@@ -147,7 +166,9 @@ def _apply_severity_overrides(
     normalized: list[dict[str, object]] = []
     for finding in findings:
         check = str(finding.get("check_name") or "")
-        override = overrides.get(check)
+        override = overrides.get(check) if overrides else None
+        if override is None:
+            override = overrides.get("*") if overrides else None
         if override is None:
             normalized.append(finding)
             continue
@@ -844,3 +865,5 @@ def _append_log(message: str) -> None:
 
 # Backwards-compatible alias for legacy imports.
 _warn_graph_structure = warn_graph_structure
+apply_severity_overrides = _apply_severity_overrides
+resolve_validation_options = _resolve_validation_options

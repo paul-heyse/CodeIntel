@@ -30,7 +30,9 @@ from codeintel.analytics.graph_service import (
     structural_metrics,
 )
 from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.config.primitives import SnapshotRef
+from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
@@ -77,6 +79,7 @@ def _resolve_module_context(runtime: GraphRuntimeOptions, repo: str, commit: str
             betweenness_cap=CENTRALITY_SAMPLE_LIMIT,
             pagerank_weight="weight",
             betweenness_weight="weight",
+            community_detection_limit=runtime.features.community_detection_limit,
         )
     )
 
@@ -93,7 +96,11 @@ def _build_import_views(
 
 def _module_metric_slices(views: ImportGraphViews, ctx: GraphContext) -> ModuleGraphSlices:
     centralities = centrality_directed(views.simple_graph, ctx, include_eigen=True)
-    structure = structural_metrics(views.undirected, weight=ctx.pagerank_weight)
+    structure = structural_metrics(
+        views.undirected,
+        weight=ctx.pagerank_weight,
+        community_limit=ctx.community_detection_limit,
+    )
     components = component_metadata(views.simple_graph)
     degree_view = cast("Iterable[tuple[object, float]]", views.simple_graph.degree)
     degree_map: dict[object, int] = {node: int(deg) for node, deg in degree_view}
@@ -156,12 +163,15 @@ def compute_graph_metrics_modules_ext(
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    filters: GraphMetricFilters | None = None,
 ) -> None:
     """Populate analytics.graph_metrics_modules_ext with richer import metrics."""
     runtime_opts = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )
     snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    cfg = GraphMetricsStepConfig(snapshot=snapshot)
+    active_filters = filters or build_graph_metric_filters(gateway, cfg)
     resolved_runtime = resolve_graph_runtime(
         gateway,
         snapshot,
@@ -169,8 +179,13 @@ def compute_graph_metrics_modules_ext(
         context=runtime_opts.context,
     )
     ctx = _resolve_module_context(runtime_opts, repo, commit)
-    engine = resolved_runtime.engine
-    views = _build_import_views(engine)
+    filtered_graph: nx.DiGraph = active_filters.filter_import_graph(
+        resolved_runtime.ensure_import_graph()
+    )
+    simple_graph: nx.DiGraph = cast("nx.DiGraph", filtered_graph.copy())
+    simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
+    undirected = simple_graph.to_undirected()
+    views = ImportGraphViews(graph=filtered_graph, simple_graph=simple_graph, undirected=undirected)
     slices = _module_metric_slices(views, ctx)
     rows = _module_metric_rows(repo, commit, ctx, views, slices)
 

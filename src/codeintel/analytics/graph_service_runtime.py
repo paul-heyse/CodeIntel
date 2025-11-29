@@ -36,6 +36,7 @@ class GraphContext:
     pagerank_weight: str | None = "weight"
     betweenness_weight: str | None = "weight"
     use_gpu: bool = False
+    community_detection_limit: int | None = None
 
     def resolved_now(self) -> datetime:
         """
@@ -64,6 +65,16 @@ class GraphContextSpec:
     pagerank_weight: str | None = None
     betweenness_weight: str | None = None
     seed: int | None = None
+    community_detection_limit: int | None = None
+
+
+@dataclass(frozen=True)
+class GraphContextCaps:
+    """Optional caps for graph context derivation."""
+
+    betweenness_cap: int | None = None
+    eigen_cap: int | None = None
+    community_detection_limit: int | None = None
 
 
 @dataclass
@@ -75,17 +86,28 @@ class GraphServiceRuntime:
     analytics_context: AnalyticsContext | None = None
     catalog_provider: FunctionCatalogProvider | None = None
 
-    def compute_graph_metrics(self, cfg: GraphMetricsStepConfig) -> None:
+    def compute_graph_metrics(
+        self, cfg: GraphMetricsStepConfig, *, filters: object | None = None
+    ) -> None:
         """Compute core function/module graph metrics."""
         module = importlib.import_module("codeintel.analytics.graphs.graph_metrics")
+        log.info(
+            "graph_runtime.compute_graph_metrics repo=%s commit=%s filters=%s",
+            cfg.repo,
+            cfg.commit,
+            "provided" if filters is not None else "default",
+        )
         self._observe(
             "graph_metrics",
             lambda: module.compute_graph_metrics(
                 self.gateway,
                 cfg,
-                catalog_provider=self.catalog_provider,
-                runtime=self.runtime,
-                analytics_context=self.analytics_context,
+                deps=module.GraphMetricsDeps(
+                    catalog_provider=self.catalog_provider,
+                    runtime=self.runtime,
+                    analytics_context=self.analytics_context,
+                    filters=filters,
+                ),
             ),
         )
 
@@ -175,6 +197,7 @@ class GraphServiceRuntime:
                 "op": name,
                 "duration_ms": duration_ms,
                 "use_gpu": self.runtime.use_gpu,
+                "features": self.runtime.options.features,
             },
         )
 
@@ -183,8 +206,7 @@ def build_graph_context(
     cfg: GraphMetricsStepConfig,
     *,
     now: datetime | None = None,
-    betweenness_cap: int | None = None,
-    eigen_cap: int | None = None,
+    caps: GraphContextCaps | None = None,
     use_gpu: bool = False,
 ) -> GraphContext:
     """
@@ -196,10 +218,8 @@ def build_graph_context(
         Graph metrics configuration values.
     now :
         Optional timestamp; defaults to UTC now when omitted.
-    betweenness_cap :
-        Optional upper bound for betweenness sampling.
-    eigen_cap :
-        Optional upper bound for eigenvector iterations.
+    caps :
+        Optional container for sampling caps and community detection limit.
     use_gpu :
         Whether to prefer GPU-backed NetworkX execution when available.
 
@@ -208,10 +228,15 @@ def build_graph_context(
     GraphContext
         Graph context with caps and seeds applied.
     """
+    resolved_caps = caps or GraphContextCaps()
     betweenness_sample = cfg.max_betweenness_sample or DEFAULT_BETWEENNESS_SAMPLE
-    if betweenness_cap is not None:
-        betweenness_sample = min(betweenness_sample, betweenness_cap)
-    eigen_max_iter = cfg.eigen_max_iter if eigen_cap is None else min(cfg.eigen_max_iter, eigen_cap)
+    if resolved_caps.betweenness_cap is not None:
+        betweenness_sample = min(betweenness_sample, resolved_caps.betweenness_cap)
+    eigen_max_iter = (
+        cfg.eigen_max_iter
+        if resolved_caps.eigen_cap is None
+        else min(cfg.eigen_max_iter, resolved_caps.eigen_cap)
+    )
     return GraphContext(
         repo=cfg.repo,
         commit=cfg.commit,
@@ -222,6 +247,7 @@ def build_graph_context(
         pagerank_weight=cfg.pagerank_weight,
         betweenness_weight=cfg.betweenness_weight,
         use_gpu=use_gpu,
+        community_detection_limit=resolved_caps.community_detection_limit,
     )
 
 
@@ -251,11 +277,15 @@ def _base_context(spec: GraphContextSpec, base_now: datetime) -> GraphContext:
     if spec.ctx is not None:
         return spec.ctx
     if spec.metrics_cfg is not None:
+        caps = GraphContextCaps(
+            betweenness_cap=spec.betweenness_cap,
+            eigen_cap=spec.eigen_cap,
+            community_detection_limit=spec.community_detection_limit,
+        )
         return build_graph_context(
             spec.metrics_cfg,
             now=base_now,
-            betweenness_cap=spec.betweenness_cap,
-            eigen_cap=spec.eigen_cap,
+            caps=caps,
             use_gpu=spec.use_gpu,
         )
     return GraphContext(
@@ -268,6 +298,7 @@ def _base_context(spec: GraphContextSpec, base_now: datetime) -> GraphContext:
         pagerank_weight=spec.pagerank_weight or "weight",
         betweenness_weight=spec.betweenness_weight or "weight",
         use_gpu=spec.use_gpu,
+        community_detection_limit=spec.community_detection_limit,
     )
 
 
@@ -296,12 +327,18 @@ def _normalize_context(
         normalized = replace(normalized, seed=spec.seed)
     if normalized.now is None:
         normalized = replace(normalized, now=base_now)
+    if (
+        spec.community_detection_limit is not None
+        and normalized.community_detection_limit != spec.community_detection_limit
+    ):
+        normalized = replace(normalized, community_detection_limit=spec.community_detection_limit)
     return normalized
 
 
 __all__ = [
     "DEFAULT_BETWEENNESS_SAMPLE",
     "GraphContext",
+    "GraphContextCaps",
     "GraphContextSpec",
     "GraphServiceRuntime",
     "build_graph_context",

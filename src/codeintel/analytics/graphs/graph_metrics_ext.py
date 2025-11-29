@@ -29,7 +29,9 @@ from codeintel.analytics.graph_service import (
     structural_metrics,
 )
 from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.config.primitives import SnapshotRef
+from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
@@ -77,6 +79,7 @@ def _resolve_function_context(runtime: GraphRuntimeOptions, repo: str, commit: s
             eigen_cap=EIGEN_MAX_ITER,
             pagerank_weight="weight",
             betweenness_weight="weight",
+            community_detection_limit=runtime.features.community_detection_limit,
         )
     )
 
@@ -93,7 +96,11 @@ def _build_function_views(
 
 def _function_metric_slices(views: GraphViews, ctx: GraphContext) -> FunctionGraphSlices:
     centralities = centrality_directed(views.simple_graph, ctx, include_eigen=True)
-    structure = structural_metrics(views.undirected, weight=ctx.pagerank_weight)
+    structure = structural_metrics(
+        views.undirected,
+        weight=ctx.pagerank_weight,
+        community_limit=ctx.community_detection_limit,
+    )
     components = component_metadata(views.simple_graph)
     articulations = (
         set(nx.articulation_points(views.undirected))
@@ -165,6 +172,7 @@ def compute_graph_metrics_functions_ext(
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    filters: GraphMetricFilters | None = None,
 ) -> None:
     """
     Populate analytics.graph_metrics_functions_ext with additional centralities.
@@ -179,11 +187,15 @@ def compute_graph_metrics_functions_ext(
         Commit hash anchoring the metrics snapshot.
     runtime : GraphRuntime | GraphRuntimeOptions | None
         Optional runtime options including cached graphs and backend selection.
+    filters :
+        Optional allowlists for restricting graph nodes.
     """
     runtime_opts = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )
     snapshot = runtime_opts.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    cfg = GraphMetricsStepConfig(snapshot=snapshot)
+    active_filters = filters or build_graph_metric_filters(gateway, cfg)
     resolved_runtime = resolve_graph_runtime(
         gateway,
         snapshot,
@@ -191,8 +203,13 @@ def compute_graph_metrics_functions_ext(
         context=runtime_opts.context,
     )
     ctx = _resolve_function_context(runtime_opts, repo, commit)
-    engine = resolved_runtime.engine
-    views = _build_function_views(engine)
+    filtered_graph: nx.DiGraph = active_filters.filter_call_graph(
+        resolved_runtime.ensure_call_graph()
+    )
+    simple_graph: nx.DiGraph = cast("nx.DiGraph", filtered_graph.copy())
+    simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
+    undirected = simple_graph.to_undirected()
+    views = GraphViews(graph=filtered_graph, simple_graph=simple_graph, undirected=undirected)
     slices = _function_metric_slices(views, ctx)
     rows = _function_metric_rows(repo, commit, ctx, views, slices)
 
