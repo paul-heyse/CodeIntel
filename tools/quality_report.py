@@ -197,8 +197,8 @@ def parse_args() -> Path:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("document_output/quality_report.json"),
-        help=("Path for the JSON report (default: document_output/quality_report.json)"),
+        default=Path("build/quality-results/quality_report.json"),
+        help=("Path for the JSON report (default: build/quality-results/quality_report.json)"),
     )
     args = parser.parse_args()
     return args.output
