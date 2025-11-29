@@ -29,13 +29,14 @@ from codeintel.analytics.profiles.utils import (
     optional_str,
 )
 from codeintel.config import ProfilesAnalyticsStepConfig
+from codeintel.config.schemas.registry_adapter import load_registry_columns
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.rows import (
     FUNCTION_PROFILE_COLUMNS,
     FunctionProfileRowModel,
     function_profile_row_to_tuple,
 )
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
 
 log = logging.getLogger(__name__)
 
@@ -798,6 +799,11 @@ def write_function_profile_rows(
     -------
     int
         Number of rows inserted.
+
+    Raises
+    ------
+    RuntimeError
+        If registry column order drifts from serializer constants.
     """
     rows = list(rows)
     if not rows:
@@ -807,21 +813,19 @@ def write_function_profile_rows(
     commit = rows[0]["commit"]
     con = gateway.con
     ensure_schema(con, "analytics.function_profile")
+    registry_cols = load_registry_columns(con).get("analytics.function_profile")
+    if registry_cols is None or tuple(registry_cols) != FUNCTION_PROFILE_COLUMNS:
+        message = (
+            "Registry columns for analytics.function_profile differ from serializer constants."
+        )
+        raise RuntimeError(message)
+    stmt = prepared_statements_dynamic(con, "analytics.function_profile")
     con.execute(
         "DELETE FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         [repo, commit],
     )
     tuples = [function_profile_row_to_tuple(row) for row in rows]
-    column_list = ",\n            ".join(FUNCTION_PROFILE_COLUMNS)
-    placeholders = ", ".join("?" for _ in FUNCTION_PROFILE_COLUMNS)
-    con.executemany(
-        f"""
-        INSERT INTO analytics.function_profile (
-            {column_list}
-        ) VALUES ({placeholders})
-        """,
-        tuples,
-    )
+    con.executemany(stmt.insert_sql, tuples)
     return len(tuples)
 
 

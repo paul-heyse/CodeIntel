@@ -16,7 +16,7 @@ from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundErro
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.serving.protocols import PytestTestEntry
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import TestCatalogRowModel, test_catalog_row_to_tuple
+from codeintel.storage.rows import TestCatalogRowModel, serialize_test_catalog_row
 
 log = logging.getLogger(__name__)
 
@@ -245,7 +245,7 @@ def ingest_tests(
     run_batch(
         gateway,
         "analytics.test_catalog",
-        [test_catalog_row_to_tuple(row.to_row(cfg.repo, cfg.commit, now)) for row in rows],
+        [serialize_test_catalog_row(row.to_row(cfg.repo, cfg.commit, now)) for row in rows],
         delete_params=[cfg.repo, cfg.commit],
         scope=f"{cfg.repo}@{cfg.commit}",
     )
