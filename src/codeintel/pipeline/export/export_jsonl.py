@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import cast
 
-from codeintel.pipeline.export import DEFAULT_VALIDATION_SCHEMAS
+from codeintel.pipeline.export import default_validation_schemas
 from codeintel.pipeline.export.manifest import write_dataset_manifest
 from codeintel.pipeline.export.validate_exports import validate_files
 from codeintel.serving.http.datasets import validate_dataset_registry
@@ -498,7 +498,8 @@ def export_all_jsonl(
     written.append(manifest_path)
 
     if opts.validate_exports:
-        for schema_name in opts.schemas or DEFAULT_VALIDATION_SCHEMAS:
+        schema_names = opts.schemas or default_validation_schemas()
+        for schema_name in schema_names:
             matching = [p for p in written if p.name.startswith(schema_name)]
             if not matching:
                 continue

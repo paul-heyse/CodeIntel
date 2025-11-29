@@ -7,10 +7,15 @@ from dataclasses import dataclass
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.storage.datasets import Dataset
-from codeintel.storage.datasets import load_dataset_registry as _load_dataset_registry
+from codeintel.storage.datasets import (
+    Dataset,
+    list_dataset_specs,
+)
+from codeintel.storage.datasets import (
+    load_dataset_registry as _load_dataset_registry,
+)
 
-__all__ = ["DatasetRegistry", "build_dataset_registry"]
+__all__ = ["DatasetRegistry", "build_dataset_registry", "describe_all_datasets"]
 
 
 @dataclass(frozen=True)
@@ -97,3 +102,16 @@ def build_dataset_registry(
         jsonl_mapping=ds_registry.jsonl_datasets,
         parquet_mapping=ds_registry.parquet_datasets,
     )
+
+
+def describe_all_datasets(con: DuckDBPyConnection) -> list[dict[str, object]]:
+    """
+    Return a JSON-serializable description of all dataset specs for this database.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Dataset descriptions derived from the active connection.
+    """
+    ds_registry = _load_dataset_registry(con)
+    return list_dataset_specs(ds_registry)
