@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from codeintel.pipeline.export import DEFAULT_VALIDATION_SCHEMAS, default_validation_schemas
@@ -25,4 +27,15 @@ def test_default_validation_schemas_match_dataset_contract() -> None:
     _require(
         condition=constant == expected,
         message=f"DEFAULT_VALIDATION_SCHEMAS mismatch: {constant} != {expected}",
+    )
+
+
+def test_schema_files_match_contract() -> None:
+    """Ensure JSON Schema filenames align with the dataset contract."""
+    schema_dir = Path("src/codeintel/config/schemas/export")
+    stems = sorted(path.stem for path in schema_dir.glob("*.json") if path.stem != "base")
+    expected = sorted(set(JSON_SCHEMA_BY_DATASET_NAME.values()))
+    _require(
+        condition=stems == expected,
+        message=f"Schema files do not match contract: {stems} != {expected}",
     )

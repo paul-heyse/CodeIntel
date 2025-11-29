@@ -36,6 +36,8 @@ from codeintel.pipeline.orchestration.steps import REGISTRY, StepPhase
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.errors import ExportError, log_problem, problem
+from codeintel.storage.contract_validation import collect_contract_issues
+from codeintel.storage.datasets import list_dataset_specs, load_dataset_registry
 from codeintel.storage.gateway import (
     DuckDBError,
     StorageConfig,
@@ -427,6 +429,50 @@ def _register_ide_commands(
     p_ide_hints.set_defaults(func=_cmd_ide_hints)
 
 
+def _register_dataset_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register dataset contract utility commands."""
+    p_ds = subparsers.add_parser("datasets", help="Dataset contract utilities")
+    ds_sub = p_ds.add_subparsers(dest="subcommand", required=True)
+
+    p_lint = ds_sub.add_parser("lint", help="Validate dataset contract health")
+    _add_common_repo_args(p_lint)
+    p_lint.add_argument(
+        "--schema-dir",
+        type=Path,
+        default=Path("config/config/schemas/export"),
+        help="Directory containing export JSON Schemas (default: config/config/schemas/export)",
+    )
+    p_lint.set_defaults(func=_cmd_datasets_lint)
+
+    p_diff = ds_sub.add_parser("diff", help="Diff current dataset specs against a baseline JSON file")
+    _add_common_repo_args(p_diff)
+    p_diff.add_argument(
+        "--baseline",
+        type=Path,
+        required=True,
+        help="Path to a JSON baseline produced by `codeintel datasets snapshot` or prior runs.",
+    )
+    p_diff.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Optional path to write the current specs snapshot.",
+    )
+    p_diff.set_defaults(func=_cmd_datasets_diff)
+
+    p_snapshot = ds_sub.add_parser("snapshot", help="Write the current dataset specs to a JSON file")
+    _add_common_repo_args(p_snapshot)
+    p_snapshot.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Path to write the snapshot JSON.",
+    )
+    p_snapshot.set_defaults(func=_cmd_datasets_snapshot)
+
+
 def _make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="codeintel",
@@ -448,6 +494,7 @@ def _make_parser() -> argparse.ArgumentParser:
     _register_history_commands(subparsers)
     _register_ide_commands(subparsers)
     _add_subsystem_subparser(subparsers)
+    _register_dataset_commands(subparsers)
 
     return parser
 
@@ -1001,6 +1048,94 @@ def _cmd_history_timeseries(args: argparse.Namespace) -> int:
         len(args.commits),
     )
     return 0
+
+
+def _cmd_datasets_lint(args: argparse.Namespace) -> int:
+    """
+    Validate dataset contract for the configured database.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success, 1 on failures).
+    """
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=True)
+    issues = collect_contract_issues(gateway.con, schema_base_dir=args.schema_dir)
+    if issues:
+        for issue in issues:
+            sys.stderr.write(f"{issue}\n")
+        return 1
+    sys.stdout.write("Dataset contract validation passed.\n")
+    return 0
+
+
+def _cmd_datasets_snapshot(args: argparse.Namespace) -> int:
+    """
+    Write the current dataset specs to a JSON snapshot file.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success).
+    """
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=True)
+    specs = list_dataset_specs(load_dataset_registry(gateway.con))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(specs, indent=2), encoding="utf-8")
+    sys.stdout.write(f"Wrote dataset specs to {args.output}\n")
+    return 0
+
+
+def _cmd_datasets_diff(args: argparse.Namespace) -> int:
+    """
+    Diff current dataset specs against a baseline snapshot.
+
+    Returns
+    -------
+    int
+        Exit code (0 on no differences, 1 when differences found or errors occurred).
+    """
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=True)
+    current_specs = list_dataset_specs(load_dataset_registry(gateway.con))
+    if not args.baseline.exists():
+        sys.stderr.write(f"Baseline file not found: {args.baseline}\n")
+        return 1
+    baseline_specs: list[dict[str, object]] = json.loads(args.baseline.read_text(encoding="utf-8"))
+    baseline_by_name: dict[str, dict[str, object]] = {}
+    for spec in baseline_specs:
+        name = str(spec.get("name"))
+        baseline_by_name[name] = spec
+    current_by_name: dict[str, dict[str, object]] = {}
+    for spec in current_specs:
+        name = str(spec.get("name"))
+        current_by_name[name] = spec
+
+    added = sorted(set(current_by_name) - set(baseline_by_name))
+    removed = sorted(set(baseline_by_name) - set(current_by_name))
+    changed = sorted(
+        name
+        for name in current_by_name
+        if name in baseline_by_name and current_by_name[name] != baseline_by_name[name]
+    )
+
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(current_specs, indent=2), encoding="utf-8")
+
+    if not (added or removed or changed):
+        sys.stdout.write("No dataset spec differences detected.\n")
+        return 0
+
+    if added:
+        sys.stdout.write(f"Added datasets: {', '.join(added)}\n")
+    if removed:
+        sys.stdout.write(f"Removed datasets: {', '.join(removed)}\n")
+    if changed:
+        sys.stdout.write(f"Changed datasets: {', '.join(changed)}\n")
+    return 1
 
 
 # ---------------------------------------------------------------------------

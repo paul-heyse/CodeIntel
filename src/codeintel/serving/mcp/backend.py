@@ -16,6 +16,7 @@ from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
+    DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
     FileSummaryResponse,
@@ -186,6 +187,10 @@ class QueryBackend(Protocol):
         offset: int = 0,
     ) -> DatasetRowsResponse:
         """Read rows from a dataset in small slices."""
+        ...
+
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        """Return canonical dataset specs."""
         ...
 
 
@@ -549,6 +554,17 @@ class DuckDBBackend(QueryBackend):
             offset=offset,
         )
 
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        """
+        Return canonical dataset specs from the backend.
+
+        Returns
+        -------
+        list[DatasetSpecDescriptor]
+            Dataset spec descriptors sorted by name.
+        """
+        return self.service.dataset_specs()
+
 
 @dataclass  # noqa: PLR0904
 class HttpBackend(QueryBackend):
@@ -909,6 +925,17 @@ class HttpBackend(QueryBackend):
             limit=limit,
             offset=offset,
         )
+
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        """
+        Return canonical dataset specs from the remote API.
+
+        Returns
+        -------
+        list[DatasetSpecDescriptor]
+            Dataset spec descriptors sorted by name.
+        """
+        return self.service.dataset_specs()
 
 
 def create_backend(
