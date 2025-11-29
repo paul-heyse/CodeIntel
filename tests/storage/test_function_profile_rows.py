@@ -12,11 +12,15 @@ from codeintel.storage.rows import (
 
 
 def test_function_profile_tuple_length_matches_columns() -> None:
-    """function_profile_row_to_tuple must align with column list length."""
-    row: FunctionProfileRowModel = {
-        key: None
-        for key in FUNCTION_PROFILE_COLUMNS  # type: ignore[arg-type]
-    }
+    """
+    function_profile_row_to_tuple must align with column list length.
+
+    Raises
+    ------
+    AssertionError
+        If the serializer returns a tuple of unexpected length.
+    """
+    row: FunctionProfileRowModel = dict.fromkeys(FUNCTION_PROFILE_COLUMNS)  # type: ignore[arg-type]
     # Populate required non-null fields with minimal placeholders.
     row["function_goid_h128"] = 1
     row["repo"] = "r"
@@ -50,4 +54,9 @@ def test_function_profile_tuple_length_matches_columns() -> None:
     row["created_at"] = datetime.now(tz=UTC)
 
     values = function_profile_row_to_tuple(row)
-    assert len(values) == len(FUNCTION_PROFILE_COLUMNS)
+    if len(values) != len(FUNCTION_PROFILE_COLUMNS):
+        message = (
+            "function_profile tuple length "
+            f"{len(values)} != columns {len(FUNCTION_PROFILE_COLUMNS)}"
+        )
+        raise AssertionError(message)

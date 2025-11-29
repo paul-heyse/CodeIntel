@@ -22,7 +22,7 @@ from codeintel.storage.rows import (
     BehavioralCoverageRowModel,
     TestProfileRowModel,
     behavioral_coverage_row_to_tuple,
-    test_profile_row_to_tuple,
+    serialize_test_profile_row,
 )
 from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
 
@@ -135,7 +135,7 @@ def write_test_profile_rows(
     )
     if not rows:
         return 0
-    tuples = [test_profile_row_to_tuple(row) for row in rows]
+    tuples = [serialize_test_profile_row(row) for row in rows]
     con.executemany(stmt.insert_sql, tuples)
     return len(rows)
 

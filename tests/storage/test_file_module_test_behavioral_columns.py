@@ -16,7 +16,7 @@ from codeintel.storage.rows import (
     behavioral_coverage_row_to_tuple,
     file_profile_row_to_tuple,
     module_profile_row_to_tuple,
-    test_profile_row_to_tuple,
+    serialize_test_profile_row,
 )
 
 
@@ -79,7 +79,7 @@ def test_test_profile_tuple_length_matches_columns() -> None:
     row["primary_function_goids"] = []
     row["subsystems_covered"] = []
     row["created_at"] = datetime.now(tz=UTC)
-    length = len(test_profile_row_to_tuple(row))
+    length = len(serialize_test_profile_row(row))
     if length != len(TEST_PROFILE_COLUMNS):
         message = f"test_profile tuple length {length} != columns {len(TEST_PROFILE_COLUMNS)}"
         raise AssertionError(message)

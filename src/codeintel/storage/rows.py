@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, TypeVar
 
 __all__ = [
     "BehavioralCoverageRowModel",
@@ -55,6 +56,20 @@ __all__ = [
     "symbol_use_to_tuple",
     "typedness_row_to_tuple",
 ]
+
+_Column = TypeVar("_Column", bound=str)
+
+
+def _serialize_row(row: Mapping[_Column, object], columns: Sequence[_Column]) -> tuple[object, ...]:
+    """
+    Serialize a mapping using a stable column sequence.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values ordered according to ``columns``.
+    """
+    return tuple(row[column] for column in columns)
 
 
 class CoverageLineRow(TypedDict):
@@ -804,7 +819,7 @@ def serialize_test_coverage_edge(row: TestCoverageEdgeRow) -> tuple[object, ...]
     tuple[object, ...]
         Values in the order expected by test_coverage_edges INSERTs.
     """
-    return tuple(row[column] for column in TEST_COVERAGE_EDGE_COLUMNS)
+    return _serialize_row(row, TEST_COVERAGE_EDGE_COLUMNS)
 
 
 _FunctionProfileColumn = Literal[
@@ -1124,7 +1139,7 @@ def function_profile_row_to_tuple(row: FunctionProfileRowModel) -> tuple[object,
     tuple[object, ...]
         Values in the order expected by function_profile INSERTs.
     """
-    return tuple(row[column] for column in FUNCTION_PROFILE_COLUMNS)
+    return _serialize_row(row, FUNCTION_PROFILE_COLUMNS)
 
 
 _FileProfileColumn = Literal[
@@ -1261,7 +1276,7 @@ def file_profile_row_to_tuple(row: FileProfileRowModel) -> tuple[object, ...]:
     tuple[object, ...]
         Values in the order expected by file_profile INSERTs.
     """
-    return tuple(row[column] for column in FILE_PROFILE_COLUMNS)
+    return _serialize_row(row, FILE_PROFILE_COLUMNS)
 
 
 _ModuleProfileColumn = Literal[
@@ -1374,7 +1389,7 @@ def module_profile_row_to_tuple(row: ModuleProfileRowModel) -> tuple[object, ...
     tuple[object, ...]
         Values in the order expected by module_profile INSERTs.
     """
-    return tuple(row[column] for column in MODULE_PROFILE_COLUMNS)
+    return _serialize_row(row, MODULE_PROFILE_COLUMNS)
 
 
 _TestProfileColumn = Literal[
@@ -1508,7 +1523,7 @@ class TestProfileRowModel(TypedDict):
     created_at: datetime
 
 
-def test_profile_row_to_tuple(row: TestProfileRowModel) -> tuple[object, ...]:
+def serialize_test_profile_row(row: TestProfileRowModel) -> tuple[object, ...]:
     """
     Serialize a TestProfileRowModel into INSERT column order.
 
@@ -1517,7 +1532,7 @@ def test_profile_row_to_tuple(row: TestProfileRowModel) -> tuple[object, ...]:
     tuple[object, ...]
         Values in the order expected by test_profile INSERTs.
     """
-    return tuple(row[column] for column in TEST_PROFILE_COLUMNS)
+    return _serialize_row(row, TEST_PROFILE_COLUMNS)
 
 
 _BehavioralCoverageColumn = Literal[
@@ -1576,4 +1591,4 @@ def behavioral_coverage_row_to_tuple(row: BehavioralCoverageRowModel) -> tuple[o
     tuple[object, ...]
         Values in the order expected by behavioral_coverage INSERTs.
     """
-    return tuple(row[column] for column in BEHAVIORAL_COVERAGE_COLUMNS)
+    return _serialize_row(row, BEHAVIORAL_COVERAGE_COLUMNS)
