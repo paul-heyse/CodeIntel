@@ -3,15 +3,24 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.pipeline.export.manifest import compute_file_hash
-from codeintel.serving.http.datasets import describe_dataset
 from codeintel.storage.datasets import Dataset, DatasetRegistry
 from codeintel.storage.gateway import DuckDBConnection
 from codeintel.storage.repositories.base import fetch_all_dicts
+
+
+@dataclass(frozen=True)
+class SamplingConfig:
+    """Sampling options for catalog rendering."""
+
+    sample_rows: int = 3
+    sample_rows_strict: bool = False
+    sample_rows_by_family: Mapping[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -33,8 +42,18 @@ class CatalogEntry:
     retention_policy: str | None
     schema_version: str | None
     stable_id: str | None
-    validation_profile: str | None
     upstream_dependencies: list[str]
+    validation_profile: str | None
+
+
+def _resolve_sample_limit(
+    family: str | None, sampling: SamplingConfig | None, default: int = 3
+) -> int:
+    base_limit = sampling.sample_rows if sampling is not None else default
+    if sampling is None or sampling.sample_rows_by_family is None or family is None:
+        return max(0, base_limit)
+    family_limit = sampling.sample_rows_by_family.get(family, base_limit)
+    return max(0, family_limit)
 
 
 def _schema_columns(dataset: Dataset) -> list[dict[str, object]]:
@@ -64,6 +83,26 @@ def _slug(name: str) -> str:
         Lowercase anchor-friendly string.
     """
     return name.lower().replace(" ", "-")
+
+
+def describe_dataset_for_catalog(ds: Dataset, warn: Callable[[str], None] | None = None) -> str:
+    """
+    Produce a human-friendly description for a dataset/table.
+
+    Returns
+    -------
+    str
+        Description string including a column preview when available.
+    """
+    schema = TABLE_SCHEMAS.get(ds.table_key)
+    if schema is None:
+        if warn is not None:
+            warn(f"No schema found for {ds.name} ({ds.table_key}); using fallback description")
+        return f"DuckDB table/view {ds.table_key}"
+    preview_column_count = 5
+    column_names = ", ".join(col.name for col in schema.columns[:preview_column_count])
+    extra = "" if len(schema.columns) <= preview_column_count else "..."
+    return f"{ds.name}: {ds.table_key} ({column_names}{extra})"
 
 
 def _handle_sampling_failure(
@@ -177,8 +216,7 @@ def build_catalog(
     registry: DatasetRegistry,
     *,
     con: DuckDBConnection | None,
-    sample_rows: int = 3,
-    sample_rows_strict: bool = False,
+    sampling: SamplingConfig | None = None,
     warn: Callable[[str], None] | None = None,
 ) -> list[CatalogEntry]:
     """
@@ -190,10 +228,8 @@ def build_catalog(
         Dataset registry loaded from metadata.datasets.
     con
         Optional DuckDB connection used for sampling rows.
-    sample_rows
-        Number of rows to sample per dataset (0 to skip).
-    sample_rows_strict
-        When True, raise on sampling failures instead of silently skipping.
+    sampling
+        Optional sampling configuration; defaults to 3 rows, non-strict.
     warn
         Optional warning callback to surface sampling issues.
 
@@ -206,13 +242,13 @@ def build_catalog(
         CatalogEntry(
             name=name,
             table=ds.table_key,
-            description=describe_dataset(ds.name, ds.table_key),
+            description=describe_dataset_for_catalog(ds, warn=warn),
             schema_columns=_schema_columns(ds),
             sample_rows=_sample_rows(
                 con,
                 ds,
-                limit=sample_rows,
-                strict=sample_rows_strict,
+                limit=_resolve_sample_limit(ds.family, sampling),
+                strict=(sampling.sample_rows_strict if sampling is not None else False),
                 warn=warn,
             ),
             json_schema_id=ds.json_schema_id,

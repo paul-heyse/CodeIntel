@@ -11,10 +11,14 @@ from pathlib import Path
 
 from codeintel.config import TestsIngestStepConfig
 from codeintel.config.models import ToolsConfig
+from codeintel.core.types import (
+    PytestTestEntry,
+    normalize_pytest_entry,
+    validate_pytest_entry,
+)
 from codeintel.ingestion.common import run_batch, should_skip_missing_file
 from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.serving.protocols import PytestTestEntry
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.rows import TestCatalogRowModel, serialize_test_catalog_row
 
@@ -36,6 +40,14 @@ def _find_default_report(repo_root: Path) -> Path | None:
 
 
 def _load_tests_from_report(report_path: Path) -> list[PytestTestEntry]:
+    """
+    Load pytest-json-report entries, normalizing and filtering invalid rows.
+
+    Returns
+    -------
+    list[PytestTestEntry]
+        Normalized test entries (invalid entries skipped).
+    """
     with report_path.open("r", encoding="utf8") as f:
         data = json.load(f)
 
@@ -48,7 +60,38 @@ def _load_tests_from_report(report_path: Path) -> list[PytestTestEntry]:
         log.warning("Unexpected pytest report format; 'tests' missing or not a list")
         return []
 
-    return tests
+    normalized: list[PytestTestEntry] = []
+    skipped = 0
+    for raw in tests:
+        if not isinstance(raw, dict):
+            skipped += 1
+            continue
+        entry = normalize_pytest_entry(raw)
+        if entry is None:
+            skipped += 1
+            continue
+        try:
+            validate_pytest_entry(entry)
+        except ValueError as exc:
+            log.debug("Skipping invalid pytest entry: %s", exc)
+            skipped += 1
+            continue
+        normalized.append(entry)
+    if skipped:
+        log.warning("Skipped %d invalid pytest entries from %s", skipped, report_path)
+    return normalized
+
+
+def load_tests_from_report(report_path: Path) -> list[PytestTestEntry]:
+    """
+    Public wrapper around _load_tests_from_report for reuse.
+
+    Returns
+    -------
+    list[PytestTestEntry]
+        Normalized test entries (invalid entries skipped).
+    """
+    return _load_tests_from_report(report_path)
 
 
 def _nodeid_to_path_and_qualname(nodeid: str) -> tuple[str, str | None]:
@@ -140,9 +183,9 @@ def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
     rel_path, qualname = _nodeid_to_path_and_qualname(nodeid)
 
     status = test.get("outcome") or test.get("status") or "unknown"
-    call = test.get("call") or {}
-    duration_s = call.get("duration") or 0.0
-    duration_ms = float(duration_s) * 1000.0
+    call = test.get("call") if isinstance(test.get("call"), dict) else {}
+    duration_s = call.get("duration") if isinstance(call, dict) else None
+    duration_ms = float(duration_s) * 1000.0 if isinstance(duration_s, (int, float)) else 0.0
 
     keywords = test.get("keywords") or {}
     markers: list[str]
@@ -227,6 +270,7 @@ def ingest_tests(
         return
 
     tests = _load_tests_from_report(pytest_report_path)
+    log.info("Loaded %d pytest entries from %s", len(tests), pytest_report_path)
     if not tests:
         log.warning("No tests found in pytest report %s", pytest_report_path)
         return

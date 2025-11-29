@@ -10,7 +10,12 @@ import pytest
 
 from codeintel.cli.main import run_datasets_catalog
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
-from codeintel.storage.catalog import build_catalog, write_html_catalog, write_markdown_catalog
+from codeintel.storage.catalog import (
+    SamplingConfig,
+    build_catalog,
+    write_html_catalog,
+    write_markdown_catalog,
+)
 from codeintel.storage.datasets import Dataset, DatasetRegistry
 
 
@@ -43,7 +48,7 @@ def _sample_registry() -> DatasetRegistry:
 def test_catalog_generation_writes_files(tmp_path: Path) -> None:
     """Catalog generation writes both Markdown and HTML outputs."""
     registry = _sample_registry()
-    entries = build_catalog(registry, con=None, sample_rows=0)
+    entries = build_catalog(registry, con=None, sampling=SamplingConfig(sample_rows=0))
     md_path = write_markdown_catalog(tmp_path, entries)
     html_path = write_html_catalog(tmp_path, entries)
 
@@ -66,7 +71,7 @@ def test_catalog_generation_writes_files(tmp_path: Path) -> None:
 def test_catalog_handles_missing_samples(tmp_path: Path) -> None:
     """Catalog includes placeholder text when no samples are available."""
     registry = _sample_registry()
-    entries = build_catalog(registry, con=None, sample_rows=0)
+    entries = build_catalog(registry, con=None, sampling=SamplingConfig(sample_rows=0))
     path = write_markdown_catalog(tmp_path, entries)
     data = path.read_text(encoding="utf-8")
     if "_No sample rows available._" not in data:
@@ -81,8 +86,7 @@ def test_catalog_sampling_gracefully_falls_back(tmp_path: Path) -> None:
     entries = build_catalog(
         registry,
         con=con,
-        sample_rows=2,
-        sample_rows_strict=False,
+        sampling=SamplingConfig(sample_rows=2, sample_rows_strict=False),
         warn=warnings.append,
     )
     if entries[0].sample_rows:
@@ -103,8 +107,7 @@ def test_catalog_sampling_strict_raises() -> None:
         build_catalog(
             registry,
             con=con,
-            sample_rows=1,
-            sample_rows_strict=True,
+            sampling=SamplingConfig(sample_rows=1, sample_rows_strict=True),
         )
 
 

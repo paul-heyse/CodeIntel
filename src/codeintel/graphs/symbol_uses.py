@@ -5,16 +5,20 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import cast
 
 from codeintel.config import SymbolUsesStepConfig
+from codeintel.core.types import (
+    ScipDocument,
+    ScipOccurrence,
+    normalize_scip_document,
+    validate_scip_document,
+)
 from codeintel.graphs.function_catalog import FunctionCatalog
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
 from codeintel.ingestion.common import run_batch
-from codeintel.serving.protocols import ScipDocument
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.rows import SymbolUseRow, symbol_use_to_tuple
 
@@ -40,6 +44,7 @@ def build_symbol_use_edges(
     docs = load_scip_documents(scip_path)
     if docs is None:
         return
+    log.info("Loaded %d SCIP documents from %s", len(docs), scip_path)
 
     provider = catalog_provider or FunctionCatalogService.from_db(
         gateway, repo=cfg.repo, commit=cfg.commit
@@ -105,7 +110,44 @@ def load_scip_documents(scip_path: Path | None) -> list[ScipDocument] | None:
             "SCIP JSON root (or 'documents' key) is not a list; aborting symbol_use_edges build."
         )
         return None
-    return [cast("ScipDocument", doc) for doc in docs_raw if isinstance(doc, dict)]
+    normalized_docs: list[ScipDocument] = []
+    skipped = 0
+    for raw in docs_raw:
+        if not isinstance(raw, dict):
+            skipped += 1
+            continue
+        normalized = normalize_scip_document(raw)
+        if normalized is None:
+            skipped += 1
+            continue
+        try:
+            validate_scip_document(normalized)
+        except ValueError as exc:
+            log.debug("Skipping invalid SCIP document: %s", exc)
+            skipped += 1
+            continue
+        normalized_docs.append(normalized)
+    if skipped:
+        log.warning("Skipped %d invalid SCIP documents while loading %s", skipped, scip_path)
+    return normalized_docs
+
+
+def _symbol_roles(occurrence: ScipOccurrence) -> int:
+    """
+    Return normalized symbol_roles bits from an occurrence.
+
+    Parameters
+    ----------
+    occurrence
+        SCIP occurrence entry providing symbol role flags.
+
+    Returns
+    -------
+    int
+        Symbol role bitmask, defaulting to 0 when missing.
+    """
+    symbol_roles = occurrence.get("symbol_roles")
+    return int(symbol_roles) if symbol_roles is not None else 0
 
 
 def build_def_map(docs: list[ScipDocument]) -> dict[str, str]:
@@ -128,7 +170,7 @@ def build_def_map(docs: list[ScipDocument]) -> dict[str, str]:
             symbol = occ.get("symbol")
             if not symbol:
                 continue
-            roles = int(occ.get("symbol_roles", 0))
+            roles = _symbol_roles(occ)
             is_def = bool(roles & 1)  # definition bit
             if is_def and symbol not in def_path_by_symbol:
                 def_path_by_symbol[symbol] = rel_path
@@ -154,7 +196,7 @@ def _build_symbol_edges(
             symbol = occ.get("symbol")
             if not symbol:
                 continue
-            roles = int(occ.get("symbol_roles", 0))
+            roles = _symbol_roles(occ)
             # Definition=1, Import=2, WriteAccess=4, ReadAccess=8
             # We consider Import, Write, and Read as references/uses.
             is_ref = bool(roles & (2 | 4 | 8))
@@ -209,7 +251,7 @@ def build_use_def_mapping(
             symbol = occ.get("symbol")
             if not symbol:
                 continue
-            roles = int(occ.get("symbol_roles", 0))
+            roles = _symbol_roles(occ)
             is_ref = bool(roles & (2 | 4 | 8))
             if not is_ref:
                 continue
@@ -232,7 +274,8 @@ def _collect_missing_paths(docs: list[ScipDocument], module_by_path: dict[str, s
             symbol = occ.get("symbol")
             if not symbol:
                 continue
-            def_path = doc.get("relative_path") if int(occ.get("symbol_roles", 0)) & 1 else None
+            roles = _symbol_roles(occ)
+            def_path = doc.get("relative_path") if roles & 1 else None
             if def_path:
                 def_path = str(def_path).replace("\\", "/")
                 if def_path not in module_by_path:
