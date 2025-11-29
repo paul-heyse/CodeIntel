@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 __all__ = [
+    "BehavioralCoverageRowModel",
     "CFGBlockRow",
     "CFGEdgeRow",
     "CallGraphEdgeRow",
@@ -14,17 +15,22 @@ __all__ = [
     "CoverageLineRow",
     "DFGEdgeRow",
     "DocstringRow",
+    "FileProfileRowModel",
+    "FunctionProfileRowModel",
     "FunctionValidationRow",
     "GoidCrosswalkRow",
     "GoidRow",
     "HotspotRow",
     "ImportEdgeRow",
     "ImportModuleRow",
+    "ModuleProfileRowModel",
     "StaticDiagnosticRow",
     "SymbolUseRow",
     "TestCatalogRowModel",
     "TestCoverageEdgeRow",
+    "TestProfileRowModel",
     "TypednessRow",
+    "behavioral_coverage_row_to_tuple",
     "call_graph_edge_to_tuple",
     "call_graph_node_to_tuple",
     "cfg_block_to_tuple",
@@ -33,16 +39,20 @@ __all__ = [
     "coverage_line_to_tuple",
     "dfg_edge_to_tuple",
     "docstring_row_to_tuple",
+    "file_profile_row_to_tuple",
+    "function_profile_row_to_tuple",
     "function_validation_row_to_tuple",
     "goid_crosswalk_to_tuple",
     "goid_to_tuple",
     "hotspot_row_to_tuple",
     "import_edge_to_tuple",
     "import_module_to_tuple",
+    "module_profile_row_to_tuple",
+    "serialize_test_catalog_row",
+    "serialize_test_coverage_edge",
+    "serialize_test_profile_row",
     "static_diagnostic_to_tuple",
     "symbol_use_to_tuple",
-    "test_catalog_row_to_tuple",
-    "test_coverage_edge_to_tuple",
     "typedness_row_to_tuple",
 ]
 
@@ -708,7 +718,7 @@ class TestCatalogRowModel(TypedDict):
     created_at: datetime
 
 
-def test_catalog_row_to_tuple(row: TestCatalogRowModel) -> tuple[object, ...]:
+def serialize_test_catalog_row(row: TestCatalogRowModel) -> tuple[object, ...]:
     """
     Serialize a TestCatalogRowModel into the INSERT column order.
 
@@ -741,11 +751,11 @@ class TestCoverageEdgeRow(TypedDict):
     test_id: str
     test_goid_h128: int | None
     function_goid_h128: int
-    urn: str
+    urn: str | None
     repo: str
     commit: str
     rel_path: str
-    qualname: str
+    qualname: str | None
     covered_lines: int
     executable_lines: int
     coverage_ratio: float
@@ -753,7 +763,39 @@ class TestCoverageEdgeRow(TypedDict):
     created_at: datetime
 
 
-def test_coverage_edge_to_tuple(row: TestCoverageEdgeRow) -> tuple[object, ...]:
+_TestCoverageEdgeColumn = Literal[
+    "test_id",
+    "test_goid_h128",
+    "function_goid_h128",
+    "urn",
+    "repo",
+    "commit",
+    "rel_path",
+    "qualname",
+    "covered_lines",
+    "executable_lines",
+    "coverage_ratio",
+    "last_status",
+    "created_at",
+]
+TEST_COVERAGE_EDGE_COLUMNS: tuple[_TestCoverageEdgeColumn, ...] = (
+    "test_id",
+    "test_goid_h128",
+    "function_goid_h128",
+    "urn",
+    "repo",
+    "commit",
+    "rel_path",
+    "qualname",
+    "covered_lines",
+    "executable_lines",
+    "coverage_ratio",
+    "last_status",
+    "created_at",
+)
+
+
+def serialize_test_coverage_edge(row: TestCoverageEdgeRow) -> tuple[object, ...]:
     """
     Serialize a TestCoverageEdgeRow into the INSERT column order.
 
@@ -762,18 +804,776 @@ def test_coverage_edge_to_tuple(row: TestCoverageEdgeRow) -> tuple[object, ...]:
     tuple[object, ...]
         Values in the order expected by test_coverage_edges INSERTs.
     """
-    return (
-        row["test_id"],
-        row["test_goid_h128"],
-        row["function_goid_h128"],
-        row["urn"],
-        row["repo"],
-        row["commit"],
-        row["rel_path"],
-        row["qualname"],
-        row["covered_lines"],
-        row["executable_lines"],
-        row["coverage_ratio"],
-        row["last_status"],
-        row["created_at"],
-    )
+    return tuple(row[column] for column in TEST_COVERAGE_EDGE_COLUMNS)
+
+
+_FunctionProfileColumn = Literal[
+    "function_goid_h128",
+    "urn",
+    "repo",
+    "commit",
+    "rel_path",
+    "module",
+    "language",
+    "kind",
+    "qualname",
+    "start_line",
+    "end_line",
+    "loc",
+    "logical_loc",
+    "cyclomatic_complexity",
+    "complexity_bucket",
+    "param_count",
+    "positional_params",
+    "keyword_params",
+    "vararg",
+    "kwarg",
+    "max_nesting_depth",
+    "stmt_count",
+    "decorator_count",
+    "has_docstring",
+    "total_params",
+    "annotated_params",
+    "return_type",
+    "param_types",
+    "fully_typed",
+    "partial_typed",
+    "untyped",
+    "typedness_bucket",
+    "typedness_source",
+    "file_typed_ratio",
+    "static_error_count",
+    "has_static_errors",
+    "executable_lines",
+    "covered_lines",
+    "coverage_ratio",
+    "tested",
+    "untested_reason",
+    "tests_touching",
+    "failing_tests",
+    "slow_tests",
+    "flaky_tests",
+    "last_test_status",
+    "dominant_test_status",
+    "slow_test_threshold_ms",
+    "created_in_commit",
+    "created_at_history",
+    "last_modified_commit",
+    "last_modified_at",
+    "age_days",
+    "commit_count",
+    "author_count",
+    "lines_added",
+    "lines_deleted",
+    "churn_score",
+    "stability_bucket",
+    "call_fan_in",
+    "call_fan_out",
+    "call_edge_in_count",
+    "call_edge_out_count",
+    "call_is_leaf",
+    "call_is_entrypoint",
+    "call_is_public",
+    "risk_score",
+    "risk_level",
+    "risk_component_coverage",
+    "risk_component_complexity",
+    "risk_component_static",
+    "risk_component_hotspot",
+    "is_pure",
+    "uses_io",
+    "touches_db",
+    "uses_time",
+    "uses_randomness",
+    "modifies_globals",
+    "modifies_closure",
+    "spawns_threads_or_tasks",
+    "has_transitive_effects",
+    "purity_confidence",
+    "param_nullability_json",
+    "return_nullability",
+    "has_preconditions",
+    "has_postconditions",
+    "has_raises",
+    "contract_confidence",
+    "role",
+    "framework",
+    "role_confidence",
+    "role_sources_json",
+    "tags",
+    "owners",
+    "doc_short",
+    "doc_long",
+    "doc_params",
+    "doc_returns",
+    "created_at",
+]
+FUNCTION_PROFILE_COLUMNS: tuple[_FunctionProfileColumn, ...] = (
+    "function_goid_h128",
+    "urn",
+    "repo",
+    "commit",
+    "rel_path",
+    "module",
+    "language",
+    "kind",
+    "qualname",
+    "start_line",
+    "end_line",
+    "loc",
+    "logical_loc",
+    "cyclomatic_complexity",
+    "complexity_bucket",
+    "param_count",
+    "positional_params",
+    "keyword_params",
+    "vararg",
+    "kwarg",
+    "max_nesting_depth",
+    "stmt_count",
+    "decorator_count",
+    "has_docstring",
+    "total_params",
+    "annotated_params",
+    "return_type",
+    "param_types",
+    "fully_typed",
+    "partial_typed",
+    "untyped",
+    "typedness_bucket",
+    "typedness_source",
+    "file_typed_ratio",
+    "static_error_count",
+    "has_static_errors",
+    "executable_lines",
+    "covered_lines",
+    "coverage_ratio",
+    "tested",
+    "untested_reason",
+    "tests_touching",
+    "failing_tests",
+    "slow_tests",
+    "flaky_tests",
+    "last_test_status",
+    "dominant_test_status",
+    "slow_test_threshold_ms",
+    "created_in_commit",
+    "created_at_history",
+    "last_modified_commit",
+    "last_modified_at",
+    "age_days",
+    "commit_count",
+    "author_count",
+    "lines_added",
+    "lines_deleted",
+    "churn_score",
+    "stability_bucket",
+    "call_fan_in",
+    "call_fan_out",
+    "call_edge_in_count",
+    "call_edge_out_count",
+    "call_is_leaf",
+    "call_is_entrypoint",
+    "call_is_public",
+    "risk_score",
+    "risk_level",
+    "risk_component_coverage",
+    "risk_component_complexity",
+    "risk_component_static",
+    "risk_component_hotspot",
+    "is_pure",
+    "uses_io",
+    "touches_db",
+    "uses_time",
+    "uses_randomness",
+    "modifies_globals",
+    "modifies_closure",
+    "spawns_threads_or_tasks",
+    "has_transitive_effects",
+    "purity_confidence",
+    "param_nullability_json",
+    "return_nullability",
+    "has_preconditions",
+    "has_postconditions",
+    "has_raises",
+    "contract_confidence",
+    "role",
+    "framework",
+    "role_confidence",
+    "role_sources_json",
+    "tags",
+    "owners",
+    "doc_short",
+    "doc_long",
+    "doc_params",
+    "doc_returns",
+    "created_at",
+)
+
+
+class FunctionProfileRowModel(TypedDict):
+    """Row shape for ``analytics.function_profile`` inserts."""
+
+    function_goid_h128: int
+    urn: str | None
+    repo: str
+    commit: str
+    rel_path: str
+    module: str | None
+    language: str | None
+    kind: str | None
+    qualname: str | None
+    start_line: int | None
+    end_line: int | None
+    loc: int
+    logical_loc: int
+    cyclomatic_complexity: int
+    complexity_bucket: str | None
+    param_count: int
+    positional_params: int
+    keyword_params: int
+    vararg: bool
+    kwarg: bool
+    max_nesting_depth: int | None
+    stmt_count: int | None
+    decorator_count: int | None
+    has_docstring: bool
+    total_params: int
+    annotated_params: int
+    return_type: str | None
+    param_types: object
+    fully_typed: bool
+    partial_typed: bool
+    untyped: bool
+    typedness_bucket: str | None
+    typedness_source: str | None
+    file_typed_ratio: float | None
+    static_error_count: int
+    has_static_errors: bool
+    executable_lines: int
+    covered_lines: int
+    coverage_ratio: float | None
+    tested: bool
+    untested_reason: str | None
+    tests_touching: int
+    failing_tests: int
+    slow_tests: int
+    flaky_tests: int
+    last_test_status: str | None
+    dominant_test_status: str | None
+    slow_test_threshold_ms: float
+    created_in_commit: str | None
+    created_at_history: datetime | None
+    last_modified_commit: str | None
+    last_modified_at: datetime | None
+    age_days: int | None
+    commit_count: int
+    author_count: int
+    lines_added: int
+    lines_deleted: int
+    churn_score: float | None
+    stability_bucket: str | None
+    call_fan_in: int
+    call_fan_out: int
+    call_edge_in_count: int
+    call_edge_out_count: int
+    call_is_leaf: bool
+    call_is_entrypoint: bool
+    call_is_public: bool
+    risk_score: float
+    risk_level: str | None
+    risk_component_coverage: float
+    risk_component_complexity: float
+    risk_component_static: float
+    risk_component_hotspot: float
+    is_pure: bool
+    uses_io: bool
+    touches_db: bool
+    uses_time: bool
+    uses_randomness: bool
+    modifies_globals: bool
+    modifies_closure: bool
+    spawns_threads_or_tasks: bool
+    has_transitive_effects: bool
+    purity_confidence: float | None
+    param_nullability_json: object
+    return_nullability: str | None
+    has_preconditions: bool
+    has_postconditions: bool
+    has_raises: bool
+    contract_confidence: float | None
+    role: str | None
+    framework: str | None
+    role_confidence: float | None
+    role_sources_json: object
+    tags: object
+    owners: object
+    doc_short: str | None
+    doc_long: str | None
+    doc_params: object
+    doc_returns: object
+    created_at: datetime
+
+
+def function_profile_row_to_tuple(row: FunctionProfileRowModel) -> tuple[object, ...]:
+    """
+    Serialize a FunctionProfileRowModel into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by function_profile INSERTs.
+    """
+    return tuple(row[column] for column in FUNCTION_PROFILE_COLUMNS)
+
+
+_FileProfileColumn = Literal[
+    "repo",
+    "commit",
+    "rel_path",
+    "module",
+    "language",
+    "node_count",
+    "function_count",
+    "class_count",
+    "avg_depth",
+    "max_depth",
+    "ast_complexity",
+    "hotspot_score",
+    "commit_count",
+    "author_count",
+    "lines_added",
+    "lines_deleted",
+    "annotation_ratio",
+    "untyped_defs",
+    "overlay_needed",
+    "type_error_count",
+    "static_error_count",
+    "has_static_errors",
+    "total_functions",
+    "public_functions",
+    "avg_loc",
+    "max_loc",
+    "avg_cyclomatic_complexity",
+    "max_cyclomatic_complexity",
+    "high_risk_function_count",
+    "medium_risk_function_count",
+    "max_risk_score",
+    "file_coverage_ratio",
+    "tested_function_count",
+    "untested_function_count",
+    "tests_touching",
+    "tags",
+    "owners",
+    "created_at",
+]
+FILE_PROFILE_COLUMNS: tuple[_FileProfileColumn, ...] = (
+    "repo",
+    "commit",
+    "rel_path",
+    "module",
+    "language",
+    "node_count",
+    "function_count",
+    "class_count",
+    "avg_depth",
+    "max_depth",
+    "ast_complexity",
+    "hotspot_score",
+    "commit_count",
+    "author_count",
+    "lines_added",
+    "lines_deleted",
+    "annotation_ratio",
+    "untyped_defs",
+    "overlay_needed",
+    "type_error_count",
+    "static_error_count",
+    "has_static_errors",
+    "total_functions",
+    "public_functions",
+    "avg_loc",
+    "max_loc",
+    "avg_cyclomatic_complexity",
+    "max_cyclomatic_complexity",
+    "high_risk_function_count",
+    "medium_risk_function_count",
+    "max_risk_score",
+    "file_coverage_ratio",
+    "tested_function_count",
+    "untested_function_count",
+    "tests_touching",
+    "tags",
+    "owners",
+    "created_at",
+)
+
+
+class FileProfileRowModel(TypedDict):
+    """Row shape for ``analytics.file_profile`` inserts."""
+
+    repo: str
+    commit: str
+    rel_path: str
+    module: str | None
+    language: str | None
+    node_count: int | None
+    function_count: int | None
+    class_count: int | None
+    avg_depth: float | None
+    max_depth: int | None
+    ast_complexity: float | None
+    hotspot_score: float | None
+    commit_count: int | None
+    author_count: int | None
+    lines_added: int | None
+    lines_deleted: int | None
+    annotation_ratio: float | None
+    untyped_defs: int | None
+    overlay_needed: bool | None
+    type_error_count: int | None
+    static_error_count: int | None
+    has_static_errors: bool | None
+    total_functions: int | None
+    public_functions: int | None
+    avg_loc: float | None
+    max_loc: int | None
+    avg_cyclomatic_complexity: float | None
+    max_cyclomatic_complexity: int | None
+    high_risk_function_count: int | None
+    medium_risk_function_count: int | None
+    max_risk_score: float | None
+    file_coverage_ratio: float | None
+    tested_function_count: int | None
+    untested_function_count: int | None
+    tests_touching: int | None
+    tags: object
+    owners: object
+    created_at: datetime
+
+
+def file_profile_row_to_tuple(row: FileProfileRowModel) -> tuple[object, ...]:
+    """
+    Serialize a FileProfileRowModel into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by file_profile INSERTs.
+    """
+    return tuple(row[column] for column in FILE_PROFILE_COLUMNS)
+
+
+_ModuleProfileColumn = Literal[
+    "repo",
+    "commit",
+    "module",
+    "path",
+    "language",
+    "file_count",
+    "total_loc",
+    "total_logical_loc",
+    "function_count",
+    "class_count",
+    "avg_file_complexity",
+    "max_file_complexity",
+    "high_risk_function_count",
+    "medium_risk_function_count",
+    "low_risk_function_count",
+    "max_risk_score",
+    "avg_risk_score",
+    "module_coverage_ratio",
+    "tested_function_count",
+    "untested_function_count",
+    "import_fan_in",
+    "import_fan_out",
+    "cycle_group",
+    "in_cycle",
+    "role",
+    "role_confidence",
+    "role_sources_json",
+    "tags",
+    "owners",
+    "created_at",
+]
+MODULE_PROFILE_COLUMNS: tuple[_ModuleProfileColumn, ...] = (
+    "repo",
+    "commit",
+    "module",
+    "path",
+    "language",
+    "file_count",
+    "total_loc",
+    "total_logical_loc",
+    "function_count",
+    "class_count",
+    "avg_file_complexity",
+    "max_file_complexity",
+    "high_risk_function_count",
+    "medium_risk_function_count",
+    "low_risk_function_count",
+    "max_risk_score",
+    "avg_risk_score",
+    "module_coverage_ratio",
+    "tested_function_count",
+    "untested_function_count",
+    "import_fan_in",
+    "import_fan_out",
+    "cycle_group",
+    "in_cycle",
+    "role",
+    "role_confidence",
+    "role_sources_json",
+    "tags",
+    "owners",
+    "created_at",
+)
+
+
+class ModuleProfileRowModel(TypedDict):
+    """Row shape for ``analytics.module_profile`` inserts."""
+
+    repo: str
+    commit: str
+    module: str
+    path: str | None
+    language: str | None
+    file_count: int | None
+    total_loc: int | None
+    total_logical_loc: int | None
+    function_count: int | None
+    class_count: int | None
+    avg_file_complexity: float | None
+    max_file_complexity: float | None
+    high_risk_function_count: int | None
+    medium_risk_function_count: int | None
+    low_risk_function_count: int | None
+    max_risk_score: float | None
+    avg_risk_score: float | None
+    module_coverage_ratio: float | None
+    tested_function_count: int | None
+    untested_function_count: int | None
+    import_fan_in: int | None
+    import_fan_out: int | None
+    cycle_group: int | None
+    in_cycle: bool | None
+    role: str | None
+    role_confidence: float | None
+    role_sources_json: object
+    tags: object
+    owners: object
+    created_at: datetime
+
+
+def module_profile_row_to_tuple(row: ModuleProfileRowModel) -> tuple[object, ...]:
+    """
+    Serialize a ModuleProfileRowModel into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by module_profile INSERTs.
+    """
+    return tuple(row[column] for column in MODULE_PROFILE_COLUMNS)
+
+
+_TestProfileColumn = Literal[
+    "repo",
+    "commit",
+    "test_id",
+    "test_goid_h128",
+    "urn",
+    "rel_path",
+    "module",
+    "qualname",
+    "language",
+    "kind",
+    "status",
+    "duration_ms",
+    "markers",
+    "flaky",
+    "last_run_at",
+    "functions_covered",
+    "functions_covered_count",
+    "primary_function_goids",
+    "subsystems_covered",
+    "subsystems_covered_count",
+    "primary_subsystem_id",
+    "assert_count",
+    "raise_count",
+    "uses_parametrize",
+    "uses_fixtures",
+    "io_bound",
+    "uses_network",
+    "uses_db",
+    "uses_filesystem",
+    "uses_subprocess",
+    "flakiness_score",
+    "importance_score",
+    "notes",
+    "tg_degree",
+    "tg_weighted_degree",
+    "tg_proj_degree",
+    "tg_proj_weight",
+    "tg_proj_clustering",
+    "tg_proj_betweenness",
+    "created_at",
+]
+TEST_PROFILE_COLUMNS: tuple[_TestProfileColumn, ...] = (
+    "repo",
+    "commit",
+    "test_id",
+    "test_goid_h128",
+    "urn",
+    "rel_path",
+    "module",
+    "qualname",
+    "language",
+    "kind",
+    "status",
+    "duration_ms",
+    "markers",
+    "flaky",
+    "last_run_at",
+    "functions_covered",
+    "functions_covered_count",
+    "primary_function_goids",
+    "subsystems_covered",
+    "subsystems_covered_count",
+    "primary_subsystem_id",
+    "assert_count",
+    "raise_count",
+    "uses_parametrize",
+    "uses_fixtures",
+    "io_bound",
+    "uses_network",
+    "uses_db",
+    "uses_filesystem",
+    "uses_subprocess",
+    "flakiness_score",
+    "importance_score",
+    "notes",
+    "tg_degree",
+    "tg_weighted_degree",
+    "tg_proj_degree",
+    "tg_proj_weight",
+    "tg_proj_clustering",
+    "tg_proj_betweenness",
+    "created_at",
+)
+
+
+class TestProfileRowModel(TypedDict):
+    """Row shape for ``analytics.test_profile`` inserts."""
+
+    repo: str
+    commit: str
+    test_id: str
+    test_goid_h128: int | None
+    urn: str | None
+    rel_path: str
+    module: str | None
+    qualname: str | None
+    language: str | None
+    kind: str | None
+    status: str | None
+    duration_ms: float | None
+    markers: object
+    flaky: bool | None
+    last_run_at: datetime | None
+    functions_covered: object
+    functions_covered_count: int | None
+    primary_function_goids: object
+    subsystems_covered: object
+    subsystems_covered_count: int | None
+    primary_subsystem_id: str | None
+    assert_count: int | None
+    raise_count: int | None
+    uses_parametrize: bool | None
+    uses_fixtures: bool | None
+    io_bound: bool | None
+    uses_network: bool | None
+    uses_db: bool | None
+    uses_filesystem: bool | None
+    uses_subprocess: bool | None
+    flakiness_score: float | None
+    importance_score: float | None
+    notes: str | None
+    tg_degree: int | None
+    tg_weighted_degree: float | None
+    tg_proj_degree: int | None
+    tg_proj_weight: float | None
+    tg_proj_clustering: float | None
+    tg_proj_betweenness: float | None
+    created_at: datetime
+
+
+def test_profile_row_to_tuple(row: TestProfileRowModel) -> tuple[object, ...]:
+    """
+    Serialize a TestProfileRowModel into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by test_profile INSERTs.
+    """
+    return tuple(row[column] for column in TEST_PROFILE_COLUMNS)
+
+
+_BehavioralCoverageColumn = Literal[
+    "repo",
+    "commit",
+    "test_id",
+    "test_goid_h128",
+    "rel_path",
+    "qualname",
+    "behavior_tags",
+    "tag_source",
+    "heuristic_version",
+    "llm_model",
+    "llm_run_id",
+    "created_at",
+]
+BEHAVIORAL_COVERAGE_COLUMNS: tuple[_BehavioralCoverageColumn, ...] = (
+    "repo",
+    "commit",
+    "test_id",
+    "test_goid_h128",
+    "rel_path",
+    "qualname",
+    "behavior_tags",
+    "tag_source",
+    "heuristic_version",
+    "llm_model",
+    "llm_run_id",
+    "created_at",
+)
+
+
+class BehavioralCoverageRowModel(TypedDict):
+    """Row shape for ``analytics.behavioral_coverage`` inserts."""
+
+    repo: str
+    commit: str
+    test_id: str
+    test_goid_h128: int | None
+    rel_path: str
+    qualname: str | None
+    behavior_tags: object
+    tag_source: str
+    heuristic_version: str | None
+    llm_model: str | None
+    llm_run_id: str | None
+    created_at: datetime
+
+
+def behavioral_coverage_row_to_tuple(row: BehavioralCoverageRowModel) -> tuple[object, ...]:
+    """
+    Serialize a BehavioralCoverageRowModel into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by behavioral_coverage INSERTs.
+    """
+    return tuple(row[column] for column in BEHAVIORAL_COVERAGE_COLUMNS)

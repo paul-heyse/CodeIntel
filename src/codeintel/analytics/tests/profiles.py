@@ -4,12 +4,38 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
+from codeintel.analytics.tests_profiles.behavioral_tags import build_behavior_rows
+from codeintel.analytics.tests_profiles.coverage_inputs import (
+    aggregate_test_coverage_by_function,
+    aggregate_test_coverage_by_subsystem,
+    load_test_graph_metrics,
+    load_test_records,
+)
+from codeintel.analytics.tests_profiles.importance import (
+    compute_importance_score as compute_importance_score_new,
+)
+from codeintel.analytics.tests_profiles.rows import (
+    build_behavioral_coverage_rows,
+    build_test_profile_rows,
+    write_behavioral_coverage_rows,
+    write_test_profile_rows,
+)
+from codeintel.analytics.tests_profiles.types import (
+    BehavioralContext,
+    BehavioralLLMRequest,
+    BehavioralLLMRunner,
+    ImportanceInputs,
+    IoFlags,
+    TestAstInfo,
+    TestProfileContext,
+    TestRecord,
+)
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.ingestion.ast_utils import parse_python_module
 from codeintel.ingestion.paths import relpath_to_module
@@ -50,85 +76,6 @@ PRIMARY_COVERAGE_THRESHOLD = 0.4
 
 
 @dataclass(frozen=True)
-class IoFlags:
-    """Flags describing IO usage within a test."""
-
-    uses_network: bool = False
-    uses_db: bool = False
-    uses_filesystem: bool = False
-    uses_subprocess: bool = False
-
-    @property
-    def io_bound(self) -> bool:
-        """Return True when any IO flag is set."""
-        return self.uses_network or self.uses_db or self.uses_filesystem or self.uses_subprocess
-
-
-@dataclass(frozen=True)
-class TestAstInfo:
-    """AST-derived metrics for a single test span."""
-
-    __test__ = False
-
-    assert_count: int = 0
-    raise_count: int = 0
-    uses_pytest_raises: bool = False
-    uses_concurrency_lib: bool = False
-    has_boundary_asserts: bool = False
-    uses_fixtures: bool = False
-    io_flags: IoFlags = IoFlags()
-
-
-@dataclass(frozen=True)
-class TestRecord:
-    """Identity and span information for a test."""
-
-    __test__ = False
-
-    test_id: str
-    test_goid_h128: int | None
-    urn: str | None
-    rel_path: str
-    module: str | None
-    qualname: str | None
-    language: str | None
-    kind: str | None
-    status: str | None
-    duration_ms: float | None
-    markers: list[str]
-    flaky: bool | None
-    start_line: int | None
-    end_line: int | None
-
-
-@dataclass(frozen=True)
-class TestProfileContext:
-    """Shared inputs for building test_profile rows."""
-
-    cfg: TestProfileStepConfig
-    now: datetime
-    max_function_count: int
-    max_weighted_degree: float
-    max_subsystem_risk: float
-    functions_covered: dict[str, FunctionCoverageEntry]
-    subsystems_covered: dict[str, SubsystemCoverageEntry]
-    tg_metrics: dict[str, TestGraphMetrics]
-    ast_info: dict[str, TestAstInfo]
-
-
-@dataclass(frozen=True)
-class ImportanceInputs:
-    """Inputs required to compute test importance."""
-
-    functions_covered_count: int
-    weighted_degree: float | None
-    max_function_count: int
-    max_weighted_degree: float
-    subsystem_risk: float | None
-    max_subsystem_risk: float
-
-
-@dataclass(frozen=True)
 class FunctionCoverageEntry:
     """Coverage details for a test-to-function mapping."""
 
@@ -160,24 +107,6 @@ class TestGraphMetrics:
 
 
 @dataclass(frozen=True)
-class BehavioralLLMRequest:
-    """Payload sent to an LLM classifier for behavioral coverage."""
-
-    repo: str
-    commit: str
-    test_id: str
-    rel_path: str
-    qualname: str
-    markers: list[str]
-    functions_covered: list[dict[str, object]]
-    subsystems_covered: list[dict[str, object]]
-    assert_count: int
-    raise_count: int
-    status: str | None
-    source: str | None
-
-
-@dataclass(frozen=True)
 class BehavioralProfile:
     """Existing behavioral signals pulled from test_profile."""
 
@@ -186,26 +115,6 @@ class BehavioralProfile:
     assert_count: int
     raise_count: int
     markers: list[str]
-
-
-@dataclass(frozen=True)
-class BehavioralLLMResult:
-    """LLM classification result for behavioral coverage."""
-
-    tags: list[str]
-    model: str | None = None
-    run_id: str | None = None
-
-
-@dataclass(frozen=True)
-class BehavioralContext:
-    """Context for behavioral coverage tagging."""
-
-    cfg: BehavioralCoverageStepConfig
-    ast_info: dict[str, TestAstInfo]
-    profile_ctx: dict[str, dict[str, object]]
-    now: datetime
-    llm_runner: BehavioralLLMRunner | None
 
 
 EMPTY_FUNCTION_COVERAGE_ENTRY = FunctionCoverageEntry(functions=[], count=0, primary=[])
@@ -238,78 +147,40 @@ def build_test_profile(gateway: StorageGateway, cfg: TestProfileStepConfig) -> N
     """
     con = gateway.con
     ensure_schema(con, "analytics.test_profile")
-    tests = _load_test_records(con, cfg.repo, cfg.commit)
+    tests: list[TestRecord] = list(load_test_records(con, cfg))
     if not tests:
         log.info("No tests found for %s@%s; skipping test_profile", cfg.repo, cfg.commit)
         return
 
-    con.execute(
-        "DELETE FROM analytics.test_profile WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
+    functions_covered = aggregate_test_coverage_by_function(con, cfg)
+    subsystems_covered = aggregate_test_coverage_by_subsystem(
+        con,
+        BehavioralCoverageStepConfig(snapshot=cfg.snapshot),
     )
-
-    ctx = _build_profile_context(con=con, cfg=cfg, tests=tests)
-    rows = [_build_test_profile_row(test, ctx) for test in tests]
-
-    con.executemany(
-        """
-        INSERT INTO analytics.test_profile (
-            repo,
-            commit,
-            test_id,
-            test_goid_h128,
-            urn,
-            rel_path,
-            module,
-            qualname,
-            language,
-            kind,
-            status,
-            duration_ms,
-            markers,
-            flaky,
-            last_run_at,
-            functions_covered,
-            functions_covered_count,
-            primary_function_goids,
-            subsystems_covered,
-            subsystems_covered_count,
-            primary_subsystem_id,
-            assert_count,
-            raise_count,
-            uses_parametrize,
-            uses_fixtures,
-            io_bound,
-            uses_network,
-            uses_db,
-            uses_filesystem,
-            uses_subprocess,
-            flakiness_score,
-            importance_score,
-            notes,
-            tg_degree,
-            tg_weighted_degree,
-            tg_proj_degree,
-            tg_proj_weight,
-            tg_proj_clustering,
-            tg_proj_betweenness,
-            created_at
-        ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        )
-        """,
-        rows,
+    tg_metrics = load_test_graph_metrics(con, cfg)
+    ctx = _build_profile_context(
+        con=con,
+        cfg=cfg,
+        tests=tests,
+        precomputed={
+            "functions_covered": functions_covered,
+            "subsystems_covered": subsystems_covered,
+            "tg_metrics": tg_metrics,
+        },
     )
-    log.info("test_profile populated: %d rows for %s@%s", len(rows), cfg.repo, cfg.commit)
+    rows = build_test_profile_rows(tests, ctx)
+    inserted = write_test_profile_rows(gateway, cfg, rows)
+    log.info("test_profile populated: %d rows for %s@%s", inserted, cfg.repo, cfg.commit)
 
 
 def _build_profile_context(
     *,
     con: DuckDBConnection,
     cfg: TestProfileStepConfig,
-    tests: list[TestRecord],
+    tests: Iterable[TestRecord],
+    precomputed: dict[str, object] | None = None,
 ) -> TestProfileContext:
+    tests_list = list(tests)
     now = datetime.now(tz=UTC)
     io_spec_raw = cfg.io_spec if isinstance(cfg.io_spec, dict) else None
     io_spec: dict[str, dict[str, list[str]]] = (
@@ -317,10 +188,17 @@ def _build_profile_context(
         if io_spec_raw is not None
         else DEFAULT_IO_SPEC
     )
-    functions_covered = _load_functions_covered(con, cfg.repo, cfg.commit)
-    subsystems_covered = _load_subsystems_covered(con, cfg.repo, cfg.commit)
-    tg_metrics = _load_test_graph_metrics(con, cfg.repo, cfg.commit)
-    ast_info = _build_test_ast_index(cfg.repo_root, tests, io_spec, CONCURRENCY_LIBS)
+    precomputed = precomputed or {}
+    functions_covered = cast(
+        "dict[str, FunctionCoverageEntry] | None", precomputed.get("functions_covered")
+    ) or _load_functions_covered(con, cfg.repo, cfg.commit)
+    subsystems_covered = cast(
+        "dict[str, SubsystemCoverageEntry] | None", precomputed.get("subsystems_covered")
+    ) or _load_subsystems_covered(con, cfg.repo, cfg.commit)
+    tg_metrics = cast("dict[str, TestGraphMetrics] | None", precomputed.get("tg_metrics")) or (
+        _load_test_graph_metrics(con, cfg.repo, cfg.commit)
+    )
+    ast_info = _build_test_ast_index(cfg.repo_root, tests_list, io_spec, CONCURRENCY_LIBS)
     max_function_count = max((entry.count for entry in functions_covered.values()), default=0)
     max_weighted_degree = max(
         (metrics.weighted_degree or 0.0 for metrics in tg_metrics.values()), default=0.0
@@ -365,7 +243,7 @@ def _build_test_profile_row(test: TestRecord, ctx: TestProfileContext) -> tuple[
         subsystem_risk=subs_entry.max_risk_score,
         max_subsystem_risk=ctx.max_subsystem_risk,
     )
-    importance = compute_importance_score(importance_inputs)
+    importance = compute_importance_score_new(importance_inputs)
     return (
         ctx.cfg.repo,
         ctx.cfg.commit,
@@ -410,7 +288,16 @@ def _build_test_profile_row(test: TestRecord, ctx: TestProfileContext) -> tuple[
     )
 
 
-BehavioralLLMRunner = Callable[[BehavioralLLMRequest], BehavioralLLMResult]
+def build_test_profile_row(test: TestRecord, ctx: TestProfileContext) -> tuple[object, ...]:
+    """
+    Public wrapper for building a test_profile row tuple.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple aligned to ``analytics.test_profile`` insert order.
+    """
+    return _build_test_profile_row(test, ctx)
 
 
 def build_behavioral_coverage(
@@ -431,47 +318,10 @@ def build_behavioral_coverage(
         Optional callable that returns LLM-derived behavior tags; when absent, only heuristic
         tagging runs.
     """
-    con = gateway.con
-    ensure_schema(con, "analytics.behavioral_coverage")
-    tests = _load_test_records(con, cfg.repo, cfg.commit)
-    if not tests:
-        log.info("No tests found for %s@%s; skipping behavioral tags", cfg.repo, cfg.commit)
-        return
-
-    ast_info = _build_test_ast_index(cfg.repo_root, tests, DEFAULT_IO_SPEC, CONCURRENCY_LIBS)
-    profile_ctx = _load_test_profile_context(con, cfg.repo, cfg.commit)
-    con.execute(
-        "DELETE FROM analytics.behavioral_coverage WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-    behavior_ctx = BehavioralContext(
-        cfg=cfg,
-        ast_info=ast_info,
-        profile_ctx=profile_ctx,
-        now=datetime.now(tz=UTC),
-        llm_runner=llm_runner,
-    )
-    rows = [_build_behavior_row(test, behavior_ctx) for test in tests]
-
-    con.executemany(
-        """
-        INSERT INTO analytics.behavioral_coverage (
-            repo,
-            commit,
-            test_id,
-            test_goid_h128,
-            rel_path,
-            qualname,
-            behavior_tags,
-            tag_source,
-            heuristic_version,
-            llm_model,
-            llm_run_id,
-            created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        rows,
-    )
+    rows = build_behavior_rows(gateway, cfg, llm_runner=llm_runner)
+    models = build_behavioral_coverage_rows(rows)
+    inserted = write_behavioral_coverage_rows(gateway, cfg, models)
+    log.info("behavioral_coverage populated: %s rows for %s@%s", inserted, cfg.repo, cfg.commit)
 
 
 def _build_behavior_row(test: TestRecord, ctx: BehavioralContext) -> tuple[object, ...]:
@@ -521,6 +371,18 @@ def _build_behavior_row(test: TestRecord, ctx: BehavioralContext) -> tuple[objec
         llm_run_id,
         ctx.now,
     )
+
+
+def build_behavior_row(test: TestRecord, ctx: BehavioralContext) -> tuple[object, ...]:
+    """
+    Public wrapper for building a behavioral coverage row.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Tuple aligned to ``analytics.behavioral_coverage`` insert order.
+    """
+    return _build_behavior_row(test, ctx)
 
 
 def compute_flakiness_score(
@@ -825,6 +687,71 @@ def _load_test_records(
     return records
 
 
+# Public wrappers used by tests_profiles helpers to avoid private-member access warnings.
+def load_functions_covered(
+    con: DuckDBConnection,
+    repo: str,
+    commit: str,
+) -> dict[str, FunctionCoverageEntry]:
+    """
+    Load per-test function coverage entries.
+
+    Returns
+    -------
+    dict[str, FunctionCoverageEntry]
+        Coverage entries keyed by ``test_id``.
+    """
+    return _load_functions_covered(con, repo, commit)
+
+
+def load_subsystems_covered(
+    con: DuckDBConnection,
+    repo: str,
+    commit: str,
+) -> dict[str, SubsystemCoverageEntry]:
+    """
+    Load per-test subsystem coverage entries.
+
+    Returns
+    -------
+    dict[str, SubsystemCoverageEntry]
+        Subsystem coverage entries keyed by ``test_id``.
+    """
+    return _load_subsystems_covered(con, repo, commit)
+
+
+def load_test_graph_metrics_public(
+    con: DuckDBConnection,
+    repo: str,
+    commit: str,
+) -> dict[str, TestGraphMetrics]:
+    """
+    Load test graph metrics rows.
+
+    Returns
+    -------
+    dict[str, TestGraphMetrics]
+        Metrics keyed by ``test_id``.
+    """
+    return _load_test_graph_metrics(con, repo, commit)
+
+
+def load_test_records_public(
+    con: DuckDBConnection,
+    repo: str,
+    commit: str,
+) -> list[TestRecord]:
+    """
+    Load test records from catalog.
+
+    Returns
+    -------
+    list[TestRecord]
+        Test records for the snapshot.
+    """
+    return _load_test_records(con, repo, commit)
+
+
 def _load_functions_covered(
     con: DuckDBConnection,
     repo: str,
@@ -1077,6 +1004,22 @@ def _load_test_profile_context(
     return ctx
 
 
+def load_test_profile_context(
+    con: DuckDBConnection,
+    repo: str,
+    commit: str,
+) -> dict[str, dict[str, object]]:
+    """
+    Public wrapper for test profile context loading.
+
+    Returns
+    -------
+    dict[str, dict[str, object]]
+        Profile context keyed by ``test_id``.
+    """
+    return _load_test_profile_context(con, repo, commit)
+
+
 def build_test_ast_index_for_tests(
     repo_root: Path,
     tests: Iterable[TestRecord],
@@ -1200,6 +1143,23 @@ def _analyze_span(
         uses_fixtures=state.uses_fixtures,
         io_flags=state.io_flags,
     )
+
+
+def build_test_ast_index(
+    repo_root: Path,
+    tests: Iterable[TestRecord],
+    io_spec: dict[str, dict[str, list[str]]],
+    concurrency_libs: set[str],
+) -> dict[str, TestAstInfo]:
+    """
+    Public wrapper for building the AST index.
+
+    Returns
+    -------
+    dict[str, TestAstInfo]
+        AST-derived info keyed by ``test_id``.
+    """
+    return _build_test_ast_index(repo_root, tests, io_spec, concurrency_libs)
 
 
 def _node_in_span(node: ast.AST, config: SpanConfig) -> bool:

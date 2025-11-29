@@ -113,7 +113,7 @@ ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = {
     ),
     "analytics.test_coverage_edges": _row_binding(
         row_type=row_models.TestCoverageEdgeRow,
-        to_tuple=row_models.test_coverage_edge_to_tuple,
+        to_tuple=row_models.serialize_test_coverage_edge,
     ),
     "core.docstrings": _row_binding(
         row_type=row_models.DocstringRow,
