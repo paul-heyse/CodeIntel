@@ -25,6 +25,7 @@ from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
+    DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
     FileSummaryResponse,
@@ -880,6 +881,24 @@ def build_datasets_router() -> APIRouter:
         datasets = service.list_datasets()
         LOG.info("Listed %d datasets", len(datasets))
         return datasets
+
+    @router.get(
+        "/datasets/specs",
+        response_model=list[DatasetSpecDescriptor],
+        summary="Describe dataset contract",
+    )
+    def list_dataset_specs(*, service: ServiceDep) -> list[DatasetSpecDescriptor]:
+        """
+        Return canonical dataset specs including filenames and schema IDs.
+
+        Returns
+        -------
+        list[DatasetSpecDescriptor]
+            Dataset specs sorted by name.
+        """
+        specs = service.dataset_specs()
+        LOG.info("Listed %d dataset specs", len(specs))
+        return specs
 
     @router.get(
         "/datasets/{dataset_name}",

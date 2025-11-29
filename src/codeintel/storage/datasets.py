@@ -48,6 +48,18 @@ class Dataset:
         Optional human-readable description of the dataset's purpose.
     json_schema_id
         Optional JSON Schema identifier (without .json) used for export validation.
+    owner
+        Optional team or individual owner for stewardship and escalation.
+    freshness_sla
+        Optional freshness expectation (e.g., "daily", "hourly").
+    retention_policy
+        Optional retention policy descriptor (e.g., "90d").
+    stable_id
+        Optional stable identifier for comparing contracts across versions.
+    schema_version
+        Optional schema version string for change tracking.
+    upstream_dependencies
+        Optional tuple of other dataset names this dataset depends on.
     """
 
     table_key: str
@@ -59,6 +71,12 @@ class Dataset:
     is_view: bool = False
     description: str | None = None
     json_schema_id: str | None = None
+    owner: str | None = None
+    freshness_sla: str | None = None
+    retention_policy: str | None = None
+    stable_id: str | None = None
+    schema_version: str | None = None
+    upstream_dependencies: tuple[str, ...] = ()
 
     def has_row_binding(self) -> bool:
         """
@@ -89,6 +107,23 @@ class Dataset:
             message = f"Dataset {self.name} ({self.table_key}) has no row binding"
             raise KeyError(message)
         return self.row_binding
+
+    def capabilities(self) -> dict[str, bool]:
+        """
+        Return capability flags derived from attached metadata.
+
+        Returns
+        -------
+        dict[str, bool]
+            Flags for validation and export support.
+        """
+        return {
+            "can_validate": self.json_schema_id is not None,
+            "can_export_jsonl": self.jsonl_filename is not None,
+            "can_export_parquet": self.parquet_filename is not None,
+            "has_row_binding": self.row_binding is not None,
+            "is_view": self.is_view,
+        }
 
 
 # Backwards-compatible alias for the canonical dataset metadata contract type.
@@ -121,6 +156,21 @@ class DatasetRegistry:
         return tuple(
             name for name, ds in self.by_name.items() if ds.json_schema_id is not None
         )
+
+    def dataset_dependencies(self) -> dict[str, tuple[str, ...]]:
+        """
+        Return upstream dependencies for each dataset.
+
+        Returns
+        -------
+        dict[str, tuple[str, ...]]
+            Mapping of dataset name to its upstream dependencies.
+        """
+        return {
+            name: ds.upstream_dependencies
+            for name, ds in self.by_name.items()
+            if ds.upstream_dependencies
+        }
 
     def resolve_table_key(self, name: str) -> str:
         """
@@ -199,6 +249,18 @@ ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = {
         row_type=row_models.GoidCrosswalkRow,
         to_tuple=row_models.goid_crosswalk_to_tuple,
     ),
+    "analytics.function_profile": _row_binding(
+        row_type=row_models.FunctionProfileRowModel,
+        to_tuple=row_models.function_profile_row_to_tuple,
+    ),
+    "analytics.file_profile": _row_binding(
+        row_type=row_models.FileProfileRowModel,
+        to_tuple=row_models.file_profile_row_to_tuple,
+    ),
+    "analytics.module_profile": _row_binding(
+        row_type=row_models.ModuleProfileRowModel,
+        to_tuple=row_models.module_profile_row_to_tuple,
+    ),
     "graph.call_graph_nodes": _row_binding(
         row_type=row_models.CallGraphNodeRow,
         to_tuple=row_models.call_graph_node_to_tuple,
@@ -231,6 +293,14 @@ ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = {
         row_type=row_models.SymbolUseRow,
         to_tuple=row_models.symbol_use_to_tuple,
     ),
+    "analytics.test_profile": _row_binding(
+        row_type=row_models.ProfileRowModel,
+        to_tuple=row_models.serialize_test_profile_row,
+    ),
+    "analytics.behavioral_coverage": _row_binding(
+        row_type=row_models.BehavioralCoverageRowModel,
+        to_tuple=row_models.behavioral_coverage_row_to_tuple,
+    ),
 }
 
 # Dataset-level JSON Schema metadata.
@@ -252,6 +322,67 @@ JSON_SCHEMA_BY_DATASET_NAME: dict[str, str] = {
     # Data models
     "data_model_fields": "data_model_fields",
     "data_model_relationships": "data_model_relationships",
+}
+
+DESCRIPTION_BY_DATASET_NAME: dict[str, str] = {
+    "function_profile": "Function-level profile combining metrics, risk, and topology.",
+    "file_profile": "File-level profile with coverage, hotspots, and ownership signals.",
+    "module_profile": "Module-level profile aggregating functions, imports, and risk.",
+    "call_graph_edges": "Directed call graph edges across the codebase.",
+    "symbol_use_edges": "Symbol use edges linking definitions to references.",
+    "test_coverage_edges": "Test-to-target coverage edges for tracing impacts.",
+    "test_profile": "Test-level profile including outcomes and runtime metadata.",
+    "behavioral_coverage": "Behavioral coverage findings captured during scenario runs.",
+    "data_model_fields": "Normalized data model field definitions for analytics export.",
+    "data_model_relationships": "Normalized data model relationships for analytics export.",
+}
+
+OWNER_BY_DATASET_NAME: dict[str, str] = {
+    "function_profile": "analytics",
+    "file_profile": "analytics",
+    "module_profile": "analytics",
+    "call_graph_edges": "graphs",
+    "symbol_use_edges": "graphs",
+    "test_coverage_edges": "analytics",
+    "test_profile": "qa",
+    "behavioral_coverage": "qa",
+    "data_model_fields": "analytics",
+    "data_model_relationships": "analytics",
+}
+
+FRESHNESS_BY_DATASET_NAME: dict[str, str] = {
+    "function_profile": "daily",
+    "file_profile": "daily",
+    "module_profile": "daily",
+    "call_graph_edges": "daily",
+    "symbol_use_edges": "daily",
+    "test_coverage_edges": "daily",
+    "test_profile": "daily",
+    "behavioral_coverage": "daily",
+    "data_model_fields": "daily",
+    "data_model_relationships": "daily",
+}
+
+RETENTION_BY_DATASET_NAME: dict[str, str] = {
+    "function_profile": "90d",
+    "file_profile": "90d",
+    "module_profile": "90d",
+    "call_graph_edges": "90d",
+    "symbol_use_edges": "90d",
+    "test_coverage_edges": "90d",
+    "test_profile": "90d",
+    "behavioral_coverage": "90d",
+    "data_model_fields": "90d",
+    "data_model_relationships": "90d",
+}
+
+DEPENDENCIES_BY_DATASET_NAME: dict[str, tuple[str, ...]] = {
+    "function_profile": ("call_graph_edges", "symbol_use_edges"),
+    "file_profile": ("call_graph_edges",),
+    "module_profile": ("call_graph_edges", "symbol_use_edges"),
+    "test_profile": ("test_coverage_edges",),
+    "behavioral_coverage": ("test_profile",),
+    "data_model_relationships": ("data_model_fields",),
 }
 
 DEFAULT_JSONL_FILENAMES: dict[str, str] = {
@@ -450,6 +581,11 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
         schema: TableSchema | None = None if is_view else TABLE_SCHEMAS.get(table_key)
         row_binding = ROW_BINDINGS_BY_TABLE_KEY.get(table_key)
         json_schema_id = JSON_SCHEMA_BY_DATASET_NAME.get(name)
+        description = DESCRIPTION_BY_DATASET_NAME.get(name)
+        owner = OWNER_BY_DATASET_NAME.get(name)
+        freshness_sla = FRESHNESS_BY_DATASET_NAME.get(name)
+        retention_policy = RETENTION_BY_DATASET_NAME.get(name)
+        dependencies = DEPENDENCIES_BY_DATASET_NAME.get(name, ())
         ds = Dataset(
             table_key=table_key,
             name=name,
@@ -459,6 +595,11 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
             parquet_filename=parquet_filename,
             is_view=bool(is_view),
             json_schema_id=json_schema_id,
+            description=description,
+            owner=owner,
+            freshness_sla=freshness_sla,
+            retention_policy=retention_policy,
+            upstream_dependencies=dependencies,
         )
         by_name[name] = ds
         by_table[table_key] = ds
@@ -538,6 +679,13 @@ def describe_dataset(ds: Dataset) -> dict[str, object]:
         "has_row_binding": ds.row_binding is not None,
         "json_schema_id": ds.json_schema_id,
         "description": ds.description,
+        "owner": ds.owner,
+        "freshness_sla": ds.freshness_sla,
+        "retention_policy": ds.retention_policy,
+        "stable_id": ds.stable_id,
+        "schema_version": ds.schema_version,
+        "upstream_dependencies": list(ds.upstream_dependencies),
+        "capabilities": ds.capabilities(),
     }
 
 
@@ -551,3 +699,15 @@ def list_dataset_specs(registry: DatasetRegistry) -> list[dict[str, object]]:
         List of dataset descriptions derived from the registry.
     """
     return [describe_dataset(ds) for ds in registry.by_name.values()]
+
+
+def build_dataset_dependency_graph(registry: DatasetRegistry) -> dict[str, tuple[str, ...]]:
+    """
+    Construct a dependency graph mapping dataset -> upstream datasets.
+
+    Returns
+    -------
+    dict[str, tuple[str, ...]]
+        Mapping of dataset names to their upstream dependencies.
+    """
+    return registry.dataset_dependencies()

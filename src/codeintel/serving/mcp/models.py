@@ -223,6 +223,20 @@ class DatasetDescriptor(BaseModel):
     description: str
 
 
+class DatasetSpecDescriptor(BaseModel):
+    """Canonical dataset contract surfaced via HTTP and MCP."""
+
+    name: str
+    table_key: str
+    is_view: bool
+    schema_columns: list[str] = Field(default_factory=list)
+    jsonl_filename: str | None = None
+    parquet_filename: str | None = None
+    has_row_binding: bool
+    json_schema_id: str | None = None
+    description: str | None = None
+
+
 class DatasetRowsResponse(BaseModel):
     """Rows returned from a dataset slice."""
 

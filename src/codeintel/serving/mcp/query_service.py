@@ -9,6 +9,7 @@ instead of issuing custom SELECTs.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import cast
 
 import networkx as nx
 
@@ -17,6 +18,7 @@ from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetRowsResponse,
+    DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
     FileSummaryResponse,
@@ -37,6 +39,7 @@ from codeintel.serving.mcp.models import (
     TestsForFunctionResponse,
     ViewRow,
 )
+from codeintel.storage.datasets import list_dataset_specs, load_dataset_registry
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.repositories import (
     DatasetReadRepository,
@@ -1147,3 +1150,39 @@ class DuckDBQueryService:
             rows=[ViewRow.model_validate(r) for r in rows],
             meta=meta,
         )
+
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        """
+        Return dataset contract entries for the active gateway.
+
+        Returns
+        -------
+        list[DatasetSpecDescriptor]
+            Canonical dataset specs sorted by name.
+        """
+        registry = load_dataset_registry(self.gateway.con)
+        specs = list_dataset_specs(registry)
+        sorted_specs = sorted(specs, key=lambda spec: cast("str", spec["name"]))
+        results: list[DatasetSpecDescriptor] = []
+        for spec in sorted_specs:
+            name = cast("str", spec["name"])
+            table_key = cast("str", spec["table_key"])
+            schema_columns = list(cast("list[str]", spec["schema_columns"]))
+            jsonl_filename = cast("str | None", spec["jsonl_filename"])
+            parquet_filename = cast("str | None", spec["parquet_filename"])
+            json_schema_id = cast("str | None", spec["json_schema_id"])
+            description = cast("str | None", spec["description"])
+            results.append(
+                DatasetSpecDescriptor(
+                    name=name,
+                    table_key=table_key,
+                    is_view=bool(spec["is_view"]),
+                    schema_columns=schema_columns,
+                    jsonl_filename=jsonl_filename,
+                    parquet_filename=parquet_filename,
+                    has_row_binding=bool(spec["has_row_binding"]),
+                    json_schema_id=json_schema_id,
+                    description=description,
+                )
+            )
+        return results

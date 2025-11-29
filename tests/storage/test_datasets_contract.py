@@ -103,3 +103,27 @@ def test_describe_dataset_shape() -> None:
         condition=description["schema_columns"] == [],
         message="Expected empty schema_columns",
     )
+
+
+def test_json_schema_datasets_have_row_bindings() -> None:
+    """Datasets with JSON Schemas should expose row bindings where supported."""
+    allow_missing = {"data_model_fields", "data_model_relationships"}
+    gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=False)
+    try:
+        registry = load_dataset_registry(gateway.con)
+        for dataset_name in JSON_SCHEMA_BY_DATASET_NAME:
+            if dataset_name in allow_missing:
+                continue
+            dataset = registry.by_name.get(dataset_name)
+            _require(
+                condition=dataset is not None,
+                message=f"Dataset missing from registry: {dataset_name}",
+            )
+            if dataset is None:
+                continue
+            _require(
+                condition=dataset.row_binding is not None,
+                message=f"Row binding missing for dataset: {dataset_name}",
+            )
+    finally:
+        gateway.close()

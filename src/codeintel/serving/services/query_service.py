@@ -13,6 +13,7 @@ from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetDescriptor,
     DatasetRowsResponse,
+    DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
     FileSummaryResponse,
@@ -334,6 +335,10 @@ class DatasetQueryApi(Protocol):
         """List available datasets."""
         ...
 
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        """Return canonical dataset contract entries."""
+        ...
+
     def read_dataset_rows(
         self,
         *,
@@ -497,12 +502,14 @@ class _SubsystemQueryDelegates:
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSummaryResponse:
         return self._call(
-            "list_subsystems", lambda: self.query.list_subsystems(limit=limit, role=role, q=q)
+            "list_subsystems",
+            lambda: self.query.list_subsystems(limit=limit, role=role, q=q),
         )
 
     def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
         return self._call(
-            "get_module_subsystems", lambda: self.query.get_module_subsystems(module=module)
+            "get_module_subsystems",
+            lambda: self.query.get_module_subsystems(module=module),
         )
 
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
@@ -518,7 +525,8 @@ class _SubsystemQueryDelegates:
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSearchResponse:
         return self._call(
-            "search_subsystems", lambda: self.query.search_subsystems(limit=limit, role=role, q=q)
+            "search_subsystems",
+            lambda: self.query.search_subsystems(limit=limit, role=role, q=q),
         )
 
     def summarize_subsystem(
@@ -598,6 +606,21 @@ class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _Subsys
 
         return self._call("list_datasets", _list)
 
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        """
+        Return canonical dataset specs with filenames and schema metadata.
+
+        Returns
+        -------
+        list[DatasetSpecDescriptor]
+            Dataset specs sorted by name.
+        """
+
+        def _list_specs() -> list[DatasetSpecDescriptor]:
+            return self.query.dataset_specs()
+
+        return self._call("dataset_specs", _list_specs)
+
     def read_dataset_rows(
         self,
         *,
@@ -625,29 +648,18 @@ class LocalQueryService(_FunctionQueryDelegates, _ProfileQueryDelegates, _Subsys
         )
 
 
-@dataclass
-class HttpQueryService:
-    """Application service that forwards queries to a remote HTTP API."""
-
+class _HttpTransportMixin:
     request_json: Callable[[str, dict[str, object]], object]
     limits: BackendLimits
-    observability: ServiceObservability | None = None
+    observability: ServiceObservability | None
 
-    def _call[T](
+    def _http_call[T](
         self,
         name: str,
         func: Callable[[], T],
         *,
         dataset: str | None = None,
     ) -> T:
-        """
-        Invoke a remote query with observability tracking.
-
-        Returns
-        -------
-        T
-            Result returned by the wrapped callable.
-        """
         return _observe_call(
             self.observability,
             transport="http",
@@ -656,6 +668,8 @@ class HttpQueryService:
             func=func,
         )
 
+
+class _HttpFunctionQueryMixin(_HttpTransportMixin):
     def list_high_risk_functions(
         self,
         *,
@@ -663,25 +677,20 @@ class HttpQueryService:
         limit: int | None = None,
         tested_only: bool = False,
     ) -> HighRiskFunctionsResponse:
-        """
-        List high-risk functions via the remote API with clamped limits.
-
-        Returns
-        -------
-        HighRiskFunctionsResponse
-            Functions ordered by risk with metadata.
-        """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        if clamp.has_error:
-            return HighRiskFunctionsResponse(functions=[], truncated=False, meta=ResponseMeta())
-        return self._call(
-            "list_high_risk_functions",
-            lambda: HighRiskFunctionsResponse.model_validate(
+        def _run() -> HighRiskFunctionsResponse:
+            applied_limit = self.limits.default_limit if limit is None else limit
+            clamp = clamp_limit_value(
+                applied_limit,
+                default=applied_limit,
+                max_limit=self.limits.max_rows_per_call,
+            )
+            if clamp.has_error:
+                return HighRiskFunctionsResponse(
+                    functions=[],
+                    truncated=False,
+                    meta=ResponseMeta(),
+                )
+            return HighRiskFunctionsResponse.model_validate(
                 self.request_json(
                     "/functions/high-risk",
                     {
@@ -690,8 +699,9 @@ class HttpQueryService:
                         "tested_only": tested_only,
                     },
                 )
-            ),
-        )
+            )
+
+        return self._http_call("list_high_risk_functions", _run)
 
     def get_function_summary(
         self,
@@ -701,17 +711,8 @@ class HttpQueryService:
         rel_path: str | None = None,
         qualname: str | None = None,
     ) -> FunctionSummaryResponse:
-        """
-        Return a function summary from the remote API.
-
-        Returns
-        -------
-        FunctionSummaryResponse
-            Summary payload with found flag and metadata.
-        """
-        return self._call(
-            "get_function_summary",
-            lambda: FunctionSummaryResponse.model_validate(
+        def _run() -> FunctionSummaryResponse:
+            return FunctionSummaryResponse.model_validate(
                 self.request_json(
                     "/function/summary",
                     {
@@ -721,8 +722,9 @@ class HttpQueryService:
                         "qualname": qualname,
                     },
                 )
-            ),
-        )
+            )
+
+        return self._http_call("get_function_summary", _run)
 
     def get_callgraph_neighbors(
         self,
@@ -731,31 +733,23 @@ class HttpQueryService:
         direction: str = "both",
         limit: int | None = None,
     ) -> CallGraphNeighborsResponse:
-        """
-        Return call graph neighbors via the remote API.
-
-        Returns
-        -------
-        CallGraphNeighborsResponse
-            Neighbor edges and metadata.
-        """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        if clamp.has_error:
-            return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=ResponseMeta())
-        return self._call(
-            "get_callgraph_neighbors",
-            lambda: CallGraphNeighborsResponse.model_validate(
+        def _run() -> CallGraphNeighborsResponse:
+            applied_limit = self.limits.default_limit if limit is None else limit
+            clamp = clamp_limit_value(
+                applied_limit,
+                default=applied_limit,
+                max_limit=self.limits.max_rows_per_call,
+            )
+            if clamp.has_error:
+                return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=ResponseMeta())
+            return CallGraphNeighborsResponse.model_validate(
                 self.request_json(
                     "/function/callgraph",
                     {"goid_h128": goid_h128, "direction": direction, "limit": clamp.applied},
                 )
-            ),
-        )
+            )
+
+        return self._http_call("get_callgraph_neighbors", _run)
 
     def get_callgraph_neighborhood(
         self,
@@ -764,39 +758,30 @@ class HttpQueryService:
         radius: int = 1,
         max_nodes: int | None = None,
     ) -> GraphNeighborhoodResponse:
-        """
-        Fetch a call graph ego neighborhood via HTTP.
-
-        Parameters
-        ----------
-        goid_h128 : int
-            Center node for the ego neighborhood.
-        radius : int, optional
-            Hop distance to traverse when collecting neighbors.
-        max_nodes : int, optional
-            Optional cap on returned nodes; defaults to backend limits.
-
-        Returns
-        -------
-        GraphNeighborhoodResponse
-            Ego nodes, edges, and metadata reflecting applied limits.
-        """
-        applied_limit = self.limits.default_limit if max_nodes is None else max_nodes
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        if clamp.has_error:
-            return GraphNeighborhoodResponse(nodes=[], edges=[], meta=ResponseMeta())
-        return self._call(
-            "get_callgraph_neighborhood",
-            lambda: GraphNeighborhoodResponse.model_validate(
+        def _run() -> GraphNeighborhoodResponse:
+            applied_limit = self.limits.default_limit if max_nodes is None else max_nodes
+            clamp = clamp_limit_value(
+                applied_limit,
+                default=applied_limit,
+                max_limit=self.limits.max_rows_per_call,
+            )
+            if clamp.has_error:
+                return GraphNeighborhoodResponse(nodes=[], edges=[], meta=ResponseMeta())
+            return GraphNeighborhoodResponse.model_validate(
                 self.request_json(
                     "/graph/call/neighborhood",
-                    {"goid_h128": goid_h128, "radius": radius, "max_nodes": clamp.applied},
+                    {
+                        "goid_h128": goid_h128,
+                        "radius": radius,
+                        "max_nodes": clamp.applied,
+                    },
                 )
-            ),
+            )
+
+        return self._http_call(
+            "get_callgraph_neighborhood",
+            _run,
+            dataset="call_graph_nodes",
         )
 
     def get_import_boundary(
@@ -805,38 +790,23 @@ class HttpQueryService:
         subsystem_id: str,
         max_edges: int | None = None,
     ) -> ImportBoundaryResponse:
-        """
-        Fetch import edges that cross a subsystem boundary via HTTP.
-
-        Parameters
-        ----------
-        subsystem_id : str
-            Subsystem identifier to inspect.
-        max_edges : int, optional
-            Optional cap on returned edges; defaults to backend limits.
-
-        Returns
-        -------
-        ImportBoundaryResponse
-            Boundary nodes and edges plus truncation metadata.
-        """
-        applied_limit = self.limits.default_limit if max_edges is None else max_edges
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        if clamp.has_error:
-            return ImportBoundaryResponse(nodes=[], edges=[], meta=ResponseMeta())
-        return self._call(
-            "get_import_boundary",
-            lambda: ImportBoundaryResponse.model_validate(
+        def _run() -> ImportBoundaryResponse:
+            applied_limit = self.limits.default_limit if max_edges is None else max_edges
+            clamp = clamp_limit_value(
+                applied_limit,
+                default=applied_limit,
+                max_limit=self.limits.max_rows_per_call,
+            )
+            if clamp.has_error:
+                return ImportBoundaryResponse(nodes=[], edges=[], meta=ResponseMeta())
+            return ImportBoundaryResponse.model_validate(
                 self.request_json(
                     "/graph/import/boundary",
                     {"subsystem_id": subsystem_id, "max_edges": clamp.applied},
                 )
-            ),
-        )
+            )
+
+        return self._http_call("get_import_boundary", _run, dataset="import_graph_edges")
 
     def get_tests_for_function(
         self,
@@ -845,245 +815,156 @@ class HttpQueryService:
         urn: str | None = None,
         limit: int | None = None,
     ) -> TestsForFunctionResponse:
-        """
-        List tests exercising a function via the remote API.
-
-        Returns
-        -------
-        TestsForFunctionResponse
-            Tests plus metadata.
-        """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        if clamp.has_error:
-            return TestsForFunctionResponse(tests=[], meta=ResponseMeta())
-        return self._call(
-            "get_tests_for_function",
-            lambda: TestsForFunctionResponse.model_validate(
+        def _run() -> TestsForFunctionResponse:
+            applied_limit = self.limits.default_limit if limit is None else limit
+            clamp = clamp_limit_value(
+                applied_limit,
+                default=applied_limit,
+                max_limit=self.limits.max_rows_per_call,
+            )
+            if clamp.has_error:
+                return TestsForFunctionResponse(tests=[], meta=ResponseMeta())
+            return TestsForFunctionResponse.model_validate(
                 self.request_json(
                     "/function/tests",
                     {"goid_h128": goid_h128, "urn": urn, "limit": clamp.applied},
                 )
-            ),
-        )
+            )
+
+        return self._http_call("get_tests_for_function", _run)
 
     def get_file_summary(self, *, rel_path: str) -> FileSummaryResponse:
-        """
-        Return a file summary from the remote API.
-
-        Returns
-        -------
-        FileSummaryResponse
-            Summary plus function rows.
-        """
-        return self._call(
-            "get_file_summary",
-            lambda: FileSummaryResponse.model_validate(
+        def _run() -> FileSummaryResponse:
+            return FileSummaryResponse.model_validate(
                 self.request_json("/file/summary", {"rel_path": rel_path})
-            ),
-        )
+            )
 
+        return self._http_call("get_file_summary", _run)
+
+
+class _HttpProfileQueryMixin(_HttpTransportMixin):
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
-        """
-        Return a function profile from the remote API.
-
-        Returns
-        -------
-        FunctionProfileResponse
-            Profile payload with found flag.
-        """
-        return self._call(
-            "get_function_profile",
-            lambda: FunctionProfileResponse.model_validate(
+        def _run() -> FunctionProfileResponse:
+            return FunctionProfileResponse.model_validate(
                 self.request_json("/profiles/function", {"goid_h128": goid_h128})
-            ),
-        )
+            )
+
+        return self._http_call("get_function_profile", _run)
 
     def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
-        """
-        Return a file profile from the remote API.
-
-        Returns
-        -------
-        FileProfileResponse
-            Profile payload with found flag.
-        """
-        return self._call(
-            "get_file_profile",
-            lambda: FileProfileResponse.model_validate(
+        def _run() -> FileProfileResponse:
+            return FileProfileResponse.model_validate(
                 self.request_json("/profiles/file", {"rel_path": rel_path})
-            ),
-        )
+            )
+
+        return self._http_call("get_file_profile", _run)
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
-        """
-        Return a module profile from the remote API.
-
-        Returns
-        -------
-        ModuleProfileResponse
-            Profile payload with found flag.
-        """
-        return self._call(
-            "get_module_profile",
-            lambda: ModuleProfileResponse.model_validate(
+        def _run() -> ModuleProfileResponse:
+            return ModuleProfileResponse.model_validate(
                 self.request_json("/profiles/module", {"module": module})
-            ),
-        )
+            )
+
+        return self._http_call("get_module_profile", _run)
 
     def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
-        """
-        Return function architecture metrics from the remote API.
-
-        Returns
-        -------
-        FunctionArchitectureResponse
-            Architecture payload with found flag.
-        """
-        return self._call(
-            "get_function_architecture",
-            lambda: FunctionArchitectureResponse.model_validate(
+        def _run() -> FunctionArchitectureResponse:
+            return FunctionArchitectureResponse.model_validate(
                 self.request_json("/architecture/function", {"goid_h128": goid_h128})
-            ),
-        )
+            )
+
+        return self._http_call("get_function_architecture", _run)
 
     def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
-        """
-        Return module architecture metrics from the remote API.
-
-        Returns
-        -------
-        ModuleArchitectureResponse
-            Architecture payload with found flag.
-        """
-        return self._call(
-            "get_module_architecture",
-            lambda: ModuleArchitectureResponse.model_validate(
+        def _run() -> ModuleArchitectureResponse:
+            return ModuleArchitectureResponse.model_validate(
                 self.request_json("/architecture/module", {"module": module})
-            ),
-        )
+            )
 
+        return self._http_call("get_module_architecture", _run)
+
+
+class _HttpSubsystemQueryMixin(_HttpTransportMixin):
     def list_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+        self,
+        *,
+        limit: int | None = None,
+        role: str | None = None,
+        q: str | None = None,
     ) -> SubsystemSummaryResponse:
-        """
-        List subsystems from the remote API with clamped limits.
-
-        Returns
-        -------
-        SubsystemSummaryResponse
-            Subsystem rows and metadata.
-        """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        if clamp.has_error:
-            return SubsystemSummaryResponse(subsystems=[], meta=ResponseMeta())
-        return self._call(
-            "list_subsystems",
-            lambda: SubsystemSummaryResponse.model_validate(
+        def _run() -> SubsystemSummaryResponse:
+            applied_limit = self.limits.default_limit if limit is None else limit
+            clamp = clamp_limit_value(
+                applied_limit,
+                default=applied_limit,
+                max_limit=self.limits.max_rows_per_call,
+            )
+            if clamp.has_error:
+                return SubsystemSummaryResponse(subsystems=[], meta=ResponseMeta())
+            return SubsystemSummaryResponse.model_validate(
                 self.request_json(
                     "/architecture/subsystems",
                     {"limit": clamp.applied, "role": role, "q": q},
                 )
-            ),
-        )
+            )
+
+        return self._http_call("list_subsystems", _run)
 
     def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
-        """
-        Return subsystem memberships for a module via remote API.
-
-        Returns
-        -------
-        ModuleSubsystemResponse
-            Membership rows and metadata.
-        """
-        return self._call(
-            "get_module_subsystems",
-            lambda: ModuleSubsystemResponse.model_validate(
+        def _run() -> ModuleSubsystemResponse:
+            return ModuleSubsystemResponse.model_validate(
                 self.request_json("/architecture/module-subsystems", {"module": module})
-            ),
-        )
+            )
+
+        return self._http_call("get_module_subsystems", _run)
 
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
-        """
-        Return IDE hints for a file via remote API.
-
-        Returns
-        -------
-        FileHintsResponse
-            Hint rows and metadata.
-        """
-        return self._call(
-            "get_file_hints",
-            lambda: FileHintsResponse.model_validate(
+        def _run() -> FileHintsResponse:
+            return FileHintsResponse.model_validate(
                 self.request_json("/ide/hints", {"rel_path": rel_path})
-            ),
-        )
+            )
+
+        return self._http_call("get_file_hints", _run)
 
     def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
-        """
-        Return subsystem detail and modules via remote API.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem detail payload.
-        """
-        return self._call(
-            "get_subsystem_modules",
-            lambda: SubsystemModulesResponse.model_validate(
+        def _run() -> SubsystemModulesResponse:
+            return SubsystemModulesResponse.model_validate(
                 self.request_json("/architecture/subsystem", {"subsystem_id": subsystem_id})
-            ),
-        )
+            )
+
+        return self._http_call("get_subsystem_modules", _run)
 
     def search_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+        self,
+        *,
+        limit: int | None = None,
+        role: str | None = None,
+        q: str | None = None,
     ) -> SubsystemSearchResponse:
-        """
-        Search subsystems via remote API.
-
-        Returns
-        -------
-        SubsystemSearchResponse
-            Subsystem rows and metadata.
-        """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        if clamp.has_error:
-            return SubsystemSearchResponse(subsystems=[], meta=ResponseMeta())
-        return self._call(
-            "search_subsystems",
-            lambda: SubsystemSearchResponse.model_validate(
+        def _run() -> SubsystemSearchResponse:
+            applied_limit = self.limits.default_limit if limit is None else limit
+            clamp = clamp_limit_value(
+                applied_limit,
+                default=applied_limit,
+                max_limit=self.limits.max_rows_per_call,
+            )
+            if clamp.has_error:
+                return SubsystemSearchResponse(subsystems=[], meta=ResponseMeta())
+            return SubsystemSearchResponse.model_validate(
                 self.request_json(
                     "/architecture/subsystems",
                     {"limit": clamp.applied, "role": role, "q": q},
                 )
-            ),
-        )
+            )
+
+        return self._http_call("search_subsystems", _run)
 
     def summarize_subsystem(
-        self, *, subsystem_id: str, module_limit: int | None = None
+        self,
+        *,
+        subsystem_id: str,
+        module_limit: int | None = None,
     ) -> SubsystemModulesResponse:
-        """
-        Summarize subsystem detail with optional module truncation.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem detail payload.
-        """
         detail = self.get_subsystem_modules(subsystem_id=subsystem_id)
         if module_limit is None or not detail.modules:
             return detail
@@ -1094,67 +975,80 @@ class HttpQueryService:
             meta=detail.meta,
         )
 
-    def list_datasets(self) -> list[DatasetDescriptor]:
-        """
-        List datasets available from the remote API.
 
-        Returns
-        -------
-        list[DatasetDescriptor]
-            Dataset descriptors provided by the API.
-        """
-        data = cast("list[dict[str, object]]", self.request_json("/datasets", {}))
-        return [DatasetDescriptor.model_validate(item) for item in data]
+class _HttpDatasetQueryMixin(_HttpTransportMixin):
+    def list_datasets(self) -> list[DatasetDescriptor]:
+        def _run() -> list[DatasetDescriptor]:
+            data = cast("list[dict[str, object]]", self.request_json("/datasets", {}))
+            return [DatasetDescriptor.model_validate(item) for item in data]
+
+        return self._http_call("list_datasets", _run)
+
+    def dataset_specs(self) -> list[DatasetSpecDescriptor]:
+        def _run() -> list[DatasetSpecDescriptor]:
+            payload = cast("list[dict[str, object]]", self.request_json("/datasets/specs", {}))
+            return [DatasetSpecDescriptor.model_validate(entry) for entry in payload]
+
+        return self._http_call("dataset_specs", _run)
 
     def read_dataset_rows(
         self,
         *,
         dataset_name: str,
-        limit: int | None = 100,
+        limit: int | None = None,
         offset: int = 0,
     ) -> DatasetRowsResponse:
-        """
-        Read dataset rows from the remote API.
-
-        Returns
-        -------
-        DatasetRowsResponse
-            Dataset slice payload with metadata.
-        """
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        offset_clamp = clamp_offset_value(offset)
-        meta = ResponseMeta(
-            requested_limit=limit,
-            applied_limit=clamp.applied,
-            requested_offset=offset,
-            applied_offset=offset_clamp.applied,
-            messages=[*clamp.messages, *offset_clamp.messages],
-        )
-        if clamp.has_error or offset_clamp.has_error:
-            return DatasetRowsResponse(
-                dataset=dataset_name,
-                limit=clamp.applied,
-                offset=offset_clamp.applied,
-                rows=[],
-                meta=meta,
+        def _run() -> DatasetRowsResponse:
+            applied_limit = self.limits.default_limit if limit is None else limit
+            clamp = clamp_limit_value(
+                applied_limit,
+                default=applied_limit,
+                max_limit=self.limits.max_rows_per_call,
             )
-        data = self.request_json(
-            f"/datasets/{dataset_name}",
-            {"limit": clamp.applied, "offset": offset_clamp.applied},
-        )
-        response = DatasetRowsResponse.model_validate(data)
-        existing_meta = response.meta if response.meta is not None else ResponseMeta()
-        merged_meta = ResponseMeta(
-            requested_limit=meta.requested_limit,
-            applied_limit=meta.applied_limit,
-            requested_offset=meta.requested_offset,
-            applied_offset=meta.applied_offset,
-            truncated=existing_meta.truncated,
-            messages=[*meta.messages, *existing_meta.messages],
-        )
-        return response.model_copy(update={"meta": merged_meta})
+            offset_clamp = clamp_offset_value(offset)
+            meta = ResponseMeta(
+                requested_limit=limit,
+                applied_limit=clamp.applied,
+                requested_offset=offset,
+                applied_offset=offset_clamp.applied,
+                messages=[*clamp.messages, *offset_clamp.messages],
+            )
+            if clamp.has_error or offset_clamp.has_error:
+                return DatasetRowsResponse(
+                    dataset=dataset_name,
+                    limit=clamp.applied,
+                    offset=offset_clamp.applied,
+                    rows=[],
+                    meta=meta,
+                )
+            data = self.request_json(
+                f"/datasets/{dataset_name}",
+                {"limit": clamp.applied, "offset": offset_clamp.applied},
+            )
+            response = DatasetRowsResponse.model_validate(data)
+            existing_meta = response.meta if response.meta is not None else ResponseMeta()
+            merged_meta = ResponseMeta(
+                requested_limit=meta.requested_limit,
+                applied_limit=meta.applied_limit,
+                requested_offset=meta.requested_offset,
+                applied_offset=meta.applied_offset,
+                truncated=existing_meta.truncated,
+                messages=[*meta.messages, *existing_meta.messages],
+            )
+            return response.model_copy(update={"meta": merged_meta})
+
+        return self._http_call("read_dataset_rows", _run, dataset=dataset_name)
+
+
+@dataclass
+class HttpQueryService(
+    _HttpDatasetQueryMixin,
+    _HttpFunctionQueryMixin,
+    _HttpProfileQueryMixin,
+    _HttpSubsystemQueryMixin,
+):
+    """Application service that forwards queries to a remote HTTP API."""
+
+    request_json: Callable[[str, dict[str, object]], object]
+    limits: BackendLimits
+    observability: ServiceObservability | None = None
