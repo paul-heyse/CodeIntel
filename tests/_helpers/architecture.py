@@ -5,9 +5,67 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from codeintel.analytics.datasets import (
+    DeleteScope,
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+)
+from codeintel.analytics.rows.graph_metrics import (
+    FunctionGraphMetricsRow,
+    ModuleGraphMetricsRow,
+)
+from codeintel.analytics.rows.graph_metrics_ext import (
+    FunctionGraphMetricsExtRow,
+    ModuleGraphMetricsExtRow,
+)
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
 
+
+def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str) -> None:
+    """Remove previously seeded rows for a repo/commit to allow idempotent seeding."""
+    con = gateway.con
+    delete_statements = [
+        ("DELETE FROM core.repo_map WHERE repo = ? AND commit = ?", [repo, commit]),
+        (
+            "DELETE FROM core.modules WHERE repo = ? AND commit = ? AND module IN (?, ?, ?)",
+            [repo, commit, "pkg.mod", "pkg.alpha", "pkg.beta"],
+        ),
+        ("DELETE FROM core.goids WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM graph.call_graph_edges WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.graph_metrics_functions_ext WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.test_graph_metrics_functions WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.cfg_function_metrics WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.dfg_function_metrics WHERE repo = ? AND commit = ?", [repo, commit]),
+        (
+            "DELETE FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
+        (
+            "DELETE FROM analytics.config_graph_metrics_modules WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
+        ("DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.subsystems WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.subsystem_agreement WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.function_profile WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.module_profile WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.test_catalog WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.test_coverage_edges WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.typedness WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.static_diagnostics WHERE repo = ? AND commit = ?", [repo, commit]),
+        ("DELETE FROM analytics.hotspots WHERE rel_path LIKE ?", ["%"]),
+        ("DELETE FROM core.ast_metrics WHERE rel_path LIKE ?", ["%"]),
+        ("DELETE FROM analytics.function_validation WHERE repo = ? AND commit = ?", [repo, commit]),
+    ]
+    for statement, statement_params in delete_statements:
+        con.execute(statement, statement_params)
 
 def open_seeded_architecture_gateway(
     *,
@@ -71,6 +129,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
     StorageGateway
         Gateway with architecture tables populated for tests.
     """
+    _clear_architecture_seed(gateway=gateway, repo=repo, commit=commit)
     now = datetime.now(UTC)
     now_iso = now.isoformat()
 
@@ -188,41 +247,124 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
             )
         ]
     )
-    gateway.analytics.insert_graph_metrics_functions(
-        [(repo, commit, 1, 2, 3, 2, 3, 0.5, 0.1, 0.2, False, 0, 1, now_iso)]
+    function_contract = get_analytics_dataset_contract(
+        gateway, "analytics.graph_metrics_functions"
     )
-    gateway.analytics.insert_graph_metrics_modules(
+    module_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")
+    function_ext_contract = get_analytics_dataset_contract(
+        gateway, "analytics.graph_metrics_functions_ext"
+    )
+    module_ext_contract = get_analytics_dataset_contract(
+        gateway, "analytics.graph_metrics_modules_ext"
+    )
+    insert_analytics_rows(
+        gateway,
+        function_contract,
         [
-            (
-                repo,
-                commit,
-                "pkg.mod",
-                3,
-                2,
-                3,
-                2,
-                0.4,
-                0.2,
-                0.3,
-                False,
-                0,
-                1,
-                5,
-                4,
-                now_iso,
+            FunctionGraphMetricsRow(
+                repo=repo,
+                commit=commit,
+                function_goid_h128=1,
+                call_fan_in=2,
+                call_fan_out=3,
+                call_in_degree=2,
+                call_out_degree=3,
+                call_pagerank=0.5,
+                call_betweenness=0.1,
+                call_closeness=0.2,
+                call_cycle_member=False,
+                call_cycle_id=0,
+                call_layer=1,
+                created_at=now,
             )
-        ]
+        ],
+        delete_scope=DeleteScope(params=[repo, commit]),
+        scope=f"{repo}@{commit}",
     )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.graph_metrics_functions_ext (
-            repo, commit, function_goid_h128, call_betweenness, call_closeness, call_eigenvector,
-            call_harmonic, call_core_number, call_clustering_coeff, call_triangle_count,
-            call_is_articulation, call_is_bridge_endpoint, call_component_id, call_component_size,
-            call_scc_id, call_scc_size, created_at
-        ) VALUES (?, ?, ?, 0.1, 0.2, 0.3, 0.4, 1, 0.5, 1, FALSE, FALSE, 1, 1, 1, 1, ?)
-        """,
-        [repo, commit, 1, now_iso],
+    insert_analytics_rows(
+        gateway,
+        module_contract,
+        [
+            ModuleGraphMetricsRow(
+                repo=repo,
+                commit=commit,
+                module="pkg.mod",
+                import_fan_in=3,
+                import_fan_out=2,
+                import_in_degree=3,
+                import_out_degree=2,
+                import_pagerank=0.4,
+                import_betweenness=0.2,
+                import_closeness=0.3,
+                import_cycle_member=False,
+                import_cycle_id=0,
+                import_layer=1,
+                symbol_fan_in=5,
+                symbol_fan_out=4,
+                created_at=now,
+            )
+        ],
+        delete_scope=DeleteScope(params=[repo, commit]),
+        scope=f"{repo}@{commit}",
+    )
+    insert_analytics_rows(
+        gateway,
+        function_ext_contract,
+        [
+            FunctionGraphMetricsExtRow(
+                repo=repo,
+                commit=commit,
+                function_goid_h128=1,
+                call_betweenness=0.1,
+                call_closeness=0.2,
+                call_eigenvector=0.3,
+                call_harmonic=0.4,
+                call_core_number=1,
+                call_clustering_coeff=0.5,
+                call_triangle_count=1,
+                call_is_articulation=False,
+                call_articulation_impact=None,
+                call_is_bridge_endpoint=False,
+                call_component_id=1,
+                call_component_size=1,
+                call_scc_id=1,
+                call_scc_size=1,
+                call_ancestor_count=None,
+                call_descendant_count=None,
+                call_community_id=None,
+                created_at=now,
+            )
+        ],
+        delete_scope=DeleteScope(params=[repo, commit]),
+        scope=f"{repo}@{commit}",
+    )
+    insert_analytics_rows(
+        gateway,
+        module_ext_contract,
+        [
+            ModuleGraphMetricsExtRow(
+                repo=repo,
+                commit=commit,
+                module="pkg.mod",
+                import_betweenness=0.1,
+                import_closeness=0.1,
+                import_eigenvector=0.1,
+                import_harmonic=0.1,
+                import_k_core=1,
+                import_constraint=0.1,
+                import_effective_size=0.1,
+                import_rich_club=None,
+                import_shell_index=None,
+                import_community_id=1,
+                import_component_id=1,
+                import_component_size=1,
+                import_scc_id=1,
+                import_scc_size=1,
+                created_at=now,
+            )
+        ],
+        delete_scope=DeleteScope(params=[repo, commit]),
+        scope=f"{repo}@{commit}",
     )
     gateway.con.execute(
         """
@@ -265,35 +407,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         """,
         [repo, commit, 1, "pkg/mod.py", "pkg.mod", "pkg.mod.func", now_iso],
     )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.graph_metrics_modules_ext (
-            repo, commit, module, import_betweenness, import_closeness, import_eigenvector,
-            import_harmonic, import_k_core, import_constraint, import_effective_size,
-            import_community_id, import_component_id, import_component_size, import_scc_id,
-            import_scc_size, created_at
-        ) VALUES (?, ?, ?, 0.1, 0.1, 0.1, 0.1, 1, 0.1, 0.1, 1, 1, 1, 1, 1, ?)
-        """,
-        [repo, commit, "pkg.mod", now_iso],
-    )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.symbol_graph_metrics_modules (
-            repo, commit, module, symbol_betweenness, symbol_closeness, symbol_eigenvector,
-            symbol_harmonic, symbol_k_core, symbol_constraint, symbol_effective_size,
-            symbol_community_id, symbol_component_id, symbol_component_size, created_at
-        ) VALUES (?, ?, ?, 0.1, 0.1, 0.1, 0.1, 1, 0.1, 0.1, 1, 1, 1, ?)
-        """,
-        [repo, commit, "pkg.mod", now_iso],
-    )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.config_graph_metrics_modules (
-            repo, commit, module, community_id, degree, weighted_degree, betweenness, closeness, created_at
-        ) VALUES (?, ?, ?, 1, 1, 1, 0.1, 0.1, ?)
-        """,
-        [repo, commit, "pkg.mod", now_iso],
-    )
+    # Module graph metrics extensions are seeded via insert_analytics_rows above; no manual inserts.
     gateway.con.execute(
         """
         INSERT INTO analytics.subsystem_graph_metrics (

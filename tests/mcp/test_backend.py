@@ -84,6 +84,8 @@ def test_dataset_rows_clamping(backend: DuckDBBackend) -> None:
     resp = backend.read_dataset_rows(dataset_name="function_validation", limit=1000, offset=-2)
     if resp.limit != MAX_ROWS_LIMIT or resp.offset != 0:
         pytest.fail("Expected clamped limit/offset values")
+    if resp.meta is None:
+        pytest.fail("Expected response meta to include messages")
     codes = {m.code for m in resp.meta.messages}
     if not {"limit_clamped", "offset_invalid"} <= codes:
         pytest.fail(f"Unexpected message codes: {codes}")
@@ -96,6 +98,8 @@ def test_tests_for_function_not_found(backend: DuckDBBackend) -> None:
     resp = backend.get_tests_for_function(goid_h128=999, limit=5)
     if resp.tests:
         pytest.fail("Expected no tests for missing function")
+    if resp.meta is None:
+        pytest.fail("Expected response meta to include messages")
     codes = [m.code for m in resp.meta.messages]
     if "not_found" not in codes:
         pytest.fail(f"Expected not_found message; got {codes}")
@@ -122,6 +126,8 @@ def test_dataset_list_includes_function_validation(backend: DuckDBBackend) -> No
 def test_function_validation_clamping(backend: DuckDBBackend) -> None:
     """Clamping should apply and return messages for function_validation reads."""
     resp = backend.read_dataset_rows(dataset_name="function_validation", limit=10, offset=-1)
+    if resp.meta is None:
+        pytest.fail("Expected response meta to include messages")
     codes = {m.code for m in resp.meta.messages}
     if "offset_invalid" not in codes:
         pytest.fail(f"Expected offset_invalid message; got {codes}")

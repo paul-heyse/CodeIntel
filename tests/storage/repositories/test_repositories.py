@@ -197,8 +197,8 @@ def test_data_model_repository_reads(docs_export_gateway: ProvisionedGateway) ->
         """
         INSERT INTO analytics.data_models (
             repo, commit, model_id, goid_h128, model_name, module, rel_path, model_kind,
-            base_classes_json, fields_json, relationships_json, doc_short, doc_long, created_at
-        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, '[]', '[]', '[]', 'short', 'long', ?)
+            base_classes_json, doc_short, doc_long, created_at
+        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, '[]', 'short', 'long', ?)
         """,
         [repo, commit, "ModelA", "ModelA", "pkg.foo", "foo.py", "dataclass", now],
     )

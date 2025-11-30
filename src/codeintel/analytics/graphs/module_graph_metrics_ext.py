@@ -10,9 +10,13 @@ from typing import cast
 
 import networkx as nx
 
+from codeintel.analytics.datasets import (
+    DeleteScope,
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+)
 from codeintel.analytics.graph_rows import (
     ModuleMetricExtInputs,
-    ModuleMetricExtRow,
     build_module_metric_ext_rows,
 )
 from codeintel.analytics.graph_runtime import (
@@ -31,11 +35,11 @@ from codeintel.analytics.graph_service import (
 )
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.rows.graph_metrics_ext import ModuleGraphMetricsExtRow
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
 
 CENTRALITY_SAMPLE_LIMIT = 500
 RICH_CLUB_PERCENTILE = 0.1
@@ -119,7 +123,7 @@ def _module_metric_rows(
     ctx: GraphContext,
     views: ImportGraphViews,
     slices: ModuleGraphSlices,
-) -> list[ModuleMetricExtRow]:
+) -> list[ModuleGraphMetricsExtRow]:
     centralities = {
         "betweenness": slices.centralities.betweenness,
         "closeness": slices.centralities.closeness,
@@ -189,24 +193,13 @@ def compute_graph_metrics_modules_ext(
     slices = _module_metric_slices(views, ctx)
     rows = _module_metric_rows(repo, commit, ctx, views, slices)
 
-    con = gateway.con
-    ensure_schema(con, "analytics.graph_metrics_modules_ext")
-
-    con.execute(
-        "DELETE FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?",
-        [repo, commit],
+    contract = get_analytics_dataset_contract(
+        gateway, "analytics.graph_metrics_modules_ext"
     )
-    if rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.graph_metrics_modules_ext (
-                repo, commit, module,
-                import_betweenness, import_closeness, import_eigenvector, import_harmonic,
-                import_k_core, import_constraint, import_effective_size,
-                import_rich_club, import_shell_index,
-                import_community_id, import_component_id, import_component_size,
-                import_scc_id, import_scc_size, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+    insert_analytics_rows(
+        gateway,
+        contract,
+        rows,
+        delete_scope=DeleteScope(params=[repo, commit]),
+        scope=f"{repo}@{commit}",
+    )

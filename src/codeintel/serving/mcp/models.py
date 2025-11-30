@@ -99,8 +99,15 @@ class ProblemDetail(BaseModel):
     extras: dict[str, object] | None = None
 
     @classmethod
-    def from_domain(cls, detail: DomainProblemDetail) -> "ProblemDetail":
-        """Convert a domain ProblemDetail into the Pydantic transport model."""
+    def from_domain(cls, detail: DomainProblemDetail) -> ProblemDetail:
+        """
+        Convert a domain ProblemDetail into the Pydantic transport model.
+
+        Returns
+        -------
+        ProblemDetail
+            Transport wrapper for the provided domain detail.
+        """
         return cls(
             type=detail.type,
             title=detail.title,
@@ -112,7 +119,14 @@ class ProblemDetail(BaseModel):
         )
 
     def to_domain(self) -> DomainProblemDetail:
-        """Convert a Pydantic ProblemDetail into the domain dataclass."""
+        """
+        Convert a Pydantic ProblemDetail into the domain dataclass.
+
+        Returns
+        -------
+        DomainProblemDetail
+            Domain representation of the problem payload.
+        """
         return DomainProblemDetail(
             type=self.type,
             title=self.title,
@@ -133,7 +147,14 @@ class Message(BaseModel):
     context: dict[str, object] | None = None
 
     def to_domain(self) -> dm.Message:
-        """Convert to the domain Message dataclass."""
+        """
+        Convert to the domain Message dataclass.
+
+        Returns
+        -------
+        dm.Message
+            Domain representation of the message payload.
+        """
         return dm.Message(
             code=self.code,
             severity=self.severity,
@@ -142,8 +163,15 @@ class Message(BaseModel):
         )
 
     @classmethod
-    def from_domain(cls, msg: dm.Message) -> "Message":
-        """Build a transport Message from the domain representation."""
+    def from_domain(cls, msg: dm.Message) -> Message:
+        """
+        Build a transport Message from the domain representation.
+
+        Returns
+        -------
+        Message
+            Transport message carrying the same fields.
+        """
         return cls(
             code=msg.code,
             severity=msg.severity,
@@ -160,22 +188,36 @@ class ResponseMeta(BaseModel):
     requested_offset: int | None = None
     applied_offset: int | None = None
     truncated: bool = False
-    messages: list[Message] | None = None
+    messages: list[Message] = Field(default_factory=list)
 
     def to_domain(self) -> dm.ResponseMeta:
-        """Convert to the domain ResponseMeta dataclass."""
+        """
+        Convert to the domain ResponseMeta dataclass.
+
+        Returns
+        -------
+        dm.ResponseMeta
+            Domain representation of response metadata.
+        """
         return dm.ResponseMeta(
             requested_limit=self.requested_limit,
             applied_limit=self.applied_limit,
             requested_offset=self.requested_offset,
             applied_offset=self.applied_offset,
             truncated=self.truncated,
-            messages=[message.to_domain() for message in (self.messages or [])],
+            messages=[message.to_domain() for message in self.messages],
         )
 
     @classmethod
-    def from_domain(cls, meta: dm.ResponseMeta) -> "ResponseMeta":
-        """Convert a domain ResponseMeta into the transport model."""
+    def from_domain(cls, meta: dm.ResponseMeta) -> ResponseMeta:
+        """
+        Convert a domain ResponseMeta into the transport model.
+
+        Returns
+        -------
+        ResponseMeta
+            Transport metadata mirroring the domain payload.
+        """
         return cls(
             requested_limit=meta.requested_limit,
             applied_limit=meta.applied_limit,
@@ -240,6 +282,48 @@ class GraphPlanResponse(BaseModel):
     skipped_plugins: tuple[GraphPlanSkipped, ...]
     dep_graph: dict[str, tuple[str, ...]]
     plugin_metadata: dict[str, GraphPlanPluginMetadata]
+
+    def to_domain(self) -> dm.GraphPlan:
+        """
+        Convert to the domain GraphPlan representation.
+
+        Returns
+        -------
+        dm.GraphPlan
+            Domain plan payload with plugin metadata and dependency graph.
+        """
+        return dm.GraphPlan(
+            plan_id=self.plan_id,
+            ordered_plugins=self.ordered_plugins,
+            skipped_plugins=[entry.model_dump() for entry in self.skipped_plugins],
+            dep_graph={name: tuple(deps) for name, deps in self.dep_graph.items()},
+            plugin_metadata={
+                name: metadata.model_dump() for name, metadata in self.plugin_metadata.items()
+            },
+        )
+
+    @classmethod
+    def from_domain(cls, plan: dm.GraphPlan) -> GraphPlanResponse:
+        """
+        Convert a domain GraphPlan into the transport model.
+
+        Returns
+        -------
+        GraphPlanResponse
+            Transport plan payload.
+        """
+        return cls(
+            plan_id=plan.plan_id,
+            ordered_plugins=plan.ordered_plugins,
+            skipped_plugins=tuple(
+                GraphPlanSkipped.model_validate(entry) for entry in plan.skipped_plugins
+            ),
+            dep_graph={name: tuple(deps) for name, deps in plan.dep_graph.items()},
+            plugin_metadata={
+                name: GraphPlanPluginMetadata.model_validate(metadata)
+                for name, metadata in plan.plugin_metadata.items()
+            },
+        )
 
 
 class GraphScopePayload(BaseModel):
@@ -552,6 +636,41 @@ class FunctionSummaryResponse(BaseModel):
     summary: FunctionSummaryRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.FunctionSummaryResult:
+        """
+        Convert to the domain FunctionSummaryResult representation.
+
+        Returns
+        -------
+        dm.FunctionSummaryResult
+            Domain summary payload.
+        """
+        return dm.FunctionSummaryResult(
+            found=self.found,
+            summary=self.summary.model_dump() if self.summary is not None else None,
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(cls, result: dm.FunctionSummaryResult) -> FunctionSummaryResponse:
+        """
+        Convert a domain FunctionSummaryResult into the transport model.
+
+        Returns
+        -------
+        FunctionSummaryResponse
+            Transport summary payload.
+        """
+        return cls(
+            found=result.found,
+            summary=(
+                FunctionSummaryRow.model_validate(result.summary)
+                if result.summary is not None
+                else None
+            ),
+            meta=ResponseMeta.from_domain(result.meta),
+        )
+
 
 class HighRiskFunctionsResponse(BaseModel):
     """Response wrapper for high-risk function listings."""
@@ -559,6 +678,39 @@ class HighRiskFunctionsResponse(BaseModel):
     functions: list[ViewRow]
     truncated: bool = False
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    def to_domain(self) -> dm.HighRiskFunctionsResult:
+        """
+        Convert to the domain HighRiskFunctionsResult representation.
+
+        Returns
+        -------
+        dm.HighRiskFunctionsResult
+            Domain high-risk function payload.
+        """
+        return dm.HighRiskFunctionsResult(
+            functions=[row.model_dump() for row in self.functions],
+            truncated=self.truncated,
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.HighRiskFunctionsResult
+    ) -> HighRiskFunctionsResponse:
+        """
+        Convert a domain HighRiskFunctionsResult into the transport model.
+
+        Returns
+        -------
+        HighRiskFunctionsResponse
+            Transport high-risk function payload.
+        """
+        return cls(
+            functions=[ViewRow.model_validate(row) for row in result.functions],
+            truncated=result.truncated,
+            meta=ResponseMeta.from_domain(result.meta),
+        )
 
 
 class CallGraphNeighborsResponse(BaseModel):
@@ -568,12 +720,74 @@ class CallGraphNeighborsResponse(BaseModel):
     incoming: list[CallGraphEdgeRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.CallGraphNeighbors:
+        """
+        Convert to the domain CallGraphNeighbors representation.
+
+        Returns
+        -------
+        dm.CallGraphNeighbors
+            Domain call graph neighbor payload.
+        """
+        return dm.CallGraphNeighbors(
+            outgoing=[edge.model_dump() for edge in self.outgoing],
+            incoming=[edge.model_dump() for edge in self.incoming],
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(cls, result: dm.CallGraphNeighbors) -> CallGraphNeighborsResponse:
+        """
+        Convert a domain CallGraphNeighbors into the transport model.
+
+        Returns
+        -------
+        CallGraphNeighborsResponse
+            Transport call graph neighbor payload.
+        """
+        return cls(
+            outgoing=[CallGraphEdgeRow.model_validate(edge) for edge in result.outgoing],
+            incoming=[CallGraphEdgeRow.model_validate(edge) for edge in result.incoming],
+            meta=ResponseMeta.from_domain(result.meta),
+        )
+
 
 class TestsForFunctionResponse(BaseModel):
     """Tests that exercise a given function."""
 
     tests: list[ViewRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    def to_domain(self) -> dm.TestsForFunctionResult:
+        """
+        Convert to the domain TestsForFunctionResult representation.
+
+        Returns
+        -------
+        dm.TestsForFunctionResult
+            Domain tests payload.
+        """
+        return dm.TestsForFunctionResult(
+            tests=[test.model_dump() for test in self.tests],
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.TestsForFunctionResult
+    ) -> TestsForFunctionResponse:
+        """
+        Convert a domain TestsForFunctionResult into the transport model.
+
+        Returns
+        -------
+        TestsForFunctionResponse
+            Transport tests payload.
+        """
+        return cls(
+            tests=[ViewRow.model_validate(test) for test in result.tests],
+            meta=ResponseMeta.from_domain(result.meta),
+        )
 
 
 class GraphNeighborhoodResponse(BaseModel):
@@ -583,6 +797,39 @@ class GraphNeighborhoodResponse(BaseModel):
     edges: list[ViewRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.GraphNeighborhood:
+        """
+        Convert to the domain GraphNeighborhood representation.
+
+        Returns
+        -------
+        dm.GraphNeighborhood
+            Domain graph neighborhood payload.
+        """
+        return dm.GraphNeighborhood(
+            nodes=[node.model_dump() for node in self.nodes],
+            edges=[edge.model_dump() for edge in self.edges],
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, neighborhood: dm.GraphNeighborhood
+    ) -> GraphNeighborhoodResponse:
+        """
+        Convert a domain GraphNeighborhood into the transport model.
+
+        Returns
+        -------
+        GraphNeighborhoodResponse
+            Transport graph neighborhood payload.
+        """
+        return cls(
+            nodes=[ViewRow.model_validate(node) for node in neighborhood.nodes],
+            edges=[ViewRow.model_validate(edge) for edge in neighborhood.edges],
+            meta=ResponseMeta.from_domain(neighborhood.meta),
+        )
+
 
 class ImportBoundaryResponse(BaseModel):
     """Edges crossing subsystem boundaries in the import graph."""
@@ -590,6 +837,37 @@ class ImportBoundaryResponse(BaseModel):
     nodes: list[ViewRow]
     edges: list[ViewRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    def to_domain(self) -> dm.ImportBoundary:
+        """
+        Convert to the domain ImportBoundary representation.
+
+        Returns
+        -------
+        dm.ImportBoundary
+            Domain import boundary payload.
+        """
+        return dm.ImportBoundary(
+            nodes=[node.model_dump() for node in self.nodes],
+            edges=[edge.model_dump() for edge in self.edges],
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(cls, boundary: dm.ImportBoundary) -> ImportBoundaryResponse:
+        """
+        Convert a domain ImportBoundary into the transport model.
+
+        Returns
+        -------
+        ImportBoundaryResponse
+            Transport import boundary payload.
+        """
+        return cls(
+            nodes=[ViewRow.model_validate(node) for node in boundary.nodes],
+            edges=[ViewRow.model_validate(edge) for edge in boundary.edges],
+            meta=ResponseMeta.from_domain(boundary.meta),
+        )
 
 
 class FileSummaryResponse(BaseModel):
@@ -599,6 +877,41 @@ class FileSummaryResponse(BaseModel):
     file: FileSummaryRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.FileSummaryResult:
+        """
+        Convert to the domain FileSummaryResult representation.
+
+        Returns
+        -------
+        dm.FileSummaryResult
+            Domain file summary payload.
+        """
+        return dm.FileSummaryResult(
+            found=self.found,
+            file=self.file.model_dump() if self.file is not None else None,
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(cls, result: dm.FileSummaryResult) -> FileSummaryResponse:
+        """
+        Convert a domain FileSummaryResult into the transport model.
+
+        Returns
+        -------
+        FileSummaryResponse
+            Transport file summary payload.
+        """
+        return cls(
+            found=result.found,
+            file=(
+                FileSummaryRow.model_validate(result.file)
+                if result.file is not None
+                else None
+            ),
+            meta=ResponseMeta.from_domain(result.meta),
+        )
+
 
 class FunctionProfileResponse(BaseModel):
     """Profile payload for a single function GOID."""
@@ -606,6 +919,43 @@ class FunctionProfileResponse(BaseModel):
     found: bool
     profile: ViewRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    def to_domain(self) -> dm.FunctionProfileResult:
+        """
+        Convert to the domain FunctionProfileResult representation.
+
+        Returns
+        -------
+        dm.FunctionProfileResult
+            Domain function profile payload.
+        """
+        return dm.FunctionProfileResult(
+            found=self.found,
+            profile=self.profile.model_dump() if self.profile is not None else None,
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.FunctionProfileResult
+    ) -> FunctionProfileResponse:
+        """
+        Convert a domain FunctionProfileResult into the transport model.
+
+        Returns
+        -------
+        FunctionProfileResponse
+            Transport function profile payload.
+        """
+        return cls(
+            found=result.found,
+            profile=(
+                ViewRow.model_validate(result.profile)
+                if result.profile is not None
+                else None
+            ),
+            meta=ResponseMeta.from_domain(result.meta),
+        )
 
 
 class FileProfileResponse(BaseModel):
@@ -615,6 +965,41 @@ class FileProfileResponse(BaseModel):
     profile: ViewRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.FileProfileResult:
+        """
+        Convert to the domain FileProfileResult representation.
+
+        Returns
+        -------
+        dm.FileProfileResult
+            Domain file profile payload.
+        """
+        return dm.FileProfileResult(
+            found=self.found,
+            profile=self.profile.model_dump() if self.profile is not None else None,
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(cls, result: dm.FileProfileResult) -> FileProfileResponse:
+        """
+        Convert a domain FileProfileResult into the transport model.
+
+        Returns
+        -------
+        FileProfileResponse
+            Transport file profile payload.
+        """
+        return cls(
+            found=result.found,
+            profile=(
+                ViewRow.model_validate(result.profile)
+                if result.profile is not None
+                else None
+            ),
+            meta=ResponseMeta.from_domain(result.meta),
+        )
+
 
 class ModuleProfileResponse(BaseModel):
     """Profile payload for a module."""
@@ -622,6 +1007,41 @@ class ModuleProfileResponse(BaseModel):
     found: bool
     profile: ViewRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    def to_domain(self) -> dm.ModuleProfileResult:
+        """
+        Convert to the domain ModuleProfileResult representation.
+
+        Returns
+        -------
+        dm.ModuleProfileResult
+            Domain module profile payload.
+        """
+        return dm.ModuleProfileResult(
+            found=self.found,
+            profile=self.profile.model_dump() if self.profile is not None else None,
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(cls, result: dm.ModuleProfileResult) -> ModuleProfileResponse:
+        """
+        Convert a domain ModuleProfileResult into the transport model.
+
+        Returns
+        -------
+        ModuleProfileResponse
+            Transport module profile payload.
+        """
+        return cls(
+            found=result.found,
+            profile=(
+                ViewRow.model_validate(result.profile)
+                if result.profile is not None
+                else None
+            ),
+            meta=ResponseMeta.from_domain(result.meta),
+        )
 
 
 class FunctionArchitectureResponse(BaseModel):
@@ -631,6 +1051,43 @@ class FunctionArchitectureResponse(BaseModel):
     architecture: ViewRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.FunctionArchitectureResult:
+        """
+        Convert to the domain FunctionArchitectureResult representation.
+
+        Returns
+        -------
+        dm.FunctionArchitectureResult
+            Domain function architecture payload.
+        """
+        return dm.FunctionArchitectureResult(
+            found=self.found,
+            architecture=self.architecture.model_dump() if self.architecture is not None else None,
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.FunctionArchitectureResult
+    ) -> FunctionArchitectureResponse:
+        """
+        Convert a domain FunctionArchitectureResult into the transport model.
+
+        Returns
+        -------
+        FunctionArchitectureResponse
+            Transport function architecture payload.
+        """
+        return cls(
+            found=result.found,
+            architecture=(
+                ViewRow.model_validate(result.architecture)
+                if result.architecture is not None
+                else None
+            ),
+            meta=ResponseMeta.from_domain(result.meta),
+        )
+
 
 class ModuleArchitectureResponse(BaseModel):
     """Architecture metrics for a module."""
@@ -639,12 +1096,82 @@ class ModuleArchitectureResponse(BaseModel):
     architecture: ModuleArchitectureRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.ModuleArchitectureResult:
+        """
+        Convert to the domain ModuleArchitectureResult representation.
+
+        Returns
+        -------
+        dm.ModuleArchitectureResult
+            Domain module architecture payload.
+        """
+        return dm.ModuleArchitectureResult(
+            found=self.found,
+            architecture=(
+                self.architecture.model_dump() if self.architecture is not None else None
+            ),
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.ModuleArchitectureResult
+    ) -> ModuleArchitectureResponse:
+        """
+        Convert a domain ModuleArchitectureResult into the transport model.
+
+        Returns
+        -------
+        ModuleArchitectureResponse
+            Transport module architecture payload.
+        """
+        return cls(
+            found=result.found,
+            architecture=(
+                ModuleArchitectureRow.model_validate(result.architecture)
+                if result.architecture is not None
+                else None
+            ),
+            meta=ResponseMeta.from_domain(result.meta),
+        )
+
 
 class SubsystemSummaryResponse(BaseModel):
     """Summary of inferred subsystems."""
 
     subsystems: list[SubsystemSummaryRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    def to_domain(self) -> dm.SubsystemSummaryResult:
+        """
+        Convert to the domain SubsystemSummaryResult representation.
+
+        Returns
+        -------
+        dm.SubsystemSummaryResult
+            Domain subsystem summary payload.
+        """
+        return dm.SubsystemSummaryResult(
+            subsystems=[row.model_dump() for row in self.subsystems],
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.SubsystemSummaryResult
+    ) -> SubsystemSummaryResponse:
+        """
+        Convert a domain SubsystemSummaryResult into the transport model.
+
+        Returns
+        -------
+        SubsystemSummaryResponse
+            Transport subsystem summary payload.
+        """
+        return cls(
+            subsystems=[SubsystemSummaryRow.model_validate(row) for row in result.subsystems],
+            meta=ResponseMeta.from_domain(result.meta),
+        )
 
 
 class ModuleSubsystemResponse(BaseModel):
@@ -654,6 +1181,41 @@ class ModuleSubsystemResponse(BaseModel):
     memberships: list[ModuleWithSubsystemRow] = Field(default_factory=list)
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.ModuleSubsystemResult:
+        """
+        Convert to the domain ModuleSubsystemResult representation.
+
+        Returns
+        -------
+        dm.ModuleSubsystemResult
+            Domain module membership payload.
+        """
+        return dm.ModuleSubsystemResult(
+            found=self.found,
+            memberships=[row.model_dump() for row in self.memberships],
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.ModuleSubsystemResult
+    ) -> ModuleSubsystemResponse:
+        """
+        Convert a domain ModuleSubsystemResult into the transport model.
+
+        Returns
+        -------
+        ModuleSubsystemResponse
+            Transport module membership payload.
+        """
+        return cls(
+            found=result.found,
+            memberships=[
+                ModuleWithSubsystemRow.model_validate(row) for row in result.memberships
+            ],
+            meta=ResponseMeta.from_domain(result.meta),
+        )
+
 
 class FileHintsResponse(BaseModel):
     """IDE-ready hints for a file path (module + subsystem context)."""
@@ -661,6 +1223,37 @@ class FileHintsResponse(BaseModel):
     found: bool
     hints: list[ViewRow] = Field(default_factory=list)
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    def to_domain(self) -> dm.FileHintsResult:
+        """
+        Convert to the domain FileHintsResult representation.
+
+        Returns
+        -------
+        dm.FileHintsResult
+            Domain file hints payload.
+        """
+        return dm.FileHintsResult(
+            found=self.found,
+            hints=[hint.model_dump() for hint in self.hints],
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(cls, result: dm.FileHintsResult) -> FileHintsResponse:
+        """
+        Convert a domain FileHintsResult into the transport model.
+
+        Returns
+        -------
+        FileHintsResponse
+            Transport file hints payload.
+        """
+        return cls(
+            found=result.found,
+            hints=[ViewRow.model_validate(hint) for hint in result.hints],
+            meta=ResponseMeta.from_domain(result.meta),
+        )
 
 
 class SubsystemModulesResponse(BaseModel):
@@ -671,12 +1264,82 @@ class SubsystemModulesResponse(BaseModel):
     modules: list[ModuleWithSubsystemRow] = Field(default_factory=list)
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.SubsystemModulesResult:
+        """
+        Convert to the domain SubsystemModulesResult representation.
+
+        Returns
+        -------
+        dm.SubsystemModulesResult
+            Domain subsystem modules payload.
+        """
+        return dm.SubsystemModulesResult(
+            found=self.found,
+            subsystem=self.subsystem.model_dump() if self.subsystem is not None else None,
+            modules=[module.model_dump() for module in self.modules],
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.SubsystemModulesResult
+    ) -> SubsystemModulesResponse:
+        """
+        Convert a domain SubsystemModulesResult into the transport model.
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Transport subsystem modules payload.
+        """
+        return cls(
+            found=result.found,
+            subsystem=(
+                SubsystemSummaryRow.model_validate(result.subsystem)
+                if result.subsystem is not None
+                else None
+            ),
+            modules=[ModuleWithSubsystemRow.model_validate(module) for module in result.modules],
+            meta=ResponseMeta.from_domain(result.meta),
+        )
+
 
 class SubsystemSearchResponse(BaseModel):
     """Search-oriented subsystem listing."""
 
     subsystems: list[SubsystemSummaryRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    def to_domain(self) -> dm.SubsystemSearchResult:
+        """
+        Convert to the domain SubsystemSearchResult representation.
+
+        Returns
+        -------
+        dm.SubsystemSearchResult
+            Domain subsystem search payload.
+        """
+        return dm.SubsystemSearchResult(
+            subsystems=[row.model_dump() for row in self.subsystems],
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.SubsystemSearchResult
+    ) -> SubsystemSearchResponse:
+        """
+        Convert a domain SubsystemSearchResult into the transport model.
+
+        Returns
+        -------
+        SubsystemSearchResponse
+            Transport subsystem search payload.
+        """
+        return cls(
+            subsystems=[SubsystemSummaryRow.model_validate(row) for row in result.subsystems],
+            meta=ResponseMeta.from_domain(result.meta),
+        )
 
 
 class SubsystemProfileResponse(BaseModel):
@@ -685,12 +1348,74 @@ class SubsystemProfileResponse(BaseModel):
     profiles: list[SubsystemProfileRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
+    def to_domain(self) -> dm.SubsystemProfileResult:
+        """
+        Convert to the domain SubsystemProfileResult representation.
+
+        Returns
+        -------
+        dm.SubsystemProfileResult
+            Domain subsystem profile payload.
+        """
+        return dm.SubsystemProfileResult(
+            profiles=list(self.profiles),
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.SubsystemProfileResult
+    ) -> SubsystemProfileResponse:
+        """
+        Convert a domain SubsystemProfileResult into the transport model.
+
+        Returns
+        -------
+        SubsystemProfileResponse
+            Transport subsystem profile payload.
+        """
+        return cls(
+            profiles=[SubsystemProfileRow.model_validate(row) for row in result.profiles],
+            meta=ResponseMeta.from_domain(result.meta),
+        )
+
 
 class SubsystemCoverageResponse(BaseModel):
     """Subsystem coverage rollup rows for docs view."""
 
     coverage: list[SubsystemCoverageRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    def to_domain(self) -> dm.SubsystemCoverageResult:
+        """
+        Convert to the domain SubsystemCoverageResult representation.
+
+        Returns
+        -------
+        dm.SubsystemCoverageResult
+            Domain subsystem coverage payload.
+        """
+        return dm.SubsystemCoverageResult(
+            coverage=list(self.coverage),
+            meta=self.meta.to_domain(),
+        )
+
+    @classmethod
+    def from_domain(
+        cls, result: dm.SubsystemCoverageResult
+    ) -> SubsystemCoverageResponse:
+        """
+        Convert a domain SubsystemCoverageResult into the transport model.
+
+        Returns
+        -------
+        SubsystemCoverageResponse
+            Transport subsystem coverage payload.
+        """
+        return cls(
+            coverage=[SubsystemCoverageRow.model_validate(row) for row in result.coverage],
+            meta=ResponseMeta.from_domain(result.meta),
+        )
 
 
 class DatasetDescriptor(BaseModel):
@@ -764,7 +1489,14 @@ class DatasetSchemaResponse(BaseModel):
     meta: ResponseMeta | None = None
 
     def to_domain(self) -> dm.DatasetSchema:
-        """Convert to the domain DatasetSchema representation."""
+        """
+        Convert to the domain DatasetSchema representation.
+
+        Returns
+        -------
+        dm.DatasetSchema
+            Domain schema model with matching payload.
+        """
         return dm.DatasetSchema(
             dataset_name=self.dataset,
             table_key=self.table_key,
@@ -782,8 +1514,15 @@ class DatasetSchemaResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(cls, schema: dm.DatasetSchema) -> "DatasetSchemaResponse":
-        """Convert a domain DatasetSchema into the transport model."""
+    def from_domain(cls, schema: dm.DatasetSchema) -> DatasetSchemaResponse:
+        """
+        Convert a domain DatasetSchema into the transport model.
+
+        Returns
+        -------
+        DatasetSchemaResponse
+            Transport model reflecting the domain payload.
+        """
         return cls(
             dataset=schema.dataset_name,
             table_key=schema.table_key,
@@ -813,7 +1552,14 @@ class DatasetRowsResponse(BaseModel):
     meta: ResponseMeta | None = None
 
     def to_domain(self) -> dm.DatasetRows:
-        """Convert to the domain DatasetRows representation."""
+        """
+        Convert to the domain DatasetRows representation.
+
+        Returns
+        -------
+        dm.DatasetRows
+            Domain dataset rows payload.
+        """
         return dm.DatasetRows(
             dataset_name=self.dataset_name,
             limit=self.limit,
@@ -823,8 +1569,15 @@ class DatasetRowsResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(cls, rows: dm.DatasetRows) -> "DatasetRowsResponse":
-        """Convert a domain DatasetRows into the transport model."""
+    def from_domain(cls, rows: dm.DatasetRows) -> DatasetRowsResponse:
+        """
+        Convert a domain DatasetRows into the transport model.
+
+        Returns
+        -------
+        DatasetRowsResponse
+            Transport model reflecting the domain rows.
+        """
         return cls(
             dataset_name=rows.dataset_name,
             limit=rows.limit,

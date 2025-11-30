@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import networkx as nx
 
 from codeintel.analytics.datasets import (
+    DeleteScope,
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
@@ -274,7 +275,7 @@ def _compute_function_graph_metrics(
         gateway,
         contract,
         rows,
-        delete_params=[cfg.repo, cfg.commit],
+        delete_scope=DeleteScope(params=[cfg.repo, cfg.commit]),
         scope=f"{cfg.repo}@{cfg.commit}",
     )
     if rows:
@@ -344,7 +345,7 @@ def _compute_module_graph_metrics(
         gateway,
         contract,
         rows_to_insert,
-        delete_params=[cfg.repo, cfg.commit],
+        delete_scope=DeleteScope(params=[cfg.repo, cfg.commit]),
         scope=f"{cfg.repo}@{cfg.commit}",
     )
     if rows_to_insert:

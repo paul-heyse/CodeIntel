@@ -1,3 +1,5 @@
+"""Analytics row facades exposing typed row models and serializers."""
+
 from __future__ import annotations
 
 from codeintel.analytics.rows.function_metrics import (

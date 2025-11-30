@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -189,11 +190,19 @@ def _typedness_metrics_by_path(
     ).fetchall()
     grouped: dict[str, set[tuple[float, float, int]]] = {}
     for path, ratio_value, untyped_defs in rows:
+        ratio: Mapping[str, float] | dict[str, float]
         if isinstance(ratio_value, str):
             try:
                 ratio = json.loads(ratio_value)
             except json.JSONDecodeError:
                 ratio = {"params": 0.0, "returns": 0.0}
+        elif isinstance(ratio_value, Mapping):
+            ratio = {
+                "params": float(ratio_value.get("params", 0.0)),
+                "returns": float(ratio_value.get("returns", 0.0)),
+            }
+        else:
+            ratio = {"params": 0.0, "returns": 0.0}
         grouped.setdefault(path, set()).add(
             (ratio.get("params", 0.0), ratio.get("returns", 0.0), untyped_defs)
         )

@@ -10,6 +10,7 @@ from typing import Literal
 from fastapi import APIRouter, Request, status
 from starlette.responses import Response
 
+from codeintel.serving import domain_models as dm
 from codeintel.serving.http.dependencies import ServiceDep
 from codeintel.serving.mcp.models import (
     DatasetDescriptor,
@@ -183,7 +184,10 @@ def build_datasets_router() -> APIRouter:
         DatasetRowsResponse
             Dataset slice with pagination metadata.
         """
-        resp = service.read_dataset_rows(dataset_name=dataset_name, limit=limit, offset=offset)
+        domain_rows: dm.DatasetRows = service.read_dataset_rows(
+            dataset_name=dataset_name, limit=limit, offset=offset
+        )
+        resp = DatasetRowsResponse.from_domain(domain_rows)
         LOG.info(
             "Read dataset=%s limit=%s offset=%s returned_rows=%d",
             dataset_name,
@@ -213,7 +217,10 @@ def build_datasets_router() -> APIRouter:
         DatasetSchemaResponse
             Schema detail payload.
         """
-        detail = service.dataset_schema(dataset_name=dataset_name, sample_limit=limit)
+        domain_schema: dm.DatasetSchema = service.dataset_schema(
+            dataset_name=dataset_name, sample_limit=limit
+        )
+        detail = DatasetSchemaResponse.from_domain(domain_schema)
         LOG.info("Returned schema detail for dataset=%s", dataset_name)
         return detail
 

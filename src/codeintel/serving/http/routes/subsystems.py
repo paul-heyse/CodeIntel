@@ -104,7 +104,8 @@ def build_subsystem_router() -> APIRouter:
         SubsystemSummaryResponse
             Subsystem rows and metadata.
         """
-        return service.list_subsystems(limit=limit, role=role, q=q)
+        domain_response = service.list_subsystems(limit=limit, role=role, q=q)
+        return SubsystemSummaryResponse.from_domain(domain_response)
 
     @router.get(
         profiles_path,
@@ -125,7 +126,8 @@ def build_subsystem_router() -> APIRouter:
         SubsystemProfileResponse
             Profile rows with metadata.
         """
-        return service.list_subsystem_profiles(limit=limit)
+        domain_response = service.list_subsystem_profiles(limit=limit)
+        return SubsystemProfileResponse.from_domain(domain_response)
 
     @router.get(
         coverage_path,
@@ -146,7 +148,8 @@ def build_subsystem_router() -> APIRouter:
         SubsystemCoverageResponse
             Coverage rows with metadata.
         """
-        return service.list_subsystem_coverage(limit=limit)
+        domain_response = service.list_subsystem_coverage(limit=limit)
+        return SubsystemCoverageResponse.from_domain(domain_response)
 
     @router.get(
         memberships_path,
@@ -172,7 +175,8 @@ def build_subsystem_router() -> APIRouter:
         errors.not_found
             If the module is not mapped to any subsystem.
         """
-        response = service.get_module_subsystems(module=module)
+        domain_response = service.get_module_subsystems(module=module)
+        response = ModuleSubsystemResponse.from_domain(domain_response)
         if not response.found or not response.memberships:
             message = "Module has no subsystem mappings"
             raise errors.not_found(message)
@@ -203,10 +207,11 @@ def build_subsystem_router() -> APIRouter:
         errors.not_found
             If the subsystem cannot be located.
         """
-        response = service.get_subsystem_modules(
+        domain_response = service.get_subsystem_modules(
             subsystem_id=subsystem_id,
             module_limit=module_limit,
         )
+        response = SubsystemModulesResponse.from_domain(domain_response)
         if not response.found or response.subsystem is None:
             message = "Subsystem not found"
             raise errors.not_found(message)

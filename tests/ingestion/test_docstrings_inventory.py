@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from codeintel.config import DocstringStepConfig, RepoScanStepConfig, SnapshotRef
 from codeintel.config.primitives import BuildPaths
 from codeintel.ingestion.docstrings_ingest import ingest_docstrings
@@ -13,11 +15,15 @@ from tests._helpers.gateway import open_ingestion_gateway
 
 
 def _code_profile_ignoring_dir(snapshot_repo_root: Path, ignored_dir_name: str) -> ScanProfile:
-    """
-    Return a ScanProfile that inherits defaults but ignores an additional directory.
+    """Build a scan profile that ignores an extra directory.
+
+    Returns
+    -------
+    ScanProfile
+        Profile that mirrors the default code profile but skips the provided directory name.
     """
     base = default_code_profile(snapshot_repo_root)
-    ignore_dirs = base.ignore_dirs + (ignored_dir_name,)
+    ignore_dirs = (*base.ignore_dirs, ignored_dir_name)
     return ScanProfile(
         repo_root=base.repo_root,
         source_roots=base.source_roots,
@@ -64,8 +70,11 @@ def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -
         "SELECT DISTINCT rel_path, module FROM core.docstrings ORDER BY rel_path"
     ).fetchall()
     rel_paths = [row[0] for row in rows]
-    assert rel_paths == ["src/pkg/a.py", "src/pkg/b.py"]
-    assert all("/" in rel_path for rel_path in rel_paths)
+    expected_paths = ["src/pkg/a.py", "src/pkg/b.py"]
+    if rel_paths != expected_paths:
+        pytest.fail(f"Unexpected docstring paths {rel_paths}, expected {expected_paths}")
+    if not all("/" in rel_path for rel_path in rel_paths):
+        pytest.fail(f"Non-POSIX paths observed: {rel_paths}")
 
 
 def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) -> None:
@@ -109,4 +118,5 @@ def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) ->
         "SELECT DISTINCT rel_path FROM core.docstrings ORDER BY rel_path"
     ).fetchall()
     rel_paths = [row[0] for row in rows]
-    assert rel_paths == ["src/pkg/visible.py"]
+    if rel_paths != ["src/pkg/visible.py"]:
+        pytest.fail(f"Docstrings ingested for unexpected paths: {rel_paths}")

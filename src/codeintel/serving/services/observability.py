@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from codeintel.serving import domain_models as dm
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetRowsResponse,
@@ -101,15 +102,25 @@ def _infer_row_count(result: object) -> int | None:
     """
     attr_counts: list[tuple[type, str]] = [
         (DatasetRowsResponse, "rows"),
+        (dm.DatasetRows, "rows"),
         (HighRiskFunctionsResponse, "functions"),
+        (dm.HighRiskFunctionsResult, "functions"),
         (TestsForFunctionResponse, "tests"),
+        (dm.TestsForFunctionResult, "tests"),
         (SubsystemSummaryResponse, "subsystems"),
+        (dm.SubsystemSummaryResult, "subsystems"),
         (ModuleSubsystemResponse, "memberships"),
+        (dm.ModuleSubsystemResult, "memberships"),
         (FileHintsResponse, "hints"),
+        (dm.FileHintsResult, "hints"),
         (SubsystemModulesResponse, "modules"),
+        (dm.SubsystemModulesResult, "modules"),
         (SubsystemSearchResponse, "subsystems"),
+        (dm.SubsystemSearchResult, "subsystems"),
         (SubsystemProfileResponse, "profiles"),
+        (dm.SubsystemProfileResult, "profiles"),
         (SubsystemCoverageResponse, "coverage"),
+        (dm.SubsystemCoverageResult, "coverage"),
     ]
     if isinstance(result, CallGraphNeighborsResponse):
         return len(result.outgoing) + len(result.incoming)

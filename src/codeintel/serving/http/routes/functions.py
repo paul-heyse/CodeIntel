@@ -121,13 +121,14 @@ def _register_summary_and_risk_routes(
         errors.not_found
             If the function cannot be located.
         """
-        summary = service.get_function_summary(
+        domain_summary = service.get_function_summary(
             urn=params.urn,
             goid_h128=params.goid_h128,
             rel_path=params.rel_path,
             qualname=params.qualname,
             scope=params.scope,
         )
+        summary = FunctionSummaryResponse.from_domain(domain_summary)
         if not summary.found or summary.summary is None:
             message = "Function not found"
             raise errors.not_found(message)
@@ -155,12 +156,13 @@ def _register_summary_and_risk_routes(
         HighRiskFunctionsResponse
             High-risk functions and truncation flag.
         """
-        return service.list_high_risk_functions(
+        domain_response = service.list_high_risk_functions(
             min_risk=min_risk,
             limit=limit,
             tested_only=tested_only,
             scope=scope,
         )
+        return HighRiskFunctionsResponse.from_domain(domain_response)
 
 
 def _register_graph_and_tests_routes(
@@ -193,12 +195,13 @@ def _register_graph_and_tests_routes(
         CallGraphNeighborsResponse
             Incoming and outgoing edges adjacent to the function.
         """
-        return service.get_callgraph_neighbors(
+        domain_neighbors = service.get_callgraph_neighbors(
             goid_h128=goid_h128,
             direction=direction,
             limit=limit,
             scope=scope,
         )
+        return CallGraphNeighborsResponse.from_domain(domain_neighbors)
 
     @router.get(
         paths["functions.tests"],
@@ -222,12 +225,13 @@ def _register_graph_and_tests_routes(
         TestsForFunctionResponse
             Tests linked to the requested function.
         """
-        return service.get_tests_for_function(
+        domain_tests = service.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
             limit=limit,
             scope=scope,
         )
+        return TestsForFunctionResponse.from_domain(domain_tests)
 
     @router.get(
         paths["graph.call_neighborhood"],
@@ -261,9 +265,10 @@ def _register_graph_and_tests_routes(
         GraphNeighborhoodResponse
             Ego subgraph with truncation metadata.
         """
-        response = service.get_callgraph_neighborhood(
+        domain_response = service.get_callgraph_neighborhood(
             goid_h128=goid_h128, radius=radius, max_nodes=max_nodes
         )
+        response = GraphNeighborhoodResponse.from_domain(domain_response)
         LOG.info(
             "callgraph_neighborhood repo=%s commit=%s goid=%s radius=%s applied_limit=%s "
             "truncated=%s",
@@ -305,7 +310,8 @@ def _register_graph_and_tests_routes(
         ImportBoundaryResponse
             Boundary edges plus metadata describing truncation.
         """
-        response = service.get_import_boundary(subsystem_id=subsystem_id, max_edges=max_edges)
+        domain_response = service.get_import_boundary(subsystem_id=subsystem_id, max_edges=max_edges)
+        response = ImportBoundaryResponse.from_domain(domain_response)
         LOG.info(
             "import_boundary repo=%s commit=%s subsystem=%s applied_limit=%s truncated=%s",
             getattr(service, "repo", "unknown"),
@@ -347,7 +353,8 @@ def _register_file_summary_route(
         errors.not_found
             If the file cannot be located in metadata tables.
         """
-        summary = service.get_file_summary(rel_path=rel_path, scope=scope)
+        domain_summary = service.get_file_summary(rel_path=rel_path, scope=scope)
+        summary = FileSummaryResponse.from_domain(domain_summary)
         if not summary.found or summary.file is None:
             message = "File not found"
             raise errors.not_found(message)

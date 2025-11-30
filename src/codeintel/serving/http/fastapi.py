@@ -27,9 +27,9 @@ from codeintel.serving.http.routes.profiles import build_profiles_router
 from codeintel.serving.http.routes.subsystems import build_subsystem_router
 from codeintel.serving.mcp import errors as mcp_errors
 from codeintel.serving.mcp.models import ProblemDetail as ProblemDetailModel
-from codeintel.serving.services.factory import BackendResource, build_backend_resource
 from codeintel.serving.services.errors import ProblemDetail as DomainProblemDetail
 from codeintel.serving.services.errors import ProblemError
+from codeintel.serving.services.factory import BackendResource, build_backend_resource
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 LOG = logging.getLogger("codeintel.serving.http.fastapi")
@@ -117,13 +117,14 @@ def create_backend_resource(
 
     Raises
     ------
-    mcp_errors.backend_failure
+    McpError
         If the query service cannot be constructed for the selected mode.
     """
     try:
         return build_backend_resource(cfg, gateway=gateway)
     except Exception as exc:
-        raise mcp_errors.backend_failure(str(exc)) from exc
+        problem_detail = mcp_errors.backend_failure(str(exc)).detail
+        raise mcp_errors.McpError(problem_detail) from exc
 
 
 def problem_response(detail: DomainProblemDetail) -> JSONResponse:

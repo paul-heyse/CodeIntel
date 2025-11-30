@@ -71,7 +71,8 @@ def build_profiles_router() -> APIRouter:
         errors.not_found
             If the profile cannot be located.
         """
-        profile = service.get_function_profile(goid_h128=goid_h128)
+        domain_profile = service.get_function_profile(goid_h128=goid_h128)
+        profile = FunctionProfileResponse.from_domain(domain_profile)
         if not profile.found or profile.profile is None:
             message = "Function profile not found"
             raise errors.not_found(message)
@@ -101,7 +102,8 @@ def build_profiles_router() -> APIRouter:
         errors.not_found
             If the profile cannot be located.
         """
-        profile = service.get_file_profile(rel_path=rel_path)
+        domain_profile = service.get_file_profile(rel_path=rel_path)
+        profile = FileProfileResponse.from_domain(domain_profile)
         if not profile.found or profile.profile is None:
             message = "File profile not found"
             raise errors.not_found(message)
@@ -131,7 +133,8 @@ def build_profiles_router() -> APIRouter:
         errors.not_found
             If the profile cannot be located.
         """
-        profile = service.get_module_profile(module=module)
+        domain_profile = service.get_module_profile(module=module)
+        profile = ModuleProfileResponse.from_domain(domain_profile)
         if not profile.found or profile.profile is None:
             message = "Module profile not found"
             raise errors.not_found(message)
