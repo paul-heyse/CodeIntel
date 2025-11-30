@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 from types import SimpleNamespace
+from typing import Any, cast
 
 from mcp.server.fastmcp import FastMCP
 
@@ -40,11 +41,12 @@ def register_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
         except (AttributeError, TypeError):
             tools = None
     if tools is not None and not inspect.iscoroutine(tools):
-        mcp.tools = tools  # type: ignore[attr-defined]
+        cast("Any", mcp).tools = tools
         return
-    mcp.tools = [
+    fallback_tools = [
         SimpleNamespace(name=spec.tool_name) for spec in iter_operation_specs() if spec.tool_name
     ]
+    cast("Any", mcp).tools = fallback_tools
 
 
 __all__ = ["QueryBackendOrService", "register_tools"]

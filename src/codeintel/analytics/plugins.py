@@ -123,6 +123,7 @@ Stage = Literal[
     "other",
 ]
 
+
 @dataclass(frozen=True)
 class AnalyticsPlugin:
     """

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from codeintel.serving import domain_models as dm
+from codeintel.serving.context import RequestContext, get_current_request_context
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetRowsResponse,
@@ -40,6 +41,13 @@ class ServiceCallMetrics:
     truncated: bool | None = None
     schema_version: str | None = None
     retries: int | None = None
+    correlation_id: str | None = None
+    external_transport: str | None = None
+    operation: str | None = None
+    repo: str | None = None
+    commit: str | None = None
+    client_id: str | None = None
+    user_agent: str | None = None
 
 
 @dataclass
@@ -58,7 +66,11 @@ class ServiceObservability:
     enabled: bool = False
     logger: logging.Logger = field(default_factory=lambda: LOG)
 
-    def record(self, metrics: ServiceCallMetrics) -> None:
+    def record(
+        self,
+        metrics: ServiceCallMetrics,
+        context: RequestContext | None = None,
+    ) -> None:
         """
         Emit a structured log line for a service call.
 
@@ -66,6 +78,8 @@ class ServiceObservability:
         ----------
         metrics
             Call metrics describing the invocation outcome.
+        context
+            Optional RequestContext to enrich the payload.
         """
         if not self.enabled or not self.logger.isEnabledFor(logging.INFO):
             return
@@ -74,20 +88,47 @@ class ServiceObservability:
             "transport": metrics.transport,
             "duration_ms": round(metrics.duration_ms, 2),
         }
-        if metrics.rows is not None:
-            payload["rows"] = metrics.rows
-        if metrics.dataset is not None:
-            payload["dataset"] = metrics.dataset
-        if metrics.messages is not None:
-            payload["messages"] = metrics.messages
-        if metrics.error is not None:
-            payload["error"] = metrics.error
-        if metrics.truncated is not None:
-            payload["truncated"] = metrics.truncated
-        if metrics.schema_version is not None:
-            payload["schema_version"] = metrics.schema_version
-        if metrics.retries is not None:
-            payload["retries"] = metrics.retries
+
+        def _add_optional(key: str, value: object | None) -> None:
+            if value is not None:
+                payload[key] = value
+
+        for key, value in (
+            ("rows", metrics.rows),
+            ("dataset", metrics.dataset),
+            ("messages", metrics.messages),
+            ("error", metrics.error),
+            ("truncated", metrics.truncated),
+            ("schema_version", metrics.schema_version),
+            ("retries", metrics.retries),
+        ):
+            _add_optional(key, value)
+
+        ctx = context
+
+        def _context_value(metric_value: object | None, fallback: object | None) -> object | None:
+            return metric_value if metric_value is not None else fallback
+
+        context_pairs = (
+            (
+                "correlation_id",
+                _context_value(metrics.correlation_id, ctx.correlation_id if ctx else None),
+            ),
+            (
+                "external_transport",
+                _context_value(metrics.external_transport, ctx.transport if ctx else None),
+            ),
+            (
+                "operation",
+                _context_value(metrics.operation, ctx.operation if ctx else None),
+            ),
+            ("repo", _context_value(metrics.repo, ctx.repo if ctx else None)),
+            ("commit", _context_value(metrics.commit, ctx.commit if ctx else None)),
+            ("client_id", _context_value(metrics.client_id, ctx.client_id if ctx else None)),
+            ("user_agent", _context_value(metrics.user_agent, ctx.user_agent if ctx else None)),
+        )
+        for key, value in context_pairs:
+            _add_optional(key, value)
         self.logger.info("service_call %s", payload)
 
 
@@ -173,44 +214,59 @@ def _observe_call[T](
     """
     Execute a callable while capturing observability signals.
 
+    Uses the current RequestContext (if any) to enrich metrics.
+
     Returns
     -------
     T
         Result returned by the wrapped callable.
     """
+    req_ctx = get_current_request_context()
     start = time.perf_counter()
+
+    def _apply_request_context(metrics: ServiceCallMetrics) -> None:
+        if req_ctx is None:
+            return
+        metrics.correlation_id = req_ctx.correlation_id
+        metrics.external_transport = req_ctx.transport
+        metrics.operation = req_ctx.operation or name
+        metrics.repo = req_ctx.repo
+        metrics.commit = req_ctx.commit
+        metrics.client_id = req_ctx.client_id
+        metrics.user_agent = req_ctx.user_agent
+
     try:
         result = func()
     except Exception as exc:
         duration_ms = (time.perf_counter() - start) * 1000
         if observability is not None:
-            observability.record(
-                ServiceCallMetrics(
-                    name=name,
-                    transport=transport,
-                    duration_ms=duration_ms,
-                    dataset=context.dataset if context is not None else None,
-                    schema_version=context.schema_version if context is not None else None,
-                    retries=context.retries if context is not None else None,
-                    error=exc.__class__.__name__,
-                )
-            )
-        raise
-    duration_ms = (time.perf_counter() - start) * 1000
-    if observability is not None:
-        observability.record(
-            ServiceCallMetrics(
+            metrics = ServiceCallMetrics(
                 name=name,
                 transport=transport,
                 duration_ms=duration_ms,
-                rows=_infer_row_count(result),
                 dataset=context.dataset if context is not None else None,
-                messages=_extract_message_count(result),
-                truncated=_extract_truncated(result),
                 schema_version=context.schema_version if context is not None else None,
                 retries=context.retries if context is not None else None,
+                error=exc.__class__.__name__,
             )
+            _apply_request_context(metrics)
+            observability.record(metrics, context=req_ctx)
+        raise
+    duration_ms = (time.perf_counter() - start) * 1000
+    if observability is not None:
+        metrics = ServiceCallMetrics(
+            name=name,
+            transport=transport,
+            duration_ms=duration_ms,
+            rows=_infer_row_count(result),
+            dataset=context.dataset if context is not None else None,
+            messages=_extract_message_count(result),
+            truncated=_extract_truncated(result),
+            schema_version=context.schema_version if context is not None else None,
+            retries=context.retries if context is not None else None,
         )
+        _apply_request_context(metrics)
+        observability.record(metrics, context=req_ctx)
     return result
 
 

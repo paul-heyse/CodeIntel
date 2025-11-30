@@ -296,6 +296,10 @@ ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = {
         row_type=row_models.FunctionProfileRowModel,
         to_tuple=row_models.function_profile_row_to_tuple,
     ),
+    "analytics.function_ast_features": _row_binding(
+        row_type=row_models.FunctionAstFeaturesRow,
+        to_tuple=row_models.function_ast_features_row_to_tuple,
+    ),
     "analytics.file_profile": _row_binding(
         row_type=row_models.FileProfileRowModel,
         to_tuple=row_models.file_profile_row_to_tuple,
@@ -520,6 +524,7 @@ DEFAULT_JSONL_FILENAMES: dict[str, str] = {
     "analytics.function_types": "function_types.jsonl",
     "analytics.function_effects": "function_effects.jsonl",
     "analytics.function_contracts": "function_contracts.jsonl",
+    "analytics.function_ast_features": "function_ast_features.jsonl",
     "analytics.semantic_roles_functions": "semantic_roles_functions.jsonl",
     "analytics.semantic_roles_modules": "semantic_roles_modules.jsonl",
     # Coverage + tests
@@ -604,6 +609,7 @@ DEFAULT_PARQUET_FILENAMES: dict[str, str] = {
     "analytics.function_types": "function_types.parquet",
     "analytics.function_effects": "function_effects.parquet",
     "analytics.function_contracts": "function_contracts.parquet",
+    "analytics.function_ast_features": "function_ast_features.parquet",
     "analytics.semantic_roles_functions": "semantic_roles_functions.parquet",
     "analytics.semantic_roles_modules": "semantic_roles_modules.parquet",
     # Coverage + tests

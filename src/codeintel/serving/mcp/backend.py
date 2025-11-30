@@ -1037,13 +1037,16 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FunctionSummaryResponse
             Summary payload with found flag.
         """
-        return self.service.get_function_summary(
+        result = self.service.get_function_summary(
             urn=urn,
             goid_h128=goid_h128,
             rel_path=rel_path,
             qualname=qualname,
             scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
+        if isinstance(result, FunctionSummaryResponse):
+            return result
+        return FunctionSummaryResponse.from_domain(result)
 
     def list_high_risk_functions(
         self,
@@ -1061,12 +1064,15 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         HighRiskFunctionsResponse
             Functions ordered by risk with truncation metadata.
         """
-        return self.service.list_high_risk_functions(
+        result = self.service.list_high_risk_functions(
             min_risk=min_risk,
             limit=limit,
             tested_only=tested_only,
             scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
+        if isinstance(result, HighRiskFunctionsResponse):
+            return result
+        return HighRiskFunctionsResponse.from_domain(result)
 
     def get_callgraph_neighbors(
         self,
@@ -1085,12 +1091,15 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
             Neighbor edges and metadata.
         """
         _ = scope
-        return self.service.get_callgraph_neighbors(
+        result = self.service.get_callgraph_neighbors(
             goid_h128=goid_h128,
             direction=direction,
             limit=limit,
             scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
+        if isinstance(result, CallGraphNeighborsResponse):
+            return result
+        return CallGraphNeighborsResponse.from_domain(result)
 
     def get_callgraph_neighborhood(
         self,
@@ -1107,11 +1116,14 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         GraphNeighborhoodResponse
             Nodes and edges for the neighborhood plus metadata.
         """
-        return self.service.get_callgraph_neighborhood(
+        result = self.service.get_callgraph_neighborhood(
             goid_h128=goid_h128,
             radius=radius,
             max_nodes=max_nodes,
         )
+        if isinstance(result, GraphNeighborhoodResponse):
+            return result
+        return GraphNeighborhoodResponse.from_domain(result)
 
     def get_import_boundary(
         self,
@@ -1127,10 +1139,13 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         ImportBoundaryResponse
             Boundary edges and truncation metadata.
         """
-        return self.service.get_import_boundary(
+        result = self.service.get_import_boundary(
             subsystem_id=subsystem_id,
             max_edges=max_edges,
         )
+        if isinstance(result, ImportBoundaryResponse):
+            return result
+        return ImportBoundaryResponse.from_domain(result)
 
     def get_tests_for_function(
         self,
@@ -1149,12 +1164,15 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
             Tests hitting the function plus messages.
         """
         _ = scope
-        return self.service.get_tests_for_function(
+        result = self.service.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
             limit=limit,
             scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
+        if isinstance(result, TestsForFunctionResponse):
+            return result
+        return TestsForFunctionResponse.from_domain(result)
 
     def get_file_summary(
         self,
@@ -1171,9 +1189,12 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
             File-level summary payload with functions.
         """
         _ = scope
-        return self.service.get_file_summary(
+        result = self.service.get_file_summary(
             rel_path=rel_path, scope=scope if isinstance(scope, GraphScopePayload) else None
         )
+        if isinstance(result, FileSummaryResponse):
+            return result
+        return FileSummaryResponse.from_domain(result)
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """
@@ -1184,7 +1205,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FunctionProfileResponse
             Profile payload including found flag.
         """
-        return self.service.get_function_profile(goid_h128=goid_h128)
+        result = self.service.get_function_profile(goid_h128=goid_h128)
+        if isinstance(result, FunctionProfileResponse):
+            return result
+        return FunctionProfileResponse.from_domain(result)
 
     def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
         """
@@ -1195,7 +1219,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FileProfileResponse
             Profile payload including found flag.
         """
-        return self.service.get_file_profile(rel_path=rel_path)
+        result = self.service.get_file_profile(rel_path=rel_path)
+        if isinstance(result, FileProfileResponse):
+            return result
+        return FileProfileResponse.from_domain(result)
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
         """
@@ -1206,7 +1233,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         ModuleProfileResponse
             Profile payload including found flag.
         """
-        return self.service.get_module_profile(module=module)
+        result = self.service.get_module_profile(module=module)
+        if isinstance(result, ModuleProfileResponse):
+            return result
+        return ModuleProfileResponse.from_domain(result)
 
     def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
         """
@@ -1217,7 +1247,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FunctionArchitectureResponse
             Architecture payload including found flag.
         """
-        return self.service.get_function_architecture(goid_h128=goid_h128)
+        result = self.service.get_function_architecture(goid_h128=goid_h128)
+        if isinstance(result, FunctionArchitectureResponse):
+            return result
+        return FunctionArchitectureResponse.from_domain(result)
 
     def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
         """
@@ -1228,7 +1261,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         ModuleArchitectureResponse
             Architecture payload including found flag.
         """
-        return self.service.get_module_architecture(module=module)
+        result = self.service.get_module_architecture(module=module)
+        if isinstance(result, ModuleArchitectureResponse):
+            return result
+        return ModuleArchitectureResponse.from_domain(result)
 
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
@@ -1241,7 +1277,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         SubsystemSummaryResponse
             Subsystem rows and metadata.
         """
-        return self.service.list_subsystems(limit=limit, role=role, q=q)
+        result = self.service.list_subsystems(limit=limit, role=role, q=q)
+        if isinstance(result, SubsystemSummaryResponse):
+            return result
+        return SubsystemSummaryResponse.from_domain(result)
 
     def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
         """
@@ -1252,7 +1291,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         ModuleSubsystemResponse
             Membership rows and metadata.
         """
-        return self.service.get_module_subsystems(module=module)
+        result = self.service.get_module_subsystems(module=module)
+        if isinstance(result, ModuleSubsystemResponse):
+            return result
+        return ModuleSubsystemResponse.from_domain(result)
 
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
         """
@@ -1263,7 +1305,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FileHintsResponse
             Hint rows and metadata for the path.
         """
-        return self.service.get_file_hints(rel_path=rel_path)
+        result = self.service.get_file_hints(rel_path=rel_path)
+        if isinstance(result, FileHintsResponse):
+            return result
+        return FileHintsResponse.from_domain(result)
 
     def get_subsystem_modules(
         self, *, subsystem_id: str, module_limit: int | None = None
@@ -1276,10 +1321,13 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         SubsystemModulesResponse
             Subsystem detail payload.
         """
-        return self.service.get_subsystem_modules(
+        result = self.service.get_subsystem_modules(
             subsystem_id=subsystem_id,
             module_limit=module_limit,
         )
+        if isinstance(result, SubsystemModulesResponse):
+            return result
+        return SubsystemModulesResponse.from_domain(result)
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
@@ -1292,7 +1340,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         SubsystemSearchResponse
             Subsystem rows and metadata.
         """
-        return self.service.search_subsystems(limit=limit, role=role, q=q)
+        result = self.service.search_subsystems(limit=limit, role=role, q=q)
+        if isinstance(result, SubsystemSearchResponse):
+            return result
+        return SubsystemSearchResponse.from_domain(result)
 
     def summarize_subsystem(
         self, *, subsystem_id: str, module_limit: int | None = None
@@ -1305,10 +1356,13 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         SubsystemModulesResponse
             Subsystem detail payload.
         """
-        return self.service.summarize_subsystem(
+        result = self.service.summarize_subsystem(
             subsystem_id=subsystem_id,
             module_limit=module_limit,
         )
+        if isinstance(result, SubsystemModulesResponse):
+            return result
+        return SubsystemModulesResponse.from_domain(result)
 
 
 def create_backend(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 
@@ -37,7 +37,7 @@ def call_name(node: ast.AST | None) -> str | None:
     return None
 
 
-def resolve_call_target(func: ast.AST, alias_map: dict[str, str] | None = None) -> CallTarget:
+def resolve_call_target(func: ast.AST, alias_map: Mapping[str, str] | None = None) -> CallTarget:
     """
     Resolve a call target into (library, attribute, base).
 

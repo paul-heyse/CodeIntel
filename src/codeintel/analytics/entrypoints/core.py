@@ -6,12 +6,14 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.context import (
     AnalyticsContext,
     AnalyticsContextConfig,
@@ -79,6 +81,7 @@ class EntryPointContext:
     subsystem_names: dict[str, str]
     catalog: FunctionCatalogProvider
     now: datetime
+    features: Mapping[int, FunctionAstFeatures]
 
 
 @dataclass(frozen=True)
@@ -142,7 +145,11 @@ def build_entrypoints(
     )
     catalog = shared_context.catalog
     entrypoint_context = _build_entrypoint_context(
-        con, cfg, catalog, module_map_override=shared_context.module_map
+        con,
+        cfg,
+        catalog,
+        module_map_override=shared_context.module_map,
+        features=shared_context.function_features_map,
     )
     if entrypoint_context is None:
         log.warning("No modules available to scan for entrypoints in %s@%s", cfg.repo, cfg.commit)
@@ -241,6 +248,7 @@ def _build_entrypoint_context(
     cfg: EntryPointsStepConfig,
     catalog: FunctionCatalogProvider,
     module_map_override: dict[str, str] | None = None,
+    features: Mapping[int, FunctionAstFeatures] | None = None,
 ) -> EntryPointContext | None:
     module_ctx = _load_module_context(con, cfg.repo, cfg.commit)
     if not module_ctx:
@@ -268,6 +276,7 @@ def _build_entrypoint_context(
         subsystem_names=subsystem_names,
         catalog=catalog,
         now=datetime.now(tz=UTC),
+        features=features or {},
     )
 
 
@@ -284,12 +293,27 @@ def _materialize_candidate(
     if module_info is None:
         log.debug("Module context missing for %s; skipping entrypoint", rel_path)
         return None
+    feature_vector = ctx.features.get(goid)
 
     entrypoint_id = _entrypoint_id(ctx.repo, ctx.commit, cand, urn)
     subsystem_id = ctx.subsystem_by_module.get(module_info.module)
     subsystem_name = ctx.subsystem_names.get(subsystem_id) if subsystem_id is not None else None
     coverage_ratio = ctx.coverage_by_goid.get(goid)
     summary, edge_rows = _summarize_tests(goid, entrypoint_id, ctx)
+    extra_payload = cand.extra or {}
+    if feature_vector is not None:
+        feature_summary = {
+            "http_server_libs": sorted(feature_vector.http_server_libs),
+            "http_client_libs": sorted(feature_vector.http_client_libs),
+            "db_libs": sorted(feature_vector.db_libs),
+            "message_libs": sorted(feature_vector.message_libs),
+            "uses_network": feature_vector.io_flags.uses_network,
+            "uses_db": feature_vector.io_flags.uses_db,
+            "uses_filesystem": feature_vector.io_flags.uses_filesystem,
+            "uses_subprocess": feature_vector.io_flags.uses_subprocess,
+            "uses_concurrency_lib": feature_vector.uses_concurrency_lib,
+        }
+        extra_payload = {**extra_payload, "ast_features": feature_summary}
 
     entrypoint_row = (
         ctx.repo,
@@ -310,7 +334,7 @@ def _materialize_candidate(
         cand.arguments_schema,
         cand.schedule,
         cand.trigger,
-        _normalize_json(cand.extra),
+        _normalize_json(extra_payload),
         subsystem_id,
         subsystem_name,
         _normalize_json(module_info.tags),

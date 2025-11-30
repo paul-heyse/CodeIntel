@@ -15,6 +15,7 @@ ColumnType = Literal[
     "VARCHAR",
     "JSON",
     "TIMESTAMP",
+    "TIMESTAMPTZ",
 ]
 COLUMN_TYPE = ColumnType
 
@@ -143,6 +144,33 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         description="Structured docstring facts extracted with griffe",
+    ),
+    "core.ingest_runs": TableSchema(
+        schema="core",
+        name="ingest_runs",
+        columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
+            Column("step", "VARCHAR", nullable=False),
+            Column("run_id", "VARCHAR", nullable=False),
+            Column("mode", "VARCHAR", nullable=False),
+            Column("started_at", "TIMESTAMPTZ", nullable=False),
+            Column("finished_at", "TIMESTAMPTZ"),
+            Column("duration_s", "DOUBLE"),
+            Column("rows_inserted", "BIGINT", nullable=False),
+            Column("rows_deleted", "BIGINT", nullable=False),
+            Column("status", "VARCHAR", nullable=False),
+            Column("error_kind", "VARCHAR"),
+            Column("error_message", "VARCHAR"),
+            Column("datasets", "JSON"),
+            Column("modules_total", "BIGINT"),
+            Column("modules_changed", "BIGINT"),
+            Column("modules_deleted", "BIGINT"),
+            Column("modules_changed_ratio", "DOUBLE"),
+            Column("modules_deleted_ratio", "DOUBLE"),
+            Column("use_full_rebuild", "BOOLEAN"),
+        ],
+        description="Per-step ingest run telemetry for control plane reporting.",
     ),
     "core.modules": TableSchema(
         schema="core",
@@ -1562,6 +1590,44 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         description=(
             "Denormalized per-function profile combining risk, coverage, tests, docs, and graph "
             "metrics"
+        ),
+    ),
+    "analytics.function_ast_features": TableSchema(
+        schema="analytics",
+        name="function_ast_features",
+        columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
+            Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("qualname", "VARCHAR", nullable=False),
+            Column("is_async", "BOOLEAN", nullable=False),
+            Column("uses_network", "BOOLEAN", nullable=False),
+            Column("uses_db", "BOOLEAN", nullable=False),
+            Column("uses_filesystem", "BOOLEAN", nullable=False),
+            Column("uses_subprocess", "BOOLEAN", nullable=False),
+            Column("uses_concurrency_lib", "BOOLEAN", nullable=False),
+            Column("uses_threading", "BOOLEAN", nullable=False),
+            Column("uses_asyncio_lib", "BOOLEAN", nullable=False),
+            Column("http_client_libs", "JSON", nullable=False),
+            Column("http_server_libs", "JSON", nullable=False),
+            Column("db_libs", "JSON", nullable=False),
+            Column("message_libs", "JSON", nullable=False),
+            Column("config_read_count", "INTEGER", nullable=False),
+            Column("feature_flag_count", "INTEGER", nullable=False),
+            Column("decorators", "JSON", nullable=False),
+            Column("libraries_used", "JSON", nullable=False),
+            Column("created_at", "TIMESTAMP", nullable=False),
+        ],
+        primary_key=("repo", "commit", "function_goid_h128"),
+        indexes=(
+            Index(
+                "idx_analytics_function_ast_features_repo_commit",
+                ("repo", "commit"),
+            ),
+        ),
+        description=(
+            "Per-function AST-derived semantic features for explainability and classification."
         ),
     ),
     "analytics.file_profile": TableSchema(

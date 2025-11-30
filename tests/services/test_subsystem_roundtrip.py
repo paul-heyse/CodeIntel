@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.http.fastapi import create_app
+from codeintel.serving.mcp.models import SubsystemCoverageRow, SubsystemProfileRow
 from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
@@ -143,7 +144,7 @@ def test_subsystem_profile_roundtrip() -> None:
     local_profiles = local.list_subsystem_profiles(limit=PROFILE_LIMIT)
     if not local_profiles.profiles:
         pytest.fail("Expected subsystem profile rows")
-    profile = local_profiles.profiles[0]
+    profile = SubsystemProfileRow.model_validate(local_profiles.profiles[0])
     if profile.entrypoints_json != ENTRYPOINTS:
         pytest.fail("Entrypoints were not normalized to list-of-dicts")
     if profile.risk_level is None or profile.risk_level.value != "medium":
@@ -167,7 +168,7 @@ def test_subsystem_coverage_roundtrip() -> None:
     local_cov = local.list_subsystem_coverage(limit=COVERAGE_LIMIT)
     if not local_cov.coverage:
         pytest.fail("Expected subsystem coverage rows")
-    cov = local_cov.coverage[0]
+    cov = SubsystemCoverageRow.model_validate(local_cov.coverage[0])
     if cov.test_count != EXPECTED_TEST_COUNT:
         pytest.fail("Coverage aggregates did not compute expected test_count")
 

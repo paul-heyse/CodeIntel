@@ -14,12 +14,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving import domain_models as dm
 from codeintel.serving.http.datasets import build_registry_and_limits, validate_dataset_registry
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import QueryBackend
 from codeintel.serving.mcp.models import (
-    FunctionSummaryResponse,
     GraphScopePayload,
     ResponseMeta,
     SubsystemCoverageResponse,
@@ -468,7 +468,7 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
             rel_path: str | None = None,
             qualname: str | None = None,
             scope: GraphScopePayload | None = None,
-        ) -> FunctionSummaryResponse:
+        ) -> dm.FunctionSummaryResult:
             _ = (goid_h128, rel_path)
             calls.append("get_function_summary")
             return super().get_function_summary(
@@ -560,7 +560,7 @@ def test_mcp_tool_delegation() -> None:
             goid_h128: int | None = None,
             rel_path: str | None = None,
             qualname: str | None = None,
-        ) -> FunctionSummaryResponse:
+        ) -> dm.FunctionSummaryResult:
             _ = (goid_h128, rel_path)
             calls.append("get_function_summary")
             return super().get_function_summary(

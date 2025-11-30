@@ -47,7 +47,9 @@ def _load_subsystem_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
         else:
             paths[op_id] = spec.http_path
     if missing or missing_paths:
-        message = f"Missing OperationSpec entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
+        message = (
+            f"Missing OperationSpec entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
+        )
         raise ValueError(message)
     return specs, paths
 

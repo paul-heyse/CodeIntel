@@ -4,21 +4,16 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from codeintel.analytics.tests_profiles.behavioral_tags import (
-    CONCURRENCY_LIBS as _CONCURRENCY_LIBS,
-)
-from codeintel.analytics.tests_profiles.behavioral_tags import (
-    DEFAULT_IO_SPEC as _DEFAULT_IO_SPEC,
-)
-from codeintel.analytics.tests_profiles.behavioral_tags import (
-    build_behavior_rows,
-)
+from codeintel.analytics.ast_features.extract import build_import_map, io_flags_from_call
+from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
+from codeintel.analytics.ast_utils import resolve_call_target
+from codeintel.analytics.tests_profiles.behavioral_tags import build_behavior_rows
 from codeintel.analytics.tests_profiles.importance import (
     compute_importance_score as compute_importance_score_new,
 )
@@ -47,10 +42,38 @@ from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 
-DEFAULT_IO_SPEC: dict[str, dict[str, list[str]]] = _DEFAULT_IO_SPEC
-CONCURRENCY_LIBS: set[str] = set(_CONCURRENCY_LIBS)
-
 PRIMARY_COVERAGE_THRESHOLD = 0.4
+
+
+def _normalize_io_entry(value: object) -> dict[str, list[str]]:
+    if isinstance(value, Mapping):
+        libs = value.get("libs", [])
+        funcs = value.get("funcs", [])
+    else:
+        libs = []
+        funcs = []
+    return {
+        "libs": [str(item) for item in libs] if isinstance(libs, Iterable) else [],
+        "funcs": [str(item) for item in funcs] if isinstance(funcs, Iterable) else [],
+    }
+
+
+def _patterns_from_io_spec(
+    io_spec: Mapping[str, object] | None,
+) -> AstFeaturePatterns:
+    base_spec = io_spec or DEFAULT_PATTERNS.io_spec
+    normalized_spec = {
+        key: _normalize_io_entry(value)
+        for key, value in base_spec.items()
+    }
+    return AstFeaturePatterns(
+        io_spec=normalized_spec,
+        concurrency_libs=set(DEFAULT_PATTERNS.concurrency_libs),
+        http_client_libs=set(DEFAULT_PATTERNS.http_client_libs),
+        http_server_libs=set(DEFAULT_PATTERNS.http_server_libs),
+        db_libs=set(DEFAULT_PATTERNS.db_libs),
+        message_libs=set(DEFAULT_PATTERNS.message_libs),
+    )
 
 
 @dataclass(frozen=True)
@@ -133,7 +156,9 @@ def build_test_profile(gateway: StorageGateway, cfg: TestProfileStepConfig) -> N
     functions_covered = _load_functions_covered(con, cfg.repo, cfg.commit)
     subsystems_covered = _load_subsystems_covered(con, cfg.repo, cfg.commit)
     tg_metrics = _load_test_graph_metrics(con, cfg.repo, cfg.commit)
-    ast_info = _build_test_ast_index(cfg.repo_root, tests, DEFAULT_IO_SPEC, CONCURRENCY_LIBS)
+    io_spec_raw = cfg.io_spec if isinstance(cfg.io_spec, dict) else None
+    patterns = _patterns_from_io_spec(io_spec_raw)
+    ast_info = _build_test_ast_index(cfg.repo_root, tests, patterns)
     ctx = build_test_profile_context(
         cfg=cfg,
         functions_covered=functions_covered,
@@ -156,11 +181,7 @@ def _build_profile_context(
     tests_list = list(tests)
     now = datetime.now(tz=UTC)
     io_spec_raw = cfg.io_spec if isinstance(cfg.io_spec, dict) else None
-    io_spec: dict[str, dict[str, list[str]]] = (
-        cast("dict[str, dict[str, list[str]]]", io_spec_raw)
-        if io_spec_raw is not None
-        else DEFAULT_IO_SPEC
-    )
+    patterns = _patterns_from_io_spec(io_spec_raw)
     precomputed = precomputed or {}
     functions_covered = cast(
         "dict[str, FunctionCoverageEntry] | None", precomputed.get("functions_covered")
@@ -171,7 +192,6 @@ def _build_profile_context(
     tg_metrics = cast("dict[str, TestGraphMetrics] | None", precomputed.get("tg_metrics")) or (
         _load_test_graph_metrics(con, cfg.repo, cfg.commit)
     )
-    ast_info = _build_test_ast_index(cfg.repo_root, tests_list, io_spec, CONCURRENCY_LIBS)
     max_function_count = max((entry.count for entry in functions_covered.values()), default=0)
     max_weighted_degree = max(
         (metrics.weighted_degree or 0.0 for metrics in tg_metrics.values()), default=0.0
@@ -180,6 +200,7 @@ def _build_profile_context(
         (entry.max_risk_score or 0.0 for entry in subsystems_covered.values()),
         default=0.0,
     )
+    ast_info = _build_test_ast_index(cfg.repo_root, tests_list, patterns)
     return TestProfileContext(
         cfg=cfg,
         now=now,
@@ -1007,14 +1028,13 @@ def build_test_ast_index_for_tests(
     dict[str, TestAstInfo]
         Mapping from test IDs to AST-derived metrics.
     """
-    return _build_test_ast_index(repo_root, tests, DEFAULT_IO_SPEC, CONCURRENCY_LIBS)
+    return _build_test_ast_index(repo_root, tests, DEFAULT_PATTERNS)
 
 
 def _build_test_ast_index(
     repo_root: Path,
     tests: Iterable[TestRecord],
-    io_spec: dict[str, dict[str, list[str]]],
-    concurrency_libs: set[str],
+    patterns: AstFeaturePatterns,
 ) -> dict[str, TestAstInfo]:
     tests_by_path: dict[str, list[TestRecord]] = {}
     for test in tests:
@@ -1025,8 +1045,7 @@ def _build_test_ast_index(
         ast_results = _analyze_file(
             repo_root / rel_path,
             path_tests,
-            io_spec,
-            concurrency_libs,
+            patterns,
         )
         info_by_id.update(ast_results)
     return info_by_id
@@ -1035,14 +1054,13 @@ def _build_test_ast_index(
 def _analyze_file(
     path: Path,
     tests: Iterable[TestRecord],
-    io_spec: dict[str, dict[str, list[str]]],
-    concurrency_libs: set[str],
+    patterns: AstFeaturePatterns,
 ) -> dict[str, TestAstInfo]:
     parsed = parse_python_module(path)
     if parsed is None:
         return {test.test_id: TestAstInfo() for test in tests}
     _, tree = parsed
-    import_map = _build_import_map(tree)
+    import_map = build_import_map(tree)
     info: dict[str, TestAstInfo] = {}
     for test in tests:
         if test.start_line is None:
@@ -1052,8 +1070,7 @@ def _analyze_file(
             import_map=import_map,
             start_line=test.start_line,
             end_line=test.end_line or test.start_line,
-            io_spec=io_spec,
-            concurrency_libs=concurrency_libs,
+            patterns=patterns,
         )
         info[test.test_id] = _analyze_span(tree, config)
     return info
@@ -1079,22 +1096,7 @@ class SpanConfig:
     import_map: dict[str, str]
     start_line: int
     end_line: int
-    io_spec: dict[str, dict[str, list[str]]]
-    concurrency_libs: set[str]
-
-
-def _build_import_map(tree: ast.AST) -> dict[str, str]:
-    mapping: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                root = alias.name.split(".", maxsplit=1)[0]
-                mapping[alias.asname or alias.name] = root
-        if isinstance(node, ast.ImportFrom):
-            module = node.module.split(".", maxsplit=1)[0] if node.module else ""
-            for alias in node.names:
-                mapping[alias.asname or alias.name] = module
-    return mapping
+    patterns: AstFeaturePatterns
 
 
 def _analyze_span(
@@ -1121,8 +1123,7 @@ def _analyze_span(
 def build_test_ast_index(
     repo_root: Path,
     tests: Iterable[TestRecord],
-    io_spec: dict[str, dict[str, list[str]]],
-    concurrency_libs: set[str],
+    patterns: AstFeaturePatterns,
 ) -> dict[str, TestAstInfo]:
     """
     Public wrapper for building the AST index.
@@ -1132,7 +1133,7 @@ def build_test_ast_index(
     dict[str, TestAstInfo]
         AST-derived info keyed by ``test_id``.
     """
-    return _build_test_ast_index(repo_root, tests, io_spec, concurrency_libs)
+    return _build_test_ast_index(repo_root, tests, patterns)
 
 
 def _node_in_span(node: ast.AST, config: SpanConfig) -> bool:
@@ -1157,7 +1158,12 @@ def _update_span_state(
     if isinstance(node, ast.Call):
         if _is_pytest_raises(node.func):
             state.uses_pytest_raises = True
-        state.io_flags = _update_io_flags(node, config, state.io_flags)
+        state.io_flags = io_flags_from_call(
+            node,
+            config.import_map,
+            state.io_flags,
+            patterns=config.patterns,
+        )
         state.uses_concurrency = state.uses_concurrency or _uses_concurrency(node, config)
 
 
@@ -1185,68 +1191,8 @@ def _is_pytest_raises(node: ast.AST | None) -> bool:
 
 
 def _uses_concurrency(node: ast.Call, config: SpanConfig) -> bool:
-    root_name, _ = _call_root_and_attr(node.func)
-    if root_name is None:
+    target = resolve_call_target(node.func, config.import_map)
+    if target.library is None:
         return False
-    module = config.import_map.get(root_name, root_name)
-    return module in config.concurrency_libs
-
-
-def _call_root_and_attr(func: ast.AST) -> tuple[str | None, str | None]:
-    if isinstance(func, ast.Name):
-        return func.id, func.id
-    if isinstance(func, ast.Attribute):
-        attr = func.attr
-        value = func.value
-        while isinstance(value, ast.Attribute):
-            value = value.value
-        if isinstance(value, ast.Name):
-            return value.id, attr
-    return None, None
-
-
-def _update_io_flags(
-    node: ast.Call,
-    config: SpanConfig,
-    existing: IoFlags,
-) -> IoFlags:
-    root_name, attr = _call_root_and_attr(node.func)
-    if root_name is None:
-        return existing
-    module = config.import_map.get(root_name, root_name)
-    module_root = module.split(".", maxsplit=1)[0]
-    attr_lower = attr.lower() if attr is not None else None
-
-    uses_network = existing.uses_network
-    uses_db = existing.uses_db
-    uses_filesystem = existing.uses_filesystem
-    uses_subprocess = existing.uses_subprocess
-
-    network_spec = config.io_spec["network"]
-    db_spec = config.io_spec["db"]
-    filesystem_spec = config.io_spec["filesystem"]
-    subprocess_spec = config.io_spec["subprocess"]
-
-    if module_root in network_spec["libs"] or (
-        attr_lower is not None and attr_lower in network_spec["funcs"]
-    ):
-        uses_network = True
-    if module_root in db_spec["libs"] or (
-        attr_lower is not None and attr_lower in db_spec["funcs"]
-    ):
-        uses_db = True
-    if module_root in filesystem_spec["libs"] or (
-        attr_lower is not None and attr_lower in filesystem_spec["funcs"]
-    ):
-        uses_filesystem = True
-    if module_root in subprocess_spec["libs"] or (
-        attr_lower is not None and attr_lower in subprocess_spec["funcs"]
-    ):
-        uses_subprocess = True
-
-    return IoFlags(
-        uses_network=uses_network,
-        uses_db=uses_db,
-        uses_filesystem=uses_filesystem,
-        uses_subprocess=uses_subprocess,
-    )
+    library_root = target.library.split(".", maxsplit=1)[0]
+    return library_root in config.patterns.concurrency_libs

@@ -23,7 +23,10 @@ from codeintel.analytics.entrypoints.plugins import ENTRYPOINTS_PLUGIN
 from codeintel.analytics.functions.contracts_plugins import FUNCTION_CONTRACTS_PLUGIN
 from codeintel.analytics.functions.effects_plugins import FUNCTION_EFFECTS_PLUGIN
 from codeintel.analytics.functions.history_plugins import FUNCTION_HISTORY_PLUGIN
-from codeintel.analytics.functions.plugins import FUNCTION_METRICS_PLUGIN
+from codeintel.analytics.functions.plugins import (
+    FUNCTION_AST_FEATURES_PLUGIN,
+    FUNCTION_METRICS_PLUGIN,
+)
 from codeintel.analytics.graph_service_runtime import GraphPluginRunOptions, GraphServiceRuntime
 from codeintel.analytics.graphs.plugins import (
     DEFAULT_GRAPH_METRIC_PLUGINS,
@@ -331,7 +334,10 @@ class FunctionAnalyticsStep:
 
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(FUNCTION_METRICS_PLUGIN.name,),
+                plugin_names=(
+                    FUNCTION_AST_FEATURES_PLUGIN.name,
+                    FUNCTION_METRICS_PLUGIN.name,
+                ),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -361,13 +367,19 @@ class FunctionAnalyticsStep:
             "validation_total": 0,
             "validation_parse_failed": 0,
             "validation_span_not_found": 0,
+            "rows_written": 0,
+            "functions_seen": 0,
+            "functions_missing": 0,
         }
         for rec in report.records:
             if rec.name == "functions.metrics" and isinstance(rec.meta, dict):
                 result = rec.meta.get("result")
                 if isinstance(result, dict):
                     summary.update({k: int(v) for k, v in result.items() if isinstance(v, int)})
-                break
+            if rec.name == "functions.ast_features" and isinstance(rec.meta, dict):
+                result = rec.meta.get("result")
+                if isinstance(result, dict):
+                    summary.update({k: int(v) for k, v in result.items() if isinstance(v, int)})
 
         if manifest_path is not None:
             payload = encode_manifest(report)
@@ -375,13 +387,18 @@ class FunctionAnalyticsStep:
             manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
         log.info(
-            "function_metrics summary rows=%d types=%d validation=%d "
-            "parse_failed=%d span_not_found=%d",
+            (
+                "function_metrics summary rows=%d types=%d validation=%d "
+                "parse_failed=%d span_not_found=%d ast_features=%d functions_seen=%d missing=%d"
+            ),
             summary["metrics_rows"],
             summary["types_rows"],
             summary["validation_total"],
             summary["validation_parse_failed"],
             summary["validation_span_not_found"],
+            summary["rows_written"],
+            summary["functions_seen"],
+            summary["functions_missing"],
         )
 
 

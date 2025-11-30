@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
+from codeintel.analytics.ast_features.model import IoFlags
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 
 
@@ -62,21 +63,6 @@ class TestGraphMetricsProtocol(Protocol):
 
 
 @dataclass(frozen=True)
-class IoFlags:
-    """Flags describing IO usage within a test."""
-
-    uses_network: bool = False
-    uses_db: bool = False
-    uses_filesystem: bool = False
-    uses_subprocess: bool = False
-
-    @property
-    def io_bound(self) -> bool:
-        """Return True when any IO flag is set."""
-        return self.uses_network or self.uses_db or self.uses_filesystem or self.uses_subprocess
-
-
-@dataclass(frozen=True)
 class TestAstInfo:
     """AST-derived metrics for a single test span."""
 
@@ -88,7 +74,7 @@ class TestAstInfo:
     uses_concurrency_lib: bool = False
     has_boundary_asserts: bool = False
     uses_fixtures: bool = False
-    io_flags: IoFlags = IoFlags()
+    io_flags: IoFlags = field(default_factory=IoFlags)
 
 
 @dataclass(frozen=True)

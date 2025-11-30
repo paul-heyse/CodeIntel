@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.ast_utils import resolve_call_target, safe_unparse, snippet_from_lines
 from codeintel.analytics.context import (
     AnalyticsContext,
@@ -115,6 +116,7 @@ class DependencyContext:
     module_map: dict[str, str]
     catalog: FunctionCatalogProvider
     now: datetime
+    features: dict[int, FunctionAstFeatures]
 
 
 class DependencyCallVisitor(ast.NodeVisitor):
@@ -232,6 +234,7 @@ def build_external_dependency_calls(
         module_map=module_map,
         catalog=catalog,
         now=now,
+        features=shared_context.function_features_map,
     )
 
     rows: list[tuple[object, ...]] = []
@@ -270,6 +273,14 @@ def _function_call_rows(
     func_ast: FunctionAst,
     context: DependencyContext,
 ) -> list[tuple[object, ...]]:
+    feature_vector = context.features.get(goid)
+    if feature_vector is not None and not (
+        feature_vector.io_flags.uses_network
+        or feature_vector.db_libs
+        or feature_vector.http_client_libs
+        or feature_vector.message_libs
+    ):
+        return []
     alias_map = context.alias_maps.get(func_ast.rel_path, {})
     visitor = DependencyCallVisitor(
         alias_map,

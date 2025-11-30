@@ -37,7 +37,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "HasModelDump": ("codeintel.serving.protocols", "HasModelDump"),
     "BackendResource": ("codeintel.serving.services.factory", "BackendResource"),
     "build_backend_resource": ("codeintel.serving.services.factory", "build_backend_resource"),
-    "build_service_from_config": ("codeintel.serving.services.factory", "build_service_from_config"),
+    "build_service_from_config": (
+        "codeintel.serving.services.factory",
+        "build_service_from_config",
+    ),
     "HttpQueryService": ("codeintel.serving.services.query_service", "HttpQueryService"),
     "LocalQueryService": ("codeintel.serving.services.query_service", "LocalQueryService"),
     "QueryService": ("codeintel.serving.services.query_service", "QueryService"),

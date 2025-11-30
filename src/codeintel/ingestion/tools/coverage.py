@@ -83,9 +83,7 @@ class CoveragePlugin(ToolPlugin):
 
         output_path = output_path_obj
         coverage_file = coverage_file_obj
-        await to_thread.run_sync(
-            lambda: output_path.parent.mkdir(parents=True, exist_ok=True)
-        )
+        await to_thread.run_sync(lambda: output_path.parent.mkdir(parents=True, exist_ok=True))
 
         args = ["json", "--quiet", "-o", str(output_path)]
         if coverage_file is not None:

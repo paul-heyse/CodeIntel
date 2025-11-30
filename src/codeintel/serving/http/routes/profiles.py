@@ -40,7 +40,11 @@ def build_profiles_router() -> APIRouter:
     spec_function = _require_spec("profiles.function")
     spec_file = _require_spec("profiles.file")
     spec_module = _require_spec("profiles.module")
-    if spec_function.http_path is None or spec_file.http_path is None or spec_module.http_path is None:
+    if (
+        spec_function.http_path is None
+        or spec_file.http_path is None
+        or spec_module.http_path is None
+    ):
         message = "Profile OperationSpec entries must define http_path"
         raise ValueError(message)
     function_path = spec_function.http_path

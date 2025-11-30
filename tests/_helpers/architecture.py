@@ -35,13 +35,34 @@ def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str)
         ("DELETE FROM graph.call_graph_edges WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.graph_metrics_functions_ext WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.test_graph_metrics_functions WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.cfg_function_metrics WHERE repo = ? AND commit = ?", [repo, commit]),
-        ("DELETE FROM analytics.dfg_function_metrics WHERE repo = ? AND commit = ?", [repo, commit]),
+        (
+            "DELETE FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
+        (
+            "DELETE FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
+        (
+            "DELETE FROM analytics.graph_metrics_functions_ext WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
+        (
+            "DELETE FROM analytics.graph_metrics_modules_ext WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
+        (
+            "DELETE FROM analytics.test_graph_metrics_functions WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
+        (
+            "DELETE FROM analytics.cfg_function_metrics WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
+        (
+            "DELETE FROM analytics.dfg_function_metrics WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
         (
             "DELETE FROM analytics.symbol_graph_metrics_modules WHERE repo = ? AND commit = ?",
             [repo, commit],
@@ -50,7 +71,10 @@ def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str)
             "DELETE FROM analytics.config_graph_metrics_modules WHERE repo = ? AND commit = ?",
             [repo, commit],
         ),
-        ("DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?", [repo, commit]),
+        (
+            "DELETE FROM analytics.subsystem_graph_metrics WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        ),
         ("DELETE FROM analytics.subsystems WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.subsystem_modules WHERE repo = ? AND commit = ?", [repo, commit]),
         ("DELETE FROM analytics.subsystem_agreement WHERE repo = ? AND commit = ?", [repo, commit]),
@@ -66,6 +90,7 @@ def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str)
     ]
     for statement, statement_params in delete_statements:
         con.execute(statement, statement_params)
+
 
 def open_seeded_architecture_gateway(
     *,
@@ -247,9 +272,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
             )
         ]
     )
-    function_contract = get_analytics_dataset_contract(
-        gateway, "analytics.graph_metrics_functions"
-    )
+    function_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
     module_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")
     function_ext_contract = get_analytics_dataset_contract(
         gateway, "analytics.graph_metrics_functions_ext"

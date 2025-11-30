@@ -12,6 +12,8 @@ from typing import cast
 
 import networkx as nx
 
+from codeintel.analytics.ast_features.extract import compute_function_features
+from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.function_ast_cache import (
     FunctionAst,
     FunctionAstLoadRequest,
@@ -85,6 +87,7 @@ class AnalyticsResourceCounters:
     call_graph_ms: float
     import_graph_ms: float
     function_asts_ms: float
+    function_features_ms: float
     symbol_module_graph_ms: float
     symbol_function_graph_ms: float
 
@@ -100,6 +103,7 @@ class AnalyticsContext:
     module_map: dict[str, str]
     function_ast_map: dict[int, FunctionAst]
     missing_function_goids: set[int]
+    function_features_map: dict[int, FunctionAstFeatures]
     call_graph: nx.DiGraph
     import_graph: nx.DiGraph | None
     symbol_module_graph: nx.Graph | None
@@ -232,6 +236,67 @@ def _load_trimmed_graph(
     return trimmed, truncated, metrics, elapsed_ms
 
 
+def _load_graphs_for_context(
+    engine: GraphEngine,
+    cfg: AnalyticsContextConfig,
+) -> tuple[dict[str, nx.Graph | None], dict[str, bool], list[dict[str, object]], dict[str, float]]:
+    graphs: dict[str, nx.Graph | None] = {}
+    truncated: dict[str, bool] = {}
+    graph_metrics: list[dict[str, object]] = []
+    timers: dict[str, float] = {}
+
+    def _record(
+        label: str,
+        loader: Callable[[], nx.Graph | None],
+        *,
+        max_nodes: int | None,
+        max_edges: int | None,
+        seed: int,
+    ) -> None:
+        graph, is_truncated, metrics, elapsed_ms = _load_trimmed_graph(
+            loader,
+            label=label,
+            max_nodes=max_nodes,
+            max_edges=max_edges,
+            seed=seed,
+        )
+        graphs[label] = graph
+        truncated[label] = is_truncated
+        graph_metrics.append(metrics)
+        timers[f"{label}_ms"] = elapsed_ms
+
+    _record(
+        "call_graph",
+        engine.call_graph,
+        max_nodes=cfg.max_call_graph_nodes,
+        max_edges=cfg.max_graph_edges,
+        seed=cfg.sample_seed,
+    )
+    _record(
+        "import_graph",
+        lambda: _import_graph_or_none(engine),
+        max_nodes=cfg.max_import_graph_nodes,
+        max_edges=cfg.max_graph_edges,
+        seed=cfg.sample_seed + 1,
+    )
+    if cfg.load_symbol_graphs:
+        _record(
+            "symbol_module_graph",
+            engine.symbol_module_graph,
+            max_nodes=cfg.max_symbol_graph_nodes,
+            max_edges=cfg.max_symbol_graph_edges,
+            seed=cfg.sample_seed + 2,
+        )
+        _record(
+            "symbol_function_graph",
+            engine.symbol_function_graph,
+            max_nodes=cfg.max_symbol_graph_nodes,
+            max_edges=cfg.max_symbol_graph_edges,
+            seed=cfg.sample_seed + 3,
+        )
+    return graphs, truncated, graph_metrics, timers
+
+
 def _resolve_engine(
     gateway: StorageGateway,
     cfg: AnalyticsContextConfig,
@@ -309,7 +374,6 @@ def build_analytics_context(
         Shared analytics artifacts scoped to the provided repository snapshot.
     """
     timers: dict[str, float] = {}
-    graph_metrics: list[dict[str, object]] = []
     active_engine = _resolve_engine(
         gateway=gateway,
         cfg=cfg,
@@ -327,68 +391,17 @@ def build_analytics_context(
     module_map = load_module_map(gateway, cfg.repo, cfg.commit)
     timers["module_map_ms"] = (monotonic() - start) * 1000.0
 
-    graphs: dict[str, nx.Graph | None] = {}
-    truncated: dict[str, bool] = {}
-
-    def _record_graph(
-        label: str,
-        loader: Callable[[], nx.Graph | None],
-        *,
-        max_nodes: int | None,
-        max_edges: int | None,
-        seed: int,
-    ) -> None:
-        graph, is_truncated, metrics, elapsed_ms = _load_trimmed_graph(
-            loader,
-            label=label,
-            max_nodes=max_nodes,
-            max_edges=max_edges,
-            seed=seed,
-        )
-        graphs[label] = graph
-        truncated[label] = is_truncated
-        graph_metrics.append(metrics)
-        timers[f"{label}_ms"] = elapsed_ms
-
-    _record_graph(
-        "call_graph",
-        active_engine.call_graph,
-        max_nodes=cfg.max_call_graph_nodes,
-        max_edges=cfg.max_graph_edges,
-        seed=cfg.sample_seed,
-    )
-
-    _record_graph(
-        "import_graph",
-        lambda: _import_graph_or_none(active_engine),
-        max_nodes=cfg.max_import_graph_nodes,
-        max_edges=cfg.max_graph_edges,
-        seed=cfg.sample_seed + 1,
-    )
-    if graphs["import_graph"] is not None:
+    graphs, truncated, graph_metrics, graph_timers = _load_graphs_for_context(active_engine, cfg)
+    timers.update(graph_timers)
+    if graphs.get("import_graph") is not None:
         graphs["import_graph"] = cast("nx.DiGraph", graphs["import_graph"])
-
-    timers["symbol_module_graph_ms"] = 0.0
-    timers["symbol_function_graph_ms"] = 0.0
-    graphs["symbol_module_graph"] = None
-    graphs["symbol_function_graph"] = None
-    truncated["symbol_module_graph"] = False
-    truncated["symbol_function_graph"] = False
-    if cfg.load_symbol_graphs:
-        _record_graph(
-            "symbol_module_graph",
-            active_engine.symbol_module_graph,
-            max_nodes=cfg.max_symbol_graph_nodes,
-            max_edges=cfg.max_symbol_graph_edges,
-            seed=cfg.sample_seed + 2,
-        )
-        _record_graph(
-            "symbol_function_graph",
-            active_engine.symbol_function_graph,
-            max_nodes=cfg.max_symbol_graph_nodes,
-            max_edges=cfg.max_symbol_graph_edges,
-            seed=cfg.sample_seed + 3,
-        )
+    if "symbol_module_graph_ms" not in timers:
+        timers["symbol_module_graph_ms"] = 0.0
+        timers["symbol_function_graph_ms"] = 0.0
+    graphs.setdefault("symbol_module_graph", None)
+    graphs.setdefault("symbol_function_graph", None)
+    truncated.setdefault("symbol_module_graph", False)
+    truncated.setdefault("symbol_function_graph", False)
 
     start = monotonic()
     function_ast_map, missing = load_function_asts(
@@ -403,27 +416,27 @@ def build_analytics_context(
     )
     timers["function_asts_ms"] = (monotonic() - start) * 1000.0
 
+    start = monotonic()
+    function_features_map: dict[int, FunctionAstFeatures] = {
+        goid: compute_function_features(fn_ast, repo_root=cfg.repo_root)
+        for goid, fn_ast in function_ast_map.items()
+    }
+    timers["function_features_ms"] = (monotonic() - start) * 1000.0
+
     def _counts(graph: nx.Graph | None) -> tuple[int, int]:
         return (graph.number_of_nodes(), graph.number_of_edges()) if graph is not None else (0, 0)
-
-    call_nodes, call_edges = _counts(graphs["call_graph"])
-    counts = {
-        "import": _counts(graphs["import_graph"]),
-        "symbol_module": _counts(graphs["symbol_module_graph"]),
-        "symbol_function": _counts(graphs["symbol_function_graph"]),
-    }
 
     stats = AnalyticsContextStats(
         function_asts=len(function_ast_map),
         missing_functions=len(missing),
-        call_graph_nodes=call_nodes,
-        call_graph_edges=call_edges,
-        import_graph_nodes=counts["import"][0],
-        import_graph_edges=counts["import"][1],
-        symbol_module_graph_nodes=counts["symbol_module"][0],
-        symbol_module_graph_edges=counts["symbol_module"][1],
-        symbol_function_graph_nodes=counts["symbol_function"][0],
-        symbol_function_graph_edges=counts["symbol_function"][1],
+        call_graph_nodes=_counts(graphs["call_graph"])[0],
+        call_graph_edges=_counts(graphs["call_graph"])[1],
+        import_graph_nodes=_counts(graphs["import_graph"])[0],
+        import_graph_edges=_counts(graphs["import_graph"])[1],
+        symbol_module_graph_nodes=_counts(graphs["symbol_module_graph"])[0],
+        symbol_module_graph_edges=_counts(graphs["symbol_module_graph"])[1],
+        symbol_function_graph_nodes=_counts(graphs["symbol_function_graph"])[0],
+        symbol_function_graph_edges=_counts(graphs["symbol_function_graph"])[1],
         truncated_function_asts=(
             cfg.max_function_asts is not None
             and cfg.max_function_asts < len(function_ast_map) + len(missing)
@@ -442,6 +455,7 @@ def build_analytics_context(
         module_map=module_map,
         function_ast_map=function_ast_map,
         missing_function_goids=missing,
+        function_features_map=function_features_map,
         call_graph=cast("nx.DiGraph", graphs["call_graph"]),
         import_graph=(
             graphs["import_graph"] if isinstance(graphs["import_graph"], nx.DiGraph) else None
@@ -457,6 +471,7 @@ def build_analytics_context(
             call_graph_ms=timers["call_graph_ms"],
             import_graph_ms=timers["import_graph_ms"],
             function_asts_ms=timers["function_asts_ms"],
+            function_features_ms=timers["function_features_ms"],
             symbol_module_graph_ms=timers["symbol_module_graph_ms"],
             symbol_function_graph_ms=timers["symbol_function_graph_ms"],
         ),

@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,
+    IncrementalIngestObserver,
     IncrementalIngestOps,
     run_incremental_ingest,
 )
@@ -449,8 +450,14 @@ def ingest_python_ast(
     tracker: ChangeTracker,
     *,
     max_workers: int | None = None,
+    observer: IncrementalIngestObserver | None = None,
 ) -> None:
-    """Parse modules listed in core.modules using the stdlib ast and populate tables."""
+    """
+    Parse modules listed in core.modules using the stdlib ast and populate tables.
+
+    When an observer is provided, it will be invoked with (dataset_name, view) before any rows
+    are deleted or inserted, allowing the caller to record view-level metrics.
+    """
     worker_count = _resolve_worker_count(max_workers)
     ops = AstIngestOps(
         repo=tracker.change_request.repo,
@@ -464,4 +471,5 @@ def ingest_python_ast(
         tracker,
         ops,
         executor_factory=_executor_factory,
+        observer=observer,
     )
