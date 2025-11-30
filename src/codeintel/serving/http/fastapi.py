@@ -17,6 +17,11 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.context import (
+    RequestContext,
+    reset_current_request_context,
+    set_current_request_context,
+)
 from codeintel.serving.http.routes.architecture import build_architecture_router
 from codeintel.serving.http.routes.datasets import build_datasets_router
 from codeintel.serving.http.routes.functions import build_functions_router
@@ -28,7 +33,7 @@ from codeintel.serving.http.routes.subsystems import build_subsystem_router
 from codeintel.serving.mcp import errors as mcp_errors
 from codeintel.serving.mcp.models import ProblemDetail as ProblemDetailModel
 from codeintel.serving.services.errors import ProblemDetail as DomainProblemDetail
-from codeintel.serving.services.errors import ProblemError
+from codeintel.serving.services.errors import ProblemError, generate_correlation_id
 from codeintel.serving.services.factory import BackendResource, build_backend_resource
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
@@ -301,6 +306,51 @@ def create_app(
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    @app.middleware("http")
+    async def _inject_request_context(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        """
+        Attach a RequestContext for each incoming HTTP request.
+
+        Correlation ID is taken from X-Request-ID / X-Correlation-ID if provided,
+        otherwise generated via generate_correlation_id().
+
+        Returns
+        -------
+        Response
+            Downstream response with correlation id echoed in headers.
+        """
+        correlation_id = (
+            request.headers.get("X-Request-ID")
+            or request.headers.get("X-Correlation-ID")
+            or generate_correlation_id()
+        )
+        cfg: ServingConfig | None = getattr(request.app.state, "config", None)
+        repo = getattr(cfg, "repo", None) if cfg is not None else None
+        commit = getattr(cfg, "commit", None) if cfg is not None else None
+        ctx = RequestContext(
+            correlation_id=correlation_id,
+            transport="http",
+            operation=None,
+            dataset=None,
+            repo=repo,
+            commit=commit,
+            snapshot=None,
+            graph_scope=None,
+            client_id=request.client.host if request.client else None,
+            user_agent=request.headers.get("User-Agent"),
+        )
+        token = set_current_request_context(ctx)
+        try:
+            response = await call_next(request)
+        finally:
+            reset_current_request_context(token)
+        if hasattr(response, "headers"):
+            response.headers.setdefault("X-Request-ID", correlation_id)
+        return response
 
     install_exception_handlers(app)
     install_logging_middleware(app)

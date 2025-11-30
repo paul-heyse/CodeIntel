@@ -31,6 +31,7 @@ from codeintel.ingestion import (
     tests_ingest,
     typing_ingest,
 )
+from codeintel.ingestion.ingest_runs import IngestRun, IngestRunSink
 from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.tool_runner import ToolRunner
@@ -51,6 +52,9 @@ class IngestionContextProtocol(Protocol):
     scip_runner: Callable[..., ScipIngestResult] | None
     artifact_writer: Callable[[Path, Path, Path], None] | None
     change_tracker: change_tracker_module.ChangeTracker | None
+    ingest_run_sink: IngestRunSink | None
+    enable_run_metrics: bool
+    current_ingest_run: IngestRun | None
 
     @property
     def active_tools(self) -> ToolsConfig:
@@ -259,7 +263,29 @@ class AstExtractStep:
     def run(self, ctx: IngestionContextProtocol) -> None:
         log.debug("Running ingestion step %s", self.name)
         tracker = _require_change_tracker(ctx, self.name)
-        py_ast_extract.ingest_python_ast(tracker)
+
+        def _observer(
+            _dataset_name: str, view: change_tracker_module.ChangeTrackerDatasetView
+        ) -> None:
+            run = ctx.current_ingest_run
+            if run is None:
+                return
+            run.modules_total = view.total_modules_considered
+            run.modules_changed = view.changed_modules_count
+            run.modules_deleted = view.deleted_modules_count
+            if view.total_modules_considered > 0:
+                run.modules_changed_ratio = (
+                    view.changed_modules_count + view.deleted_modules_count
+                ) / view.total_modules_considered
+                run.modules_deleted_ratio = (
+                    view.deleted_modules_count / view.total_modules_considered
+                )
+            else:
+                run.modules_changed_ratio = 0.0
+                run.modules_deleted_ratio = 0.0
+            run.use_full_rebuild = view.use_full_rebuild
+
+        py_ast_extract.ingest_python_ast(tracker, observer=_observer)
 
 
 @dataclass(frozen=True)

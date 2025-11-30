@@ -136,7 +136,7 @@ class _LocalDatasetMixin:
 
         Raises
         ------
-        DatasetNotFoundError
+        McpError
             When the requested dataset is missing from the registry.
         """
         registry = load_dataset_registry(self.query.gateway.con)
@@ -175,7 +175,7 @@ class _LocalDatasetMixin:
 
         Raises
         ------
-        DatasetNotFoundError
+        McpError
             When the dataset is not registered.
         """
         applied_limit = self.query.limits.default_limit if limit is None else limit

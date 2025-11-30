@@ -107,9 +107,7 @@ class _TupleRowBodyTransformer(cst.CSTTransformer):
                     func=cst.Name(self.spec.row_type_local),
                     args=[
                         cst.Arg(keyword=cst.Name(field_name), value=value)
-                        for field_name, value in zip(
-                            self.spec.field_names, elements, strict=True
-                        )
+                        for field_name, value in zip(self.spec.field_names, elements, strict=True)
                     ],
                 )
                 self.row_constructor_used = True

@@ -137,9 +137,7 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
                 return payload
             return ModuleSubsystemResponse.model_validate(payload)
 
-        pydantic_resp: ModuleSubsystemResponse = self._http_call(
-            "get_module_subsystems", _run
-        )
+        pydantic_resp: ModuleSubsystemResponse = self._http_call("get_module_subsystems", _run)
         return pydantic_resp.to_domain()
 
     def get_file_hints(self, *, rel_path: str) -> dm.FileHintsResult:
@@ -171,9 +169,7 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
                 return response
             return SubsystemModulesResponse.model_validate(response)
 
-        pydantic_resp: SubsystemModulesResponse = self._http_call(
-            "get_subsystem_modules", _run
-        )
+        pydantic_resp: SubsystemModulesResponse = self._http_call("get_subsystem_modules", _run)
         return pydantic_resp.to_domain()
 
     def search_subsystems(

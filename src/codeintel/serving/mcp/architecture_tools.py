@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.analytics.graphs.plugins import plan_graph_metric_plugins
+from codeintel.serving.context import (
+    RequestContext,
+    reset_current_request_context,
+    set_current_request_context,
+)
 from codeintel.serving.mcp.models import (
     FileHintsResponse,
     FunctionArchitectureResponse,
@@ -20,6 +27,7 @@ from codeintel.serving.mcp.models import (
 )
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.registry import OperationSpec, get_operation_spec
+from codeintel.serving.services.errors import generate_correlation_id
 
 
 def _require_spec(op_id: str) -> OperationSpec:
@@ -61,10 +69,35 @@ def _load_architecture_specs() -> dict[str, OperationSpec]:
     return specs
 
 
-def register_architecture_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
-    """Register architecture and subsystem MCP tools."""
-    _load_architecture_specs()
+def _invoke_with_request_context[T](
+    backend: QueryBackendOrService,
+    operation_id: str,
+    func: Callable[[], T],
+    *,
+    dataset: str | None = None,
+    graph_scope: object | None = None,
+) -> T:
+    correlation_id = generate_correlation_id()
+    ctx = RequestContext(
+        correlation_id=correlation_id,
+        transport="mcp",
+        operation=operation_id,
+        dataset=dataset,
+        repo=getattr(backend, "repo", None),
+        commit=getattr(backend, "commit", None),
+        snapshot=None,
+        graph_scope=graph_scope,
+        client_id=None,
+        user_agent=None,
+    )
+    token = set_current_request_context(ctx)
+    try:
+        return func()
+    finally:
+        reset_current_request_context(token)
 
+
+def _register_graph_plugin_plan_tool(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     @mcp.tool()
     @_wrap
     def graph_plugin_plan(
@@ -89,116 +122,234 @@ def register_architecture_tools(mcp: FastMCP, backend: QueryBackendOrService) ->
         dict[str, object] | dict[str, ProblemDetail]
             Plan payload with ordering, skips, and dependency graph or an error detail.
         """
-        plan = plan_graph_metric_plugins(
-            plugin_names=tuple(names) if names else None,
-            enabled=tuple(enable) if enable else None,
-            disabled=tuple(disable) if disable else None,
-        )
-        metadata = {
-            plugin.name: GraphPlanPluginMetadata(
-                stage=plugin.stage,
-                severity=plugin.severity,
-                requires_isolation=plugin.requires_isolation,
-                isolation_kind=plugin.isolation_kind,
-                scope_aware=plugin.scope_aware,
-                supported_scopes=plugin.supported_scopes,
-                description=plugin.description,
-                enabled_by_default=plugin.enabled_by_default,
-                depends_on=plugin.depends_on,
-                provides=plugin.provides,
-                requires=plugin.requires,
-                resource_hints=(
-                    {
-                        "max_runtime_ms": plugin.resource_hints.max_runtime_ms,
-                        "memory_mb_hint": plugin.resource_hints.memory_mb_hint,
-                    }
-                    if plugin.resource_hints is not None
-                    else None
-                ),
-                options_model=plugin.options_model.__name__ if plugin.options_model else None,
-                options_default=plugin.options_default,
-                version_hash=plugin.version_hash,
-                contract_checkers=len(plugin.contract_checkers),
-                config_schema_ref=plugin.config_schema_ref,
-                row_count_tables=plugin.row_count_tables,
-                cache_populates=plugin.cache_populates,
-                cache_consumes=plugin.cache_consumes,
-            )
-            for plugin in plan.plugins
-        }
-        resp = GraphPlanResponse(
-            plan_id=plan.plan_id,
-            ordered_plugins=plan.ordered_names,
-            skipped_plugins=tuple(
-                GraphPlanSkipped(name=skipped.name, reason=skipped.reason)
-                for skipped in plan.skipped_plugins
-            ),
-            dep_graph={name: tuple(deps) for name, deps in plan.dep_graph.items()},
-            plugin_metadata=metadata,
-        )
-        return resp.model_dump()
 
+        def _build_response() -> GraphPlanResponse:
+            plan = plan_graph_metric_plugins(
+                plugin_names=tuple(names) if names else None,
+                enabled=tuple(enable) if enable else None,
+                disabled=tuple(disable) if disable else None,
+            )
+            metadata = {
+                plugin.name: GraphPlanPluginMetadata(
+                    stage=plugin.stage,
+                    severity=plugin.severity,
+                    requires_isolation=plugin.requires_isolation,
+                    isolation_kind=plugin.isolation_kind,
+                    scope_aware=plugin.scope_aware,
+                    supported_scopes=plugin.supported_scopes,
+                    description=plugin.description,
+                    enabled_by_default=plugin.enabled_by_default,
+                    depends_on=plugin.depends_on,
+                    provides=plugin.provides,
+                    requires=plugin.requires,
+                    resource_hints=(
+                        {
+                            "max_runtime_ms": plugin.resource_hints.max_runtime_ms,
+                            "memory_mb_hint": plugin.resource_hints.memory_mb_hint,
+                        }
+                        if plugin.resource_hints is not None
+                        else None
+                    ),
+                    options_model=plugin.options_model.__name__ if plugin.options_model else None,
+                    options_default=plugin.options_default,
+                    version_hash=plugin.version_hash,
+                    contract_checkers=len(plugin.contract_checkers),
+                    config_schema_ref=plugin.config_schema_ref,
+                    row_count_tables=plugin.row_count_tables,
+                    cache_populates=plugin.cache_populates,
+                    cache_consumes=plugin.cache_consumes,
+                )
+                for plugin in plan.plugins
+            }
+            return GraphPlanResponse(
+                plan_id=plan.plan_id,
+                ordered_plugins=plan.ordered_names,
+                skipped_plugins=tuple(
+                    GraphPlanSkipped(name=skipped.name, reason=skipped.reason)
+                    for skipped in plan.skipped_plugins
+                ),
+                dep_graph={name: tuple(deps) for name, deps in plan.dep_graph.items()},
+                plugin_metadata=metadata,
+            )
+
+        response = _invoke_with_request_context(
+            backend,
+            "graph.plugins.plan",
+            _build_response,
+        )
+        return response.model_dump()
+
+
+def _register_function_architecture_tool(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     @mcp.tool()
     @_wrap
     def get_function_architecture(goid_h128: int) -> dict[str, object] | dict[str, ProblemDetail]:
-        resp: FunctionArchitectureResponse = backend.get_function_architecture(goid_h128=goid_h128)
-        return resp.model_dump()
+        def _call() -> FunctionArchitectureResponse:
+            result = backend.get_function_architecture(goid_h128=goid_h128)
+            if isinstance(result, FunctionArchitectureResponse):
+                return result
+            return FunctionArchitectureResponse.from_domain(result)
 
+        response = _invoke_with_request_context(
+            backend,
+            "architecture.function",
+            _call,
+        )
+        return response.model_dump()
+
+
+def _register_module_architecture_tool(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     @mcp.tool()
     @_wrap
     def get_module_architecture(module: str) -> dict[str, object] | dict[str, ProblemDetail]:
-        resp: ModuleArchitectureResponse = backend.get_module_architecture(module=module)
-        return resp.model_dump()
+        def _call() -> ModuleArchitectureResponse:
+            result = backend.get_module_architecture(module=module)
+            if isinstance(result, ModuleArchitectureResponse):
+                return result
+            return ModuleArchitectureResponse.from_domain(result)
 
+        response = _invoke_with_request_context(
+            backend,
+            "architecture.module",
+            _call,
+        )
+        return response.model_dump()
+
+
+def _register_list_subsystems_tool(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     @mcp.tool()
     @_wrap
     def list_subsystems(
         limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> dict[str, object] | dict[str, ProblemDetail]:
-        resp: SubsystemSummaryResponse = backend.list_subsystems(limit=limit, role=role, q=q)
-        return resp.model_dump()
+        def _call() -> SubsystemSummaryResponse:
+            result = backend.list_subsystems(limit=limit, role=role, q=q)
+            if isinstance(result, SubsystemSummaryResponse):
+                return result
+            return SubsystemSummaryResponse.from_domain(result)
 
+        response = _invoke_with_request_context(
+            backend,
+            "subsystems.list",
+            _call,
+        )
+        return response.model_dump()
+
+
+def _register_module_subsystems_tool(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     @mcp.tool()
     @_wrap
     def get_module_subsystems(module: str) -> dict[str, object] | dict[str, ProblemDetail]:
-        resp: ModuleSubsystemResponse = backend.get_module_subsystems(module=module)
-        return resp.model_dump()
+        def _call() -> ModuleSubsystemResponse:
+            result = backend.get_module_subsystems(module=module)
+            if isinstance(result, ModuleSubsystemResponse):
+                return result
+            return ModuleSubsystemResponse.from_domain(result)
 
+        response = _invoke_with_request_context(
+            backend,
+            "subsystems.module_memberships",
+            _call,
+        )
+        return response.model_dump()
+
+
+def _register_file_hints_tool(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     @mcp.tool()
     @_wrap
     def get_file_hints(rel_path: str) -> dict[str, object] | dict[str, ProblemDetail]:
-        resp: FileHintsResponse = backend.get_file_hints(rel_path=rel_path)
-        return resp.model_dump()
+        def _call() -> FileHintsResponse:
+            result = backend.get_file_hints(rel_path=rel_path)
+            if isinstance(result, FileHintsResponse):
+                return result
+            return FileHintsResponse.from_domain(result)
 
+        response = _invoke_with_request_context(
+            backend,
+            "ide.hints",
+            _call,
+        )
+        return response.model_dump()
+
+
+def _register_subsystem_modules_tool(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     @mcp.tool()
     @_wrap
     def get_subsystem_modules(
         subsystem_id: str, module_limit: int | None = None
     ) -> dict[str, object] | dict[str, ProblemDetail]:
-        resp: SubsystemModulesResponse = backend.get_subsystem_modules(
-            subsystem_id=subsystem_id,
-            module_limit=module_limit,
-        )
-        return resp.model_dump()
+        def _call() -> SubsystemModulesResponse:
+            result = backend.get_subsystem_modules(
+                subsystem_id=subsystem_id,
+                module_limit=module_limit,
+            )
+            if isinstance(result, SubsystemModulesResponse):
+                return result
+            return SubsystemModulesResponse.from_domain(result)
 
+        response = _invoke_with_request_context(
+            backend,
+            "subsystems.detail",
+            _call,
+        )
+        return response.model_dump()
+
+
+def _register_search_subsystems_tool(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     @mcp.tool()
     @_wrap
     def search_subsystems(
         limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> dict[str, object] | dict[str, ProblemDetail]:
-        resp: SubsystemSearchResponse = backend.search_subsystems(limit=limit, role=role, q=q)
-        return resp.model_dump()
+        def _call() -> SubsystemSearchResponse:
+            result = backend.search_subsystems(limit=limit, role=role, q=q)
+            if isinstance(result, SubsystemSearchResponse):
+                return result
+            return SubsystemSearchResponse.from_domain(result)
 
+        response = _invoke_with_request_context(
+            backend,
+            "subsystems.search",
+            _call,
+        )
+        return response.model_dump()
+
+
+def _register_summarize_subsystem_tool(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     @mcp.tool()
     @_wrap
     def summarize_subsystem(
         subsystem_id: str, module_limit: int | None = None
     ) -> dict[str, object] | dict[str, ProblemDetail]:
-        resp: SubsystemModulesResponse = backend.summarize_subsystem(
-            subsystem_id=subsystem_id,
-            module_limit=module_limit,
+        def _call() -> SubsystemModulesResponse:
+            result = backend.summarize_subsystem(
+                subsystem_id=subsystem_id,
+                module_limit=module_limit,
+            )
+            if isinstance(result, SubsystemModulesResponse):
+                return result
+            return SubsystemModulesResponse.from_domain(result)
+
+        response = _invoke_with_request_context(
+            backend,
+            "subsystems.summarize",
+            _call,
         )
-        return resp.model_dump()
+        return response.model_dump()
+
+
+def register_architecture_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
+    """Register architecture and subsystem MCP tools."""
+    _load_architecture_specs()
+    _register_graph_plugin_plan_tool(mcp, backend)
+    _register_function_architecture_tool(mcp, backend)
+    _register_module_architecture_tool(mcp, backend)
+    _register_list_subsystems_tool(mcp, backend)
+    _register_module_subsystems_tool(mcp, backend)
+    _register_file_hints_tool(mcp, backend)
+    _register_subsystem_modules_tool(mcp, backend)
+    _register_search_subsystems_tool(mcp, backend)
+    _register_summarize_subsystem_tool(mcp, backend)
 
 
 __all__ = ["register_architecture_tools"]

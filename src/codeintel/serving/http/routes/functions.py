@@ -86,7 +86,9 @@ def _load_function_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
         else:
             paths[op_id] = spec.http_path
     if missing or missing_paths:
-        message = f"Missing OperationSpec entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
+        message = (
+            f"Missing OperationSpec entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
+        )
         raise ValueError(message)
     return specs, paths
 
@@ -310,7 +312,9 @@ def _register_graph_and_tests_routes(
         ImportBoundaryResponse
             Boundary edges plus metadata describing truncation.
         """
-        domain_response = service.get_import_boundary(subsystem_id=subsystem_id, max_edges=max_edges)
+        domain_response = service.get_import_boundary(
+            subsystem_id=subsystem_id, max_edges=max_edges
+        )
         response = ImportBoundaryResponse.from_domain(domain_response)
         LOG.info(
             "import_boundary repo=%s commit=%s subsystem=%s applied_limit=%s truncated=%s",

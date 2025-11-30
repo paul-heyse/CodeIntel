@@ -68,11 +68,11 @@ def build_architecture_router() -> APIRouter:
         errors.not_found
             If no architecture row exists for the GOID.
         """
-        response = service.get_function_architecture(goid_h128=goid_h128)
-        if not response.found or response.architecture is None:
+        result = service.get_function_architecture(goid_h128=goid_h128)
+        if not result.found or result.architecture is None:
             message = "Function architecture not found"
             raise errors.not_found(message)
-        return response
+        return FunctionArchitectureResponse.from_domain(result)
 
     @router.get(
         module_path,
@@ -98,11 +98,11 @@ def build_architecture_router() -> APIRouter:
         errors.not_found
             If no architecture row exists for the module.
         """
-        response = service.get_module_architecture(module=module)
-        if not response.found or response.architecture is None:
+        result = service.get_module_architecture(module=module)
+        if not result.found or result.architecture is None:
             message = "Module architecture not found"
             raise errors.not_found(message)
-        return response
+        return ModuleArchitectureResponse.from_domain(result)
 
     return router
 

@@ -69,9 +69,7 @@ class _HttpProfileQueryMixin(_HttpTransportMixin):
                 return payload
             return FunctionProfileResponse.model_validate(payload)
 
-        pydantic_resp: FunctionProfileResponse = self._http_call(
-            "get_function_profile", _run
-        )
+        pydantic_resp: FunctionProfileResponse = self._http_call("get_function_profile", _run)
         return pydantic_resp.to_domain()
 
     def get_file_profile(self, *, rel_path: str) -> dm.FileProfileResult:
@@ -121,9 +119,7 @@ class _HttpProfileQueryMixin(_HttpTransportMixin):
                 return payload
             return ModuleArchitectureResponse.model_validate(payload)
 
-        pydantic_resp: ModuleArchitectureResponse = self._http_call(
-            "get_module_architecture", _run
-        )
+        pydantic_resp: ModuleArchitectureResponse = self._http_call("get_module_architecture", _run)
         return pydantic_resp.to_domain()
 
 

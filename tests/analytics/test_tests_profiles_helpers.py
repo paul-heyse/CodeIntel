@@ -289,14 +289,14 @@ def test_build_behavior_rows_mixed_sources() -> None:
             llm_model,
             llm_run_id,
             getattr(ctx, "now", datetime.now(tz=UTC)),
-        )
+    )
 
     def _fake_llm_runner(_request: BehavioralLLMRequest) -> BehavioralLLMResult:
         return BehavioralLLMResult(tags=["db"])
 
     hooks = behavioral_tags.BehaviorRowHooks(
         load_tests=lambda _con, _cfg: sample_tests,
-        build_ast=lambda _root, _tests, _io_spec, _concurrency: ast_info,
+        build_ast=lambda _root, _tests, _patterns: ast_info,
         load_profile_ctx=lambda _con, _cfg: profile_ctx,
         row_builder=_fake_build_behavior_row,
     )

@@ -60,9 +60,7 @@ class PytestPlugin(ToolPlugin):
             raise TypeError(message)
         json_report_path = json_report_path_obj
 
-        await to_thread.run_sync(
-            lambda: json_report_path.parent.mkdir(parents=True, exist_ok=True)
-        )
+        await to_thread.run_sync(lambda: json_report_path.parent.mkdir(parents=True, exist_ok=True))
 
         args = [
             "-q",

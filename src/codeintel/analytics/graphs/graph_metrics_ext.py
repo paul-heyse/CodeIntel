@@ -216,9 +216,7 @@ def compute_graph_metrics_functions_ext(
     views = GraphViews(graph=filtered_graph, simple_graph=simple_graph, undirected=undirected)
     slices = _function_metric_slices(views, ctx)
     rows = _function_metric_rows(repo, commit, ctx, views, slices)
-    contract = get_analytics_dataset_contract(
-        gateway, "analytics.graph_metrics_functions_ext"
-    )
+    contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions_ext")
     insert_analytics_rows(
         gateway,
         contract,

@@ -695,9 +695,7 @@ class HighRiskFunctionsResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.HighRiskFunctionsResult
-    ) -> HighRiskFunctionsResponse:
+    def from_domain(cls, result: dm.HighRiskFunctionsResult) -> HighRiskFunctionsResponse:
         """
         Convert a domain HighRiskFunctionsResult into the transport model.
 
@@ -773,9 +771,7 @@ class TestsForFunctionResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.TestsForFunctionResult
-    ) -> TestsForFunctionResponse:
+    def from_domain(cls, result: dm.TestsForFunctionResult) -> TestsForFunctionResponse:
         """
         Convert a domain TestsForFunctionResult into the transport model.
 
@@ -813,9 +809,7 @@ class GraphNeighborhoodResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, neighborhood: dm.GraphNeighborhood
-    ) -> GraphNeighborhoodResponse:
+    def from_domain(cls, neighborhood: dm.GraphNeighborhood) -> GraphNeighborhoodResponse:
         """
         Convert a domain GraphNeighborhood into the transport model.
 
@@ -904,11 +898,7 @@ class FileSummaryResponse(BaseModel):
         """
         return cls(
             found=result.found,
-            file=(
-                FileSummaryRow.model_validate(result.file)
-                if result.file is not None
-                else None
-            ),
+            file=(FileSummaryRow.model_validate(result.file) if result.file is not None else None),
             meta=ResponseMeta.from_domain(result.meta),
         )
 
@@ -936,9 +926,7 @@ class FunctionProfileResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.FunctionProfileResult
-    ) -> FunctionProfileResponse:
+    def from_domain(cls, result: dm.FunctionProfileResult) -> FunctionProfileResponse:
         """
         Convert a domain FunctionProfileResult into the transport model.
 
@@ -950,9 +938,7 @@ class FunctionProfileResponse(BaseModel):
         return cls(
             found=result.found,
             profile=(
-                ViewRow.model_validate(result.profile)
-                if result.profile is not None
-                else None
+                ViewRow.model_validate(result.profile) if result.profile is not None else None
             ),
             meta=ResponseMeta.from_domain(result.meta),
         )
@@ -993,9 +979,7 @@ class FileProfileResponse(BaseModel):
         return cls(
             found=result.found,
             profile=(
-                ViewRow.model_validate(result.profile)
-                if result.profile is not None
-                else None
+                ViewRow.model_validate(result.profile) if result.profile is not None else None
             ),
             meta=ResponseMeta.from_domain(result.meta),
         )
@@ -1036,9 +1020,7 @@ class ModuleProfileResponse(BaseModel):
         return cls(
             found=result.found,
             profile=(
-                ViewRow.model_validate(result.profile)
-                if result.profile is not None
-                else None
+                ViewRow.model_validate(result.profile) if result.profile is not None else None
             ),
             meta=ResponseMeta.from_domain(result.meta),
         )
@@ -1067,9 +1049,7 @@ class FunctionArchitectureResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.FunctionArchitectureResult
-    ) -> FunctionArchitectureResponse:
+    def from_domain(cls, result: dm.FunctionArchitectureResult) -> FunctionArchitectureResponse:
         """
         Convert a domain FunctionArchitectureResult into the transport model.
 
@@ -1114,9 +1094,7 @@ class ModuleArchitectureResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.ModuleArchitectureResult
-    ) -> ModuleArchitectureResponse:
+    def from_domain(cls, result: dm.ModuleArchitectureResult) -> ModuleArchitectureResponse:
         """
         Convert a domain ModuleArchitectureResult into the transport model.
 
@@ -1157,9 +1135,7 @@ class SubsystemSummaryResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.SubsystemSummaryResult
-    ) -> SubsystemSummaryResponse:
+    def from_domain(cls, result: dm.SubsystemSummaryResult) -> SubsystemSummaryResponse:
         """
         Convert a domain SubsystemSummaryResult into the transport model.
 
@@ -1197,9 +1173,7 @@ class ModuleSubsystemResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.ModuleSubsystemResult
-    ) -> ModuleSubsystemResponse:
+    def from_domain(cls, result: dm.ModuleSubsystemResult) -> ModuleSubsystemResponse:
         """
         Convert a domain ModuleSubsystemResult into the transport model.
 
@@ -1210,9 +1184,7 @@ class ModuleSubsystemResponse(BaseModel):
         """
         return cls(
             found=result.found,
-            memberships=[
-                ModuleWithSubsystemRow.model_validate(row) for row in result.memberships
-            ],
+            memberships=[ModuleWithSubsystemRow.model_validate(row) for row in result.memberships],
             meta=ResponseMeta.from_domain(result.meta),
         )
 
@@ -1281,9 +1253,7 @@ class SubsystemModulesResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.SubsystemModulesResult
-    ) -> SubsystemModulesResponse:
+    def from_domain(cls, result: dm.SubsystemModulesResult) -> SubsystemModulesResponse:
         """
         Convert a domain SubsystemModulesResult into the transport model.
 
@@ -1325,9 +1295,7 @@ class SubsystemSearchResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.SubsystemSearchResult
-    ) -> SubsystemSearchResponse:
+    def from_domain(cls, result: dm.SubsystemSearchResult) -> SubsystemSearchResponse:
         """
         Convert a domain SubsystemSearchResult into the transport model.
 
@@ -1363,9 +1331,7 @@ class SubsystemProfileResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.SubsystemProfileResult
-    ) -> SubsystemProfileResponse:
+    def from_domain(cls, result: dm.SubsystemProfileResult) -> SubsystemProfileResponse:
         """
         Convert a domain SubsystemProfileResult into the transport model.
 
@@ -1401,9 +1367,7 @@ class SubsystemCoverageResponse(BaseModel):
         )
 
     @classmethod
-    def from_domain(
-        cls, result: dm.SubsystemCoverageResult
-    ) -> SubsystemCoverageResponse:
+    def from_domain(cls, result: dm.SubsystemCoverageResult) -> SubsystemCoverageResponse:
         """
         Convert a domain SubsystemCoverageResult into the transport model.
 

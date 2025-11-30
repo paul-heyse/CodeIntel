@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, TypeVar
+
+if TYPE_CHECKING:
+    from codeintel.ingestion.ingest_runs import IngestRunMode, IngestRunStatus
 
 __all__ = [
     "BehavioralCoverageRowModel",
@@ -17,6 +22,7 @@ __all__ = [
     "DFGEdgeRow",
     "DocstringRow",
     "FileProfileRowModel",
+    "FunctionAstFeaturesRow",
     "FunctionMetricsRow",
     "FunctionProfileRowModel",
     "FunctionTypesRow",
@@ -30,6 +36,7 @@ __all__ = [
     "HotspotRow",
     "ImportEdgeRow",
     "ImportModuleRow",
+    "IngestRunRow",
     "ModuleProfileRowModel",
     "StaticDiagnosticRow",
     "SubsystemCoverageCacheRow",
@@ -49,6 +56,7 @@ __all__ = [
     "dfg_edge_to_tuple",
     "docstring_row_to_tuple",
     "file_profile_row_to_tuple",
+    "function_ast_features_row_to_tuple",
     "function_metrics_row_to_tuple",
     "function_profile_row_to_tuple",
     "function_types_row_to_tuple",
@@ -62,6 +70,7 @@ __all__ = [
     "hotspot_row_to_tuple",
     "import_edge_to_tuple",
     "import_module_to_tuple",
+    "ingest_run_to_tuple",
     "module_profile_row_to_tuple",
     "serialize_test_catalog_row",
     "serialize_test_coverage_edge",
@@ -86,6 +95,90 @@ def _serialize_row(row: Mapping[_Column, object], columns: Sequence[_Column]) ->
         Values ordered according to ``columns``.
     """
     return tuple(row[column] for column in columns)
+
+
+@dataclass(frozen=True)
+class IngestRunRow:
+    """Row shape for control-plane ingest runs persisted to DuckDB."""
+
+    repo: str
+    commit: str
+    step: str
+    run_id: str
+    mode: str
+    started_at: datetime
+    finished_at: datetime | None
+    duration_s: float | None
+    rows_inserted: int
+    rows_deleted: int
+    status: str
+    error_kind: str | None
+    error_message: str | None
+    datasets: str
+    modules_total: int | None
+    modules_changed: int | None
+    modules_deleted: int | None
+    modules_changed_ratio: float | None
+    modules_deleted_ratio: float | None
+    use_full_rebuild: bool | None
+
+
+class IngestRunLike(Protocol):
+    """Structural contract for ingest run serialization."""
+
+    repo: str
+    commit: str
+    step: str
+    run_id: str
+    mode: IngestRunMode
+    started_at: datetime
+    finished_at: datetime | None
+    duration_s: float | None
+    rows_inserted: int
+    rows_deleted: int
+    status: IngestRunStatus
+    error_kind: str | None
+    error_message: str | None
+    datasets: tuple[str, ...]
+    modules_total: int | None
+    modules_changed: int | None
+    modules_deleted: int | None
+    modules_changed_ratio: float | None
+    modules_deleted_ratio: float | None
+    use_full_rebuild: bool | None
+
+
+def ingest_run_to_tuple(run: IngestRunLike) -> tuple[object, ...]:
+    """
+    Serialize an IngestRun into the INSERT column order for core.ingest_runs.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values in the order expected by ingest_runs INSERTs.
+    """
+    return (
+        run.repo,
+        run.commit,
+        run.step,
+        run.run_id,
+        run.mode.value,
+        run.started_at,
+        run.finished_at,
+        run.duration_s,
+        run.rows_inserted,
+        run.rows_deleted,
+        run.status.value,
+        run.error_kind,
+        run.error_message,
+        json.dumps(list(run.datasets)),
+        run.modules_total,
+        run.modules_changed,
+        run.modules_deleted,
+        run.modules_changed_ratio,
+        run.modules_deleted_ratio,
+        run.use_full_rebuild,
+    )
 
 
 class CoverageLineRow(TypedDict):
@@ -1536,6 +1629,71 @@ def function_profile_row_to_tuple(row: FunctionProfileRowModel) -> tuple[object,
         Values in the order expected by function_profile INSERTs.
     """
     return _serialize_row(row, FUNCTION_PROFILE_COLUMNS)
+
+
+_FUNCTION_AST_FEATURES_COLUMNS: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "function_goid_h128",
+    "rel_path",
+    "qualname",
+    "is_async",
+    "uses_network",
+    "uses_db",
+    "uses_filesystem",
+    "uses_subprocess",
+    "uses_concurrency_lib",
+    "uses_threading",
+    "uses_asyncio_lib",
+    "http_client_libs",
+    "http_server_libs",
+    "db_libs",
+    "message_libs",
+    "config_read_count",
+    "feature_flag_count",
+    "decorators",
+    "libraries_used",
+    "created_at",
+)
+
+
+class FunctionAstFeaturesRow(TypedDict):
+    """Row shape for ``analytics.function_ast_features`` inserts."""
+
+    repo: str
+    commit: str
+    function_goid_h128: int
+    rel_path: str
+    qualname: str
+    is_async: bool
+    uses_network: bool
+    uses_db: bool
+    uses_filesystem: bool
+    uses_subprocess: bool
+    uses_concurrency_lib: bool
+    uses_threading: bool
+    uses_asyncio_lib: bool
+    http_client_libs: list[str]
+    http_server_libs: list[str]
+    db_libs: list[str]
+    message_libs: list[str]
+    config_read_count: int
+    feature_flag_count: int
+    decorators: list[str]
+    libraries_used: list[str]
+    created_at: datetime
+
+
+def function_ast_features_row_to_tuple(row: FunctionAstFeaturesRow) -> tuple[object, ...]:
+    """
+    Serialize a FunctionAstFeaturesRow into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values ordered per analytics.function_ast_features definition.
+    """
+    return _serialize_row(row, _FUNCTION_AST_FEATURES_COLUMNS)
 
 
 _FileProfileColumn = Literal[

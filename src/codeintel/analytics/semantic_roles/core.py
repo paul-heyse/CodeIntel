@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.ast_utils import safe_unparse
 from codeintel.analytics.context import (
     AnalyticsContext,
@@ -41,6 +42,7 @@ HELPER_LOC_THRESHOLD = 20
 class FunctionContext:
     """Classification context for a single function."""
 
+    goid: int
     rel_path: str
     qualname: str
     decorators: list[str]
@@ -50,6 +52,7 @@ class FunctionContext:
     module_name: str | None
     graph: dict[str, int]
     loc: int | None
+    features: FunctionAstFeatures | None = None
 
     @property
     def name(self) -> str:
@@ -161,6 +164,7 @@ class RoleArtifacts:
     effects: dict[int, dict[str, object]]
     contracts: dict[int, dict[str, object]]
     graph_metrics: dict[int, dict[str, int]]
+    features: dict[int, FunctionAstFeatures]
 
 
 @dataclass(frozen=True)
@@ -212,6 +216,7 @@ def compute_semantic_roles(
     )
     module_by_path = shared_context.module_map
     ast_map = shared_context.function_ast_map
+    features_map = shared_context.function_features_map
 
     module_meta = _load_module_meta(con, repo=cfg.repo, commit=cfg.commit)
     function_rows = _load_function_rows(con, repo=cfg.repo, commit=cfg.commit)
@@ -226,6 +231,7 @@ def compute_semantic_roles(
         effects=effects,
         contracts=contracts,
         graph_metrics=graph_metrics,
+        features=features_map,
     )
 
     now = datetime.now(tz=UTC)
@@ -290,6 +296,7 @@ def _build_function_role_rows(
         decorators = _decorator_names(ast_info.node.decorator_list) if ast_info else []
 
         context = FunctionContext(
+            goid=goid,
             rel_path=normalized_path,
             qualname=qualname,
             decorators=decorators,
@@ -299,6 +306,7 @@ def _build_function_role_rows(
             module_name=module,
             graph=artifacts.graph_metrics.get(goid, {}),
             loc=loc,
+            features=artifacts.features.get(goid),
         )
 
         role, confidence, framework, role_sources = _classify_function(context)
@@ -492,16 +500,51 @@ def _score_tests(context: FunctionContext, accumulator: RoleAccumulator) -> None
 
 
 def _score_api_handlers(context: FunctionContext, accumulator: RoleAccumulator) -> None:
-    for dec in context.decorators:
+    features = context.features
+    decorators = features.decorators if features is not None else context.decorators
+
+    if features is not None and features.http_server_libs:
+        libs = ",".join(sorted(features.http_server_libs))
+        accumulator.bump("api_handler", 0.7, f"http_server_libs:{libs}")
+
+    _score_api_decorators(
+        decorators,
+        accumulator,
+        fastapi_weight=0.2 if features is not None else 0.7,
+        flask_weight=0.2 if features is not None else 0.6,
+    )
+
+    if any(term in context.rel_path_lower for term in ("api", "route", "handler")):
+        weight = 0.2 if features is not None else 0.4
+        accumulator.bump("api_handler", weight, "path:api")
+    if context.name.split("_", maxsplit=1)[0] in {"get", "post", "put", "delete", "patch"}:
+        weight = 0.1 if features is not None else 0.2
+        accumulator.bump("api_handler", weight, "name:http_verb")
+
+
+def _score_api_decorators(
+    decorators: Iterable[str],
+    accumulator: RoleAccumulator,
+    *,
+    fastapi_weight: float,
+    flask_weight: float,
+) -> None:
+    for dec in decorators:
         dec_lower = dec.lower()
         if "router." in dec_lower or dec_lower.startswith(("get(", "post(")):
-            accumulator.bump("api_handler", 0.7, f"decorator:{dec}", framework_hint="fastapi")
+            accumulator.bump(
+                "api_handler",
+                fastapi_weight,
+                f"decorator:{dec}",
+                framework_hint="fastapi",
+            )
         elif ".route" in dec_lower or dec_lower.startswith("route"):
-            accumulator.bump("api_handler", 0.6, f"decorator:{dec}", framework_hint="flask")
-    if any(term in context.rel_path_lower for term in ("api", "route", "handler")):
-        accumulator.bump("api_handler", 0.4, "path:api")
-    if context.name.split("_", maxsplit=1)[0] in {"get", "post", "put", "delete", "patch"}:
-        accumulator.bump("api_handler", 0.2, "name:http_verb")
+            accumulator.bump(
+                "api_handler",
+                flask_weight,
+                f"decorator:{dec}",
+                framework_hint="flask",
+            )
 
 
 def _score_cli_commands(context: FunctionContext, accumulator: RoleAccumulator) -> None:
@@ -515,6 +558,13 @@ def _score_cli_commands(context: FunctionContext, accumulator: RoleAccumulator) 
         accumulator.bump("cli_command", 0.4, "path:cli")
     if context.name in {"main", "cli"}:
         accumulator.bump("cli_command", 0.3, "name:entrypoint")
+
+    features = context.features
+    if features is not None:
+        if "click" in features.libraries_used:
+            accumulator.bump("cli_command", 0.5, "library:click")
+        if "typer" in features.libraries_used:
+            accumulator.bump("cli_command", 0.5, "library:typer")
 
 
 def _score_repositories(context: FunctionContext, accumulator: RoleAccumulator) -> None:

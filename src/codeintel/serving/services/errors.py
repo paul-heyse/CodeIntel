@@ -8,16 +8,24 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from codeintel.serving.context import get_current_request_context
+
 
 def generate_correlation_id() -> str:
     """
     Return a new correlation identifier for tracing errors.
 
+    If a RequestContext is active, reuse its correlation_id; otherwise generate a
+    new identifier.
+
     Returns
     -------
     str
-        UUID4 correlation identifier.
+        UUID4 correlation identifier or the active RequestContext correlation id.
     """
+    ctx = get_current_request_context()
+    if ctx is not None and ctx.correlation_id:
+        return ctx.correlation_id
     return str(uuid4())
 
 

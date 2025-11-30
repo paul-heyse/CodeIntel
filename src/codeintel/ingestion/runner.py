@@ -4,20 +4,29 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Sequence
+import uuid
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.config import SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths
 from codeintel.ingestion import change_tracker as change_tracker_module
+from codeintel.ingestion.ingest_runs import (
+    IngestRun,
+    IngestRunMode,
+    IngestRunSink,
+    IngestRunStatus,
+    classify_error,
+)
 from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.steps import DEFAULT_REGISTRY, IngestStepRegistry
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +46,9 @@ class IngestionContext:
     scip_runner: Callable[..., ScipIngestResult] | None = None
     artifact_writer: Callable[[Path, Path, Path], None] | None = None
     change_tracker: change_tracker_module.ChangeTracker | None = None
+    ingest_run_sink: IngestRunSink | None = None
+    enable_run_metrics: bool = False
+    current_ingest_run: IngestRun | None = None
 
     @property
     def repo_root(self) -> Path:
@@ -84,23 +96,157 @@ class IngestionContext:
         return self.gateway.config.db_path
 
 
-def _log_step_start(step: str, ctx: IngestionContext) -> float:
+def _count_rows(gateway: StorageGateway, table_key: str) -> int:
     """
-    Emit a start log for an ingestion step.
+    Return COUNT(*) for a table key, or 0 if the table is missing.
+
+    This is intentionally forgiving: it should never cause a step to fail just because metrics
+    are enabled.
 
     Returns
     -------
-    float
-        Start timestamp for duration tracking.
+    int
+        Row count for the requested table when available, otherwise zero.
     """
-    log.info("ingest start: %s repo=%s commit=%s", step, ctx.repo, ctx.commit)
-    return time.perf_counter()
+    try:
+        row = gateway.con.table(table_key).aggregate("count(*)").fetchone()
+    except DuckDBError:
+        return 0
+    if row is None:
+        return 0
+    return int(row[0])
 
 
-def _log_step_done(step: str, start_ts: float, ctx: IngestionContext) -> None:
-    """Emit completion log with duration for an ingestion step."""
-    duration = time.perf_counter() - start_ts
-    log.info("ingest done: %s repo=%s commit=%s (%.2fs)", step, ctx.repo, ctx.commit, duration)
+def _guess_run_mode(ctx: IngestionContext, step_name: str) -> IngestRunMode:
+    """
+    Coarse heuristic for determining run mode.
+
+    - If no change_tracker is present, treat as FULL.
+    - For known incremental datasets (those that use run_incremental_ingest), label as
+      INCREMENTAL; we do not (yet) distinguish full_rebuild vs true incremental inside the
+      harness.
+
+    Returns
+    -------
+    IngestRunMode
+        Resolved mode based on available change-tracker context.
+    """
+    if ctx.change_tracker is None:
+        return IngestRunMode.FULL
+
+    incremental_steps = {
+        "ast_extract",
+        "cst_extract",
+        "scip_ingest",
+        "typing_ingest",
+        "docstrings_ingest",
+    }
+    return IngestRunMode.INCREMENTAL if step_name in incremental_steps else IngestRunMode.FULL
+
+
+def _collect_row_counts(ctx: IngestionContext, datasets: tuple[str, ...]) -> dict[str, int]:
+    """
+    Collect row counts for the provided dataset tables.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping of table_key to row count (missing tables return zero).
+    """
+    if not ctx.enable_run_metrics or not datasets:
+        return {}
+    counts: dict[str, int] = {}
+    for table_key in datasets:
+        counts[table_key] = _count_rows(ctx.gateway, table_key)
+    return counts
+
+
+def _compute_row_deltas(
+    rows_before: Mapping[str, int],
+    rows_after: Mapping[str, int],
+) -> tuple[int, int]:
+    """
+    Compute inserted/deleted deltas from before/after counts.
+
+    Returns
+    -------
+    tuple[int, int]
+        Inserted and deleted row counts in that order.
+    """
+    inserted = 0
+    deleted = 0
+    for table_key, after in rows_after.items():
+        before = rows_before.get(table_key, 0)
+        if after >= before:
+            inserted += after - before
+        else:
+            deleted += before - after
+    return inserted, deleted
+
+
+def _finalize_ingest_run(
+    ctx: IngestionContext,
+    ingest_run: IngestRun,
+    start_ts: float,
+    error: BaseException | None,
+) -> None:
+    """Populate metrics, status, and sinks for a completed ingest run."""
+    ingest_run.finished_at = datetime.now(UTC)
+    ingest_run.duration_s = time.perf_counter() - start_ts
+
+    rows_after = _collect_row_counts(ctx, ingest_run.datasets)
+    ingest_run.rows_after = rows_after
+
+    if rows_after:
+        inserted, deleted = _compute_row_deltas(ingest_run.rows_before, rows_after)
+        ingest_run.rows_inserted = inserted
+        ingest_run.rows_deleted = deleted
+
+    if error is None:
+        status = IngestRunStatus.OK
+        if (
+            ctx.enable_run_metrics
+            and ingest_run.mode is IngestRunMode.INCREMENTAL
+            and ingest_run.rows_inserted == 0
+            and ingest_run.rows_deleted == 0
+        ):
+            status = IngestRunStatus.SKIPPED
+        ingest_run.status = status
+        log.info(
+            "ingest done: step=%s repo=%s commit=%s run_id=%s status=%s "
+            "rows_inserted=%d rows_deleted=%d duration=%.2fs",
+            ingest_run.step,
+            ingest_run.repo,
+            ingest_run.commit,
+            ingest_run.run_id,
+            ingest_run.status.value,
+            ingest_run.rows_inserted,
+            ingest_run.rows_deleted,
+            ingest_run.duration_s or 0.0,
+        )
+    else:
+        ingest_run.status = IngestRunStatus.ERROR
+        ingest_run.error_kind = classify_error(error)
+        ingest_run.error_message = str(error)
+        log.error(
+            "ingest error: step=%s repo=%s commit=%s run_id=%s status=%s error_kind=%s",
+            ingest_run.step,
+            ingest_run.repo,
+            ingest_run.commit,
+            ingest_run.run_id,
+            ingest_run.status.value,
+            ingest_run.error_kind,
+        )
+
+    if ctx.ingest_run_sink is not None:
+        try:
+            ctx.ingest_run_sink.record(ingest_run)
+        except Exception:  # pragma: no cover - sink errors should not break ingestion
+            log.exception(
+                "Failed to record ingest run for step=%s run_id=%s",
+                ingest_run.step,
+                ingest_run.run_id,
+            )
 
 
 def _run_ingest_step(
@@ -126,10 +272,47 @@ def _run_ingest_step(
     object | None
         Any value returned by the underlying step.
     """
-    start = _log_step_start(name, ctx)
     step = registry.get(name)
-    result = step.run(ctx)
-    _log_step_done(name, start, ctx)
+    datasets = tuple(step.produces_tables)
+    mode = _guess_run_mode(ctx, name)
+    run_id = str(uuid.uuid4())
+    started_at = datetime.now(UTC)
+    start_ts = time.perf_counter()
+
+    rows_before = _collect_row_counts(ctx, datasets)
+
+    ingest_run = IngestRun(
+        run_id=run_id,
+        repo=ctx.repo,
+        commit=ctx.commit,
+        step=name,
+        datasets=datasets,
+        mode=mode,
+        started_at=started_at,
+        rows_before=rows_before,
+    )
+    ctx.current_ingest_run = ingest_run
+
+    log.info(
+        "ingest start: step=%s repo=%s commit=%s run_id=%s",
+        name,
+        ctx.repo,
+        ctx.commit,
+        run_id,
+    )
+
+    error: BaseException | None = None
+    result: object | None = None
+
+    try:
+        result = step.run(ctx)
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        _finalize_ingest_run(ctx, ingest_run, start_ts, error)
+        ctx.current_ingest_run = None
+
     return result
 
 

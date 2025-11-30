@@ -86,8 +86,10 @@ from codeintel.storage.gateway import StorageGateway
 if TYPE_CHECKING:  # pragma: no cover
     from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 else:  # pragma: no cover
+
     class FunctionCatalogProvider:  # type: ignore[too-many-instance-attributes]
         ...
+
 
 log = logging.getLogger(__name__)
 
@@ -348,13 +350,17 @@ def _build_execution_context(
         config_data_flow_cfg=cast("ConfigDataFlowStepConfig | None", cfgs.get("config_data_flow"))
         if plugin.name == "config.data_flow"
         else None,
-        coverage_functions_cfg=cast("CoverageAnalyticsStepConfig | None", cfgs.get("coverage_functions"))
+        coverage_functions_cfg=cast(
+            "CoverageAnalyticsStepConfig | None", cfgs.get("coverage_functions")
+        )
         if plugin.name == "coverage.functions"
         else None,
         test_coverage_cfg=cast("TestCoverageStepConfig | None", cfgs.get("test_coverage_edges"))
         if plugin.name == "coverage.test_edges"
         else None,
-        external_deps_cfg=cast("ExternalDependenciesStepConfig | None", cfgs.get("external_dependencies"))
+        external_deps_cfg=cast(
+            "ExternalDependenciesStepConfig | None", cfgs.get("external_dependencies")
+        )
         if plugin.name == "deps.external"
         else None,
         graph_cfg=cast("GraphMetricsStepConfig | None", cfgs.get("graph"))
@@ -460,7 +466,9 @@ def _execute_graph_plugin(
         raise
     plan.telemetry.finish_plugin(span, record)
     plan.telemetry.record_metrics(record, plan.scope)
-    stop = record.status == "failed" and exec_settings.severity == "fatal" and exec_settings.fail_fast
+    stop = (
+        record.status == "failed" and exec_settings.severity == "fatal" and exec_settings.fail_fast
+    )
     return _analytics_record_from_graph(record), stop
 
 

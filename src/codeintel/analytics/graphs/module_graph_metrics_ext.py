@@ -193,9 +193,7 @@ def compute_graph_metrics_modules_ext(
     slices = _module_metric_slices(views, ctx)
     rows = _module_metric_rows(repo, commit, ctx, views, slices)
 
-    contract = get_analytics_dataset_contract(
-        gateway, "analytics.graph_metrics_modules_ext"
-    )
+    contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules_ext")
     insert_analytics_rows(
         gateway,
         contract,

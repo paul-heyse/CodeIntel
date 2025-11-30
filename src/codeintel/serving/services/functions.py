@@ -192,9 +192,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
                 return payload
             return HighRiskFunctionsResponse.model_validate(payload)
 
-        pydantic_resp: HighRiskFunctionsResponse = self._http_call(
-            "list_high_risk_functions", _run
-        )
+        pydantic_resp: HighRiskFunctionsResponse = self._http_call("list_high_risk_functions", _run)
         return pydantic_resp.to_domain()
 
     def get_function_summary(
@@ -258,9 +256,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
                 return payload
             return CallGraphNeighborsResponse.model_validate(payload)
 
-        pydantic_resp: CallGraphNeighborsResponse = self._http_call(
-            "get_callgraph_neighbors", _run
-        )
+        pydantic_resp: CallGraphNeighborsResponse = self._http_call("get_callgraph_neighbors", _run)
         return pydantic_resp.to_domain()
 
     def get_callgraph_neighborhood(

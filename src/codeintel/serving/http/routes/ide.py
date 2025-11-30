@@ -63,11 +63,11 @@ def build_ide_router() -> APIRouter:
         errors.not_found
             If no hints can be derived for the path.
         """
-        response = service.get_file_hints(rel_path=rel_path)
-        if not response.found or not response.hints:
+        result = service.get_file_hints(rel_path=rel_path)
+        if not result.found or not result.hints:
             message = "IDE hints not found for path"
             raise errors.not_found(message)
-        return response
+        return FileHintsResponse.from_domain(result)
 
     return router
 

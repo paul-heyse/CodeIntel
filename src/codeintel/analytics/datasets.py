@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from codeintel.analytics.rows.function_metrics import (
     FunctionMetricsRow,
@@ -47,6 +47,9 @@ REPO_COMMIT_ARITY = 2
 DELETE_SQL_BY_TABLE: dict[str, str] = {
     "analytics.function_metrics": "DELETE FROM analytics.function_metrics WHERE repo = ? AND commit = ?",
     "analytics.function_types": "DELETE FROM analytics.function_types WHERE repo = ? AND commit = ?",
+    "analytics.function_ast_features": (
+        "DELETE FROM analytics.function_ast_features WHERE repo = ? AND commit = ?"
+    ),
     "analytics.graph_metrics_functions": "DELETE FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
     "analytics.graph_metrics_modules": "DELETE FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
     "analytics.graph_metrics_functions_ext": "DELETE FROM analytics.graph_metrics_functions_ext WHERE repo = ? AND commit = ?",
@@ -159,6 +162,11 @@ def build_analytics_dataset_contracts(
             row_type=row_models.FunctionProfileRowModel,
             to_tuple=row_models.function_profile_row_to_tuple,
         ),
+        "analytics.function_ast_features": _contract(
+            "analytics.function_ast_features",
+            row_type=row_models.FunctionAstFeaturesRow,
+            to_tuple=row_models.function_ast_features_row_to_tuple,
+        ),
         "analytics.test_profile": _contract(
             "analytics.test_profile",
             row_type=TestProfileRow,
@@ -216,6 +224,21 @@ def get_analytics_dataset_contract(
     return contracts[name]
 
 
+def get_function_ast_features_contract(
+    gateway: StorageGateway,
+) -> AnalyticsDatasetContract[row_models.FunctionAstFeaturesRow]:
+    """
+    Return the dataset contract for function AST features.
+
+    Returns
+    -------
+    AnalyticsDatasetContract[FunctionAstFeaturesRow]
+        Contract describing analytics.function_ast_features.
+    """
+    contract = get_analytics_dataset_contract(gateway, "analytics.function_ast_features")
+    return cast("AnalyticsDatasetContract[row_models.FunctionAstFeaturesRow]", contract)
+
+
 def insert_analytics_rows(
     gateway: StorageGateway,
     contract: AnalyticsDatasetContract[RowT],
@@ -237,8 +260,10 @@ def insert_analytics_rows(
     )
     if delete_scope is not None:
         columns_for_delete = delete_scope.columns
-        if columns_for_delete is None and contract.primary_key and len(delete_scope.params) == len(
-            contract.primary_key
+        if (
+            columns_for_delete is None
+            and contract.primary_key
+            and len(delete_scope.params) == len(contract.primary_key)
         ):
             columns_for_delete = contract.primary_key
         elif (
