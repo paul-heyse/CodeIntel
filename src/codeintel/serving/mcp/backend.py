@@ -26,8 +26,10 @@ from codeintel.serving.mcp.models import (
     FunctionArchitectureResponse,
     FunctionProfileResponse,
     FunctionSummaryResponse,
+    GraphNeighborhoodResponse,
     GraphScopePayload,
     HighRiskFunctionsResponse,
+    ImportBoundaryResponse,
     ModuleArchitectureResponse,
     ModuleProfileResponse,
     ModuleSubsystemResponse,
@@ -75,10 +77,14 @@ async def _get_async(
     return await client.get(path, params=params)
 
 
-class QueryBackend(Protocol):
-    """Abstract interface consumed by MCP tools."""
+class BaseBackend(Protocol):
+    """Base backend interface providing shared service access."""
 
     service: QueryService
+
+
+class FunctionBackend(BaseBackend, Protocol):
+    """Function and graph operations surfaced by backends."""
 
     def get_function_summary(
         self,
@@ -89,7 +95,7 @@ class QueryBackend(Protocol):
         qualname: str | None = None,
         scope: object | None = None,
     ) -> FunctionSummaryResponse:
-        """Return a function summary from docs.v_function_summary."""
+        """Return a function summary from analytics and docs views."""
         ...
 
     def list_high_risk_functions(
@@ -100,7 +106,7 @@ class QueryBackend(Protocol):
         tested_only: bool = False,
         scope: object | None = None,
     ) -> HighRiskFunctionsResponse:
-        """List high-risk functions from analytics.goid_risk_factors."""
+        """List high-risk functions with optional tested-only filtering."""
         ...
 
     def get_callgraph_neighbors(
@@ -111,7 +117,26 @@ class QueryBackend(Protocol):
         limit: int | None = None,
         scope: object | None = None,
     ) -> CallGraphNeighborsResponse:
-        """Return incoming/outgoing call graph neighbors."""
+        """Return incoming and outgoing call graph neighbors."""
+        ...
+
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        """Return a bounded ego neighborhood in the call graph."""
+        ...
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """Return import graph edges crossing a subsystem boundary."""
         ...
 
     def get_tests_for_function(
@@ -131,8 +156,12 @@ class QueryBackend(Protocol):
         rel_path: str,
         scope: object | None = None,
     ) -> FileSummaryResponse:
-        """Return file summary plus function rows."""
+        """Return a file summary with nested function rows."""
         ...
+
+
+class ProfileBackend(BaseBackend, Protocol):
+    """Profile and architecture operations surfaced by backends."""
 
     def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
         """Return a denormalized function profile."""
@@ -143,21 +172,25 @@ class QueryBackend(Protocol):
         ...
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
-        """Return a module profile."""
+        """Return a profile for a module."""
         ...
 
     def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
-        """Return call-graph architecture metrics for a function."""
+        """Return architecture metrics for a function."""
         ...
 
     def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
-        """Return import-graph architecture metrics for a module."""
+        """Return architecture metrics for a module."""
         ...
+
+
+class SubsystemBackend(BaseBackend, Protocol):
+    """Subsystem, IDE hints, and search operations."""
 
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSummaryResponse:
-        """List inferred subsystems."""
+        """List inferred subsystems with optional filters."""
         ...
 
     def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
@@ -165,24 +198,30 @@ class QueryBackend(Protocol):
         ...
 
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
-        """Return IDE-focused hints for a file (module + subsystem context)."""
+        """Return IDE-focused hints for a file."""
         ...
 
-    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
-        """Return subsystem details and module memberships."""
+    def get_subsystem_modules(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
+        """Return subsystem detail and member modules."""
         ...
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSearchResponse:
-        """Search-oriented subsystem listing."""
+        """Search subsystems by role or label."""
         ...
 
     def summarize_subsystem(
         self, *, subsystem_id: str, module_limit: int | None = None
     ) -> SubsystemModulesResponse:
-        """Summarize a subsystem with truncated module list."""
+        """Summarize a subsystem with optional module truncation."""
         ...
+
+
+class DatasetBackendProtocol(BaseBackend, Protocol):
+    """Dataset listing and schema operations surfaced by backends."""
 
     def list_datasets(self) -> list[DatasetDescriptor]:
         """List datasets available to browse."""
@@ -195,16 +234,25 @@ class QueryBackend(Protocol):
         limit: int = 100,
         offset: int = 0,
     ) -> DatasetRowsResponse:
-        """Read rows from a dataset in small slices."""
+        """Read a slice of rows from a dataset."""
         ...
 
     def dataset_specs(self) -> list[DatasetSpecDescriptor]:
-        """Return canonical dataset specs."""
+        """Return canonical dataset specifications."""
         ...
 
     def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
-        """Return schema details for a dataset."""
+        """Return schema and sample rows for a dataset."""
         ...
+
+
+class QueryBackend(
+    DatasetBackendProtocol,
+    FunctionBackend,
+    ProfileBackend,
+    SubsystemBackend,
+):
+    """Aggregated backend interface consumed by MCP tools."""
 
 
 class DatasetBackendMixin:
@@ -297,9 +345,16 @@ def _validate_direction(direction: str) -> str:
     errors.invalid_argument
         When the direction is not supported.
     """
-    if direction in {"incoming", "outgoing", "both"}:
-        return direction
-    message = "direction must be one of incoming, outgoing, both"
+    normalized = {
+        "incoming": "in",
+        "in": "in",
+        "outgoing": "out",
+        "out": "out",
+        "both": "both",
+    }
+    if direction in normalized:
+        return normalized[direction]
+    message = "direction must be one of in, out, both"
     raise errors.invalid_argument(message)
 
 
@@ -435,6 +490,46 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
             scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
 
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        """
+        Return a bounded ego neighborhood for a function.
+
+        Returns
+        -------
+        GraphNeighborhoodResponse
+            Nodes and edges in the neighborhood plus metadata.
+        """
+        return self.service.get_callgraph_neighborhood(
+            goid_h128=goid_h128,
+            radius=radius,
+            max_nodes=max_nodes,
+        )
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """
+        Return import graph edges crossing a subsystem boundary.
+
+        Returns
+        -------
+        ImportBoundaryResponse
+            Boundary edges and truncation metadata.
+        """
+        return self.service.get_import_boundary(
+            subsystem_id=subsystem_id,
+            max_edges=max_edges,
+        )
+
     def get_tests_for_function(
         self,
         *,
@@ -568,7 +663,9 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         """
         return self.service.get_file_hints(rel_path=rel_path)
 
-    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+    def get_subsystem_modules(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
         """
         Return subsystem details and module memberships.
 
@@ -577,7 +674,10 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         SubsystemModulesResponse
             Subsystem detail payload.
         """
-        return self.service.get_subsystem_modules(subsystem_id=subsystem_id)
+        return self.service.get_subsystem_modules(
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
@@ -713,24 +813,6 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         message = "HTTP request failed after retries"
         raise errors.backend_failure(message)
 
-    def request_json(self, path: str, params: dict[str, object]) -> object:
-        """
-        Public wrapper around HTTP GET to avoid private attribute access.
-
-        Parameters
-        ----------
-        path:
-            API path to fetch.
-        params:
-            Query parameters to include in the request.
-
-        Returns
-        -------
-        object
-            Decoded JSON payload.
-        """
-        return self._request_json(path, params)
-
     def _verify_health(self) -> None:
         """
         Verify remote API health once at startup.
@@ -763,12 +845,13 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         FunctionSummaryResponse
             Summary payload with found flag.
         """
-        _ = scope
-        data = self._request_json(
-            "/function/summary",
-            {"urn": urn, "goid_h128": goid_h128, "rel_path": rel_path, "qualname": qualname},
+        return self.service.get_function_summary(
+            urn=urn,
+            goid_h128=goid_h128,
+            rel_path=rel_path,
+            qualname=qualname,
+            scope=scope if isinstance(scope, GraphScopePayload) else None,
         )
-        return FunctionSummaryResponse.model_validate(data)
 
     def list_high_risk_functions(
         self,
@@ -815,6 +898,46 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
             direction=direction,
             limit=limit,
             scope=scope if isinstance(scope, GraphScopePayload) else None,
+        )
+
+    def get_callgraph_neighborhood(
+        self,
+        *,
+        goid_h128: int,
+        radius: int = 1,
+        max_nodes: int | None = None,
+    ) -> GraphNeighborhoodResponse:
+        """
+        Return a bounded ego neighborhood in the call graph.
+
+        Returns
+        -------
+        GraphNeighborhoodResponse
+            Nodes and edges for the neighborhood plus metadata.
+        """
+        return self.service.get_callgraph_neighborhood(
+            goid_h128=goid_h128,
+            radius=radius,
+            max_nodes=max_nodes,
+        )
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """
+        Return import graph edges crossing a subsystem boundary.
+
+        Returns
+        -------
+        ImportBoundaryResponse
+            Boundary edges and truncation metadata.
+        """
+        return self.service.get_import_boundary(
+            subsystem_id=subsystem_id,
+            max_edges=max_edges,
         )
 
     def get_tests_for_function(
@@ -950,7 +1073,9 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         """
         return self.service.get_file_hints(rel_path=rel_path)
 
-    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+    def get_subsystem_modules(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
         """
         Return subsystem details and module memberships from the remote API.
 
@@ -959,7 +1084,10 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         SubsystemModulesResponse
             Subsystem detail payload.
         """
-        return self.service.get_subsystem_modules(subsystem_id=subsystem_id)
+        return self.service.get_subsystem_modules(
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None

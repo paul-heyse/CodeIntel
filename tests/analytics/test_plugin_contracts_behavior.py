@@ -75,7 +75,9 @@ def test_contract_fatal_failure_marks_failed(plugin_harness: PluginTestHarness) 
         pytest.fail(message)
 
 
-def test_idempotency_respects_row_count_changes(plugin_harness: PluginTestHarness, tmp_path: Path) -> None:
+def test_idempotency_respects_row_count_changes(
+    plugin_harness: PluginTestHarness, tmp_path: Path
+) -> None:
     """Skip-on-unchanged should rerun when row counts change even if options stay the same."""
     state = {"count": 1}
 

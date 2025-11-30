@@ -14,9 +14,7 @@ from codeintel.analytics.tests import compute_test_coverage_edges
 
 def _coverage_functions_run(ctx: AnalyticsExecutionContext) -> object | None:
     if ctx.coverage_functions_cfg is None:
-        message = (
-            "CoverageAnalyticsStepConfig required in AnalyticsExecutionContext.coverage_functions_cfg"
-        )
+        message = "CoverageAnalyticsStepConfig required in AnalyticsExecutionContext.coverage_functions_cfg"
         raise ValueError(message)
     compute_coverage_functions(
         ctx.gateway,

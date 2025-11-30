@@ -7,6 +7,15 @@ from fastapi import APIRouter
 from codeintel.serving.http.dependencies import ServiceDep
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import FunctionArchitectureResponse, ModuleArchitectureResponse
+from codeintel.serving.registry import OperationSpec, get_operation_spec
+
+
+def _require_spec(op_id: str) -> OperationSpec:
+    spec = get_operation_spec(op_id)
+    if spec is None:
+        message = f"OperationSpec {op_id} is not registered"
+        raise ValueError(message)
+    return spec
 
 
 def build_architecture_router() -> APIRouter:
@@ -19,11 +28,14 @@ def build_architecture_router() -> APIRouter:
         Router exposing architecture datasets without direct SQL.
     """
     router = APIRouter()
+    spec_function = _require_spec("architecture.function")
+    spec_module = _require_spec("architecture.module")
 
     @router.get(
-        "/architecture/function",
+        spec_function.http_path,
         response_model=FunctionArchitectureResponse,
-        summary="Get architecture metrics for a function",
+        summary=spec_function.summary,
+        tags=[spec_function.category],
     )
     def function_architecture(
         *,
@@ -50,9 +62,10 @@ def build_architecture_router() -> APIRouter:
         return response
 
     @router.get(
-        "/architecture/module",
+        spec_module.http_path,
         response_model=ModuleArchitectureResponse,
-        summary="Get architecture metrics for a module",
+        summary=spec_module.summary,
+        tags=[spec_module.category],
     )
     def module_architecture(
         *,

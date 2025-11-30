@@ -19,31 +19,23 @@ from codeintel.ingestion.tool_runner import (
     ToolNotFoundError,
     ToolRunner,
 )
+from codeintel.ingestion.tools import (
+    ToolPlugin,
+    ToolPluginRegistry,
+    ToolPluginResult,
+    ToolStatus,
+    build_default_registry,
+)
 
 log = logging.getLogger(__name__)
-
-
-def _mkdir_parents(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
 
 
 def _unlink_missing(path: Path) -> None:
     path.unlink(missing_ok=True)
 
 
-def _write_text(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf8")
-
-
 def _path_is_file(path: Path) -> bool:
     return path.is_file()
-
-
-def _resolve_target_base(repo_root: Path, target_dir: Path | None) -> Path:
-    if target_dir is not None:
-        return target_dir
-    src_dir = repo_root / "src"
-    return src_dir if src_dir.is_dir() else repo_root
 
 
 @dataclass(frozen=True)
@@ -61,6 +53,51 @@ class ToolService:
     def __init__(self, runner: ToolRunner, tools_config: ToolsConfig | None = None) -> None:
         self.runner = runner
         self.tools_config = tools_config or runner.tools_config
+        self._plugins: ToolPluginRegistry = build_default_registry(self.runner, self.tools_config)
+
+    def get_plugin(self, name: str) -> ToolPlugin:
+        """
+        Return a registered plugin by name.
+
+        Parameters
+        ----------
+        name
+            Plugin registry name.
+
+        Returns
+        -------
+        ToolPlugin
+            Registered plugin instance.
+        """
+        return self._plugins.get(name)
+
+    async def run_plugin(self, name: str, *, repo_root: Path, **kwargs: object) -> ToolPluginResult:
+        """
+        Execute a tool plugin by name and return its normalized result.
+
+        Parameters
+        ----------
+        name
+            Plugin registry name (for example, "pyright", "coverage", "scip").
+        repo_root
+            Repository root passed to the plugin.
+        **kwargs
+            Plugin-specific arguments (for example, repo_root, output_path).
+
+        Returns
+        -------
+        ToolPluginResult
+            Normalized plugin result including status and artifacts.
+
+        Raises
+        ------
+        KeyError
+            If no plugin is registered under the provided name.
+        """
+        if name not in self._plugins.names():
+            raise KeyError(name)
+        plugin = self.get_plugin(name)
+        return await plugin.run(repo_root=repo_root, **kwargs)
 
     async def run_pyright(self, repo_root: Path) -> Mapping[str, int]:
         """
@@ -80,21 +117,28 @@ class ToolService:
         ------
         ToolExecutionError
             Raised when pyright exits with an unexpected status.
+        RuntimeError
+            Raised when a plugin result is missing the expected run metadata.
         """
-        try:
-            result = await self.runner.run_async(
-                ToolName.PYRIGHT,
-                ["--outputjson", str(repo_root)],
-                cwd=repo_root,
-                timeout_s=self.tools_config.default_timeout_s,
-            )
-        except ToolNotFoundError:
+        plugin_result = await self.run_plugin("pyright", repo_root=repo_root)
+
+        if plugin_result.status is ToolStatus.NOT_FOUND:
             log.warning("pyright binary not found; treating all files as 0 errors")
             return {}
 
-        if result.returncode not in {0, 1}:
-            raise ToolExecutionError(result)
-        return _parse_pyright_errors(result.stdout, repo_root)
+        if plugin_result.status is not ToolStatus.OK:
+            err = plugin_result.error
+            if isinstance(err, ToolExecutionError):
+                raise err
+            if plugin_result.run is not None:
+                raise ToolExecutionError(plugin_result.run)
+            message = "pyright plugin failed without ToolRunResult"
+            raise RuntimeError(message)
+
+        if plugin_result.run is None:
+            message = "pyright plugin returned no run metadata"
+            raise RuntimeError(message)
+        return _parse_pyright_errors(plugin_result.run.stdout, repo_root)
 
     async def run_pyrefly(self, repo_root: Path) -> Mapping[str, int]:
         """
@@ -111,44 +155,30 @@ class ToolService:
             Mapping from relative file paths to error counts.
         """
         output_path = self.runner.cache_dir / "pyrefly.json"
-        await to_thread.run_sync(_mkdir_parents, output_path.parent)
-        args = [
-            "check",
-            str(repo_root),
-            "--output-format",
-            "json",
-            "--output",
-            str(output_path),
-            "--summary",
-            "none",
-            "--count-errors=0",
-        ]
-        try:
-            result = await self.runner.run_async(
-                ToolName.PYREFLY,
-                args,
-                cwd=repo_root,
-                output_path=output_path,
-                timeout_s=self.tools_config.default_timeout_s,
-            )
-        except ToolNotFoundError:
+
+        plugin_result = await self.run_plugin(
+            "pyrefly",
+            repo_root=repo_root,
+            output_path=output_path,
+        )
+
+        if plugin_result.status is ToolStatus.NOT_FOUND:
             log.warning("pyrefly binary not found; treating all files as 0 errors")
             await to_thread.run_sync(_unlink_missing, output_path)
             return {}
 
-        output_exists = await to_thread.run_sync(_path_is_file, output_path)
-        if result.returncode != 0 and not output_exists:
+        if plugin_result.status is not ToolStatus.OK:
             log.warning(
-                "pyrefly exited with code %s and produced no output; stdout=%s stderr=%s",
-                result.returncode,
-                result.stdout.strip(),
-                result.stderr.strip(),
+                "pyrefly invocation failed or produced unusable output; status=%s error=%r",
+                plugin_result.status,
+                plugin_result.error,
             )
             await to_thread.run_sync(_unlink_missing, output_path)
             return {}
 
-        payload = await to_thread.run_sync(ToolRunner.load_json, output_path) or {}
-        await to_thread.run_sync(_unlink_missing, output_path)
+        json_path = plugin_result.artifacts.get("pyrefly_json", output_path)
+        payload = await to_thread.run_sync(ToolRunner.load_json, json_path) or {}
+        await to_thread.run_sync(_unlink_missing, json_path)
         return _parse_pyrefly_errors(payload, repo_root)
 
     async def run_ruff(self, repo_root: Path) -> Mapping[str, int]:
@@ -169,21 +199,31 @@ class ToolService:
         ------
         ToolExecutionError
             Raised when ruff exits with an unexpected status.
+        RuntimeError
+            Raised when a plugin result is missing the expected run metadata.
         """
-        try:
-            result = await self.runner.run_async(
-                ToolName.RUFF,
-                ["check", str(repo_root), "--output-format", "json"],
-                cwd=repo_root,
-                timeout_s=self.tools_config.default_timeout_s,
-            )
-        except ToolNotFoundError:
+        plugin_result = await self.run_plugin(
+            "ruff",
+            repo_root=repo_root,
+        )
+
+        if plugin_result.status is ToolStatus.NOT_FOUND:
             log.warning("ruff binary not found; treating all files as 0 errors")
             return {}
 
-        if result.returncode not in {0, 1}:
-            raise ToolExecutionError(result)
-        return _parse_ruff_errors(result.stdout, repo_root)
+        if plugin_result.status is not ToolStatus.OK:
+            err = plugin_result.error
+            if isinstance(err, ToolExecutionError):
+                raise err
+            if plugin_result.run is not None:
+                raise ToolExecutionError(plugin_result.run)
+            message = "ruff plugin failed without ToolRunResult"
+            raise RuntimeError(message)
+
+        if plugin_result.run is None:
+            message = "ruff plugin returned no run metadata"
+            raise RuntimeError(message)
+        return _parse_ruff_errors(plugin_result.run.stdout, repo_root)
 
     async def run_coverage_json(
         self,
@@ -208,29 +248,34 @@ class ToolService:
         -------
         list[CoverageFileReport]
             Normalized coverage summaries grouped per file.
-
-        Raises
-        ------
-        ToolExecutionError
-            Raised when coverage CLI execution fails or produces no output.
         """
         target_output = output_path or (self.runner.cache_dir / "coverage.json")
-        await to_thread.run_sync(_mkdir_parents, target_output.parent)
-        args = ["json", "--quiet", "-o", str(target_output)]
         data_file = coverage_file or self.tools_config.coverage_file
-        if data_file is not None:
-            args.append(f"--data-file={data_file}")
-        result = await self.runner.run_async(
-            ToolName.COVERAGE,
-            args,
-            cwd=repo_root,
+
+        plugin_result = await self.run_plugin(
+            "coverage",
+            repo_root=repo_root,
+            coverage_file=data_file,
             output_path=target_output,
-            timeout_s=self.tools_config.default_timeout_s,
         )
-        if not result.ok or not await to_thread.run_sync(_path_is_file, target_output):
-            raise ToolExecutionError(result)
-        payload = await to_thread.run_sync(ToolRunner.load_json, target_output) or {}
-        await to_thread.run_sync(_unlink_missing, target_output)
+
+        if plugin_result.status is ToolStatus.NOT_FOUND:
+            log.warning("coverage binary not found; skipping coverage ingestion")
+            await to_thread.run_sync(_unlink_missing, target_output)
+            return []
+
+        if plugin_result.status is not ToolStatus.OK:
+            log.warning(
+                "coverage CLI failed or returned non-zero exit; status=%s error=%r",
+                plugin_result.status,
+                plugin_result.error,
+            )
+            await to_thread.run_sync(_unlink_missing, target_output)
+            return []
+
+        json_path = plugin_result.artifacts.get("coverage_json", target_output)
+        payload = await to_thread.run_sync(ToolRunner.load_json, json_path) or {}
+        await to_thread.run_sync(_unlink_missing, json_path)
         return _parse_coverage_payload(payload, repo_root)
 
     async def run_pytest_report(
@@ -258,25 +303,38 @@ class ToolService:
         ------
         ToolExecutionError
             Raised when pytest execution fails or does not create a report.
+        ToolNotFoundError
+            Raised when the pytest binary cannot be resolved.
+        RuntimeError
+            Raised when a plugin result is missing the expected run metadata.
         """
         if await to_thread.run_sync(_path_is_file, json_report_path):
             return False
 
-        await to_thread.run_sync(_mkdir_parents, json_report_path.parent)
-        result = await self.runner.run_async(
-            ToolName.PYTEST,
-            [
-                "--json-report",
-                f"--json-report-file={json_report_path}",
-            ],
-            cwd=repo_root,
-            output_path=json_report_path,
-            timeout_s=self.tools_config.default_timeout_s,
+        plugin_result = await self.run_plugin(
+            "pytest",
+            repo_root=repo_root,
+            json_report_path=json_report_path,
         )
-        if not result.ok:
-            raise ToolExecutionError(result)
-        if not await to_thread.run_sync(_path_is_file, json_report_path):
-            raise ToolExecutionError(result)
+
+        if plugin_result.status is ToolStatus.NOT_FOUND:
+            raise ToolNotFoundError(ToolName.PYTEST, self.tools_config.pytest_bin)
+
+        if plugin_result.status is not ToolStatus.OK:
+            err = plugin_result.error
+            if isinstance(err, ToolExecutionError):
+                raise err
+            if plugin_result.run is not None:
+                raise ToolExecutionError(plugin_result.run)
+            message = "pytest plugin failed without ToolRunResult"
+            raise RuntimeError(message)
+
+        if plugin_result.run is None:
+            message = "pytest plugin returned no run metadata"
+            raise RuntimeError(message)
+        exists = await to_thread.run_sync(_path_is_file, json_report_path)
+        if not exists:
+            raise ToolExecutionError(plugin_result.run)
         return True
 
     async def run_scip_full(
@@ -287,14 +345,41 @@ class ToolService:
         output_json: Path,
         target_dir: Path | None = None,
     ) -> None:
-        """Run scip-python for a full index and export to JSON."""
-        await self._run_scip_python(
-            repo_root,
+        """
+        Run scip-python for a full index and export to JSON.
+
+        Raises
+        ------
+        ToolExecutionError
+            Raised when SCIP tooling exits with an error.
+        ToolNotFoundError
+            Raised when SCIP tooling binaries cannot be resolved.
+        RuntimeError
+            Raised when plugin results are missing required metadata.
+        """
+        plugin_result = await self.run_plugin(
+            "scip",
+            repo_root=repo_root,
             output_scip=output_scip,
+            output_json=output_json,
             target_dir=target_dir,
-            target_only=None,
+            rel_paths=None,
         )
-        await self._run_scip_print(output_scip, output_json)
+
+        if plugin_result.status is ToolStatus.NOT_FOUND:
+            error = plugin_result.error
+            if isinstance(error, ToolNotFoundError):
+                raise error
+            configured_path = self.tools_config.resolve_path(plugin_result.tool)
+            raise ToolNotFoundError(plugin_result.tool, configured_path)
+
+        if plugin_result.status is not ToolStatus.OK:
+            if isinstance(plugin_result.error, ToolExecutionError):
+                raise plugin_result.error
+            if plugin_result.run is not None:
+                raise ToolExecutionError(plugin_result.run)
+            message = "SCIP plugin failed without ToolRunResult"
+            raise RuntimeError(message)
 
     async def run_scip_shard(
         self,
@@ -305,51 +390,41 @@ class ToolService:
         output_json: Path,
         target_dir: Path | None = None,
     ) -> None:
-        """Run scip-python for a subset of files and export to JSON."""
-        await self._run_scip_python(
-            repo_root,
+        """
+        Run scip-python for a subset of files and export to JSON.
+
+        Raises
+        ------
+        ToolExecutionError
+            Raised when SCIP tooling exits with an error.
+        ToolNotFoundError
+            Raised when SCIP tooling binaries cannot be resolved.
+        RuntimeError
+            Raised when plugin results are missing required metadata.
+        """
+        plugin_result = await self.run_plugin(
+            "scip",
+            repo_root=repo_root,
             output_scip=output_scip,
+            output_json=output_json,
             target_dir=target_dir,
-            target_only=rel_paths,
+            rel_paths=list(rel_paths),
         )
-        await self._run_scip_print(output_scip, output_json)
 
-    async def _run_scip_python(
-        self,
-        repo_root: Path,
-        *,
-        output_scip: Path,
-        target_dir: Path | None,
-        target_only: Sequence[str] | None,
-    ) -> None:
-        target_base = await to_thread.run_sync(_resolve_target_base, repo_root, target_dir)
-        await to_thread.run_sync(_mkdir_parents, output_scip.parent)
-        args: list[str] = ["index", str(target_base), "--output", str(output_scip)]
-        for rel_path in target_only or ():
-            args.extend(["--target-only", rel_path])
-        result = await self.runner.run_async(
-            ToolName.SCIP_PYTHON,
-            args,
-            cwd=repo_root,
-            output_path=output_scip,
-            timeout_s=self.tools_config.default_timeout_s,
-        )
-        if not result.ok:
-            raise ToolExecutionError(result)
+        if plugin_result.status is ToolStatus.NOT_FOUND:
+            error = plugin_result.error
+            if isinstance(error, ToolNotFoundError):
+                raise error
+            configured_path = self.tools_config.resolve_path(plugin_result.tool)
+            raise ToolNotFoundError(plugin_result.tool, configured_path)
 
-    async def _run_scip_print(self, scip_path: Path, output_json: Path) -> None:
-        args = ["print", "--json", str(scip_path)]
-        await to_thread.run_sync(_mkdir_parents, output_json.parent)
-        result = await self.runner.run_async(
-            ToolName.SCIP,
-            args,
-            cwd=scip_path.parent,
-            output_path=output_json,
-            timeout_s=self.tools_config.default_timeout_s,
-        )
-        if not result.ok:
-            raise ToolExecutionError(result)
-        await to_thread.run_sync(_write_text, output_json, result.stdout or "")
+        if plugin_result.status is not ToolStatus.OK:
+            if isinstance(plugin_result.error, ToolExecutionError):
+                raise plugin_result.error
+            if plugin_result.run is not None:
+                raise ToolExecutionError(plugin_result.run)
+            message = "SCIP plugin failed without ToolRunResult"
+            raise RuntimeError(message)
 
 
 def _parse_pyrefly_errors(payload: Mapping[str, Any], repo_root: Path) -> dict[str, int]:

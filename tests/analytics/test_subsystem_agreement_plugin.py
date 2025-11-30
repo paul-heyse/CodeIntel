@@ -42,6 +42,7 @@ def test_subsystem_agreement_plugin_matches_legacy(tmp_path: Path) -> None:
             """,
             [datetime.now(tz=UTC)],
         )
+
         def _run(ctx: GraphMetricExecutionContext) -> GraphPluginResult:
             compute_subsystem_agreement(ctx.gateway, repo=ctx.repo, commit=ctx.commit)
             row = con.execute(

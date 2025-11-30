@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from codeintel.serving.mcp.architecture_tools import register_architecture_tools
 from codeintel.serving.mcp.dataset_tools import register_dataset_tools
 from codeintel.serving.mcp.function_tools import register_function_tools
+from codeintel.serving.mcp.meta_tools import register_meta_tools
 from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 
@@ -26,6 +27,7 @@ def register_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     register_profile_tools(mcp, backend)
     register_architecture_tools(mcp, backend)
     register_dataset_tools(mcp, backend)
+    register_meta_tools(mcp, backend)
 
 
 __all__ = ["QueryBackendOrService", "register_tools"]

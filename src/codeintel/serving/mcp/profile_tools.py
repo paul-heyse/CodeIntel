@@ -6,10 +6,22 @@ from mcp.server.fastmcp import FastMCP
 
 from codeintel.serving.mcp.models import ProblemDetail
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
+from codeintel.serving.registry import OperationSpec, get_operation_spec
+
+
+def _require_spec(op_id: str, expected_tool: str) -> OperationSpec:
+    spec = get_operation_spec(op_id)
+    if spec is None or spec.tool_name != expected_tool:
+        message = f"OperationSpec {op_id} has mismatched tool name"
+        raise ValueError(message)
+    return spec
 
 
 def register_profile_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     """Register profile-oriented MCP tools."""
+    _ = _require_spec("profiles.function", "get_function_profile")
+    _ = _require_spec("profiles.file", "get_file_profile")
+    _ = _require_spec("profiles.module", "get_module_profile")
 
     @mcp.tool()
     @_wrap

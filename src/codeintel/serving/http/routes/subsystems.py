@@ -13,6 +13,15 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
     SubsystemSummaryResponse,
 )
+from codeintel.serving.registry import OperationSpec, get_operation_spec
+
+
+def _require_spec(op_id: str) -> OperationSpec:
+    spec = get_operation_spec(op_id)
+    if spec is None:
+        message = f"OperationSpec {op_id} is not registered"
+        raise ValueError(message)
+    return spec
 
 
 def build_subsystem_router() -> APIRouter:
@@ -25,11 +34,17 @@ def build_subsystem_router() -> APIRouter:
         Router exposing subsystem docs views and membership helpers.
     """
     router = APIRouter()
+    spec_list = _require_spec("subsystems.list")
+    spec_profiles = _require_spec("subsystems.profiles")
+    spec_coverage = _require_spec("subsystems.coverage")
+    spec_memberships = _require_spec("subsystems.module_memberships")
+    spec_detail = _require_spec("subsystems.detail")
 
     @router.get(
-        "/architecture/subsystems",
+        spec_list.http_path,
         response_model=SubsystemSummaryResponse,
-        summary="List inferred subsystems",
+        summary=spec_list.summary,
+        tags=[spec_list.category],
     )
     def list_subsystems(
         *,
@@ -49,9 +64,10 @@ def build_subsystem_router() -> APIRouter:
         return service.list_subsystems(limit=limit, role=role, q=q)
 
     @router.get(
-        "/architecture/subsystem-profiles",
+        spec_profiles.http_path,
         response_model=SubsystemProfileResponse,
-        summary="List subsystem profiles",
+        summary=spec_profiles.summary,
+        tags=[spec_profiles.category],
     )
     def list_subsystem_profiles(
         *,
@@ -69,9 +85,10 @@ def build_subsystem_router() -> APIRouter:
         return service.list_subsystem_profiles(limit=limit)
 
     @router.get(
-        "/architecture/subsystem-coverage",
+        spec_coverage.http_path,
         response_model=SubsystemCoverageResponse,
-        summary="List subsystem coverage rollups",
+        summary=spec_coverage.summary,
+        tags=[spec_coverage.category],
     )
     def list_subsystem_coverage(
         *,
@@ -89,9 +106,10 @@ def build_subsystem_router() -> APIRouter:
         return service.list_subsystem_coverage(limit=limit)
 
     @router.get(
-        "/architecture/module-subsystems",
+        spec_memberships.http_path,
         response_model=ModuleSubsystemResponse,
-        summary="List subsystem memberships for a module",
+        summary=spec_memberships.summary,
+        tags=[spec_memberships.category],
     )
     def module_subsystems(
         *,
@@ -118,9 +136,10 @@ def build_subsystem_router() -> APIRouter:
         return response
 
     @router.get(
-        "/architecture/subsystem",
+        spec_detail.http_path,
         response_model=SubsystemModulesResponse,
-        summary="Get modules and detail for a subsystem",
+        summary=spec_detail.summary,
+        tags=[spec_detail.category],
     )
     def subsystem_modules(
         *,
@@ -141,7 +160,7 @@ def build_subsystem_router() -> APIRouter:
         errors.not_found
             If the subsystem cannot be located.
         """
-        response = service.summarize_subsystem(
+        response = service.get_subsystem_modules(
             subsystem_id=subsystem_id,
             module_limit=module_limit,
         )

@@ -22,6 +22,7 @@ from codeintel.serving.http.routes.datasets import build_datasets_router
 from codeintel.serving.http.routes.functions import build_functions_router
 from codeintel.serving.http.routes.health import build_health_router
 from codeintel.serving.http.routes.ide import build_ide_router
+from codeintel.serving.http.routes.meta import build_meta_router
 from codeintel.serving.http.routes.profiles import build_profiles_router
 from codeintel.serving.http.routes.subsystems import build_subsystem_router
 from codeintel.serving.mcp import errors
@@ -217,6 +218,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(build_subsystem_router())
     app.include_router(build_ide_router())
     app.include_router(build_datasets_router())
+    app.include_router(build_meta_router())
     app.include_router(build_health_router())
 
 

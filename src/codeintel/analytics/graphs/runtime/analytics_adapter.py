@@ -132,7 +132,14 @@ def graph_run_to_analytics(report: GraphPluginRunReport) -> AnalyticsRunReport:
 
 
 def _graph_record_from_analytics(rec: AnalyticsRunRecord, run_id: str) -> GraphPluginRunRecord:
-    """Convert an AnalyticsRunRecord back into a graph runtime record."""
+    """
+    Convert an AnalyticsRunRecord back into a graph runtime record.
+
+    Returns
+    -------
+    GraphPluginRunRecord
+        Record aligned to graph runtime telemetry schema.
+    """
     meta = rec.meta if isinstance(rec.meta, dict) else {}
     stage = str(meta.get("stage") or rec.kind)
     severity = str(meta.get("severity") or "fatal")
@@ -176,14 +183,21 @@ def _graph_record_from_analytics(rec: AnalyticsRunRecord, run_id: str) -> GraphP
 
 
 def analytics_to_graph_run(report: AnalyticsRunReport) -> GraphPluginRunReport:
-    """Convert an AnalyticsRunReport back into a GraphPluginRunReport."""
+    """
+    Convert an AnalyticsRunReport back into a GraphPluginRunReport.
+
+    Returns
+    -------
+    GraphPluginRunReport
+        Graph runtime-compatible run report.
+    """
     scope = GraphRunScope(
         paths=tuple(report.scope.paths),
         modules=tuple(report.scope.modules),
         time_window=report.scope.time_window,
     )
     skipped = tuple(
-        GraphMetricPluginSkip(name=step.name, reason=step.reason)
+        GraphMetricPluginSkip(name=step.name, reason="disabled")
         for step in report.plan.skipped_steps
     )
     records = tuple(_graph_record_from_analytics(rec, report.run_id) for rec in report.records)

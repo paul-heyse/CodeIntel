@@ -55,6 +55,7 @@ from codeintel.storage.gateway import (
 if TYPE_CHECKING:
     from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 else:  # pragma: no cover - fallback when dependency is absent at runtime
+
     class FunctionCatalogProvider:  # type: ignore[too-many-ancestors]
         """Placeholder to satisfy type checkers when catalog provider is unavailable."""
 

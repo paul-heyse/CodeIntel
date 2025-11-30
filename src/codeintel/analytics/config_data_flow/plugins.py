@@ -13,7 +13,9 @@ from codeintel.analytics.plugins import (
 
 def _config_data_flow_run(ctx: AnalyticsExecutionContext) -> object | None:
     if ctx.config_data_flow_cfg is None:
-        message = "ConfigDataFlowStepConfig required in AnalyticsExecutionContext.config_data_flow_cfg"
+        message = (
+            "ConfigDataFlowStepConfig required in AnalyticsExecutionContext.config_data_flow_cfg"
+        )
         raise ValueError(message)
     compute_config_data_flow(
         ctx.gateway,

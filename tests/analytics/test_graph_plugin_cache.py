@@ -14,7 +14,9 @@ from codeintel.analytics.graphs.plugins import (
 from tests.analytics.conftest import PluginTestHarness
 
 
-def test_scratch_declare_consume_and_cleanup(plugin_harness: PluginTestHarness, tmp_path: Path) -> None:
+def test_scratch_declare_consume_and_cleanup(
+    plugin_harness: PluginTestHarness, tmp_path: Path
+) -> None:
     """Values declared in scratch should be consumable across plugins and cleaned afterwards."""
     marker = tmp_path / "scratch_cleanup.txt"
     cache_key = "scratch_token"
@@ -57,7 +59,10 @@ def test_scratch_declare_consume_and_cleanup(plugin_harness: PluginTestHarness, 
 
     report = plugin_harness.run_plugins_with_cfg(("cache_populator", "cache_consumer"))
     statuses = {record.name: record.status for record in report.records}
-    if statuses.get("cache_populator") != "succeeded" or statuses.get("cache_consumer") != "succeeded":
+    if (
+        statuses.get("cache_populator") != "succeeded"
+        or statuses.get("cache_consumer") != "succeeded"
+    ):
         message = "both cache plugins should succeed"
         pytest.fail(message)
     if not marker.exists():

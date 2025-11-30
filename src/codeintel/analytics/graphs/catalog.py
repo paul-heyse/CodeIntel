@@ -114,9 +114,7 @@ def render_plugin_catalog_markdown(catalog: dict[str, object]) -> str:
         "| Name | Stage | Severity | Enabled | Isolation | Scope-aware | Depends | Provides | "
         "Requires |"
     )
-    lines.append(
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
-    )
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for name in sorted(plugins):
         meta = plugins[name]
         enabled = "yes" if meta["enabled_by_default"] else "no"
@@ -290,7 +288,7 @@ def render_plugin_catalog_html(catalog: dict[str, object]) -> str:
     lines.append("<body>")
     lines.append("<h1>Graph Plugin Catalog</h1>")
     lines.append(f"<p>Generated at: {generated_at} | Plugin count: {len(plugins)}</p>")
-    lines.append("<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">")
+    lines.append('<table border="1" cellpadding="4" cellspacing="0">')
     lines.append(
         "<tr><th>Name</th><th>Stage</th><th>Severity</th><th>Enabled</th>"
         "<th>Isolation</th><th>Scope-aware</th><th>Depends</th><th>Provides</th>"
@@ -422,8 +420,7 @@ def render_plugin_catalog_html(catalog: dict[str, object]) -> str:
     lines.append("</pre>")
     lines.append("<p>")
     lines.append(
-        "Regenerate: uv run python scripts/render_graph_plugin_catalog.py "
-        "(JSON + Markdown + HTML)."
+        "Regenerate: uv run python scripts/render_graph_plugin_catalog.py (JSON + Markdown + HTML)."
     )
     lines.append("</p>")
     lines.append("</body>")

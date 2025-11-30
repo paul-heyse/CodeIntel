@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Literal
 
-from fastapi import APIRouter
-from pydantic import Field
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict, Field
 
 from codeintel.serving.http.dependencies import ServiceDep
 from codeintel.serving.mcp import errors
@@ -15,12 +15,50 @@ from codeintel.serving.mcp.models import (
     FileSummaryResponse,
     FunctionSummaryResponse,
     GraphNeighborhoodResponse,
+    GraphScopePayload,
     HighRiskFunctionsResponse,
     ImportBoundaryResponse,
     TestsForFunctionResponse,
 )
+from codeintel.serving.registry import OperationSpec, get_operation_spec
 
 LOG = logging.getLogger("codeintel.serving.http.routes.functions")
+
+
+class FunctionSummaryParams(BaseModel):
+    """Function summary query parameters."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    urn: str | None = None
+    goid_h128: int | None = None
+    rel_path: str | None = None
+    qualname: str | None = None
+    scope: GraphScopePayload | None = None
+
+
+def _require_spec(op_id: str) -> OperationSpec:
+    spec = get_operation_spec(op_id)
+    if spec is None:
+        message = f"OperationSpec {op_id} is not registered"
+        raise ValueError(message)
+    return spec
+
+
+def _function_summary_params(
+    urn: str | None = None,
+    goid_h128: int | None = None,
+    rel_path: str | None = None,
+    qualname: str | None = None,
+    scope: GraphScopePayload | None = None,
+) -> FunctionSummaryParams:
+    return FunctionSummaryParams(
+        urn=urn,
+        goid_h128=goid_h128,
+        rel_path=rel_path,
+        qualname=qualname,
+        scope=scope,
+    )
 
 
 def build_functions_router() -> APIRouter:
@@ -33,19 +71,24 @@ def build_functions_router() -> APIRouter:
         Router exposing function metadata endpoints.
     """
     router = APIRouter()
+    spec_summary = _require_spec("function.summary")
+    spec_high_risk = _require_spec("functions.high_risk")
+    spec_tests = _require_spec("functions.tests")
+    spec_neighbors = _require_spec("graph.call_neighbors")
+    spec_neighborhood = _require_spec("graph.call_neighborhood")
+    spec_import_boundary = _require_spec("graph.import_boundary")
+    spec_file_summary = _require_spec("file.summary")
 
     @router.get(
-        "/function/summary",
+        spec_summary.http_path,
         response_model=FunctionSummaryResponse,
-        summary="Get function summary",
+        summary=spec_summary.summary,
+        tags=[spec_summary.category],
     )
     def function_summary(
         *,
         service: ServiceDep,
-        urn: str | None = None,
-        goid_h128: int | None = None,
-        rel_path: str | None = None,
-        qualname: str | None = None,
+        params: Annotated[FunctionSummaryParams, Depends(_function_summary_params)],
     ) -> FunctionSummaryResponse:
         """
         Return a function summary identified by GOID, URN, or path.
@@ -61,10 +104,11 @@ def build_functions_router() -> APIRouter:
             If the function cannot be located.
         """
         summary = service.get_function_summary(
-            urn=urn,
-            goid_h128=goid_h128,
-            rel_path=rel_path,
-            qualname=qualname,
+            urn=params.urn,
+            goid_h128=params.goid_h128,
+            rel_path=params.rel_path,
+            qualname=params.qualname,
+            scope=params.scope,
         )
         if not summary.found or summary.summary is None:
             message = "Function not found"
@@ -72,9 +116,10 @@ def build_functions_router() -> APIRouter:
         return summary
 
     @router.get(
-        "/functions/high-risk",
+        spec_high_risk.http_path,
         response_model=HighRiskFunctionsResponse,
-        summary="List high-risk functions",
+        summary=spec_high_risk.summary,
+        tags=[spec_high_risk.category],
     )
     def list_high_risk_functions(
         *,
@@ -82,6 +127,7 @@ def build_functions_router() -> APIRouter:
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
+        scope: GraphScopePayload | None = None,
     ) -> HighRiskFunctionsResponse:
         """
         List high-risk functions with optional tested-only filtering.
@@ -91,17 +137,18 @@ def build_functions_router() -> APIRouter:
         HighRiskFunctionsResponse
             High-risk functions and truncation flag.
         """
-        result = service.list_high_risk_functions(
+        return service.list_high_risk_functions(
             min_risk=min_risk,
             limit=limit,
             tested_only=tested_only,
+            scope=scope,
         )
-        return HighRiskFunctionsResponse(functions=result.functions, truncated=result.truncated)
 
     @router.get(
-        "/function/callgraph",
+        spec_neighbors.http_path,
         response_model=CallGraphNeighborsResponse,
-        summary="Get call graph neighbors for a function",
+        summary=spec_neighbors.summary,
+        tags=[spec_neighbors.category],
     )
     def function_callgraph(
         *,
@@ -109,6 +156,7 @@ def build_functions_router() -> APIRouter:
         goid_h128: int,
         direction: Literal["in", "out", "both"] = "both",
         limit: int | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> CallGraphNeighborsResponse:
         """
         Return incoming and outgoing neighbors for a function.
@@ -122,12 +170,14 @@ def build_functions_router() -> APIRouter:
             goid_h128=goid_h128,
             direction=direction,
             limit=limit,
+            scope=scope,
         )
 
     @router.get(
-        "/function/tests",
+        spec_tests.http_path,
         response_model=TestsForFunctionResponse,
-        summary="List tests that exercise a function",
+        summary=spec_tests.summary,
+        tags=[spec_tests.category],
     )
     def tests_for_function(
         *,
@@ -135,6 +185,7 @@ def build_functions_router() -> APIRouter:
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
+        scope: GraphScopePayload | None = None,
     ) -> TestsForFunctionResponse:
         """
         List tests that exercised the requested function.
@@ -148,12 +199,14 @@ def build_functions_router() -> APIRouter:
             goid_h128=goid_h128,
             urn=urn,
             limit=limit,
+            scope=scope,
         )
 
     @router.get(
-        "/graph/call/neighborhood",
+        spec_neighborhood.http_path,
         response_model=GraphNeighborhoodResponse,
-        summary="Call graph ego neighborhood",
+        summary=spec_neighborhood.summary,
+        tags=[spec_neighborhood.category],
     )
     def callgraph_neighborhood(
         *,
@@ -197,9 +250,10 @@ def build_functions_router() -> APIRouter:
         return response
 
     @router.get(
-        "/graph/import/boundary",
+        spec_import_boundary.http_path,
         response_model=ImportBoundaryResponse,
-        summary="Import graph edges crossing a subsystem",
+        summary=spec_import_boundary.summary,
+        tags=[spec_import_boundary.category],
     )
     def import_boundary(
         *,
@@ -236,14 +290,16 @@ def build_functions_router() -> APIRouter:
         return response
 
     @router.get(
-        "/file/summary",
+        spec_file_summary.http_path,
         response_model=FileSummaryResponse,
-        summary="Get file summary with function details",
+        summary=spec_file_summary.summary,
+        tags=[spec_file_summary.category],
     )
     def file_summary(
         *,
         service: ServiceDep,
         rel_path: str,
+        scope: GraphScopePayload | None = None,
     ) -> FileSummaryResponse:
         """
         Return file-level metrics plus function summaries.
@@ -258,7 +314,7 @@ def build_functions_router() -> APIRouter:
         errors.not_found
             If the file cannot be located in metadata tables.
         """
-        summary = service.get_file_summary(rel_path=rel_path)
+        summary = service.get_file_summary(rel_path=rel_path, scope=scope)
         if not summary.found or summary.file is None:
             message = "File not found"
             raise errors.not_found(message)
