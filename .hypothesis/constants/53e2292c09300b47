@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/dependencies/plugins.py
+# hypothesis_version: 6.148.3
+
+[90000, 'EXTERNAL_DEPS_PLUGIN', 'config_ingest', 'core.goids', 'deps.external', 'fatal', 'goids', 'other']

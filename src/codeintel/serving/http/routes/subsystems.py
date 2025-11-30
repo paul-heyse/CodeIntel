@@ -24,9 +24,42 @@ def _require_spec(op_id: str) -> OperationSpec:
     return spec
 
 
+def _load_subsystem_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
+    ids = [
+        "subsystems.list",
+        "subsystems.profiles",
+        "subsystems.coverage",
+        "subsystems.module_memberships",
+        "subsystems.detail",
+    ]
+    specs: dict[str, OperationSpec] = {}
+    paths: dict[str, str] = {}
+    missing: list[str] = []
+    missing_paths: list[str] = []
+    for op_id in ids:
+        spec = get_operation_spec(op_id)
+        if spec is None:
+            missing.append(op_id)
+            continue
+        specs[op_id] = spec
+        if spec.http_path is None:
+            missing_paths.append(op_id)
+        else:
+            paths[op_id] = spec.http_path
+    if missing or missing_paths:
+        message = f"Missing OperationSpec entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
+        raise ValueError(message)
+    return specs, paths
+
+
 def build_subsystem_router() -> APIRouter:
     """
     Construct the router for subsystem endpoints.
+
+    Raises
+    ------
+    ValueError
+        If OperationSpec entries are missing or lack paths.
 
     Returns
     -------
@@ -34,14 +67,20 @@ def build_subsystem_router() -> APIRouter:
         Router exposing subsystem docs views and membership helpers.
     """
     router = APIRouter()
-    spec_list = _require_spec("subsystems.list")
-    spec_profiles = _require_spec("subsystems.profiles")
-    spec_coverage = _require_spec("subsystems.coverage")
-    spec_memberships = _require_spec("subsystems.module_memberships")
-    spec_detail = _require_spec("subsystems.detail")
+    specs, paths = _load_subsystem_specs()
+    spec_list = specs["subsystems.list"]
+    spec_profiles = specs["subsystems.profiles"]
+    spec_coverage = specs["subsystems.coverage"]
+    spec_memberships = specs["subsystems.module_memberships"]
+    spec_detail = specs["subsystems.detail"]
+    list_path = paths["subsystems.list"]
+    profiles_path = paths["subsystems.profiles"]
+    coverage_path = paths["subsystems.coverage"]
+    memberships_path = paths["subsystems.module_memberships"]
+    detail_path = paths["subsystems.detail"]
 
     @router.get(
-        spec_list.http_path,
+        list_path,
         response_model=SubsystemSummaryResponse,
         summary=spec_list.summary,
         tags=[spec_list.category],
@@ -64,7 +103,7 @@ def build_subsystem_router() -> APIRouter:
         return service.list_subsystems(limit=limit, role=role, q=q)
 
     @router.get(
-        spec_profiles.http_path,
+        profiles_path,
         response_model=SubsystemProfileResponse,
         summary=spec_profiles.summary,
         tags=[spec_profiles.category],
@@ -85,7 +124,7 @@ def build_subsystem_router() -> APIRouter:
         return service.list_subsystem_profiles(limit=limit)
 
     @router.get(
-        spec_coverage.http_path,
+        coverage_path,
         response_model=SubsystemCoverageResponse,
         summary=spec_coverage.summary,
         tags=[spec_coverage.category],
@@ -106,7 +145,7 @@ def build_subsystem_router() -> APIRouter:
         return service.list_subsystem_coverage(limit=limit)
 
     @router.get(
-        spec_memberships.http_path,
+        memberships_path,
         response_model=ModuleSubsystemResponse,
         summary=spec_memberships.summary,
         tags=[spec_memberships.category],
@@ -136,7 +175,7 @@ def build_subsystem_router() -> APIRouter:
         return response
 
     @router.get(
-        spec_detail.http_path,
+        detail_path,
         response_model=SubsystemModulesResponse,
         summary=spec_detail.summary,
         tags=[spec_detail.category],

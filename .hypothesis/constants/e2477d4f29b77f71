@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tools/pyright.py
+# hypothesis_version: 6.148.3
+
+['--outputjson', 'analytics.typedness', 'errorCount', 'files', 'pyright', 'pyright_bin', 'summary']

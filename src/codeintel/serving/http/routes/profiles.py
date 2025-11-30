@@ -11,11 +11,25 @@ from codeintel.serving.mcp.models import (
     FunctionProfileResponse,
     ModuleProfileResponse,
 )
+from codeintel.serving.registry import OperationSpec, get_operation_spec
+
+
+def _require_spec(op_id: str) -> OperationSpec:
+    spec = get_operation_spec(op_id)
+    if spec is None:
+        message = f"OperationSpec {op_id} is not registered"
+        raise ValueError(message)
+    return spec
 
 
 def build_profiles_router() -> APIRouter:
     """
     Construct the router for profile endpoints.
+
+    Raises
+    ------
+    ValueError
+        If OperationSpec entries are missing or lack http_path values.
 
     Returns
     -------
@@ -23,11 +37,21 @@ def build_profiles_router() -> APIRouter:
         Router exposing function, file, and module profiles.
     """
     router = APIRouter()
+    spec_function = _require_spec("profiles.function")
+    spec_file = _require_spec("profiles.file")
+    spec_module = _require_spec("profiles.module")
+    if spec_function.http_path is None or spec_file.http_path is None or spec_module.http_path is None:
+        message = "Profile OperationSpec entries must define http_path"
+        raise ValueError(message)
+    function_path = spec_function.http_path
+    file_path = spec_file.http_path
+    module_path = spec_module.http_path
 
     @router.get(
-        "/profiles/function",
+        function_path,
         response_model=FunctionProfileResponse,
-        summary="Get a function profile",
+        summary=spec_function.summary,
+        tags=[spec_function.category],
     )
     def function_profile(
         *,
@@ -54,9 +78,10 @@ def build_profiles_router() -> APIRouter:
         return profile
 
     @router.get(
-        "/profiles/file",
+        file_path,
         response_model=FileProfileResponse,
-        summary="Get a file profile",
+        summary=spec_file.summary,
+        tags=[spec_file.category],
     )
     def file_profile(
         *,
@@ -83,9 +108,10 @@ def build_profiles_router() -> APIRouter:
         return profile
 
     @router.get(
-        "/profiles/module",
+        module_path,
         response_model=ModuleProfileResponse,
-        summary="Get a module profile",
+        summary=spec_module.summary,
+        tags=[spec_module.category],
     )
     def module_profile(
         *,

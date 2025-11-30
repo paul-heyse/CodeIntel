@@ -457,7 +457,7 @@ def _execute_graph_plugin(
         record = exc.record
         plan.telemetry.finish_plugin(span, record)
         plan.telemetry.record_metrics(record, plan.scope)
-        return _analytics_record_from_graph(record), True
+        raise
     plan.telemetry.finish_plugin(span, record)
     plan.telemetry.record_metrics(record, plan.scope)
     stop = record.status == "failed" and exec_settings.severity == "fatal" and exec_settings.fail_fast

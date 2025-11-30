@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/semantic_roles/plugins.py
+# hypothesis_version: 6.148.3
+
+[90000, 'callgraph', 'core.goids', 'fatal', 'other', 'semantic.roles']

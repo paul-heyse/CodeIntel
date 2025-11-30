@@ -61,11 +61,7 @@ class ScipPlugin(ToolPlugin):
         self,
         *,
         repo_root: Path,
-        output_scip: Path,
-        output_json: Path,
-        target_dir: Path | None = None,
-        rel_paths: Sequence[str] | None = None,
-        **_: object,
+        **kwargs: object,
     ) -> ToolPluginResult:
         """
         Run scip-python index and scip print to produce SCIP + JSON.
@@ -78,6 +74,28 @@ class ScipPlugin(ToolPlugin):
         ToolPluginResult
             Normalized execution result from the SCIP plugin.
         """
+        output_scip_obj = kwargs.get("output_scip")
+        output_json_obj = kwargs.get("output_json")
+        target_dir_obj = kwargs.get("target_dir")
+        rel_paths_obj = kwargs.get("rel_paths")
+
+        if not isinstance(output_scip_obj, Path):
+            message = "scip plugin requires output_scip of type Path"
+            raise TypeError(message)
+        if not isinstance(output_json_obj, Path):
+            message = "scip plugin requires output_json of type Path"
+            raise TypeError(message)
+        if target_dir_obj is not None and not isinstance(target_dir_obj, Path):
+            message = "scip plugin requires target_dir to be Path or None"
+            raise TypeError(message)
+        if rel_paths_obj is not None and not isinstance(rel_paths_obj, Sequence):
+            message = "scip plugin requires rel_paths to be a sequence of strings"
+            raise TypeError(message)
+
+        output_scip = output_scip_obj
+        output_json = output_json_obj
+        target_dir = target_dir_obj
+        rel_paths = tuple(rel_paths_obj) if rel_paths_obj is not None else None
         try:
             await self._run_scip_python(
                 repo_root,

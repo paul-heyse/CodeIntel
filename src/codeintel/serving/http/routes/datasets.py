@@ -17,6 +17,7 @@ from codeintel.serving.mcp.models import (
     DatasetSchemaResponse,
     DatasetSpecDescriptor,
 )
+from codeintel.serving.registry import OperationSpec, get_operation_spec
 
 LOG = logging.getLogger("codeintel.serving.http.routes.datasets")
 
@@ -54,9 +55,22 @@ def _filter_datasets(
     return filtered
 
 
+def _require_spec(op_id: str) -> OperationSpec:
+    spec = get_operation_spec(op_id)
+    if spec is None:
+        message = f"OperationSpec {op_id} is not registered"
+        raise ValueError(message)
+    return spec
+
+
 def build_datasets_router() -> APIRouter:
     """
     Construct the router for dataset browsing endpoints.
+
+    Raises
+    ------
+    ValueError
+        If OperationSpec entries are missing or lack http_path values.
 
     Returns
     -------
@@ -64,8 +78,27 @@ def build_datasets_router() -> APIRouter:
         Router exposing dataset discovery and access endpoints.
     """
     router = APIRouter()
+    spec_list = _require_spec("datasets.list")
+    spec_specs = _require_spec("datasets.specs")
+    spec_rows = _require_spec("datasets.rows")
+    spec_schema = _require_spec("datasets.schema")
+    if spec_list.http_path is None or spec_specs.http_path is None:
+        message = "Dataset OperationSpec entries must define http_path"
+        raise ValueError(message)
+    if spec_rows.http_path is None or spec_schema.http_path is None:
+        message = "Dataset OperationSpec entries must define http_path"
+        raise ValueError(message)
+    list_path = spec_list.http_path
+    specs_path = spec_specs.http_path
+    rows_path = spec_rows.http_path
+    schema_path = spec_schema.http_path
 
-    @router.get("/datasets", response_model=list[DatasetDescriptor], summary="List datasets")
+    @router.get(
+        list_path,
+        response_model=list[DatasetDescriptor],
+        summary=spec_list.summary,
+        tags=[spec_list.category],
+    )
     def list_datasets(
         *,
         service: ServiceDep,
@@ -100,9 +133,10 @@ def build_datasets_router() -> APIRouter:
         return filtered
 
     @router.get(
-        "/datasets/specs",
+        specs_path,
         response_model=list[DatasetSpecDescriptor],
-        summary="Describe dataset contract",
+        summary=spec_specs.summary,
+        tags=[spec_specs.category],
     )
     def list_dataset_specs(
         *,
@@ -129,9 +163,10 @@ def build_datasets_router() -> APIRouter:
         return specs
 
     @router.get(
-        "/datasets/{dataset_name}",
+        rows_path,
         response_model=DatasetRowsResponse,
-        summary="Read rows from a dataset",
+        summary=spec_rows.summary,
+        tags=[spec_rows.category],
     )
     def read_dataset_rows(
         *,
@@ -159,9 +194,10 @@ def build_datasets_router() -> APIRouter:
         return resp
 
     @router.get(
-        "/datasets/{dataset_name}/schema",
+        schema_path,
         response_model=DatasetSchemaResponse,
-        summary="Describe dataset schema and samples",
+        summary=spec_schema.summary,
+        tags=[spec_schema.category],
     )
     def dataset_schema(
         *,

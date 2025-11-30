@@ -61,9 +61,44 @@ def _function_summary_params(
     )
 
 
+def _load_function_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
+    ids = [
+        "function.summary",
+        "functions.high_risk",
+        "functions.tests",
+        "graph.call_neighbors",
+        "graph.call_neighborhood",
+        "graph.import_boundary",
+        "file.summary",
+    ]
+    specs: dict[str, OperationSpec] = {}
+    paths: dict[str, str] = {}
+    missing: list[str] = []
+    missing_paths: list[str] = []
+    for op_id in ids:
+        spec = get_operation_spec(op_id)
+        if spec is None:
+            missing.append(op_id)
+            continue
+        specs[op_id] = spec
+        if spec.http_path is None:
+            missing_paths.append(op_id)
+        else:
+            paths[op_id] = spec.http_path
+    if missing or missing_paths:
+        message = f"Missing OperationSpec entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
+        raise ValueError(message)
+    return specs, paths
+
+
 def build_functions_router() -> APIRouter:
     """
     Construct the router for function-centric endpoints.
+
+    Raises
+    ------
+    ValueError
+        If required OperationSpec entries are missing or incomplete.
 
     Returns
     -------
@@ -71,16 +106,24 @@ def build_functions_router() -> APIRouter:
         Router exposing function metadata endpoints.
     """
     router = APIRouter()
-    spec_summary = _require_spec("function.summary")
-    spec_high_risk = _require_spec("functions.high_risk")
-    spec_tests = _require_spec("functions.tests")
-    spec_neighbors = _require_spec("graph.call_neighbors")
-    spec_neighborhood = _require_spec("graph.call_neighborhood")
-    spec_import_boundary = _require_spec("graph.import_boundary")
-    spec_file_summary = _require_spec("file.summary")
+    specs, paths = _load_function_specs()
+    spec_summary = specs["function.summary"]
+    spec_high_risk = specs["functions.high_risk"]
+    spec_tests = specs["functions.tests"]
+    spec_neighbors = specs["graph.call_neighbors"]
+    spec_neighborhood = specs["graph.call_neighborhood"]
+    spec_import_boundary = specs["graph.import_boundary"]
+    spec_file_summary = specs["file.summary"]
+    summary_path = paths["function.summary"]
+    high_risk_path = paths["functions.high_risk"]
+    tests_path = paths["functions.tests"]
+    neighbors_path = paths["graph.call_neighbors"]
+    neighborhood_path = paths["graph.call_neighborhood"]
+    import_boundary_path = paths["graph.import_boundary"]
+    file_summary_path = paths["file.summary"]
 
     @router.get(
-        spec_summary.http_path,
+        summary_path,
         response_model=FunctionSummaryResponse,
         summary=spec_summary.summary,
         tags=[spec_summary.category],
@@ -116,7 +159,7 @@ def build_functions_router() -> APIRouter:
         return summary
 
     @router.get(
-        spec_high_risk.http_path,
+        high_risk_path,
         response_model=HighRiskFunctionsResponse,
         summary=spec_high_risk.summary,
         tags=[spec_high_risk.category],
@@ -145,7 +188,7 @@ def build_functions_router() -> APIRouter:
         )
 
     @router.get(
-        spec_neighbors.http_path,
+        neighbors_path,
         response_model=CallGraphNeighborsResponse,
         summary=spec_neighbors.summary,
         tags=[spec_neighbors.category],
@@ -174,7 +217,7 @@ def build_functions_router() -> APIRouter:
         )
 
     @router.get(
-        spec_tests.http_path,
+        tests_path,
         response_model=TestsForFunctionResponse,
         summary=spec_tests.summary,
         tags=[spec_tests.category],
@@ -203,7 +246,7 @@ def build_functions_router() -> APIRouter:
         )
 
     @router.get(
-        spec_neighborhood.http_path,
+        neighborhood_path,
         response_model=GraphNeighborhoodResponse,
         summary=spec_neighborhood.summary,
         tags=[spec_neighborhood.category],
@@ -250,7 +293,7 @@ def build_functions_router() -> APIRouter:
         return response
 
     @router.get(
-        spec_import_boundary.http_path,
+        import_boundary_path,
         response_model=ImportBoundaryResponse,
         summary=spec_import_boundary.summary,
         tags=[spec_import_boundary.category],
@@ -290,7 +333,7 @@ def build_functions_router() -> APIRouter:
         return response
 
     @router.get(
-        spec_file_summary.http_path,
+        file_summary_path,
         response_model=FileSummaryResponse,
         summary=spec_file_summary.summary,
         tags=[spec_file_summary.category],

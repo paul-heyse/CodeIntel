@@ -25,13 +25,10 @@ def _get_limits(backend: QueryBackendOrService) -> BackendLimits:
 
 
 def _get_service(backend: QueryBackendOrService) -> QueryService:
-    if isinstance(backend, QueryService):
-        return backend
     service_obj = getattr(backend, "service", None)
-    if service_obj is None:
-        message = "Backend does not expose a query service"
-        raise ValueError(message)
-    return cast(QueryService, service_obj)
+    if service_obj is not None:
+        return cast("QueryService", service_obj)
+    return cast("QueryService", backend)
 
 
 def register_meta_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:

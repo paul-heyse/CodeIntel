@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tools/pytest.py
+# hypothesis_version: 6.148.3
+
+['--disable-warnings', '--json-report', '--maxfail=1', '-q', 'pytest', 'pytest_bin', 'pytest_json_report']

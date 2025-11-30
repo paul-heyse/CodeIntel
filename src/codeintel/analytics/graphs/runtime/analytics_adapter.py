@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from codeintel.analytics.graphs.contracts import PluginContractResult
 from codeintel.analytics.graphs.plugins import GraphMetricPluginSkip
 from codeintel.analytics.graphs.runtime.model import (
     GraphPluginRunRecord,
@@ -18,6 +19,30 @@ from codeintel.analytics.runtime_manifest import (
     AnalyticsStatus,
 )
 from codeintel.config.steps_graphs import GraphRunScope
+
+
+def _parse_contracts(meta: dict[str, object]) -> tuple[PluginContractResult, ...]:
+    raw = meta.get("contracts")
+    if not isinstance(raw, (tuple, list)):
+        return ()
+    parsed: list[PluginContractResult] = []
+    for contract in raw:
+        if isinstance(contract, PluginContractResult):
+            parsed.append(contract)
+            continue
+        if isinstance(contract, dict):
+            name = contract.get("name")
+            status = contract.get("status")
+            message = contract.get("message")
+            if isinstance(name, str) and isinstance(status, str):
+                parsed.append(
+                    PluginContractResult(
+                        name=name,
+                        status=status,  # type: ignore[arg-type]
+                        message=message if isinstance(message, str) else None,
+                    )
+                )
+    return tuple(parsed)
 
 
 def _scope_from_graph(scope: GraphRunScope) -> AnalyticsScope:
@@ -152,8 +177,7 @@ def _graph_record_from_analytics(rec: AnalyticsRunRecord, run_id: str) -> GraphP
     requires_isolation = bool(meta.get("requires_isolation", False))
     isolation_kind = meta.get("isolation_kind")
     policy_fail_fast = bool(meta.get("policy_fail_fast", False))
-    contracts_meta = meta.get("contracts")
-    contracts = tuple(contracts_meta) if isinstance(contracts_meta, tuple) else ()
+    contracts = _parse_contracts(meta)
     status: AnalyticsStatus = rec.status
 
     return GraphPluginRunRecord(
@@ -175,7 +199,7 @@ def _graph_record_from_analytics(rec: AnalyticsRunRecord, run_id: str) -> GraphP
         version_hash=version_hash if isinstance(version_hash, str) else None,
         skipped_reason=skipped_reason if isinstance(skipped_reason, str) else None,
         row_counts=row_counts,
-        contracts=contracts,  # type: ignore[arg-type]
+        contracts=contracts,
         requires_isolation=requires_isolation,
         isolation_kind=isolation_kind if isinstance(isolation_kind, str) else None,
         policy_fail_fast=policy_fail_fast,

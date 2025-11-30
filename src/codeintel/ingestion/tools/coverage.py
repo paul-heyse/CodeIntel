@@ -49,9 +49,7 @@ class CoveragePlugin(ToolPlugin):
         self,
         *,
         repo_root: Path,
-        coverage_file: Path | None,
-        output_path: Path,
-        **_: object,
+        **kwargs: object,
     ) -> ToolPluginResult:
         """
         Run coverage CLI to produce a JSON report.
@@ -60,16 +58,26 @@ class CoveragePlugin(ToolPlugin):
         ----------
         repo_root:
             Repository root passed to the CLI via `cwd`.
-        coverage_file:
-            Path to `.coverage` data file.
-        output_path:
-            Target JSON file path.
+        **kwargs:
+            Expected keys: coverage_file (Path | None), output_path (Path).
 
         Returns
         -------
         ToolPluginResult
             Normalized execution result from the coverage plugin.
         """
+        coverage_file_obj = kwargs.get("coverage_file")
+        output_path_obj = kwargs.get("output_path")
+
+        if not isinstance(output_path_obj, Path):
+            message = "coverage plugin requires an output_path of type Path"
+            raise TypeError(message)
+        if coverage_file_obj is not None and not isinstance(coverage_file_obj, Path):
+            message = "coverage plugin requires coverage_file to be Path or None"
+            raise TypeError(message)
+
+        output_path = output_path_obj
+        coverage_file = coverage_file_obj
         await to_thread.run_sync(
             lambda: output_path.parent.mkdir(parents=True, exist_ok=True)
         )

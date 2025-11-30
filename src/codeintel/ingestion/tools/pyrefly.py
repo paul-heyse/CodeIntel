@@ -44,7 +44,7 @@ class PyreflyPlugin(ToolPlugin):
         )
     )
 
-    async def run(self, *, repo_root: Path, output_path: Path, **_: object) -> ToolPluginResult:
+    async def run(self, *, repo_root: Path, **kwargs: object) -> ToolPluginResult:
         """
         Invoke pyrefly with JSON output and normalize outcomes.
 
@@ -56,6 +56,12 @@ class PyreflyPlugin(ToolPlugin):
         ToolPluginResult
             Normalized execution result from the pyrefly plugin.
         """
+        output_path_obj = kwargs.get("output_path")
+        if not isinstance(output_path_obj, Path):
+            message = "pyrefly plugin requires an output_path of type Path"
+            raise TypeError(message)
+        output_path = output_path_obj
+
         await to_thread.run_sync(_mkdir_parents, output_path.parent)
 
         args = [
@@ -87,7 +93,7 @@ class PyreflyPlugin(ToolPlugin):
                 error=exc,
             )
 
-        output_exists = await to_thread.run_sync(output_path.is_file)
+        output_exists = await to_thread.run_sync(lambda: output_path.is_file())
         if not output_exists and result.returncode != 0:
             log.warning(
                 "pyrefly exited with code %s and produced no output; stdout=%s stderr=%s",
