@@ -9,9 +9,13 @@ from typing import cast
 
 import networkx as nx
 
+from codeintel.analytics.datasets import (
+    DeleteScope,
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+)
 from codeintel.analytics.graph_rows import (
     FunctionMetricExtInputs,
-    FunctionMetricExtRow,
     build_function_metric_ext_rows,
 )
 from codeintel.analytics.graph_runtime import (
@@ -30,11 +34,11 @@ from codeintel.analytics.graph_service import (
 )
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.rows.graph_metrics_ext import FunctionGraphMetricsExtRow
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
 
 CENTRALITY_SAMPLE_LIMIT = 500
 EIGEN_MAX_ITER = 200
@@ -123,7 +127,7 @@ def _function_metric_rows(
     ctx: GraphContext,
     views: GraphViews,
     slices: FunctionGraphSlices,
-) -> list[FunctionMetricExtRow]:
+) -> list[FunctionGraphMetricsExtRow]:
     node_count = views.graph.number_of_nodes()
     ancestor_count = {
         node: len(nx.ancestors(views.graph, node)) if node_count else 0
@@ -212,24 +216,13 @@ def compute_graph_metrics_functions_ext(
     views = GraphViews(graph=filtered_graph, simple_graph=simple_graph, undirected=undirected)
     slices = _function_metric_slices(views, ctx)
     rows = _function_metric_rows(repo, commit, ctx, views, slices)
-
-    con = gateway.con
-    ensure_schema(con, "analytics.graph_metrics_functions_ext")
-    con.execute(
-        "DELETE FROM analytics.graph_metrics_functions_ext WHERE repo = ? AND commit = ?",
-        [repo, commit],
+    contract = get_analytics_dataset_contract(
+        gateway, "analytics.graph_metrics_functions_ext"
     )
-    if rows:
-        con.executemany(
-            """
-            INSERT INTO analytics.graph_metrics_functions_ext (
-                repo, commit, function_goid_h128,
-                call_betweenness, call_closeness, call_eigenvector, call_harmonic,
-                call_core_number, call_clustering_coeff, call_triangle_count,
-                call_is_articulation, call_articulation_impact, call_is_bridge_endpoint,
-                call_component_id, call_component_size, call_scc_id, call_scc_size,
-                call_ancestor_count, call_descendant_count, call_community_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
+    insert_analytics_rows(
+        gateway,
+        contract,
+        rows,
+        delete_scope=DeleteScope(params=[repo, commit]),
+        scope=f"{repo}@{commit}",
+    )

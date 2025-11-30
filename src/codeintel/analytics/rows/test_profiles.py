@@ -1,3 +1,5 @@
+"""Typed row re-exports for test profile analytics tables."""
+
 from __future__ import annotations
 
 from codeintel.storage.rows import (

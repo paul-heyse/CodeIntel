@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import wraps
 
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import QueryBackend
@@ -22,6 +23,7 @@ def _wrap(func: Callable[..., object]) -> Callable[..., object]:
         Wrapped tool function that emits dict payloads.
     """
 
+    @wraps(func)
     def _inner(*args: object, **kwargs: object) -> object:
         try:
             return func(*args, **kwargs)
@@ -32,4 +34,16 @@ def _wrap(func: Callable[..., object]) -> Callable[..., object]:
     return _inner
 
 
-__all__ = ["QueryBackendOrService", "_wrap"]
+def wrap_tool(func: Callable[..., object]) -> Callable[..., object]:
+    """
+    Public wrapper that normalizes McpError instances into ProblemDetail payloads.
+
+    Returns
+    -------
+    Callable[..., object]
+        Wrapped function that yields either a result or an error payload.
+    """
+    return _wrap(func)
+
+
+__all__ = ["QueryBackendOrService", "_wrap", "wrap_tool"]

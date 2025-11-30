@@ -86,4 +86,4 @@ def backend_failure(message: str) -> McpError:
     )
 
 
-__all__ = ["McpError", "backend_failure", "invalid_argument", "not_found", "ProblemDetailModel"]
+__all__ = ["McpError", "ProblemDetailModel", "backend_failure", "invalid_argument", "not_found"]

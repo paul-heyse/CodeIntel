@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
+from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import (
     BackendLimits,
     DuckDBQueryService,
     clamp_limit_value,
     clamp_offset_value,
 )
+from codeintel.serving.mcp import errors as mcp_errors
 from codeintel.serving.mcp.models import (
     DatasetDescriptor,
     DatasetRowsResponse,
@@ -18,6 +20,7 @@ from codeintel.serving.mcp.models import (
     DatasetSpecDescriptor,
     ResponseMeta,
 )
+from codeintel.serving.services.errors import DatasetNotFoundError
 from codeintel.serving.services.http_transport import _HttpTransportMixin
 from codeintel.storage.datasets import Dataset, load_dataset_registry
 
@@ -122,29 +125,38 @@ class _LocalDatasetMixin:
 
         return self._call("dataset_specs", _list_specs)
 
-    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
         """
         Return DuckDB + JSON Schema details and sample rows for a dataset.
 
         Returns
         -------
-        DatasetSchemaResponse
-            Composite schema and sample payload.
+        dm.DatasetSchema
+            Dataset schema details with sample rows.
+
+        Raises
+        ------
+        DatasetNotFoundError
+            When the requested dataset is missing from the registry.
         """
-
-        def _schema() -> DatasetSchemaResponse:
-            return self.query.dataset_schema(dataset_name=dataset_name, sample_limit=sample_limit)
-
         registry = load_dataset_registry(self.query.gateway.con)
         schema_version = None
         if dataset_name in registry.by_name:
             schema_version = registry.by_name[dataset_name].schema_version
-        return self._call(
+        else:
+            problem_detail = DatasetNotFoundError.for_name(dataset_name).detail
+            raise mcp_errors.McpError(problem_detail)
+
+        def _schema() -> DatasetSchemaResponse:
+            return self.query.dataset_schema(dataset_name=dataset_name, sample_limit=sample_limit)
+
+        pydantic_resp: DatasetSchemaResponse = self._call(
             "dataset_schema",
             _schema,
             dataset=dataset_name,
             schema_version=schema_version,
         )
+        return pydantic_resp.to_domain()
 
     def read_dataset_rows(
         self,
@@ -152,21 +164,29 @@ class _LocalDatasetMixin:
         dataset_name: str,
         limit: int | None = None,
         offset: int = 0,
-    ) -> DatasetRowsResponse:
+    ) -> dm.DatasetRows:
         """
         Read dataset rows with clamping and messaging.
 
         Returns
         -------
-        DatasetRowsResponse
+        dm.DatasetRows
             Dataset slice and metadata for truncation/messaging.
+
+        Raises
+        ------
+        DatasetNotFoundError
+            When the dataset is not registered.
         """
         applied_limit = self.query.limits.default_limit if limit is None else limit
         registry = load_dataset_registry(self.query.gateway.con)
         schema_version = None
         if dataset_name in registry.by_name:
             schema_version = registry.by_name[dataset_name].schema_version
-        return self._call(
+        else:
+            problem_detail = DatasetNotFoundError.for_name(dataset_name).detail
+            raise mcp_errors.McpError(problem_detail)
+        pydantic_resp: DatasetRowsResponse = self._call(
             "read_dataset_rows",
             lambda: self.query.read_dataset_rows(
                 dataset_name=dataset_name,
@@ -176,6 +196,7 @@ class _LocalDatasetMixin:
             dataset=dataset_name,
             schema_version=schema_version,
         )
+        return pydantic_resp.to_domain()
 
 
 class _HttpDatasetQueryMixin(_HttpTransportMixin):
@@ -206,7 +227,7 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
         dataset_name: str,
         limit: int | None = None,
         offset: int = 0,
-    ) -> DatasetRowsResponse:
+    ) -> dm.DatasetRows:
         def _run() -> DatasetRowsResponse:
             clamp = clamp_limit_value(
                 limit,
@@ -225,7 +246,7 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
                     truncated=False,
                 )
                 return DatasetRowsResponse(
-                    dataset=dataset_name,
+                    dataset_name=dataset_name,
                     limit=clamp.applied,
                     offset=offset_clamp.applied,
                     rows=[],
@@ -235,6 +256,8 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
                 f"/datasets/{dataset_name}",
                 {"limit": clamp.applied, "offset": offset_clamp.applied},
             )
+            if isinstance(data, dict) and "dataset" in data and "dataset_name" not in data:
+                data = {**data, "dataset_name": data["dataset"]}
             response = DatasetRowsResponse.model_validate(data)
             existing_meta = response.meta if response.meta is not None else ResponseMeta()
             merged_meta = ResponseMeta(
@@ -243,13 +266,16 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
                 requested_offset=offset,
                 applied_offset=offset_clamp.applied,
                 truncated=existing_meta.truncated,
-                messages=[*messages, *existing_meta.messages],
+                messages=[*messages, *(existing_meta.messages or [])],
             )
             return response.model_copy(update={"meta": merged_meta})
 
-        return self._http_call("read_dataset_rows", _run, dataset=dataset_name)
+        pydantic_resp: DatasetRowsResponse = self._http_call(
+            "read_dataset_rows", _run, dataset=dataset_name
+        )
+        return pydantic_resp.to_domain()
 
-    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
         def _run() -> DatasetSchemaResponse:
             data = self.request_json(
                 f"/datasets/{dataset_name}/schema",
@@ -257,7 +283,10 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
             )
             return DatasetSchemaResponse.model_validate(data)
 
-        return self._http_call("dataset_schema", _run, dataset=dataset_name)
+        pydantic_resp: DatasetSchemaResponse = self._http_call(
+            "dataset_schema", _run, dataset=dataset_name
+        )
+        return pydantic_resp.to_domain()
 
 
 __all__ = ["_HttpDatasetQueryMixin", "_LocalDatasetMixin"]

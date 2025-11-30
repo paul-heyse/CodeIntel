@@ -123,6 +123,16 @@ class ProblemError(Exception):
         self.detail = detail
         super().__init__(detail.detail or detail.title)
 
+    @property
+    def problem_detail(self) -> ProblemDetail:
+        """
+        Return the attached problem detail.
+
+        This alias exists for backward compatibility with callers expecting a
+        ``problem_detail`` attribute.
+        """
+        return self.detail
+
 
 class PipelineError(ProblemError):
     """Pipeline execution failure."""
@@ -145,13 +155,20 @@ class DatasetNotFoundError(ProblemError):
 
     @classmethod
     def for_name(cls, dataset_name: str) -> DatasetNotFoundError:
-        """Build a dataset-not-found problem for a logical dataset name."""
+        """
+        Build a dataset-not-found problem for a logical dataset name.
+
+        Returns
+        -------
+        DatasetNotFoundError
+            Structured problem error with dataset context.
+        """
         return cls(
             ProblemDetail(
                 type="https://codeintel/problems/dataset-not-found",
-                title="Dataset not found",
-                detail=f"Dataset {dataset_name!r} is not registered in the catalog.",
-                status=404,
+                title="Invalid argument",
+                detail=f"Unknown dataset: {dataset_name}",
+                status=400,
                 code="dataset-not-found",
                 extras={"dataset": dataset_name},
             )

@@ -11,9 +11,7 @@ from codeintel.analytics.graph_rows.graph_metrics import (
 )
 from codeintel.analytics.graph_rows.graph_metrics_ext import (
     FunctionMetricExtInputs,
-    FunctionMetricExtRow,
     ModuleMetricExtInputs,
-    ModuleMetricExtRow,
     build_function_metric_ext_rows,
     build_module_metric_ext_rows,
 )
@@ -29,14 +27,18 @@ from codeintel.analytics.graph_rows.symbol_graph_metrics import (
     build_symbol_function_rows,
     build_symbol_module_rows,
 )
+from codeintel.analytics.rows.graph_metrics_ext import (
+    FunctionGraphMetricsExtRow,
+    ModuleGraphMetricsExtRow,
+)
 
 __all__ = [
     "FunctionGraphMetricInputs",
+    "FunctionGraphMetricsExtRow",
     "FunctionMetricExtInputs",
-    "FunctionMetricExtRow",
     "ModuleGraphMetricInputs",
+    "ModuleGraphMetricsExtRow",
     "ModuleMetricExtInputs",
-    "ModuleMetricExtRow",
     "SubsystemMetricInputs",
     "SymbolFunctionMetricInputs",
     "SymbolFunctionRow",

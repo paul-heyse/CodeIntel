@@ -11,7 +11,7 @@ from codeintel.serving.mcp.models import ProblemDetail
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.registry import OperationSpec, iter_operation_specs
 
-FUNCTION_TOOL_CATEGORIES: set[str] = {"functions", "graph", "files"}
+FUNCTION_TOOL_CATEGORIES: set[str] = {"functions", "graph", "files", "function"}
 
 
 class _ModelLike(Protocol):

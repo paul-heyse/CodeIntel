@@ -6,34 +6,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits, DuckDBQueryService
 from codeintel.serving.backend.datasets import describe_dataset
 from codeintel.serving.mcp.models import (
-    CallGraphNeighborsResponse,
     DatasetDescriptor,
-    DatasetRowsResponse,
-    DatasetSchemaResponse,
     DatasetSpecDescriptor,
-    FileHintsResponse,
-    FileProfileResponse,
-    FileSummaryResponse,
-    FunctionArchitectureResponse,
-    FunctionProfileResponse,
-    FunctionSummaryResponse,
-    GraphNeighborhoodResponse,
     GraphScopePayload,
-    HighRiskFunctionsResponse,
-    ImportBoundaryResponse,
-    ModuleArchitectureResponse,
-    ModuleProfileResponse,
-    ModuleSubsystemResponse,
-    ResponseMeta,
-    SubsystemCoverageResponse,
-    SubsystemModulesResponse,
-    SubsystemProfileResponse,
-    SubsystemSearchResponse,
-    SubsystemSummaryResponse,
-    TestsForFunctionResponse,
 )
 from codeintel.serving.services.datasets import _HttpDatasetQueryMixin, _LocalDatasetMixin
 from codeintel.serving.services.functions import (
@@ -55,6 +34,8 @@ from codeintel.serving.services.subsystems import (
     _SubsystemQueryDelegates,
 )
 
+ResponseMeta = dm.ResponseMeta
+
 
 class FunctionQueryApi(Protocol):
     """Function-centric query surface."""
@@ -67,7 +48,7 @@ class FunctionQueryApi(Protocol):
         rel_path: str | None = None,
         qualname: str | None = None,
         scope: GraphScopePayload | None = None,
-    ) -> FunctionSummaryResponse:
+    ) -> dm.FunctionSummaryResult:
         """Return a function summary for an identifier."""
         ...
 
@@ -78,7 +59,7 @@ class FunctionQueryApi(Protocol):
         limit: int | None = None,
         tested_only: bool = False,
         scope: GraphScopePayload | None = None,
-    ) -> HighRiskFunctionsResponse:
+    ) -> dm.HighRiskFunctionsResult:
         """List high-risk functions."""
         ...
 
@@ -89,7 +70,7 @@ class FunctionQueryApi(Protocol):
         direction: str = "both",
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
-    ) -> CallGraphNeighborsResponse:
+    ) -> dm.CallGraphNeighbors:
         """Return call graph neighbors for a function."""
         ...
 
@@ -100,7 +81,7 @@ class FunctionQueryApi(Protocol):
         urn: str | None = None,
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
-    ) -> TestsForFunctionResponse:
+    ) -> dm.TestsForFunctionResult:
         """List tests that exercise a function."""
         ...
 
@@ -110,7 +91,7 @@ class FunctionQueryApi(Protocol):
         goid_h128: int,
         radius: int = 1,
         max_nodes: int | None = None,
-    ) -> GraphNeighborhoodResponse:
+    ) -> dm.GraphNeighborhood:
         """Return an ego neighborhood in the call graph."""
         ...
 
@@ -119,13 +100,13 @@ class FunctionQueryApi(Protocol):
         *,
         subsystem_id: str,
         max_edges: int | None = None,
-    ) -> ImportBoundaryResponse:
+    ) -> dm.ImportBoundary:
         """Return import edges crossing a subsystem boundary."""
         ...
 
     def get_file_summary(
         self, *, rel_path: str, scope: GraphScopePayload | None = None
-    ) -> FileSummaryResponse:
+    ) -> dm.FileSummaryResult:
         """Return a file summary."""
         ...
 
@@ -133,23 +114,23 @@ class FunctionQueryApi(Protocol):
 class ProfileQueryApi(Protocol):
     """Profile and architecture surfaces."""
 
-    def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
+    def get_function_profile(self, *, goid_h128: int) -> dm.FunctionProfileResult:
         """Return a function profile."""
         ...
 
-    def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
+    def get_file_profile(self, *, rel_path: str) -> dm.FileProfileResult:
         """Return a file profile."""
         ...
 
-    def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
+    def get_module_profile(self, *, module: str) -> dm.ModuleProfileResult:
         """Return a module profile."""
         ...
 
-    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
+    def get_function_architecture(self, *, goid_h128: int) -> dm.FunctionArchitectureResult:
         """Return architecture metrics for a function."""
         ...
 
-    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
+    def get_module_architecture(self, *, module: str) -> dm.ModuleArchitectureResult:
         """Return architecture metrics for a module."""
         ...
 
@@ -159,41 +140,41 @@ class SubsystemQueryApi(Protocol):
 
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSummaryResponse:
+    ) -> dm.SubsystemSummaryResult:
         """List subsystems with optional filters."""
         ...
 
-    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
+    def get_module_subsystems(self, *, module: str) -> dm.ModuleSubsystemResult:
         """Return subsystem memberships for a module."""
         ...
 
-    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+    def get_file_hints(self, *, rel_path: str) -> dm.FileHintsResult:
         """Return IDE hints for a file."""
         ...
 
     def get_subsystem_modules(
         self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
+    ) -> dm.SubsystemModulesResult:
         """Return a subsystem with member modules and an optional limit."""
         ...
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSearchResponse:
+    ) -> dm.SubsystemSearchResult:
         """Search subsystems."""
         ...
 
     def summarize_subsystem(
         self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
+    ) -> dm.SubsystemModulesResult:
         """Summarize a subsystem with optional module limit."""
         ...
 
-    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> dm.SubsystemProfileResult:
         """List subsystem profiles from docs views."""
         ...
 
-    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> dm.SubsystemCoverageResult:
         """List subsystem coverage rollups from docs views."""
         ...
 
@@ -215,11 +196,11 @@ class DatasetQueryApi(Protocol):
         dataset_name: str,
         limit: int | None = None,
         offset: int = 0,
-    ) -> DatasetRowsResponse:
+    ) -> dm.DatasetRows:
         """Read rows from a dataset."""
         ...
 
-    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
         """Return schema and samples for a dataset."""
         ...
 

@@ -14,11 +14,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict
 
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.datasets import (
+    DeleteScope,
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.functions.config import (
     FunctionAnalyticsOptions,
     ProcessContext,
@@ -640,19 +641,19 @@ def persist_function_analytics(
     scope = f"{cfg.repo}@{cfg.commit}"
     metrics_contract = get_analytics_dataset_contract(gateway, "analytics.function_metrics")
     types_contract = get_analytics_dataset_contract(gateway, "analytics.function_types")
-    delete_params = [cfg.repo, cfg.commit]
+    delete_scope = DeleteScope(params=[cfg.repo, cfg.commit])
     insert_analytics_rows(
         gateway,
         metrics_contract,
         result.metrics_rows,
-        delete_params=delete_params,
+        delete_scope=delete_scope,
         scope=scope,
     )
     insert_analytics_rows(
         gateway,
         types_contract,
         result.types_rows,
-        delete_params=delete_params,
+        delete_scope=delete_scope,
         scope=scope,
     )
     result.reporter.flush(gateway)

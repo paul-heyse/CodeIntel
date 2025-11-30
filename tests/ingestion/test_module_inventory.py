@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
+from types import ModuleType
+
+import pytest
 
 from codeintel.config import RepoScanStepConfig, SnapshotRef
 from codeintel.config.primitives import BuildPaths
@@ -22,7 +25,7 @@ from codeintel.storage.module_index import load_module_map
 from tests._helpers.gateway import open_ingestion_gateway
 
 
-def _source(module: object) -> str:
+def _source(module: ModuleType) -> str:
     return inspect.getsource(module)
 
 
@@ -55,7 +58,8 @@ def test_source_scanner_only_used_in_repo_scan_and_config_ingest() -> None:
         if "SourceScanner(" in _source(module) and name not in allowed:
             offenders.append(name)
 
-    assert not offenders, f"SourceScanner used outside allowed modules: {offenders}"
+    if offenders:
+        pytest.fail(f"SourceScanner used outside allowed modules: {offenders}")
 
 
 def test_module_inventory_round_trip(tmp_path: Path) -> None:
@@ -84,8 +88,14 @@ def test_module_inventory_round_trip(tmp_path: Path) -> None:
     records = list(iter_modules(module_map, snapshot.repo_root, logger=None, scan_profile=profile))
 
     rel_paths = sorted(record.rel_path for record in records)
-    assert rel_paths == ["src/pkg/a.py", "src/pkg/b.py"]
-    assert all("/" in rel_path for rel_path in rel_paths)
+    expected = ["src/pkg/a.py", "src/pkg/b.py"]
+    if rel_paths != expected:
+        pytest.fail(f"Unexpected module paths {rel_paths}, expected {expected}")
+    if not all("/" in rel_path for rel_path in rel_paths):
+        pytest.fail(f"Non-POSIX module paths: {rel_paths}")
 
     tracker_paths = sorted(module.rel_path for module in tracker.modules)
-    assert tracker_paths == rel_paths
+    if tracker_paths != rel_paths:
+        pytest.fail(
+            f"Tracker modules {tracker_paths} differ from module_map derived paths {rel_paths}"
+        )

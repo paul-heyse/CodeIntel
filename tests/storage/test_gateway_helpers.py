@@ -6,6 +6,14 @@ from datetime import UTC, datetime
 
 import pytest
 
+from codeintel.analytics.datasets import (
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+)
+from codeintel.analytics.rows.graph_metrics import (
+    FunctionGraphMetricsRow,
+    ModuleGraphMetricsRow,
+)
 from codeintel.storage.gateway import StorageGateway
 
 EXPECTED_FUNCTION_METRICS_LEN = 29
@@ -203,11 +211,55 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
     )
     gateway.analytics.insert_typedness([("r", "c", "m.py", 0, '{"params":1}', 0, False)])
     gateway.analytics.insert_static_diagnostics([("r", "c", "m.py", 0, 0, 0, 0, False)])
-    gateway.analytics.insert_graph_metrics_functions(
-        [("r", "c", 1, 1, 1, 1, 1, 0.1, 0.2, 0.3, False, None, None, now_str)]
+    function_contract = get_analytics_dataset_contract(
+        gateway, "analytics.graph_metrics_functions"
     )
-    gateway.analytics.insert_graph_metrics_modules(
-        [("r", "c", "m", 1, 1, 1, 1, 0.1, 0.2, 0.3, False, None, None, 1, 1, now_str)]
+    module_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")
+    insert_analytics_rows(
+        gateway,
+        function_contract,
+        [
+            FunctionGraphMetricsRow(
+                repo="r",
+                commit="c",
+                function_goid_h128=1,
+                call_fan_in=1,
+                call_fan_out=1,
+                call_in_degree=1,
+                call_out_degree=1,
+                call_pagerank=0.1,
+                call_betweenness=0.2,
+                call_closeness=0.3,
+                call_cycle_member=False,
+                call_cycle_id=None,
+                call_layer=None,
+                created_at=now,
+            )
+        ],
+    )
+    insert_analytics_rows(
+        gateway,
+        module_contract,
+        [
+            ModuleGraphMetricsRow(
+                repo="r",
+                commit="c",
+                module="m",
+                import_fan_in=1,
+                import_fan_out=1,
+                import_in_degree=1,
+                import_out_degree=1,
+                import_pagerank=0.1,
+                import_betweenness=0.2,
+                import_closeness=0.3,
+                import_cycle_member=False,
+                import_cycle_id=None,
+                import_layer=None,
+                symbol_fan_in=1,
+                symbol_fan_out=1,
+                created_at=now,
+            )
+        ],
     )
     gateway.analytics.insert_subsystems(
         [

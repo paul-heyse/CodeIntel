@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from importlib import import_module
+from typing import TYPE_CHECKING
 
-from codeintel.serving.mcp.models import Message
+if TYPE_CHECKING:
+    from codeintel.serving.mcp.models import Message
 
 
 @dataclass(frozen=True)
@@ -66,12 +69,13 @@ def clamp_limit_value(
     ClampResult
         Applied limit plus any informational or error messages.
     """
+    message_cls = _get_message_class()
     messages: list[Message] = []
     limit = default if requested is None else requested
 
     if limit < 0:
         messages.append(
-            Message(
+            message_cls(
                 code="limit_invalid",
                 severity="error",
                 detail="limit must be non-negative",
@@ -82,7 +86,7 @@ def clamp_limit_value(
 
     if limit > max_limit:
         messages.append(
-            Message(
+            message_cls(
                 code="limit_clamped",
                 severity="warning",
                 detail=f"Requested {limit} rows; delivering {max_limit} (max allowed).",
@@ -108,11 +112,12 @@ def clamp_offset_value(offset: int) -> ClampResult:
     ClampResult
         Applied offset and any validation messages.
     """
+    message_cls = _get_message_class()
     if offset < 0:
         return ClampResult(
             applied=0,
             messages=[
-                Message(
+                message_cls(
                     code="offset_invalid",
                     severity="error",
                     detail="offset must be non-negative",
@@ -122,3 +127,16 @@ def clamp_offset_value(offset: int) -> ClampResult:
             has_error=True,
         )
     return ClampResult(applied=offset)
+
+
+def _get_message_class() -> type[Message]:
+    """
+    Return the Message model without importing at module import time.
+
+    Returns
+    -------
+    type[Message]
+        Message model used for clamp results.
+    """
+    module = import_module("codeintel.serving.mcp.models")
+    return module.Message

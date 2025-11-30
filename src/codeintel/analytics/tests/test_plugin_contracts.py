@@ -7,6 +7,10 @@ from datetime import UTC, datetime
 
 import pytest
 
+from codeintel.analytics.datasets import (
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+)
 from codeintel.analytics.graphs.contracts import (
     ContractChecker,
     assert_columns_present,
@@ -18,14 +22,35 @@ from codeintel.analytics.graphs.contracts import (
     table_exists_checker,
     table_not_empty_checker,
 )
+from codeintel.analytics.rows.graph_metrics import FunctionGraphMetricsRow
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 
 
 def _gateway_with_function_metrics(repo: str, commit: str) -> StorageGateway:
     gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    now_iso = datetime.now(tz=UTC).isoformat()
-    gateway.analytics.insert_graph_metrics_functions(
-        [(repo, commit, 1, 2, 3, 2, 3, 0.5, 0.1, 0.2, False, 0, 1, now_iso)]
+    now = datetime.now(tz=UTC)
+    contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
+    insert_analytics_rows(
+        gateway,
+        contract,
+        [
+            FunctionGraphMetricsRow(
+                repo=repo,
+                commit=commit,
+                function_goid_h128=1,
+                call_fan_in=2,
+                call_fan_out=3,
+                call_in_degree=2,
+                call_out_degree=3,
+                call_pagerank=0.5,
+                call_betweenness=0.1,
+                call_closeness=0.2,
+                call_cycle_member=False,
+                call_cycle_id=0,
+                call_layer=1,
+                created_at=now,
+            )
+        ],
     )
     return gateway
 
@@ -84,9 +109,29 @@ def test_not_null_fraction_checker_flags_missing_values() -> None:
     repo = "demo/repo"
     commit = "deadbeef"
     gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    now_iso = datetime.now(tz=UTC).isoformat()
-    gateway.analytics.insert_graph_metrics_functions(
-        [(repo, commit, 1, 2, 3, 2, 3, None, None, None, False, 0, 1, now_iso)]
+    now = datetime.now(tz=UTC)
+    contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
+    insert_analytics_rows(
+        gateway,
+        contract,
+        [
+            FunctionGraphMetricsRow(
+                repo=repo,
+                commit=commit,
+                function_goid_h128=1,
+                call_fan_in=2,
+                call_fan_out=3,
+                call_in_degree=2,
+                call_out_degree=3,
+                call_pagerank=None,
+                call_betweenness=None,
+                call_closeness=None,
+                call_cycle_member=False,
+                call_cycle_id=0,
+                call_layer=1,
+                created_at=now,
+            )
+        ],
     )
     result = assert_not_null_fraction(
         gateway,

@@ -1066,9 +1066,7 @@ class DuckDBQueryService:
                     ]
                 ),
             )
-        limited_modules = (
-            modules[:module_limit] if module_limit is not None else list(modules)
-        )
+        limited_modules = modules[:module_limit] if module_limit is not None else list(modules)
         return SubsystemModulesResponse(
             found=True,
             subsystem=SubsystemSummaryRow.model_validate(subsystem_row),
@@ -1227,7 +1225,7 @@ class DuckDBQueryService:
 
         if limit_clamp.has_error or offset_clamp.has_error or limit_clamp.applied <= 0:
             return DatasetRowsResponse(
-                dataset=dataset_name,
+                dataset_name=dataset_name,
                 limit=limit_clamp.applied,
                 offset=offset_clamp.applied,
                 rows=[],
@@ -1249,7 +1247,7 @@ class DuckDBQueryService:
                 )
             )
         return DatasetRowsResponse(
-            dataset=dataset_name,
+            dataset_name=dataset_name,
             limit=limit_clamp.applied,
             offset=offset_clamp.applied,
             rows=[ViewRow.model_validate(r) for r in rows],
