@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from importlib import import_module
 from pathlib import Path
 from typing import Protocol
 
@@ -15,6 +14,7 @@ from codeintel.analytics.graph_service_runtime import (
     GraphPluginRunRecord,
     GraphRuntimeTelemetry,
     GraphServiceRuntime,
+    PluginFatalError,
 )
 from codeintel.analytics.graphs.contracts import PluginContractResult
 from codeintel.analytics.graphs.plugins import (
@@ -35,7 +35,6 @@ from codeintel.storage.gateway import open_memory_gateway
 RETRY_ATTEMPTS = 2
 TIMEOUT_MS = 10
 EXPECTED_RECORDS = 2
-_FATAL_ERROR = import_module("codeintel.analytics.graph_service_runtime")._PluginFatalError  # noqa: SLF001
 
 
 def _make_service(
@@ -321,7 +320,7 @@ def test_contract_failure_respects_fatal_fail_fast() -> None:
     )
     service, cfg = _make_service()
     try:
-        with pytest.raises(_FATAL_ERROR):
+        with pytest.raises(PluginFatalError):
             service.run_plugins(
                 (plugin_name,),
                 cfg=GraphMetricsStepConfig(

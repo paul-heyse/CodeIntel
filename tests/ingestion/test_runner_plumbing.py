@@ -101,7 +101,6 @@ def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
         gateway,
         cfg=cfg,
         tool_service=tool_service,
-        tools=ToolsConfig.model_validate({}),
     )
 
     row = gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()

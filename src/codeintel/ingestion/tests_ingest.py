@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,7 +17,12 @@ from codeintel.core.types import (
     normalize_pytest_entry,
     validate_pytest_entry,
 )
-from codeintel.ingestion.common import run_batch, should_skip_missing_file
+from codeintel.ingestion.change_tracker import (
+    ChangeTracker,
+    IncrementalIngestOps,
+    run_incremental_ingest,
+)
+from codeintel.ingestion.common import ModuleRecord, run_batch, should_skip_missing_file
 from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
@@ -212,38 +218,26 @@ def _build_row(test: PytestTestEntry) -> TestCatalogRow | None:
     )
 
 
-def ingest_tests(
-    gateway: StorageGateway,
+def _collect_test_rows(
     cfg: TestsIngestStepConfig,
-    report_path: Path | None = None,
     *,
-    tools: ToolsConfig | None = None,
-    tool_service: ToolService | None = None,
-) -> None:
+    report_path: Path | None,
+    tool_service: ToolService | None,
+    created_at: datetime,
+) -> tuple[list[TestCatalogRowModel], Path | None]:
     """
-    Ingest a pytest JSON report into analytics.test_catalog.
+    Collect normalized test rows from a pytest JSON report.
 
-    This step does NOT compute test_coverage_edges; those are derived
-    later in an analytics step by combining coverage contexts with GOIDs.
-
-    Parameters
-    ----------
-    gateway:
-        StorageGateway providing access to the DuckDB database.
-    cfg:
-        Tests ingestion configuration (paths and identifiers).
-    report_path:
-        Optional explicit path to write a pytest JSON report.
-    tools:
-        Optional tool configuration overriding default executables.
-    tool_service:
-        Optional ToolService for running pytest; constructed from runner/tools when missing.
+    Returns
+    -------
+    tuple[list[TestCatalogRowModel], Path | None]
+        Rows ready for ingestion and the resolved report path (may be None).
     """
     repo_root = cfg.repo_root
     pytest_report_path = report_path or cfg.pytest_report_path or _find_default_report(repo_root)
-    active_tools = tools or ToolsConfig.model_validate({})
     service = tool_service
     if service is None:
+        active_tools = ToolsConfig.model_validate({})
         runner = ToolRunner(
             tools_config=active_tools, cache_dir=repo_root / "build" / ".tool_cache"
         )
@@ -262,36 +256,161 @@ def ingest_tests(
             )
         except (ToolExecutionError, ToolNotFoundError) as exc:
             log.warning("pytest report generation failed: %s", exc)
-            return
+            return [], pytest_report_path
 
     if pytest_report_path is None or should_skip_missing_file(
         pytest_report_path, logger=log, label="pytest JSON report"
     ):
-        return
+        return [], pytest_report_path
 
     tests = _load_tests_from_report(pytest_report_path)
     log.info("Loaded %d pytest entries from %s", len(tests), pytest_report_path)
     if not tests:
         log.warning("No tests found in pytest report %s", pytest_report_path)
-        return
+        return [], pytest_report_path
 
-    now = datetime.now(UTC)
-    rows: list[TestCatalogRow] = []
+    rows: list[TestCatalogRowModel] = []
     for test in tests:
         row = _build_row(test)
         if row is not None:
-            rows.append(row)
+            rows.append(row.to_row(cfg.repo, cfg.commit, created_at))
 
     if not rows:
         log.warning("No valid tests found in pytest report %s", pytest_report_path)
+        return [], pytest_report_path
+
+    return rows, pytest_report_path
+
+
+@dataclass
+class TestsIngestOps(IncrementalIngestOps[TestCatalogRowModel]):
+    """Implement incremental ingest operations for analytics.test_catalog."""
+
+    cfg: TestsIngestStepConfig
+    rows_by_path: dict[str, list[TestCatalogRowModel]]
+    dataset_name: str = field(init=False, default="analytics.test_catalog")
+
+    @staticmethod
+    def module_filter(module: ModuleRecord) -> bool:
+        """
+        Restrict ingestion to test modules.
+
+        Returns
+        -------
+        bool
+            True when the module is within the tests/ path.
+        """
+        return module.rel_path.startswith("tests/")
+
+    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        """Delete rows for removed test modules."""
+        if rel_paths:
+            gateway.con.execute(
+                """
+                DELETE FROM analytics.test_catalog
+                WHERE repo = ? AND commit = ? AND rel_path IN (SELECT * FROM UNNEST(?))
+                """,
+                [self.cfg.repo, self.cfg.commit, list(rel_paths)],
+            )
+            return
+
+        run_batch(
+            gateway,
+            "analytics.test_catalog",
+            [],
+            delete_params=[self.cfg.repo, self.cfg.commit],
+        )
+
+    def process_module(self, module: ModuleRecord) -> Iterable[TestCatalogRowModel]:
+        """
+        Return test rows for the specified module path.
+
+        Returns
+        -------
+        Iterable[TestCatalogRowModel]
+            Rows previously grouped by relative path.
+        """
+        return self.rows_by_path.get(module.rel_path, [])
+
+    def insert_rows(self, gateway: StorageGateway, rows: Sequence[TestCatalogRowModel]) -> None:
+        """Insert test rows for changed modules."""
+        if not rows:
+            return
+
+        run_batch(
+            gateway,
+            "analytics.test_catalog",
+            [serialize_test_catalog_row(row) for row in rows],
+            delete_params=None,
+            scope=f"{self.cfg.repo}@{self.cfg.commit}",
+        )
+
+
+def ingest_tests(
+    gateway: StorageGateway,
+    cfg: TestsIngestStepConfig,
+    report_path: Path | None = None,
+    *,
+    tool_service: ToolService | None = None,
+    tracker: ChangeTracker | None = None,
+) -> None:
+    """
+    Ingest a pytest JSON report into analytics.test_catalog.
+
+    This step does NOT compute test_coverage_edges; those are derived
+    later in an analytics step by combining coverage contexts with GOIDs.
+
+    Parameters
+    ----------
+    gateway:
+        StorageGateway providing access to the DuckDB database.
+    cfg:
+        Tests ingestion configuration (paths and identifiers).
+    report_path:
+        Optional explicit path to write a pytest JSON report.
+    tool_service:
+        Optional ToolService for running pytest; constructed from runner/tools when missing.
+    tracker :
+        Optional change tracker enabling incremental ingestion.
+    """
+    created_at = datetime.now(UTC)
+    rows, resolved_report = _collect_test_rows(
+        cfg,
+        report_path=report_path,
+        tool_service=tool_service,
+        created_at=created_at,
+    )
+
+    if tracker is not None:
+        rows_by_path: dict[str, list[TestCatalogRowModel]] = {}
+        for row in rows:
+            rows_by_path.setdefault(row["rel_path"], []).append(row)
+
+        ops = TestsIngestOps(cfg=cfg, rows_by_path=rows_by_path)
+        run_incremental_ingest(tracker, ops)
+        log.info(
+            "test_catalog ingested incrementally for %s@%s rows=%d",
+            cfg.repo,
+            cfg.commit,
+            sum(len(bucket) for bucket in rows_by_path.values()),
+        )
+        return
+
+    if not rows:
+        log.warning("No valid tests found in pytest report %s", resolved_report)
         return
 
     run_batch(
         gateway,
         "analytics.test_catalog",
-        [serialize_test_catalog_row(row.to_row(cfg.repo, cfg.commit, now)) for row in rows],
+        [serialize_test_catalog_row(row) for row in rows],
         delete_params=[cfg.repo, cfg.commit],
         scope=f"{cfg.repo}@{cfg.commit}",
     )
 
-    log.info("test_catalog ingested from %s for %s@%s", pytest_report_path, cfg.repo, cfg.commit)
+    log.info(
+        "test_catalog ingested from %s for %s@%s",
+        resolved_report,
+        cfg.repo,
+        cfg.commit,
+    )

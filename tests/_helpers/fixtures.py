@@ -533,7 +533,6 @@ def provision_ingested_repo(
             gateway,
             cfg=builder.typing_ingest(tool_runner=runner),
             tool_service=tool_service,
-            tools=tools_cfg,
         )
     if opts.include_coverage:
         ingest_coverage_lines(
@@ -616,7 +615,6 @@ def provision_existing_repo(
             gateway,
             cfg=builder.typing_ingest(tool_runner=runner),
             tool_service=tool_service,
-            tools=tools_cfg,
         )
     if opts.include_coverage:
         ingest_coverage_lines(

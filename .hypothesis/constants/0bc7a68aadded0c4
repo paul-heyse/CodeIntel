@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/http/routes/functions.py
+# hypothesis_version: 6.148.3
+
+[0.7, '/file/summary', '/function/callgraph', '/function/summary', '/function/tests', '/functions/high-risk', 'File not found', 'Function not found', 'Get function summary', 'both', 'commit', 'in', 'out', 'repo', 'unknown']

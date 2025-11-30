@@ -23,7 +23,7 @@ from codeintel.analytics.cfg_dfg.dfg_core import (
     load_dfg_edges,
 )
 from codeintel.analytics.context import AnalyticsContext
-from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

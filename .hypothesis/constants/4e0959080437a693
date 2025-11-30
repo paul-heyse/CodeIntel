@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/observability.py
+# hypothesis_version: 6.148.3
+
+[1000, 'Any', 'LOG', 'ServiceCallContext', 'ServiceCallMetrics', 'ServiceObservability', '_observe_call', 'coverage', 'dataset', 'duration_ms', 'error', 'functions', 'hints', 'memberships', 'messages', 'meta', 'modules', 'name', 'profiles', 'retries', 'rows', 'schema_version', 'service_call %s', 'subsystems', 'tests', 'transport', 'truncated']

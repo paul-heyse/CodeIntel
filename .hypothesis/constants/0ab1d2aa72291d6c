@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/services/subsystems.py
+# hypothesis_version: 6.148.3
+
+['/ide/hints', 'get_file_hints', 'limit', 'list_subsystems', 'module', 'q', 'rel_path', 'role', 'search_subsystems', 'subsystem_id', 'summarize_subsystem']

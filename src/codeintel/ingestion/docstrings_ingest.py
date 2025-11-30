@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import ast
 import logging
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TypedDict
 
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.builder import DocstringStepConfig
+from codeintel.ingestion.change_tracker import (
+    ChangeTracker,
+    IncrementalIngestOps,
+    run_incremental_ingest,
+)
 from codeintel.ingestion.common import (
+    ModuleRecord,
     iter_modules,
     read_module_source,
     run_batch,
@@ -137,10 +144,121 @@ class DocstringVisitor(ast.NodeVisitor):
         )
 
 
+def _delete_existing_docstrings(
+    gateway: StorageGateway,
+    *,
+    repo: str,
+    commit: str,
+    rel_paths: list[str],
+) -> None:
+    """
+    Remove existing docstring rows for a set of module paths.
+
+    When rel_paths is empty, delete all rows for repo@commit.
+    """
+    if rel_paths:
+        gateway.con.execute(
+            """
+            DELETE FROM core.docstrings
+            WHERE repo = ? AND commit = ? AND rel_path IN (SELECT * FROM UNNEST(?))
+            """,
+            [repo, commit, rel_paths],
+        )
+        return
+
+    run_batch(
+        gateway,
+        "core.docstrings",
+        [],
+        delete_params=[repo, commit],
+    )
+
+
+@dataclass
+class DocstringIngestOps(IncrementalIngestOps[DocstringRow]):
+    """
+    Implement incremental ingest operations for core.docstrings.
+
+    Reuses the DocstringVisitor to parse only modules surfaced by ChangeTracker.
+    """
+
+    cfg: DocstringStepConfig
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    dataset_name: str = field(init=False, default="core.docstrings")
+    _ctx: DocstringContext = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Initialize the shared docstring ingestion context."""
+        self._ctx = DocstringContext(cfg=self.cfg, created_at=self.created_at)
+
+    @staticmethod
+    def module_filter(module: ModuleRecord) -> bool:
+        """
+        Restrict ingestion to Python source modules.
+
+        Returns
+        -------
+        bool
+            True when the module path ends with .py.
+        """
+        return module.rel_path.endswith(".py")
+
+    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        """Delete rows corresponding to changed or deleted modules."""
+        _delete_existing_docstrings(
+            gateway,
+            repo=self.cfg.repo,
+            commit=self.cfg.commit,
+            rel_paths=list(rel_paths),
+        )
+
+    def process_module(self, module: ModuleRecord) -> Iterable[DocstringRow]:
+        """
+        Parse a module and emit docstring rows.
+
+        Returns
+        -------
+        Iterable[DocstringRow]
+            Parsed docstring rows for the provided module (empty on failure).
+        """
+        source = read_module_source(module, logger=log)
+        if source is None:
+            return []
+
+        try:
+            tree = ast.parse(source, filename=str(module.file_path))
+        except SyntaxError:
+            log.warning("Failed to parse AST for docstrings: %s", module.file_path)
+            return []
+
+        visitor = DocstringVisitor(
+            rel_path=module.rel_path,
+            module_name=module.module_name,
+            ctx=self._ctx,
+        )
+        visitor.visit(tree)
+        return visitor.rows
+
+    def insert_rows(self, gateway: StorageGateway, rows: Sequence[DocstringRow]) -> None:
+        """Persist parsed docstring rows."""
+        if not rows:
+            return
+
+        run_batch(
+            gateway,
+            "core.docstrings",
+            [docstring_row_to_tuple(row) for row in rows],
+            delete_params=None,
+            scope=f"{self.cfg.repo}@{self.cfg.commit}",
+        )
+
+
 def ingest_docstrings(
     gateway: StorageGateway,
     cfg: DocstringStepConfig,
     code_profile: ScanProfile | None = None,
+    *,
+    tracker: ChangeTracker | None = None,
 ) -> None:
     """
     Extract docstrings for all Python modules in core.modules and persist them.
@@ -153,7 +271,15 @@ def ingest_docstrings(
         Repository context for this ingestion run.
     code_profile : ScanProfile | None
         Optional scan profile controlling iteration cadence.
+    tracker : ChangeTracker | None
+        Optional change tracker enabling incremental ingestion.
     """
+    if tracker is not None:
+        ops = DocstringIngestOps(cfg=cfg, created_at=datetime.now(UTC))
+        run_incremental_ingest(tracker, ops)
+        log.info("Docstrings ingested incrementally for %s@%s", cfg.repo, cfg.commit)
+        return
+
     repo_root = cfg.repo_root.resolve()
     module_map = load_module_map(gateway, cfg.repo, cfg.commit, language="python", logger=log)
     if should_skip_empty(module_map, logger=log):

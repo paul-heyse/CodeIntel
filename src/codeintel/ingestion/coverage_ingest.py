@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -13,7 +14,13 @@ from coverage.exceptions import CoverageException
 
 from codeintel.config import CoverageIngestStepConfig
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.common import run_batch, should_skip_missing_file
+from codeintel.ingestion.change_tracker import (
+    ChangeTracker,
+    IncrementalIngestOps,
+    SupportsFullRebuild,
+    run_incremental_ingest,
+)
+from codeintel.ingestion.common import ModuleRecord, run_batch, should_skip_missing_file
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
 from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
@@ -68,51 +75,57 @@ def _rows_from_reports(
 log = logging.getLogger(__name__)
 
 
-def ingest_coverage_lines(
-    gateway: StorageGateway,
+def _collect_coverage_rows(
+    _gateway: StorageGateway,
     cfg: CoverageIngestStepConfig,
     *,
-    tools: ToolsConfig | None = None,
-    tool_service: ToolService | None = None,
-    json_output_path: Path | None = None,
-) -> None:
+    tools: ToolsConfig | None,
+    tool_service: ToolService | None,
+    json_output_path: Path | None,
+    now: datetime,
+) -> tuple[list[CoverageLineRow], str]:
     """
-    Read a `.coverage` database and populate `analytics.coverage_lines`.
-
-    The ingestion uses the `coverage.py` API and assumes data was collected
-    with `dynamic_context = test_function` or similar so context_count can be
-    computed. Rows contain repo, commit, path, line number, execution flags,
-    hit counts, and created_at timestamps.
+    Resolve coverage input into rows and source label.
 
     Parameters
     ----------
-    gateway:
-        StorageGateway providing access to the target DuckDB database.
-    cfg:
-        Coverage ingestion configuration (paths and identifiers).
-    json_output_path:
-        Optional explicit path for the coverage JSON output.
-    tools:
-        Optional tool configuration overriding executable resolution.
-    tool_service:
-        Optional ToolService to reuse for running coverage CLI.
+    _gateway :
+        Gateway passed for API parity; not used directly.
+    cfg :
+        Coverage ingest configuration.
+    tools :
+        Optional tool configuration for resolving binaries.
+    tool_service :
+        Optional tool service used to execute coverage commands.
+    json_output_path :
+        Optional explicit path for coverage JSON output.
+    now :
+        Timestamp applied to emitted rows.
+
+    Returns
+    -------
+    tuple[list[CoverageLineRow], str]
+        Rows ready for ingestion and a source label ("cli" or "api").
     """
     repo_root = cfg.repo_root
     coverage_file = cfg.coverage_file
 
     if coverage_file is None or should_skip_missing_file(
-        coverage_file, logger=log, label="coverage file"
+        coverage_file,
+        logger=log,
+        label="coverage file",
     ):
-        return
+        return [], "missing"
 
-    now = datetime.now(UTC)
     active_tools = tools or ToolsConfig.model_validate({})
     service = tool_service
     if service is None:
         shared_runner = ToolRunner(
-            tools_config=active_tools, cache_dir=cfg.repo_root / "build" / ".tool_cache"
+            tools_config=active_tools,
+            cache_dir=cfg.repo_root / "build" / ".tool_cache",
         )
         service = ToolService(shared_runner, active_tools)
+
     json_path = json_output_path or (service.runner.cache_dir / "coverage.json")
 
     reports: list[CoverageFileReport] | None = None
@@ -127,28 +140,164 @@ def ingest_coverage_lines(
     except (ToolExecutionError, ToolNotFoundError) as exc:
         log.warning("coverage CLI failed; falling back to API parsing: %s", exc)
 
-    source = "cli" if reports else "api"
     if reports:
-        rows = _rows_from_reports(cfg, reports, now)
-    else:
-        rows = _collect_via_api(repo_root, coverage_file, cfg, now)
-    if not rows:
-        log.info("coverage_lines ingestion skipped (no rows) for %s@%s", cfg.repo, cfg.commit)
+        return _rows_from_reports(cfg, reports, now), "cli"
+
+    return _collect_via_api(repo_root, coverage_file, cfg, now), "api"
+
+
+@dataclass
+class CoverageIngestOps(IncrementalIngestOps[CoverageLineRow], SupportsFullRebuild):
+    """
+    Wrap coverage ingestion in the incremental harness with full rebuild semantics.
+
+    Coverage is derived from test runs, so this always performs a full rebuild.
+    """
+
+    cfg: CoverageIngestStepConfig
+    tools: ToolsConfig | None
+    tool_service: ToolService | None
+    json_output_path: Path | None
+    now: datetime
+    dataset_name: str = field(init=False, default="analytics.coverage_lines")
+
+    @staticmethod
+    def module_filter(module: ModuleRecord) -> bool:
+        """
+        Indicate that all modules are considered for coverage.
+
+        Returns
+        -------
+        bool
+            Always True to force full rebuild semantics.
+        """
+        del module
+        return True
+
+    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        """No-op: full rebuild handles deletion."""
+
+    @staticmethod
+    def process_module(module: ModuleRecord) -> Iterable[CoverageLineRow]:
+        """
+        Return rows for a single module.
+
+        Returns
+        -------
+        Iterable[CoverageLineRow]
+            Always empty because coverage runs as a full rebuild.
+        """
+        del module
+        return []
+
+    def insert_rows(self, gateway: StorageGateway, rows: Sequence[CoverageLineRow]) -> None:
+        """No-op: run_full_rebuild performs insertion."""
+
+    def run_full_rebuild(self, tracker: ChangeTracker) -> bool:
+        """
+        Perform a full rebuild of analytics.coverage_lines for the configured snapshot.
+
+        Returns
+        -------
+        bool
+            True once ingestion completes to short-circuit further processing.
+        """
+        rows, source = _collect_coverage_rows(
+            tracker.gateway,
+            self.cfg,
+            tools=self.tools,
+            tool_service=self.tool_service,
+            json_output_path=self.json_output_path,
+            now=self.now,
+        )
+        if not rows:
+            log.info(
+                "coverage_lines ingestion skipped (no rows) for %s@%s",
+                self.cfg.repo,
+                self.cfg.commit,
+            )
+            return True
+
+        run_batch(
+            tracker.gateway,
+            "analytics.coverage_lines",
+            [coverage_line_to_tuple(r) for r in rows],
+            delete_params=[self.cfg.repo, self.cfg.commit],
+        )
+        log.info(
+            "coverage_lines ingested for %s@%s rows=%d source=%s",
+            self.cfg.repo,
+            self.cfg.commit,
+            len(rows),
+            source,
+        )
+        return True
+
+
+def ingest_coverage_lines(
+    gateway: StorageGateway,
+    cfg: CoverageIngestStepConfig,
+    *,
+    tools: ToolsConfig | None = None,
+    tool_service: ToolService | None = None,
+    tracker: ChangeTracker | None = None,
+) -> None:
+    """
+    Read a `.coverage` database and populate `analytics.coverage_lines`.
+
+    Behaviour
+    ---------
+    When ``tracker`` is provided, coverage ingestion runs as a full rebuild
+    through the incremental harness for consistency. When ``tracker`` is None,
+    the legacy full rebuild path is used directly.
+    """
+    now = datetime.now(UTC)
+    output_path = cfg.paths.coverage_json
+
+    if tracker is None:
+        rows, source = _collect_coverage_rows(
+            gateway,
+            cfg,
+            tools=tools,
+            tool_service=tool_service,
+            json_output_path=output_path,
+            now=now,
+        )
+        if not rows:
+            log.info(
+                "coverage_lines ingestion skipped (no rows) for %s@%s",
+                cfg.repo,
+                cfg.commit,
+            )
+            return
+
+        run_batch(
+            gateway,
+            "analytics.coverage_lines",
+            [coverage_line_to_tuple(r) for r in rows],
+            delete_params=[cfg.repo, cfg.commit],
+        )
+        log.info(
+            "coverage_lines ingested for %s@%s rows=%d source=%s",
+            cfg.repo,
+            cfg.commit,
+            len(rows),
+            source,
+        )
         return
 
-    run_batch(
-        gateway,
-        "analytics.coverage_lines",
-        [coverage_line_to_tuple(r) for r in rows],
-        delete_params=[cfg.repo, cfg.commit],
+    ops = CoverageIngestOps(
+        cfg=cfg,
+        tools=tools,
+        tool_service=tool_service,
+        json_output_path=output_path,
+        now=now,
     )
-    log.info(
-        "coverage_lines ingested for %s@%s rows=%d source=%s",
-        cfg.repo,
-        cfg.commit,
-        len(rows),
-        source,
+    tracker_for_coverage = replace(
+        tracker,
+        change_request=replace(tracker.change_request, full_rebuild=True),
     )
+    run_incremental_ingest(tracker_for_coverage, ops)
 
 
 def _collect_via_api(

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/http/routes/ide.py
+# hypothesis_version: 6.148.3
+
+['/ide/hints', 'build_ide_router']

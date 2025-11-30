@@ -42,17 +42,15 @@ def test_manifest_includes_run_id_scope_and_isolation(
         message = "Manifest should include scope paths"
         pytest.fail(message)
     record = payload["records"][0]
-    if record.get("requires_isolation") is not True:
+    meta = record.get("meta", {})
+    if meta.get("requires_isolation") is not True:
         message = "Manifest record should reflect isolation requirement"
         pytest.fail(message)
-    if record.get("row_counts") is None:
+    if meta.get("row_counts") is None:
         message = "Manifest record should include row_counts"
         pytest.fail(message)
-    if record.get("contracts") is None:
+    if meta.get("contracts") is None:
         message = "Manifest record should include contracts list"
-        pytest.fail(message)
-    if record.get("run_id") != run_id:
-        message = "Record run_id should match manifest run_id"
         pytest.fail(message)
     report_record = report.records[0]
     if report_record.run_id != run_id:

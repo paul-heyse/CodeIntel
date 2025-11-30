@@ -16,6 +16,12 @@ from pydantic import BaseModel
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.graphs.contracts import ContractChecker
+from codeintel.analytics.plugins import (
+    AnalyticsExecutionContext,
+    AnalyticsPlugin,
+    ResourceHints,
+    register_analytics_plugin,
+)
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphRunScope
@@ -759,6 +765,73 @@ register_graph_metric_plugin(
 )
 
 
+def graph_metric_plugin_to_analytics(plugin: GraphMetricPlugin) -> AnalyticsPlugin:
+    """Wrap a GraphMetricPlugin as a generic AnalyticsPlugin."""
+
+    def context_factory(ctx: AnalyticsExecutionContext) -> GraphMetricExecutionContext:
+        if ctx.graph_runtime is None:
+            message = "Graph runtime required for graph analytics plugin execution"
+            raise ValueError(message)
+        scratch = (
+            ctx.scratch
+            if isinstance(ctx.scratch, GraphRuntimeScratch)
+            else GraphRuntimeScratch()
+        )
+        return GraphMetricExecutionContext(
+            gateway=ctx.gateway,
+            runtime=ctx.graph_runtime,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            config=ctx.graph_cfg,
+            analytics_context=ctx.analytics_context,
+            catalog_provider=ctx.catalog_provider,
+            options=ctx.options,
+            plugin_name=plugin.name,
+            run_id=ctx.run_id,
+            scope=ctx.scope,
+            scratch=scratch,
+        )
+
+    hints = None
+    if plugin.resource_hints is not None:
+        hints = ResourceHints(
+            max_runtime_ms=plugin.resource_hints.max_runtime_ms,
+            max_memory_mb=plugin.resource_hints.memory_mb_hint,
+        )
+
+    return AnalyticsPlugin(
+        name=plugin.name,
+        description=plugin.description,
+        stage="graph",
+        enabled_by_default=plugin.enabled_by_default,
+        run=plugin.run,  # type: ignore[arg-type]
+        severity=plugin.severity,
+        depends_on=plugin.depends_on,
+        provides=plugin.provides,
+        requires=plugin.requires,
+        options_model=plugin.options_model,
+        options_default=plugin.options_default,
+        resource_hints=hints,
+        version_hash=plugin.version_hash,
+        row_count_tables=plugin.row_count_tables,
+        contract_checkers=plugin.contract_checkers,
+        context_factory=context_factory,
+    )
+
+
+_ANALYTICS_REGISTRATION_DONE = False
+
+
+def _register_graph_plugins_as_analytics() -> None:
+    """Register all graph metric plugins in the analytics registry."""
+    global _ANALYTICS_REGISTRATION_DONE
+    if _ANALYTICS_REGISTRATION_DONE:
+        return
+    for plugin in list_graph_metric_plugins():
+        register_analytics_plugin(graph_metric_plugin_to_analytics(plugin))
+    _ANALYTICS_REGISTRATION_DONE = True
+
+
 def _plugin_graph_metrics_modules_ext(
     ctx: GraphMetricExecutionContext,
 ) -> GraphPluginResult | None:
@@ -1063,3 +1136,6 @@ DEFAULT_GRAPH_METRIC_PLUGINS: tuple[str, ...] = (
     "subsystem_agreement",
     "graph_stats",
 )
+
+
+_register_graph_plugins_as_analytics()

@@ -34,7 +34,7 @@ from codeintel.analytics.graph_service import (
     component_metadata,
     neighbor_stats,
 )
-from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.gateway import StorageGateway

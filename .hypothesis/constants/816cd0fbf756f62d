@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/runtime/model.py
+# hypothesis_version: 6.148.3
+
+['GraphPluginRunRecord', 'GraphPluginRunReport', 'failed', 'fatal', 'skip_on_error', 'skipped', 'soft_fail', 'succeeded']

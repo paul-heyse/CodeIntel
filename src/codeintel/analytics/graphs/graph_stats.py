@@ -17,7 +17,7 @@ from codeintel.analytics.graph_service import (
     build_projection_graph,
     global_graph_stats,
 )
-from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
