@@ -65,6 +65,11 @@ class CoveragePlugin(ToolPlugin):
         -------
         ToolPluginResult
             Normalized execution result from the coverage plugin.
+
+        Raises
+        ------
+        TypeError
+            Raised when required keyword arguments are missing or of the wrong type.
         """
         coverage_file_obj = kwargs.get("coverage_file")
         output_path_obj = kwargs.get("output_path")

@@ -251,6 +251,7 @@ class QueryBackend(
     FunctionBackend,
     ProfileBackend,
     SubsystemBackend,
+    Protocol,
 ):
     """Aggregated backend interface consumed by MCP tools."""
 

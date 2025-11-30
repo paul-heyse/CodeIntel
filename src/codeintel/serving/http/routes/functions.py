@@ -91,42 +91,17 @@ def _load_function_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
     return specs, paths
 
 
-def build_functions_router() -> APIRouter:
-    """
-    Construct the router for function-centric endpoints.
-
-    Raises
-    ------
-    ValueError
-        If required OperationSpec entries are missing or incomplete.
-
-    Returns
-    -------
-    APIRouter
-        Router exposing function metadata endpoints.
-    """
-    router = APIRouter()
-    specs, paths = _load_function_specs()
-    spec_summary = specs["function.summary"]
-    spec_high_risk = specs["functions.high_risk"]
-    spec_tests = specs["functions.tests"]
-    spec_neighbors = specs["graph.call_neighbors"]
-    spec_neighborhood = specs["graph.call_neighborhood"]
-    spec_import_boundary = specs["graph.import_boundary"]
-    spec_file_summary = specs["file.summary"]
-    summary_path = paths["function.summary"]
-    high_risk_path = paths["functions.high_risk"]
-    tests_path = paths["functions.tests"]
-    neighbors_path = paths["graph.call_neighbors"]
-    neighborhood_path = paths["graph.call_neighborhood"]
-    import_boundary_path = paths["graph.import_boundary"]
-    file_summary_path = paths["file.summary"]
+def _register_summary_and_risk_routes(
+    router: APIRouter, specs: dict[str, OperationSpec], paths: dict[str, str]
+) -> None:
+    summary_spec = specs["function.summary"]
+    risk_spec = specs["functions.high_risk"]
 
     @router.get(
-        summary_path,
+        paths["function.summary"],
         response_model=FunctionSummaryResponse,
-        summary=spec_summary.summary,
-        tags=[spec_summary.category],
+        summary=summary_spec.summary,
+        tags=[summary_spec.category],
     )
     def function_summary(
         *,
@@ -159,10 +134,10 @@ def build_functions_router() -> APIRouter:
         return summary
 
     @router.get(
-        high_risk_path,
+        paths["functions.high_risk"],
         response_model=HighRiskFunctionsResponse,
-        summary=spec_high_risk.summary,
-        tags=[spec_high_risk.category],
+        summary=risk_spec.summary,
+        tags=[risk_spec.category],
     )
     def list_high_risk_functions(
         *,
@@ -187,11 +162,20 @@ def build_functions_router() -> APIRouter:
             scope=scope,
         )
 
+
+def _register_graph_and_tests_routes(
+    router: APIRouter, specs: dict[str, OperationSpec], paths: dict[str, str]
+) -> None:
+    neighbors_spec = specs["graph.call_neighbors"]
+    neighborhood_spec = specs["graph.call_neighborhood"]
+    import_boundary_spec = specs["graph.import_boundary"]
+    tests_spec = specs["functions.tests"]
+
     @router.get(
-        neighbors_path,
+        paths["graph.call_neighbors"],
         response_model=CallGraphNeighborsResponse,
-        summary=spec_neighbors.summary,
-        tags=[spec_neighbors.category],
+        summary=neighbors_spec.summary,
+        tags=[neighbors_spec.category],
     )
     def function_callgraph(
         *,
@@ -217,10 +201,10 @@ def build_functions_router() -> APIRouter:
         )
 
     @router.get(
-        tests_path,
+        paths["functions.tests"],
         response_model=TestsForFunctionResponse,
-        summary=spec_tests.summary,
-        tags=[spec_tests.category],
+        summary=tests_spec.summary,
+        tags=[tests_spec.category],
     )
     def tests_for_function(
         *,
@@ -246,10 +230,10 @@ def build_functions_router() -> APIRouter:
         )
 
     @router.get(
-        neighborhood_path,
+        paths["graph.call_neighborhood"],
         response_model=GraphNeighborhoodResponse,
-        summary=spec_neighborhood.summary,
-        tags=[spec_neighborhood.category],
+        summary=neighborhood_spec.summary,
+        tags=[neighborhood_spec.category],
     )
     def callgraph_neighborhood(
         *,
@@ -293,10 +277,10 @@ def build_functions_router() -> APIRouter:
         return response
 
     @router.get(
-        import_boundary_path,
+        paths["graph.import_boundary"],
         response_model=ImportBoundaryResponse,
-        summary=spec_import_boundary.summary,
-        tags=[spec_import_boundary.category],
+        summary=import_boundary_spec.summary,
+        tags=[import_boundary_spec.category],
     )
     def import_boundary(
         *,
@@ -332,11 +316,17 @@ def build_functions_router() -> APIRouter:
         )
         return response
 
+
+def _register_file_summary_route(
+    router: APIRouter, specs: dict[str, OperationSpec], paths: dict[str, str]
+) -> None:
+    file_spec = specs["file.summary"]
+
     @router.get(
-        file_summary_path,
+        paths["file.summary"],
         response_model=FileSummaryResponse,
-        summary=spec_file_summary.summary,
-        tags=[spec_file_summary.category],
+        summary=file_spec.summary,
+        tags=[file_spec.category],
     )
     def file_summary(
         *,
@@ -362,6 +352,31 @@ def build_functions_router() -> APIRouter:
             message = "File not found"
             raise errors.not_found(message)
         return summary
+
+
+def build_functions_router() -> APIRouter:
+    """
+    Construct the router for function-centric endpoints.
+
+    Raises
+    ------
+    ValueError
+        If required OperationSpec entries are missing or incomplete.
+
+    Returns
+    -------
+    APIRouter
+        Router exposing function metadata endpoints.
+    """
+    router = APIRouter()
+    try:
+        specs, paths = _load_function_specs()
+    except ValueError as exc:
+        message = "Failed to load function OperationSpec entries"
+        raise ValueError(message) from exc
+    _register_summary_and_risk_routes(router, specs, paths)
+    _register_graph_and_tests_routes(router, specs, paths)
+    _register_file_summary_route(router, specs, paths)
 
     return router
 

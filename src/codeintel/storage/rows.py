@@ -17,10 +17,16 @@ __all__ = [
     "DFGEdgeRow",
     "DocstringRow",
     "FileProfileRowModel",
+    "FunctionMetricsRow",
     "FunctionProfileRowModel",
+    "FunctionTypesRow",
     "FunctionValidationRow",
     "GoidCrosswalkRow",
     "GoidRow",
+    "GraphMetricsFunctionsExtRow",
+    "GraphMetricsFunctionsRow",
+    "GraphMetricsModulesExtRow",
+    "GraphMetricsModulesRow",
     "HotspotRow",
     "ImportEdgeRow",
     "ImportModuleRow",
@@ -43,10 +49,16 @@ __all__ = [
     "dfg_edge_to_tuple",
     "docstring_row_to_tuple",
     "file_profile_row_to_tuple",
+    "function_metrics_row_to_tuple",
     "function_profile_row_to_tuple",
+    "function_types_row_to_tuple",
     "function_validation_row_to_tuple",
     "goid_crosswalk_to_tuple",
     "goid_to_tuple",
+    "graph_metrics_functions_ext_row_to_tuple",
+    "graph_metrics_functions_row_to_tuple",
+    "graph_metrics_modules_ext_row_to_tuple",
+    "graph_metrics_modules_row_to_tuple",
     "hotspot_row_to_tuple",
     "import_edge_to_tuple",
     "import_module_to_tuple",
@@ -484,6 +496,386 @@ def hotspot_row_to_tuple(row: HotspotRow) -> tuple[object, ...]:
         row["complexity"],
         row["score"],
     )
+
+
+class FunctionMetricsRow(TypedDict):
+    """Row shape for analytics.function_metrics inserts."""
+
+    function_goid_h128: int
+    urn: str | None
+    repo: str
+    commit: str
+    rel_path: str
+    language: str | None
+    kind: str | None
+    qualname: str | None
+    start_line: int | None
+    end_line: int | None
+    loc: int | None
+    logical_loc: int | None
+    param_count: int | None
+    positional_params: int | None
+    keyword_only_params: int | None
+    has_varargs: bool
+    has_varkw: bool
+    is_async: bool
+    is_generator: bool
+    return_count: int | None
+    yield_count: int | None
+    raise_count: int | None
+    cyclomatic_complexity: int | None
+    max_nesting_depth: int | None
+    stmt_count: int | None
+    decorator_count: int | None
+    has_docstring: bool
+    complexity_bucket: str | None
+    created_at: datetime
+
+
+FUNCTION_METRICS_COLUMNS: list[str] = [
+    "function_goid_h128",
+    "urn",
+    "repo",
+    "commit",
+    "rel_path",
+    "language",
+    "kind",
+    "qualname",
+    "start_line",
+    "end_line",
+    "loc",
+    "logical_loc",
+    "param_count",
+    "positional_params",
+    "keyword_only_params",
+    "has_varargs",
+    "has_varkw",
+    "is_async",
+    "is_generator",
+    "return_count",
+    "yield_count",
+    "raise_count",
+    "cyclomatic_complexity",
+    "max_nesting_depth",
+    "stmt_count",
+    "decorator_count",
+    "has_docstring",
+    "complexity_bucket",
+    "created_at",
+]
+
+
+def function_metrics_row_to_tuple(row: FunctionMetricsRow) -> tuple[object, ...]:
+    """
+    Serialize a FunctionMetricsRow into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with analytics.function_metrics columns.
+    """
+    return _serialize_row(row, FUNCTION_METRICS_COLUMNS)
+
+
+class FunctionTypesRow(TypedDict):
+    """Row shape for analytics.function_types inserts."""
+
+    function_goid_h128: int
+    urn: str | None
+    repo: str
+    commit: str
+    rel_path: str
+    language: str | None
+    kind: str | None
+    qualname: str | None
+    start_line: int | None
+    end_line: int | None
+    total_params: int | None
+    annotated_params: int | None
+    unannotated_params: int | None
+    param_typed_ratio: float | None
+    has_return_annotation: bool
+    return_type: str | None
+    return_type_source: str | None
+    type_comment: str | None
+    param_types: object
+    fully_typed: bool
+    partial_typed: bool
+    untyped: bool
+    typedness_bucket: str | None
+    typedness_source: str | None
+    created_at: datetime
+
+
+FUNCTION_TYPES_COLUMNS: list[str] = [
+    "function_goid_h128",
+    "urn",
+    "repo",
+    "commit",
+    "rel_path",
+    "language",
+    "kind",
+    "qualname",
+    "start_line",
+    "end_line",
+    "total_params",
+    "annotated_params",
+    "unannotated_params",
+    "param_typed_ratio",
+    "has_return_annotation",
+    "return_type",
+    "return_type_source",
+    "type_comment",
+    "param_types",
+    "fully_typed",
+    "partial_typed",
+    "untyped",
+    "typedness_bucket",
+    "typedness_source",
+    "created_at",
+]
+
+
+def function_types_row_to_tuple(row: FunctionTypesRow) -> tuple[object, ...]:
+    """
+    Serialize a FunctionTypesRow into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with analytics.function_types columns.
+    """
+    return _serialize_row(row, FUNCTION_TYPES_COLUMNS)
+
+
+class GraphMetricsFunctionsRow(TypedDict):
+    """Row shape for analytics.graph_metrics_functions inserts."""
+
+    repo: str
+    commit: str
+    function_goid_h128: int
+    call_fan_in: int
+    call_fan_out: int
+    call_in_degree: int
+    call_out_degree: int
+    call_pagerank: float | None
+    call_betweenness: float | None
+    call_closeness: float | None
+    call_cycle_member: bool
+    call_cycle_id: int | None
+    call_layer: int | None
+    created_at: datetime
+
+
+GRAPH_METRICS_FUNCTIONS_COLUMNS: list[str] = [
+    "repo",
+    "commit",
+    "function_goid_h128",
+    "call_fan_in",
+    "call_fan_out",
+    "call_in_degree",
+    "call_out_degree",
+    "call_pagerank",
+    "call_betweenness",
+    "call_closeness",
+    "call_cycle_member",
+    "call_cycle_id",
+    "call_layer",
+    "created_at",
+]
+
+
+def graph_metrics_functions_row_to_tuple(
+    row: GraphMetricsFunctionsRow,
+) -> tuple[object, ...]:
+    """
+    Serialize a GraphMetricsFunctionsRow into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with analytics.graph_metrics_functions columns.
+    """
+    return _serialize_row(row, GRAPH_METRICS_FUNCTIONS_COLUMNS)
+
+
+class GraphMetricsModulesRow(TypedDict):
+    """Row shape for analytics.graph_metrics_modules inserts."""
+
+    repo: str
+    commit: str
+    module: str
+    import_fan_in: int
+    import_fan_out: int
+    import_in_degree: int
+    import_out_degree: int
+    import_pagerank: float | None
+    import_betweenness: float | None
+    import_closeness: float | None
+    import_cycle_member: bool
+    import_cycle_id: int | None
+    import_layer: int | None
+    symbol_fan_in: int
+    symbol_fan_out: int
+    created_at: datetime
+
+
+GRAPH_METRICS_MODULES_COLUMNS: list[str] = [
+    "repo",
+    "commit",
+    "module",
+    "import_fan_in",
+    "import_fan_out",
+    "import_in_degree",
+    "import_out_degree",
+    "import_pagerank",
+    "import_betweenness",
+    "import_closeness",
+    "import_cycle_member",
+    "import_cycle_id",
+    "import_layer",
+    "symbol_fan_in",
+    "symbol_fan_out",
+    "created_at",
+]
+
+
+def graph_metrics_modules_row_to_tuple(
+    row: GraphMetricsModulesRow,
+) -> tuple[object, ...]:
+    """
+    Serialize a GraphMetricsModulesRow into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with analytics.graph_metrics_modules columns.
+    """
+    return _serialize_row(row, GRAPH_METRICS_MODULES_COLUMNS)
+
+
+class GraphMetricsFunctionsExtRow(TypedDict):
+    """Row shape for analytics.graph_metrics_functions_ext inserts."""
+
+    repo: str
+    commit: str
+    function_goid_h128: int
+    call_betweenness: float | None
+    call_closeness: float | None
+    call_eigenvector: float | None
+    call_harmonic: float | None
+    call_core_number: int | None
+    call_clustering_coeff: float | None
+    call_triangle_count: int | None
+    call_is_articulation: bool | None
+    call_articulation_impact: int | None
+    call_is_bridge_endpoint: bool | None
+    call_component_id: int | None
+    call_component_size: int | None
+    call_scc_id: int | None
+    call_scc_size: int | None
+    call_ancestor_count: int | None
+    call_descendant_count: int | None
+    call_community_id: int | None
+    created_at: datetime
+
+
+GRAPH_METRICS_FUNCTIONS_EXT_COLUMNS: list[str] = [
+    "repo",
+    "commit",
+    "function_goid_h128",
+    "call_betweenness",
+    "call_closeness",
+    "call_eigenvector",
+    "call_harmonic",
+    "call_core_number",
+    "call_clustering_coeff",
+    "call_triangle_count",
+    "call_is_articulation",
+    "call_articulation_impact",
+    "call_is_bridge_endpoint",
+    "call_component_id",
+    "call_component_size",
+    "call_scc_id",
+    "call_scc_size",
+    "call_ancestor_count",
+    "call_descendant_count",
+    "call_community_id",
+    "created_at",
+]
+
+
+def graph_metrics_functions_ext_row_to_tuple(
+    row: GraphMetricsFunctionsExtRow,
+) -> tuple[object, ...]:
+    """
+    Serialize a GraphMetricsFunctionsExtRow into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with analytics.graph_metrics_functions_ext columns.
+    """
+    return _serialize_row(row, GRAPH_METRICS_FUNCTIONS_EXT_COLUMNS)
+
+
+class GraphMetricsModulesExtRow(TypedDict):
+    """Row shape for analytics.graph_metrics_modules_ext inserts."""
+
+    repo: str
+    commit: str
+    module: str
+    import_betweenness: float | None
+    import_closeness: float | None
+    import_eigenvector: float | None
+    import_harmonic: float | None
+    import_k_core: int | None
+    import_constraint: float | None
+    import_effective_size: float | None
+    import_rich_club: bool | None
+    import_shell_index: int | None
+    import_community_id: int | None
+    import_component_id: int | None
+    import_component_size: int | None
+    import_scc_id: int | None
+    import_scc_size: int | None
+    created_at: datetime
+
+
+GRAPH_METRICS_MODULES_EXT_COLUMNS: list[str] = [
+    "repo",
+    "commit",
+    "module",
+    "import_betweenness",
+    "import_closeness",
+    "import_eigenvector",
+    "import_harmonic",
+    "import_k_core",
+    "import_constraint",
+    "import_effective_size",
+    "import_rich_club",
+    "import_shell_index",
+    "import_community_id",
+    "import_component_id",
+    "import_component_size",
+    "import_scc_id",
+    "import_scc_size",
+    "created_at",
+]
+
+
+def graph_metrics_modules_ext_row_to_tuple(
+    row: GraphMetricsModulesExtRow,
+) -> tuple[object, ...]:
+    """
+    Serialize a GraphMetricsModulesExtRow into INSERT column order.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Values aligned with analytics.graph_metrics_modules_ext columns.
+    """
+    return _serialize_row(row, GRAPH_METRICS_MODULES_EXT_COLUMNS)
 
 
 class CallGraphNodeRow(TypedDict):

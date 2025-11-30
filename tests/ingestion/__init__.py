@@ -1,1 +1,3 @@
-"""Test package for ingestion module."""
+"""Test package for ingestion modules."""
+
+from __future__ import annotations

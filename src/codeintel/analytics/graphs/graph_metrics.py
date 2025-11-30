@@ -14,6 +14,10 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
+from codeintel.analytics.datasets import (
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+)
 from codeintel.analytics.graph_rows import (
     FunctionGraphMetricInputs,
     ModuleGraphMetricInputs,
@@ -242,7 +246,6 @@ def _compute_function_graph_metrics(
     runtime: GraphRuntime,
     filters: GraphMetricFilters,
 ) -> None:
-    con = gateway.con
     graph = filters.filter_call_graph(runtime.ensure_call_graph())
     stats = neighbor_stats(graph, weight=ctx.betweenness_weight)
     centrality_bundle = centrality_directed(graph, ctx)
@@ -255,11 +258,6 @@ def _compute_function_graph_metrics(
         "closeness": centrality_bundle.closeness,
     }
 
-    con.execute(
-        "DELETE FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-
     rows = build_function_graph_metric_rows(
         FunctionGraphMetricInputs(
             cfg=cfg,
@@ -271,8 +269,15 @@ def _compute_function_graph_metrics(
         )
     )
 
+    contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
+    insert_analytics_rows(
+        gateway,
+        contract,
+        rows,
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
     if rows:
-        gateway.analytics.insert_graph_metrics_functions(rows)
         log.info(
             "graph_metrics_functions populated: %d rows for %s@%s",
             len(rows),
@@ -289,7 +294,6 @@ def _compute_module_graph_metrics(
     runtime: GraphRuntime,
     options: ModuleMetricOptions,
 ) -> None:
-    con = gateway.con
     filters = options.filters or GraphMetricFilters()
     graph = filters.filter_import_graph(runtime.ensure_import_graph())
     symbol_modules, symbol_inbound, symbol_outbound = load_symbol_module_edges(
@@ -317,11 +321,6 @@ def _compute_module_graph_metrics(
         cached_component_meta,
     )
 
-    con.execute(
-        "DELETE FROM analytics.graph_metrics_modules WHERE repo = ? AND commit = ?",
-        [cfg.repo, cfg.commit],
-    )
-
     centrality = {
         "pagerank": centrality_bundle.pagerank,
         "betweenness": centrality_bundle.betweenness,
@@ -340,8 +339,15 @@ def _compute_module_graph_metrics(
         )
     )
 
+    contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")
+    insert_analytics_rows(
+        gateway,
+        contract,
+        rows_to_insert,
+        delete_params=[cfg.repo, cfg.commit],
+        scope=f"{cfg.repo}@{cfg.commit}",
+    )
     if rows_to_insert:
-        gateway.analytics.insert_graph_metrics_modules(rows_to_insert)
         log.info(
             "graph_metrics_modules populated: %d rows for %s@%s",
             len(rows_to_insert),

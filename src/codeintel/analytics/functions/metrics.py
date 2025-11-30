@@ -14,6 +14,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict
 
+from codeintel.analytics.datasets import (
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+)
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.functions.config import (
     FunctionAnalyticsOptions,
@@ -30,8 +34,9 @@ from codeintel.analytics.functions.typedness import (
 from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
+from codeintel.analytics.rows.function_metrics import FunctionMetricsRow
+from codeintel.analytics.rows.function_types import FunctionTypesRow
 from codeintel.config import FunctionAnalyticsStepConfig
-from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -45,8 +50,8 @@ COMPLEXITY_MEDIUM = 10
 class FunctionAnalyticsResult:
     """Pure analysis output for function metrics/types plus validation."""
 
-    metrics_rows: list[tuple]
-    types_rows: list[tuple]
+    metrics_rows: list[FunctionMetricsRow]
+    types_rows: list[FunctionTypesRow]
     reporter: FunctionValidationReporter
 
     @property
@@ -247,7 +252,7 @@ def _function_rows_from_node(
     node: ast.AST,
     lines: list[str],
     ctx: ProcessContext,
-) -> tuple[tuple, tuple] | None:
+) -> tuple[FunctionMetricsRow, FunctionTypesRow] | None:
     if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
         return None
 
@@ -260,65 +265,65 @@ def _function_rows_from_node(
     typedness = derived.typedness
     return_type_source = "annotation" if param_stats.has_return_annotation else "unknown"
 
-    metrics_row = (
-        meta.goid,
-        meta.urn,
-        ctx.cfg.repo,
-        ctx.cfg.commit,
-        meta.rel_path,
-        meta.language,
-        meta.kind,
-        meta.qualname,
-        meta.start_line,
-        meta.end_line,
-        loc,
-        logical_loc,
-        param_stats.param_count,
-        param_stats.positional_params,
-        param_stats.keyword_only_params,
-        param_stats.has_varargs,
-        param_stats.has_varkw,
-        derived.is_async,
-        derived.is_generator,
-        stats.return_count,
-        stats.yield_count,
-        stats.raise_count,
-        stats.complexity,
-        stats.max_nesting_depth,
-        derived.stmt_count,
-        derived.decorator_count,
-        derived.has_docstring,
-        derived.complexity_bucket,
-        ctx.now,
-    )
+    metrics_row: FunctionMetricsRow = {
+        "function_goid_h128": meta.goid,
+        "urn": meta.urn,
+        "repo": ctx.cfg.repo,
+        "commit": ctx.cfg.commit,
+        "rel_path": meta.rel_path,
+        "language": meta.language,
+        "kind": meta.kind,
+        "qualname": meta.qualname,
+        "start_line": meta.start_line,
+        "end_line": meta.end_line,
+        "loc": loc,
+        "logical_loc": logical_loc,
+        "param_count": param_stats.param_count,
+        "positional_params": param_stats.positional_params,
+        "keyword_only_params": param_stats.keyword_only_params,
+        "has_varargs": param_stats.has_varargs,
+        "has_varkw": param_stats.has_varkw,
+        "is_async": derived.is_async,
+        "is_generator": derived.is_generator,
+        "return_count": stats.return_count,
+        "yield_count": stats.yield_count,
+        "raise_count": stats.raise_count,
+        "cyclomatic_complexity": stats.complexity,
+        "max_nesting_depth": stats.max_nesting_depth,
+        "stmt_count": derived.stmt_count,
+        "decorator_count": derived.decorator_count,
+        "has_docstring": derived.has_docstring,
+        "complexity_bucket": derived.complexity_bucket,
+        "created_at": ctx.now,
+    }
 
-    types_row = (
-        meta.goid,
-        meta.urn,
-        ctx.cfg.repo,
-        ctx.cfg.commit,
-        meta.rel_path,
-        meta.language,
-        meta.kind,
-        meta.qualname,
-        meta.start_line,
-        meta.end_line,
-        param_stats.total_params,
-        param_stats.annotated_params,
-        typedness.unannotated_params,
-        typedness.param_typed_ratio,
-        param_stats.has_return_annotation,
-        param_stats.return_type,
-        return_type_source,
-        None,
-        param_stats.param_types,
-        typedness.fully_typed,
-        typedness.partial_typed,
-        typedness.untyped,
-        typedness.typedness_bucket,
-        typedness.typedness_source,
-        ctx.now,
-    )
+    types_row: FunctionTypesRow = {
+        "function_goid_h128": meta.goid,
+        "urn": meta.urn,
+        "repo": ctx.cfg.repo,
+        "commit": ctx.cfg.commit,
+        "rel_path": meta.rel_path,
+        "language": meta.language,
+        "kind": meta.kind,
+        "qualname": meta.qualname,
+        "start_line": meta.start_line,
+        "end_line": meta.end_line,
+        "total_params": param_stats.total_params,
+        "annotated_params": param_stats.annotated_params,
+        "unannotated_params": typedness.unannotated_params,
+        "param_typed_ratio": typedness.param_typed_ratio,
+        "has_return_annotation": param_stats.has_return_annotation,
+        "return_type": param_stats.return_type,
+        "return_type_source": return_type_source,
+        "type_comment": None,
+        "param_types": param_stats.param_types,
+        "fully_typed": typedness.fully_typed,
+        "partial_typed": typedness.partial_typed,
+        "untyped": typedness.untyped,
+        "typedness_bucket": typedness.typedness_bucket,
+        "typedness_source": typedness.typedness_source,
+        "created_at": ctx.now,
+    }
     return metrics_row, types_row
 
 
@@ -326,13 +331,13 @@ def analyze_function(
     meta: FunctionMeta,
     parsed: ParsedModule,
     ctx: ProcessContext,
-) -> tuple[tuple, tuple] | None:
+) -> tuple[FunctionMetricsRow, FunctionTypesRow] | None:
     """
     Derive analytics rows for a single function span.
 
     Returns
     -------
-    tuple[tuple, tuple] | None
+    tuple[FunctionMetricsRow, FunctionTypesRow] | None
         Metrics row and types row when a matching AST node is found; otherwise
         None when the span cannot be resolved.
     """
@@ -359,9 +364,9 @@ def _process_file_functions(
     rel_path: str,
     fun_rows: list[GoidRow],
     state: ProcessState,
-) -> tuple[list[tuple], list[tuple]]:
-    metrics_rows: list[tuple] = []
-    types_rows: list[tuple] = []
+) -> tuple[list[FunctionMetricsRow], list[FunctionTypesRow]]:
+    metrics_rows: list[FunctionMetricsRow] = []
+    types_rows: list[FunctionTypesRow] = []
 
     abs_path = (state.cfg.repo_root / rel_path).resolve()
     parsed = _get_parsed_module(rel_path, state=state)
@@ -448,8 +453,8 @@ def build_function_analytics(
     FunctionAnalyticsResult
         Aggregated metrics, types, and validation findings.
     """
-    metrics_rows: list[tuple] = []
-    types_rows: list[tuple] = []
+    metrics_rows: list[FunctionMetricsRow] = []
+    types_rows: list[FunctionTypesRow] = []
 
     for rel_path, fun_rows in goids_by_file.items():
         file_metrics, file_types = _process_file_functions(
@@ -555,8 +560,8 @@ def _build_function_analytics_from_context(
     span_index: dict[int, SourceSpan],
     reporter: FunctionValidationReporter,
 ) -> FunctionAnalyticsResult:
-    metrics_rows: list[tuple] = []
-    types_rows: list[tuple] = []
+    metrics_rows: list[FunctionMetricsRow] = []
+    types_rows: list[FunctionTypesRow] = []
     ast_map = context.function_ast_map
     missing_goids = context.missing_function_goids
 
@@ -633,18 +638,21 @@ def persist_function_analytics(
     con = gateway.con
     ensure_schema(con, "analytics.function_validation")
     scope = f"{cfg.repo}@{cfg.commit}"
-    run_batch(
+    metrics_contract = get_analytics_dataset_contract(gateway, "analytics.function_metrics")
+    types_contract = get_analytics_dataset_contract(gateway, "analytics.function_types")
+    delete_params = [cfg.repo, cfg.commit]
+    insert_analytics_rows(
         gateway,
-        "analytics.function_metrics",
+        metrics_contract,
         result.metrics_rows,
-        delete_params=[cfg.repo, cfg.commit],
+        delete_params=delete_params,
         scope=scope,
     )
-    run_batch(
+    insert_analytics_rows(
         gateway,
-        "analytics.function_types",
+        types_contract,
         result.types_rows,
-        delete_params=[cfg.repo, cfg.commit],
+        delete_params=delete_params,
         scope=scope,
     )
     result.reporter.flush(gateway)

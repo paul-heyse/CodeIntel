@@ -9,7 +9,9 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.serving import domain_models as dm
 from codeintel.serving.mcp.view_utils import normalize_entrypoints_payload
+from codeintel.serving.services.errors import ProblemDetail as DomainProblemDetail
 
 _TIME_WINDOW_LEN = 2
 
@@ -93,16 +95,61 @@ class ProblemDetail(BaseModel):
     detail: str | None = None
     status: int | None = None
     instance: str | None = None
-    data: dict[str, object] | None = None
+    code: str | None = None
+    extras: dict[str, object] | None = None
+
+    @classmethod
+    def from_domain(cls, detail: DomainProblemDetail) -> "ProblemDetail":
+        """Convert a domain ProblemDetail into the Pydantic transport model."""
+        return cls(
+            type=detail.type,
+            title=detail.title,
+            detail=detail.detail,
+            status=detail.status,
+            instance=detail.instance,
+            code=detail.code,
+            extras=detail.extras or {},
+        )
+
+    def to_domain(self) -> DomainProblemDetail:
+        """Convert a Pydantic ProblemDetail into the domain dataclass."""
+        return DomainProblemDetail(
+            type=self.type,
+            title=self.title,
+            detail=self.detail,
+            status=self.status,
+            instance=self.instance or "",
+            code=self.code,
+            extras=dict(self.extras or {}),
+        )
 
 
 class Message(BaseModel):
     """Structured message attached to responses."""
 
     code: str
-    severity: Literal["info", "warning", "error"]
-    detail: str
+    severity: Literal["info", "warning", "error"] = "info"
+    detail: str | None = None
     context: dict[str, object] | None = None
+
+    def to_domain(self) -> dm.Message:
+        """Convert to the domain Message dataclass."""
+        return dm.Message(
+            code=self.code,
+            severity=self.severity,
+            detail=self.detail,
+            context=dict(self.context or {}),
+        )
+
+    @classmethod
+    def from_domain(cls, msg: dm.Message) -> "Message":
+        """Build a transport Message from the domain representation."""
+        return cls(
+            code=msg.code,
+            severity=msg.severity,
+            detail=msg.detail,
+            context=msg.context or {},
+        )
 
 
 class ResponseMeta(BaseModel):
@@ -113,7 +160,30 @@ class ResponseMeta(BaseModel):
     requested_offset: int | None = None
     applied_offset: int | None = None
     truncated: bool = False
-    messages: list[Message] = Field(default_factory=list)
+    messages: list[Message] | None = None
+
+    def to_domain(self) -> dm.ResponseMeta:
+        """Convert to the domain ResponseMeta dataclass."""
+        return dm.ResponseMeta(
+            requested_limit=self.requested_limit,
+            applied_limit=self.applied_limit,
+            requested_offset=self.requested_offset,
+            applied_offset=self.applied_offset,
+            truncated=self.truncated,
+            messages=[message.to_domain() for message in (self.messages or [])],
+        )
+
+    @classmethod
+    def from_domain(cls, meta: dm.ResponseMeta) -> "ResponseMeta":
+        """Convert a domain ResponseMeta into the transport model."""
+        return cls(
+            requested_limit=meta.requested_limit,
+            applied_limit=meta.applied_limit,
+            requested_offset=meta.requested_offset,
+            applied_offset=meta.applied_offset,
+            truncated=meta.truncated,
+            messages=[Message.from_domain(msg) for msg in meta.messages],
+        )
 
 
 class GraphPluginDescriptor(BaseModel):
@@ -691,16 +761,77 @@ class DatasetSchemaResponse(BaseModel):
     schema_version: str | None = None
     stable_id: str | None = None
     validation_profile: Literal["strict", "lenient"] | None = None
+    meta: ResponseMeta | None = None
+
+    def to_domain(self) -> dm.DatasetSchema:
+        """Convert to the domain DatasetSchema representation."""
+        return dm.DatasetSchema(
+            dataset_name=self.dataset,
+            table_key=self.table_key,
+            duckdb_schema=[column.model_dump() for column in self.duckdb_schema],
+            json_schema=self.json_schema,
+            sample_rows=[row.model_dump() for row in self.sample_rows],
+            capabilities=dict(self.capabilities or {}),
+            owner=self.owner,
+            freshness_sla=self.freshness_sla,
+            retention_policy=self.retention_policy,
+            schema_version=self.schema_version,
+            stable_id=self.stable_id,
+            validation_profile=self.validation_profile,
+            meta=self.meta.to_domain() if self.meta is not None else None,
+        )
+
+    @classmethod
+    def from_domain(cls, schema: dm.DatasetSchema) -> "DatasetSchemaResponse":
+        """Convert a domain DatasetSchema into the transport model."""
+        return cls(
+            dataset=schema.dataset_name,
+            table_key=schema.table_key,
+            duckdb_schema=[
+                DatasetSchemaColumn.model_validate(column) for column in schema.duckdb_schema
+            ],
+            json_schema=schema.json_schema,
+            sample_rows=[ViewRow.model_validate(row) for row in schema.sample_rows],
+            capabilities=schema.capabilities,
+            owner=schema.owner,
+            freshness_sla=schema.freshness_sla,
+            retention_policy=schema.retention_policy,
+            schema_version=schema.schema_version,
+            stable_id=schema.stable_id,
+            validation_profile=schema.validation_profile,
+            meta=ResponseMeta.from_domain(schema.meta) if schema.meta is not None else None,
+        )
 
 
 class DatasetRowsResponse(BaseModel):
     """Rows returned from a dataset slice."""
 
-    dataset: str
+    dataset_name: str
     limit: int
     offset: int
     rows: list[ViewRow]
-    meta: ResponseMeta = Field(default_factory=ResponseMeta)
+    meta: ResponseMeta | None = None
+
+    def to_domain(self) -> dm.DatasetRows:
+        """Convert to the domain DatasetRows representation."""
+        return dm.DatasetRows(
+            dataset_name=self.dataset_name,
+            limit=self.limit,
+            offset=self.offset,
+            rows=[row.model_dump() for row in self.rows],
+            meta=self.meta.to_domain() if self.meta is not None else dm.ResponseMeta(),
+        )
+
+    @classmethod
+    def from_domain(cls, rows: dm.DatasetRows) -> "DatasetRowsResponse":
+        """Convert a domain DatasetRows into the transport model."""
+        return cls(
+            dataset_name=rows.dataset_name,
+            limit=rows.limit,
+            offset=rows.offset,
+            rows=[ViewRow.model_validate(row) for row in rows.rows],
+            meta=ResponseMeta.from_domain(rows.meta),
+        )
 
 
 class DatasetMetaResponse(BaseModel):

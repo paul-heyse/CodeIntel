@@ -256,6 +256,14 @@ ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = {
         row_type=row_models.FunctionValidationRow,
         to_tuple=row_models.function_validation_row_to_tuple,
     ),
+    "analytics.function_metrics": _row_binding(
+        row_type=row_models.FunctionMetricsRow,
+        to_tuple=row_models.function_metrics_row_to_tuple,
+    ),
+    "analytics.function_types": _row_binding(
+        row_type=row_models.FunctionTypesRow,
+        to_tuple=row_models.function_types_row_to_tuple,
+    ),
     "analytics.graph_validation": _row_binding(
         row_type=row_models.GraphValidationRow,
         to_tuple=row_models.graph_validation_row_to_tuple,
@@ -327,6 +335,22 @@ ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] = {
     "graph.symbol_use_edges": _row_binding(
         row_type=row_models.SymbolUseRow,
         to_tuple=row_models.symbol_use_to_tuple,
+    ),
+    "analytics.graph_metrics_functions": _row_binding(
+        row_type=row_models.GraphMetricsFunctionsRow,
+        to_tuple=row_models.graph_metrics_functions_row_to_tuple,
+    ),
+    "analytics.graph_metrics_modules": _row_binding(
+        row_type=row_models.GraphMetricsModulesRow,
+        to_tuple=row_models.graph_metrics_modules_row_to_tuple,
+    ),
+    "analytics.graph_metrics_functions_ext": _row_binding(
+        row_type=row_models.GraphMetricsFunctionsExtRow,
+        to_tuple=row_models.graph_metrics_functions_ext_row_to_tuple,
+    ),
+    "analytics.graph_metrics_modules_ext": _row_binding(
+        row_type=row_models.GraphMetricsModulesExtRow,
+        to_tuple=row_models.graph_metrics_modules_ext_row_to_tuple,
     ),
     "analytics.test_profile": _row_binding(
         row_type=row_models.ProfileRowModel,

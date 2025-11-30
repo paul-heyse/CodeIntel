@@ -9,43 +9,12 @@ from datetime import datetime
 from typing import Any
 
 from codeintel.analytics.graph_service import ComponentBundle, NeighborStats
+from codeintel.analytics.rows.graph_metrics import (
+    FunctionGraphMetricsRow,
+    ModuleGraphMetricsRow,
+)
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.storage.gateway import DuckDBError, StorageGateway
-
-FunctionMetricRow = tuple[
-    str,
-    str,
-    int,
-    int,
-    int,
-    int,
-    int,
-    float | None,
-    float | None,
-    float | None,
-    bool,
-    int | None,
-    int | None,
-    str,
-]
-ModuleMetricRow = tuple[
-    str,
-    str,
-    str,
-    int,
-    int,
-    int,
-    int,
-    float | None,
-    float | None,
-    float | None,
-    bool,
-    int | None,
-    int | None,
-    int,
-    int,
-    str,
-]
 
 
 @dataclass(frozen=True)
@@ -76,7 +45,7 @@ class ModuleGraphMetricInputs:
 
 def build_function_graph_metric_rows(
     inputs: FunctionGraphMetricInputs,
-) -> list[FunctionMetricRow]:
+) -> list[FunctionGraphMetricsRow]:
     """
     Construct rows for analytics.graph_metrics_functions.
 
@@ -87,25 +56,25 @@ def build_function_graph_metric_rows(
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Row tuples ready for graph_metrics_functions insertion.
+    list[FunctionGraphMetricsRow]
+        Row dicts ready for graph_metrics_functions insertion.
     """
     return [
-        (
-            inputs.cfg.repo,
-            inputs.cfg.commit,
-            int(node),
-            len(inputs.stats.in_neighbors.get(node, ())),
-            len(inputs.stats.out_neighbors.get(node, ())),
-            inputs.stats.in_counts.get(node, 0),
-            inputs.stats.out_counts.get(node, 0),
-            inputs.centrality["pagerank"].get(node),
-            inputs.centrality["betweenness"].get(node),
-            inputs.centrality["closeness"].get(node),
-            inputs.components.in_cycle.get(node, False),
-            inputs.components.scc_id.get(node),
-            inputs.components.layer.get(node),
-            inputs.created_at.isoformat(),
+        FunctionGraphMetricsRow(
+            repo=inputs.cfg.repo,
+            commit=inputs.cfg.commit,
+            function_goid_h128=int(node),
+            call_fan_in=len(inputs.stats.in_neighbors.get(node, ())),
+            call_fan_out=len(inputs.stats.out_neighbors.get(node, ())),
+            call_in_degree=inputs.stats.in_counts.get(node, 0),
+            call_out_degree=inputs.stats.out_counts.get(node, 0),
+            call_pagerank=inputs.centrality["pagerank"].get(node),
+            call_betweenness=inputs.centrality["betweenness"].get(node),
+            call_closeness=inputs.centrality["closeness"].get(node),
+            call_cycle_member=inputs.components.in_cycle.get(node, False),
+            call_cycle_id=inputs.components.scc_id.get(node),
+            call_layer=inputs.components.layer.get(node),
+            created_at=inputs.created_at,
         )
         for node in inputs.graph_nodes
     ]
@@ -254,7 +223,7 @@ def load_symbol_module_edges(
 
 def build_module_graph_metric_rows(
     inputs: ModuleGraphMetricInputs,
-) -> list[ModuleMetricRow]:
+) -> list[ModuleGraphMetricsRow]:
     """
     Construct rows for analytics.graph_metrics_modules.
 
@@ -265,35 +234,35 @@ def build_module_graph_metric_rows(
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Row tuples ready for graph_metrics_modules insertion.
+    list[ModuleGraphMetricsRow]
+        Row dicts ready for graph_metrics_modules insertion.
     """
     return [
-        (
-            inputs.cfg.repo,
-            inputs.cfg.commit,
-            module,
-            len(inputs.import_stats.in_neighbors.get(module, ())),
-            len(inputs.import_stats.out_neighbors.get(module, ())),
-            inputs.import_stats.in_counts.get(module, 0),
-            inputs.import_stats.out_counts.get(module, 0),
-            inputs.centrality["pagerank"].get(module),
-            inputs.centrality["betweenness"].get(module),
-            inputs.centrality["closeness"].get(module),
-            bool(inputs.component_meta["in_cycle"].get(module, False)),
-            (
+        ModuleGraphMetricsRow(
+            repo=inputs.cfg.repo,
+            commit=inputs.cfg.commit,
+            module=module,
+            import_fan_in=len(inputs.import_stats.in_neighbors.get(module, ())),
+            import_fan_out=len(inputs.import_stats.out_neighbors.get(module, ())),
+            import_in_degree=inputs.import_stats.in_counts.get(module, 0),
+            import_out_degree=inputs.import_stats.out_counts.get(module, 0),
+            import_pagerank=inputs.centrality["pagerank"].get(module),
+            import_betweenness=inputs.centrality["betweenness"].get(module),
+            import_closeness=inputs.centrality["closeness"].get(module),
+            import_cycle_member=bool(inputs.component_meta["in_cycle"].get(module, False)),
+            import_cycle_id=(
                 int(component_id)
                 if (component_id := inputs.component_meta["component_id"].get(module)) is not None
                 else None
             ),
-            (
+            import_layer=(
                 int(layer_val)
                 if (layer_val := inputs.component_meta["layer"].get(module)) is not None
                 else None
             ),
-            len(inputs.symbol_inbound.get(module, ())),
-            len(inputs.symbol_outbound.get(module, ())),
-            inputs.created_at.isoformat(),
+            symbol_fan_in=len(inputs.symbol_inbound.get(module, ())),
+            symbol_fan_out=len(inputs.symbol_outbound.get(module, ())),
+            created_at=inputs.created_at,
         )
         for module in sorted(inputs.modules)
     ]

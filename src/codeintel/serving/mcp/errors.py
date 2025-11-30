@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codeintel.serving.mcp.models import ProblemDetail
+from codeintel.serving.mcp.models import ProblemDetail as ProblemDetailModel
+from codeintel.serving.services.errors import ProblemDetail as DomainProblemDetail
 
 
 @dataclass
 class McpError(Exception):
-    """Base MCP error carrying a ProblemDetail payload."""
+    """Base MCP error carrying a domain ProblemDetail payload."""
 
-    detail: ProblemDetail
+    detail: DomainProblemDetail
 
     def __str__(self) -> str:
         """
@@ -22,7 +23,7 @@ class McpError(Exception):
         str
             Concise representation of the problem.
         """
-        return f"{self.detail.title}: {self.detail.detail or ''}".strip()
+        return self.detail.detail or self.detail.title
 
 
 def invalid_argument(message: str) -> McpError:
@@ -35,11 +36,12 @@ def invalid_argument(message: str) -> McpError:
         Error wrapping a ProblemDetail payload.
     """
     return McpError(
-        detail=ProblemDetail(
-            type="https://example.com/problems/invalid-argument",
+        detail=DomainProblemDetail(
+            type="https://codeintel/problems/invalid-argument",
             title="Invalid argument",
             detail=message,
             status=400,
+            code="invalid-argument",
         )
     )
 
@@ -54,11 +56,12 @@ def not_found(message: str) -> McpError:
         Error wrapping a ProblemDetail payload.
     """
     return McpError(
-        detail=ProblemDetail(
-            type="https://example.com/problems/not-found",
+        detail=DomainProblemDetail(
+            type="https://codeintel/problems/not-found",
             title="Not found",
             detail=message,
             status=404,
+            code="not-found",
         )
     )
 
@@ -73,10 +76,14 @@ def backend_failure(message: str) -> McpError:
         Error wrapping a ProblemDetail payload.
     """
     return McpError(
-        detail=ProblemDetail(
-            type="https://example.com/problems/backend-failure",
+        detail=DomainProblemDetail(
+            type="https://codeintel/problems/backend-failure",
             title="Backend failure",
             detail=message,
             status=500,
+            code="backend-failure",
         )
     )
+
+
+__all__ = ["McpError", "backend_failure", "invalid_argument", "not_found", "ProblemDetailModel"]

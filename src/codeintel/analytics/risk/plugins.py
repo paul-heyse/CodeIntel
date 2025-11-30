@@ -152,9 +152,9 @@ def _risk_factors_run(ctx: AnalyticsExecutionContext) -> object | None:
             SELECT
                 function_goid_h128,
                 COUNT(*) AS test_count,
-                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failing_test_count,
-                any_value(status IGNORE NULLS) AS last_test_status
-            FROM coverage.test_edges
+                SUM(CASE WHEN last_status = 'failed' THEN 1 ELSE 0 END) AS failing_test_count,
+                any_value(last_status) AS last_test_status
+            FROM analytics.test_coverage_edges
             WHERE repo = ? AND commit = ?
             GROUP BY function_goid_h128
         ) t_stats
@@ -169,6 +169,19 @@ def _risk_factors_run(ctx: AnalyticsExecutionContext) -> object | None:
         "DELETE FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?",
         [ctx.repo, ctx.commit],
     )
+    if not use_catalog_modules:
+        con.execute(
+            """
+            CREATE OR REPLACE TEMP TABLE temp.catalog_modules (
+                path VARCHAR,
+                module VARCHAR,
+                repo VARCHAR,
+                commit VARCHAR,
+                tags JSON,
+                owners JSON
+            )
+            """
+        )
     con.execute(risk_sql, [ctx.repo, ctx.commit])
 
     if use_catalog_modules:

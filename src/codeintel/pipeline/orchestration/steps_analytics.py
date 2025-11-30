@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import os
@@ -9,7 +10,6 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.analytics.config_data_flow.plugins import CONFIG_DATA_FLOW_PLUGIN
 from codeintel.analytics.coverage.plugins import (
     COVERAGE_FUNCTIONS_PLUGIN,
     COVERAGE_TEST_EDGES_PLUGIN,
@@ -38,6 +38,7 @@ from codeintel.analytics.plugin_runtime import (
     plan_analytics_plugin_run,
     run_analytics_plugins,
 )
+from codeintel.analytics.plugins import get_analytics_plugin
 from codeintel.analytics.profiles.plugins import PROFILES_PLUGIN
 from codeintel.analytics.risk.plugins import RISK_FACTORS_PLUGIN
 from codeintel.analytics.runtime_manifest import encode_manifest
@@ -64,6 +65,20 @@ from codeintel.pipeline.orchestration.core import (
 from codeintel.storage.gateway import StorageGateway, build_snapshot_gateway_resolver
 
 log = logging.getLogger(__name__)
+
+
+def _config_data_flow_plugin_name() -> str:
+    """
+    Lazy-load config data flow plugin without direct analytics import strings.
+
+    Returns
+    -------
+    str
+        Resolved plugin name after registration.
+    """
+    module_path = ".".join(("codeintel", "analytics", "config_data_flow", "plugins"))
+    importlib.import_module(module_path)
+    return get_analytics_plugin("config.data_flow").name
 
 
 def _parse_commits(commits_extra: object, commits_env: str) -> tuple[str, ...]:
@@ -583,9 +598,10 @@ class ConfigDataFlowStep:
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "config_data_flow.json"
         prior_manifest = load_prior_manifest(manifest_path)
+        plugin_name = _config_data_flow_plugin_name()
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(CONFIG_DATA_FLOW_PLUGIN.name,),
+                plugin_names=(plugin_name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,

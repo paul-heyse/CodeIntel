@@ -67,7 +67,11 @@ def build_subsystem_router() -> APIRouter:
         Router exposing subsystem docs views and membership helpers.
     """
     router = APIRouter()
-    specs, paths = _load_subsystem_specs()
+    try:
+        specs, paths = _load_subsystem_specs()
+    except ValueError as exc:
+        message = "Failed to load subsystem OperationSpec entries"
+        raise ValueError(message) from exc
     spec_list = specs["subsystems.list"]
     spec_profiles = specs["subsystems.profiles"]
     spec_coverage = specs["subsystems.coverage"]
