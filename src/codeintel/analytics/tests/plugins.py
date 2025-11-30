@@ -13,25 +13,36 @@ from codeintel.config.steps_analytics import BehavioralCoverageStepConfig, TestP
 
 
 def _test_profile_run(ctx: AnalyticsExecutionContext) -> dict[str, int]:
-    """Bridge from generic context to build_test_profile."""
+    """
+    Bridge from generic context to build_test_profile.
+
+    Returns
+    -------
+    dict[str, int]
+        Row count summary for test_profile.
+
+    Raises
+    ------
+    ValueError
+        If the test profile config is missing from the execution context.
+    """
     if ctx.test_profile_cfg is None:
-        message = (
-            "TestProfileStepConfig is required in AnalyticsExecutionContext.test_profile_cfg"
-        )
+        message = "TestProfileStepConfig is required in AnalyticsExecutionContext.test_profile_cfg"
         raise ValueError(message)
 
     cfg: TestProfileStepConfig = ctx.test_profile_cfg
     gateway = ctx.gateway
     build_test_profile(gateway, cfg)
     con = gateway.con
-    (row_count,) = con.execute(
+    row = con.execute(
         """
         SELECT COUNT(*) FROM analytics.test_profile
         WHERE repo = ? AND commit = ?
         """,
         [cfg.repo, cfg.commit],
     ).fetchone()
-    return {"profile_rows": int(row_count)}
+    row_count = int(row[0]) if row else 0
+    return {"profile_rows": row_count}
 
 
 TEST_PROFILE_PLUGIN = AnalyticsPlugin(
@@ -57,7 +68,21 @@ TEST_PROFILE_PLUGIN = AnalyticsPlugin(
 
 
 def _behavioral_coverage_run(ctx: AnalyticsExecutionContext) -> dict[str, int]:
-    """Bridge from generic context to build_behavioral_coverage."""
+    """
+    Bridge from generic context to build_behavioral_coverage.
+
+    Returns
+    -------
+    dict[str, int]
+        Row count summary for behavioral coverage.
+
+    Raises
+    ------
+    ValueError
+        If the behavioral coverage config is missing.
+    TypeError
+        If the provided llm runner is not callable.
+    """
     if ctx.behavioral_cfg is None:
         message = (
             "BehavioralCoverageStepConfig is required in AnalyticsExecutionContext.behavioral_cfg"
@@ -79,14 +104,15 @@ def _behavioral_coverage_run(ctx: AnalyticsExecutionContext) -> dict[str, int]:
     )
 
     con = gateway.con
-    (row_count,) = con.execute(
+    row = con.execute(
         """
         SELECT COUNT(*) FROM analytics.behavioral_coverage
         WHERE repo = ? AND commit = ?
         """,
         [cfg.repo, cfg.commit],
     ).fetchone()
-    return {"behavior_rows": int(row_count)}
+    row_count = int(row[0]) if row else 0
+    return {"behavior_rows": row_count}
 
 
 BEHAVIORAL_COVERAGE_PLUGIN = AnalyticsPlugin(

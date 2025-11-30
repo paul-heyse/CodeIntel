@@ -13,7 +13,9 @@ from codeintel.analytics.plugins import (
 
 def _function_history_run(ctx: AnalyticsExecutionContext) -> object | None:
     if ctx.function_history_cfg is None:
-        message = "FunctionHistoryStepConfig required in AnalyticsExecutionContext.function_history_cfg"
+        message = (
+            "FunctionHistoryStepConfig required in AnalyticsExecutionContext.function_history_cfg"
+        )
         raise ValueError(message)
     compute_function_history(
         ctx.gateway,

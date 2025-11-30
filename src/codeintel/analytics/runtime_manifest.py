@@ -110,10 +110,7 @@ def encode_manifest(report: AnalyticsRunReport) -> dict[str, object]:
             "labels": dict(report.scope.labels),
         },
         "tags": dict(report.tags),
-        "records": [
-            _encode_record(record)
-            for record in report.records
-        ],
+        "records": [_encode_record(record) for record in report.records],
     }
 
 

@@ -171,8 +171,10 @@ class SubsystemQueryApi(Protocol):
         """Return IDE hints for a file."""
         ...
 
-    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
-        """Return a subsystem with member modules."""
+    def get_subsystem_modules(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
+        """Return a subsystem with member modules and an optional limit."""
         ...
 
     def search_subsystems(

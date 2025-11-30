@@ -134,6 +134,7 @@ class PipelineContext:
     export_datasets: tuple[str, ...] | None = None
     export_validation_profile: Literal["strict", "lenient"] | None = None
     force_full_export: bool = False
+    run_id: str = ""
 
     @property
     def document_output_dir(self) -> Path:

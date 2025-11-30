@@ -1036,7 +1036,9 @@ class DuckDBQueryService:
             meta=ResponseMeta(),
         )
 
-    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+    def get_subsystem_modules(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
         """
         Return subsystem details and module memberships.
 
@@ -1064,10 +1066,13 @@ class DuckDBQueryService:
                     ]
                 ),
             )
+        limited_modules = (
+            modules[:module_limit] if module_limit is not None else list(modules)
+        )
         return SubsystemModulesResponse(
             found=True,
             subsystem=SubsystemSummaryRow.model_validate(subsystem_row),
-            modules=[ModuleWithSubsystemRow.model_validate(r) for r in modules],
+            modules=[ModuleWithSubsystemRow.model_validate(r) for r in limited_modules],
             meta=ResponseMeta(),
         )
 
@@ -1096,17 +1101,9 @@ class DuckDBQueryService:
         SubsystemModulesResponse
             Subsystem detail payload, optionally with a limited module list.
         """
-        detail = self.get_subsystem_modules(subsystem_id=subsystem_id)
-        if not detail.found or detail.subsystem is None:
-            return detail
-        if module_limit is None:
-            return detail
-        limited_modules = detail.modules[:module_limit]
-        return SubsystemModulesResponse(
-            found=detail.found,
-            subsystem=detail.subsystem,
-            modules=limited_modules,
-            meta=detail.meta,
+        return self.get_subsystem_modules(
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
         )
 
     def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:

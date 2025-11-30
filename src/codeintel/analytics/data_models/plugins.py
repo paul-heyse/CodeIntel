@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.analytics.data_models import compute_data_models
 from codeintel.analytics.data_model_usage import compute_data_model_usage
+from codeintel.analytics.data_models import compute_data_models
 from codeintel.analytics.plugins import (
     AnalyticsExecutionContext,
     AnalyticsPlugin,

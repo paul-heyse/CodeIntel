@@ -8,7 +8,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -766,30 +766,38 @@ register_graph_metric_plugin(
 
 
 def graph_metric_plugin_to_analytics(plugin: GraphMetricPlugin) -> AnalyticsPlugin:
-    """Wrap a GraphMetricPlugin as a generic AnalyticsPlugin."""
+    """
+    Wrap a GraphMetricPlugin as a generic AnalyticsPlugin.
 
-    def context_factory(ctx: AnalyticsExecutionContext) -> GraphMetricExecutionContext:
+    Returns
+    -------
+    AnalyticsPlugin
+        Analytics-compatible wrapper preserving runtime hints and contracts.
+    """
+
+    def context_factory(ctx: AnalyticsExecutionContext) -> AnalyticsExecutionContext:
         if ctx.graph_runtime is None:
             message = "Graph runtime required for graph analytics plugin execution"
             raise ValueError(message)
         scratch = (
-            ctx.scratch
-            if isinstance(ctx.scratch, GraphRuntimeScratch)
-            else GraphRuntimeScratch()
+            ctx.scratch if isinstance(ctx.scratch, GraphRuntimeScratch) else GraphRuntimeScratch()
         )
-        return GraphMetricExecutionContext(
-            gateway=ctx.gateway,
-            runtime=ctx.graph_runtime,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            config=ctx.graph_cfg,
-            analytics_context=ctx.analytics_context,
-            catalog_provider=ctx.catalog_provider,
-            options=ctx.options,
-            plugin_name=plugin.name,
-            run_id=ctx.run_id,
-            scope=ctx.scope,
-            scratch=scratch,
+        return cast(
+            "AnalyticsExecutionContext",
+            GraphMetricExecutionContext(
+                gateway=ctx.gateway,
+                runtime=ctx.graph_runtime,
+                repo=ctx.repo,
+                commit=ctx.commit,
+                config=ctx.graph_cfg,
+                analytics_context=ctx.analytics_context,
+                catalog_provider=ctx.catalog_provider,
+                options=ctx.options,
+                plugin_name=plugin.name,
+                run_id=ctx.run_id,
+                scope=ctx.scope,
+                scratch=scratch,
+            ),
         )
 
     hints = None
@@ -815,21 +823,19 @@ def graph_metric_plugin_to_analytics(plugin: GraphMetricPlugin) -> AnalyticsPlug
         version_hash=plugin.version_hash,
         row_count_tables=plugin.row_count_tables,
         contract_checkers=plugin.contract_checkers,
+        requires_isolation=plugin.requires_isolation,
+        isolation_kind=plugin.isolation_kind,
         context_factory=context_factory,
     )
 
 
-_ANALYTICS_REGISTRATION_DONE = False
-
-
 def _register_graph_plugins_as_analytics() -> None:
     """Register all graph metric plugins in the analytics registry."""
-    global _ANALYTICS_REGISTRATION_DONE
-    if _ANALYTICS_REGISTRATION_DONE:
+    if getattr(_register_graph_plugins_as_analytics, "done", False):
         return
     for plugin in list_graph_metric_plugins():
         register_analytics_plugin(graph_metric_plugin_to_analytics(plugin))
-    _ANALYTICS_REGISTRATION_DONE = True
+    _register_graph_plugins_as_analytics.done = True  # type: ignore[attr-defined]
 
 
 def _plugin_graph_metrics_modules_ext(
@@ -1106,7 +1112,9 @@ def _plugin_subsystem_agreement(ctx: GraphMetricExecutionContext) -> GraphPlugin
         repo=ctx.repo,
         commit=ctx.commit,
     )
-    return GraphPluginResult(row_counts=_row_counts_for_tables(ctx, ("analytics.subsystem_agreement",)))
+    return GraphPluginResult(
+        row_counts=_row_counts_for_tables(ctx, ("analytics.subsystem_agreement",))
+    )
 
 
 register_graph_metric_plugin(

@@ -1,1046 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="27" skipped="3" tests="477" time="64.561" timestamp="2025-11-29T20:24:10.956782-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_soft_fail_severity_continues" time="0.682"><failure message="KeyError: 'Unknown analytics plugin: soft_fail_plugin'">name = 'soft_fail_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'soft_fail_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-    def test_soft_fail_severity_continues() -&gt; None:
-        """Soft failures should not stop subsequent plugins."""
-        attempts: list[int] = []
-    
-        def _fails(_ctx: object) -&gt; None:
-            attempts.append(1)
-            message = "boom"
-            raise RuntimeError(message)
-    
-        ran_success: list[int] = []
-    
-        def _succeeds(_ctx: object) -&gt; None:
-            ran_success.append(1)
-    
-        failing = GraphMetricPlugin(
-            name="soft_fail_plugin",
-            description="fails softly",
-            stage="core",
-            enabled_by_default=False,
-            run=_fails,
-            severity="soft_fail",
-        )
-        succeeding = GraphMetricPlugin(
-            name="after_soft_fail",
-            description="runs after soft failure",
-            stage="core",
-            enabled_by_default=False,
-            run=_succeeds,
-        )
-    
-        register_graph_metric_plugin(failing)
-        register_graph_metric_plugin(succeeding)
-        service, cfg = _make_service()
-        try:
-&gt;           report = service.run_plugins(
-                ("soft_fail_plugin", "after_soft_fail"),
-                cfg=cfg,
-            )
-
-tests/analytics/test_graph_plugin_policy_runtime.py:97: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'soft_fail_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: soft_fail_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_evidence" name="test_evidence_collector_deduplicates_and_truncates" time="0.001" /><testcase classname="tests.analytics.test_graph_metric_filters" name="test_filter_import_graph_noop_without_modules" time="0.001" /><testcase classname="tests.analytics.test_function_profile_contract" name="test_file_profile_writer_registry_and_prepared_statements" time="0.001" /><testcase classname="tests.analytics.test_graph_features" name="test_summarize_graph_for_function_profile_contract" time="0.018" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_component_metadata_cycles_and_layers" time="0.002" /><testcase classname="tests.analytics.test_cli_parser" name="test_function_parser_default_none" time="0.007" /><testcase classname="tests.analytics.test_function_metrics_plugin_runtime" name="test_function_metrics_plugin_executes" time="2.526" /><testcase classname="tests.analytics.test_graph_runtime_planning" name="test_plan_graph_plugin_run_resolves_scope_and_hashes" time="0.001" /><testcase classname="tests.analytics.test_evidence" name="test_validate_evidence_samples_rejects_invalid_payloads" time="0.000" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_provisioned_gateway_round_trip" time="3.744" /><testcase classname="tests.analytics.test_graph_metrics_calculations" name="test_graph_metrics_ready_gateway_smoke" time="2.886" /><testcase classname="tests.analytics.test_graph_metric_filters" name="test_build_filters_safe_when_repos_empty" time="0.698" /><testcase classname="tests.analytics.test_function_profile_contract" name="test_module_profile_writer_registry_and_prepared_statements" time="0.000" /><testcase classname="tests.analytics.test_function_profile_contract" name="test_test_profile_writer_registry_and_prepared_statements" time="0.000" /><testcase classname="tests.analytics.test_function_profile_contract" name="test_behavioral_coverage_writer_registry_and_prepared_statements" time="0.000" /><testcase classname="tests.analytics.test_graph_runtime_cache" name="test_disk_cache_round_trip" time="0.003" /><testcase classname="tests.analytics.test_graph_runtime_cache" name="test_disk_cache_mismatch_falls_back_to_loader" time="0.001" /><testcase classname="tests.analytics.test_graph_runtime_context" name="test_build_graph_context_applies_caps" time="0.000" /><testcase classname="tests.analytics.test_graph_runtime_context" name="test_resolve_graph_context_normalizes_spec" time="0.000" /><testcase classname="tests.analytics.test_graph_runtime_execution" name="test_run_graph_plugin_batch_executes_plugin" time="0.667" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_projection_metrics_basic" time="0.002" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_structural_metrics_triangle_and_core" time="0.051" /><testcase classname="tests.analytics.test_dependencies_config_values" name="test_load_config_keys_filters_repo" time="4.070" /><testcase classname="tests.analytics.test_graph_service_runtime" name="test_graph_service_runtime_runs_default_plugins" time="4.627" /><testcase classname="tests.analytics.test_graph_runtime_manifest" name="test_load_prior_manifest_merges_meta" time="0.002" /><testcase classname="tests.analytics.test_graph_runtime_manifest" name="test_is_unchanged_matches_hashes_without_row_counts" time="0.000" /><testcase classname="tests.analytics.test_graph_runtime_perf" name="test_ensure_call_graph_is_fast" time="0.001" /><testcase classname="tests.analytics.test_graph_runtime_perf" name="test_ensure_call_graph_medium_perf" time="0.002" /><testcase classname="tests.analytics.test_graph_runtime_perf" name="test_structural_metrics_with_cap_is_fast" time="0.160" /><testcase classname="tests.analytics.test_graph_manifest_skip" name="test_skip_on_unchanged_reads_manifest" time="0.661"><failure message="KeyError: 'Unknown analytics plugin: noop_plugin'">name = 'noop_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'noop_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw7/test_skip_on_unchanged_reads_m0')
-snapshot_repo_commit = ('demo/repo', 'deadbeef', SnapshotRef(repo='demo/repo', commit='deadbeef', repo_root=PosixPath('/home/paul/CodeIntel'), branch=None))
-
-    def test_skip_on_unchanged_reads_manifest(
-        tmp_path: Path, snapshot_repo_commit: tuple[str, str, SnapshotRef]
-    ) -&gt; None:
-        """Skip-on-unchanged should skip a plugin when manifest matches input hash."""
-        _, _, snapshot = snapshot_repo_commit
-        plugin_name = "noop_plugin"
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=plugin_name,
-                description="noop",
-                stage="core",
-                enabled_by_default=False,
-                run=lambda _ctx: None,
-                version_hash="v1",
-            )
-        )
-        service = _build_service(snapshot)
-        cfg = GraphMetricsStepConfig(
-            snapshot=snapshot,
-            enabled_plugins=(plugin_name,),
-            plugin_policy=GraphPluginPolicy(skip_on_unchanged=True),
-        )
-        manifest_path = tmp_path / "manifest.json"
-        # First run writes manifest
-&gt;       first_report = service.run_plugins(
-            (plugin_name,),
-            cfg=cfg,
-            run_options=GraphPluginRunOptions(manifest_path=manifest_path),
-        )
-
-tests/analytics/test_graph_manifest_skip.py:68: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'noop_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: noop_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_service_unit" name="test_global_graph_stats_triangle" time="0.003" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_bipartite_degrees_weight_and_centrality" time="0.001" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_bounded_simple_path_count_caps_results" time="0.001" /><testcase classname="tests.analytics.test_graph_stats_smoke" name="test_graph_stats_records_counts_for_basic_graphs" time="1.045" /><testcase classname="tests.analytics.test_graph_runtime_perf" name="test_filter_subgraph_on_large_graph_is_fast" time="0.005" /><testcase classname="tests.analytics.test_graph_runtime_perf" name="test_graph_metric_filters_on_runtime_are_fast" time="0.006" /><testcase classname="tests.analytics.test_graph_runtime_execution" name="test_run_graph_plugin_batch_skips_when_unchanged" time="0.652" /><testcase classname="tests.analytics.test_graph_metric_filters" name="test_filter_subsystem_memberships_respects_allowlists" time="0.000" /><testcase classname="tests.analytics.test_graph_metric_filters" name="test_filter_subsystem_graph_prunes_nodes" time="0.001" /><testcase classname="tests.analytics.test_graph_metric_filters_integration" name="test_filters_prune_architecture_metrics" time="4.039" /><testcase classname="tests.analytics.test_graph_manifest_skip" name="test_dry_run_skips_execution" time="0.639"><failure message="KeyError: 'Unknown analytics plugin: dry_run_plugin'">name = 'dry_run_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'dry_run_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw7/test_dry_run_skips_execution0')
-snapshot_repo_commit = ('demo/repo', 'deadbeef', SnapshotRef(repo='demo/repo', commit='deadbeef', repo_root=PosixPath('/home/paul/CodeIntel'), branch=None))
-
-    def test_dry_run_skips_execution(
-        tmp_path: Path, snapshot_repo_commit: tuple[str, str, SnapshotRef]
-    ) -&gt; None:
-        """Dry-run should not execute plugins and mark status skipped."""
-        _, _, snapshot = snapshot_repo_commit
-        plugin_name = "dry_run_plugin"
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=plugin_name,
-                description="noop",
-                stage="core",
-                enabled_by_default=False,
-                run=lambda _ctx: (_ for _ in ()).throw(RuntimeError("should not run")),
-                version_hash="v1",
-            )
-        )
-        service = _build_service(snapshot)
-        cfg = GraphMetricsStepConfig(
-            snapshot=snapshot,
-            enabled_plugins=(plugin_name,),
-            plugin_policy=GraphPluginPolicy(dry_run=True),
-        )
-        manifest_path = tmp_path / "manifest.json"
-&gt;       report = service.run_plugins(
-            (plugin_name,),
-            cfg=cfg,
-            run_options=GraphPluginRunOptions(manifest_path=manifest_path),
-        )
-
-tests/analytics/test_graph_manifest_skip.py:110: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'dry_run_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: dry_run_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_retry_policy_allows_retries" time="0.648"><failure message="KeyError: 'Unknown analytics plugin: retry_plugin'">name = 'retry_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'retry_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-    def test_retry_policy_allows_retries() -&gt; None:
-        """Plugins should honor retry policy before surfacing failure."""
-        call_count = {"n": 0}
-    
-        def _flaky(_ctx: object) -&gt; None:
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                message = "transient"
-                raise RuntimeError(message)
-    
-        plugin_name = "retry_plugin"
-        plugin = GraphMetricPlugin(
-            name=plugin_name,
-            description="flaky plugin",
-            stage="core",
-            enabled_by_default=False,
-            run=_flaky,
-        )
-        register_graph_metric_plugin(plugin)
-        service, cfg = _make_service()
-        cfg = GraphMetricsStepConfig(
-            snapshot=cfg.snapshot,
-            plugin_policy=GraphPluginPolicy(
-                retries={
-                    plugin_name: GraphPluginRetryPolicy(max_attempts=RETRY_ATTEMPTS, backoff_ms=0)
-                },
-            ),
-        )
-        try:
-&gt;           report = service.run_plugins((plugin_name,), cfg=cfg)
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-tests/analytics/test_graph_plugin_policy_runtime.py:178: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'retry_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: retry_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_typer_cli_detected" time="0.001" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_pytest_fixture_vs_test_role" time="0.001" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_service_tag_and_graph_signal" time="0.001" /><testcase classname="tests.analytics.test_span_resolver" name="test_build_span_index_skips_missing_goids" time="0.001" /><testcase classname="tests.analytics.test_span_resolver" name="test_resolve_span_success" time="0.001" /><testcase classname="tests.analytics.test_span_resolver" name="test_resolve_span_missing" time="0.000" /><testcase classname="tests.analytics.test_tests_profiles_coverage_inputs" name="test_aggregate_test_coverage_by_function_in_memory" time="0.014" /><testcase classname="tests.analytics.test_tests_profiles_coverage_inputs" name="test_aggregate_test_coverage_by_subsystem_in_memory" time="0.013" /><testcase classname="tests.analytics.test_tests_profiles_helpers" name="test_importance_guardrails_and_monotonicity" time="0.001" /><testcase classname="tests.analytics.test_tests_profiles_helpers" name="test_build_test_profile_rows_round_trip" time="0.001" /><testcase classname="tests.analytics.test_tests_profiles_helpers" name="test_build_behavioral_coverage_rows_normalization" time="0.000" /><testcase classname="tests.analytics.test_tests_profiles_helpers" name="test_build_behavior_rows_mixed_sources" time="0.000" /><testcase classname="tests.analytics.test_tests_profiles_helpers" name="test_write_test_profile_rows_with_stubs" time="0.000" /><testcase classname="tests.analytics.test_tests_profiles_registry_and_snapshots" name="test_test_profile_model_snapshot" time="0.001" /><testcase classname="tests.analytics.test_tests_profiles_registry_and_snapshots" name="test_behavioral_writer_registry_guard" time="0.000" /><testcase classname="tests.analytics.test_tests_profiles_wrappers" name="test_coverage_wrappers_empty" time="0.009" /><testcase classname="tests.analytics.test_tests_profiles_wrappers" name="test_importance_and_flakiness_scoring" time="0.000" /><testcase classname="tests.analytics.test_tests_profiles_wrappers" name="test_infer_behavior_tags_basic" time="0.000" /><testcase classname="tests.analytics.test_writer_guard" name="test_writer_guard_happy_path_executes_delete_and_insert" time="0.000" /><testcase classname="tests.analytics.test_writer_guard" name="test_writer_guard_empty_rows[True-1]" time="0.000" /><testcase classname="tests.analytics.test_writer_guard" name="test_writer_guard_empty_rows[False-0]" time="0.000" /><testcase classname="tests.analytics.test_writer_guard" name="test_writer_guard_registry_mismatch_raises" time="0.000" /><testcase classname="tests.analytics.test_writer_guard" name="test_writer_guard_registry_columns_drift_raises" time="0.000" /><testcase classname="tests.analytics.test_writer_guard" name="test_writer_guard_respects_custom_delete_sql" time="0.000" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.functions-expected0]" time="0.001" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.graphs-expected1]" time="0.001" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.history-expected2]" time="0.001" /><testcase classname="tests.architecture.test_analytics_exports" name="test_domain_exports[codeintel.analytics.parsing-expected3]" time="0.000" /><testcase classname="tests.architecture.test_analytics_graph_boundary" name="test_analytics_modules_do_not_import_nx_views" time="0.002" /><testcase classname="tests.architecture.test_analytics_imports" name="test_external_imports_use_domain_apis" time="0.008" /><testcase classname="tests.architecture.test_duckdb_boundaries" name="test_duckdb_usage_is_localized" time="0.006" /><testcase classname="tests.architecture.test_export_macro_paths" name="test_exporters_avoid_direct_table_reads" time="0.000" /><testcase classname="tests.architecture.test_graph_engine_entrypoints" name="test_build_graph_engine_entrypoints_are_restricted" time="0.012" /><testcase classname="tests.architecture.test_nx_views_boundary" name="test_nx_views_only_used_in_graphs_layer" time="0.005" /><testcase classname="tests.architecture.test_query_layer_boundaries" name="test_adapters_do_not_embed_sql" time="0.001" /><testcase classname="tests.cli.test_cli_scope_and_plan" name="test_cli_plan_outputs_isolation_and_scope_metadata" time="0.008" /><testcase classname="tests.cli.test_cli_scope_and_plan" name="test_cli_plugins_json_includes_enriched_metadata" time="0.006" /><testcase classname="tests.cli.test_docs_export_cli" name="test_cmd_docs_export_invokes_validator_before_exports" time="4.827" /><testcase classname="tests.analytics.test_graph_runtime_manifest" name="test_compute_input_hash_includes_scope_and_options" time="0.000" /><testcase classname="tests.analytics.test_graph_manifest_skip" name="test_manifest_records_contract_results" time="0.621"><failure message="KeyError: 'Unknown analytics plugin: contract_manifest_plugin'">name = 'contract_manifest_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'contract_manifest_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw7/test_manifest_records_contract0')
-snapshot_repo_commit = ('demo/repo', 'deadbeef', SnapshotRef(repo='demo/repo', commit='deadbeef', repo_root=PosixPath('/home/paul/CodeIntel'), branch=None))
-
-    def test_manifest_records_contract_results(
-        tmp_path: Path, snapshot_repo_commit: tuple[str, str, SnapshotRef]
-    ) -&gt; None:
-        """Manifest should include contract result entries."""
-        _, _, snapshot = snapshot_repo_commit
-        plugin_name = "contract_manifest_plugin"
-        checker = lambda _ctx: PluginContractResult(name="demo_contract", status="passed")  # noqa: E731
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=plugin_name,
-                description="contract manifest",
-                stage="core",
-                enabled_by_default=False,
-                run=lambda _ctx: None,
-                contract_checkers=(checker,),
-            )
-        )
-        service = _build_service(snapshot)
-        cfg = GraphMetricsStepConfig(snapshot=snapshot, enabled_plugins=(plugin_name,))
-        manifest_path = tmp_path / "manifest.json"
-        try:
-&gt;           report = service.run_plugins(
-                (plugin_name,),
-                cfg=cfg,
-                run_options=GraphPluginRunOptions(manifest_path=manifest_path),
-            )
-
-tests/analytics/test_graph_manifest_skip.py:146: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'contract_manifest_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: contract_manifest_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_timeout_marks_partial_and_continues" time="0.628"><failure message="KeyError: 'Unknown analytics plugin: timeout_plugin'">name = 'timeout_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'timeout_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-    def test_timeout_marks_partial_and_continues() -&gt; None:
-        """Timeouts should mark partial failure but allow downstream plugins."""
-    
-        def _slow(_ctx: object) -&gt; None:
-            time.sleep(0.1)
-    
-        ran_second: list[int] = []
-    
-        def _fast(_ctx: object) -&gt; None:
-            ran_second.append(1)
-    
-        slow_name = "timeout_plugin"
-        fast_name = "next_plugin"
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=slow_name,
-                description="times out",
-                stage="core",
-                enabled_by_default=False,
-                run=_slow,
-                severity="soft_fail",
-            )
-        )
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=fast_name,
-                description="runs after timeout",
-                stage="core",
-                enabled_by_default=False,
-                run=_fast,
-            )
-        )
-        service, cfg = _make_service()
-        cfg = GraphMetricsStepConfig(
-            snapshot=cfg.snapshot,
-            plugin_policy=GraphPluginPolicy(
-                timeouts_ms={slow_name: TIMEOUT_MS},
-            ),
-        )
-        try:
-&gt;           report = service.run_plugins((slow_name, fast_name), cfg=cfg)
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-tests/analytics/test_graph_plugin_policy_runtime.py:228: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'timeout_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: timeout_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_dry_run_skips_execution" time="0.591"><failure message="KeyError: 'Unknown analytics plugin: harness_dry_run_plugin'">name = 'harness_dry_run_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'harness_dry_run_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x76fae4f77cb0&gt;
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw10/test_dry_run_skips_execution0')
-
-    def test_dry_run_skips_execution(plugin_harness: PluginTestHarness, tmp_path: Path) -&gt; None:
-        """Dry-run mode should skip execution and mark skipped reason."""
-        executed = False
-    
-        def dry_plugin(_ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
-            nonlocal executed
-            executed = True
-            return _simple_result()
-    
-        plugin = GraphMetricPlugin(
-            name="harness_dry_run_plugin",
-            description="dry run demo",
-            stage="core",
-            enabled_by_default=False,
-            run=dry_plugin,
-        )
-        plugin_harness.register(plugin)
-&gt;       report = plugin_harness.service.run_plugins(
-            (plugin.name,),
-            cfg=plugin_harness.cfg,
-            run_options=GraphPluginRunOptions(
-                dry_run=True,
-                manifest_path=tmp_path / "dry-run-manifest.json",
-            ),
-        )
-
-tests/analytics/test_plugin_scope_isolation.py:113: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'harness_dry_run_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: harness_dry_run_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_manifest_skip" name="test_manifest_records_scope" time="0.692"><failure message="KeyError: 'Unknown analytics plugin: scope_manifest_plugin'">name = 'scope_manifest_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'scope_manifest_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw7/test_manifest_records_scope0')
-snapshot_repo_commit = ('demo/repo', 'deadbeef', SnapshotRef(repo='demo/repo', commit='deadbeef', repo_root=PosixPath('/home/paul/CodeIntel'), branch=None))
-
-    def test_manifest_records_scope(
-        tmp_path: Path, snapshot_repo_commit: tuple[str, str, SnapshotRef]
-    ) -&gt; None:
-        """Manifest should include scopes used during execution."""
-        _, _, snapshot = snapshot_repo_commit
-        plugin_name = "scope_manifest_plugin"
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=plugin_name,
-                description="scope manifest",
-                stage="core",
-                enabled_by_default=False,
-                run=lambda _ctx: None,
-            )
-        )
-        scope = GraphRunScope(
-            paths=("a.py",),
-            modules=("mod.a",),
-            time_window=(datetime(2020, 1, 1, tzinfo=UTC), datetime(2020, 1, 2, tzinfo=UTC)),
-        )
-        cfg = GraphMetricsStepConfig(snapshot=snapshot, enabled_plugins=(plugin_name,), scope=scope)
-        service = _build_service(snapshot)
-        manifest_path = tmp_path / "manifest.json"
-        try:
-&gt;           service.run_plugins(
-                (plugin_name,),
-                cfg=cfg,
-                run_options=GraphPluginRunOptions(manifest_path=manifest_path),
-            )
-
-tests/analytics/test_graph_manifest_skip.py:188: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'scope_manifest_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: scope_manifest_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_contract_failure_marks_plugin_failed_and_continues" time="0.705"><failure message="KeyError: 'Unknown analytics plugin: contract_fail_plugin'">name = 'contract_fail_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'contract_fail_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-    def test_contract_failure_marks_plugin_failed_and_continues() -&gt; None:
-        """Contract failures should mark plugin failed but not halt when soft."""
-    
-        def _noop(_ctx: object) -&gt; None:
-            return None
-    
-        def _contract_fail(_ctx: object) -&gt; PluginContractResult:
-            return PluginContractResult(name="c1", status="failed", message="bad")
-    
-        ran_second: list[int] = []
-    
-        def _second(_ctx: object) -&gt; None:
-            ran_second.append(1)
-    
-        first_name = "contract_fail_plugin"
-        second_name = "after_contract_fail"
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=first_name,
-                description="contract fail",
-                stage="core",
-                enabled_by_default=False,
-                run=_noop,
-                contract_checkers=(_contract_fail,),
-                severity="soft_fail",
-            )
-        )
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=second_name,
-                description="runs after contract failure",
-                stage="core",
-                enabled_by_default=False,
-                run=_second,
-            )
-        )
-        service, cfg = _make_service()
-        try:
-&gt;           report = service.run_plugins((first_name, second_name), cfg=cfg)
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-tests/analytics/test_graph_plugin_policy_runtime.py:283: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'contract_fail_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: contract_fail_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_function_profile_contract" name="test_function_profile_tuple_alignment" time="0.000" /><testcase classname="tests.analytics.test_function_profile_contract" name="test_file_profile_tuple_alignment" time="0.000" /><testcase classname="tests.analytics.test_function_profile_contract" name="test_module_profile_tuple_alignment" time="0.000" /><testcase classname="tests.analytics.test_function_profile_contract" name="test_test_profile_tuple_alignment" time="0.001" /><testcase classname="tests.analytics.test_function_profile_contract" name="test_behavioral_coverage_tuple_alignment" time="0.001" /><testcase classname="tests.analytics.test_function_profile_contract" name="test_function_profile_writer_registry_and_prepared_statements" time="0.001" /><testcase classname="tests.cli.test_nx_backend" name="test_maybe_enable_nx_gpu_raises_when_strict" time="0.004" /><testcase classname="tests.cli.test_pipeline_cli" name="test_list_steps_text_output" time="0.008" /><testcase classname="tests.cli.test_pipeline_cli" name="test_list_steps_json_output" time="0.007" /><testcase classname="tests.cli.test_pipeline_cli" name="test_list_steps_filter_by_phase" time="0.007" /><testcase classname="tests.cli.test_pipeline_cli" name="test_list_steps_all_phases_valid[ingestion]" time="0.007" /><testcase classname="tests.cli.test_pipeline_cli" name="test_list_steps_all_phases_valid[graphs]" time="0.006" /><testcase classname="tests.cli.test_pipeline_cli" name="test_list_steps_all_phases_valid[analytics]" time="0.006" /><testcase classname="tests.cli.test_pipeline_cli" name="test_list_steps_all_phases_valid[export]" time="0.006" /><testcase classname="tests.cli.test_pipeline_cli" name="test_deps_text_output" time="0.007" /><testcase classname="tests.cli.test_pipeline_cli" name="test_deps_json_output" time="0.007" /><testcase classname="tests.cli.test_pipeline_cli" name="test_deps_unknown_step" time="0.009" /><testcase classname="tests.cli.test_pipeline_cli" name="test_deps_step_with_no_deps" time="0.006" /><testcase classname="tests.cli.test_pipeline_cli" name="test_parser_has_pipeline_command" time="0.005" /><testcase classname="tests.cli.test_pipeline_cli" name="test_parser_pipeline_run" time="0.006" /><testcase classname="tests.cli.test_pipeline_cli" name="test_parser_pipeline_deps" time="0.007" /><testcase classname="tests.config.test_graph_feature_flags" name="test_graph_feature_flags_validate_limit" time="0.001" /><testcase classname="tests.config.test_graph_feature_flags" name="test_graph_runtime_options_resolve_eager_flag" time="0.001" /><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_isolation_flag_in_run_record" time="0.676"><failure message="KeyError: 'Unknown analytics plugin: harness_isolated_plugin'">name = 'harness_isolated_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'harness_isolated_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x76fae4b4b9d0&gt;
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw10/test_isolation_flag_in_run_rec0')
-
-    def test_isolation_flag_in_run_record(plugin_harness: PluginTestHarness, tmp_path: Path) -&gt; None:
-        """Isolation metadata should be reflected in run records."""
-    
-        def isolated_plugin(_ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
-            return _simple_result()
-    
-        plugin = GraphMetricPlugin(
-            name="harness_isolated_plugin",
-            description="isolation demo",
-            stage="core",
-            enabled_by_default=False,
-            run=isolated_plugin,
-            requires_isolation=True,
-            isolation_kind="process",
-        )
-        plugin_harness.register(plugin)
-&gt;       report = plugin_harness.service.run_plugins(
-            (plugin.name,),
-            cfg=plugin_harness.cfg,
-            run_options=GraphPluginRunOptions(manifest_path=tmp_path / "isolation.json"),
-        )
-
-tests/analytics/test_plugin_scope_isolation.py:150: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'harness_isolated_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: harness_isolated_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_manifest_skip" name="test_is_unchanged_respects_row_counts" time="0.604"><failure message="KeyError: 'Unknown analytics plugin: row_count_plugin'">name = 'row_count_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'row_count_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw7/test_is_unchanged_respects_row0')
-
-    def test_is_unchanged_respects_row_counts(tmp_path: Path) -&gt; None:
-        """Skip-on-unchanged should fall back when table row counts differ."""
-    
-        def _row_count_plugin(ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
-            ctx.gateway.execute(
-                """
-                CREATE TABLE IF NOT EXISTS analytics.demo_row_counts (
-                    repo TEXT,
-                    commit TEXT,
-                    value INT
-                )
-                """
-            )
-            ctx.gateway.execute(
-                "DELETE FROM analytics.demo_row_counts WHERE repo = ? AND commit = ?",
-                [ctx.repo, ctx.commit],
-            )
-            ctx.gateway.execute(
-                "INSERT INTO analytics.demo_row_counts VALUES (?, ?, ?)",
-                [ctx.repo, ctx.commit, 1],
-            )
-            row = ctx.gateway.execute(
-                "SELECT COUNT(*) FROM analytics.demo_row_counts WHERE repo = ? AND commit = ?",
-                [ctx.repo, ctx.commit],
-            ).fetchone()
-            count = 0 if row is None else int(row[0])
-            return GraphPluginResult(row_counts={"analytics.demo_row_counts": count})
-    
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name="row_count_plugin",
-                description="demo",
-                stage="core",
-                enabled_by_default=False,
-                run=_row_count_plugin,
-                row_count_tables=("analytics.demo_row_counts",),
-            )
-        )
-        try:
-            snapshot = SnapshotRef(repo="demo/repo", commit="c0ffee", repo_root=Path())
-            service = _build_service(snapshot)
-            cfg = GraphMetricsStepConfig(
-                snapshot=snapshot,
-                enabled_plugins=("row_count_plugin",),
-                plugin_policy=GraphPluginPolicy(skip_on_unchanged=True),
-            )
-            manifest_path = tmp_path / "manifest-row-counts.json"
-&gt;           first_report = service.run_plugins(
-                ("row_count_plugin",),
-                cfg=cfg,
-                run_options=GraphPluginRunOptions(manifest_path=manifest_path),
-            )
-
-tests/analytics/test_graph_manifest_skip.py:260: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'row_count_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: row_count_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_contract_failure_respects_fatal_fail_fast" time="0.606"><failure message="KeyError: 'Unknown analytics plugin: fatal_contract_plugin'">name = 'fatal_contract_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'fatal_contract_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-    def test_contract_failure_respects_fatal_fail_fast() -&gt; None:
-        """Fatal severity with fail-fast should raise on contract failure."""
-    
-        def _noop(_ctx: object) -&gt; None:
-            return None
-    
-        def _contract_fail(_ctx: object) -&gt; PluginContractResult:
-            return PluginContractResult(name="c1", status="failed", message="bad")
-    
-        plugin_name = "fatal_contract_plugin"
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=plugin_name,
-                description="fatal contract",
-                stage="core",
-                enabled_by_default=False,
-                run=_noop,
-                contract_checkers=(_contract_fail,),
-                severity="fatal",
-            )
-        )
-        service, cfg = _make_service()
-        try:
-            with pytest.raises(PluginFatalError):
-&gt;               service.run_plugins(
-                    (plugin_name,),
-                    cfg=GraphMetricsStepConfig(
-                        snapshot=cfg.snapshot,
-                        plugin_policy=GraphPluginPolicy(fail_fast=True),
-                    ),
-                )
-
-tests/analytics/test_graph_plugin_policy_runtime.py:324: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'fatal_contract_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: fatal_contract_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_scope_required_without_scope_skips" time="0.615"><failure message="KeyError: 'Unknown analytics plugin: scope_required_skip'">name = 'scope_required_skip'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'scope_required_skip'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x76fad52cc050&gt;
-
-    def test_scope_required_without_scope_skips(plugin_harness: PluginTestHarness) -&gt; None:
-        """Scope-aware plugin should skip or fail when scope is missing, per severity."""
-        plugin = make_scope_plugin(name="scope_required_skip", severity="skip_on_error")
-        plugin_harness.register(plugin)
-&gt;       report = plugin_harness.service.run_plugins((plugin.name,), cfg=plugin_harness.cfg)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-tests/analytics/test_plugin_scope_isolation.py:171: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'scope_required_skip'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: scope_required_skip'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_metric_filters" name="test_filter_call_graph_prunes_nodes" time="0.001" /><testcase classname="tests.config.test_subsystems_config" name="test_invalid_overrides_raise[overrides1-integer]" time="0.001" /><testcase classname="tests.config.test_subsystems_config" name="test_invalid_overrides_raise[overrides2-numeric]" time="0.001" /><testcase classname="tests.core.test_core_types_normalizers" name="test_normalize_scip_document_filters_invalid_occurrences" time="0.000" /><testcase classname="tests.core.test_core_types_normalizers" name="test_normalize_pytest_entry_sanitizes_keywords_and_durations" time="0.000" /><testcase classname="tests.docs_export.test_export_defaults" name="test_default_validation_schemas_match_dataset_contract" time="0.001" /><testcase classname="tests.docs_export.test_export_defaults" name="test_schema_files_match_contract" time="0.001" /><testcase classname="tests.docs_export.test_export_edge_columns" name="test_call_graph_edges_export_includes_repo_commit" time="4.469" /><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_isolated_plugin_executes_in_subprocess" time="0.649"><failure message="KeyError: 'Unknown analytics plugin: isolated_plugin'">name = 'isolated_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'isolated_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw11/test_isolated_plugin_executes_0')
-
-    def test_isolated_plugin_executes_in_subprocess(tmp_path: Path) -&gt; None:
-        """Plugins marked for isolation should execute via worker."""
-        plugin_name = "isolated_plugin"
-        output_file = tmp_path / "iso.txt"
-    
-        def _isolated(ctx: object) -&gt; None:
-            if not isinstance(ctx, GraphMetricExecutionContext):
-                message = "context not provided"
-                raise TypeError(message)
-            path = Path(ctx.options["path"])  # type: ignore[index]
-            path.write_text(ctx.repo, encoding="utf-8")
-    
-        register_graph_metric_plugin(
-            GraphMetricPlugin(
-                name=plugin_name,
-                description="isolated",
-                stage="core",
-                enabled_by_default=False,
-                run=_isolated,
-                requires_isolation=True,
-            )
-        )
-        service, cfg = _make_service()
-        try:
-&gt;           report = service.run_plugins(
-                (plugin_name,),
-                cfg=cfg,
-                run_options=GraphPluginRunOptions(
-                    plugin_options={plugin_name: {"path": str(output_file)}}
-                ),
-            )
-
-tests/analytics/test_graph_plugin_policy_runtime.py:359: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'isolated_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: isolated_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_symbol_uses_respects_catalog_module_map" time="4.367" /><testcase classname="tests.analytics.test_functions_validation" name="test_records_validation_when_parse_fails" time="5.237" /><testcase classname="tests.analytics.test_feature_flags_behavior" name="test_eager_hydration_respects_feature_override" time="3.721" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_loose_gateway_allows_schema_drift" time="3.749" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_file_backed_gateway_creates_db" time="3.636" /><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_isolation_worker_returns_row_counts_and_contracts" time="0.626"><failure message="KeyError: 'Unknown analytics plugin: iso_worker_plugin'">name = 'iso_worker_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'iso_worker_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x76fae4b7f490&gt;
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw10/test_isolation_worker_returns_0')
-
-    def test_isolation_worker_returns_row_counts_and_contracts(
-        plugin_harness: PluginTestHarness, tmp_path: Path
-    ) -&gt; None:
-        """Isolation worker should return row counts and contracts with run_id preserved."""
-    
-        def _contract(_ctx: GraphMetricExecutionContext) -&gt; PluginContractResult:
-            return PluginContractResult(name="iso_contract", status="passed")
-    
-        plugin = replace(
-            make_isolation_plugin(name="iso_worker_plugin"),
-            contract_checkers=(_contract,),
-        )
-        plugin_harness.register(plugin)
-&gt;       report = plugin_harness.service.run_plugins(
-            (plugin.name,),
-            cfg=plugin_harness.cfg,
-            run_options=GraphPluginRunOptions(manifest_path=tmp_path / "iso-worker.json"),
-        )
-
-tests/analytics/test_plugin_scope_isolation.py:191: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'iso_worker_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: iso_worker_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_profiles" name="test_profile_builders_aggregate_expected_fields" time="5.364" /><testcase classname="tests.analytics.test_domain_api_exports" name="test_functions_api_exports_expected_symbols" time="0.000" /><testcase classname="tests.analytics.test_domain_api_exports" name="test_graphs_api_exports_expected_symbols" time="0.000" /><testcase classname="tests.analytics.test_domain_api_exports" name="test_history_api_exports_expected_symbols" time="0.000" /><testcase classname="tests.analytics.test_entrypoint_evidence" name="test_detect_entrypoints_emits_snippet_evidence" time="0.001" /><testcase classname="tests.analytics.test_entrypoints_and_dependencies" name="test_entrypoints_and_dependencies_round_trip" time="7.851" /><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_runtime_emits_run_id_and_telemetry_hooks" time="0.618"><failure message="KeyError: 'Unknown analytics plugin: telemetry_plugin'">name = 'telemetry_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'telemetry_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-    def test_runtime_emits_run_id_and_telemetry_hooks() -&gt; None:
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="10" skipped="0" tests="18" time="5.738" timestamp="2025-11-29T21:35:26.345537-05:00" hostname="paul-X870-AORUS-ELITE-WIFI7"><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_runtime_emits_run_id_and_telemetry_hooks" time="1.109"><failure message="Failed: Telemetry start should capture run_id; Telemetry finish should be recorded; Telemetry metrics should include scope">def test_runtime_emits_run_id_and_telemetry_hooks() -&gt; None:
         """Runtime should propagate run_id and invoke telemetry hooks."""
         plugin_name = "telemetry_plugin"
     
@@ -1085,358 +43,218 @@ The above exception was the direct cause of the following exception:
         telemetry = _Telemetry()
         service.telemetry = telemetry
         try:
-&gt;           report = service.run_plugins(
+            report = service.run_plugins(
                 (plugin_name,),
                 cfg=GraphMetricsStepConfig(snapshot=cfg.snapshot, scope=scope),
                 run_options=GraphPluginRunOptions(scope=scope),
             )
+        finally:
+            unregister_graph_metric_plugin(plugin_name)
+        if not report.records:
+            pytest.fail("Expected telemetry plugin to produce record")
+        record = report.records[0]
+        if not record.policy_fail_fast:
+            pytest.fail("Policy fail_fast should be reflected on plugin record")
+&gt;       _assert_telemetry_expectations(
+            record=record,
+            report_run_id=report.run_id,
+            telemetry=telemetry,
+            scope=scope,
+        )
 
-tests/analytics/test_graph_plugin_policy_runtime.py:423: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/analytics/test_graph_plugin_policy_runtime.py:435: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-name = 'telemetry_plugin'
+record = GraphPluginRunRecord(name='telemetry_plugin', stage='graph', severity='fatal', status='succeeded', attempts=1, timeout...ipped_reason=None, row_counts=None, contracts=(), requires_isolation=False, isolation_kind=None, policy_fail_fast=True)
+report_run_id = '461bc1eb40454f4cb121d7630a201672'
+telemetry = &lt;tests.analytics.test_graph_plugin_policy_runtime.test_runtime_emits_run_id_and_telemetry_hooks.&lt;locals&gt;._Telemetry object at 0x7ae6d0f14ec0&gt;
+scope = GraphRunScope(paths=('a.py',), modules=(), time_window=None)
 
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: telemetry_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_planner_rejects_cycles" time="0.588" /><testcase classname="tests.analytics.test_graph_service_runtime" name="test_graph_service_runtime_disables_plugins" time="3.632" /><testcase classname="tests.docs_export.test_export_validation_flag" name="test_docs_export_validation_flag_triggers_schema_check" time="7.314" /><testcase classname="tests.analytics.test_graph_metrics_calculations" name="test_compute_function_graph_metrics_counts_and_cycles" time="2.418" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_graph_views_exist" time="4.856" /><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_planner_requires_providers" time="0.592" /><testcase classname="tests.analytics.test_plugin_skip_on_unchanged_options" name="test_skip_on_unchanged_respects_row_counts_and_options" time="0.566"><failure message="KeyError: 'Unknown analytics plugin: option_count_plugin'">name = 'option_count_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'option_count_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x76fae4f0b570&gt;
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw10/test_skip_on_unchanged_respect0')
-
-    def test_skip_on_unchanged_respects_row_counts_and_options(
-        plugin_harness: PluginTestHarness, tmp_path: Path
+    def _assert_telemetry_expectations(
+        record: GraphPluginRunRecord,
+        report_run_id: str,
+        telemetry: _TelemetryRecorder,
+        scope: GraphRunScope,
     ) -&gt; None:
-        """Skip-on-unchanged should skip identical runs and rerun on changed options/counts."""
-        plugin = GraphMetricPlugin(
-            name="option_count_plugin",
-            description="uses options for row count",
-            stage="core",
-            enabled_by_default=False,
-            run=_option_count_plugin,
+        """Validate telemetry hooks captured expected metadata."""
+        failures: list[str] = []
+        if record.run_id != report_run_id:
+            failures.append("Run ID should propagate to report and record")
+        if not telemetry.starts or telemetry.starts[0][1] != record.run_id:
+            failures.append("Telemetry start should capture run_id")
+        if not telemetry.finishes:
+            failures.append("Telemetry finish should be recorded")
+        if not telemetry.metrics or telemetry.scopes[0] != scope:
+            failures.append("Telemetry metrics should include scope")
+        if failures:
+&gt;           pytest.fail("; ".join(failures))
+E           Failed: Telemetry start should capture run_id; Telemetry finish should be recorded; Telemetry metrics should include scope
+
+tests/analytics/test_graph_plugin_policy_runtime.py:146: Failed</failure></testcase><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_contract_failure_marks_plugin_failed_and_continues" time="1.226"><failure message="Failed: Contract failure should mark plugin status as failed">def test_contract_failure_marks_plugin_failed_and_continues() -&gt; None:
+        """Contract failures should mark plugin failed but not halt when soft."""
+    
+        def _noop(_ctx: object) -&gt; None:
+            return None
+    
+        def _contract_fail(_ctx: object) -&gt; PluginContractResult:
+            return PluginContractResult(name="c1", status="failed", message="bad")
+    
+        ran_second: list[int] = []
+    
+        def _second(_ctx: object) -&gt; None:
+            ran_second.append(1)
+    
+        first_name = "contract_fail_plugin"
+        second_name = "after_contract_fail"
+        register_graph_metric_plugin(
+            GraphMetricPlugin(
+                name=first_name,
+                description="contract fail",
+                stage="core",
+                enabled_by_default=False,
+                run=_noop,
+                contract_checkers=(_contract_fail,),
+                severity="soft_fail",
+            )
         )
-        plugin_harness.register(plugin)
-        policy_cfg = GraphMetricsStepConfig(
-            snapshot=plugin_harness.cfg.snapshot,
-            plugin_policy=GraphPluginPolicy(skip_on_unchanged=True),
+        register_graph_metric_plugin(
+            GraphMetricPlugin(
+                name=second_name,
+                description="runs after contract failure",
+                stage="core",
+                enabled_by_default=False,
+                run=_second,
+            )
         )
-        manifest_path = tmp_path / "option-count.json"
-        # First run seeds manifest.
-&gt;       first_report = plugin_harness.run_plugins_with_cfg(
-            (plugin.name,),
-            cfg=policy_cfg,
-            run_options=GraphPluginRunOptions(
-                plugin_options={plugin.name: {"count": 1}},
-                manifest_path=manifest_path,
+        service, cfg = _make_service()
+        try:
+            report = service.run_plugins((first_name, second_name), cfg=cfg)
+        finally:
+            unregister_graph_metric_plugin(first_name)
+            unregister_graph_metric_plugin(second_name)
+        first, second = report.records
+        if first.status != "failed":
+&gt;           pytest.fail("Contract failure should mark plugin status as failed")
+E           Failed: Contract failure should mark plugin status as failed
+
+tests/analytics/test_graph_plugin_policy_runtime.py:289: Failed</failure></testcase><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_timeout_marks_partial_and_continues" time="1.321"><failure message="Failed: Timeout should mark plugin as failed">def test_timeout_marks_partial_and_continues() -&gt; None:
+        """Timeouts should mark partial failure but allow downstream plugins."""
+    
+        def _slow(_ctx: object) -&gt; None:
+            time.sleep(0.1)
+    
+        ran_second: list[int] = []
+    
+        def _fast(_ctx: object) -&gt; None:
+            ran_second.append(1)
+    
+        slow_name = "timeout_plugin"
+        fast_name = "next_plugin"
+        register_graph_metric_plugin(
+            GraphMetricPlugin(
+                name=slow_name,
+                description="times out",
+                stage="core",
+                enabled_by_default=False,
+                run=_slow,
+                severity="soft_fail",
+            )
+        )
+        register_graph_metric_plugin(
+            GraphMetricPlugin(
+                name=fast_name,
+                description="runs after timeout",
+                stage="core",
+                enabled_by_default=False,
+                run=_fast,
+            )
+        )
+        service, cfg = _make_service()
+        cfg = GraphMetricsStepConfig(
+            snapshot=cfg.snapshot,
+            plugin_policy=GraphPluginPolicy(
+                timeouts_ms={slow_name: TIMEOUT_MS},
             ),
         )
-
-tests/analytics/test_plugin_skip_on_unchanged_options.py:50: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/analytics/conftest.py:102: in run_plugins_with_cfg
-    return self.service.run_plugins(plugin_names, cfg=cfg or self.cfg, run_options=options)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'option_count_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
         try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: option_count_plugin'
+            report = service.run_plugins((slow_name, fast_name), cfg=cfg)
+        finally:
+            unregister_graph_metric_plugin(slow_name)
+            unregister_graph_metric_plugin(fast_name)
+        first, second = report.records
+        if first.status != "failed":
+&gt;           pytest.fail("Timeout should mark plugin as failed")
+E           Failed: Timeout should mark plugin as failed
 
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.docs_export.test_validate_exports" name="test_docs_export_views_exist" time="3.654" /><testcase classname="tests.cli.test_history_timeseries_cli" name="test_history_timeseries_cli_happy_path" time="10.725" /><testcase classname="tests.config.test_ingestion_schema_registry" name="test_ingestion_sql_tables_match_schema" time="4.045" /><testcase classname="tests.analytics.test_graph_metrics_runtime_reuse" name="test_compute_graph_metrics_reuses_runtime_engine" time="3.821" /><testcase classname="tests.config.test_serving_graph_features" name="test_serving_config_from_env_graph_features" time="0.001" /><testcase classname="tests.config.test_serving_graph_features" name="test_serving_config_validates_graph_features" time="0.001" /><testcase classname="tests.config.test_subsystems_config" name="test_overrides_are_applied_and_typed" time="0.001" /><testcase classname="tests.config.test_subsystems_config" name="test_invalid_overrides_raise[overrides0-integer]" time="0.001" /><testcase classname="tests.analytics.test_graph_metrics_smoke" name="test_compute_graph_metrics_with_small_graph" time="0.897" /><testcase classname="tests.analytics.test_graph_metrics_calculations" name="test_compute_module_graph_metrics_with_symbol_coupling" time="2.409" /><testcase classname="tests.analytics.test_feature_flags_behavior" name="test_eager_hydration_off_defers_graph_loads" time="3.649" /><testcase classname="tests.analytics.test_feature_flags_behavior" name="test_community_detection_cap_skips_when_exceeded" time="0.056" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_builder_inserts_round_trip" time="3.706" /><testcase classname="tests.docs_export.test_export_edge_columns" name="test_import_graph_edges_export_includes_repo_commit" time="4.304" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_symbol_uses_falls_back_to_modules_when_catalog_partial" time="4.127" /><testcase classname="tests.analytics.test_graph_plugin_cache" name="test_scratch_declare_consume_and_cleanup" time="0.591"><failure message="KeyError: 'Unknown analytics plugin: cache_populator'">name = 'cache_populator'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'cache_populator'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7d0f7b7996a0&gt;
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw9/test_scratch_declare_consume_a0')
-
-    def test_scratch_declare_consume_and_cleanup(plugin_harness: PluginTestHarness, tmp_path: Path) -&gt; None:
-        """Values declared in scratch should be consumable across plugins and cleaned afterwards."""
-        marker = tmp_path / "scratch_cleanup.txt"
-        cache_key = "scratch_token"
+tests/analytics/test_graph_plugin_policy_runtime.py:234: Failed</failure></testcase><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_soft_fail_severity_continues" time="1.181" /><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_retry_policy_allows_retries" time="1.145" /><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_contract_failure_respects_fatal_fail_fast" time="1.203"><failure message="Failed: DID NOT RAISE &lt;class 'codeintel.analytics.graphs.runtime.execution.PluginFatalError'&gt;">def test_contract_failure_respects_fatal_fail_fast() -&gt; None:
+        """Fatal severity with fail-fast should raise on contract failure."""
     
-        def _populate(ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
-            ctx.scratch.declare(cache_key, "value")
+        def _noop(_ctx: object) -&gt; None:
+            return None
     
-            def _write_marker() -&gt; None:
-                marker.write_text("cleaned", encoding="utf-8")
+        def _contract_fail(_ctx: object) -&gt; PluginContractResult:
+            return PluginContractResult(name="c1", status="failed", message="bad")
     
-            ctx.scratch.register_cleanup(_write_marker)
-            return GraphPluginResult(row_counts={"analytics.cache_populator": 1})
-    
-        def _consume(ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
-            cached = ctx.scratch.consume(cache_key)
-            if cached != "value":
-                message = "scratch value should be available to dependent plugin"
-                pytest.fail(message)
-            return GraphPluginResult(row_counts={"analytics.cache_consumer": 1})
-    
-        populator = GraphMetricPlugin(
-            name="cache_populator",
-            description="populates scratch cache",
-            stage="core",
-            enabled_by_default=False,
-            run=_populate,
-            cache_populates=(cache_key,),
-        )
-        consumer = GraphMetricPlugin(
-            name="cache_consumer",
-            description="consumes scratch cache",
-            stage="core",
-            enabled_by_default=False,
-            run=_consume,
-            depends_on=("cache_populator",),
-            cache_consumes=(cache_key,),
-        )
-        plugin_harness.register(populator)
-        plugin_harness.register(consumer)
-    
-&gt;       report = plugin_harness.run_plugins_with_cfg(("cache_populator", "cache_consumer"))
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-tests/analytics/test_graph_plugin_cache.py:58: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/analytics/conftest.py:102: in run_plugins_with_cfg
-    return self.service.run_plugins(plugin_names, cfg=cfg or self.cfg, run_options=options)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'cache_populator'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: cache_populator'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_service_runtime" name="test_graph_service_runtime_writes_manifest" time="4.045" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_graph_stats_include_symbol_and_config_graphs" time="3.879" /><testcase classname="tests.analytics.test_functions_validation" name="test_span_not_found_is_recorded" time="4.936" /><testcase classname="tests.analytics.test_graph_plugin_cache" name="test_isolation_plugin_runs_with_scratch" time="0.610"><failure message="KeyError: 'Unknown analytics plugin: isolation_scratch'">name = 'isolation_scratch'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'isolation_scratch'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7d0f67790050&gt;
-
-    def test_isolation_plugin_runs_with_scratch(plugin_harness: PluginTestHarness) -&gt; None:
-        """Scratch should not break isolation-capable plugins."""
-    
-        def _run(ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
-            ctx.scratch.declare("isolated", value=True)
-            return GraphPluginResult(row_counts={"analytics.isolation_scratch": 1})
-    
-        isolation_plugin = GraphMetricPlugin(
-            name="isolation_scratch",
-            description="isolation plugin with scratch usage",
-            stage="core",
-            enabled_by_default=False,
-            run=_run,
-            requires_isolation=True,
-            isolation_kind="process",
-            cache_populates=("isolated",),
-        )
-        plugin_harness.register(isolation_plugin)
-&gt;       report = plugin_harness.run_plugins_with_cfg(("isolation_scratch",))
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-tests/analytics/test_graph_plugin_cache.py:89: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/analytics/conftest.py:102: in run_plugins_with_cfg
-    return self.service.run_plugins(plugin_names, cfg=cfg or self.cfg, run_options=options)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'isolation_scratch'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: isolation_scratch'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_graph_plugin_catalog" name="test_build_plugin_catalog_includes_expected_fields" time="0.000" /><testcase classname="tests.analytics.test_graph_plugin_catalog" name="test_render_plugin_catalog_markdown_contains_examples" time="0.000" /><testcase classname="tests.graphs.test_engine_nx" name="test_engine_matches_nx_views_for_core_graphs" time="0.648" /><testcase classname="tests.analytics.test_runtime_pool" name="test_pool_reuses_runtime_within_ttl" time="4.651" /><testcase classname="tests.docs_export.test_validate_exports" name="test_export_raises_on_validation_failure" time="5.179" /><testcase classname="tests.graphs.test_function_index" name="test_lookup_prefers_exact_span_and_qualname" time="0.000" /><testcase classname="tests.graphs.test_function_index" name="test_lookup_falls_back_to_enclosing_and_same_line" time="0.000" /><testcase classname="tests.graphs.test_goid_builder_decorators" name="test_goid_start_line_includes_decorator_span" time="0.001" /><testcase classname="tests.analytics.test_subsystem_agreement_plugin" name="test_subsystem_agreement_plugin_matches_legacy" time="0.594"><failure message="KeyError: 'Unknown analytics plugin: subsystem_agreement_test'">name = 'subsystem_agreement_test'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'subsystem_agreement_test'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw8/test_subsystem_agreement_plugi0')
-
-    def test_subsystem_agreement_plugin_matches_legacy(tmp_path: Path) -&gt; None:
-        """
-        Ensure subsystem agreement plugin matches legacy shim outputs.
-    
-        Raises
-        ------
-        AssertionError
-            If plugin-generated rows differ from legacy computation.
-        """
-        harness = PluginTestHarness(tmp_path)
-        try:
-            con = harness.gateway.con
-            con.execute(
-                """
-                INSERT INTO analytics.subsystem_modules (repo, commit, module, subsystem_id)
-                VALUES ('demo/repo', 'deadbeef', 'pkg.mod', 1)
-                """
-            )
-            con.execute(
-                """
-                INSERT INTO analytics.graph_metrics_modules_ext (
-                    repo, commit, module, import_community_id, created_at
-                ) VALUES ('demo/repo', 'deadbeef', 'pkg.mod', 1, ?)
-                """,
-                [datetime.now(tz=UTC)],
-            )
-            def _run(ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
-                compute_subsystem_agreement(ctx.gateway, repo=ctx.repo, commit=ctx.commit)
-                row = con.execute(
-                    """
-                    SELECT COUNT(*) FROM analytics.subsystem_agreement
-                    WHERE repo = ? AND commit = ?
-                    """,
-                    [ctx.repo, ctx.commit],
-                ).fetchone()
-                if row is None or row[0] is None:
-                    message = "Expected subsystem_agreement rows to be present"
-                    pytest.fail(message)
-                return GraphPluginResult(
-                    row_counts={"analytics.subsystem_agreement": int(row[0])},
-                )
-    
-            plugin = GraphMetricPlugin(
-                name="subsystem_agreement_test",
-                description="test subsystem agreement plugin",
-                stage="subsystem",
+        plugin_name = "fatal_contract_plugin"
+        register_graph_metric_plugin(
+            GraphMetricPlugin(
+                name=plugin_name,
+                description="fatal contract",
+                stage="core",
                 enabled_by_default=False,
-                run=_run,
-                row_count_tables=("analytics.subsystem_agreement",),
+                run=_noop,
+                contract_checkers=(_contract_fail,),
+                severity="fatal",
             )
-            harness.register(plugin)
-            # Run plugin
-&gt;           harness.service.run_plugins((plugin.name,), cfg=harness.cfg)
-
-tests/analytics/test_subsystem_agreement_plugin.py:71: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'subsystem_agreement_test'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
+        )
+        service, cfg = _make_service()
         try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: subsystem_agreement_test'
+&gt;           with pytest.raises(PluginFatalError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE &lt;class 'codeintel.analytics.graphs.runtime.execution.PluginFatalError'&gt;
 
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_subsystem_cache_benchmark" name="test_refresh_and_benchmark_returns_timings" time="0.761" /><testcase classname="tests.graphs.test_backend_selection" name="test_build_graph_runtime_captures_backend_info" time="4.656" /><testcase classname="tests.analytics.test_function_history" name="test_function_history_populates_rows" time="4.022" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_docs_export_ready_has_non_nulls" time="0.749" /><testcase classname="tests.graphs.test_callgraph_builder" name="test_callgraph_handles_aliases_and_relative_imports" time="2.935" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_symbol_and_config_metrics_builder_round_trip" time="3.639" /><testcase classname="tests.docs_export.test_export_validation_models" name="test_data_model_field_schema_validates_fixture" time="0.002" /><testcase classname="tests.docs_export.test_export_validation_models" name="test_data_model_relationship_schema_validates_fixture" time="0.001" /><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_graph_metrics_uses_catalog_for_symbol_modules" time="4.038" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_centrality_directed_weighted_and_seeded" time="0.002" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_centrality_undirected_empty_returns_zeroes" time="0.001" /><testcase classname="tests.analytics.test_graph_service_unit" name="test_neighbor_stats_with_weights" time="0.000" /><testcase classname="tests.graphs.test_symbol_uses_module_fallback" name="test_partial_catalog_map_falls_back_to_db" time="3.084" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_subsystem_agreement_summary_aggregates" time="3.962" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_validation_passes_on_minimal_data" time="1.312" /><testcase classname="tests.graphs.test_graph_validation_catalog" name="test_graph_validation_orphan_uses_catalog_map" time="4.836" /><testcase classname="tests.analytics.test_graph_engine_guardrails" name="test_graph_metrics_reuse_provided_runtime" time="3.727" /><testcase classname="tests.analytics.test_runtime_pool" name="test_pool_expires_runtime_after_ttl" time="4.633" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_subset_by_dataset_name" time="1.668" /><testcase classname="tests.graphs.test_callgraph_fallback" name="test_callgraph_falls_back_to_ast" time="0.001" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_callee_precedence_local_then_alias" time="0.001" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_callee_import_alias_global_attr_chain" time="0.000" /><testcase classname="tests.analytics.test_plugin_contracts_behavior" name="test_contract_soft_failure_marks_record_failed" time="0.585"><failure message="KeyError: 'Unknown analytics plugin: contract_soft_fail'">name = 'contract_soft_fail'
+tests/analytics/test_graph_plugin_policy_runtime.py:323: Failed</failure></testcase><testcase classname="tests.analytics.test_graph_plugin_policy_runtime" name="test_isolated_plugin_executes_in_subprocess" time="1.219"><failure message="Failed: Isolation flag should be recorded on the run record">tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-312/popen-gw6/test_isolated_plugin_executes_0')
 
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
+    def test_isolated_plugin_executes_in_subprocess(tmp_path: Path) -&gt; None:
+        """Plugins marked for isolation should execute via worker."""
+        plugin_name = "isolated_plugin"
+        output_file = tmp_path / "iso.txt"
+    
+        def _isolated(ctx: object) -&gt; None:
+            if not isinstance(ctx, GraphMetricExecutionContext):
+                message = "context not provided"
+                raise TypeError(message)
+            path = Path(ctx.options["path"])  # type: ignore[index]
+            path.write_text(ctx.repo, encoding="utf-8")
+    
+        register_graph_metric_plugin(
+            GraphMetricPlugin(
+                name=plugin_name,
+                description="isolated",
+                stage="core",
+                enabled_by_default=False,
+                run=_isolated,
+                requires_isolation=True,
+            )
+        )
+        service, cfg = _make_service()
         try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'contract_soft_fail'
+            report = service.run_plugins(
+                (plugin_name,),
+                cfg=cfg,
+                run_options=GraphPluginRunOptions(
+                    plugin_options={plugin_name: {"path": str(output_file)}}
+                ),
+            )
+        finally:
+            unregister_graph_metric_plugin(plugin_name)
+        if report.records[0].status != "succeeded":
+            pytest.fail("Isolated plugin should succeed")
+        if not report.records[0].requires_isolation:
+&gt;           pytest.fail("Isolation flag should be recorded on the run record")
+E           Failed: Isolation flag should be recorded on the run record
 
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7a9205b48050&gt;
+tests/analytics/test_graph_plugin_policy_runtime.py:371: Failed</failure></testcase><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_scope_required_without_scope_skips" time="1.066" /><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_planner_rejects_cycles" time="1.104" /><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_dry_run_skips_execution" time="1.124" /><testcase classname="tests.analytics.test_plugin_contracts_behavior" name="test_contract_soft_failure_marks_record_failed" time="1.130"><failure message="Failed: Soft contract failure should mark record failed with contract_failed error">plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x72aab02427b0&gt;
 
     def test_contract_soft_failure_marks_record_failed(plugin_harness: PluginTestHarness) -&gt; None:
         """Soft contract failure should mark record failed without raising fatal error."""
@@ -1456,46 +274,41 @@ plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7a92
             contract_checkers=(_soft_contract,),
         )
         plugin_harness.register(plugin)
-&gt;       report = plugin_harness.service.run_plugins((plugin.name,), cfg=plugin_harness.cfg)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        report = plugin_harness.service.run_plugins((plugin.name,), cfg=plugin_harness.cfg)
+        record = report.records[0]
+        if record.status != "failed" or record.error != "contract_failed":
+            message = "Soft contract failure should mark record failed with contract_failed error"
+&gt;           pytest.fail(message)
+E           Failed: Soft contract failure should mark record failed with contract_failed error
 
-tests/analytics/test_plugin_contracts_behavior.py:42: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/analytics/test_plugin_contracts_behavior.py:46: Failed</failure></testcase><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_isolation_worker_returns_row_counts_and_contracts" time="1.163"><failure message="Failed: Isolation metadata should be preserved">plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7068a6c6e7b0&gt;
+tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-312/popen-gw14/test_isolation_worker_returns_0')
 
-name = 'contract_soft_fail'
+    def test_isolation_worker_returns_row_counts_and_contracts(
+        plugin_harness: PluginTestHarness, tmp_path: Path
+    ) -&gt; None:
+        """Isolation worker should return row counts and contracts with run_id preserved."""
+    
+        def _contract(_ctx: GraphMetricExecutionContext) -&gt; PluginContractResult:
+            return PluginContractResult(name="iso_contract", status="passed")
+    
+        plugin = replace(
+            make_isolation_plugin(name="iso_worker_plugin"),
+            contract_checkers=(_contract,),
+        )
+        plugin_harness.register(plugin)
+        report = plugin_harness.service.run_plugins(
+            (plugin.name,),
+            cfg=plugin_harness.cfg,
+            run_options=GraphPluginRunOptions(manifest_path=tmp_path / "iso-worker.json"),
+        )
+        record = report.records[0]
+        if record.requires_isolation is not True or record.isolation_kind != "process":
+            message = "Isolation metadata should be preserved"
+&gt;           pytest.fail(message)
+E           Failed: Isolation metadata should be preserved
 
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: contract_soft_fail'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_subsystems" name="test_subsystems_cluster_and_risk_aggregation" time="4.085" /><testcase classname="tests.docs_export.test_validate_exports" name="test_export_logs_problem_detail_on_validation_failure" time="5.233" /><testcase classname="tests.analytics.test_function_history" name="test_function_history_respects_min_threshold" time="3.841" /><testcase classname="tests.analytics.test_plugin_contracts_behavior" name="test_contract_fatal_failure_marks_failed" time="0.600"><failure message="KeyError: 'Unknown analytics plugin: contract_fatal_fail'">name = 'contract_fatal_fail'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'contract_fatal_fail'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7a9205bc8410&gt;
+tests/analytics/test_plugin_scope_isolation.py:199: Failed</failure></testcase><testcase classname="tests.analytics.test_plugin_contracts_behavior" name="test_idempotency_respects_row_count_changes" time="1.197" /><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_scope_propagates_to_plugin_and_report" time="1.222" /><testcase classname="tests.analytics.test_plugin_contracts_behavior" name="test_contract_fatal_failure_marks_failed" time="1.226"><failure message="Failed: Fatal contract failure should mark record failed when fail_fast is False">plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x77fc079327b0&gt;
 
     def test_contract_fatal_failure_marks_failed(plugin_harness: PluginTestHarness) -&gt; None:
         """Fatal contract failure should mark the record failed when fail_fast is disabled."""
@@ -1519,306 +332,45 @@ plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7a92
             snapshot=plugin_harness.cfg.snapshot,
             plugin_policy=GraphPluginPolicy(fail_fast=False),
         )
-&gt;       report = plugin_harness.service.run_plugins((plugin.name,), cfg=cfg)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        report = plugin_harness.service.run_plugins((plugin.name,), cfg=cfg)
+        record = report.records[0]
+        if record.status != "failed" or record.error != "contract_failed":
+            message = "Fatal contract failure should mark record failed when fail_fast is False"
+&gt;           pytest.fail(message)
+E           Failed: Fatal contract failure should mark record failed when fail_fast is False
 
-tests/analytics/test_plugin_contracts_behavior.py:71: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/analytics/test_plugin_contracts_behavior.py:75: Failed</failure></testcase><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_isolation_flag_in_run_record" time="1.229"><failure message="Failed: Run record should reflect isolation requirement">plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x76a3274927b0&gt;
+tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-312/popen-gw12/test_isolation_flag_in_run_rec0')
 
-name = 'contract_fatal_fail'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: contract_fatal_fail'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_callee_unresolved_returns_none" time="0.001" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_resolve_via_scip_uses_crosswalk_mapping" time="0.000" /><testcase classname="tests.graphs.test_callgraph_resolution" name="test_dedupe_includes_repo_commit_scope" time="0.000" /><testcase classname="tests.graphs.test_engine_factory" name="test_build_graph_engine_uses_backend_flags" time="1.069" /><testcase classname="tests.graphs.test_symbol_uses_module_fallback" name="test_no_module_mapping_keeps_same_module_false" time="3.064" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_file_backed_gateway_releases_handles" time="3.645" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_subset_validates_dataset_names" time="1.198" /><testcase classname="tests.docs_export.test_function_validation_export" name="test_function_validation_export" time="4.870" /><testcase classname="tests.analytics.test_plugin_contracts_behavior" name="test_idempotency_respects_row_count_changes" time="0.583"><failure message="KeyError: 'Unknown analytics plugin: stateful_counts'">name = 'stateful_counts'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'stateful_counts'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7a91f00ca0d0&gt;
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw6/test_idempotency_respects_row_0')
-
-    def test_idempotency_respects_row_count_changes(plugin_harness: PluginTestHarness, tmp_path: Path) -&gt; None:
-        """Skip-on-unchanged should rerun when row counts change even if options stay the same."""
-        state = {"count": 1}
+    def test_isolation_flag_in_run_record(plugin_harness: PluginTestHarness, tmp_path: Path) -&gt; None:
+        """Isolation metadata should be reflected in run records."""
     
-        def _run(_ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
-            return GraphPluginResult(row_counts={"analytics.stateful": state["count"]})
-    
-        plugin = GraphMetricPlugin(
-            name="stateful_counts",
-            description="stateful row count plugin",
-            stage="core",
-            enabled_by_default=False,
-            run=_run,
-        )
-        plugin_harness.register(plugin)
-        policy_cfg = GraphMetricsStepConfig(
-            snapshot=plugin_harness.cfg.snapshot,
-            plugin_policy=GraphPluginPolicy(skip_on_unchanged=True),
-        )
-        manifest_path = tmp_path / "stateful.json"
-&gt;       first_report = plugin_harness.run_plugins_with_cfg(
-            (plugin.name,),
-            cfg=policy_cfg,
-            run_options=GraphPluginRunOptions(manifest_path=manifest_path),
-        )
-
-tests/analytics/test_plugin_contracts_behavior.py:98: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/analytics/conftest.py:102: in run_plugins_with_cfg
-    return self.service.run_plugins(plugin_names, cfg=cfg or self.cfg, run_options=options)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'stateful_counts'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: stateful_counts'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_catalog_provider_usage" name="test_profiles_use_catalog_module_map_when_modules_table_empty" time="4.614" /><testcase classname="tests.analytics.test_graph_stats_validation" name="test_validation_flags_large_symbol_community_and_config_hubs" time="3.694" /><testcase classname="tests.graphs.test_engine_factory" name="test_build_graph_engine_cpu_backend_leaves_env_clean" time="0.637" /><testcase classname="tests.analytics.test_plugin_dependencies" name="test_planner_orders_providers_before_consumers" time="0.616"><failure message="KeyError: 'Unknown analytics plugin: dep_consumer'">name = 'dep_consumer'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'dep_consumer'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7a91741acfc0&gt;
-
-    def test_planner_orders_providers_before_consumers(plugin_harness: PluginTestHarness) -&gt; None:
-        """Planner should order providers before dependent consumers and expose dep graph."""
-        provider = make_provider_plugin(name="dep_provider", provides=("resource_x",))
-        consumer = make_consumer_plugin(
-            name="dep_consumer",
-            requires=("resource_x",),
-            depends_on=("dep_provider",),
-        )
-        plugin_harness.register(provider)
-        plugin_harness.register(consumer)
-        plan = plan_graph_metric_plugins((consumer.name, provider.name))
-        ordered_names = tuple(plugin.name for plugin in plan.plugins)
-        if ordered_names != ("dep_provider", "dep_consumer"):
-            message = "Provider should precede consumer in plan order"
-            pytest.fail(message)
-        expected_dep_graph = {"dep_consumer": ("dep_provider",), "dep_provider": ()}
-        if plan.dep_graph != expected_dep_graph:
-            message = "Dependency graph should include provider relation"
-            pytest.fail(message)
-&gt;       report = plugin_harness.run_plugins_with_cfg((consumer.name, provider.name))
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-tests/analytics/test_plugin_dependencies.py:34: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/analytics/conftest.py:102: in run_plugins_with_cfg
-    return self.service.run_plugins(plugin_names, cfg=cfg or self.cfg, run_options=options)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'dep_consumer'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: dep_consumer'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_history_timeseries" name="test_history_timeseries_aggregates_functions" time="10.386" /><testcase classname="tests.analytics.test_plugin_dependencies" name="test_plan_records_disabled_plugins" time="0.000" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_strict_fixtures_expose_views" time="12.970" /><testcase classname="tests.analytics.test_ast_utils" name="test_call_name_resolves_attribute_chain" time="0.001" /><testcase classname="tests.analytics.test_ast_utils" name="test_resolve_call_target_uses_alias_map" time="0.000" /><testcase classname="tests.analytics.test_ast_utils" name="test_literal_value_coercions" time="0.000" /><testcase classname="tests.analytics.test_ast_utils" name="test_safe_unparse_survives_invalid_nodes" time="0.000" /><testcase classname="tests.analytics.test_ast_utils" name="test_snippet_from_lines_includes_range" time="0.000" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path1]" time="0.001" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path2]" time="0.001" /><testcase classname="tests.ingestion.test_py_ast_extract" name="test_ast_visitor_records_decorator_span" time="0.001" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_repo_scan_honors_scan_profile" time="1.971" /><testcase classname="tests.cli.test_history_timeseries_cli" name="test_history_timeseries_cli_missing_snapshot" time="2.781" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_helpers_resolve_dataset_names" time="1.377" /><testcase classname="tests.docs_export.test_export_parity" name="test_export_mappings_cover_required_tables" time="4.872" /><testcase classname="tests.analytics.test_plugin_harness" name="test_plugin_harness_idempotent_skip" time="0.623"><failure message="KeyError: 'Unknown analytics plugin: harness_row_count_plugin'">name = 'harness_row_count_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'harness_row_count_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7a91741ad810&gt;
-
-    def test_plugin_harness_idempotent_skip(plugin_harness: PluginTestHarness) -&gt; None:
-        """Harness should assert skip-on-unchanged between runs."""
-        harness = plugin_harness
-        if not hasattr(harness, "register"):
-            pytest.fail("plugin_harness fixture missing register")
-        harness.register(
-            GraphMetricPlugin(
-                name="harness_row_count_plugin",
-                description="demo",
-                stage="core",
-                enabled_by_default=False,
-                run=_row_count_plugin,
-                row_count_tables=("analytics.harness_demo",),
-                contract_checkers=(cast("ContractChecker", _contract_checker),),
-            )
-        )
-&gt;       harness.run_twice_assert_idempotent("harness_row_count_plugin")
-
-tests/analytics/test_plugin_harness.py:65: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/analytics/conftest.py:124: in run_twice_assert_idempotent
-    first_report = self.service.run_plugins(
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'harness_row_count_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: harness_row_count_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_scope_propagates_to_plugin_and_report" time="0.564"><failure message="KeyError: 'Unknown analytics plugin: harness_scope_plugin'">name = 'harness_scope_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-&gt;           return _ANALYTICS_PLUGINS[name]
-                   ^^^^^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'harness_scope_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x7a91f004b890&gt;
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw6/test_scope_propagates_to_plugi0')
-
-    def test_scope_propagates_to_plugin_and_report(
-        plugin_harness: PluginTestHarness, tmp_path: Path
-    ) -&gt; None:
-        """Scopes from run options should reach plugin context and report."""
-        observed: dict[str, object] = {}
-    
-        def scoped_plugin(ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
-            observed["paths"] = tuple(ctx.scope.paths)
-            observed["modules"] = tuple(ctx.scope.modules)
-            observed["time_window"] = ctx.scope.time_window
+        def isolated_plugin(_ctx: GraphMetricExecutionContext) -&gt; GraphPluginResult:
             return _simple_result()
     
         plugin = GraphMetricPlugin(
-            name="harness_scope_plugin",
-            description="scope propagation demo",
+            name="harness_isolated_plugin",
+            description="isolation demo",
             stage="core",
             enabled_by_default=False,
-            run=scoped_plugin,
-            scope_aware=True,
-            supported_scopes=("paths", "modules", "time_window"),
+            run=isolated_plugin,
+            requires_isolation=True,
+            isolation_kind="process",
         )
         plugin_harness.register(plugin)
-        window = (datetime.now(tz=UTC), datetime.now(tz=UTC) + timedelta(days=1))
-        scope = GraphRunScope(paths=("src/foo.py",), modules=("pkg.mod",), time_window=window)
-&gt;       report = plugin_harness.service.run_plugins(
+        report = plugin_harness.service.run_plugins(
             (plugin.name,),
             cfg=plugin_harness.cfg,
-            run_options=GraphPluginRunOptions(
-                scope=scope,
-                manifest_path=tmp_path / "scope-manifest.json",
-            ),
+            run_options=GraphPluginRunOptions(manifest_path=tmp_path / "isolation.json"),
         )
+        record = report.records[0]
+        if record.requires_isolation is not True:
+            message = "Run record should reflect isolation requirement"
+&gt;           pytest.fail(message)
+E           Failed: Run record should reflect isolation requirement
 
-tests/analytics/test_plugin_scope_isolation.py:63: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    requested[name] = get_analytics_plugin(name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'harness_scope_plugin'
-
-    def get_analytics_plugin(name: str) -&gt; AnalyticsPlugin:
-        """Return a registered analytics plugin by name."""
-        try:
-            return _ANALYTICS_PLUGINS[name]
-        except KeyError as exc:
-            message = f"Unknown analytics plugin: {name}"
-&gt;           raise KeyError(message) from exc
-E           KeyError: 'Unknown analytics plugin: harness_scope_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.ingestion.test_change_tracker" name="test_incremental_ingest_ops_reparse_changed_modules" time="3.354" /><testcase classname="tests.graphs.test_validation" name="test_run_graph_validations_hard_fail_on_error" time="4.866" /><testcase classname="tests.graphs.test_import_modules" name="test_import_modules_matches_condensation_layers" time="4.598" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_validation_runs_against_registry" time="0.718" /><testcase classname="tests.ingestion.test_scip_ingest_ops" name="test_scip_module_filter_limits_to_src_python_files" time="0.009" /><testcase classname="tests.ingestion.test_step_registry" name="test_registry_includes_all_expected_steps" time="0.000" /><testcase classname="tests.ingestion.test_step_registry" name="test_metadata_exposes_tables_and_deps" time="0.000" /><testcase classname="tests.ingestion.test_step_registry" name="test_topological_order_respects_dependencies" time="0.000" /><testcase classname="tests.ingestion.test_step_registry" name="test_run_ingest_steps_executes_dependencies" time="0.575" /><testcase classname="tests.graphs.test_symbol_uses_normalization" name="test_load_scip_documents_skips_invalid_entries" time="0.001" /><testcase classname="tests.analytics.test_runtime_pool" name="test_pool_lru_eviction" time="4.669" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_coverage_ingest_uses_runner" time="1.616" /><testcase classname="tests.analytics.test_symbol_config_metrics" name="test_symbol_and_config_metrics_populate_and_views_create" time="4.692" /><testcase classname="tests.ingestion.test_subprocess_policy" name="test_no_direct_subprocess_usage_outside_tooling" time="0.013" /><testcase classname="tests.ingestion.test_tests_ingest_normalization" name="test_load_tests_from_report_normalizes_entries" time="0.001" /><testcase classname="tests.ingestion.test_tool_runner" name="test_tool_runner_missing_binary" time="0.001" /><testcase classname="tests.ingestion.test_tool_runner" name="test_tool_runner_unknown_tool" time="0.001" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_aliases_import_and_from_import" time="0.002" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_import_edges_relative_resolution" time="0.001" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_import_edges_deep_relative_and_multi_targets" time="0.001" /><testcase classname="tests.graphs.test_import_resolver" name="test_collect_aliases_handles_from_import_aliases_and_packages" time="0.001" /><testcase classname="tests._helpers.test_helpers_roundtrip" name="test_strict_schema_flag_enforces_views" time="0.701" /><testcase classname="tests.ingestion.test_tool_service" name="test_tool_service_pyright_parses_errors" time="0.523" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_fastapi_role_detected" time="0.001" /><testcase classname="tests.analytics.test_semantic_roles_signals" name="test_flask_role_detected" time="0.000" /><testcase classname="tests.cli.test_nx_backend" name="test_maybe_enable_nx_gpu_noop_when_disabled" time="0.001" /><testcase classname="tests.cli.test_nx_backend" name="test_maybe_enable_nx_gpu_soft_fallback" time="0.002" /><testcase classname="tests.graphs.test_backend_selection" name="test_maybe_enable_nx_gpu_success" time="0.000" /><testcase classname="tests.graphs.test_backend_selection" name="test_maybe_enable_nx_gpu_fallback" time="0.001" /><testcase classname="tests.graphs.test_backend_selection" name="test_maybe_enable_nx_gpu_strict_raises" time="0.001" /><testcase classname="tests.mcp.test_registry_limits_parity" name="test_limits_parity_between_local_and_remote_configs" time="0.000" /><testcase classname="tests.mcp.test_registry_limits_parity" name="test_registry_helper_matches_base_registry" time="0.000" /><testcase classname="tests.ingestion.test_tool_service" name="test_tool_service_pyrefly_parses_errors" time="0.522" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_typing_ingest_uses_shared_runner" time="1.849" /><testcase classname="tests.ingestion.test_tool_service" name="test_tool_service_coverage_reports" time="0.462" /><testcase classname="tests.lint.test_no_legacy_data_model_json" name="test_no_legacy_json_usage_outside_whitelist" time="0.012" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_engine_reuse_across_semantic_roles" time="1.831" /><testcase classname="tests.docs_export.test_graph_validation_export" name="test_graph_validation_export" time="5.606" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_incremental" time="3.682" /><testcase classname="tests.analytics.test_cfg_dfg_metrics_ext" name="test_cfg_metrics_ext_populates_loop_and_unreachable_counts" time="4.246" /><testcase classname="tests.ingestion.test_common_changes" name="test_compute_changes_tracks_add_modify_delete" time="2.281" /><testcase classname="tests.docs_export.test_export_parity" name="test_export_mappings_registered_with_dataset_registry" time="4.901" /><testcase classname="tests.docs_export.test_export_runner" name="test_run_validated_exports_invokes_validator_before_exports" time="4.900" /><testcase classname="tests.graphs.test_validation" name="test_run_graph_validations_emits_warnings" time="4.874" /><testcase classname="tests.ingestion.test_scip_ingest" name="test_ingest_scip_produces_artifacts" time="2.589"><skipped type="pytest.skip" message="SCIP ingestion not successful in test environment: Tool scip-python failed (code=127)&#10;Args: ('index', '/tmp/pytest-of-paul/pytest-305/popen-gw1/test_ingest_scip_produces_arti0/repo', '--output', '/tmp/pytest-of-paul/pytest-305/popen-gw1/test_ingest_scip_produces_arti0/repo/build/scip/index.scip')&#10;stderr: /usr/bin/env: 'node': No such file or directory">/home/paul/CodeIntel/tests/ingestion/test_scip_ingest.py:56: SCIP ingestion not successful in test environment: Tool scip-python failed (code=127)
-Args: ('index', '/tmp/pytest-of-paul/pytest-305/popen-gw1/test_ingest_scip_produces_arti0/repo', '--output', '/tmp/pytest-of-paul/pytest-305/popen-gw1/test_ingest_scip_produces_arti0/repo/build/scip/index.scip')
-stderr: /usr/bin/env: 'node': No such file or directory</skipped></testcase><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_graph_runtime_reuses_engine" time="0.557" /><testcase classname="tests.docs_export.test_validate_exports" name="test_validate_jsonl_happy_path" time="0.002" /><testcase classname="tests.docs_export.test_validate_exports" name="test_validate_jsonl_failure" time="0.002" /><testcase classname="tests.graphs.test_span_consistency_integration" name="test_span_alignment_across_components" time="6.763" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_runtime_reuse_with_graph_context" time="0.567" /><testcase classname="tests.graphs.test_validation" name="test_run_graph_validations_caps_findings" time="4.882" /><testcase classname="tests.mcp.test_backend_adapter" name="test_validate_direction_accepts_expected" time="3.662" /><testcase classname="tests.mcp.test_backend" name="test_read_function_validation_dataset" time="3.777" /><testcase classname="tests.orchestration.test_graph_metrics_step" name="test_graph_metrics_step_runs_plugins" time="4.079" /><testcase classname="tests.analytics.test_symbol_config_metrics" name="test_subsystem_agreement_exposed_in_views" time="3.987" /><testcase classname="tests.mcp.test_wiring_smoke" name="test_mcp_wiring_smoke" time="4.329" /><testcase classname="tests.ingestion.test_coverage_incremental" name="test_coverage_ingest_runs_full_rebuild_with_tracker" time="1.150" /><testcase classname="tests.mcp.test_backend" name="test_get_tests_for_function_invalid" time="3.762" /><testcase classname="tests.analytics.test_tests_profile_plugin_runtime" name="test_tests_profile_plugin_runtime" time="3.543" /><testcase classname="tests.orchestration.test_graph_engine_sharing" name="test_graph_engine_reused_with_backend_flags" time="1.142" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_full_rebuild_when_changed_ratio_exceeds_policy" time="3.653" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path0]" time="0.001" /><testcase classname="tests.orchestration.test_step_registry" name="test_expand_with_deps" time="0.001" /><testcase classname="tests.orchestration.test_step_registry" name="test_expand_with_deps_unknown_step" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_topological_order" time="0.001" /><testcase classname="tests.orchestration.test_step_registry" name="test_topological_order_cycle_detection" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_as_dict" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_iteration" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_run_records_context_repo" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_registry_contains_all_steps" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_backward_compat_exports" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_all_steps_have_required_attributes" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_step_metadata" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_phase_coverage" time="0.000" /><testcase classname="tests.ingestion.test_scip_ingest" name="test_ingest_scip_uses_injected_runner" time="2.594" /><testcase classname="tests.analytics.test_cfg_dfg_metrics_ext" name="test_dfg_metrics_ext_counts_use_kinds_and_paths" time="4.227" /><testcase classname="tests.orchestration.test_step_registry" name="test_list_by_phase[StepPhase.ANALYTICS-expected_names1]" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_list_by_phase[StepPhase.EXPORT-expected_names2]" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_dependency_graph" time="0.000" /><testcase classname="tests.analytics.test_cli_parser" name="test_function_parser_invalid_exits" time="0.007" /><testcase classname="tests.orchestration.test_history_timeseries_prefect" name="test_prefect_history_timeseries_step" time="17.052" /><testcase classname="tests.mcp.test_backend_adapter" name="test_backend_delegates_after_validation" time="3.660" /><testcase classname="tests.graphs.test_validation" name="test_run_graph_validations_snapshot_mismatch_raises" time="4.625" /><testcase classname="tests.mcp.test_backend" name="test_dataset_list_includes_function_validation" time="3.774" /><testcase classname="tests.orchestration.test_step_registry" name="test_getitem_raises_keyerror" time="0.001" /><testcase classname="tests.orchestration.test_step_registry" name="test_list_all" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_list_by_phase[StepPhase.INGESTION-expected_names0]" time="0.000" /><testcase classname="tests.mcp.test_backend" name="test_read_dataset_rows_unknown" time="3.752" /><testcase classname="tests.analytics.test_manifest_fields" name="test_manifest_includes_run_id_scope_and_isolation" time="0.562"><failure message="KeyError: 'Unknown analytics plugin: manifest_iso_plugin'">name = 'manifest_iso_plugin'
-
-&gt;   ???
-E   KeyError: 'manifest_iso_plugin'
-
-src/codeintel/analytics/plugins.py:170: KeyError
-
-The above exception was the direct cause of the following exception:
-
-plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x769ac6b1bcb0&gt;
-tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw15/test_manifest_includes_run_id_0')
+tests/analytics/test_plugin_scope_isolation.py:158: Failed</failure></testcase><testcase classname="tests.analytics.test_manifest_fields" name="test_manifest_includes_run_id_scope_and_isolation" time="0.569"><failure message="Failed: Manifest record should reflect isolation requirement">plugin_harness = &lt;tests.analytics.conftest.PluginTestHarness object at 0x75214cd1e510&gt;
+tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-312/popen-gw1/test_manifest_includes_run_id_0')
 
     def test_manifest_includes_run_id_scope_and_isolation(
         plugin_harness: PluginTestHarness, tmp_path: Path
@@ -1833,37 +385,25 @@ tmp_path = PosixPath('/tmp/pytest-of-paul/pytest-305/popen-gw15/test_manifest_in
             time_window=(datetime.now(tz=UTC), datetime.now(tz=UTC) + timedelta(hours=1)),
         )
         manifest_path = tmp_path / "manifest-iso.json"
-&gt;       report = plugin_harness.service.run_plugins(
+        report = plugin_harness.service.run_plugins(
             (plugin.name,),
             cfg=plugin_harness.cfg,
             run_options=GraphPluginRunOptions(scope=scope, manifest_path=manifest_path),
         )
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        run_id = payload.get("run_id")
+        if not run_id or not isinstance(run_id, str):
+            message = "Manifest should include top-level run_id"
+            pytest.fail(message)
+        scope_payload = payload.get("scope")
+        if scope_payload is None or scope_payload.get("paths") != list(scope.paths):
+            message = "Manifest should include scope paths"
+            pytest.fail(message)
+        record = payload["records"][0]
+        meta = record.get("meta", {})
+        if meta.get("requires_isolation") is not True:
+            message = "Manifest record should reflect isolation requirement"
+&gt;           pytest.fail(message)
+E           Failed: Manifest record should reflect isolation requirement
 
-tests/analytics/test_manifest_fields.py:30: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-src/codeintel/analytics/graph_service_runtime.py:106: in run_plugins
-    plan = plan_analytics_plugin_run(
-src/codeintel/analytics/plugin_runtime.py:206: in plan_analytics_plugin_run
-    plan = plan_analytics_plugins(plugin_names)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/analytics/plugins.py:244: in plan_analytics_plugins
-    disabled: Sequence[str] | None = None,
-                          ^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-name = 'manifest_iso_plugin'
-
-    
-    _ANALYTICS_PLUGINS: dict[str, AnalyticsPlugin] = {}
-    
-    
-    def register_analytics_plugin(plugin: AnalyticsPlugin) -&gt; None:
-        """
-&gt;       Register an analytics plugin.
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^
-    
-        Intended for module-level registration in analytics subpackages.
-        """
-E       KeyError: 'Unknown analytics plugin: manifest_iso_plugin'
-
-src/codeintel/analytics/plugins.py:173: KeyError</failure></testcase><testcase classname="tests.orchestration.test_prefect_flow_smoke" name="test_prefect_flow_imports" time="0.001" /><testcase classname="tests.analytics.test_model_config_heuristics" name="test_data_models_and_usage_and_config_flow" time="1.345" /><testcase classname="tests.docs_export.test_export_smoke" name="test_export_all_writes_expected_files" time="1.812" /><testcase classname="tests.graphs.test_validation_flags" name="test_validation_strict_escalates_findings" time="3.614" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_respects_module_filter_and_deleted_paths" time="3.618" /><testcase classname="tests.orchestration.test_risk_factors_catalog_fallback" name="test_risk_factors_uses_catalog_modules_when_core_modules_empty" time="2.555" /><testcase classname="tests.server.test_fastapi" name="test_backend_registry_matches_gateway" time="2.702" /><testcase classname="tests.server.test_dataset_registry_parity" name="test_dataset_registry_parity_across_factory_defaults" time="3.648" /><testcase classname="tests.server.test_fastapi" name="test_dataset_rows_limit_clamped" time="2.728" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_backend_registry_matches_gateway" time="2.931" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_callgraph_neighborhood_limits" time="3.542" /><testcase classname="tests.mcp.test_backend" name="test_get_function_summary" time="3.696" /><testcase classname="tests.server.test_fastapi" name="test_function_summary_success" time="2.720" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_health_reports_limits" time="3.574" /><testcase classname="tests.mcp.test_backend_dataset_adapter" name="test_read_dataset_rows_delegates" time="3.588" /><testcase classname="tests.mcp.test_duckdb_backend_engine" name="test_duckdb_backend_uses_injected_engine" time="0.576" /><testcase classname="tests.orchestration.test_step_registry" name="test_build_registry_from_dicts" time="0.000" /><testcase classname="tests.orchestration.test_step_registry" name="test_get_step" time="0.001" /><testcase classname="tests.services.test_factory_wiring" name="test_build_backend_resource_remote" time="6.490" /><testcase classname="tests.mcp.test_backend" name="test_function_validation_clamping" time="3.687" /><testcase classname="tests.server.test_fastapi" name="test_tests_for_function_success" time="2.748" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_http_backend_against_fastapi" time="3.606" /><testcase classname="tests.mcp.test_backend" name="test_dataset_rows_clamping" time="3.660" /><testcase classname="tests.server.test_fastapi" name="test_dataset_rows_success" time="2.727" /><testcase classname="tests.services.test_errors" name="test_log_problem_emits_json" time="0.001" /><testcase classname="tests.services.test_factory_wiring" name="test_build_backend_resource_local" time="3.901" /><testcase classname="tests.services.test_errors" name="test_problem_allows_override_instance_and_type" time="0.001" /><testcase classname="tests.services.test_errors" name="test_problem_error_taxonomy_subclasses" time="0.000" /><testcase classname="tests.services.test_query_service" name="test_mcp_tool_delegation" time="0.558"><skipped type="pytest.skip" message="FastMCP tools registry not available">/home/paul/CodeIntel/tests/services/test_query_service.py:575: FastMCP tools registry not available</skipped></testcase><testcase classname="tests.graphs.test_validation_flags" name="test_validation_non_strict_allows_warnings" time="3.544" /><testcase classname="tests.orchestration.test_prefect_flow_smoke" name="test_prefect_flow_preflight_only" time="7.071" /><testcase classname="tests.ingestion.test_change_tracker" name="test_view_for_dataset_full_rebuild_flag_forces_rebuild" time="3.571" /><testcase classname="tests.services.test_backend_limits" name="test_http_service_applies_backend_limits" time="0.001" /><testcase classname="tests.services.test_errors" name="test_problem_defaults_and_to_dict" time="0.000" /><testcase classname="tests.services.test_subsystem_roundtrip" name="test_subsystem_profile_roundtrip" time="0.920" /><testcase classname="tests.server.test_dataset_registry_parity" name="test_backend_resource_limits_and_registry_align" time="3.726" /><testcase classname="tests.server.test_datasets_registry" name="test_function_validation_dataset_present" time="0.001" /><testcase classname="tests.services.test_typed_docs_responses" name="test_subsystem_profile_response_uses_typed_row" time="0.425" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_import_boundary_limits" time="3.649" /><testcase classname="tests.services.test_typed_docs_responses" name="test_subsystem_coverage_response_uses_typed_row" time="0.427" /><testcase classname="tests.services.test_subsystem_roundtrip" name="test_subsystem_coverage_roundtrip" time="0.957" /><testcase classname="tests.server.test_fastapi" name="test_function_summary_not_found" time="2.732" /><testcase classname="tests.mcp.test_backend" name="test_get_function_summary_invalid" time="3.667" /><testcase classname="tests.serving.test_dataset_specs" name="test_dataset_specs_include_contract_fields" time="0.430" /><testcase classname="tests.server.test_fastapi" name="test_dataset_rows_unknown_dataset" time="2.729" /><testcase classname="tests.serving.test_mcp_scope_parsing" name="test_parse_graph_scope_roundtrip" time="0.001" /><testcase classname="tests.serving.test_query_service_scope" name="test_local_query_service_parses_graph_scope" time="0.000" /><testcase classname="tests.mcp.test_backend_adapter" name="test_require_identifier_validation" time="3.563" /><testcase classname="tests.services.test_query_service" name="test_observability_tracks_subsystem_profile_calls" time="0.001" /><testcase classname="tests.services.test_query_service" name="test_observability_tracks_subsystem_coverage_calls" time="0.000" /><testcase classname="tests.serving.test_view_utils" name="test_normalize_entrypoints_payload_from_json_string" time="0.001" /><testcase classname="tests.serving.test_view_utils" name="test_normalize_entrypoints_payload_from_mixed_dicts" time="0.000" /><testcase classname="tests.serving.test_view_utils" name="test_normalize_entrypoints_payload_from_single_dict" time="0.000" /><testcase classname="tests.serving.test_view_utils" name="test_normalize_entrypoints_row_updates_mapping_in_place" time="0.000" /><testcase classname="tests.serving.test_view_utils" name="test_normalize_entrypoints_row_handles_none" time="0.000" /><testcase classname="tests.server.test_fastapi_endpoints" name="test_fastapi_endpoints_smoke" time="3.655" /><testcase classname="tests.services.test_query_service" name="test_query_service_contract_local_vs_http" time="3.498" /><testcase classname="tests.mcp.test_backend" name="test_tests_for_function_not_found" time="3.656" /><testcase classname="tests.services.test_query_service" name="test_http_read_dataset_rows_invalid_offset" time="0.001" /><testcase classname="tests.services.test_query_service" name="test_http_high_risk_clamps_using_limits" time="0.000" /><testcase classname="tests.server.test_wiring_smoke" name="test_fastapi_wiring_smoke" time="4.230" /><testcase classname="tests.services.test_query_service" name="test_fastapi_delegates_to_query_service" time="0.728" /><testcase classname="tests.services.test_typed_docs_responses" name="test_function_summary_response_uses_typed_row" time="0.463" /><testcase classname="tests.services.test_subsystem_roundtrip" name="test_subsystem_coverage_not_found_meta" time="0.493" /><testcase classname="tests.services.test_backend_limits" name="test_clamp_limit_value_caps_and_reports" time="0.001" /><testcase classname="tests.storage.test_dataset_catalog" name="test_catalog_handles_missing_samples" time="0.001" /><testcase classname="tests.storage.test_dataset_catalog" name="test_catalog_sampling_gracefully_falls_back" time="0.014" /><testcase classname="tests.storage.test_dataset_catalog" name="test_catalog_sampling_strict_raises" time="0.011" /><testcase classname="tests.storage.test_dataset_catalog" name="test_catalog_missing_db_writes_empty" time="0.001" /><testcase classname="tests.storage.test_dataset_catalog" name="test_catalog_missing_db_strict_fails" time="0.001" /><testcase classname="tests.storage.test_dataset_scaffold" name="test_scaffold_writes_artifacts" time="0.001" /><testcase classname="tests.storage.test_dataset_scaffold" name="test_scaffold_respects_dry_run" time="0.001" /><testcase classname="tests.storage.test_dataset_scaffold" name="test_scaffold_blocks_overwrite_without_flag" time="0.001" /><testcase classname="tests.storage.test_dataset_scaffold" name="test_scaffold_view_defaults_skip_exports" time="0.001" /><testcase classname="tests.storage.test_dataset_scaffold" name="test_scaffold_emits_bootstrap_snippet_when_requested" time="0.001" /><testcase classname="tests.storage.test_dataset_scaffold" name="test_scaffold_registry_conflict_blocks_creation" time="0.001" /><testcase classname="tests.storage.test_datasets_contract" name="test_json_schema_ids_attached_to_datasets" time="0.483" /><testcase classname="tests.server.test_fastapi" name="test_tests_for_function_validation" time="2.741" /><testcase classname="tests.serving.test_mcp_scope_and_plan_models" name="test_parse_graph_scope_coerces_time_window_strings" time="0.001" /><testcase classname="tests.storage.test_datasets_contract" name="test_describe_dataset_shape" time="0.000" /><testcase classname="tests.storage.test_datasets_contract" name="test_json_schema_datasets_have_row_bindings" time="0.489" /><testcase classname="tests.storage.test_conformance" name="test_conformance_passes_with_empty_db" time="0.440" /><testcase classname="tests.storage.test_dataset_catalog" name="test_catalog_generation_writes_files" time="0.002" /><testcase classname="tests.storage.test_docs_views_as_datasets" name="test_docs_view_readable_via_dataset_rows" time="0.467" /><testcase classname="tests.storage.test_datasets_contract" name="test_require_row_binding_behavior" time="0.001" /><testcase classname="tests.storage.test_docs_view_indexes" name="test_test_profile_has_primary_subsystem_index" time="0.045" /><testcase classname="tests.storage.test_docs_view_indexes" name="test_subsystems_has_repo_commit_index" time="0.044" /><testcase classname="tests.storage.test_file_module_test_behavioral_columns" name="test_file_profile_tuple_length_matches_columns" time="0.001" /><testcase classname="tests.storage.test_file_module_test_behavioral_columns" name="test_test_profile_tuple_length_matches_columns" time="0.000" /><testcase classname="tests.storage.test_file_module_test_behavioral_columns" name="test_behavioral_coverage_tuple_length_matches_columns" time="0.000" /><testcase classname="tests.storage.test_function_profile_rows" name="test_function_profile_tuple_length_matches_columns" time="0.000" /><testcase classname="tests.storage.test_docs_views_as_datasets" name="test_docs_views_expose_capabilities" time="0.296" /><testcase classname="tests.serving.test_backend_resource_runtime" name="test_backend_resource_reuse_across_builds" time="4.366" /><testcase classname="tests.services.test_query_service" name="test_local_read_dataset_rows_defaults_limit" time="3.497" /><testcase classname="tests.mcp.test_backend" name="test_callgraph_direction_validation" time="3.757" /><testcase classname="tests.serving.test_serving_runtime_analytics_e2e" name="test_serving_runtime_analytics_reuses_engine" time="4.155" /><testcase classname="tests.serving.test_mcp_scope_and_plan_models" name="test_graph_plan_response_accepts_plugin_metadata" time="0.000" /><testcase classname="tests.services.test_query_service" name="test_local_read_dataset_rows_records_observability" time="3.470" /><testcase classname="tests.services.test_query_service" name="test_http_read_dataset_rows_clamps_limit" time="0.001" /><testcase classname="tests.orchestration.test_prefect_flow_smoke" name="test_cli_docs_export_with_validation" time="10.317" /><testcase classname="tests.services.test_query_service" name="test_local_query_service_reads_architecture_seed" time="3.449" /><testcase classname="tests.storage.repositories.test_repositories" name="test_function_repository_reads" time="4.847" /><testcase classname="tests.storage.test_docs_views_as_datasets" name="test_docs_views_registered_in_metadata" time="0.273" /><testcase classname="tests.serving.test_backend_resource_runtime" name="test_backend_resource_reuses_pooled_runtime" time="3.760" /><testcase classname="tests.storage.test_normalized_macros_helper" name="test_normalized_macros_match_expected_sets" time="0.001" /><testcase classname="tests.storage.repositories.test_repositories" name="test_data_model_repository_reads" time="4.861" /><testcase classname="tests.storage.test_catalog_describe" name="test_describe_dataset_warns_on_missing_schema" time="0.000" /><testcase classname="tests.storage.test_export_macro_parity" name="test_macro_parity_exports_seeded_rows" time="3.605" /><testcase classname="tests.orchestration.test_pipeline_catalog_entrypoint" name="test_pipeline_steps_use_function_catalog" time="8.665" /><testcase classname="tests.storage.test_export_macro_strict" name="test_require_macros_rejects_dataset_rows_only" time="3.572" /><testcase classname="tests.storage.test_gateway_helpers" name="test_insert_helpers_write_expected_rows" time="4.015" /><testcase classname="tests.storage.test_file_module_test_behavioral_columns" name="test_module_profile_tuple_length_matches_columns" time="0.000" /><testcase classname="tests.storage.test_schema_roundtrip" name="test_symbol_use_round_trip" time="0.415" /><testcase classname="tests.services.test_query_service" name="test_local_read_dataset_rows_propagates_errors" time="3.368" /><testcase classname="tests.storage.test_ingest_prepared_dynamic" name="test_dynamic_prepared_statements_match_registry" time="3.715" /><testcase classname="tests.storage.test_schema_roundtrip" name="test_test_coverage_round_trip" time="0.024" /><testcase classname="tests.storage.test_schema_roundtrip" name="test_generate_export_schemas_writes_files" time="0.262" /><testcase classname="tests.storage.test_subsystem_docs_views" name="test_subsystem_profile_columns" time="0.053" /><testcase classname="tests.storage.test_subsystem_view_schema_drift" name="test_subsystem_docs_views_schema_stable" time="0.060" /><testcase classname="tests.storage.test_views_scoping" name="test_call_graph_view_scopes_edges_to_repo_commit" time="4.275" /><testcase classname="tests.mcp.test_backend" name="test_get_tests_for_function" time="3.694" /><testcase classname="tests.services.test_factory_wiring" name="test_build_backend_resource_gateway_path" time="4.171" /><testcase classname="tests.storage.test_macro_schemas" name="test_macro_schemas_match_table_definitions" time="3.583" /><testcase classname="tests.storage.test_metadata_bootstrap" name="test_metadata_bootstrap_populates_catalog" time="0.429" /><testcase classname="tests.serving.test_serving_runtime_analytics_e2e" name="test_serving_wiring_respects_supplied_runtime" time="3.716" /><testcase classname="tests.test_layering_serving_imports" name="test_no_serving_imports_in_middle_packages" time="0.373" /><testcase classname="tests.storage.test_metadata_dataset_rows_macro" name="test_dataset_rows_macro_handles_registry_datasets" time="3.602" /><testcase classname="tests.test_pipeline_smoke" name="test_pipeline_export_docs_smoke" time="0.001"><skipped type="pytest.xfail" message="Pipeline export_docs currently fails in function_effects catalog integration" /></testcase><testcase classname="tests.test_tests_analytics_unit" name="test_backfill_test_goids_updates_catalog" time="4.321" /><testcase classname="tests.storage.test_normalized_macros_helper" name="test_dataset_rows_only_tables_parse" time="3.579" /><testcase classname="tests.storage.test_schema_function_validation" name="test_apply_all_schemas_creates_function_validation" time="3.552" /><testcase classname="tests.storage.test_schema_generation" name="test_json_schema_from_typeddict_round_trip" time="0.001" /><testcase classname="tests.storage.test_export_macro_strict" name="test_require_macros_allows_macro_backed_tables" time="3.548" /><testcase classname="tests.storage.test_schema_roundtrip" name="test_call_graph_edge_round_trip" time="0.389" /><testcase classname="tests.storage.test_export_macro_invocation" name="test_export_calls_macro_sentinel" time="3.559" /><testcase classname="tests.storage.test_schema_roundtrip" name="test_behavioral_coverage_round_trip" time="0.200" /><testcase classname="tests.storage.test_ingest_perf" name="test_ingest_macro_perf_reasonable" time="4.343" /><testcase classname="tests.storage.test_ingest_prepared_dynamic" name="test_ingest_macros_registered" time="3.568" /><testcase classname="tests.storage.test_subsystem_docs_views" name="test_subsystem_profile_view_prefers_cache" time="0.058" /><testcase classname="tests.storage.test_macro_performance" name="test_normalized_macro_latency_smoke[analytics.function_metrics]" time="3.540" /><testcase classname="tests.storage.repositories.test_repositories" name="test_module_repository_reads" time="4.759" /><testcase classname="tests.storage.test_subsystem_docs_views" name="test_subsystem_coverage_view_prefers_cache" time="0.061" /><testcase classname="tests.storage.test_macro_performance" name="test_normalized_macro_latency_smoke[graph.call_graph_edges]" time="3.551" /><testcase classname="tests.test_core_dependency_hygiene" name="test_core_imports_are_stdlib_only" time="0.001" /><testcase classname="tests.storage.test_subsystem_docs_views" name="test_subsystem_coverage_columns" time="0.048" /><testcase classname="tests.storage.test_macro_registry" name="test_macro_registry_hashes" time="3.572" /><testcase classname="tests.test_layering_serving_imports" name="test_no_pipeline_imports_in_middle_packages" time="0.493" /><testcase classname="tests.storage.test_normalized_macros" name="test_normalized_macros_execute" time="3.608" /><testcase classname="tests.test_testing_contract" name="test_testing_charter_forbidden_patterns" time="0.015" /><testcase classname="tests.storage.test_normalized_macros_helper" name="test_normalized_macros_defined" time="3.596" /><testcase classname="tests.test_tests_analytics_unit" name="test_compute_test_coverage_edges_with_real_coverage" time="4.466" /><testcase classname="tests.test_tests_analytics_unit" name="test_edges_for_file_uses_test_meta" time="0.001" /><testcase classname="tests.storage.test_schema_alignment" name="test_apply_and_validate_schema_alignment" time="3.680" /><testcase classname="tests.test_tests_analytics_unit" name="test_compute_test_coverage_edges_respects_injected_loader" time="4.378" /><testcase classname="tests.storage.test_normalized_macros_helper" name="test_normalized_macro_schema_validation" time="3.432" /><testcase classname="tests.test_callgraph_alias_resolution" name="test_callgraph_resolves_import_alias" time="4.381" /><testcase classname="tests.orchestration.test_pipeline_catalog_reuse" name="test_steps_share_function_catalog" time="6.977" /><testcase classname="tests.storage.repositories.test_repositories" name="test_subsystem_repository_reads" time="4.644" /><testcase classname="tests.orchestration.test_prefect_export_docs" name="test_t_export_docs_invokes_validator_before_export" time="1.742" /></testsuite></testsuites>
+tests/analytics/test_manifest_fields.py:48: Failed</failure></testcase><testcase classname="tests.analytics.test_plugin_scope_isolation" name="test_planner_requires_providers" time="0.574" /></testsuite></testsuites>

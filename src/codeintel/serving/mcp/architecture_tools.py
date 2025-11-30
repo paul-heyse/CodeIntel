@@ -19,10 +19,51 @@ from codeintel.serving.mcp.models import (
     SubsystemSummaryResponse,
 )
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
+from codeintel.serving.registry import OperationSpec, get_operation_spec
+
+
+def _require_spec(op_id: str) -> OperationSpec:
+    spec = get_operation_spec(op_id)
+    if spec is None:
+        message = f"OperationSpec {op_id} is not registered"
+        raise ValueError(message)
+    return spec
+
+
+def _load_architecture_specs() -> dict[str, OperationSpec]:
+    specs: dict[str, OperationSpec] = {
+        "subsystems.list": _require_spec("subsystems.list"),
+        "subsystems.module_memberships": _require_spec("subsystems.module_memberships"),
+        "subsystems.detail": _require_spec("subsystems.detail"),
+        "subsystems.search": _require_spec("subsystems.search"),
+        "subsystems.summarize": _require_spec("subsystems.summarize"),
+        "ide.hints": _require_spec("ide.hints"),
+        "architecture.function": _require_spec("architecture.function"),
+        "architecture.module": _require_spec("architecture.module"),
+        "graph.plugins.plan": _require_spec("graph.plugins.plan"),
+    }
+    expected_names = {
+        "subsystems.list": "list_subsystems",
+        "subsystems.module_memberships": "get_module_subsystems",
+        "subsystems.detail": "get_subsystem_modules",
+        "subsystems.search": "search_subsystems",
+        "subsystems.summarize": "summarize_subsystem",
+        "ide.hints": "get_file_hints",
+        "architecture.function": "get_function_architecture",
+        "architecture.module": "get_module_architecture",
+        "graph.plugins.plan": "graph_plugin_plan",
+    }
+    for op_id, tool_name in expected_names.items():
+        spec = specs[op_id]
+        if spec.tool_name != tool_name:
+            message = f"OperationSpec {op_id} has mismatched tool name"
+            raise ValueError(message)
+    return specs
 
 
 def register_architecture_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
     """Register architecture and subsystem MCP tools."""
+    _load_architecture_specs()
 
     @mcp.tool()
     @_wrap
@@ -112,7 +153,7 @@ def register_architecture_tools(mcp: FastMCP, backend: QueryBackendOrService) ->
     @mcp.tool()
     @_wrap
     def list_subsystems(
-        limit: int = 50, role: str | None = None, q: str | None = None
+        limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: SubsystemSummaryResponse = backend.list_subsystems(limit=limit, role=role, q=q)
         return resp.model_dump()
@@ -131,14 +172,19 @@ def register_architecture_tools(mcp: FastMCP, backend: QueryBackendOrService) ->
 
     @mcp.tool()
     @_wrap
-    def get_subsystem_modules(subsystem_id: str) -> dict[str, object] | dict[str, ProblemDetail]:
-        resp: SubsystemModulesResponse = backend.get_subsystem_modules(subsystem_id=subsystem_id)
+    def get_subsystem_modules(
+        subsystem_id: str, module_limit: int | None = None
+    ) -> dict[str, object] | dict[str, ProblemDetail]:
+        resp: SubsystemModulesResponse = backend.get_subsystem_modules(
+            subsystem_id=subsystem_id,
+            module_limit=module_limit,
+        )
         return resp.model_dump()
 
     @mcp.tool()
     @_wrap
     def search_subsystems(
-        limit: int = 20, role: str | None = None, q: str | None = None
+        limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> dict[str, object] | dict[str, ProblemDetail]:
         resp: SubsystemSearchResponse = backend.search_subsystems(limit=limit, role=role, q=q)
         return resp.model_dump()

@@ -42,10 +42,14 @@ class _SubsystemQueryDelegates:
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
         return self._call("get_file_hints", lambda: self.query.get_file_hints(rel_path=rel_path))
 
-    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+    def get_subsystem_modules(
+        self, *, subsystem_id: str, module_limit: int | None = None
+    ) -> SubsystemModulesResponse:
         return self._call(
             "get_subsystem_modules",
-            lambda: self.query.get_subsystem_modules(subsystem_id=subsystem_id),
+            lambda: self.query.get_subsystem_modules(
+                subsystem_id=subsystem_id, module_limit=module_limit
+            ),
         )
 
     def search_subsystems(
@@ -125,10 +129,18 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
 
         return self._http_call("get_file_hints", _run)
 
-    def get_subsystem_modules(self, *, subsystem_id: str) -> SubsystemModulesResponse:
+    def get_subsystem_modules(
+        self,
+        *,
+        subsystem_id: str,
+        module_limit: int | None = None,
+    ) -> SubsystemModulesResponse:
         def _run() -> SubsystemModulesResponse:
+            payload: dict[str, object] = {"subsystem_id": subsystem_id}
+            if module_limit is not None:
+                payload["module_limit"] = module_limit
             return SubsystemModulesResponse.model_validate(
-                self.request_json("/architecture/subsystem", {"subsystem_id": subsystem_id})
+                self.request_json("/architecture/subsystem", payload)
             )
 
         return self._http_call("get_subsystem_modules", _run)
@@ -164,15 +176,7 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
         subsystem_id: str,
         module_limit: int | None = None,
     ) -> SubsystemModulesResponse:
-        detail = self.get_subsystem_modules(subsystem_id=subsystem_id)
-        if module_limit is None or not detail.modules:
-            return detail
-        return SubsystemModulesResponse(
-            found=detail.found,
-            subsystem=detail.subsystem,
-            modules=detail.modules[:module_limit],
-            meta=detail.meta,
-        )
+        return self.get_subsystem_modules(subsystem_id=subsystem_id, module_limit=module_limit)
 
     def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
         def _run() -> SubsystemProfileResponse:

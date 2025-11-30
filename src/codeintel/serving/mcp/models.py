@@ -647,6 +647,7 @@ class DatasetSpecDescriptor(BaseModel):
 
     name: str
     table_key: str
+    family: str | None = None
     is_view: bool
     schema_columns: list[str] = Field(default_factory=list)
     jsonl_filename: str | None = None
@@ -700,3 +701,35 @@ class DatasetRowsResponse(BaseModel):
     offset: int
     rows: list[ViewRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+
+class DatasetMetaResponse(BaseModel):
+    """Expose dataset metadata enriched with serving limits."""
+
+    id: str
+    name: str
+    table_key: str
+    description: str
+    schema_version: str | None = None
+    family: str | None = None
+    is_docs_view: bool = False
+    is_read_only: bool = False
+    default_limit: int
+    max_limit: int
+
+
+class OperationMetaResponse(BaseModel):
+    """Introspectable metadata for a single operation."""
+
+    id: str
+    category: str
+    summary: str
+    description: str | None = None
+    http_method: str | None = None
+    http_path: str | None = None
+    tool_name: str | None = None
+    output_model: str
+    required_datasets: list[str] = Field(default_factory=list)
+    required_graphs: list[str] = Field(default_factory=list)
+    default_limit: int | None = None
+    max_limit: int | None = None

@@ -1,9 +1,15 @@
+"""Runtime test for the function metrics analytics plugin harness integration."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from codeintel.analytics.functions.plugins import FUNCTION_METRICS_PLUGIN
 from codeintel.analytics.plugin_runtime import (
+    AnalyticsPlanRequest,
+    AnalyticsRunContext,
     plan_analytics_plugin_run,
     run_analytics_plugins,
 )
@@ -43,6 +49,7 @@ def _seed_function(
 
 
 def test_function_metrics_plugin_executes(tmp_path: Path) -> None:
+    """Execute the function metrics plugin end-to-end through the analytics harness."""
     gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
     repo = "demo/repo"
     commit = "abc123"
@@ -54,30 +61,48 @@ def test_function_metrics_plugin_executes(tmp_path: Path) -> None:
     scope = GraphRunScope()
 
     plan = plan_analytics_plugin_run(
-        plugin_names=(FUNCTION_METRICS_PLUGIN.name,),
-        policy=policy,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        scope=scope,
-        prior_manifest={},
-        cfg_options={},
-        runtime_options={},
-        run_id="test-run",
+        AnalyticsPlanRequest(
+            plugin_names=(FUNCTION_METRICS_PLUGIN.name,),
+            policy=policy,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            scope=scope,
+            prior_manifest={},
+            cfg_options={},
+            runtime_options={},
+            run_id="test-run",
+        )
     )
 
     report = run_analytics_plugins(
         plan=plan,
-        gateway=gateway,
-        analytics_context=None,
-        graph_runtime=None,
-        cfgs={"function": cfg},
+        run_context=AnalyticsRunContext(
+            gateway=gateway,
+            analytics_context=None,
+            graph_runtime=None,
+            cfgs={"function": cfg},
+            extra={},
+            catalog_provider=None,
+        ),
     )
 
-    assert len(report.records) == 1
+    if len(report.records) != 1:
+        msg = "Expected a single run record for the metrics plugin."
+        pytest.fail(msg)
     rec = report.records[0]
-    assert rec.name == FUNCTION_METRICS_PLUGIN.name
-    assert rec.status == "succeeded"
+    if rec.name != FUNCTION_METRICS_PLUGIN.name:
+        msg = "Unexpected plugin name in run record."
+        pytest.fail(msg)
+    if rec.status != "succeeded":
+        msg = f"Plugin did not succeed: {rec.status}"
+        pytest.fail(msg)
     summary = rec.meta.get("result")
-    assert isinstance(summary, dict)
-    assert summary["metrics_rows"] >= 1
-    assert summary["types_rows"] >= 1
+    if not isinstance(summary, dict):
+        msg = "Expected metrics summary dictionary."
+        pytest.fail(msg)
+    if summary.get("metrics_rows", 0) < 1:
+        msg = "Function metrics did not emit rows."
+        pytest.fail(msg)
+    if summary.get("types_rows", 0) < 1:
+        msg = "Function types did not emit rows."
+        pytest.fail(msg)

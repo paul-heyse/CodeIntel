@@ -16,22 +16,32 @@ from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 
 
 def _function_metrics_run(ctx: AnalyticsExecutionContext) -> dict[str, int]:
-    """Bridge from generic AnalyticsExecutionContext to function metrics step."""
+    """
+    Bridge from generic AnalyticsExecutionContext to function metrics step.
+
+    Returns
+    -------
+    dict[str, int]
+        Summary counters emitted by the metrics/type computation.
+
+    Raises
+    ------
+    ValueError
+        If the function analytics configuration is missing from the context.
+    """
     if ctx.function_cfg is None:
         message = (
-            "FunctionAnalyticsStepConfig is required in "
-            "AnalyticsExecutionContext.function_cfg"
+            "FunctionAnalyticsStepConfig is required in AnalyticsExecutionContext.function_cfg"
         )
         raise ValueError(message)
 
     cfg: FunctionAnalyticsStepConfig = ctx.function_cfg
     opts = FunctionAnalyticsOptions(context=ctx.analytics_context)
-    summary = compute_function_metrics_and_types(
+    return compute_function_metrics_and_types(
         ctx.gateway,
         cfg,
         options=opts,
     )
-    return summary
 
 
 FUNCTION_METRICS_PLUGIN = AnalyticsPlugin(

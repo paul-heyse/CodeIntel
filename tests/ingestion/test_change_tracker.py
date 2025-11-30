@@ -207,7 +207,7 @@ def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
     file_a = repo_root / "a.py"
     file_b = repo_root / "b.py"
     file_a.write_text(
-        '\n'.join(
+        "\n".join(
             [
                 '"""Module A."""',
                 "",
@@ -219,7 +219,7 @@ def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
         encoding="utf8",
     )
     file_b.write_text(
-        '\n'.join(
+        "\n".join(
             [
                 '"""Module B."""',
                 "",
@@ -276,7 +276,7 @@ def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
         baseline_metrics = _typedness_metrics_by_path(gateway)
 
         file_b.write_text(
-            '\n'.join(
+            "\n".join(
                 [
                     '"""Module B updated."""',
                     "",

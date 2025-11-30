@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from importlib import import_module
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -16,12 +17,10 @@ from codeintel.analytics.graphs.contracts import ContractChecker
 from codeintel.analytics.runtime_manifest import AnalyticsSkippedStep
 from codeintel.config.steps_analytics import (
     BehavioralCoverageStepConfig,
-    ConfigDataFlowStepConfig,
     CoverageAnalyticsStepConfig,
-    DataModelUsageStepConfig,
     DataModelsStepConfig,
+    DataModelUsageStepConfig,
     EntryPointsStepConfig,
-    ExternalDependenciesStepConfig,
     FunctionAnalyticsStepConfig,
     FunctionContractsStepConfig,
     FunctionEffectsStepConfig,
@@ -34,7 +33,12 @@ from codeintel.config.steps_analytics import (
     TestCoverageStepConfig,
     TestProfileStepConfig,
 )
-from codeintel.config.steps_graphs import GraphMetricsStepConfig, GraphRunScope
+from codeintel.config.steps_graphs import (
+    ConfigDataFlowStepConfig,
+    ExternalDependenciesStepConfig,
+    GraphMetricsStepConfig,
+    GraphRunScope,
+)
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
@@ -109,6 +113,7 @@ Stage = Literal[
     "function",
     "function_history",
     "test",
+    "coverage",
     "subsystem",
     "data_model",
     "data_model_usage",
@@ -117,9 +122,6 @@ Stage = Literal[
     "history",
     "other",
 ]
-
-TContext = TypeVar("TContext", bound=AnalyticsExecutionContext)
-
 
 @dataclass(frozen=True)
 class AnalyticsPlugin:
@@ -133,7 +135,7 @@ class AnalyticsPlugin:
     description: str
     stage: Stage
     enabled_by_default: bool
-    run: Callable[[TContext], object | None]
+    run: Callable[[AnalyticsExecutionContext], object | None]
 
     severity: Severity = "fatal"
     depends_on: tuple[str, ...] = ()
@@ -146,6 +148,8 @@ class AnalyticsPlugin:
     version_hash: str | None = None
     row_count_tables: tuple[str, ...] = ()
     contract_checkers: tuple[ContractChecker, ...] = ()
+    requires_isolation: bool = False
+    isolation_kind: Literal["process", "thread"] | None = None
 
     context_factory: Callable[[AnalyticsExecutionContext], AnalyticsExecutionContext] | None = None
 
@@ -173,6 +177,11 @@ def register_analytics_plugin(plugin: AnalyticsPlugin) -> None:
     Register an analytics plugin.
 
     Intended for module-level registration in analytics subpackages.
+
+    Raises
+    ------
+    ValueError
+        If the plugin name is already registered.
     """
     if plugin.name in _ANALYTICS_PLUGINS:
         message = f"Duplicate analytics plugin name: {plugin.name}"
@@ -182,7 +191,24 @@ def register_analytics_plugin(plugin: AnalyticsPlugin) -> None:
 
 
 def get_analytics_plugin(name: str) -> AnalyticsPlugin:
-    """Return a registered analytics plugin by name."""
+    """
+    Return a registered analytics plugin by name.
+
+    Returns
+    -------
+    AnalyticsPlugin
+        Registered plugin instance.
+
+    Raises
+    ------
+    KeyError
+        If no analytics or graph plugin exists with the requested name.
+    """
+    plugin = _ANALYTICS_PLUGINS.get(name)
+    if plugin is not None:
+        return plugin
+
+    _autoregister_graph_plugin(name)
     try:
         return _ANALYTICS_PLUGINS[name]
     except KeyError as exc:
@@ -191,7 +217,14 @@ def get_analytics_plugin(name: str) -> AnalyticsPlugin:
 
 
 def list_analytics_plugins() -> tuple[AnalyticsPlugin, ...]:
-    """Return all registered analytics plugins."""
+    """
+    Return all registered analytics plugins.
+
+    Returns
+    -------
+    tuple[AnalyticsPlugin, ...]
+        Registered plugins in registration order.
+    """
     return tuple(_ANALYTICS_PLUGINS.values())
 
 
@@ -202,6 +235,14 @@ def _resolve_requested_plugins(
     disabled: Sequence[str] | None,
     defaults: Sequence[str],
 ) -> tuple[tuple[str, ...], tuple[AnalyticsSkippedStep, ...]]:
+    """
+    Resolve requested plugin names and capture disabled entries.
+
+    Returns
+    -------
+    tuple[tuple[str, ...], tuple[AnalyticsSkippedStep, ...]]
+        Selected plugin names and skipped records.
+    """
     if enabled:
         selected = tuple(enabled)
     elif plugin_names:
@@ -226,13 +267,24 @@ def _resolve_requested_plugins(
 
 
 def _validate_plugin_deps(requested: dict[str, AnalyticsPlugin]) -> dict[str, set[str]]:
-    """Validate that dependencies exist within the requested set."""
+    """
+    Validate that dependencies exist within the requested set.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Dependency mapping for each requested plugin.
+    """
     dependencies: dict[str, set[str]] = {name: set() for name in requested}
     for plugin in requested.values():
         for dep in plugin.depends_on:
             if dep not in requested:
-                message = f"Dependency '{dep}' for analytics plugin '{plugin.name}' is not selected"
-                raise ValueError(message)
+                log.debug(
+                    "Skipping unmet dependency %s for analytics plugin %s",
+                    dep,
+                    plugin.name,
+                )
+                continue
             dependencies[plugin.name].add(dep)
     return dependencies
 
@@ -246,6 +298,16 @@ def plan_analytics_plugins(
 ) -> AnalyticsPluginPlan:
     """
     Build an execution plan with dependency validation and topological ordering.
+
+    Raises
+    ------
+    ValueError
+        If duplicate plugins are requested or a dependency cycle is detected.
+
+    Returns
+    -------
+    AnalyticsPluginPlan
+        Ordered analytics plugin plan with dependency graph metadata.
     """
     selection, skipped = _resolve_requested_plugins(
         plugin_names=plugin_names,
@@ -292,14 +354,26 @@ def plan_analytics_plugins(
     )
 
 
+def _autoregister_graph_plugin(name: str) -> None:
+    """Attempt to mirror a graph plugin into the analytics registry when missing."""
+    if name in _ANALYTICS_PLUGINS:
+        return
+    try:
+        graphs_plugins = import_module("codeintel.analytics.graphs.plugins")
+        graph_plugin = graphs_plugins.get_graph_metric_plugin(name)
+        register_analytics_plugin(graphs_plugins.graph_metric_plugin_to_analytics(graph_plugin))
+    except (ImportError, AttributeError, KeyError):
+        return
+
+
 __all__ = [
     "AnalyticsExecutionContext",
     "AnalyticsPlugin",
     "AnalyticsPluginPlan",
     "ResourceHints",
     "Stage",
-    "register_analytics_plugin",
     "get_analytics_plugin",
     "list_analytics_plugins",
     "plan_analytics_plugins",
+    "register_analytics_plugin",
 ]

@@ -19,6 +19,7 @@ from codeintel.analytics.graphs.runtime import (
     GraphPluginRunRecord,
     GraphPluginRunReport,
     GraphRuntimeTelemetry,
+    OtelGraphRuntimeTelemetry,
     PluginExecutionPlan,
     PluginExecutionSettings,
     PluginFatalError,
@@ -30,7 +31,12 @@ from codeintel.analytics.graphs.runtime.analytics_adapter import (
     graph_run_to_analytics,
 )
 from codeintel.analytics.graphs.runtime.manifest import load_prior_manifest, write_manifest
-from codeintel.analytics.plugin_runtime import plan_analytics_plugin_run, run_analytics_plugins
+from codeintel.analytics.plugin_runtime import (
+    AnalyticsPlanRequest,
+    AnalyticsRunContext,
+    plan_analytics_plugin_run,
+    run_analytics_plugins,
+)
 from codeintel.analytics.runtime_manifest import encode_manifest
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
@@ -79,8 +85,6 @@ class GraphServiceRuntime:
         ------
         ValueError
             If neither a config nor runtime snapshot is available to derive repo/commit.
-        PluginFatalError
-            When a fatal plugin failure occurs and fail-fast is enabled.
 
         Returns
         -------
@@ -102,27 +106,34 @@ class GraphServiceRuntime:
         cfg_options = cfg.plugin_options if cfg is not None else {}
         runtime_options = (run_options.plugin_options if run_options is not None else {}) or {}
         run_id = uuid4().hex
+        telemetry = self.telemetry or OtelGraphRuntimeTelemetry()
 
         plan = plan_analytics_plugin_run(
-            plugin_names=plugin_names,
-            policy=policy,
-            repo=repo,
-            commit=commit,
-            scope=scope,
-            prior_manifest=prior_manifest or {},
-            cfg_options=cfg_options,
-            runtime_options=runtime_options,
-            run_id=run_id,
+            AnalyticsPlanRequest(
+                plugin_names=plugin_names,
+                policy=policy,
+                repo=repo,
+                commit=commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options=cfg_options,
+                runtime_options=runtime_options,
+                run_id=run_id,
+                telemetry=telemetry,
+            )
         )
 
         analytics_report = run_analytics_plugins(
             plan=plan,
-            gateway=self.gateway,
-            analytics_context=self.analytics_context,
-            graph_runtime=self.runtime,
-            cfgs={"graph": cfg} if cfg is not None else {},
-            extra={},
-            catalog_provider=self.catalog_provider,
+            run_context=AnalyticsRunContext(
+                gateway=self.gateway,
+                analytics_context=self.analytics_context,
+                graph_runtime=self.runtime,
+                cfgs={"graph": cfg} if cfg is not None else {},
+                extra={},
+                catalog_provider=self.catalog_provider,
+            ),
+            # telemetry handled inside analytics execution
         )
 
         report = analytics_to_graph_run(analytics_report)
@@ -144,8 +155,9 @@ class GraphServiceRuntime:
             raise ValueError(message)
         return snapshot.repo, snapshot.commit
 
+    @staticmethod
     def _resolve_scope(
-        self, cfg: GraphMetricsStepConfig | None, run_options: GraphPluginRunOptions | None
+        cfg: GraphMetricsStepConfig | None, run_options: GraphPluginRunOptions | None
     ) -> GraphRunScope:
         if run_options is not None and run_options.scope is not None:
             return run_options.scope
@@ -168,7 +180,5 @@ __all__ = [
     "PluginExecutionSettings",
     "PluginFatalError",
     "build_graph_context",
-    "compute_input_hash",
-    "compute_options_hash",
     "resolve_graph_context",
 ]

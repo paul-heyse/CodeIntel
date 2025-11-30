@@ -9,45 +9,48 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.analytics.ast_metrics import build_hotspots
-from codeintel.analytics.coverage_analytics import compute_coverage_functions
-from codeintel.analytics.data_model_usage import compute_data_model_usage
-from codeintel.analytics.data_models import compute_data_models
-from codeintel.analytics.dependencies import (
-    build_external_dependencies,
-    build_external_dependency_calls,
+from codeintel.analytics.config_data_flow.plugins import CONFIG_DATA_FLOW_PLUGIN
+from codeintel.analytics.coverage.plugins import (
+    COVERAGE_FUNCTIONS_PLUGIN,
+    COVERAGE_TEST_EDGES_PLUGIN,
 )
-from codeintel.analytics.entrypoints import build_entrypoints
-from codeintel.analytics.functions import (
-    compute_function_contracts,
-    compute_function_effects,
-    compute_function_history,
+from codeintel.analytics.data_models.plugins import (
+    DATA_MODEL_USAGE_PLUGIN,
+    DATA_MODELS_PLUGIN,
 )
+from codeintel.analytics.dependencies.plugins import EXTERNAL_DEPS_PLUGIN
+from codeintel.analytics.entrypoints.plugins import ENTRYPOINTS_PLUGIN
+from codeintel.analytics.functions.contracts_plugins import FUNCTION_CONTRACTS_PLUGIN
+from codeintel.analytics.functions.effects_plugins import FUNCTION_EFFECTS_PLUGIN
+from codeintel.analytics.functions.history_plugins import FUNCTION_HISTORY_PLUGIN
 from codeintel.analytics.functions.plugins import FUNCTION_METRICS_PLUGIN
 from codeintel.analytics.graph_service_runtime import GraphPluginRunOptions, GraphServiceRuntime
-from codeintel.analytics.graphs import compute_config_data_flow
 from codeintel.analytics.graphs.plugins import (
     DEFAULT_GRAPH_METRIC_PLUGINS,
     plan_graph_metric_plugins,
 )
 from codeintel.analytics.graphs.runtime.manifest import load_prior_manifest
-from codeintel.analytics.history import compute_history_timeseries_gateways
-from codeintel.analytics.plugin_runtime import plan_analytics_plugin_run, run_analytics_plugins
-from codeintel.analytics.profiles import (
-    build_file_profile,
-    build_function_profile,
-    build_module_profile,
+from codeintel.analytics.history.plugins import HISTORY_TIMESERIES_PLUGIN
+from codeintel.analytics.hotspots.plugins import HOTSPOTS_PLUGIN
+from codeintel.analytics.plugin_runtime import (
+    AnalyticsPlanRequest,
+    AnalyticsRunContext,
+    plan_analytics_plugin_run,
+    run_analytics_plugins,
 )
-from codeintel.analytics.semantic_roles import compute_semantic_roles
-from codeintel.analytics.subsystems import build_subsystems, refresh_subsystem_caches
-from codeintel.analytics.tests import compute_test_coverage_edges
+from codeintel.analytics.profiles.plugins import PROFILES_PLUGIN
+from codeintel.analytics.risk.plugins import RISK_FACTORS_PLUGIN
+from codeintel.analytics.runtime_manifest import encode_manifest
+from codeintel.analytics.semantic_roles.plugins import SEMANTIC_ROLES_PLUGIN
+from codeintel.analytics.subsystems import refresh_subsystem_caches
+from codeintel.analytics.subsystems.plugins import SUBSYSTEMS_PLUGIN
 from codeintel.analytics.tests.plugins import (
     BEHAVIORAL_COVERAGE_PLUGIN,
     TEST_PROFILE_PLUGIN,
 )
 from codeintel.config import GraphMetricsStepConfig
+from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
-from codeintel.analytics.runtime_manifest import encode_manifest
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,
@@ -58,7 +61,6 @@ from codeintel.pipeline.orchestration.core import (
     _resolve_code_profile,
     ensure_graph_runtime,
 )
-from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.storage.gateway import StorageGateway, build_snapshot_gateway_resolver
 
 log = logging.getLogger(__name__)
@@ -137,9 +139,40 @@ class HotspotsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Compute file-level hotspot scores."""
         _log_step(self.name)
-        gateway = ctx.gateway
+        acx = _analytics_context(ctx)
         cfg = ctx.config_builder().hotspots()
-        build_hotspots(gateway, cfg, runner=ctx.tool_runner)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "hotspots.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(HOTSPOTS_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
+        )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=None,
+                cfgs={"hotspots": cfg},
+                extra={"tool_runner": ctx.tool_runner},
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -156,7 +189,38 @@ class FunctionHistoryStep:
         _log_step(self.name)
         cfg = ctx.config_builder().function_history()
         acx = _analytics_context(ctx)
-        compute_function_history(ctx.gateway, cfg, runner=ctx.tool_runner, context=acx)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "function_history.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(FUNCTION_HISTORY_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
+        )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=None,
+                cfgs={"function_history": cfg},
+                extra={"tool_runner": ctx.tool_runner},
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -189,12 +253,41 @@ class HistoryTimeseriesStep:
             repo=ctx.repo,
             primary_gateway=ctx.gateway,
         )
-        compute_history_timeseries_gateways(
-            ctx.gateway,
-            cfg,
-            snapshot_resolver,
-            runner=ctx.tool_runner,
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "history_timeseries.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(HISTORY_TIMESERIES_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=_analytics_context(ctx),
+                graph_runtime=None,
+                cfgs={"history": cfg},
+                extra={
+                    "history_snapshot_resolver": snapshot_resolver,
+                    "tool_runner": ctx.tool_runner,
+                },
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -222,23 +315,29 @@ class FunctionAnalyticsStep:
         prior_manifest = load_prior_manifest(manifest_path)
 
         plan = plan_analytics_plugin_run(
-            plugin_names=(FUNCTION_METRICS_PLUGIN.name,),
-            policy=policy,
-            repo=cfg.repo,
-            commit=cfg.commit,
-            scope=scope,
-            prior_manifest=prior_manifest or {},
-            cfg_options={},
-            runtime_options={},
-            run_id=ctx.run_id,
+            AnalyticsPlanRequest(
+                plugin_names=(FUNCTION_METRICS_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
 
         report = run_analytics_plugins(
             plan=plan,
-            gateway=gateway,
-            analytics_context=acx,
-            graph_runtime=None,
-            cfgs={"function": cfg},
+            run_context=AnalyticsRunContext(
+                gateway=gateway,
+                analytics_context=acx,
+                graph_runtime=None,
+                cfgs={"function": cfg},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
         )
 
         summary: dict[str, int] = {
@@ -252,9 +351,7 @@ class FunctionAnalyticsStep:
             if rec.name == "functions.metrics" and isinstance(rec.meta, dict):
                 result = rec.meta.get("result")
                 if isinstance(result, dict):
-                    summary.update(
-                        {k: int(v) for k, v in result.items() if isinstance(v, int)}
-                    )
+                    summary.update({k: int(v) for k, v in result.items() if isinstance(v, int)})
                 break
 
         if manifest_path is not None:
@@ -288,13 +385,38 @@ class FunctionEffectsStep:
         cfg = ctx.config_builder().function_effects()
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        compute_function_effects(
-            ctx.gateway,
-            cfg,
-            catalog_provider=acx.catalog,
-            context=acx,
-            runtime=runtime,
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "function_effects.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(FUNCTION_EFFECTS_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=runtime,
+                cfgs={"function_effects": cfg},
+                extra={},
+                catalog_provider=acx.catalog,
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -312,13 +434,38 @@ class FunctionContractsStep:
         cfg = ctx.config_builder().function_contracts()
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        compute_function_contracts(
-            ctx.gateway,
-            cfg,
-            catalog_provider=acx.catalog,
-            context=acx,
-            runtime=runtime,
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "function_contracts.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(FUNCTION_CONTRACTS_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=runtime,
+                cfgs={"function_contracts": cfg},
+                extra={},
+                catalog_provider=acx.catalog,
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -334,7 +481,38 @@ class DataModelsStep:
         """Populate analytics.data_models."""
         _log_step(self.name)
         cfg = ctx.config_builder().data_models()
-        compute_data_models(ctx.gateway, cfg)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "data_models.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(DATA_MODELS_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
+        )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=_analytics_context(ctx),
+                graph_runtime=None,
+                cfgs={"data_models": cfg},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -352,13 +530,38 @@ class DataModelUsageStep:
         cfg = ctx.config_builder().data_model_usage()
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        compute_data_model_usage(
-            ctx.gateway,
-            cfg,
-            catalog_provider=acx.catalog,
-            context=acx,
-            runtime=runtime,
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "data_model_usage.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(DATA_MODEL_USAGE_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=runtime,
+                cfgs={"data_model_usage": cfg},
+                extra={},
+                catalog_provider=acx.catalog,
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -376,7 +579,38 @@ class ConfigDataFlowStep:
         cfg = ctx.config_builder().config_data_flow()
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        compute_config_data_flow(ctx.gateway, cfg, context=acx, runtime=runtime)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "config_data_flow.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(CONFIG_DATA_FLOW_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
+        )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=runtime,
+                cfgs={"config_data_flow": cfg},
+                extra={},
+                catalog_provider=acx.catalog,
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -391,10 +625,40 @@ class CoverageAnalyticsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Aggregate line coverage to function spans."""
         _log_step(self.name)
-        gateway = ctx.gateway
         cfg = ctx.config_builder().coverage_analytics()
         acx = _analytics_context(ctx)
-        compute_coverage_functions(gateway, cfg, context=acx)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "coverage_functions.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(COVERAGE_FUNCTIONS_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
+        )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=None,
+                cfgs={"coverage_functions": cfg},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -409,10 +673,40 @@ class TestCoverageEdgesStep:
     def run(self, ctx: PipelineContext) -> None:
         """Derive test-to-function edges using coverage contexts."""
         _log_step(self.name)
-        gateway = ctx.gateway
-        catalog = _function_catalog(ctx)
         cfg = ctx.config_builder().test_coverage(coverage_loader=ctx.coverage_loader)
-        compute_test_coverage_edges(gateway, cfg, catalog_provider=catalog)
+        catalog = _function_catalog(ctx)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "test_coverage_edges.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(COVERAGE_TEST_EDGES_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
+        )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=_analytics_context(ctx),
+                graph_runtime=None,
+                cfgs={"test_coverage_edges": cfg},
+                extra={},
+                catalog_provider=catalog,
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -435,134 +729,38 @@ class RiskFactorsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Compute risk factors by joining analytics tables."""
         _log_step(self.name)
-        log.info("Computing risk_factors for %s@%s", ctx.repo, ctx.commit)
-        gateway = ctx.gateway
-        con = gateway.con
-        catalog = ctx.function_catalog
-
-        con.execute(
-            "DELETE FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?",
-            [ctx.repo, ctx.commit],
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "risk_factors.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(RISK_FACTORS_PLUGIN.name,),
+                policy=policy,
+                repo=ctx.repo,
+                commit=ctx.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
-
-        use_catalog_modules = _seed_catalog_modules(
-            gateway, catalog, repo=ctx.repo, commit=ctx.commit
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=_analytics_context(ctx),
+                graph_runtime=None,
+                cfgs={},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
         )
-
-        risk_sql = """
-        INSERT INTO analytics.goid_risk_factors
-        SELECT
-            fm.function_goid_h128,
-            fm.urn,
-            fm.repo,
-            fm.commit,
-            fm.rel_path,
-            fm.language,
-            fm.kind,
-            fm.qualname,
-            fm.loc,
-            fm.logical_loc,
-            fm.cyclomatic_complexity,
-            fm.complexity_bucket,
-            ft.typedness_bucket,
-            ft.typedness_source,
-            h.score                       AS hotspot_score,
-            CAST(ty.annotation_ratio->>'params' AS DOUBLE) AS file_typed_ratio,
-            sd.total_errors               AS static_error_count,
-            sd.has_errors                 AS has_static_errors,
-            cf.executable_lines,
-            cf.covered_lines,
-            cf.coverage_ratio,
-            cf.tested,
-            COALESCE(t_stats.test_count, 0)         AS test_count,
-            COALESCE(t_stats.failing_test_count, 0) AS failing_test_count,
-            COALESCE(t_stats.last_test_status, 'unknown') AS last_test_status,
-            (
-                COALESCE(1.0 - cf.coverage_ratio, 1.0) * 0.4 +
-                CASE fm.complexity_bucket
-                    WHEN 'high' THEN 0.4
-                    WHEN 'medium' THEN 0.2
-                    ELSE 0.0
-                END +
-                CASE WHEN sd.has_errors THEN 0.2 ELSE 0.0 END +
-                CASE WHEN h.score > 0 THEN 0.1 ELSE 0.0 END
-            ) AS risk_score,
-            CASE
-                WHEN (
-                    COALESCE(1.0 - cf.coverage_ratio, 1.0) * 0.4 +
-                    CASE fm.complexity_bucket
-                        WHEN 'high' THEN 0.4
-                        WHEN 'medium' THEN 0.2
-                        ELSE 0.0
-                    END +
-                    CASE WHEN sd.has_errors THEN 0.2 ELSE 0.0 END +
-                    CASE WHEN h.score > 0 THEN 0.1 ELSE 0.0 END
-                ) >= 0.7 THEN 'high'
-                WHEN (
-                    COALESCE(1.0 - cf.coverage_ratio, 1.0) * 0.4 +
-                    CASE fm.complexity_bucket
-                        WHEN 'high' THEN 0.4
-                        WHEN 'medium' THEN 0.2
-                        ELSE 0.0
-                    END +
-                    CASE WHEN sd.has_errors THEN 0.2 ELSE 0.0 END +
-                    CASE WHEN h.score > 0 THEN 0.1 ELSE 0.0 END
-                ) >= 0.4 THEN 'medium'
-                ELSE 'low'
-            END AS risk_level,
-            m.tags,
-            m.owners,
-            NOW() AS created_at
-        FROM analytics.function_metrics fm
-        LEFT JOIN analytics.function_types ft
-            ON ft.function_goid_h128 = fm.function_goid_h128
-        LEFT JOIN analytics.coverage_functions cf
-            ON cf.function_goid_h128 = fm.function_goid_h128
-        LEFT JOIN analytics.hotspots h
-            ON h.rel_path = fm.rel_path
-        LEFT JOIN analytics.typedness ty
-            ON ty.path = fm.rel_path
-        LEFT JOIN analytics.static_diagnostics sd
-            ON sd.rel_path = fm.rel_path
-        LEFT JOIN (
-            SELECT
-                e.function_goid_h128,
-                COUNT(DISTINCT e.test_id) AS test_count,
-                COUNT(
-                    DISTINCT CASE WHEN t.status IN ('failed','error') THEN e.test_id END
-                ) AS failing_test_count,
-                CASE
-                    WHEN COUNT(DISTINCT e.test_id) = 0 THEN 'untested'
-                    WHEN COUNT(
-                        DISTINCT CASE WHEN t.status IN ('failed','error') THEN e.test_id END
-                    ) > 0
-                        THEN 'some_failing'
-                    WHEN COUNT(DISTINCT CASE WHEN t.status = 'passed' THEN e.test_id END) > 0
-                        THEN 'all_passing'
-                    ELSE 'unknown'
-                END AS last_test_status
-            FROM analytics.test_coverage_edges e
-            LEFT JOIN analytics.test_catalog t
-                ON t.test_id = e.test_id
-            GROUP BY e.function_goid_h128
-        ) AS t_stats
-            ON t_stats.function_goid_h128 = fm.function_goid_h128
-        LEFT JOIN core.modules m
-            ON m.path = fm.rel_path
-        WHERE fm.repo = ?
-          AND fm.commit = ?;
-        """
-        if use_catalog_modules:
-            risk_sql = risk_sql.replace("core.modules", "temp.catalog_modules")
-
-        con.execute(risk_sql, [ctx.repo, ctx.commit])
-
-        count_row = con.execute(
-            "SELECT COUNT(*) FROM analytics.goid_risk_factors WHERE repo = ? AND commit = ?",
-            [ctx.repo, ctx.commit],
-        ).fetchone()
-        n = int(count_row[0]) if count_row is not None else 0
-        log.info("risk_factors populated: %d rows for %s@%s", n, ctx.repo, ctx.commit)
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _resolve_graph_plugins(
@@ -651,13 +849,38 @@ class SemanticRolesStep:
         cfg = ctx.config_builder().semantic_roles()
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        compute_semantic_roles(
-            ctx.gateway,
-            cfg,
-            catalog_provider=acx.catalog,
-            context=acx,
-            runtime=runtime,
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "semantic_roles.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(SEMANTIC_ROLES_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=runtime,
+                cfgs={"semantic_roles": cfg},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -672,11 +895,41 @@ class SubsystemsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Populate subsystem membership and summaries."""
         _log_step(self.name)
-        gateway = ctx.gateway
         cfg = ctx.config_builder().subsystems()
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        build_subsystems(gateway, cfg, context=acx, runtime=runtime)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "subsystems.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(SUBSYSTEMS_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
+        )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=runtime,
+                cfgs={"subsystems": cfg},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -705,24 +958,29 @@ class TestProfileStep:
         prior_manifest = load_prior_manifest(manifest_path)
 
         plan = plan_analytics_plugin_run(
-            plugin_names=(TEST_PROFILE_PLUGIN.name,),
-            policy=policy,
-            repo=cfg.repo,
-            commit=cfg.commit,
-            scope=scope,
-            prior_manifest=prior_manifest or {},
-            cfg_options={},
-            runtime_options={},
-            run_id=ctx.run_id,
+            AnalyticsPlanRequest(
+                plugin_names=(TEST_PROFILE_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
 
         report = run_analytics_plugins(
             plan=plan,
-            gateway=ctx.gateway,
-            analytics_context=acx,
-            graph_runtime=None,
-            cfgs={"test_profile": cfg},
-            extra={},
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=None,
+                cfgs={"test_profile": cfg},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
         )
 
         summary = {}
@@ -783,24 +1041,29 @@ class BehavioralCoverageStep:
         }
 
         plan = plan_analytics_plugin_run(
-            plugin_names=(BEHAVIORAL_COVERAGE_PLUGIN.name,),
-            policy=policy,
-            repo=cfg.repo,
-            commit=cfg.commit,
-            scope=scope,
-            prior_manifest=prior_manifest or {},
-            cfg_options=cfg_options,
-            runtime_options={},
-            run_id=ctx.run_id,
+            AnalyticsPlanRequest(
+                plugin_names=(BEHAVIORAL_COVERAGE_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options=cfg_options,
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
 
         report = run_analytics_plugins(
             plan=plan,
-            gateway=ctx.gateway,
-            analytics_context=_analytics_context(ctx),
-            graph_runtime=None,
-            cfgs={"behavioral_coverage": cfg},
-            extra={"behavioral_llm_runner": llm_runner},
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=_analytics_context(ctx),
+                graph_runtime=None,
+                cfgs={"behavioral_coverage": cfg},
+                extra={"behavioral_llm_runner": llm_runner},
+                catalog_provider=_function_catalog(ctx),
+            ),
         )
 
         if manifest_path is not None:
@@ -839,16 +1102,41 @@ class EntryPointsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Populate analytics.entrypoints and analytics.entrypoint_tests."""
         _log_step(self.name)
+        cfg = ctx.config_builder().entrypoints(scan_profile=_resolve_code_profile(ctx))
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        cfg = ctx.config_builder().entrypoints(scan_profile=_resolve_code_profile(ctx))
-        build_entrypoints(
-            ctx.gateway,
-            cfg,
-            catalog_provider=acx.catalog,
-            context=acx,
-            runtime=runtime,
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "entrypoints.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(ENTRYPOINTS_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=runtime,
+                cfgs={"entrypoints": cfg},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -863,19 +1151,43 @@ class ExternalDependenciesStep:
     def run(self, ctx: PipelineContext) -> None:
         """Populate dependency call edges and aggregated usage."""
         _log_step(self.name)
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
         cfg = ctx.config_builder().external_dependencies(
             scan_profile=_resolve_code_profile(ctx),
         )
-        build_external_dependency_calls(
-            ctx.gateway,
-            cfg,
-            catalog_provider=acx.catalog,
-            context=acx,
-            runtime=runtime,
+        acx = _analytics_context(ctx)
+        runtime = ensure_graph_runtime(ctx, acx=acx)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "external_dependencies.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(EXTERNAL_DEPS_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
         )
-        build_external_dependencies(ctx.gateway, cfg)
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=runtime,
+                cfgs={"external_dependencies": cfg},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -898,12 +1210,40 @@ class ProfilesStep:
     def run(self, ctx: PipelineContext) -> None:
         """Aggregate profile tables for functions, files, and modules."""
         _log_step(self.name)
-        gateway = ctx.gateway
-        acx = _analytics_context(ctx)
         cfg = ctx.config_builder().profiles_analytics()
-        build_function_profile(gateway, cfg, catalog_provider=acx.catalog, context=acx)
-        build_file_profile(gateway, cfg, catalog_provider=acx.catalog, context=acx)
-        build_module_profile(gateway, cfg, catalog_provider=acx.catalog, context=acx)
+        acx = _analytics_context(ctx)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "profiles.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+        plan = plan_analytics_plugin_run(
+            AnalyticsPlanRequest(
+                plugin_names=(PROFILES_PLUGIN.name,),
+                policy=policy,
+                repo=cfg.repo,
+                commit=cfg.commit,
+                scope=scope,
+                prior_manifest=prior_manifest or {},
+                cfg_options={},
+                runtime_options={},
+                run_id=ctx.run_id,
+            )
+        )
+        report = run_analytics_plugins(
+            plan=plan,
+            run_context=AnalyticsRunContext(
+                gateway=ctx.gateway,
+                analytics_context=acx,
+                graph_runtime=None,
+                cfgs={"profiles": cfg},
+                extra={},
+                catalog_provider=_function_catalog(ctx),
+            ),
+        )
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 ANALYTICS_STEPS: dict[str, PipelineStep] = {

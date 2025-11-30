@@ -101,7 +101,9 @@ def _resolve_plugin_options_map(
     cfg_options = cfg_options or {}
     runtime_options = runtime_options or {}
     allowed_plugins = {plugin.name for plugin in plugins}
-    unknown_option_plugins = (set(cfg_options.keys()) | set(runtime_options.keys())) - allowed_plugins
+    unknown_option_plugins = (
+        set(cfg_options.keys()) | set(runtime_options.keys())
+    ) - allowed_plugins
     if unknown_option_plugins:
         message = (
             "Options provided for unknown graph metric plugins: "
@@ -199,8 +201,10 @@ def plan_graph_plugin_run(
     cfg = context.cfg
     run_options = context.run_options
     policy = context.policy
-    scope = run_options.scope if run_options and run_options.scope is not None else (
-        cfg.scope if cfg is not None else GraphRunScope()
+    scope = (
+        run_options.scope
+        if run_options and run_options.scope is not None
+        else (cfg.scope if cfg is not None else GraphRunScope())
     )
     repo, commit = _resolve_target(
         cfg=cfg,
