@@ -47,6 +47,7 @@
   ```bash
   uv run python -m tools.quality_report --output build/quality-results/quality_report.json
   # If OpenAPI changed: lint spec (e.g., spectral lint openapi.yaml)
+  After resolving quality report items, uv run pytest -q
 
   ```
   - The consolidated report is written to `build/quality-results/quality_report.json`

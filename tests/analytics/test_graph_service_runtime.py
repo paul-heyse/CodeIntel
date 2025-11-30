@@ -135,6 +135,7 @@ def test_graph_service_runtime_writes_manifest(tmp_path: Path) -> None:
         pytest.fail("Manifest did not include repo/commit")
     if len(report.records) == 0:
         pytest.fail("Plugin run report should contain records")
-    for record in report.records:
-        if record.input_hash is None:
+    for record in payload.get("records", []):
+        meta = record.get("meta", {})
+        if meta.get("input_hash") is None:
             pytest.fail("Expected input_hash to be recorded in manifest")

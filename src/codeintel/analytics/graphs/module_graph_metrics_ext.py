@@ -29,8 +29,8 @@ from codeintel.analytics.graph_service import (
     component_metadata,
     structural_metrics,
 )
-from codeintel.analytics.graph_service_runtime import GraphContextSpec, resolve_graph_context
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
+from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.graphs.engine import GraphEngine

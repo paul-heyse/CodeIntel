@@ -16,7 +16,7 @@ from networkx.exception import (
     PowerIterationFailedConvergence,
 )
 
-from codeintel.analytics.graph_service_runtime import GraphContext
+from codeintel.analytics.graphs.runtime import GraphContext
 
 log = logging.getLogger(__name__)
 

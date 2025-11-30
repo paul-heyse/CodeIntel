@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graph_metrics/metrics.py
+# hypothesis_version: 6.148.3
+
+[0.0, 'BipartiteDegrees', 'CentralityBundle', 'ComponentBundle', 'DominanceMetrics', 'GlobalGraphStats', 'NeighborStats', 'ProjectionMetrics', 'StructuralMetrics', 'bipartite_degrees', 'build_cfg_graph', 'build_dfg_graph', 'centrality_directed', 'cfg_centralities', 'cfg_reachable_nodes', 'community_ids', 'component_metadata', 'dfg_centralities', 'dfg_component_stats', 'dfg_path_lengths', 'empty partition', 'entry', 'exit', 'global_graph_stats', 'log_empty_graph', 'neighbor_stats', 'nodes not in graph', 'normalize_decimal_id', 'normalize_node_id', 'partition too large', 'projection', 'projection failure', 'projection_metrics', 'safe_float', 'structural_metrics', 'to_decimal_id', 'utf-8', 'weight']

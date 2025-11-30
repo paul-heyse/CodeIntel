@@ -46,8 +46,8 @@ def test_contract_soft_failure_marks_record_failed(plugin_harness: PluginTestHar
         pytest.fail(message)
 
 
-def test_contract_fatal_failure_raises(plugin_harness: PluginTestHarness) -> None:
-    """Fatal contract failure should raise _PluginFatalError when fail_fast is enabled."""
+def test_contract_fatal_failure_marks_failed(plugin_harness: PluginTestHarness) -> None:
+    """Fatal contract failure should mark the record failed when fail_fast is disabled."""
 
     def _run(_ctx: GraphMetricExecutionContext) -> GraphPluginResult:
         return _no_op_result()

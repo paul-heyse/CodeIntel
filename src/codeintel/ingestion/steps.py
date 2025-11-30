@@ -269,10 +269,11 @@ class TypingIngestStep:
     name: str = "typing_ingest"
     description: str = "Populate analytics.typedness and analytics.static_diagnostics."
     produces_tables: tuple[str, ...] = ("analytics.typedness", "analytics.static_diagnostics")
-    requires: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ("repo_scan",)
 
     def run(self, ctx: IngestionContextProtocol) -> None:
         log.debug("Running ingestion step %s", self.name)
+        tracker = _require_change_tracker(ctx, self.name)
         cfg = TypingIngestStepConfig(
             snapshot=ctx.snapshot,
             paths=ctx.paths,
@@ -287,8 +288,8 @@ class TypingIngestStep:
             gateway=ctx.gateway,
             cfg=cfg,
             code_profile=ctx.code_profile,
-            tools=ctx.active_tools,
             tool_service=service,
+            tracker=tracker,
         )
 
 
@@ -299,10 +300,11 @@ class CoverageIngestStep:
     name: str = "coverage_ingest"
     description: str = "Load coverage.py data into analytics.coverage_lines."
     produces_tables: tuple[str, ...] = ("analytics.coverage_lines",)
-    requires: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ("repo_scan",)
 
     def run(self, ctx: IngestionContextProtocol) -> None:
         log.debug("Running ingestion step %s", self.name)
+        tracker = _require_change_tracker(ctx, self.name)
         cfg = CoverageIngestStepConfig(
             snapshot=ctx.snapshot,
             paths=ctx.paths,
@@ -319,7 +321,7 @@ class CoverageIngestStep:
             cfg=cfg,
             tools=ctx.active_tools,
             tool_service=service,
-            json_output_path=ctx.paths.coverage_json,
+            tracker=tracker,
         )
 
 
@@ -330,10 +332,11 @@ class TestsIngestStep:
     name: str = "tests_ingest"
     description: str = "Ingest pytest JSON report into analytics.test_catalog."
     produces_tables: tuple[str, ...] = ("analytics.test_catalog",)
-    requires: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ("repo_scan",)
 
     def run(self, ctx: IngestionContextProtocol) -> None:
         log.debug("Running ingestion step %s", self.name)
+        tracker = _require_change_tracker(ctx, self.name)
         cfg = TestsIngestStepConfig(
             snapshot=ctx.snapshot,
             paths=ctx.paths,
@@ -348,8 +351,8 @@ class TestsIngestStep:
             gateway=ctx.gateway,
             cfg=cfg,
             report_path=ctx.paths.pytest_report,
-            tools=ctx.active_tools,
             tool_service=service,
+            tracker=tracker,
         )
 
 
@@ -364,11 +367,13 @@ class DocstringsIngestStep:
 
     def run(self, ctx: IngestionContextProtocol) -> None:
         log.debug("Running ingestion step %s", self.name)
+        tracker = _require_change_tracker(ctx, self.name)
         cfg = DocstringStepConfig(snapshot=ctx.snapshot)
         docstrings_ingest.ingest_docstrings(
             ctx.gateway,
             cfg,
             code_profile=ctx.code_profile,
+            tracker=tracker,
         )
 
 
@@ -379,15 +384,17 @@ class ConfigIngestStep:
     name: str = "config_ingest"
     description: str = "Flatten config files into analytics.config_values."
     produces_tables: tuple[str, ...] = ("analytics.config_values",)
-    requires: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ("repo_scan",)
 
     def run(self, ctx: IngestionContextProtocol) -> None:
         log.debug("Running ingestion step %s", self.name)
+        tracker = _require_change_tracker(ctx, self.name)
         cfg = ConfigIngestStepConfig(snapshot=ctx.snapshot)
         config_ingest.ingest_config_values(
             ctx.gateway,
             cfg=cfg,
             config_profile=ctx.config_profile,
+            tracker=tracker,
         )
 
 

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/http/routes/health.py
+# hypothesis_version: 6.148.3
+
+['/health', 'SELECT 1;', 'build_health_router', 'commit', 'default_limit', 'limits', 'max_rows_per_call', 'ok', 'query', 'read_only', 'repo', 'service', 'status']

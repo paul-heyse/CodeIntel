@@ -6,14 +6,21 @@ import configparser
 import json
 import logging
 import tomllib  # Python 3.11+
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import cast
 
 import yaml
 
 from codeintel.config import ConfigIngestStepConfig
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.change_tracker import (
+    ChangeTracker,
+    IncrementalIngestOps,
+    SupportsFullRebuild,
+    run_incremental_ingest,
+)
+from codeintel.ingestion.common import ModuleRecord, run_batch
 from codeintel.ingestion.paths import repo_relpath
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
@@ -161,10 +168,120 @@ def _flatten_config(
     return items
 
 
+def _collect_config_rows(
+    cfg: ConfigIngestStepConfig,
+    config_profile: ScanProfile,
+) -> list[ConfigValueRow]:
+    """
+    Collect flattened config rows for the provided snapshot and profile.
+
+    Parameters
+    ----------
+    cfg :
+        Configuration for the ingestion step.
+    config_profile :
+        Scan profile controlling config file discovery.
+
+    Returns
+    -------
+    list[ConfigValueRow]
+        Flattened config keypaths for the current snapshot.
+    """
+    repo_root = cfg.repo_root
+    rows: list[ConfigValueRow] = []
+    for path in _iter_config_files(config_profile):
+        if path.suffix.lower() not in CONFIG_EXTENSIONS:
+            continue
+        rel_path = repo_relpath(repo_root, path)
+        fmt = _detect_format(path)
+        data = _load_config(path, fmt)
+        if not data:
+            continue
+
+        for keypath, _ in _flatten_config(data):
+            rows.append(
+                ConfigValueRow(
+                    repo=cfg.repo,
+                    commit=cfg.commit,
+                    config_path=rel_path,
+                    format=fmt,
+                    key=keypath,
+                    reference_paths=[],
+                    reference_modules=[],
+                    reference_count=0,
+                )
+            )
+    return rows
+
+
+@dataclass
+class ConfigIngestOps(IncrementalIngestOps[ConfigValueRow], SupportsFullRebuild):
+    """Implement incremental ingest wrapper for config values."""
+
+    cfg: ConfigIngestStepConfig
+    config_profile: ScanProfile
+    rows: list[ConfigValueRow]
+    dataset_name: str = field(init=False, default="analytics.config_values")
+
+    @staticmethod
+    def module_filter(module: ModuleRecord) -> bool:
+        """
+        Config ingestion relies on a full rebuild regardless of module filters.
+
+        Returns
+        -------
+        bool
+            Always True to include all modules for rebuild evaluation.
+        """
+        del module
+        return True
+
+    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        """No-op; run_full_rebuild handles deletion."""
+
+    @staticmethod
+    def process_module(module: ModuleRecord) -> Iterable[ConfigValueRow]:
+        """
+        Return config rows for a module.
+
+        Returns
+        -------
+        Iterable[ConfigValueRow]
+            Always empty because config ingestion runs as a full rebuild.
+        """
+        del module
+        return []
+
+    def insert_rows(self, gateway: StorageGateway, rows: Sequence[ConfigValueRow]) -> None:
+        """No-op; run_full_rebuild performs insertion."""
+
+    def run_full_rebuild(self, tracker: ChangeTracker) -> bool:
+        """
+        Perform a full rebuild of analytics.config_values.
+
+        Returns
+        -------
+        bool
+            True to signal the harness that ingestion completed.
+        """
+        rows = self.rows or _collect_config_rows(self.cfg, self.config_profile)
+
+        run_batch(
+            tracker.gateway,
+            "analytics.config_values",
+            [config_value_to_tuple(r) for r in rows],
+            delete_params=[self.cfg.repo, self.cfg.commit],
+        )
+        log.info("config_values ingested: %d keys across config files", len(rows))
+        return True
+
+
 def ingest_config_values(
     gateway: StorageGateway,
     cfg: ConfigIngestStepConfig,
     config_profile: ScanProfile | None = None,
+    *,
+    tracker: ChangeTracker | None = None,
 ) -> None:
     """
     Populate analytics.config_values from configuration files.
@@ -186,35 +303,23 @@ def ingest_config_values(
         Repository context for config ingestion.
     config_profile:
         Optional scan profile to honor ignore/include rules while walking files.
+    tracker : ChangeTracker | None
+        Optional tracker enabling harness-based rebuild semantics.
     """
     repo_root = cfg.repo_root
     repo = cfg.repo
     commit = cfg.commit
     profile = config_profile or profile_from_env(default_config_profile(repo_root))
+    rows = _collect_config_rows(cfg, profile)
 
-    rows: list[ConfigValueRow] = []
-    for path in _iter_config_files(profile):
-        if path.suffix.lower() not in CONFIG_EXTENSIONS:
-            continue
-        rel_path = repo_relpath(repo_root, path)
-        fmt = _detect_format(path)
-        data = _load_config(path, fmt)
-        if not data:
-            continue
-
-        for keypath, _ in _flatten_config(data):
-            rows.append(
-                ConfigValueRow(
-                    repo=repo,
-                    commit=commit,
-                    config_path=rel_path,
-                    format=fmt,
-                    key=keypath,
-                    reference_paths=[],
-                    reference_modules=[],
-                    reference_count=0,
-                )
-            )
+    if tracker is not None:
+        ops = ConfigIngestOps(cfg=cfg, config_profile=profile, rows=rows)
+        tracker_for_config = replace(
+            tracker,
+            change_request=replace(tracker.change_request, full_rebuild=True),
+        )
+        run_incremental_ingest(tracker_for_config, ops)
+        return
 
     run_batch(
         gateway,

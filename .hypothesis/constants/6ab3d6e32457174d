@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/runtime/telemetry.py
+# hypothesis_version: 6.148.3
+
+['graph.attempts', 'graph.commit', 'graph.input_hash', 'graph.isolation_kind', 'graph.options_hash', 'graph.partial', 'graph.plugin', 'graph.repo', 'graph.run_id', 'graph.scope.modules', 'graph.scope.paths', 'graph.scope_hash', 'graph.severity', 'graph.stage', 'graph.status', 'graph.timeout_ms', 'graph.version_hash', 'isolation_kind', 'modules', 'ms', 'none', 'options_hash', 'paths', 'plugin', 'policy_fail_fast', 'requires_isolation', 'scope_hash', 'scope_modules', 'scope_paths', 'scope_present', 'scope_time_window', 'severity', 'skip_reason', 'skipped', 'stage', 'status', 'time_window', 'trace.Span', 'unspecified']

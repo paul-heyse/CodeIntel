@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections.abc import Iterable, Sequence
@@ -18,19 +19,20 @@ from codeintel.analytics.dependencies import (
 )
 from codeintel.analytics.entrypoints import build_entrypoints
 from codeintel.analytics.functions import (
-    FunctionAnalyticsOptions,
     compute_function_contracts,
     compute_function_effects,
     compute_function_history,
-    compute_function_metrics_and_types,
 )
+from codeintel.analytics.functions.plugins import FUNCTION_METRICS_PLUGIN
 from codeintel.analytics.graph_service_runtime import GraphPluginRunOptions, GraphServiceRuntime
 from codeintel.analytics.graphs import compute_config_data_flow
 from codeintel.analytics.graphs.plugins import (
     DEFAULT_GRAPH_METRIC_PLUGINS,
     plan_graph_metric_plugins,
 )
+from codeintel.analytics.graphs.runtime.manifest import load_prior_manifest
 from codeintel.analytics.history import compute_history_timeseries_gateways
+from codeintel.analytics.plugin_runtime import plan_analytics_plugin_run, run_analytics_plugins
 from codeintel.analytics.profiles import (
     build_file_profile,
     build_function_profile,
@@ -38,13 +40,14 @@ from codeintel.analytics.profiles import (
 )
 from codeintel.analytics.semantic_roles import compute_semantic_roles
 from codeintel.analytics.subsystems import build_subsystems, refresh_subsystem_caches
-from codeintel.analytics.tests import (
-    build_behavioral_coverage,
-    build_test_profile,
-    compute_test_coverage_edges,
+from codeintel.analytics.tests import compute_test_coverage_edges
+from codeintel.analytics.tests.plugins import (
+    BEHAVIORAL_COVERAGE_PLUGIN,
+    TEST_PROFILE_PLUGIN,
 )
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.analytics.runtime_manifest import encode_manifest
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,
@@ -55,6 +58,7 @@ from codeintel.pipeline.orchestration.core import (
     _resolve_code_profile,
     ensure_graph_runtime,
 )
+from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.storage.gateway import StorageGateway, build_snapshot_gateway_resolver
 
 log = logging.getLogger(__name__)
@@ -203,7 +207,7 @@ class FunctionAnalyticsStep:
     deps: Sequence[str] = ("goids",)
 
     def run(self, ctx: PipelineContext) -> None:
-        """Compute per-function metrics and typedness."""
+        """Compute per-function metrics and typedness via AnalyticsPlugin harness."""
         _log_step(self.name)
         gateway = ctx.gateway
         cfg = ctx.config_builder().function_analytics(
@@ -211,11 +215,53 @@ class FunctionAnalyticsStep:
             parser=ctx.function_parser,
         )
         acx = _analytics_context(ctx)
-        summary = compute_function_metrics_and_types(
-            gateway,
-            cfg,
-            options=FunctionAnalyticsOptions(context=acx),
+
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "function_metrics.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+
+        plan = plan_analytics_plugin_run(
+            plugin_names=(FUNCTION_METRICS_PLUGIN.name,),
+            policy=policy,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            scope=scope,
+            prior_manifest=prior_manifest or {},
+            cfg_options={},
+            runtime_options={},
+            run_id=ctx.run_id,
         )
+
+        report = run_analytics_plugins(
+            plan=plan,
+            gateway=gateway,
+            analytics_context=acx,
+            graph_runtime=None,
+            cfgs={"function": cfg},
+        )
+
+        summary: dict[str, int] = {
+            "metrics_rows": 0,
+            "types_rows": 0,
+            "validation_total": 0,
+            "validation_parse_failed": 0,
+            "validation_span_not_found": 0,
+        }
+        for rec in report.records:
+            if rec.name == "functions.metrics" and isinstance(rec.meta, dict):
+                result = rec.meta.get("result")
+                if isinstance(result, dict):
+                    summary.update(
+                        {k: int(v) for k, v in result.items() if isinstance(v, int)}
+                    )
+                break
+
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
         log.info(
             "function_metrics summary rows=%d types=%d validation=%d "
             "parse_failed=%d span_not_found=%d",
@@ -652,7 +698,46 @@ class TestProfileStep:
         """Populate analytics.test_profile."""
         _log_step(self.name)
         cfg = ctx.config_builder().test_profile()
-        build_test_profile(ctx.gateway, cfg)
+        acx = _analytics_context(ctx)
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "test_profile.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+
+        plan = plan_analytics_plugin_run(
+            plugin_names=(TEST_PROFILE_PLUGIN.name,),
+            policy=policy,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            scope=scope,
+            prior_manifest=prior_manifest or {},
+            cfg_options={},
+            runtime_options={},
+            run_id=ctx.run_id,
+        )
+
+        report = run_analytics_plugins(
+            plan=plan,
+            gateway=ctx.gateway,
+            analytics_context=acx,
+            graph_runtime=None,
+            cfgs={"test_profile": cfg},
+            extra={},
+        )
+
+        summary = {}
+        for rec in report.records:
+            if rec.name == "tests.profile" and isinstance(rec.meta, dict):
+                if isinstance(rec.meta.get("result"), dict):
+                    summary = rec.meta["result"]
+                break
+
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        log.info("test_profile summary rows=%d", summary.get("profile_rows", 0))
         if cfg.refresh_subsystem_cache:
             refresh_subsystem_caches(
                 ctx.gateway,
@@ -685,7 +770,56 @@ class BehavioralCoverageStep:
             enable_llm=enable_llm,
             llm_model=llm_model,
         )
-        build_behavioral_coverage(ctx.gateway, cfg, llm_runner=llm_runner)  # type: ignore[arg-type]
+        policy = GraphPluginPolicy()
+        scope = GraphRunScope()
+        manifest_path = ctx.build_dir / "manifests" / "behavioral_coverage.json"
+        prior_manifest = load_prior_manifest(manifest_path)
+
+        cfg_options: dict[str, dict[str, object]] = {
+            BEHAVIORAL_COVERAGE_PLUGIN.name: {
+                "enable_llm": cfg.enable_llm,
+                "llm_model": cfg.llm_model,
+            }
+        }
+
+        plan = plan_analytics_plugin_run(
+            plugin_names=(BEHAVIORAL_COVERAGE_PLUGIN.name,),
+            policy=policy,
+            repo=cfg.repo,
+            commit=cfg.commit,
+            scope=scope,
+            prior_manifest=prior_manifest or {},
+            cfg_options=cfg_options,
+            runtime_options={},
+            run_id=ctx.run_id,
+        )
+
+        report = run_analytics_plugins(
+            plan=plan,
+            gateway=ctx.gateway,
+            analytics_context=_analytics_context(ctx),
+            graph_runtime=None,
+            cfgs={"behavioral_coverage": cfg},
+            extra={"behavioral_llm_runner": llm_runner},
+        )
+
+        if manifest_path is not None:
+            payload = encode_manifest(report)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        summary = {}
+        for rec in report.records:
+            if rec.name == "tests.behavioral_coverage" and isinstance(rec.meta, dict):
+                if isinstance(rec.meta.get("result"), dict):
+                    summary = rec.meta["result"]
+                break
+        log.info(
+            "behavioral_coverage summary rows=%d enable_llm=%s llm_model=%s",
+            summary.get("behavior_rows", 0),
+            cfg.enable_llm,
+            cfg.llm_model,
+        )
 
 
 @dataclass

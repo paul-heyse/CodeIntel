@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/runtime/analytics_adapter.py
+# hypothesis_version: 6.148.3
+
+['contracts', 'fatal', 'graph', 'graph_plugin', 'input_hash', 'isolation_kind', 'message', 'name', 'options_hash', 'options_present', 'policy_fail_fast', 'requires_isolation', 'row_counts', 'runtime', 'severity', 'skipped_reason', 'stage', 'status', 'timeout_ms', 'version_hash']

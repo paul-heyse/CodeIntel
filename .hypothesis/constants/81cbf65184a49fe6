@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/http/fastapi.py
+# hypothesis_version: 6.148.3
+
+[1000, '0.1.0', ':memory:', 'Backend failure', 'Invalid request', '_gateway', 'config', 'errors', 'gateway', 'http', 'local_db', 'rb', 'status', 'unknown']

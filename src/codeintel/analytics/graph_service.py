@@ -40,7 +40,7 @@ from codeintel.analytics.graph_metrics import (
     structural_metrics,
     to_decimal_id,
 )
-from codeintel.analytics.graph_service_runtime import (
+from codeintel.analytics.graphs.runtime import (
     DEFAULT_BETWEENNESS_SAMPLE,
     GraphContext,
     build_graph_context,
