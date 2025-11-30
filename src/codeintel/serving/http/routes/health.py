@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from codeintel.serving.registry import OperationSpec, get_operation_spec
 from fastapi import APIRouter
 
 from codeintel.serving.http.dependencies import BackendDep, ConfigDep
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.registry import OperationSpec, get_operation_spec
 from codeintel.storage.gateway import DuckDBError
 
 

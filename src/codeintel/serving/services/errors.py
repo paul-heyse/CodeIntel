@@ -24,14 +24,16 @@ def generate_correlation_id() -> str:
 @dataclass(frozen=True)
 class ProblemDetail:
     """
-    RFC 9457 Problem Details payload.
+    Canonical domain-level Problem Details representation.
 
-    Fields mirror the standard shape with optional extras for diagnostics.
+    Mirrors RFC 9457/RFC 7807 plus:
+    - code: short machine code ("dataset-not-found")
+    - extras: arbitrary diagnostic payload.
     """
 
-    type: str
-    title: str
-    detail: str
+    type: str = "about:blank"
+    title: str = ""
+    detail: str | None = None
     status: int | None = None
     instance: str = field(default_factory=generate_correlation_id)
     code: str | None = None
@@ -64,7 +66,7 @@ class ProblemDetail:
 def problem(  # noqa: PLR0913
     code: str,
     title: str,
-    detail: str,
+    detail: str | None,
     *,
     status: int | None = None,
     instance: str | None = None,
@@ -118,33 +120,73 @@ class ProblemError(Exception):
     """Base exception carrying a ProblemDetail payload."""
 
     def __init__(self, detail: ProblemDetail) -> None:
-        super().__init__(detail.detail)
-        self.problem_detail = detail
+        self.detail = detail
+        super().__init__(detail.detail or detail.title)
 
 
 class PipelineError(ProblemError):
     """Pipeline execution failure."""
 
-    def __init__(self, detail: ProblemDetail) -> None:
-        super().__init__(detail)
-
 
 class ExportError(ProblemError):
     """Export/validation failure."""
-
-    def __init__(self, detail: ProblemDetail) -> None:
-        super().__init__(detail)
 
 
 class SchemaDriftError(ProblemError):
     """Schema drift detected between expected and actual datasets."""
 
-    def __init__(self, detail: ProblemDetail) -> None:
-        super().__init__(detail)
-
 
 class ValidationError(ProblemError):
     """Input or configuration validation failure."""
 
-    def __init__(self, detail: ProblemDetail) -> None:
-        super().__init__(detail)
+
+class DatasetNotFoundError(ProblemError):
+    """Requested dataset could not be located."""
+
+    @classmethod
+    def for_name(cls, dataset_name: str) -> DatasetNotFoundError:
+        """Build a dataset-not-found problem for a logical dataset name."""
+        return cls(
+            ProblemDetail(
+                type="https://codeintel/problems/dataset-not-found",
+                title="Dataset not found",
+                detail=f"Dataset {dataset_name!r} is not registered in the catalog.",
+                status=404,
+                code="dataset-not-found",
+                extras={"dataset": dataset_name},
+            )
+        )
+
+
+class DatasetSchemaDriftError(ProblemError):
+    """Schema drift detected between expected and actual datasets."""
+
+
+class GraphScopeError(ProblemError):
+    """Invalid or unsupported graph scope."""
+
+
+class GraphFeatureDisabledError(ProblemError):
+    """Graph-related feature is disabled in current configuration."""
+
+
+class BackendTimeoutError(ProblemError):
+    """Backend operation exceeded its allowed time budget."""
+
+
+__all__ = [
+    "BackendTimeoutError",
+    "DatasetNotFoundError",
+    "DatasetSchemaDriftError",
+    "ExportError",
+    "GraphFeatureDisabledError",
+    "GraphScopeError",
+    "PipelineError",
+    "ProblemDetail",
+    "ProblemError",
+    "SchemaDriftError",
+    "ValidationError",
+    "generate_correlation_id",
+    "log_problem",
+    "problem",
+]

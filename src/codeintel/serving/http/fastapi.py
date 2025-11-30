@@ -25,9 +25,11 @@ from codeintel.serving.http.routes.ide import build_ide_router
 from codeintel.serving.http.routes.meta import build_meta_router
 from codeintel.serving.http.routes.profiles import build_profiles_router
 from codeintel.serving.http.routes.subsystems import build_subsystem_router
-from codeintel.serving.mcp import errors
-from codeintel.serving.mcp.models import ProblemDetail
+from codeintel.serving.mcp import errors as mcp_errors
+from codeintel.serving.mcp.models import ProblemDetail as ProblemDetailModel
 from codeintel.serving.services.factory import BackendResource, build_backend_resource
+from codeintel.serving.services.errors import ProblemDetail as DomainProblemDetail
+from codeintel.serving.services.errors import ProblemError
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 LOG = logging.getLogger("codeintel.serving.http.fastapi")
@@ -115,18 +117,18 @@ def create_backend_resource(
 
     Raises
     ------
-    errors.backend_failure
+    mcp_errors.backend_failure
         If the query service cannot be constructed for the selected mode.
     """
     try:
         return build_backend_resource(cfg, gateway=gateway)
     except Exception as exc:
-        raise errors.backend_failure(str(exc)) from exc
+        raise mcp_errors.backend_failure(str(exc)) from exc
 
 
-def problem_response(detail: ProblemDetail) -> JSONResponse:
+def problem_response(detail: DomainProblemDetail) -> JSONResponse:
     """
-    Convert a ProblemDetail payload into a JSON HTTP response.
+    Convert a domain ProblemDetail payload into a JSON HTTP response.
 
     Parameters
     ----------
@@ -139,7 +141,8 @@ def problem_response(detail: ProblemDetail) -> JSONResponse:
         Response with RFC 7807 payload.
     """
     status_code = detail.status or status.HTTP_500_INTERNAL_SERVER_ERROR
-    payload = detail.model_dump()
+    model = ProblemDetailModel.from_domain(detail)
+    payload = model.model_dump()
     payload.setdefault("status", status_code)
     return JSONResponse(status_code=status_code, content=payload)
 
@@ -147,10 +150,10 @@ def problem_response(detail: ProblemDetail) -> JSONResponse:
 def install_exception_handlers(app: FastAPI) -> None:
     """Register global exception handlers for consistent Problem Details."""
 
-    @app.exception_handler(errors.McpError)
+    @app.exception_handler(mcp_errors.McpError)
     def _handle_mcp_error(
         _request: Request,
-        exc: errors.McpError,
+        exc: mcp_errors.McpError,
     ) -> JSONResponse:
         return problem_response(exc.detail)
 
@@ -159,25 +162,34 @@ def install_exception_handlers(app: FastAPI) -> None:
         _request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
-        problem = ProblemDetail(
-            type="https://example.com/problems/validation-error",
+        problem = DomainProblemDetail(
+            type="https://codeintel/problems/invalid-request",
             title="Invalid request",
-            detail="Request validation failed",
-            status=status.HTTP_400_BAD_REQUEST,
-            data={"errors": exc.errors()},
+            detail=str(exc),
+            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            code="invalid-request",
+            extras={"errors": exc.errors()},
         )
         return problem_response(problem)
+
+    @app.exception_handler(ProblemError)
+    def _handle_problem_error(
+        _request: Request,
+        exc: ProblemError,
+    ) -> JSONResponse:
+        return problem_response(exc.detail)
 
     @app.exception_handler(Exception)
     def _handle_unexpected(
         _request: Request,
         exc: Exception,
     ) -> JSONResponse:
-        problem = ProblemDetail(
-            type="https://example.com/problems/backend-failure",
+        problem = DomainProblemDetail(
+            type="https://codeintel/problems/backend-failure",
             title="Backend failure",
             detail=str(exc),
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            code="backend-failure",
         )
         return problem_response(problem)
 
@@ -265,7 +277,7 @@ def create_app(
             gw = open_gateway(gw_cfg)
         if gw is None and config.mode == "local_db":
             message = "StorageGateway is required for local_db FastAPI app"
-            raise errors.backend_failure(message)
+            raise mcp_errors.backend_failure(message)
         backend_kwargs: dict[str, object] = {}
         params = inspect.signature(backend_factory).parameters
         if "gateway" in params:

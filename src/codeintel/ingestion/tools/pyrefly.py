@@ -55,6 +55,11 @@ class PyreflyPlugin(ToolPlugin):
         -------
         ToolPluginResult
             Normalized execution result from the pyrefly plugin.
+
+        Raises
+        ------
+        TypeError
+            Raised when required keyword arguments are missing or of the wrong type.
         """
         output_path_obj = kwargs.get("output_path")
         if not isinstance(output_path_obj, Path):
@@ -93,7 +98,10 @@ class PyreflyPlugin(ToolPlugin):
                 error=exc,
             )
 
-        output_exists = await to_thread.run_sync(lambda: output_path.is_file())
+        def _is_file() -> bool:
+            return output_path.is_file()
+
+        output_exists = await to_thread.run_sync(_is_file)
         if not output_exists and result.returncode != 0:
             log.warning(
                 "pyrefly exited with code %s and produced no output; stdout=%s stderr=%s",

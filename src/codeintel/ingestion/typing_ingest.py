@@ -16,17 +16,16 @@ from codeintel.ingestion.change_tracker import (
     IncrementalIngestOps,
     run_incremental_ingest,
 )
-from codeintel.ingestion.common import ModuleRecord, run_batch
-from codeintel.ingestion.paths import repo_relpath
+from codeintel.ingestion.common import ModuleRecord, iter_modules, run_batch
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
-    SourceScanner,
     default_code_profile,
     profile_from_env,
 )
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.module_index import load_module_map
 from codeintel.storage.rows import (
     StaticDiagnosticRow,
     TypednessRow,
@@ -55,11 +54,6 @@ class AnnotationInfo:
     params_ratio: float
     returns_ratio: float
     untyped_defs: int
-
-
-def _iter_python_files(profile: ScanProfile) -> Iterable[Path]:
-    scanner = SourceScanner(profile)
-    yield from scanner.iter_files()
 
 
 def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
@@ -228,7 +222,7 @@ class TypingIngestOps(IncrementalIngestOps[TypingIngestResult]):
         Iterable[TypingIngestResult]
             Rows summarizing annotations and static diagnostics.
         """
-        path = self.repo_root / module.rel_path
+        path = module.file_path
         info = _compute_annotation_info_for_file(path) or AnnotationInfo(
             params_ratio=0.0,
             returns_ratio=0.0,
@@ -336,12 +330,23 @@ def _ingest_typing_full(
     error_maps :
         Static diagnostic counts keyed by relative path.
     """
+    module_map = load_module_map(
+        gateway,
+        cfg.repo,
+        cfg.commit,
+        language="python",
+        logger=log,
+    )
     annotation_info: dict[str, AnnotationInfo] = {}
-    for path in _iter_python_files(profile):
-        rel_path = repo_relpath(cfg.repo_root, path)
-        info = _compute_annotation_info_for_file(path)
+    for record in iter_modules(
+        module_map,
+        cfg.repo_root,
+        logger=log,
+        scan_profile=profile,
+    ):
+        info = _compute_annotation_info_for_file(record.file_path)
         if info is not None:
-            annotation_info[rel_path] = info
+            annotation_info[record.rel_path] = info
 
     path_set = (
         set(annotation_info)

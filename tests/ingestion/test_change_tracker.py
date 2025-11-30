@@ -188,10 +188,10 @@ def _typedness_metrics_by_path(
         "SELECT path, annotation_ratio, untyped_defs FROM analytics.typedness",
     ).fetchall()
     grouped: dict[str, set[tuple[float, float, int]]] = {}
-    for path, ratio, untyped_defs in rows:
-        if isinstance(ratio, str):
+    for path, ratio_value, untyped_defs in rows:
+        if isinstance(ratio_value, str):
             try:
-                ratio = json.loads(ratio)
+                ratio = json.loads(ratio_value)
             except json.JSONDecodeError:
                 ratio = {"params": 0.0, "returns": 0.0}
         grouped.setdefault(path, set()).add(

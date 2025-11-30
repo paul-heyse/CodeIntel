@@ -73,6 +73,11 @@ class ScipPlugin(ToolPlugin):
         -------
         ToolPluginResult
             Normalized execution result from the SCIP plugin.
+
+        Raises
+        ------
+        TypeError
+            Raised when required keyword arguments are missing or of the wrong type.
         """
         output_scip_obj = kwargs.get("output_scip")
         output_json_obj = kwargs.get("output_json")

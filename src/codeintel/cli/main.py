@@ -1539,7 +1539,7 @@ def cmd_docs_export(
             ),
         )
     except ExportError as exc:
-        log_problem(LOG, exc.problem_detail)
+        log_problem(LOG, exc.detail)
         return 1
 
     LOG.info("Export complete.")

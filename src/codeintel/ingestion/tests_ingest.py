@@ -23,6 +23,7 @@ from codeintel.ingestion.change_tracker import (
     run_incremental_ingest,
 )
 from codeintel.ingestion.common import ModuleRecord, run_batch, should_skip_missing_file
+from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
@@ -118,7 +119,8 @@ def _nodeid_to_path_and_qualname(nodeid: str) -> tuple[str, str | None]:
         Relative path and qualified name (None when missing).
     """
     parts = nodeid.split("::")
-    rel_path = parts[0]
+    raw_path = parts[0]
+    rel_path = normalize_rel_path(raw_path)
     qualname = "::".join(parts[1:]) if len(parts) > 1 else None
     return rel_path, qualname
 

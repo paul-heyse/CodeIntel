@@ -465,8 +465,6 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("rel_path", "VARCHAR", nullable=False),
             Column("model_kind", "VARCHAR", nullable=False),
             Column("base_classes_json", "JSON"),
-            Column("fields_json", "JSON", nullable=False),
-            Column("relationships_json", "JSON"),
             Column("doc_short", "VARCHAR"),
             Column("doc_long", "VARCHAR"),
             Column("created_at", "TIMESTAMP", nullable=False),

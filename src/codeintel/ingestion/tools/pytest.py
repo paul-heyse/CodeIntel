@@ -48,6 +48,11 @@ class PytestPlugin(ToolPlugin):
         -------
         ToolPluginResult
             Normalized execution result from the pytest plugin.
+
+        Raises
+        ------
+        TypeError
+            Raised when required keyword arguments are missing or of the wrong type.
         """
         json_report_path_obj = kwargs.get("json_report_path")
         if not isinstance(json_report_path_obj, Path):

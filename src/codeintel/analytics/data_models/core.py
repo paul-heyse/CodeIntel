@@ -839,38 +839,6 @@ def _persist_models(
             model.rel_path,
             model.model_kind,
             json.dumps(model.base_classes),
-            json.dumps(
-                [
-                    {
-                        "name": field.name,
-                        "type": field.type,
-                        "required": field.required,
-                        "has_default": field.has_default,
-                        "default_expr": field.default_expr,
-                        "constraints": field.constraints,
-                        "source": field.source,
-                        "lineno": field.lineno,
-                    }
-                    for field in model.fields
-                ]
-            ),
-            json.dumps(
-                [
-                    {
-                        "field": rel.field_name,
-                        "target_model_id": rel.target_model_id,
-                        "target_model_name": rel.target_model_name,
-                        "target_module": rel.target_module,
-                        "multiplicity": rel.multiplicity,
-                        "kind": rel.kind,
-                        "via": rel.via,
-                        "evidence": rel.evidence,
-                        "rel_path": rel.rel_path,
-                        "lineno": rel.lineno,
-                    }
-                    for rel in model.relationships
-                ]
-            ),
             model.doc_short,
             model.doc_long,
             now,
@@ -928,9 +896,8 @@ def _persist_models(
             INSERT INTO analytics.data_models (
                 repo, commit, model_id, goid_h128,
                 model_name, module, rel_path, model_kind,
-                base_classes_json, fields_json, relationships_json,
-                doc_short, doc_long, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                base_classes_json, doc_short, doc_long, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )

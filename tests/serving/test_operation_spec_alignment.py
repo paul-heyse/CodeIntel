@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any, cast
+
 import pytest
+from fastapi.routing import APIRoute
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.serving.backend import BackendLimits
@@ -13,6 +17,7 @@ from codeintel.serving.http.routes.health import build_health_router
 from codeintel.serving.http.routes.ide import build_ide_router
 from codeintel.serving.http.routes.profiles import build_profiles_router
 from codeintel.serving.http.routes.subsystems import build_subsystem_router
+from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.mcp.tools_base import register_tools
 from codeintel.serving.registry import OperationSpec, get_operation_spec, iter_operation_specs
 
@@ -30,7 +35,7 @@ class _DummyBackend:
 
     limits = BackendLimits()
 
-    def __getattr__(self, _name: str) -> _DummyModel:
+    def __getattr__(self, _name: str) -> Callable[..., _DummyModel]:
         def _call(**_kwargs: object) -> _DummyModel:
             return _DummyModel()
 
@@ -82,7 +87,7 @@ def test_http_routes_match_operation_specs() -> None:
     ]
 
     for router, spec_ids in router_specs:
-        paths = {route.path for route in router.routes}
+        paths = {route.path for route in router.routes if isinstance(route, APIRoute)}
         for spec_id in spec_ids:
             spec = _ensure_spec(spec_id)
             if spec.http_path not in paths:
@@ -91,11 +96,12 @@ def test_http_routes_match_operation_specs() -> None:
 
 def test_mcp_tool_names_match_operation_specs() -> None:
     """Ensure MCP registration exposes every OperationSpec.tool_name."""
-
     mcp = FastMCP("test")
     backend = _DummyBackend()
-    register_tools(mcp, backend)
-    tool_names = {tool.name for tool in mcp.tools}
+    register_tools(mcp, cast("QueryBackendOrService", backend))
+    tools = cast("list[Any]", getattr(mcp, "tools", []))
+    tool_names = {cast("str", getattr(tool, "name", "")) for tool in tools}
+    tool_names.discard("")
 
     for spec in iter_operation_specs():
         if spec.tool_name is None:

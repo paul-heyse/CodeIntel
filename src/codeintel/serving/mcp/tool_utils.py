@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import QueryBackend
+from codeintel.serving.mcp.models import ProblemDetail as ProblemDetailModel
 from codeintel.serving.services.query_service import QueryService
 
 QueryBackendOrService = QueryBackend | QueryService
@@ -25,7 +26,8 @@ def _wrap(func: Callable[..., object]) -> Callable[..., object]:
         try:
             return func(*args, **kwargs)
         except errors.McpError as exc:
-            return {"error": exc.detail.model_dump()}
+            model = ProblemDetailModel.from_domain(exc.detail)
+            return {"error": model.model_dump()}
 
     return _inner
 
