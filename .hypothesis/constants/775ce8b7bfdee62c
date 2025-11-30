@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/config_data_flow/plugins.py
+# hypothesis_version: 6.148.3
+
+[90000, 'callgraph', 'config.data_flow', 'config_ingest', 'core.config_keys', 'entrypoints.build', 'fatal', 'functions.metrics', 'subsystem']

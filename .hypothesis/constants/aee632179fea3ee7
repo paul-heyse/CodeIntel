@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/data_models/__init__.py
+# hypothesis_version: 6.148.3
+
+['ClassMeta', 'ModelRecord', 'compute_data_models']

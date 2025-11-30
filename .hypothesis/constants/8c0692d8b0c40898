@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/meta_tools.py
+# hypothesis_version: 6.148.3
+
+['QueryService', 'limits', 'query', 'register_meta_tools', 'service']

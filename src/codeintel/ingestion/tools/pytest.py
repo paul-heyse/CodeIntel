@@ -40,9 +40,7 @@ class PytestPlugin(ToolPlugin):
         )
     )
 
-    async def run(
-        self, *, repo_root: Path, json_report_path: Path, **_: object
-    ) -> ToolPluginResult:
+    async def run(self, *, repo_root: Path, **kwargs: object) -> ToolPluginResult:
         """
         Execute pytest and write a JSON report to the requested path.
 
@@ -51,6 +49,12 @@ class PytestPlugin(ToolPlugin):
         ToolPluginResult
             Normalized execution result from the pytest plugin.
         """
+        json_report_path_obj = kwargs.get("json_report_path")
+        if not isinstance(json_report_path_obj, Path):
+            message = "pytest plugin requires json_report_path of type Path"
+            raise TypeError(message)
+        json_report_path = json_report_path_obj
+
         await to_thread.run_sync(
             lambda: json_report_path.parent.mkdir(parents=True, exist_ok=True)
         )

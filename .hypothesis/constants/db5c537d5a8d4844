@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/profiles/plugins.py
+# hypothesis_version: 6.148.3
+
+[120000, 'PROFILES_PLUGIN', 'callgraph', 'fatal', 'functions.contracts', 'functions.effects', 'functions.history', 'import_graph', 'profiles', 'profiles.build', 'risk_factors.build', 'semantic.roles']

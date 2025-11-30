@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from codeintel.serving.registry import OperationSpec, get_operation_spec
 from fastapi import APIRouter
 
 from codeintel.serving.http.dependencies import BackendDep, ConfigDep
@@ -10,9 +11,22 @@ from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.storage.gateway import DuckDBError
 
 
+def _require_spec(op_id: str) -> OperationSpec:
+    spec = get_operation_spec(op_id)
+    if spec is None:
+        message = f"OperationSpec {op_id} is not registered"
+        raise ValueError(message)
+    return spec
+
+
 def build_health_router() -> APIRouter:
     """
     Construct the router for health and diagnostics endpoints.
+
+    Raises
+    ------
+    ValueError
+        If the OperationSpec for health is missing or incomplete.
 
     Returns
     -------
@@ -20,10 +34,16 @@ def build_health_router() -> APIRouter:
         Router exposing health status endpoints.
     """
     router = APIRouter()
+    spec = _require_spec("health.status")
+    if spec.http_path is None:
+        message = "OperationSpec health.status is missing http_path"
+        raise ValueError(message)
+    path = spec.http_path
 
     @router.get(
-        "/health",
-        summary="Health check for CodeIntel API",
+        path,
+        summary=spec.summary,
+        tags=[spec.category],
     )
     def health(
         *,

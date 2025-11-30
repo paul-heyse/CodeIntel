@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tool_service.py
+# hypothesis_version: 6.148.3
+
+['coverage', 'coverage.json', 'coverage_json', 'error', 'errors', 'executed_lines', 'file', 'filename', 'files', 'generalDiagnostics', 'missing_lines', 'path', 'pyrefly', 'pyrefly.json', 'pyrefly_json', 'pyright', 'pytest', 'ruff', 'scip', 'severity']

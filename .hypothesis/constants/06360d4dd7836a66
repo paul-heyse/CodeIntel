@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/risk/plugins.py
+# hypothesis_version: 6.148.3
+
+[90000, 'RISK_FACTORS_PLUGIN', '[]', 'catalog', 'config_ingest', 'coverage.functions', 'coverage.test_edges', 'fatal', 'functions.metrics', 'hotspots.build', 'profiles', 'risk_factors.build', 'tests_ingest', 'typing_ingest']

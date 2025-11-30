@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/runtime/execution.py
+# hypothesis_version: 6.148.3
+
+[1000, 'Any', 'Contract failure', 'IsolationEnvelope', 'IsolationResult', 'MPContext', 'PluginFatalError', 'config', 'contract_failed', 'duration_ms', 'failed', 'fatal', 'features', 'fork', 'graph_run_id', 'graph_runtime', 'isolation failure', 'metric', 'no_result', 'op', 'plugin_attempts', 'plugin_contracts', 'plugin_ended_at', 'plugin_severity', 'plugin_stage', 'plugin_started_at', 'plugin_status', 'plugin_timeout_ms', 'skip_on_error', 'skipped', 'soft_failed', 'succeeded', 'timeout', 'unchanged', 'use_gpu']

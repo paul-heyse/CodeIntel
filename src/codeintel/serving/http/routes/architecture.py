@@ -22,6 +22,11 @@ def build_architecture_router() -> APIRouter:
     """
     Construct the router for architecture and subsystem endpoints.
 
+    Raises
+    ------
+    ValueError
+        If OperationSpec entries are missing or lack http_path values.
+
     Returns
     -------
     APIRouter
@@ -30,9 +35,17 @@ def build_architecture_router() -> APIRouter:
     router = APIRouter()
     spec_function = _require_spec("architecture.function")
     spec_module = _require_spec("architecture.module")
+    if spec_function.http_path is None:
+        message = "OperationSpec architecture.function is missing http_path"
+        raise ValueError(message)
+    function_path = spec_function.http_path
+    if spec_module.http_path is None:
+        message = "OperationSpec architecture.module is missing http_path"
+        raise ValueError(message)
+    module_path = spec_module.http_path
 
     @router.get(
-        spec_function.http_path,
+        function_path,
         response_model=FunctionArchitectureResponse,
         summary=spec_function.summary,
         tags=[spec_function.category],
@@ -62,7 +75,7 @@ def build_architecture_router() -> APIRouter:
         return response
 
     @router.get(
-        spec_module.http_path,
+        module_path,
         response_model=ModuleArchitectureResponse,
         summary=spec_module.summary,
         tags=[spec_module.category],
