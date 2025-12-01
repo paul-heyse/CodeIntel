@@ -10,6 +10,7 @@ from codeintel.serving.backend import clamp_limit_value
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import (
     FileHintsResponse,
+    Message,
     ModuleSubsystemResponse,
     ResponseMeta,
     SubsystemCoverageResponse,
@@ -18,6 +19,7 @@ from codeintel.serving.mcp.models import (
     SubsystemSearchResponse,
     SubsystemSummaryResponse,
 )
+from codeintel.serving.services.errors import ProblemError
 from codeintel.serving.services.http_transport import _HttpTransportMixin
 
 
@@ -163,7 +165,22 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
             payload: dict[str, object] = {"subsystem_id": subsystem_id}
             if module_limit is not None:
                 payload["module_limit"] = module_limit
-            response = self.request_json("/architecture/subsystem", payload)
+            try:
+                response = self.request_json("/architecture/subsystem", payload)
+            except ProblemError:
+                return SubsystemModulesResponse(
+                    found=False,
+                    modules=[],
+                    meta=ResponseMeta(
+                        messages=[
+                            Message(
+                                code="not_found",
+                                severity="warning",
+                                detail="Subsystem not found",
+                            )
+                        ]
+                    ),
+                )
             if isinstance(response, dm.SubsystemModulesResult):
                 return SubsystemModulesResponse.from_domain(response)
             if isinstance(response, SubsystemModulesResponse):

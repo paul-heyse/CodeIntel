@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-01T08:07:17.411957+00:00",
-  "overall_status": "failed",
-  "duration_seconds": 9.886874,
+  "generated_at": "2025-12-01T10:22:04.850574+00:00",
+  "overall_status": "passed",
+  "duration_seconds": 7.633759,
   "results": [
     {
       "name": "ruff_check",
@@ -13,16 +13,13 @@
         "check",
         "--fix"
       ],
-      "status": "failed",
-      "return_code": 1,
-      "started_at": "2025-12-01T08:07:07.524911+00:00",
-      "ended_at": "2025-12-01T08:07:07.558377+00:00",
-      "duration_seconds": 0.033466,
+      "status": "passed",
+      "return_code": 0,
+      "started_at": "2025-12-01T10:21:57.216661+00:00",
+      "ended_at": "2025-12-01T10:21:57.243546+00:00",
+      "duration_seconds": 0.026885,
       "stdout": [
-        "\u001b[4msrc/codeintel/ingestion/ingest_service.py\u001b[0m:",
-        "  326\u001b[36m:\u001b[0m21 \u001b[1;31mS608\u001b[0m Possible SQL injection vector through string-based query construction",
-        "",
-        "Found 1 error."
+        "All checks passed!"
       ],
       "stderr": []
     },
@@ -37,9 +34,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-01T08:07:07.558401+00:00",
-      "ended_at": "2025-12-01T08:07:16.842255+00:00",
-      "duration_seconds": 9.283854,
+      "started_at": "2025-12-01T10:21:57.243562+00:00",
+      "ended_at": "2025-12-01T10:22:04.356388+00:00",
+      "duration_seconds": 7.112826,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -55,9 +52,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-01T08:07:16.842279+00:00",
-      "ended_at": "2025-12-01T08:07:17.411785+00:00",
-      "duration_seconds": 0.569506,
+      "started_at": "2025-12-01T10:22:04.356404+00:00",
+      "ended_at": "2025-12-01T10:22:04.850420+00:00",
+      "duration_seconds": 0.494016,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",

@@ -505,6 +505,8 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
             apply_schema=opts.apply_schema,
             ensure_views=effective_ensure_views,
             validate_schema=effective_validate_schema,
+            repo=ctx.repo,
+            commit=ctx.commit,
         )
         gateway = open_gateway(cfg)
         ensure_ingest_macros(gateway.con)
@@ -513,6 +515,8 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
             apply_schema=opts.apply_schema,
             ensure_views=effective_ensure_views,
             validate_schema=effective_validate_schema,
+            repo=ctx.repo,
+            commit=ctx.commit,
         )
     _assert_ingest_macros_present(gateway.con)
     return gateway

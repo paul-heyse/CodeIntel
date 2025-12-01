@@ -21,6 +21,7 @@ from codeintel.storage.schemas import apply_all_schemas
 from codeintel.storage.sql_helpers import ensure_schema as _ensure_schema
 
 log = logging.getLogger(__name__)
+SMALL_BATCH_THRESHOLD = 25
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection
@@ -157,6 +158,41 @@ def _assert_macro_available(con: DuckDBConnection, macro_name: str) -> bool:
     return target in macros or short in macros
 
 
+def _prepare_registry(con: DuckDBConnection, table_key: str) -> tuple[list[str], str]:
+    """
+    Ensure schemas/macros exist and return registry columns plus macro name.
+
+    Returns
+    -------
+    tuple[list[str], str]
+        Registry column order and resolved macro name.
+
+    Raises
+    ------
+    RuntimeError
+        When registry metadata is missing.
+    """
+    ensure_ingest_macros(con)
+    assert_ingest_macros_present(con)
+    try:
+        ensure_schema(con, table_key)
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        if "missing" not in message:
+            raise
+        apply_all_schemas(con)
+        ensure_schema(con, table_key)
+    registry_cols = load_registry_columns(con).get(table_key)
+    if registry_cols is None:
+        message = f"Table {table_key} missing from registry"
+        raise RuntimeError(message)
+    macro_name = INGEST_MACROS.get(table_key)
+    if macro_name is None:
+        message = f"No ingest macro is defined for table {table_key}"
+        raise RuntimeError(message)
+    return registry_cols, macro_name
+
+
 def _extract_repo_commit(
     registry_cols: Sequence[str], rows: Sequence[Sequence[object]]
 ) -> tuple[object | None, object | None]:
@@ -203,11 +239,11 @@ def _fallback_prepared_insert(
     _, _, table_sql = _quote_table_key(table_key)
     df = pd.DataFrame([tuple(row) for row in rows], columns=pd.Index(registry_cols))
     try:
-        con.append(table_sql, df, by_name=True)
+        con.from_df(df).insert_into(table_sql)
     except DuckDBError:
         # Table may not exist; apply schemas and retry
         apply_all_schemas(con)
-        con.append(table_sql, df, by_name=True)
+        con.from_df(df).insert_into(table_sql)
     return len(rows)
 
 
@@ -260,32 +296,20 @@ def ingest_via_macro(
 
     Raises
     ------
-    RuntimeError
-        If registry metadata for the table is missing.
     ValueError
         If table or macro identifiers are unsafe.
     """
     if not rows:
         return 0
-    ensure_ingest_macros(con)
-    assert_ingest_macros_present(con)
-    try:
-        ensure_schema(con, table_key)
-    except RuntimeError as exc:
-        message = str(exc).lower()
-        if "missing" not in message:
-            raise
-        apply_all_schemas(con)
-        ensure_schema(con, table_key)
-    ensure_schema(con, table_key)
-    registry_cols = load_registry_columns(con).get(table_key)
-    if registry_cols is None:
-        message = f"Table {table_key} missing from registry"
-        raise RuntimeError(message)
-    macro_name = INGEST_MACROS.get(table_key)
-    if macro_name is None:
-        message = f"No ingest macro is defined for table {table_key}"
-        raise RuntimeError(message)
+    registry_cols, macro_name = _prepare_registry(con, table_key)
+    # For small batches, the overhead of macro invocation outweighs benefits; use prepared insert.
+    if len(rows) <= SMALL_BATCH_THRESHOLD:
+        return _fallback_prepared_insert(
+            con,
+            table_key=table_key,
+            registry_cols=registry_cols,
+            rows=rows,
+        )
     if not _assert_macro_available(con, macro_name):
         # Macros unavailable - ensure schema exists before fallback
         apply_all_schemas(con)
@@ -300,6 +324,11 @@ def ingest_via_macro(
             },
         )
         try:
+            return _fallback_prepared_insert(
+                con, table_key=table_key, registry_cols=registry_cols, rows=rows
+            )
+        except DuckDBError:
+            apply_all_schemas(con)
             return _fallback_prepared_insert(
                 con, table_key=table_key, registry_cols=registry_cols, rows=rows
             )

@@ -507,17 +507,16 @@ def _export_dataset_jsonl(
         completed_at=completed_at.isoformat(),
     )
     write_per_dataset_manifest(target.output_path, manifest_payload)
-    if final_row_count is not None:
-        write_incremental_marker(
-            target.output_path,
-            IncrementalMarker(
-                dataset=target.dataset_name,
-                row_count=final_row_count,
-                schema_version=target.dataset.schema_version if target.dataset else None,
-                validation_profile=validation_profile,
-                schema_digest=schema_digest,
-            ),
-        )
+    write_incremental_marker(
+        target.output_path,
+        IncrementalMarker(
+            dataset=target.dataset_name,
+            row_count=final_row_count or 0,
+            schema_version=target.dataset.schema_version if target.dataset else None,
+            validation_profile=validation_profile,
+            schema_digest=schema_digest,
+        ),
+    )
     return target.output_path
 
 

@@ -21,6 +21,7 @@ from codeintel.analytics.rows.graph_metrics_ext import (
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS
+from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.duckdb import gateway_with_macros
 
 
@@ -172,6 +173,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
     StorageGateway
         Gateway with architecture tables populated for tests.
     """
+    apply_all_schemas(gateway.con)
     ensure_ingest_macros(gateway.con)
     _assert_ingest_macros_present(gateway)
     _clear_architecture_seed(gateway=gateway, repo=repo, commit=commit)
