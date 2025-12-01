@@ -418,8 +418,7 @@ def get_observability_from_config(cfg: ServingConfig) -> ServiceObservability | 
         Enabled observability config when toggled on; otherwise ``None``.
     """
     enabled = bool(
-        getattr(cfg, "enable_observability", False)
-        or getattr(cfg, "observability_enabled", False)
+        getattr(cfg, "enable_observability", False) or getattr(cfg, "observability_enabled", False)
     )
     if not enabled:
         return None

@@ -363,9 +363,7 @@ def build_file_profile_response(
     if row is None:
         messages = []
         if not_found_message:
-            messages.append(
-                Message(code="not_found", severity="warning", detail=not_found_message)
-            )
+            messages.append(Message(code="not_found", severity="warning", detail=not_found_message))
         return FileProfileResponse(
             found=False,
             profile=None,

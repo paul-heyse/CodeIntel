@@ -7,9 +7,10 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from codeintel.config.dataset_contract import DatasetContract
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.pipeline.export.manifest import compute_file_hash
-from codeintel.storage.datasets import Dataset, DatasetRegistry
+from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError
 from codeintel.storage.repositories.base import fetch_all_dicts
 
@@ -56,7 +57,7 @@ def _resolve_sample_limit(
     return max(0, family_limit)
 
 
-def _schema_columns(dataset: Dataset) -> list[dict[str, object]]:
+def _schema_columns(dataset: DatasetContract) -> list[dict[str, object]]:
     """
     Serialize schema columns for a dataset.
 
@@ -85,7 +86,9 @@ def _slug(name: str) -> str:
     return name.lower().replace(" ", "-")
 
 
-def describe_dataset_for_catalog(ds: Dataset, warn: Callable[[str], None] | None = None) -> str:
+def describe_dataset_for_catalog(
+    ds: DatasetContract, warn: Callable[[str], None] | None = None
+) -> str:
     """
     Produce a human-friendly description for a dataset/table.
 
@@ -122,7 +125,7 @@ def _handle_sampling_failure(
 
 def _sample_rows(
     con: DuckDBConnection | None,
-    dataset: Dataset,
+    dataset: DatasetContract,
     *,
     limit: int,
     strict: bool,
@@ -198,7 +201,7 @@ def _sample_rows(
         )
 
 
-def _schema_digest(dataset: Dataset) -> str | None:
+def _schema_digest(dataset: DatasetContract) -> str | None:
     """
     Compute a JSON Schema digest when the schema file exists.
 

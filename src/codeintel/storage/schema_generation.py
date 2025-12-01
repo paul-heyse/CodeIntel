@@ -12,6 +12,7 @@ from typing import get_args, get_origin
 import jsonschema
 from jsonschema.protocols import Validator
 
+from codeintel.config.dataset_contract import DATASET_CONTRACTS
 from codeintel.storage.datasets import DatasetRegistry
 
 TYPE_MAP: dict[type[object], dict[str, object]] = {
@@ -188,21 +189,20 @@ def generate_export_schemas(
     for name, ds in sorted(datasets.items()):
         if include_datasets is not None and name not in include_datasets:
             continue
+        contract = DATASET_CONTRACTS.get(name)
+        if contract is None or contract.json_schema_id is None:
+            continue
         row_binding = getattr(ds, "row_binding", None)
         if row_binding is None or row_binding.row_type is None:
             continue
-        schema_id = (
-            f"https://schemas.codeintel.dev/export/{name}.json"
-            if getattr(ds, "json_schema_id", None)
-            else None
-        )
+        schema_id = f"https://schemas.codeintel.dev/export/{contract.json_schema_id}.json"
         schema = json_schema_from_typeddict(
             row_binding.row_type,
             additional_properties=True,
             schema_id=schema_id,
             title=f"{name} export",
         )
-        path = output_dir / f"{getattr(ds, 'json_schema_id', name)}.json"
+        path = output_dir / f"{contract.json_schema_id}.json"
         path.write_text(json.dumps(schema, indent=2, sort_keys=True), encoding="utf-8")
         written.append(path)
     return written

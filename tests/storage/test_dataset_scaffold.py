@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 from codeintel.cli.main import ScaffoldConfigError, build_scaffold_options
-from codeintel.storage.datasets import Dataset, DatasetRegistry
+from codeintel.config.dataset_contract import DatasetContract
+from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.scaffold import ScaffoldOptions, scaffold_dataset
 
 
@@ -100,7 +101,7 @@ def test_scaffold_emits_bootstrap_snippet_when_requested(tmp_path: Path) -> None
 def test_scaffold_registry_conflict_blocks_creation(tmp_path: Path) -> None:
     """Live registry clashes should fail fast when enabled."""
     opts = _base_opts(tmp_path)
-    existing = Dataset(
+    existing = DatasetContract(
         table_key=opts.table_key,
         name=opts.name,
         schema=None,

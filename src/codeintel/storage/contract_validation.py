@@ -6,10 +6,13 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
+from codeintel.config.dataset_contract import (
+    DATASET_CONTRACTS,
+    DATASET_CONTRACTS_BY_TABLE_KEY,
+    JSON_SCHEMA_BY_DATASET_NAME,
+)
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.storage.datasets import (
-    DEPENDENCIES_BY_DATASET_NAME,
-    JSON_SCHEMA_BY_DATASET_NAME,
     DatasetRegistry,
     build_dataset_dependency_graph,
     load_dataset_registry,
@@ -17,12 +20,9 @@ from codeintel.storage.datasets import (
 
 BINDING_REQUIRED_DATASETS: set[str] = {
     name
-    for name in JSON_SCHEMA_BY_DATASET_NAME
-    if name
-    not in {
-        "data_model_fields",
-        "data_model_relationships",
-    }
+    for name, contract in DATASET_CONTRACTS.items()
+    if contract.json_schema_id is not None
+    and name not in {"data_model_fields", "data_model_relationships"}
 }
 
 
@@ -66,7 +66,7 @@ def _validate_schema_alignment(registry: DatasetRegistry) -> list[str]:
     ]
     missing_in_registry = [
         key
-        for key in TABLE_SCHEMAS
+        for key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
         if key not in registry.by_table_key and not key.startswith("tmp_")
     ]
     registry_errors = (
@@ -101,21 +101,44 @@ def _validate_table_columns(con: DuckDBPyConnection, registry: DatasetRegistry) 
     return errors
 
 
+def _validate_schemas_match_contracts() -> list[str]:
+    issues: list[str] = []
+    for table_key, schema in TABLE_SCHEMAS.items():
+        if table_key.startswith("tmp_"):
+            continue
+        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+        if contract is None:
+            issues.append(f"No DatasetContract for table {table_key}")
+            continue
+        if contract.is_view or contract.schema is None:
+            continue
+        if contract.schema is not schema:
+            issues.append(f"Schema mismatch for {table_key}")
+    return issues
+
+
 def _validate_dependencies(registry: DatasetRegistry) -> list[str]:
+    issues: list[str] = []
     known = set(registry.by_name)
     graph = build_dataset_dependency_graph(registry)
-    errors = [
+
+    issues.extend(
         f"Dataset {name} depends on unknown dataset {dep}"
         for name, deps in graph.items()
         for dep in deps
         if dep not in known
-    ]
-    errors.extend(
-        f"Dependency mapping references unknown dataset {dep_name}"
-        for dep_name in DEPENDENCIES_BY_DATASET_NAME
-        if dep_name not in known
     )
-    return errors
+
+    for name, contract in DATASET_CONTRACTS.items():
+        expected = set(contract.upstream_dependencies)
+        actual = set(graph.get(name, ()))
+        if expected != actual:
+            issues.append(
+                f"Dataset {name} dependency mismatch: expected {sorted(expected)}, "
+                f"got {sorted(actual)}"
+            )
+
+    return issues
 
 
 def collect_contract_issues(
@@ -136,6 +159,7 @@ def collect_contract_issues(
     issues.extend(_validate_schema_files(registry, base_dir=schema_base_dir))
     issues.extend(_validate_row_bindings(registry))
     issues.extend(_validate_schema_alignment(registry))
+    issues.extend(_validate_schemas_match_contracts())
     issues.extend(_validate_table_columns(con, registry))
     issues.extend(_validate_dependencies(registry))
     missing_json_schema = [

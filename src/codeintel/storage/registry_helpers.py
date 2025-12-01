@@ -7,10 +7,8 @@ from dataclasses import dataclass
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.storage.datasets import (
-    Dataset,
-    list_dataset_specs,
-)
+from codeintel.config.dataset_contract import DatasetContract
+from codeintel.storage.datasets import list_dataset_specs
 from codeintel.storage.datasets import (
     load_dataset_registry as _load_dataset_registry,
 )
@@ -25,7 +23,7 @@ class DatasetRegistry:
     mapping: Mapping[str, str]
     tables: tuple[str, ...]
     views: tuple[str, ...]
-    meta: Mapping[str, Dataset] | None = None
+    meta: Mapping[str, DatasetContract] | None = None
     jsonl_mapping: Mapping[str, str] | None = None
     parquet_mapping: Mapping[str, str] | None = None
 

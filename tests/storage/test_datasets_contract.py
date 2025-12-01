@@ -6,13 +6,12 @@ from collections.abc import Mapping
 
 import pytest
 
-from codeintel.storage.datasets import (
+from codeintel.config.dataset_contract import (
     JSON_SCHEMA_BY_DATASET_NAME,
-    Dataset,
+    DatasetContract,
     RowBinding,
-    describe_dataset,
-    load_dataset_registry,
 )
+from codeintel.storage.datasets import describe_dataset, load_dataset_registry
 from codeintel.storage.gateway import open_memory_gateway
 
 
@@ -43,7 +42,7 @@ def test_json_schema_ids_attached_to_datasets() -> None:
 def test_require_row_binding_behavior() -> None:
     """Row binding helpers should expose deterministic behavior."""
     binding = RowBinding(row_type=dict, to_tuple=_stub_to_tuple)
-    dataset_with_binding = Dataset(
+    dataset_with_binding = DatasetContract(
         table_key="dummy.table",
         name="dummy",
         schema=None,
@@ -58,7 +57,7 @@ def test_require_row_binding_behavior() -> None:
         message="require_row_binding did not return configured binding",
     )
 
-    dataset_without_binding = Dataset(
+    dataset_without_binding = DatasetContract(
         table_key="dummy2.table",
         name="dummy2",
         schema=None,
@@ -73,7 +72,7 @@ def test_require_row_binding_behavior() -> None:
 
 def test_describe_dataset_shape() -> None:
     """describe_dataset should emit a JSON-friendly summary."""
-    dataset = Dataset(
+    dataset = DatasetContract(
         table_key="analytics.function_profile",
         name="function_profile",
         schema=None,

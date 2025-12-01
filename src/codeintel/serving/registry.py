@@ -25,6 +25,10 @@ class DatasetMeta:
     is_read_only: bool
     default_limit: int
     max_limit: int
+    owner: str | None = None
+    freshness_sla: str | None = None
+    retention_policy: str | None = None
+    validation_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,10 @@ def build_dataset_meta(service: QueryService, limits: BackendLimits) -> list[Dat
                 is_read_only=is_read_only,
                 default_limit=limits.default_limit,
                 max_limit=limits.max_rows_per_call,
+                owner=spec.owner,
+                freshness_sla=spec.freshness_sla,
+                retention_policy=spec.retention_policy,
+                validation_profile=spec.validation_profile,
             )
         )
 

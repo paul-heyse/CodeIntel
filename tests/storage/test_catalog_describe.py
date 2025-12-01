@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+from codeintel.config.dataset_contract import DatasetContract
 from codeintel.storage.catalog import describe_dataset_for_catalog
-from codeintel.storage.datasets import Dataset
 
 
 def test_describe_dataset_warns_on_missing_schema() -> None:
     """Fallback description should emit a warning when schema is absent."""
-    dataset = Dataset(
+    dataset = DatasetContract(
         table_key="unknown.table",
         name="missing",
         schema=None,

@@ -12,6 +12,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Literal, cast
 
+from codeintel.config.dataset_contract import DatasetContract
 from codeintel.pipeline.export import default_validation_schemas
 from codeintel.pipeline.export.manifest import (
     ExportManifestData,
@@ -33,7 +34,6 @@ from codeintel.serving.services.errors import (
     problem,
 )
 from codeintel.storage.contract_validation import _schema_path
-from codeintel.storage.datasets import Dataset
 from codeintel.storage.gateway import (
     DuckDBConnection,
     DuckDBError,
@@ -85,7 +85,7 @@ class ExportTarget:
     dataset_name: str
     table_name: str
     output_path: Path
-    dataset: Dataset | None
+    dataset: DatasetContract | None
 
 
 def _validate_registry_or_raise(gateway: StorageGateway) -> None:
@@ -154,7 +154,7 @@ def _select_dataset_tables(
 
 def _resolve_validation_profile(
     options: ExportCallOptions,
-    dataset: Dataset | None,
+    dataset: DatasetContract | None,
 ) -> str:
     if options.validation_profile is not None:
         return options.validation_profile
@@ -163,7 +163,7 @@ def _resolve_validation_profile(
     return "strict"
 
 
-def _schema_digest(dataset: Dataset | None) -> str | None:
+def _schema_digest(dataset: DatasetContract | None) -> str | None:
     if dataset is None or dataset.json_schema_id is None:
         return None
     schema_file = _schema_path(dataset.json_schema_id)
@@ -522,7 +522,7 @@ def _export_dataset_jsonl(
 
 def _validate_written_exports(
     written: list[Path],
-    registry_meta: Mapping[str, Dataset],
+    registry_meta: Mapping[str, DatasetContract],
     opts: ExportCallOptions,
 ) -> None:
     if not opts.validate_exports:

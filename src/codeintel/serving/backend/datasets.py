@@ -5,12 +5,13 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Literal
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS, DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
-from codeintel.storage.views import DOCS_VIEWS as GATEWAY_DOCS_VIEWS
 
-DOCS_VIEWS = {view.split(".", maxsplit=1)[1]: view for view in GATEWAY_DOCS_VIEWS}
+DOCS_VIEWS = {
+    name: contract.table_key for name, contract in DATASET_CONTRACTS.items() if contract.is_view
+}
 
 
 def _normalize_type(value: str) -> str:
@@ -20,19 +21,6 @@ def _normalize_type(value: str) -> str:
     if normalized.startswith("DECIMAL"):
         return "DECIMAL"
     return normalized
-
-
-def _dataset_name(table_key: str) -> str:
-    """
-    Derive dataset name from a fully qualified table key.
-
-    Returns
-    -------
-    str
-        Dataset-safe name derived from the table key.
-    """
-    _, name = table_key.split(".", maxsplit=1)
-    return name
 
 
 PREVIEW_COLUMN_COUNT = 5
@@ -50,14 +38,10 @@ def build_dataset_registry(
         Mapping of dataset name to fully qualified table/view name.
     """
     registry: OrderedDict[str, str] = OrderedDict()
-    for table_key in sorted(TABLE_SCHEMAS):
-        name = _dataset_name(table_key)
-        if name not in registry:
-            registry[name] = table_key
-    if include_docs_views == "include":
-        for name, table in DOCS_VIEWS.items():
-            if name not in registry:
-                registry[name] = table
+    for name, contract in sorted(DATASET_CONTRACTS.items(), key=lambda item: item[1].table_key):
+        if include_docs_views == "exclude" and contract.is_view:
+            continue
+        registry[name] = contract.table_key
     return dict(registry)
 
 
@@ -93,12 +77,12 @@ def describe_dataset(name: str, table: str) -> str:
     str
         Description string including a column preview when available.
     """
-    schema = TABLE_SCHEMAS.get(table)
-    if schema is None:
-        return f"DuckDB table/view {table}"
-    column_names = ", ".join(col.name for col in schema.columns[:PREVIEW_COLUMN_COUNT])
-    extra = "" if len(schema.columns) <= PREVIEW_COLUMN_COUNT else "..."
-    return f"{name}: {table} ({column_names}{extra})"
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table)
+    if contract is None or contract.schema is None:
+        return f"{name}: {table}"
+    column_names = contract.schema.column_names()[:PREVIEW_COLUMN_COUNT]
+    extra = "" if len(contract.schema.columns) <= PREVIEW_COLUMN_COUNT else "..."
+    return f"{name}: {table} ({', '.join(column_names)}{extra})"
 
 
 def _macro_failure_message(
@@ -145,7 +129,12 @@ def _collect_dataset_registry_issues(
             missing.append(f"{dataset_name} ({table})")
             continue
 
-        expected_schema = TABLE_SCHEMAS.get(table)
+        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table)
+        if contract is None:
+            missing.append(f"{dataset_name} ({table})")
+            continue
+
+        expected_schema = contract.schema
         if expected_schema is None:
             continue
 
