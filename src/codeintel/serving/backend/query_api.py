@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.serving.backend.limits import BackendLimits
+from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     DatasetSchemaResponse,

@@ -1,6 +1,25 @@
 """Shared backend wiring helpers for HTTP and MCP surfaces.
 
-Preferred import path: ``from codeintel.serving.services.factory import build_backend_resource``.
+Note
+----
+This module is a backward-compatibility shim. The canonical implementation
+for service construction now lives in ``codeintel.serving.bootstrap``.
+
+Import Pattern
+--------------
+New code should import from ``codeintel.serving.bootstrap`` for service
+construction:
+
+    from codeintel.serving.bootstrap import build_service_stack, ServiceStack
+
+For backend resource construction (which includes both local and remote modes),
+continue using this module:
+
+    from codeintel.serving.services.wiring import build_backend_resource
+
+Legacy imports will continue to work:
+
+    from codeintel.serving.services.factory import build_backend_resource
 """
 
 from __future__ import annotations
@@ -21,19 +40,21 @@ from codeintel.analytics.graph_runtime import (
 )
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
-from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.datasets import build_registry_and_limits
-from codeintel.serving.services.query_service import (
-    LocalQueryService,
-    QueryService,
-    ServiceObservability,
+from codeintel.serving.backend.pagination import BackendLimits
+from codeintel.serving.bootstrap import (
+    DatasetRegistryOptions,
+    ServiceBuildOptions,
+    build_service_from_config,
+    get_observability_from_config,
 )
+from codeintel.serving.services.observability import ServiceObservability
+from codeintel.serving.services.query_service import LocalQueryService, QueryService
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
     from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend, QueryBackend
-    from codeintel.serving.services.factory import DatasetRegistryOptions, ServiceBuildOptions
 
 __all__ = ["BackendResource", "build_backend_resource"]
 
@@ -49,42 +70,6 @@ def _load_mcp_backends() -> tuple[type[DuckDBBackend], type[HttpBackend]]:
     """
     module = import_module("codeintel.serving.mcp.backend")
     return module.DuckDBBackend, module.HttpBackend
-
-
-def _load_service_factories() -> tuple[type[ServiceBuildOptions], Callable[..., QueryService]]:
-    """
-    Deferred import helper for service factory utilities (avoids circular imports).
-
-    Returns
-    -------
-    tuple[type[ServiceBuildOptions], Callable[..., QueryService]]
-        Service build options type and the factory function.
-    """
-    module = import_module("codeintel.serving.services.factory")
-    return module.ServiceBuildOptions, module.build_service_from_config
-
-
-def _load_factory_utils() -> tuple[
-    type[DatasetRegistryOptions],
-    Callable[[ServingConfig], ServiceObservability | None],
-    Callable[..., QueryService],
-    type[ServiceBuildOptions],
-]:
-    """
-    Deferred import helper for factory utilities to avoid module cycles.
-
-    Returns
-    -------
-    tuple
-        DatasetRegistryOptions type, observability resolver, service factory, and ServiceBuildOptions type.
-    """
-    module = import_module("codeintel.serving.services.factory")
-    return (
-        module.DatasetRegistryOptions,
-        module.get_observability_from_config,
-        module.build_service_from_config,
-        module.ServiceBuildOptions,
-    )
 
 
 @dataclass
@@ -120,13 +105,13 @@ def build_backend_resource(
 
     Parameters
     ----------
-    cfg:
+    cfg
         Validated serving configuration.
-    gateway:
+    gateway
         StorageGateway supplying connection and dataset registry for local_db mode.
-    http_client:
+    http_client
         Optional pre-built HTTPX client for remote_api mode.
-    options:
+    options
         Optional bundle controlling registry, observability, and runtime reuse.
 
     Returns
@@ -140,14 +125,8 @@ def build_backend_resource(
         When required inputs are missing for the configured mode or unsupported modes are requested.
     """
     resolved_options = options or BackendResourceOptions()
-    (
-        dataset_registry_options,
-        get_observability_from_config,
-        _build_service_from_config,
-        _service_build_options,
-    ) = _load_factory_utils()
     resolved_observability = resolved_options.observability or get_observability_from_config(cfg)
-    registry_opts = resolved_options.registry or dataset_registry_options()
+    registry_opts = resolved_options.registry or DatasetRegistryOptions()
     _, limits = build_registry_and_limits(cfg)
 
     if cfg.mode == "local_db":
@@ -209,7 +188,6 @@ def _build_local_resource(
         create_all_views(connection)
 
     duckdb_backend_cls, _ = _load_mcp_backends()
-    service_build_options_cls, build_service_from_config = _load_service_factories()
 
     snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
     runtime_opts = GraphRuntimeOptions(
@@ -230,7 +208,7 @@ def _build_local_resource(
     service = build_service_from_config(
         cfg,
         gateway=gateway,
-        options=service_build_options_cls(
+        options=ServiceBuildOptions(
             registry=options.registry,
             observability=options.observability,
             graph_runtime=active_runtime,

@@ -17,7 +17,7 @@ import networkx as nx
 
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.engine import GraphEngine
-from codeintel.serving.backend.limits import BackendLimits, clamp_limit_value
+from codeintel.serving.backend.pagination import BackendLimits, clamp_limit_value
 from codeintel.serving.backend.query_api import (
     DatasetQueriesApi,
     FunctionQueriesApi,

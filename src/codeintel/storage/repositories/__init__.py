@@ -1,6 +1,14 @@
 """Repository layer for DuckDB persistence."""
 
-from codeintel.storage.repositories.base import BaseRepository, RowDict
+from codeintel.storage.repositories.base import (
+    BaseRepository,
+    PaginatedRows,
+    RowDict,
+    fetch_all_dicts,
+    fetch_one_dict,
+    fetch_paginated,
+    row_exists,
+)
 from codeintel.storage.repositories.data_models import DataModelRepository
 from codeintel.storage.repositories.datasets import DatasetReadRepository
 from codeintel.storage.repositories.functions import FunctionRepository
@@ -16,7 +24,12 @@ __all__ = [
     "FunctionRepository",
     "GraphRepository",
     "ModuleRepository",
+    "PaginatedRows",
     "RowDict",
     "SubsystemRepository",
     "TestRepository",
+    "fetch_all_dicts",
+    "fetch_one_dict",
+    "fetch_paginated",
+    "row_exists",
 ]

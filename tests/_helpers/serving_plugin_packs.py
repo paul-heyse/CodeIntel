@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from typing import cast
 
 from codeintel.config.steps_graphs import GraphRunScope
-from codeintel.serving.backend.limits import BackendLimits
+from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.services.query_service import LocalQueryService, ResponseMeta
 from codeintel.storage.gateway import StorageGateway

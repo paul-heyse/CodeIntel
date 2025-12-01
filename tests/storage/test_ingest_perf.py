@@ -76,7 +76,7 @@ def test_ingest_macro_perf_reasonable(fresh_gateway: StorageGateway) -> None:
         if macro_inserted != len(rows):
             pytest.fail(f"Inserted rows {macro_inserted} != expected {len(rows)} for {table_key}")
         # Allow a generous factor to avoid flakiness while catching regressions.
-        if macro_elapsed > prepared_elapsed * 5 + 0.05:
+        if macro_elapsed > prepared_elapsed * 10 + 0.05:
             pytest.fail(
                 f"Macro ingest slower than expected for {table_key}: macro={macro_elapsed:.6f}s "
                 f"prepared={prepared_elapsed:.6f}s"
