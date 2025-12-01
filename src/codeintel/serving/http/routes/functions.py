@@ -226,7 +226,15 @@ def _register_graph_and_tests_routes(
         -------
         TestsForFunctionResponse
             Tests linked to the requested function.
+
+        Raises
+        ------
+        errors.invalid_argument
+            When no identifier is supplied.
         """
+        if goid_h128 is None and urn is None:
+            message = "At least one identifier (goid_h128 or urn) is required"
+            raise errors.invalid_argument(message)
         domain_tests = service.get_tests_for_function(
             goid_h128=goid_h128,
             urn=urn,
@@ -266,7 +274,15 @@ def _register_graph_and_tests_routes(
         -------
         GraphNeighborhoodResponse
             Ego subgraph with truncation metadata.
+
+        Raises
+        ------
+        errors.invalid_argument
+            When max_nodes is negative.
         """
+        if max_nodes is not None and max_nodes < 0:
+            message = "max_nodes must be non-negative"
+            raise errors.invalid_argument(message)
         domain_response = service.get_callgraph_neighborhood(
             goid_h128=goid_h128, radius=radius, max_nodes=max_nodes
         )
@@ -311,7 +327,15 @@ def _register_graph_and_tests_routes(
         -------
         ImportBoundaryResponse
             Boundary edges plus metadata describing truncation.
+
+        Raises
+        ------
+        errors.invalid_argument
+            When max_edges is negative.
         """
+        if max_edges is not None and max_edges < 0:
+            message = "max_edges must be non-negative"
+            raise errors.invalid_argument(message)
         domain_response = service.get_import_boundary(
             subsystem_id=subsystem_id, max_edges=max_edges
         )

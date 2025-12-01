@@ -913,9 +913,9 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
     """
     con = _connect(config)
     if not config.read_only:
+        _apply_schema_and_views(con, config)
+        _ensure_macros_and_schema(con, config)
         bootstrap_metadata_datasets(con)
-        ensure_ingest_macros(con)
-        assert_ingest_macros_present(con)
     datasets = build_dataset_registry(con)
     validate_contract_or_raise(con)
     return _DuckDBGateway(config=config, datasets=datasets, con=con)
@@ -976,6 +976,8 @@ def open_memory_gateway(
     apply_schema: bool = True,
     ensure_views: bool = False,
     validate_schema: bool = True,
+    repo: str | None = None,
+    commit: str | None = None,
 ) -> StorageGateway:
     """
     Create an in-memory StorageGateway for tests.
@@ -988,6 +990,10 @@ def open_memory_gateway(
         When True, create docs views after schema application.
     validate_schema
         When True, validate schema alignment after setup.
+    repo
+        Optional repository slug to record in the StorageConfig for observability.
+    commit
+        Optional commit hash to record in the StorageConfig for observability.
 
     Returns
     -------
@@ -1000,5 +1006,7 @@ def open_memory_gateway(
         apply_schema=apply_schema,
         ensure_views=ensure_views,
         validate_schema=validate_schema,
+        repo=repo,
+        commit=commit,
     )
     return open_gateway(cfg)

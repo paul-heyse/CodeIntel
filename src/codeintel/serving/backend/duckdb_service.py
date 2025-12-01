@@ -447,16 +447,36 @@ class _FunctionQueries:
         if resolved is None:
             resolved = self._resolve_function_goid(urn=urn)
         if resolved is None:
-            return TestsForFunctionResponse(tests=[], meta=ResponseMeta())
+            return TestsForFunctionResponse(
+                tests=[],
+                meta=ResponseMeta(
+                    messages=[
+                        Message(
+                            code="not_found",
+                            severity="warning",
+                            detail="Function not found",
+                        )
+                    ]
+                ),
+            )
         limit_clamp = clamp_limit_value(
             limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
         tests = self.repositories.tests.get_tests_for_function(resolved, limit=limit_clamp.applied)
+        messages = list(limit_clamp.messages)
+        if not tests:
+            messages.append(
+                Message(
+                    code="not_found",
+                    severity="warning",
+                    detail="Tests not found for function",
+                )
+            )
         return TestsForFunctionResponse(
             tests=[ViewRow.model_validate(r) for r in tests],
-            meta=ResponseMeta(messages=limit_clamp.messages),
+            meta=ResponseMeta(messages=messages),
         )
 
     def get_callgraph_neighborhood(
@@ -466,14 +486,38 @@ class _FunctionQueries:
         radius: int = 1,
         max_nodes: int | None = None,
     ) -> GraphNeighborhoodResponse:
+        """
+        Compute a bounded ego neighborhood in the call graph.
+
+        Parameters
+        ----------
+        goid_h128
+            GOID of the function to center the neighborhood on.
+        radius
+            Hop radius for ego graph computation.
+        max_nodes
+            Optional node cap; when provided, truncates result set.
+
+        Returns
+        -------
+        GraphNeighborhoodResponse
+            Nodes and edges in the neighborhood with truncation metadata.
+        """
         engine = self._require_graph_engine()
         graph = engine.call_graph()
         if goid_h128 not in graph:
-            return GraphNeighborhoodResponse(nodes=[], edges=[], meta=ResponseMeta())
+            meta = ResponseMeta(
+                applied_limit=max_nodes,
+                truncated=max_nodes is not None and max_nodes == 0,
+            )
+            return GraphNeighborhoodResponse(nodes=[], edges=[], meta=meta)
         subgraph = nx.ego_graph(graph, goid_h128, radius=radius, center=True)
-        if max_nodes is not None and subgraph.number_of_nodes() > max_nodes:
+        original_node_count = subgraph.number_of_nodes()
+        truncated = False
+        if max_nodes is not None and original_node_count > max_nodes:
             trimmed_nodes = list(subgraph.nodes)[:max_nodes]
             subgraph = subgraph.subgraph(trimmed_nodes).copy()
+            truncated = True
         nodes: list[ViewRow] = []
         for node in subgraph.nodes:
             summary_row = self.functions.get_function_summary_by_goid(int(node))
@@ -513,7 +557,11 @@ class _FunctionQueries:
                     }
                 )
             )
-        return GraphNeighborhoodResponse(nodes=nodes, edges=edges, meta=ResponseMeta())
+        meta = ResponseMeta(
+            applied_limit=max_nodes,
+            truncated=truncated or (max_nodes is not None and max_nodes == 0),
+        )
+        return GraphNeighborhoodResponse(nodes=nodes, edges=edges, meta=meta)
 
     def get_import_boundary(
         self,
@@ -524,35 +572,41 @@ class _FunctionQueries:
         """
         Return import edges crossing a subsystem boundary.
 
+        Parameters
+        ----------
+        subsystem_id
+            Subsystem identifier to find boundary edges for.
+        max_edges
+            Maximum edges to return; when provided, truncates result set.
+
         Returns
         -------
         ImportBoundaryResponse
-            Boundary nodes and edges; empty when no graph engine is available.
+            Boundary nodes and edges with truncation metadata.
         """
         limit_clamp = clamp_limit_value(
             max_edges,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
+        meta = ResponseMeta(
+            messages=limit_clamp.messages,
+            applied_limit=limit_clamp.applied,
+            truncated=limit_clamp.applied == 0,
+        )
         try:
             engine = self._require_graph_engine()
         except errors.McpError:
-            return ImportBoundaryResponse(
-                nodes=[],
-                edges=[],
-                meta=ResponseMeta(messages=limit_clamp.messages),
-            )
+            return ImportBoundaryResponse(nodes=[], edges=[], meta=meta)
         import_graph = engine.import_graph()
         if subsystem_id not in import_graph:
-            return ImportBoundaryResponse(
-                nodes=[],
-                edges=[],
-                meta=ResponseMeta(messages=limit_clamp.messages),
-            )
+            return ImportBoundaryResponse(nodes=[], edges=[], meta=meta)
         boundary_edges: list[dict[str, object]] = []
         boundary_nodes: set[str] = set()
+        truncated = False
         for u, v, data in import_graph.out_edges(subsystem_id, data=True):
             if limit_clamp.applied is not None and len(boundary_edges) >= limit_clamp.applied:
+                truncated = True
                 break
             boundary_nodes.update({str(u), str(v)})
             boundary_edges.append(
@@ -564,6 +618,7 @@ class _FunctionQueries:
             )
         for u, v, data in import_graph.in_edges(subsystem_id, data=True):
             if limit_clamp.applied is not None and len(boundary_edges) >= limit_clamp.applied:
+                truncated = True
                 break
             boundary_nodes.update({str(u), str(v)})
             boundary_edges.append(
@@ -575,11 +630,12 @@ class _FunctionQueries:
             )
         nodes = [ViewRow.model_validate({"id": node}) for node in sorted(boundary_nodes)]
         edges = [ViewRow.model_validate(edge) for edge in boundary_edges]
-        return ImportBoundaryResponse(
-            nodes=nodes,
-            edges=edges,
-            meta=ResponseMeta(messages=limit_clamp.messages),
+        meta = ResponseMeta(
+            messages=limit_clamp.messages,
+            applied_limit=limit_clamp.applied,
+            truncated=truncated or limit_clamp.applied == 0,
         )
+        return ImportBoundaryResponse(nodes=nodes, edges=edges, meta=meta)
 
     def get_function_profile(self, goid_h128: int) -> FunctionProfileResponse:
         row = self.functions.get_function_profile(goid_h128)
@@ -593,16 +649,37 @@ class _FunctionQueries:
         )
 
     def get_function_architecture(self, goid_h128: int) -> FunctionArchitectureResponse:
-        graph_engine = self._require_graph_engine()
-        engine_graph = graph_engine.call_graph()
-        if goid_h128 not in engine_graph:
-            message = f"Function not found in call graph: {goid_h128}"
+        """
+        Fetch function architecture metrics by GOID.
+
+        Queries the ``docs.v_function_architecture`` view which aggregates
+        graph metrics from ``analytics.graph_metrics_functions`` and related
+        tables. This follows the same repository pattern as module architecture.
+
+        Parameters
+        ----------
+        goid_h128
+            Function global object ID (128-bit hash).
+
+        Returns
+        -------
+        FunctionArchitectureResponse
+            Architecture metrics including call_fan_in, call_fan_out,
+            pagerank, betweenness, closeness, and other graph centrality
+            measures.
+
+        Raises
+        ------
+        errors.not_found
+            When no architecture record exists for the given GOID.
+        """
+        row = self.functions.get_function_architecture(goid_h128)
+        if row is None:
+            message = f"Function architecture not found: {goid_h128}"
             raise errors.not_found(message)
-        fan_in = engine_graph.in_degree(goid_h128)
-        fan_out = engine_graph.out_degree(goid_h128)
         return FunctionArchitectureResponse(
             found=True,
-            architecture=ViewRow.model_validate({"fan_in": fan_in, "fan_out": fan_out}),
+            architecture=ViewRow.model_validate(row),
             meta=ResponseMeta(),
         )
 
@@ -628,8 +705,19 @@ class _ModuleQueries:
     def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
         row = self.modules.get_file_profile(rel_path)
         if row is None:
-            message = f"File profile not found: {rel_path}"
-            raise errors.not_found(message)
+            return FileProfileResponse(
+                found=False,
+                profile=None,
+                meta=ResponseMeta(
+                    messages=[
+                        Message(
+                            code="not_found",
+                            severity="warning",
+                            detail=f"File profile not found: {rel_path}",
+                        )
+                    ]
+                ),
+            )
         return FileProfileResponse(
             found=True, profile=FileProfileRow.model_validate(row), meta=ResponseMeta()
         )
@@ -669,10 +757,26 @@ class _ModuleQueries:
         )
 
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+        """
+        Fetch IDE-focused hints for a file by relative path.
+
+        Queries the ``docs.v_ide_hints`` view which aggregates module metrics,
+        subsystem context, and risk indicators for IDE consumption.
+
+        Parameters
+        ----------
+        rel_path
+            Relative file path within the repository.
+
+        Returns
+        -------
+        FileHintsResponse
+            Hint rows including subsystem_name, risk levels, and fan metrics.
+        """
         hints = self.modules.get_file_hints(rel_path)
         return FileHintsResponse(
             found=True,
-            hints=[ViewRow.model_validate({"hint": str(hint)}) for hint in hints],
+            hints=[ViewRow.model_validate(hint) for hint in hints],
             meta=ResponseMeta(),
         )
 
@@ -711,15 +815,42 @@ class _SubsystemQueries:
     def get_subsystem_modules(
         self, *, subsystem_id: str, module_limit: int | None = None
     ) -> SubsystemModulesResponse:
+        """
+        Fetch subsystem detail and member modules by subsystem identifier.
+
+        Queries the ``docs.v_subsystem_summary`` view for subsystem metadata
+        and ``docs.v_subsystem_modules`` for membership rows. This follows the
+        repository pattern consistent with other architecture endpoints.
+
+        Parameters
+        ----------
+        subsystem_id
+            Unique subsystem identifier.
+        module_limit
+            Maximum modules to return (defaults to backend limit).
+
+        Returns
+        -------
+        SubsystemModulesResponse
+            Subsystem summary and module membership list.
+        """
         limit_clamp = clamp_limit_value(
             module_limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
+        subsystem_row = self.subsystems.get_subsystem_summary(subsystem_id)
+        if subsystem_row is None:
+            return SubsystemModulesResponse(
+                found=False,
+                subsystem=None,
+                modules=[],
+                meta=ResponseMeta(messages=limit_clamp.messages),
+            )
         rows = self.subsystems.list_subsystem_modules(subsystem_id)[: limit_clamp.applied]
         return SubsystemModulesResponse(
             found=True,
-            subsystem=None,
+            subsystem=SubsystemSummaryRow.model_validate(subsystem_row),
             modules=[ModuleWithSubsystemRow.model_validate(r) for r in rows],
             meta=ResponseMeta(messages=limit_clamp.messages),
         )
@@ -762,9 +893,18 @@ class _SubsystemQueries:
             max_limit=self.context.limits.max_rows_per_call,
         )
         rows = self.subsystems.list_subsystem_coverage(limit=limit_clamp.applied)
+        messages = list(limit_clamp.messages)
+        if not rows:
+            messages.append(
+                Message(
+                    code="not_found",
+                    severity="warning",
+                    detail="No subsystem coverage found",
+                )
+            )
         return SubsystemCoverageResponse(
             coverage=[SubsystemCoverageRow.model_validate(r) for r in rows],
-            meta=ResponseMeta(messages=limit_clamp.messages),
+            meta=ResponseMeta(messages=messages),
         )
 
 

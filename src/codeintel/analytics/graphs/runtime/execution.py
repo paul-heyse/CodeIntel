@@ -708,6 +708,7 @@ def _execute_planned_plugin(
     log_plugin_finish(record, ctx.runtime, plan.scope)
     return record
 
+
 def run_graph_plugin_batch(
     *,
     plan: PluginExecutionPlan,

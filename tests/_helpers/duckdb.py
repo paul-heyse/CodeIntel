@@ -31,6 +31,8 @@ def gateway_with_macros(
     apply_schema: bool = True,
     ensure_views: bool = True,
     validate_schema: bool = True,
+    repo: str | None = None,
+    commit: str | None = None,
 ) -> StorageGateway:
     """
     Create an in-memory StorageGateway with schemas/views/macros ensured.
@@ -49,6 +51,8 @@ def gateway_with_macros(
         apply_schema=apply_schema,
         ensure_views=ensure_views,
         validate_schema=validate_schema,
+        repo=repo,
+        commit=commit,
     )
     ensure_ingest_macros(gateway.con)
     registered = list_ingest_macros(gateway.con)

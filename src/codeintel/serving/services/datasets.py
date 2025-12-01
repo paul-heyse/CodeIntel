@@ -15,6 +15,7 @@ from codeintel.serving.mcp.models import (
     DatasetSchemaResponse,
     DatasetSpecDescriptor,
     ResponseMeta,
+    ViewRow,
 )
 from codeintel.serving.services.errors import DatasetNotFoundError
 from codeintel.serving.services.http_transport import _HttpTransportMixin
@@ -208,31 +209,34 @@ class _LocalDatasetMixin:
             )
             return response.to_domain()
 
-        raw_rows = self._call(
-            "read_dataset_rows",
-            lambda: self.query.datasets.read_dataset_rows(
+        def _run() -> DatasetRowsResponse:
+            raw_rows = self.query.datasets.read_dataset_rows(
                 dataset_name=dataset_name,
                 limit=clamped_limit.applied,
                 offset=clamped_offset.applied,
-            ),
+            )
+            return DatasetRowsResponse(
+                dataset_name=dataset_name,
+                limit=clamped_limit.applied or 0,
+                offset=clamped_offset.applied,
+                rows=[ViewRow.model_validate(row) for row in raw_rows],
+                meta=ResponseMeta(
+                    requested_limit=limit,
+                    applied_limit=clamped_limit.applied,
+                    requested_offset=offset,
+                    applied_offset=clamped_offset.applied,
+                    truncated=False,
+                    messages=messages,
+                ),
+            )
+
+        pydantic_resp: DatasetRowsResponse = self._call(
+            "read_dataset_rows",
+            _run,
             dataset=dataset_name,
             schema_version=schema_version,
         )
-        response = DatasetRowsResponse(
-            dataset_name=dataset_name,
-            limit=clamped_limit.applied or 0,
-            offset=clamped_offset.applied,
-            rows=list(raw_rows),
-            meta=ResponseMeta(
-                requested_limit=limit,
-                applied_limit=clamped_limit.applied,
-                requested_offset=offset,
-                applied_offset=clamped_offset.applied,
-                truncated=False,
-                messages=messages,
-            ),
-        )
-        return response.to_domain()
+        return pydantic_resp.to_domain()
 
 
 class _HttpDatasetQueryMixin(_HttpTransportMixin):
