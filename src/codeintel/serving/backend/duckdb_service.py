@@ -15,6 +15,7 @@ from typing import Literal, cast
 
 import networkx as nx
 
+from codeintel.config.dataset_contract import DatasetContract
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.backend.pagination import BackendLimits, clamp_limit_value
@@ -63,12 +64,7 @@ from codeintel.serving.mcp.models import (
     TestsForFunctionResponse,
     ViewRow,
 )
-from codeintel.storage.datasets import (
-    Dataset,
-    dataset_for_name,
-    list_dataset_specs,
-    load_dataset_registry,
-)
+from codeintel.storage.datasets import dataset_for_name, list_dataset_specs, load_dataset_registry
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.repositories import (
     DatasetReadRepository,
@@ -118,7 +114,7 @@ def _fetch_duckdb_schema(con: DuckDBConnection, table_key: str) -> list[DatasetS
     ]
 
 
-def _load_json_schema(ds: Dataset) -> dict[str, object] | None:
+def _load_json_schema(ds: DatasetContract) -> dict[str, object] | None:
     """
     Load a JSON Schema document for a dataset if present on disk.
 

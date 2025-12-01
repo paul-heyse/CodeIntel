@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
+from codeintel.config.dataset_contract import DatasetContract
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits, clamp_limit_value, clamp_offset_value
 from codeintel.serving.backend.query_api import DuckDBQueryApi
@@ -19,7 +20,7 @@ from codeintel.serving.mcp.models import (
 )
 from codeintel.serving.services.errors import DatasetNotFoundError
 from codeintel.serving.services.http_transport import _HttpTransportMixin
-from codeintel.storage.datasets import Dataset, load_dataset_registry
+from codeintel.storage.datasets import load_dataset_registry
 
 
 def _normalize_validation_profile(
@@ -80,7 +81,9 @@ class _LocalDatasetMixin:
                 registry = load_dataset_registry(self.query.gateway.con)
             results: list[DatasetDescriptor] = []
             for name, table in sorted(mapping.items()):
-                ds: Dataset | None = registry.by_name.get(name) if registry is not None else None
+                ds: DatasetContract | None = (
+                    registry.by_name.get(name) if registry is not None else None
+                )
                 description = (
                     ds.description
                     if ds is not None and ds.description is not None

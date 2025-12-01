@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codeintel.storage.datasets import JSON_SCHEMA_BY_DATASET_NAME
+from codeintel.config.dataset_contract import JSON_SCHEMA_BY_DATASET_NAME
 
 
 def default_validation_schemas() -> list[str]:

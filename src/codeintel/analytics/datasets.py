@@ -32,10 +32,11 @@ from codeintel.analytics.rows.test_profiles import (
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
+from codeintel.config.dataset_contract import DatasetContract
 from codeintel.config.schemas.tables import TABLE_SCHEMAS, TableSchema
 from codeintel.ingestion.common import run_batch
 from codeintel.storage import rows as row_models
-from codeintel.storage.datasets import Dataset, DatasetRegistry, load_dataset_registry
+from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
 from codeintel.storage.gateway import StorageGateway
 
 type RowType = Mapping[str, object]
@@ -100,7 +101,7 @@ class AnalyticsDatasetContract[RowT: RowType]:
     to_tuple: ToTuple
     primary_key: tuple[str, ...]
     indexes: tuple[tuple[str, ...], ...]
-    dataset_meta: Dataset | None = None
+    dataset_meta: DatasetContract | None = None
 
 
 def _build_registry(gateway: StorageGateway) -> DatasetRegistry:

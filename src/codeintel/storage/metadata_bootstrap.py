@@ -9,15 +9,11 @@ from dataclasses import dataclass
 
 from duckdb import DuckDBPyConnection
 
+from codeintel.config.dataset_contract import DATASET_CONTRACTS
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
-from codeintel.storage.datasets import (
-    DEFAULT_JSONL_FILENAMES,
-    DEFAULT_PARQUET_FILENAMES,
-    DESCRIPTION_BY_DATASET_NAME,
-)
 from codeintel.storage.normalized_macros import render_macro
 from codeintel.storage.sql_helpers import safe_macro_call
-from codeintel.storage.views import DERIVED_DOCS_VIEWS, create_all_views
+from codeintel.storage.views import create_all_views
 
 DATASET_ROWS_ONLY: tuple[str, ...] = (
     "analytics.config_graph_metrics_keys",
@@ -1075,38 +1071,27 @@ def bootstrap_metadata_datasets(
         # Use DuckDB's warning log for visibility during bootstrap.
         con.execute("SELECT ? AS warning", [warning_message])
 
-    jsonl_mapping = dict(jsonl_filenames or DEFAULT_JSONL_FILENAMES)
-    parquet_mapping = dict(parquet_filenames or DEFAULT_PARQUET_FILENAMES)
+    jsonl_mapping = dict(jsonl_filenames or {})
+    parquet_mapping = dict(parquet_filenames or {})
 
-    for table_key in sorted(TABLE_SCHEMAS.keys()):
-        schema_prefix, name = table_key.split(".", maxsplit=1)
-        description = DESCRIPTION_BY_DATASET_NAME.get(name)
+    for name, contract in sorted(DATASET_CONTRACTS.items(), key=lambda item: item[1].table_key):
+        if contract.is_view and not include_views:
+            continue
+
+        table_key = contract.table_key
+        schema_prefix, _ = table_key.split(".", maxsplit=1)
+        jsonl_filename = jsonl_mapping.get(table_key) or contract.jsonl_filename
+        parquet_filename = parquet_mapping.get(table_key) or contract.parquet_filename
+
         _upsert_dataset_row(
             con,
             _DatasetUpsert(
                 table_key=table_key,
                 name=name,
-                is_view=False,
-                jsonl_filename=jsonl_mapping.get(table_key),
-                parquet_filename=parquet_mapping.get(table_key),
-                family=schema_prefix,
-                description=description,
+                is_view=contract.is_view,
+                jsonl_filename=jsonl_filename,
+                parquet_filename=parquet_filename,
+                family=contract.family or schema_prefix,
+                description=contract.description,
             ),
         )
-
-    if include_views:
-        for view_key in DERIVED_DOCS_VIEWS:
-            schema_prefix, name = view_key.split(".", maxsplit=1)
-            description = DESCRIPTION_BY_DATASET_NAME.get(name)
-            _upsert_dataset_row(
-                con,
-                _DatasetUpsert(
-                    table_key=view_key,
-                    name=name,
-                    is_view=True,
-                    jsonl_filename=jsonl_mapping.get(view_key),
-                    parquet_filename=parquet_mapping.get(view_key),
-                    family=schema_prefix,
-                    description=description,
-                ),
-            )

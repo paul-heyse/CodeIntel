@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 
 from codeintel.serving.mcp.models import Message, ResponseMeta
 
-
 # =============================================================================
 # Backend Configuration
 # =============================================================================
