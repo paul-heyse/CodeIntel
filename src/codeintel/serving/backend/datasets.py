@@ -6,7 +6,7 @@ from collections import OrderedDict
 from typing import Literal
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
-from codeintel.serving.backend.limits import BackendLimits
+from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
 from codeintel.storage.views import DOCS_VIEWS as GATEWAY_DOCS_VIEWS
 

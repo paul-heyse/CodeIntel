@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/bootstrap.py
+# hypothesis_version: 6.148.3
+
+['BootstrapOptions', 'ServiceBuildOptions', 'ServiceStack', 'build_query_service', 'build_repositories', 'build_service_stack', 'enable_observability', 'local_db', 'remote_api']

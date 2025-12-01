@@ -14,7 +14,7 @@ from codeintel.serving.backend import (
     DuckDBRepositories,
     GraphEngineProvider,
 )
-from codeintel.serving.backend.limits import BackendLimits
+from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import FunctionSummaryResponse
