@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.ingestion.common import ChangeRequest, ModuleRecord, compute_changes
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
 def test_compute_changes_tracks_add_modify_delete(tmp_path: Path) -> None:

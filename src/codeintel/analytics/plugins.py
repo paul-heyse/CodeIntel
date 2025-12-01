@@ -42,7 +42,9 @@ from codeintel.config.steps_graphs import (
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graphs.plugins import GraphMetricExecutionContext
+    from codeintel.analytics.graphs.plugins import (
+        ContextFactory as GraphContextFactory,
+    )
     from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
@@ -153,12 +155,7 @@ class AnalyticsPlugin:
     requires_isolation: bool = False
     isolation_kind: Literal["process", "thread"] | None = None
 
-    context_factory: (
-        Callable[
-            [AnalyticsExecutionContext], AnalyticsExecutionContext | GraphMetricExecutionContext
-        ]
-        | None
-    ) = None
+    context_factory: GraphContextFactory | None = None
 
 
 @dataclass(frozen=True)

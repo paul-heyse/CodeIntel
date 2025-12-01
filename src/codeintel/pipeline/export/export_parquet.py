@@ -41,7 +41,7 @@ from codeintel.storage.gateway import (
     StorageGateway,
 )
 from codeintel.storage.metadata_bootstrap import NORMALIZED_MACROS as BOOTSTRAP_MACROS
-from codeintel.storage.sql_helpers import macro_select_sql
+from codeintel.storage.sql_helpers import macro_select_sql, prepared_statements_dynamic
 
 log = logging.getLogger(__name__)
 
@@ -146,7 +146,11 @@ def _schema_digest(dataset: Dataset | None) -> str | None:
 
 def _row_count(con: DuckDBConnection, table_name: str) -> int | None:
     try:
-        row = con.table(table_name).count("*").fetchone()
+        stmts = prepared_statements_dynamic(con, table_name)
+        if stmts.select_sql is None:
+            return None
+        relation = con.sql(stmts.select_sql, params=stmts.select_params or [])
+        row = relation.count("*").fetchone()
     except DuckDBError:
         log.debug("Row count unavailable for %s", table_name, exc_info=True)
         return None

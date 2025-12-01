@@ -8,6 +8,7 @@ from collections.abc import Callable
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
+from types import SimpleNamespace
 from typing import NamedTuple, Protocol, cast, runtime_checkable
 
 import pytest
@@ -15,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving import domain_models as dm
+from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.http.datasets import build_registry_and_limits, validate_dataset_registry
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp import errors
@@ -27,7 +29,7 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
     SubsystemProfileRow,
 )
-from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
+from codeintel.serving.mcp.query_service import BackendLimits
 from codeintel.serving.services.observability import RequestContext
 from codeintel.serving.services.query_service import (
     HttpQueryService,
@@ -37,6 +39,7 @@ from codeintel.serving.services.query_service import (
 )
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
+from tests._helpers.gateway import build_duckdb_query_service
 
 
 @runtime_checkable
@@ -109,6 +112,12 @@ class _StubSubsystemQuery:
     """Minimal query stub for subsystem docs observability tests."""
 
     def __init__(self) -> None:
+        self.gateway = SimpleNamespace(datasets=SimpleNamespace(mapping={}))
+        self.limits = BackendLimits()
+        self.functions = self
+        self.modules = self
+        self.subsystems = self
+        self.datasets = self
         self.profile = SubsystemProfileRow(
             repo="demo/repo",
             commit="deadbeef",
@@ -254,7 +263,7 @@ def test_observability_tracks_subsystem_profile_calls() -> None:
     """Subsystem profile listing should record dataset and row count."""
     obs = RecordingObservability()
     local = LocalQueryService(
-        query=cast("DuckDBQueryService", _StubSubsystemQuery()),
+        query=cast("DuckDBQueryApi", _StubSubsystemQuery()),
         dataset_tables={},
         observability=obs,
     )
@@ -276,7 +285,7 @@ def test_observability_tracks_subsystem_coverage_calls() -> None:
     """Subsystem coverage listing should record dataset and row count."""
     obs = RecordingObservability()
     local = LocalQueryService(
-        query=cast("DuckDBQueryService", _StubSubsystemQuery()),
+        query=cast("DuckDBQueryApi", _StubSubsystemQuery()),
         dataset_tables={},
         observability=obs,
     )
@@ -305,8 +314,8 @@ def _build_local_service(
     validate_dataset_registry(gateway)
     repo = getattr(getattr(gateway, "config", None), "repo", "demo/repo") or "demo/repo"
     commit = getattr(getattr(gateway, "config", None), "commit", "deadbeef") or "deadbeef"
-    query = DuckDBQueryService(
-        gateway=gateway,
+    query = build_duckdb_query_service(
+        gateway,
         repo=repo,
         commit=commit,
         limits=effective_limits,
@@ -454,11 +463,8 @@ def test_fastapi_delegates_to_query_service(tmp_path: Path) -> None:
         """Service that records method calls."""
 
         def __init__(self) -> None:
-            query = DuckDBQueryService(
-                gateway=gateway,
-                repo="demo/repo",
-                commit="deadbeef",
-                limits=limits,
+            query = build_duckdb_query_service(
+                gateway, repo="demo/repo", commit="deadbeef", limits=limits
             )
             super().__init__(query=query, dataset_tables=dict(gateway.datasets.mapping))
 
@@ -516,11 +522,8 @@ def test_local_query_service_reads_architecture_seed(
     cfg = ServingConfig(repo="demo/repo", commit="deadbeef")
     registry, limits = build_registry_and_limits(cfg)
     validate_dataset_registry(architecture_gateway)
-    query = DuckDBQueryService(
-        gateway=architecture_gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        limits=limits,
+    query = build_duckdb_query_service(
+        architecture_gateway, repo=cfg.repo, commit=cfg.commit, limits=limits
     )
     service = LocalQueryService(query=query, dataset_tables=registry)
 
@@ -547,11 +550,8 @@ def test_mcp_tool_delegation() -> None:
         """Service that records method invocations."""
 
         def __init__(self) -> None:
-            query = DuckDBQueryService(
-                gateway=gateway,
-                repo="demo/repo",
-                commit="deadbeef",
-                limits=limits,
+            query = build_duckdb_query_service(
+                gateway, repo="demo/repo", commit="deadbeef", limits=limits
             )
             super().__init__(query=query, dataset_tables=dict(gateway.datasets.mapping))
 
@@ -591,11 +591,8 @@ def test_query_service_contract_local_vs_http(
     cfg = ServingConfig(repo="demo/repo", commit="deadbeef")
     registry, limits = build_registry_and_limits(cfg)
     validate_dataset_registry(architecture_gateway)
-    query = DuckDBQueryService(
-        gateway=architecture_gateway,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        limits=limits,
+    query = build_duckdb_query_service(
+        architecture_gateway, repo=cfg.repo, commit=cfg.commit, limits=limits
     )
     local = LocalQueryService(query=query, dataset_tables=registry)
     http = _build_http_adapter_from_local(local, limits)

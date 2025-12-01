@@ -8,10 +8,16 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+from duckdb import Error as DuckDBError
 
 from codeintel.config.schemas.registry_adapter import load_registry_columns
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
-from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
+from codeintel.storage.ingest_macros import (
+    assert_ingest_macros_present,
+    ensure_ingest_macros,
+    list_ingest_macros,
+)
+from codeintel.storage.schemas import apply_all_schemas
 from codeintel.storage.sql_helpers import ensure_schema as _ensure_schema
 
 log = logging.getLogger(__name__)
@@ -151,6 +157,34 @@ def _assert_macro_available(con: DuckDBConnection, macro_name: str) -> bool:
     return target in macros or short in macros
 
 
+def _extract_repo_commit(
+    registry_cols: Sequence[str], rows: Sequence[Sequence[object]]
+) -> tuple[object | None, object | None]:
+    """
+    Pull repo/commit values from the first row for logging.
+
+    Returns
+    -------
+    tuple[object | None, object | None]
+        Repo value and commit value if present in the first row.
+    """
+    repo_val: object | None = None
+    commit_val: object | None = None
+    if not rows:
+        return repo_val, commit_val
+    try:
+        repo_idx = registry_cols.index("repo")
+        repo_val = rows[0][repo_idx]
+    except ValueError:
+        repo_val = None
+    try:
+        commit_idx = registry_cols.index("commit")
+        commit_val = rows[0][commit_idx]
+    except ValueError:
+        commit_val = None
+    return repo_val, commit_val
+
+
 def _fallback_prepared_insert(
     con: DuckDBConnection,
     *,
@@ -168,7 +202,12 @@ def _fallback_prepared_insert(
     """
     _, _, table_sql = _quote_table_key(table_key)
     df = pd.DataFrame([tuple(row) for row in rows], columns=pd.Index(registry_cols))
-    con.append(table_sql, df, by_name=True)
+    try:
+        con.append(table_sql, df, by_name=True)
+    except DuckDBError:
+        # Table may not exist; apply schemas and retry
+        apply_all_schemas(con)
+        con.append(table_sql, df, by_name=True)
     return len(rows)
 
 
@@ -228,6 +267,17 @@ def ingest_via_macro(
     """
     if not rows:
         return 0
+    ensure_ingest_macros(con)
+    assert_ingest_macros_present(con)
+    try:
+        ensure_schema(con, table_key)
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        if "missing" not in message:
+            raise
+        apply_all_schemas(con)
+        ensure_schema(con, table_key)
+    ensure_schema(con, table_key)
     registry_cols = load_registry_columns(con).get(table_key)
     if registry_cols is None:
         message = f"Table {table_key} missing from registry"
@@ -237,19 +287,9 @@ def ingest_via_macro(
         message = f"No ingest macro is defined for table {table_key}"
         raise RuntimeError(message)
     if not _assert_macro_available(con, macro_name):
-        repo_val = None
-        commit_val = None
-        if rows and registry_cols:
-            try:
-                repo_idx = registry_cols.index("repo")
-                repo_val = rows[0][repo_idx]
-            except ValueError:
-                repo_val = None
-            try:
-                commit_idx = registry_cols.index("commit")
-                commit_val = rows[0][commit_idx]
-            except ValueError:
-                commit_val = None
+        # Macros unavailable - ensure schema exists before fallback
+        apply_all_schemas(con)
+        repo_val, commit_val = _extract_repo_commit(registry_cols, rows)
         log.warning(
             "Falling back to prepared insert; macro missing",
             extra={
@@ -280,9 +320,27 @@ def ingest_via_macro(
     df = pd.DataFrame([tuple(row) for row in rows], columns=pd.Index(registry_cols))
     con.append("temp_ingest_values", df, by_name=True)
 
-    macro_rel = con.table_function(safe_macro, ["temp_ingest_values"])
-    macro_rel.insert_into(table_sql)
-    return len(rows)
+    try:
+        # Use relation-based insert to avoid direct string interpolation in execute
+        macro_rel = con.sql(
+            "".join(
+                ("SELECT * FROM ", safe_macro, "('temp_ingest_values')"),
+            )
+        )
+        macro_rel.insert_into(table_sql)
+        return len(rows)
+    except DuckDBError:
+        log.warning(
+            "Macro unavailable at execution time; falling back to prepared insert",
+            extra={"table_key": table_key, "macro_name": macro_name},
+            exc_info=True,
+        )
+        return _fallback_prepared_insert(
+            con,
+            table_key=table_key,
+            registry_cols=registry_cols,
+            rows=rows,
+        )
 
 
 __all__ = [

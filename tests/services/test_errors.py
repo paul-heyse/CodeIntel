@@ -10,6 +10,7 @@ import pytest
 from codeintel.serving.services.errors import (
     ExportError,
     PipelineError,
+    ProblemDetailParams,
     SchemaDriftError,
     ValidationError,
     generate_correlation_id,
@@ -43,10 +44,12 @@ def test_problem_allows_override_instance_and_type() -> None:
         code="custom",
         title="Custom",
         detail="With overrides",
-        status=status_code,
-        instance=custom_instance,
-        type_uri="https://example.com/problem/custom",
-        extras={"foo": "bar"},
+        params=ProblemDetailParams(
+            status=status_code,
+            instance=custom_instance,
+            type_uri="https://example.com/problem/custom",
+            extras={"foo": "bar"},
+        ),
     )
     data = pd.to_dict()
     _expect(condition=data["instance"] == custom_instance, detail="instance mismatch")

@@ -127,7 +127,10 @@ def _build_urn(descriptor: GoidDescriptor) -> str:
 
 
 def _build_goid_entries(
-    row: pd.Series, cfg: GoidBuilderStepConfig, now: datetime, module_by_path: dict[str, str]
+    row: pd.Series,
+    cfg: GoidBuilderStepConfig,
+    now: datetime,
+    module_by_path: Mapping[str, str],
 ) -> tuple[GoidRow, GoidCrosswalkRow]:
     rel_path = str(row["path"]).replace("\\", "/")
     node_type = str(row["node_type"])
@@ -272,17 +275,17 @@ def build_goids(gateway: StorageGateway, cfg: GoidBuilderStepConfig) -> None:
 
 
 def build_goid_entries_for_testing(
-    row: object,
+    row: pd.Series,
     cfg: GoidBuilderStepConfig,
     now: datetime,
     module_by_path: Mapping[str, str],
-) -> tuple[dict[str, object], dict[str, object]]:
+) -> tuple[GoidRow, GoidCrosswalkRow]:
     """
     Exercise GOID entry construction in tests.
 
     Returns
     -------
-    tuple[dict[str, object], dict[str, object]]
-        GOID row and crosswalk row dictionaries.
+    tuple[GoidRow, GoidCrosswalkRow]
+        GOID row and crosswalk row dataclasses.
     """
     return _build_goid_entries(row, cfg, now, module_by_path)

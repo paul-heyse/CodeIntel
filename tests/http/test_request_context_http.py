@@ -6,11 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.backend import BackendLimits, DuckDBQueryService
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.gateway import build_duckdb_query_service
 
 
 def test_correlation_id_plumbed_into_problem_detail(
@@ -18,11 +19,8 @@ def test_correlation_id_plumbed_into_problem_detail(
 ) -> None:
     """Request header correlation IDs should flow into ProblemDetail.instance."""
     limits = BackendLimits(default_limit=3, max_rows_per_call=5)
-    query = DuckDBQueryService(
-        gateway=architecture_gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
+    query = build_duckdb_query_service(
+        architecture_gateway, repo="demo/repo", commit="deadbeef", limits=limits
     )
     service = LocalQueryService(
         query=query,

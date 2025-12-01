@@ -7,7 +7,7 @@ import networkx as nx
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from tests._helpers.config_builders import make_snapshot
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
 def _expect(*, condition: bool, detail: str) -> None:

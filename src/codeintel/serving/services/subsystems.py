@@ -6,7 +6,8 @@ from collections.abc import Callable
 from typing import Any
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import DuckDBQueryService, clamp_limit_value
+from codeintel.serving.backend import clamp_limit_value
+from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import (
     FileHintsResponse,
     ModuleSubsystemResponse,
@@ -23,7 +24,7 @@ from codeintel.serving.services.http_transport import _HttpTransportMixin
 class _SubsystemQueryDelegates:
     """Local delegates for subsystem-related queries."""
 
-    query: DuckDBQueryService
+    query: DuckDBQueryApi
     _call: Callable[..., Any]
 
     def list_subsystems(
@@ -31,20 +32,20 @@ class _SubsystemQueryDelegates:
     ) -> dm.SubsystemSummaryResult:
         pydantic_resp: SubsystemSummaryResponse = self._call(
             "list_subsystems",
-            lambda: self.query.list_subsystems(limit=limit, role=role, q=q),
+            lambda: self.query.subsystems.list_subsystems(limit=limit, role=role, q=q),
         )
         return pydantic_resp.to_domain()
 
     def get_module_subsystems(self, *, module: str) -> dm.ModuleSubsystemResult:
         pydantic_resp: ModuleSubsystemResponse = self._call(
             "get_module_subsystems",
-            lambda: self.query.get_module_subsystems(module=module),
+            lambda: self.query.subsystems.get_module_subsystems(module=module),
         )
         return pydantic_resp.to_domain()
 
     def get_file_hints(self, *, rel_path: str) -> dm.FileHintsResult:
         pydantic_resp: FileHintsResponse = self._call(
-            "get_file_hints", lambda: self.query.get_file_hints(rel_path=rel_path)
+            "get_file_hints", lambda: self.query.modules.get_file_hints(rel_path=rel_path)
         )
         return pydantic_resp.to_domain()
 
@@ -53,7 +54,7 @@ class _SubsystemQueryDelegates:
     ) -> dm.SubsystemModulesResult:
         pydantic_resp: SubsystemModulesResponse = self._call(
             "get_subsystem_modules",
-            lambda: self.query.get_subsystem_modules(
+            lambda: self.query.subsystems.get_subsystem_modules(
                 subsystem_id=subsystem_id, module_limit=module_limit
             ),
         )
@@ -64,7 +65,7 @@ class _SubsystemQueryDelegates:
     ) -> dm.SubsystemSearchResult:
         pydantic_resp: SubsystemSearchResponse = self._call(
             "search_subsystems",
-            lambda: self.query.search_subsystems(limit=limit, role=role, q=q),
+            lambda: self.query.subsystems.search_subsystems(limit=limit, role=role, q=q),
         )
         return pydantic_resp.to_domain()
 
@@ -73,7 +74,7 @@ class _SubsystemQueryDelegates:
     ) -> dm.SubsystemModulesResult:
         pydantic_resp: SubsystemModulesResponse = self._call(
             "summarize_subsystem",
-            lambda: self.query.summarize_subsystem(
+            lambda: self.query.subsystems.summarize_subsystem(
                 subsystem_id=subsystem_id, module_limit=module_limit
             ),
         )
@@ -82,7 +83,7 @@ class _SubsystemQueryDelegates:
     def list_subsystem_profiles(self, *, limit: int | None = None) -> dm.SubsystemProfileResult:
         pydantic_resp: SubsystemProfileResponse = self._call(
             "list_subsystem_profiles",
-            lambda: self.query.list_subsystem_profiles(limit=limit),
+            lambda: self.query.subsystems.list_subsystem_profiles(limit=limit),
             dataset="docs.v_subsystem_profile",
         )
         return pydantic_resp.to_domain()
@@ -90,7 +91,7 @@ class _SubsystemQueryDelegates:
     def list_subsystem_coverage(self, *, limit: int | None = None) -> dm.SubsystemCoverageResult:
         pydantic_resp: SubsystemCoverageResponse = self._call(
             "list_subsystem_coverage",
-            lambda: self.query.list_subsystem_coverage(limit=limit),
+            lambda: self.query.subsystems.list_subsystem_coverage(limit=limit),
             dataset="docs.v_subsystem_coverage",
         )
         return pydantic_resp.to_domain()

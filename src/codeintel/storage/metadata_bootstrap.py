@@ -16,7 +16,8 @@ from codeintel.storage.datasets import (
     DESCRIPTION_BY_DATASET_NAME,
 )
 from codeintel.storage.normalized_macros import render_macro
-from codeintel.storage.views import DERIVED_DOCS_VIEWS
+from codeintel.storage.sql_helpers import safe_macro_call
+from codeintel.storage.views import DERIVED_DOCS_VIEWS, create_all_views
 
 DATASET_ROWS_ONLY: tuple[str, ...] = (
     "analytics.config_graph_metrics_keys",
@@ -963,10 +964,8 @@ def _macro_schema_differences(con: DuckDBPyConnection) -> list[str]:
     failures: list[str] = []
     for table_key, macro in sorted(NORMALIZED_MACROS.items()):
         schema = TABLE_SCHEMAS[table_key]
-        rel = con.sql(
-            f"SELECT * FROM {macro}(?, ?, ?)",  # noqa: S608 - macro name is trusted
-            params=[table_key, 0, 0],
-        )
+        sql, params = safe_macro_call(macro, [table_key, 0, 0])
+        rel = con.sql(sql, params=params)
         actual: dict[str, str] = {}
         for name, dtype in zip(rel.columns, rel.dtypes, strict=False):
             if name.endswith("_1"):
@@ -1061,6 +1060,8 @@ def bootstrap_metadata_datasets(
 
     Safe to run repeatedly; uses idempotent upserts to refresh filenames and view flags.
     """
+    if include_views:
+        create_all_views(con)
     _assert_macro_coverage()
     apply_metadata_ddl(con)
     _register_macros(con)

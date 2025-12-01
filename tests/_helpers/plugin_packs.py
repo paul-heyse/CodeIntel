@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, cast
 
-from codeintel.analytics.graphs.contracts import PluginContractResult
+from codeintel.analytics.graphs.contracts import ContractChecker, PluginContractResult
 from codeintel.analytics.graphs.plugins import (
     GraphMetricExecutionContext,
     GraphMetricPlugin,
@@ -164,7 +164,7 @@ def build_graph_plugin_pack(settings: GraphPluginPackSettings | None = None) -> 
             enabled_by_default=False,
             run=_fatal,
             severity="fatal",
-            contract_checkers=(soft_contract,),
+            contract_checkers=(cast("ContractChecker", soft_contract),),
         ),
         slow=GraphMetricPlugin(
             name="pack_slow",

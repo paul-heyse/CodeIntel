@@ -108,7 +108,7 @@ def json_schema_from_typeddict(
     return {k: v for k, v in schema.items() if v is not None}
 
 
-JsonValue = str | int | float | bool | Mapping[str, "JsonValue"] | Sequence["JsonValue"] | None
+type JsonValue = str | int | float | bool | Mapping[str, JsonValue] | Sequence[JsonValue] | None
 
 
 def _coerce_json_value(value: object) -> JsonValue:

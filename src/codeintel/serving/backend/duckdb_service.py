@@ -8,6 +8,7 @@ instead of issuing custom SELECTs.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
@@ -17,6 +18,12 @@ import networkx as nx
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.backend.limits import BackendLimits, clamp_limit_value
+from codeintel.serving.backend.query_api import (
+    DatasetQueriesApi,
+    FunctionQueriesApi,
+    ProfileQueriesApi,
+    SubsystemQueriesApi,
+)
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphEdgeRow,
@@ -36,6 +43,7 @@ from codeintel.serving.mcp.models import (
     FunctionSummaryRow,
     GraphNeighborhoodResponse,
     HighRiskFunctionsResponse,
+    ImportBoundaryResponse,
     Message,
     ModuleArchitectureResponse,
     ModuleArchitectureRow,
@@ -284,6 +292,10 @@ class _FunctionQueries:
     def functions(self) -> FunctionRepository:
         return self.repositories.functions
 
+    @property
+    def graphs(self) -> GraphRepository:
+        return self.repositories.graphs
+
     def _require_graph_engine(self) -> GraphEngine:
         return self.engine_provider.require()
 
@@ -313,8 +325,9 @@ class _FunctionQueries:
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
-        _scope: GraphRunScope | None = None,
+        scope: GraphRunScope | None = None,
     ) -> FunctionSummaryResponse:
+        _ = scope
         meta = ResponseMeta()
         if goid_h128 is None and not (urn or (rel_path and qualname)):
             message = "Must provide urn or goid_h128 or (rel_path + qualname)."
@@ -356,7 +369,9 @@ class _FunctionQueries:
                 )
             )
             return FunctionSummaryResponse(found=False, summary=None, meta=meta)
-        return FunctionSummaryResponse(found=True, summary=row, meta=meta)
+        return FunctionSummaryResponse(
+            found=True, summary=FunctionSummaryRow.model_validate(row), meta=meta
+        )
 
     def list_high_risk_functions(
         self,
@@ -364,18 +379,26 @@ class _FunctionQueries:
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
-        _scope: GraphRunScope | None = None,
+        scope: GraphRunScope | None = None,
     ) -> HighRiskFunctionsResponse:
-        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
+        _ = scope
+        limit_clamp = clamp_limit_value(
+            limit,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
         rows = self.functions.list_high_risk_functions(
-            repo=self.context.repo,
-            commit=self.context.commit,
             min_risk=min_risk,
             limit=limit_clamp.applied,
             tested_only=tested_only,
         )
         return HighRiskFunctionsResponse(
-            functions=[FunctionSummaryRow.model_validate(r) for r in rows],
+            functions=[
+                ViewRow.model_validate(
+                    {"repo": self.context.repo, "commit": self.context.commit, **r}
+                )
+                for r in rows
+            ],
             meta=ResponseMeta(messages=limit_clamp.messages),
         )
 
@@ -385,48 +408,31 @@ class _FunctionQueries:
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
-        _scope: GraphRunScope | None = None,
+        scope: GraphRunScope | None = None,
     ) -> CallGraphNeighborsResponse:
-        engine = self._require_graph_engine()
-        graph = engine.call_graph()
-        if goid_h128 not in graph:
-            return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=ResponseMeta())
-        outgoing = [
-            CallGraphEdgeRow(
-                caller_goid_h128=goid_h128,
-                callee_goid_h128=tgt,
-                path=str(data.get("path")) if isinstance(data, dict) else None,
-                line_number=int(data.get("line_number", 0)) if isinstance(data, dict) else 0,
-                hop_distance=int(data.get("hop_distance", 0)) if isinstance(data, dict) else 0,
-                language=str(data.get("language", "python")) if isinstance(data, dict) else "python",
-                edge_type=str(data.get("edge_type", "direct")) if isinstance(data, dict) else "direct",
-                edge_label=str(data.get("edge_label", "")) if isinstance(data, dict) else "",
-                weight=float(data.get("weight", 1.0)) if isinstance(data, dict) else 1.0,
+        _ = scope
+        limit_clamp = clamp_limit_value(
+            limit,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
+        outgoing_rows: list[CallGraphEdgeRow] = []
+        incoming_rows: list[CallGraphEdgeRow] = []
+        if direction in {"outgoing", "both"}:
+            outgoing = self.graphs.get_outgoing_callgraph_neighbors(
+                goid_h128, limit=limit_clamp.applied
             )
-            for tgt, data in graph[goid_h128].items()
-        ]
-        incoming = [
-            CallGraphEdgeRow(
-                caller_goid_h128=src,
-                callee_goid_h128=goid_h128,
-                path=str(data.get("path")) if isinstance(data, dict) else None,
-                line_number=int(data.get("line_number", 0)) if isinstance(data, dict) else 0,
-                hop_distance=int(data.get("hop_distance", 0)) if isinstance(data, dict) else 0,
-                language=str(data.get("language", "python")) if isinstance(data, dict) else "python",
-                edge_type=str(data.get("edge_type", "direct")) if isinstance(data, dict) else "direct",
-                edge_label=str(data.get("edge_label", "")) if isinstance(data, dict) else "",
-                weight=float(data.get("weight", 1.0)) if isinstance(data, dict) else 1.0,
+            outgoing_rows = [CallGraphEdgeRow.model_validate(edge) for edge in outgoing]
+        if direction in {"incoming", "both"}:
+            incoming = self.graphs.get_incoming_callgraph_neighbors(
+                goid_h128, limit=limit_clamp.applied
             )
-            for src, data in graph.pred[goid_h128].items()
-        ]
-        if limit is not None:
-            outgoing = outgoing[:limit]
-            incoming = incoming[:limit]
-        if direction == "outgoing":
-            incoming = []
-        elif direction == "incoming":
-            outgoing = []
-        return CallGraphNeighborsResponse(outgoing=outgoing, incoming=incoming, meta=ResponseMeta())
+            incoming_rows = [CallGraphEdgeRow.model_validate(edge) for edge in incoming]
+        return CallGraphNeighborsResponse(
+            outgoing=outgoing_rows,
+            incoming=incoming_rows,
+            meta=ResponseMeta(messages=limit_clamp.messages),
+        )
 
     def get_tests_for_function(
         self,
@@ -434,17 +440,22 @@ class _FunctionQueries:
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
-        _scope: GraphRunScope | None = None,
+        scope: GraphRunScope | None = None,
     ) -> TestsForFunctionResponse:
+        _ = scope
         resolved = goid_h128
         if resolved is None:
             resolved = self._resolve_function_goid(urn=urn)
         if resolved is None:
             return TestsForFunctionResponse(tests=[], meta=ResponseMeta())
-        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
-        rows = self.functions.list_tests_for_function(resolved, limit=limit_clamp.applied)
+        limit_clamp = clamp_limit_value(
+            limit,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
+        tests = self.repositories.tests.get_tests_for_function(resolved, limit=limit_clamp.applied)
         return TestsForFunctionResponse(
-            tests=[FunctionSummaryRow.model_validate(r) for r in rows],
+            tests=[ViewRow.model_validate(r) for r in tests],
             meta=ResponseMeta(messages=limit_clamp.messages),
         )
 
@@ -463,12 +474,112 @@ class _FunctionQueries:
         if max_nodes is not None and subgraph.number_of_nodes() > max_nodes:
             trimmed_nodes = list(subgraph.nodes)[:max_nodes]
             subgraph = subgraph.subgraph(trimmed_nodes).copy()
-        nodes = [
-            FunctionSummaryRow.from_call_graph_node(node, subgraph.nodes[node])
-            for node in subgraph.nodes
-        ]
-        edges = [CallGraphEdgeRow.from_edge(u, v, data) for u, v, data in subgraph.edges(data=True)]
+        nodes: list[ViewRow] = []
+        for node in subgraph.nodes:
+            summary_row = self.functions.get_function_summary_by_goid(int(node))
+            if summary_row is None:
+                summary_row = {
+                    "repo": self.context.repo,
+                    "commit": self.context.commit,
+                    "rel_path": "",
+                    "function_goid_h128": int(node),
+                }
+            nodes.append(ViewRow.model_validate(summary_row))
+
+        edges: list[ViewRow] = []
+        for u, v, data in subgraph.edges(data=True):
+            edges.append(
+                ViewRow.model_validate(
+                    {
+                        "caller_goid_h128": int(u),
+                        "caller_repo": self.context.repo,
+                        "caller_commit": self.context.commit,
+                        "callee_goid_h128": int(v),
+                        "callee_repo": self.context.repo,
+                        "callee_commit": self.context.commit,
+                        "callsite_path": str(data.get("path")) if isinstance(data, dict) else None,
+                        "callsite_line": int(data.get("line_number", 0))
+                        if isinstance(data, dict)
+                        else None,
+                        "language": str(data.get("language", "python"))
+                        if isinstance(data, dict)
+                        else "python",
+                        "kind": str(data.get("edge_type", "direct"))
+                        if isinstance(data, dict)
+                        else "direct",
+                        "confidence": float(data.get("weight", 1.0))
+                        if isinstance(data, dict)
+                        else None,
+                    }
+                )
+            )
         return GraphNeighborhoodResponse(nodes=nodes, edges=edges, meta=ResponseMeta())
+
+    def get_import_boundary(
+        self,
+        *,
+        subsystem_id: str,
+        max_edges: int | None = None,
+    ) -> ImportBoundaryResponse:
+        """
+        Return import edges crossing a subsystem boundary.
+
+        Returns
+        -------
+        ImportBoundaryResponse
+            Boundary nodes and edges; empty when no graph engine is available.
+        """
+        limit_clamp = clamp_limit_value(
+            max_edges,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
+        try:
+            engine = self._require_graph_engine()
+        except errors.McpError:
+            return ImportBoundaryResponse(
+                nodes=[],
+                edges=[],
+                meta=ResponseMeta(messages=limit_clamp.messages),
+            )
+        import_graph = engine.import_graph()
+        if subsystem_id not in import_graph:
+            return ImportBoundaryResponse(
+                nodes=[],
+                edges=[],
+                meta=ResponseMeta(messages=limit_clamp.messages),
+            )
+        boundary_edges: list[dict[str, object]] = []
+        boundary_nodes: set[str] = set()
+        for u, v, data in import_graph.out_edges(subsystem_id, data=True):
+            if limit_clamp.applied is not None and len(boundary_edges) >= limit_clamp.applied:
+                break
+            boundary_nodes.update({str(u), str(v)})
+            boundary_edges.append(
+                {
+                    "source": str(u),
+                    "target": str(v),
+                    "weight": float(data.get("weight", 1.0)) if isinstance(data, dict) else 1.0,
+                }
+            )
+        for u, v, data in import_graph.in_edges(subsystem_id, data=True):
+            if limit_clamp.applied is not None and len(boundary_edges) >= limit_clamp.applied:
+                break
+            boundary_nodes.update({str(u), str(v)})
+            boundary_edges.append(
+                {
+                    "source": str(u),
+                    "target": str(v),
+                    "weight": float(data.get("weight", 1.0)) if isinstance(data, dict) else 1.0,
+                }
+            )
+        nodes = [ViewRow.model_validate({"id": node}) for node in sorted(boundary_nodes)]
+        edges = [ViewRow.model_validate(edge) for edge in boundary_edges]
+        return ImportBoundaryResponse(
+            nodes=nodes,
+            edges=edges,
+            meta=ResponseMeta(messages=limit_clamp.messages),
+        )
 
     def get_function_profile(self, goid_h128: int) -> FunctionProfileResponse:
         row = self.functions.get_function_profile(goid_h128)
@@ -476,7 +587,9 @@ class _FunctionQueries:
             message = f"Function profile not found: {goid_h128}"
             raise errors.not_found(message)
         return FunctionProfileResponse(
-            function=FunctionProfileRow.model_validate(row), meta=ResponseMeta()
+            found=True,
+            profile=FunctionProfileRow.model_validate(row),
+            meta=ResponseMeta(),
         )
 
     def get_function_architecture(self, goid_h128: int) -> FunctionArchitectureResponse:
@@ -487,7 +600,11 @@ class _FunctionQueries:
             raise errors.not_found(message)
         fan_in = engine_graph.in_degree(goid_h128)
         fan_out = engine_graph.out_degree(goid_h128)
-        return FunctionArchitectureResponse(fan_in=fan_in, fan_out=fan_out, meta=ResponseMeta())
+        return FunctionArchitectureResponse(
+            found=True,
+            architecture=ViewRow.model_validate({"fan_in": fan_in, "fan_out": fan_out}),
+            meta=ResponseMeta(),
+        )
 
 
 @dataclass
@@ -513,16 +630,21 @@ class _ModuleQueries:
         if row is None:
             message = f"File profile not found: {rel_path}"
             raise errors.not_found(message)
-        return FileProfileResponse(profile=FileProfileRow.model_validate(row), meta=ResponseMeta())
+        return FileProfileResponse(
+            found=True, profile=FileProfileRow.model_validate(row), meta=ResponseMeta()
+        )
 
     def get_file_summary(
-        self, *, rel_path: str, _scope: GraphRunScope | None = None
+        self, *, rel_path: str, scope: GraphRunScope | None = None
     ) -> FileSummaryResponse:
+        _ = scope
         row = self.modules.get_file_summary(rel_path)
         if row is None:
             message = f"File summary not found: {rel_path}"
             raise errors.not_found(message)
-        return FileSummaryResponse(summary=FileSummaryRow.model_validate(row), meta=ResponseMeta())
+        return FileSummaryResponse(
+            found=True, file=FileSummaryRow.model_validate(row), meta=ResponseMeta()
+        )
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
         row = self.modules.get_module_profile(module)
@@ -530,7 +652,9 @@ class _ModuleQueries:
             message = f"Module profile not found: {module}"
             raise errors.not_found(message)
         return ModuleProfileResponse(
-            profile=ModuleProfileRow.model_validate(row), meta=ResponseMeta()
+            found=True,
+            profile=ModuleProfileRow.model_validate(row),
+            meta=ResponseMeta(),
         )
 
     def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
@@ -539,29 +663,18 @@ class _ModuleQueries:
             message = f"Module architecture not found: {module}"
             raise errors.not_found(message)
         return ModuleArchitectureResponse(
-            architecture=ModuleArchitectureRow.model_validate(row), meta=ResponseMeta()
-        )
-
-    def list_subsystems(
-        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSummaryResponse:
-        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
-        rows = self.subsystems.list_subsystems(limit=limit_clamp.applied, role=role, q=q)
-        return SubsystemSummaryResponse(
-            subsystems=[SubsystemSummaryRow.model_validate(r) for r in rows],
-            meta=ResponseMeta(messages=limit_clamp.messages),
-        )
-
-    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
-        rows = self.subsystems.get_module_subsystems(module)
-        return ModuleSubsystemResponse(
-            memberships=[ModuleWithSubsystemRow.model_validate(r) for r in rows],
+            found=True,
+            architecture=ModuleArchitectureRow.model_validate(row),
             meta=ResponseMeta(),
         )
 
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
         hints = self.modules.get_file_hints(rel_path)
-        return FileHintsResponse(hints=[str(hint) for hint in hints], meta=ResponseMeta())
+        return FileHintsResponse(
+            found=True,
+            hints=[ViewRow.model_validate({"hint": str(hint)}) for hint in hints],
+            meta=ResponseMeta(),
+        )
 
 
 @dataclass
@@ -573,13 +686,40 @@ class _SubsystemQueries:
     def subsystems(self) -> SubsystemRepository:
         return self.repositories.subsystems
 
+    def list_subsystems(
+        self, *, limit: int | None = None, role: str | None = None, q: str | None = None
+    ) -> SubsystemSummaryResponse:
+        limit_clamp = clamp_limit_value(
+            limit,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
+        rows = self.subsystems.list_subsystems(limit=limit_clamp.applied, role=role, query=q)
+        return SubsystemSummaryResponse(
+            subsystems=[SubsystemSummaryRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(messages=limit_clamp.messages),
+        )
+
+    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
+        rows = self.subsystems.list_subsystems_for_module(module)
+        return ModuleSubsystemResponse(
+            found=True,
+            memberships=[ModuleWithSubsystemRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(),
+        )
+
     def get_subsystem_modules(
         self, *, subsystem_id: str, module_limit: int | None = None
     ) -> SubsystemModulesResponse:
-        limit_clamp = clamp_limit_value(module_limit, self.context.limits.max_rows_per_call)
-        rows = self.subsystems.get_subsystem_modules(subsystem_id, limit=limit_clamp.applied)
+        limit_clamp = clamp_limit_value(
+            module_limit,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
+        rows = self.subsystems.list_subsystem_modules(subsystem_id)[: limit_clamp.applied]
         return SubsystemModulesResponse(
-            subsystem=subsystem_id,
+            found=True,
+            subsystem=None,
             modules=[ModuleWithSubsystemRow.model_validate(r) for r in rows],
             meta=ResponseMeta(messages=limit_clamp.messages),
         )
@@ -587,8 +727,12 @@ class _SubsystemQueries:
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSearchResponse:
-        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
-        rows = self.subsystems.search_subsystems(limit=limit_clamp.applied, role=role, q=q)
+        limit_clamp = clamp_limit_value(
+            limit,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
+        rows = self.subsystems.search_subsystems(limit=limit_clamp.applied, role=role, query=q)
         return SubsystemSearchResponse(
             subsystems=[SubsystemSummaryRow.model_validate(r) for r in rows],
             meta=ResponseMeta(messages=limit_clamp.messages),
@@ -600,7 +744,11 @@ class _SubsystemQueries:
         return self.get_subsystem_modules(subsystem_id=subsystem_id, module_limit=module_limit)
 
     def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
-        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
+        limit_clamp = clamp_limit_value(
+            limit,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
         rows = self.subsystems.list_subsystem_profiles(limit=limit_clamp.applied)
         return SubsystemProfileResponse(
             profiles=[SubsystemProfileRow.model_validate(r) for r in rows],
@@ -608,7 +756,11 @@ class _SubsystemQueries:
         )
 
     def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
-        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
+        limit_clamp = clamp_limit_value(
+            limit,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
         rows = self.subsystems.list_subsystem_coverage(limit=limit_clamp.applied)
         return SubsystemCoverageResponse(
             coverage=[SubsystemCoverageRow.model_validate(r) for r in rows],
@@ -629,6 +781,11 @@ class _DatasetQueries:
     def gateway(self) -> StorageGateway:
         return self.context.gateway
 
+    def list_datasets(self) -> list[DatasetSpecDescriptor]:
+        registry = load_dataset_registry(self.gateway.con)
+        specs = list_dataset_specs(registry)
+        return [DatasetSpecDescriptor.model_validate(dict(spec)) for spec in specs]
+
     def dataset_specs(self) -> list[DatasetSpecDescriptor]:
         registry = load_dataset_registry(self.gateway.con)
         specs = list_dataset_specs(registry)
@@ -646,6 +803,26 @@ class _DatasetQueries:
             )
             results.append(DatasetSpecDescriptor.model_validate(normalized))
         return results
+
+    def read_dataset_rows(
+        self,
+        *,
+        dataset_name: str,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> Sequence[Mapping[str, object]]:
+        registry = load_dataset_registry(self.gateway.con)
+        ds = dataset_for_name(registry, dataset_name)
+        clamp = clamp_limit_value(
+            limit,
+            default=self.context.limits.default_limit,
+            max_limit=self.context.limits.max_rows_per_call,
+        )
+        return self.datasets.read_dataset_rows(
+            table_key=ds.table_key,
+            limit=clamp.applied,
+            offset=offset,
+        )
 
     def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
         registry = load_dataset_registry(self.gateway.con)
@@ -729,6 +906,11 @@ class DuckDBQueryService:
         """Expose backend limits for services consuming the query facade."""
         return self.context.limits
 
+    @property
+    def graph_engine(self) -> GraphEngine:
+        """Expose the configured graph engine for reuse across services."""
+        return self.engine_provider.require()
+
     def __dir__(self) -> list[str]:
         """
         Expose combined attributes for better introspection.
@@ -738,7 +920,41 @@ class DuckDBQueryService:
         list[str]
             Sorted attribute names across helpers and facade.
         """
-        attrs = {"context", "repositories", "engine_provider", "con", "gateway", "limits"}
+        attrs = {
+            "context",
+            "repositories",
+            "engine_provider",
+            "con",
+            "gateway",
+            "limits",
+            "functions",
+            "modules",
+            "subsystems",
+            "datasets",
+        }
         for helper in (self._functions, self._modules, self._subsystems, self._datasets):
             attrs.update(dir(helper))
         return sorted(attrs)
+
+    @property
+    def functions(self) -> FunctionQueriesApi:
+        """Helper for function queries."""
+        return self._functions
+
+    @property
+    def modules(self) -> ProfileQueriesApi:
+        """Helper for module/file queries."""
+        return self._modules
+
+    @property
+    def subsystems(self) -> SubsystemQueriesApi:
+        """Helper for subsystem queries."""
+        return self._subsystems
+
+    @property
+    def datasets(self) -> DatasetQueriesApi:
+        """Helper for dataset queries."""
+        return self._datasets
+
+
+__all__ = ["BackendContext", "DuckDBQueryService", "DuckDBRepositories", "GraphEngineProvider"]

@@ -30,6 +30,7 @@ from codeintel.analytics.graphs.plugins import (
     plan_graph_metric_plugins,
     register_graph_metric_plugin,
 )
+from codeintel.analytics.graphs.runtime.logging_helpers import log_plugin_finish
 from codeintel.analytics.graphs.runtime.manifest import (
     ManifestState,
     RecordParams,
@@ -494,8 +495,8 @@ def _execute_plugin(
             status = "succeeded"
             error_message = None
             break
-        except TimeoutError as exc:
-            error_message = repr(exc)
+        except TimeoutError:
+            error_message = "timeout"
             status = "failed"
             break
         except ISOLATION_CATCHABLE_ERRORS as exc:
@@ -657,40 +658,55 @@ def _execute_planned_plugin(
         input_hash=settings.input_hash,
         options_hash=settings.options_hash,
     )
-    if plan.policy.dry_run:
-        record = dry_run_record(plugin=plugin, params=params, run_id=plan.run_id)
-    elif plan.policy.skip_on_unchanged and is_unchanged(plan.prior_manifest, state):
-        record = skip_record(plugin=plugin, params=params, reason="unchanged", run_id=plan.run_id)
-    else:
-        record = _execute_plugin(plugin=plugin, ctx=ctx, settings=settings, run_id=plan.run_id)
+    record: GraphPluginRunRecord | None = None
+    try:
+        if plan.policy.dry_run:
+            record = dry_run_record(plugin=plugin, params=params, run_id=plan.run_id)
+        elif plan.policy.skip_on_unchanged and is_unchanged(plan.prior_manifest, state):
+            record = skip_record(
+                plugin=plugin, params=params, reason="unchanged", run_id=plan.run_id
+            )
+        else:
+            record = _execute_plugin(plugin=plugin, ctx=ctx, settings=settings, run_id=plan.run_id)
+    except PluginFatalError as exc:
+        plan.telemetry.finish_plugin(span, exc.record)
+        plan.telemetry.record_metrics(exc.record, plan.scope)
+        log_plugin_finish(exc.record, ctx.runtime, plan.scope)
+        raise
+    except ISOLATION_CATCHABLE_ERRORS:
+        message = "plugin_failed"
+        log.exception(message, extra={"graph_run_id": plan.run_id})
+        record = GraphPluginRunRecord(
+            name=plugin.name,
+            stage=plugin.stage,
+            severity=settings.severity,
+            status="failed",
+            attempts=1,
+            timeout_ms=settings.timeout_ms,
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
+            duration_ms=0.0,
+            partial=True,
+            run_id=plan.run_id,
+            error=message,
+            options=ctx.options,
+            input_hash=settings.input_hash,
+            options_hash=settings.options_hash,
+            version_hash=settings.version_hash,
+            skipped_reason=None,
+            row_counts=None,
+            contracts=(),
+            requires_isolation=plugin.requires_isolation,
+            isolation_kind=plugin.isolation_kind,
+            policy_fail_fast=settings.fail_fast,
+        )
+    if record is None:
+        missing_record_message = "Plugin execution did not produce a record"
+        raise RuntimeError(missing_record_message)
     plan.telemetry.finish_plugin(span, record)
     plan.telemetry.record_metrics(record, plan.scope)
-    log.info(
-        "graph_runtime.plugin.finish name=%s stage=%s status=%s duration_ms=%.2f attempts=%d",
-        record.name,
-        record.stage,
-        record.status,
-        record.duration_ms,
-        record.attempts,
-        extra={
-            "metric": "graph_runtime",
-            "op": record.name,
-            "duration_ms": record.duration_ms,
-            "use_gpu": ctx.runtime.use_gpu,
-            "features": ctx.runtime.options.features,
-            "plugin_status": record.status,
-            "plugin_started_at": record.started_at.isoformat(),
-            "plugin_ended_at": record.ended_at.isoformat(),
-            "plugin_stage": record.stage,
-            "plugin_attempts": record.attempts,
-            "plugin_timeout_ms": record.timeout_ms,
-            "plugin_severity": record.severity,
-            "plugin_contracts": [c.status for c in record.contracts],
-            "graph_run_id": plan.run_id,
-        },
-    )
+    log_plugin_finish(record, ctx.runtime, plan.scope)
     return record
-
 
 def run_graph_plugin_batch(
     *,

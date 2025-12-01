@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import DuckDBQueryService
+from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import (
     FileProfileResponse,
     FunctionArchitectureResponse,
@@ -20,39 +20,39 @@ from codeintel.serving.services.http_transport import _HttpTransportMixin
 class _ProfileQueryDelegates:
     """Local profile-query delegates calling DuckDBQueryService."""
 
-    query: DuckDBQueryService
+    query: DuckDBQueryApi
     _call: Callable[..., Any]
 
     def get_function_profile(self, *, goid_h128: int) -> dm.FunctionProfileResult:
         pydantic_resp: FunctionProfileResponse = self._call(
             "get_function_profile",
-            lambda: self.query.get_function_profile(goid_h128=goid_h128),
+            lambda: self.query.functions.get_function_profile(goid_h128=goid_h128),
         )
         return pydantic_resp.to_domain()
 
     def get_file_profile(self, *, rel_path: str) -> dm.FileProfileResult:
         pydantic_resp: FileProfileResponse = self._call(
-            "get_file_profile", lambda: self.query.get_file_profile(rel_path=rel_path)
+            "get_file_profile", lambda: self.query.modules.get_file_profile(rel_path=rel_path)
         )
         return pydantic_resp.to_domain()
 
     def get_module_profile(self, *, module: str) -> dm.ModuleProfileResult:
         pydantic_resp: ModuleProfileResponse = self._call(
-            "get_module_profile", lambda: self.query.get_module_profile(module=module)
+            "get_module_profile", lambda: self.query.modules.get_module_profile(module=module)
         )
         return pydantic_resp.to_domain()
 
     def get_function_architecture(self, *, goid_h128: int) -> dm.FunctionArchitectureResult:
         pydantic_resp: FunctionArchitectureResponse = self._call(
             "get_function_architecture",
-            lambda: self.query.get_function_architecture(goid_h128=goid_h128),
+            lambda: self.query.functions.get_function_architecture(goid_h128=goid_h128),
         )
         return pydantic_resp.to_domain()
 
     def get_module_architecture(self, *, module: str) -> dm.ModuleArchitectureResult:
         pydantic_resp: ModuleArchitectureResponse = self._call(
             "get_module_architecture",
-            lambda: self.query.get_module_architecture(module=module),
+            lambda: self.query.modules.get_module_architecture(module=module),
         )
         return pydantic_resp.to_domain()
 

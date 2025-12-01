@@ -16,7 +16,7 @@ from tests._helpers.builders import (
     insert_call_graph_nodes,
     insert_import_graph_edges,
 )
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
 def test_compute_graph_metrics_with_small_graph() -> None:

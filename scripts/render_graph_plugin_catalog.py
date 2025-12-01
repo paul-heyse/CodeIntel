@@ -3,16 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-REPO_SRC = REPO_ROOT / "src"
-for path in (REPO_SRC, REPO_ROOT):
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
-
-from codeintel.analytics.graphs.catalog import (  # noqa: E402
+from codeintel.analytics.graphs.catalog import (
     build_plugin_catalog,
     write_plugin_catalog,
     write_plugin_catalog_html,
@@ -63,6 +56,7 @@ def main() -> int:
         Exit code (0 on success).
     """
     args = parse_args()
+
     catalog = build_plugin_catalog()
     write_plugin_catalog(args.json_path)
     write_plugin_catalog_markdown(args.markdown_path, catalog)

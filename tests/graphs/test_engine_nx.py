@@ -28,7 +28,7 @@ from tests._helpers.builders import (
     insert_symbol_use_edges,
     insert_test_coverage_edges,
 )
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
 def _node_payload(graph: nx.Graph) -> set[tuple[object, tuple[tuple[str, object], ...]]]:

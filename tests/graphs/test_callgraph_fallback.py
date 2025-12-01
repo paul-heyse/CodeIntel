@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.graphs import callgraph_builder
-from codeintel.graphs.callgraph_builder import CallGraphRunScope
-from codeintel.graphs.function_catalog import FunctionCatalog, FunctionMeta
 from codeintel.storage.rows import CallGraphEdgeRow
 
 
@@ -59,26 +57,23 @@ def test_callgraph_falls_back_to_ast(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
     (repo_root / "mod.py").write_text("def foo():\n    pass\n", encoding="utf-8")
-    catalog = FunctionCatalog(
-        functions=[
-            FunctionMeta(
-                goid=1,
-                urn="urn:foo",
-                rel_path="mod.py",
-                qualname="mod.foo",
-                start_line=1,
-                end_line=2,
-            )
-        ],
-        module_by_path={},
-    )
-    scope = CallGraphRunScope(repo="r", commit="c", repo_root=repo_root)
+    func_spans: list[callgraph_builder.FunctionSpan] = [
+        callgraph_builder.FunctionSpan(
+            goid=1,
+            rel_path="mod.py",
+            qualname="mod.foo",
+            start_line=1,
+            end_line=2,
+        )
+    ]
 
     # Act
     edges = callgraph_builder.collect_edges_for_testing(
-        catalog,
-        scope,
-        callgraph_builder.CallGraphInputs(
+        repo_root,
+        func_spans,
+        repo="r",
+        commit="c",
+        inputs=callgraph_builder.CallGraphInputs(
             global_callee_by_name={"mod.foo": 1, "foo": 1},
             scip_candidates_by_use={},
             def_goids_by_path={},

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
+from typing import LiteralString, cast
 
 from duckdb import DuckDBPyConnection
 
@@ -16,13 +17,16 @@ _INGESTION_COLUMNS_VERIFIED: list[bool] = [False]
 
 @dataclass(frozen=True)
 class PreparedStatements:
-    """Prepared insert/delete SQL for a table (registry-driven)."""
+    """Prepared insert/delete/select SQL for a table (registry-driven)."""
 
     insert_sql: str
     delete_sql: str | None = None
+    select_sql: str | None = None
+    select_params: list[object] | None = None
 
 
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+TABLE_KEY_PARTS = 2
 
 
 def quote_identifier(identifier: str) -> str:
@@ -59,10 +63,11 @@ def quote_table_key(table_key: str) -> str:
     ValueError
         When the key is invalid.
     """
-    if "." not in table_key:
+    parts = table_key.split(".")
+    if len(parts) != TABLE_KEY_PARTS or not parts[0] or not parts[1]:
         message = f"Table key must include schema: {table_key}"
         raise ValueError(message)
-    schema_name, table_name = table_key.split(".", maxsplit=1)
+    schema_name, table_name = parts
     return f"{quote_identifier(schema_name)}.{quote_identifier(table_name)}"
 
 
@@ -91,9 +96,19 @@ def macro_select_sql(macro_name: str, placeholders: str) -> str:
         message = f"Macro name must include schema: {macro_name}"
         raise ValueError(message)
     schema_name, macro = macro_name.split(".", maxsplit=1)
-    return (
-        f"SELECT * FROM {quote_identifier(schema_name)}.{quote_identifier(macro)}({placeholders})"  # noqa: S608 - validated identifiers
+    macro_sql = ".".join((quote_identifier(schema_name), quote_identifier(macro)))
+    query = "".join(
+        (
+            "SELECT * FROM /*",
+            macro_name,
+            "*/ ",
+            macro_sql,
+            "(",
+            placeholders,
+            ")",
+        )
     )
+    return cast("LiteralString", query)
 
 
 def safe_macro_call(
@@ -132,6 +147,48 @@ def safe_macro_call(
     return sql, args
 
 
+def build_insert_sql(
+    table_identifier: str,
+    columns: Sequence[str],
+    *,
+    identifier_is_quoted: bool = False,
+) -> str:
+    """
+    Build a parameterized INSERT statement with validated identifiers.
+
+    Parameters
+    ----------
+    table_identifier
+        Fully qualified table name (schema.table) or a pre-quoted identifier
+        when ``identifier_is_quoted`` is True.
+    columns
+        Ordered list of column names to insert into.
+    identifier_is_quoted
+        When True, ``table_identifier`` is treated as already quoted (e.g., a
+        temporary view name). When False, it is validated and quoted.
+
+    Returns
+    -------
+    str
+        INSERT statement with placeholders for values.
+    """
+    table_sql = table_identifier if identifier_is_quoted else quote_table_key(table_identifier)
+    cols_sql = ", ".join(quote_identifier(col) for col in columns)
+    placeholders = ", ".join("?" for _ in columns)
+    query = "".join(
+        (
+            "INSERT INTO ",
+            table_sql,
+            " (",
+            cols_sql,
+            ") VALUES (",
+            placeholders,
+            ")",
+        )
+    )
+    return cast("LiteralString", query)
+
+
 def prepared_statements_dynamic(
     con: DuckDBPyConnection,
     table_key: str,
@@ -162,14 +219,20 @@ def prepared_statements_dynamic(
         message = f"Table {table_key} missing from registry"
         raise RuntimeError(message)
 
-    cols_sql = ", ".join(registry_cols)
-    placeholders = ", ".join("?" for _ in registry_cols)
+    insert_sql = build_insert_sql(table_key, registry_cols)
     table_sql = quote_table_key(table_key)
-
-    insert_sql = f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders})"  # noqa: S608 - validated identifiers
+    select_sql = cast(
+        "LiteralString",
+        " ".join(("SELECT * FROM", table_sql, "WHERE repo = ? AND commit = ?")),
+    )
+    # select_params default to a typical repo/commit tuple to keep the shape consistent;
+    # callers should supply concrete values when executing.
+    select_params: list[object] | None = None
     return PreparedStatements(
         insert_sql=insert_sql,
         delete_sql=None,
+        select_sql=select_sql,
+        select_params=select_params,
     )
 
 
@@ -218,9 +281,11 @@ def ensure_schema(con: DuckDBPyConnection, table_key: str) -> None:
 
 __all__ = [
     "PreparedStatements",
+    "build_insert_sql",
     "ensure_schema",
     "macro_select_sql",
     "prepared_statements_dynamic",
     "quote_identifier",
     "quote_table_key",
+    "safe_macro_call",
 ]

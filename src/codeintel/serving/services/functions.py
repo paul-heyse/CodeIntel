@@ -6,7 +6,8 @@ from collections.abc import Callable
 from typing import Any
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import DuckDBQueryService, clamp_limit_value
+from codeintel.serving.backend import clamp_limit_value
+from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
     FileSummaryResponse,
@@ -25,7 +26,7 @@ from codeintel.serving.services.http_transport import _HttpTransportMixin
 class _FunctionQueryDelegates:
     """Local delegates that call DuckDBQueryService for function-related APIs."""
 
-    query: DuckDBQueryService
+    query: DuckDBQueryApi
     _call: Callable[..., Any]
 
     def get_function_summary(
@@ -39,7 +40,7 @@ class _FunctionQueryDelegates:
     ) -> dm.FunctionSummaryResult:
         raw_resp = self._call(
             "get_function_summary",
-            lambda: self.query.get_function_summary(
+            lambda: self.query.functions.get_function_summary(
                 urn=urn,
                 goid_h128=goid_h128,
                 rel_path=rel_path,
@@ -64,7 +65,7 @@ class _FunctionQueryDelegates:
     ) -> dm.HighRiskFunctionsResult:
         pydantic_resp: HighRiskFunctionsResponse = self._call(
             "list_high_risk_functions",
-            lambda: self.query.list_high_risk_functions(
+            lambda: self.query.functions.list_high_risk_functions(
                 min_risk=min_risk,
                 limit=limit,
                 tested_only=tested_only,
@@ -83,7 +84,7 @@ class _FunctionQueryDelegates:
     ) -> dm.CallGraphNeighbors:
         pydantic_resp: CallGraphNeighborsResponse = self._call(
             "get_callgraph_neighbors",
-            lambda: self.query.get_callgraph_neighbors(
+            lambda: self.query.functions.get_callgraph_neighbors(
                 goid_h128=goid_h128,
                 direction=direction,
                 limit=limit,
@@ -102,7 +103,7 @@ class _FunctionQueryDelegates:
     ) -> dm.TestsForFunctionResult:
         pydantic_resp: TestsForFunctionResponse = self._call(
             "get_tests_for_function",
-            lambda: self.query.get_tests_for_function(
+            lambda: self.query.functions.get_tests_for_function(
                 goid_h128=goid_h128,
                 urn=urn,
                 limit=limit,
@@ -120,7 +121,7 @@ class _FunctionQueryDelegates:
     ) -> dm.GraphNeighborhood:
         pydantic_resp: GraphNeighborhoodResponse = self._call(
             "get_callgraph_neighborhood",
-            lambda: self.query.get_callgraph_neighborhood(
+            lambda: self.query.functions.get_callgraph_neighborhood(
                 goid_h128=goid_h128, radius=radius, max_nodes=max_nodes
             ),
             dataset="call_graph_nodes",
@@ -135,7 +136,9 @@ class _FunctionQueryDelegates:
     ) -> dm.ImportBoundary:
         pydantic_resp: ImportBoundaryResponse = self._call(
             "get_import_boundary",
-            lambda: self.query.get_import_boundary(subsystem_id=subsystem_id, max_edges=max_edges),
+            lambda: self.query.functions.get_import_boundary(
+                subsystem_id=subsystem_id, max_edges=max_edges
+            ),
             dataset="import_graph_edges",
         )
         return pydantic_resp.to_domain()
@@ -145,7 +148,7 @@ class _FunctionQueryDelegates:
     ) -> dm.FileSummaryResult:
         pydantic_resp: FileSummaryResponse = self._call(
             "get_file_summary",
-            lambda: self.query.get_file_summary(
+            lambda: self.query.modules.get_file_summary(
                 rel_path=rel_path,
                 scope=parse_graph_scope(scope),
             ),

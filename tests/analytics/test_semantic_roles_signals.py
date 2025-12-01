@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+
 import pytest
 
 from codeintel.analytics.semantic_roles import FunctionContext, classify_function_role
@@ -17,7 +19,7 @@ class _FunctionContextBuilder:
         self.contracts: dict[str, object] = {}
         self.module_tags: list[str] = []
         self.module_name = "pkg.api"
-        self.graph: dict[str, object] = {}
+        self.graph: dict[str, int] = {}
         self.loc = 10
 
     def with_decorators(self, *decorators: str) -> _FunctionContextBuilder:
@@ -28,11 +30,11 @@ class _FunctionContextBuilder:
         self.module_tags = list(tags)
         return self
 
-    def with_effects(self, effects: dict[str, object]) -> _FunctionContextBuilder:
+    def with_effects(self, effects: Mapping[str, object]) -> _FunctionContextBuilder:
         self.effects = dict(effects)
         return self
 
-    def with_contracts(self, contracts: dict[str, object]) -> _FunctionContextBuilder:
+    def with_contracts(self, contracts: Mapping[str, object]) -> _FunctionContextBuilder:
         self.contracts = dict(contracts)
         return self
 
@@ -40,8 +42,8 @@ class _FunctionContextBuilder:
         self.loc = loc
         return self
 
-    def with_graph(self, graph: dict[str, object]) -> _FunctionContextBuilder:
-        self.graph = dict(graph)
+    def with_graph(self, graph: Mapping[str, object]) -> _FunctionContextBuilder:
+        self.graph = {str(k): int(v) for k, v in graph.items() if isinstance(v, (int, float, str))}
         return self
 
     def build(self) -> FunctionContext:
@@ -61,24 +63,28 @@ class _FunctionContextBuilder:
 
 def _make_context(**overrides: object) -> FunctionContext:
     builder = _FunctionContextBuilder()
-    _apply_iterable_override(builder, overrides, "decorators", builder.with_decorators)
-    _apply_iterable_override(builder, overrides, "module_tags", builder.with_module_tags)
-    _apply_mapping_override(builder, overrides, "effects", builder.with_effects)
-    _apply_mapping_override(builder, overrides, "contracts", builder.with_contracts)
-    _apply_mapping_override(builder, overrides, "graph", builder.with_graph)
+    _apply_iterable_override(overrides, "decorators", builder.with_decorators)
+    _apply_iterable_override(overrides, "module_tags", builder.with_module_tags)
+    _apply_mapping_override(overrides, "effects", builder.with_effects)
+    _apply_mapping_override(overrides, "contracts", builder.with_contracts)
+    _apply_mapping_override(overrides, "graph", builder.with_graph)
     if "loc" in overrides:
-        builder.with_location(int(overrides.pop("loc")))
+        loc_value = overrides.pop("loc")
+        if isinstance(loc_value, (int, str)):
+            builder.with_location(int(loc_value))
     builder.rel_path = str(overrides.pop("rel_path", builder.rel_path))
     builder.qualname = str(overrides.pop("qualname", builder.qualname))
     builder.module_name = str(overrides.pop("module_name", builder.module_name))
-    builder.goid = int(overrides.pop("goid", builder.goid))
+    goid_value = overrides.pop("goid", builder.goid)
+    if isinstance(goid_value, (int, str)):
+        builder.goid = int(goid_value)
     return builder.build()
 
 
 def _apply_iterable_override(
     overrides: dict[str, object],
     key: str,
-    applier: callable[..., object],
+    applier: Callable[..., object],
 ) -> None:
     if key not in overrides:
         return
@@ -90,13 +96,19 @@ def _apply_iterable_override(
 def _apply_mapping_override(
     overrides: dict[str, object],
     key: str,
-    applier: callable[[dict[str, object]], object],
+    applier: Callable[[Mapping[str, object]], object],
 ) -> None:
     if key not in overrides:
         return
     mapping = overrides.pop(key)
     if isinstance(mapping, dict):
-        applier(mapping)
+        if key == "graph":
+            normalized: dict[str, object] = {
+                str(k): int(v) for k, v in mapping.items() if isinstance(v, (int, float, str))
+            }
+            applier(normalized)
+            return
+        applier({str(k): v for k, v in mapping.items()})
 
 
 def test_fastapi_role_detected() -> None:

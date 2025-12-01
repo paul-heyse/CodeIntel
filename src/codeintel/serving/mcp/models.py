@@ -412,6 +412,70 @@ class FunctionSummaryRow(MappingModel):
     last_test_status: str | None = None
 
 
+class FunctionProfileRow(MappingModel):
+    """Profile row for ``analytics.function_profile``."""
+
+    model_config = ConfigDict(extra="allow")
+
+    repo: str
+    commit: str
+    function_goid_h128: int
+    urn: str | None = None
+    rel_path: str | None = None
+    qualname: str | None = None
+    risk_score: float | None = None
+    coverage_ratio: float | None = None
+    tested: bool | None = None
+    test_count: int | None = None
+    fan_in: int | None = None
+    fan_out: int | None = None
+
+
+class FileProfileRow(MappingModel):
+    """Profile row for ``analytics.file_profile``."""
+
+    model_config = ConfigDict(extra="allow")
+
+    repo: str
+    commit: str
+    rel_path: str
+    module: str | None = None
+    language: str | None = None
+    ast_complexity: object | None = None
+    hotspot_score: object | None = None
+    type_error_count: object | None = None
+    annotation_ratio: object | None = None
+    untyped_defs: object | None = None
+    overlay_needed: object | None = None
+    total_errors: object | None = None
+    has_errors: object | None = None
+    function_count: int | None = None
+    coverage_ratio: float | None = None
+    max_risk_score: float | None = None
+
+
+class ModuleProfileRow(MappingModel):
+    """Profile row for ``analytics.module_profile``."""
+
+    model_config = ConfigDict(extra="allow")
+
+    repo: str
+    commit: str
+    module: str
+    rel_path: str | None = None
+    import_fan_in: int | None = None
+    import_fan_out: int | None = None
+    symbol_fan_in: int | None = None
+    symbol_fan_out: int | None = None
+    module_coverage_ratio: float | None = None
+    tested_function_count: int | None = None
+    untested_function_count: int | None = None
+    role: str | None = None
+    role_confidence: float | None = None
+    avg_risk_score: float | None = None
+    max_risk_score: float | None = None
+
+
 class CallGraphEdgeRow(MappingModel):
     """Edge row emitted by ``docs.v_call_graph_enriched``."""
 
@@ -907,7 +971,7 @@ class FunctionProfileResponse(BaseModel):
     """Profile payload for a single function GOID."""
 
     found: bool
-    profile: ViewRow | None = None
+    profile: FunctionProfileRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
     def to_domain(self) -> dm.FunctionProfileResult:
@@ -938,7 +1002,9 @@ class FunctionProfileResponse(BaseModel):
         return cls(
             found=result.found,
             profile=(
-                ViewRow.model_validate(result.profile) if result.profile is not None else None
+                FunctionProfileRow.model_validate(result.profile)
+                if result.profile is not None
+                else None
             ),
             meta=ResponseMeta.from_domain(result.meta),
         )
@@ -948,7 +1014,7 @@ class FileProfileResponse(BaseModel):
     """Profile payload for a file path."""
 
     found: bool
-    profile: ViewRow | None = None
+    profile: FileProfileRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
     def to_domain(self) -> dm.FileProfileResult:
@@ -979,7 +1045,9 @@ class FileProfileResponse(BaseModel):
         return cls(
             found=result.found,
             profile=(
-                ViewRow.model_validate(result.profile) if result.profile is not None else None
+                FileProfileRow.model_validate(result.profile)
+                if result.profile is not None
+                else None
             ),
             meta=ResponseMeta.from_domain(result.meta),
         )
@@ -989,7 +1057,7 @@ class ModuleProfileResponse(BaseModel):
     """Profile payload for a module."""
 
     found: bool
-    profile: ViewRow | None = None
+    profile: ModuleProfileRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
     def to_domain(self) -> dm.ModuleProfileResult:
@@ -1020,7 +1088,9 @@ class ModuleProfileResponse(BaseModel):
         return cls(
             found=result.found,
             profile=(
-                ViewRow.model_validate(result.profile) if result.profile is not None else None
+                ModuleProfileRow.model_validate(result.profile)
+                if result.profile is not None
+                else None
             ),
             meta=ResponseMeta.from_domain(result.meta),
         )

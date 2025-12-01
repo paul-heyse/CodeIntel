@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import BackendLimits, DuckDBQueryService
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.datasets import describe_dataset
+from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import (
     DatasetDescriptor,
     DatasetSpecDescriptor,
@@ -233,17 +234,25 @@ class LocalQueryService(
 ):
     """Application service backed by a local DuckDB query layer."""
 
-    query: DuckDBQueryService
+    query: DuckDBQueryApi
     dataset_tables: dict[str, str] | None = None
     describe_dataset_fn: Callable[[str, str], str] = describe_dataset
     observability: ServiceObservability | None = None
     calls: list[str] = field(default_factory=list)
+    limits: BackendLimits = field(default_factory=BackendLimits)
 
     def __post_init__(self) -> None:
         """Derive dataset registry from the query gateway when not provided."""
         if self.dataset_tables is None:
-            gateway = getattr(self.query, "gateway", None)
+            try:
+                gateway = self.query.gateway
+            except AttributeError:
+                gateway = None
             self.dataset_tables = dict(gateway.datasets.mapping) if gateway is not None else {}
+        try:
+            self.limits = self.query.limits
+        except AttributeError:
+            self.limits = BackendLimits()
 
     def _call[T](
         self,

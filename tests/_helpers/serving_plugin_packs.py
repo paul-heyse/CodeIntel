@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import SimpleNamespace
+from typing import cast
 
 from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.serving.backend.limits import BackendLimits
+from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.services.query_service import LocalQueryService, ResponseMeta
+from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass
@@ -13,6 +18,17 @@ class ScopeRecordingQuery:
     """Stub query that records scopes passed into service calls."""
 
     scopes: list[GraphRunScope | None] = field(default_factory=list)
+
+    def __init__(self) -> None:
+        self.scopes = []
+        self.gateway = cast(
+            "StorageGateway", SimpleNamespace(datasets=SimpleNamespace(mapping={}), con=None)
+        )
+        self.limits = BackendLimits()
+        self.functions = self
+        self.modules = self
+        self.subsystems = self
+        self.datasets = self
 
     def get_function_summary(
         self,
@@ -49,9 +65,9 @@ def build_serving_scope_pack() -> ServingScopePack:
     ServingScopePack
         Pack containing the query stub and service ready for tests.
     """
-    query = ScopeRecordingQuery()
-    service = LocalQueryService(query=query)
-    return ServingScopePack(query=query, service=service)
+    stub = ScopeRecordingQuery()
+    service = LocalQueryService(query=cast("DuckDBQueryApi", stub))
+    return ServingScopePack(query=stub, service=service)
 
 
 __all__ = ["ScopeRecordingQuery", "ServingScopePack", "build_serving_scope_pack"]

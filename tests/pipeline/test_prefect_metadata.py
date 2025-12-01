@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 import pytest
 from prefect import task
@@ -52,7 +53,7 @@ def test_attach_task_metadata_handles_plain_callables() -> None:
     def fn() -> None:
         called.append(True)
 
-    task_like: Callable[[], None] = attach_task_metadata(fn, step_name="plain", fn=fn)
+    task_like = cast("Callable[[], None]", attach_task_metadata(fn, step_name="plain", fn=fn))
     task_like()
     metadata = get_task_metadata(task_like)
     if metadata is None:
