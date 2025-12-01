@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.pipeline.export.export_jsonl import export_jsonl_for_table
 from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.fixtures import provision_graph_ready_repo
@@ -13,8 +13,11 @@ from tests._helpers.fixtures import provision_graph_ready_repo
 
 def _setup_edge_table(con: DuckDBConnection, table: str) -> None:
     con.execute("CREATE SCHEMA IF NOT EXISTS graph;")
-    schema = TABLE_SCHEMAS[table]
-    cols = ", ".join(f"{col.name} {col.type}" for col in schema.columns)
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY[table]
+    if contract.schema is None:
+        message = f"No schema for {table}"
+        raise ValueError(message)
+    cols = ", ".join(f"{col.name} {col.type}" for col in contract.schema.columns)
     con.execute(f"DROP TABLE IF EXISTS {table};")
     con.execute(f"CREATE TABLE {table} ({cols});")
 
@@ -48,7 +51,8 @@ def test_call_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
         message = "Expected exported rows"
         raise AssertionError(message)
     first = json.loads(content[0])
-    expected_keys = TABLE_SCHEMAS[table].column_names()
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY[table]
+    expected_keys = contract.schema.column_names() if contract.schema else []
     if set(first) != set(expected_keys):
         unexpected = set(first)
         message = f"Unexpected keys {unexpected}"
@@ -87,7 +91,8 @@ def test_import_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
         message = "Expected exported rows"
         raise AssertionError(message)
     first = json.loads(content[0])
-    expected_keys = TABLE_SCHEMAS[table].column_names()
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY[table]
+    expected_keys = contract.schema.column_names() if contract.schema else []
     if set(first) != set(expected_keys):
         unexpected = set(first)
         message = f"Unexpected keys {unexpected}"

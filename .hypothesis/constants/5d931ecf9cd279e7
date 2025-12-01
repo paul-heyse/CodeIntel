@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/tests_profiles/rows.py
+# hypothesis_version: 6.148.3
+
+[0.0, 'SerializeRow', '[', ']', 'parametrize', 'parametrized_case', 'python', 'usefixtures']

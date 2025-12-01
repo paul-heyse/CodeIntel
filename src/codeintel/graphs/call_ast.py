@@ -5,9 +5,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from codeintel.config.dataset_contract import CallGraphEdgeRow
 from codeintel.graphs.call_context import EdgeResolutionContext
 from codeintel.graphs.call_resolution import build_evidence, resolve_callee, resolve_via_scip
-from codeintel.storage.rows import CallGraphEdgeRow
 
 
 def _extract_callee_ast(expr: ast.AST) -> tuple[str, list[str]]:

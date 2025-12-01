@@ -9,16 +9,16 @@ import libcst as cst
 import networkx as nx
 
 from codeintel.config import ImportGraphStepConfig
-from codeintel.graphs.function_catalog import load_function_catalog
-from codeintel.graphs.import_resolver import collect_import_edges
-from codeintel.ingestion.common import run_batch
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     ImportEdgeRow,
     ImportModuleRow,
     import_edge_to_tuple,
     import_module_to_tuple,
 )
+from codeintel.graphs.function_catalog import load_function_catalog
+from codeintel.graphs.import_resolver import collect_import_edges
+from codeintel.ingestion.common import run_batch
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

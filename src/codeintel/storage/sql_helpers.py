@@ -9,10 +9,10 @@ from typing import LiteralString, cast
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.schemas.ingestion_sql import verify_ingestion_columns
-from codeintel.config.schemas.registry_adapter import load_registry_columns
-
-_INGESTION_COLUMNS_VERIFIED: list[bool] = [False]
+from codeintel.config.dataset_contract import (
+    DATASET_CONTRACTS_BY_TABLE_KEY,
+    TABLE_SCHEMAS,
+)
 
 
 @dataclass(frozen=True)
@@ -190,7 +190,7 @@ def build_insert_sql(
 
 
 def prepared_statements_dynamic(
-    con: DuckDBPyConnection,
+    con: DuckDBPyConnection,  # noqa: ARG001 - Kept for backward compatibility
     table_key: str,
 ) -> PreparedStatements:
     """
@@ -199,7 +199,7 @@ def prepared_statements_dynamic(
     Parameters
     ----------
     con :
-        Active DuckDB connection.
+        DuckDB connection (kept for backward compatibility; not used).
     table_key :
         Registry key (e.g., "core.ast_nodes", "analytics.function_metrics").
 
@@ -214,10 +214,16 @@ def prepared_statements_dynamic(
     RuntimeError
         If the table is missing from the registry.
     """
-    registry_cols = load_registry_columns(con).get(table_key)
-    if registry_cols is None:
-        message = f"Table {table_key} missing from registry"
-        raise RuntimeError(message)
+    schema = TABLE_SCHEMAS.get(table_key)
+    if schema is not None:
+        registry_cols = [col.name for col in schema.columns]
+    else:
+        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+        if contract is not None and contract.schema is not None:
+            registry_cols = [col.name for col in contract.schema.columns]
+        else:
+            message = f"Table {table_key} missing from TABLE_SCHEMAS"
+            raise RuntimeError(message)
 
     insert_sql = build_insert_sql(table_key, registry_cols)
     table_sql = quote_table_key(table_key)
@@ -257,14 +263,23 @@ def ensure_schema(con: DuckDBPyConnection, table_key: str) -> None:
     RuntimeError
         If the table is missing or deviates from the registry.
     """
-    if not _INGESTION_COLUMNS_VERIFIED[0]:
-        verify_ingestion_columns(con)
-        _INGESTION_COLUMNS_VERIFIED[0] = True
+    # Column verification is now done at build time via TABLE_SCHEMAS
+    # No need for runtime verification since all columns come from the same source
 
-    registry_cols = load_registry_columns(con).get(table_key)
-    if registry_cols is None:
-        message = f"Table {table_key} missing from registry"
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    schema = TABLE_SCHEMAS.get(table_key)
+    if contract is not None and contract.schema is not None:
+        registry_cols = [col.name for col in contract.schema.columns]
+        is_view = contract.is_view
+    elif schema is not None:
+        # TableSchema from TABLE_SCHEMAS without a contract - assume base table
+        registry_cols = [col.name for col in schema.columns]
+        is_view = False
+    else:
+        message = f"Table {table_key} missing from TABLE_SCHEMAS"
         raise RuntimeError(message)
+    if is_view:
+        return
 
     schema_name, table_name = table_key.split(".", maxsplit=1)
     info = con.execute(f"PRAGMA table_info({schema_name}.{table_name})").fetchall()

@@ -1,45 +1,8 @@
-"""Shared storage abstractions and constants for CodeIntel persistence backends."""
+"""Shared storage abstractions and constants for CodeIntel persistence backends.
 
-from codeintel.storage.rows import (
-    CallGraphEdgeRow,
-    CallGraphNodeRow,
-    CFGBlockRow,
-    CFGEdgeRow,
-    ConfigValueRow,
-    CoverageLineRow,
-    DFGEdgeRow,
-    DocstringRow,
-    FunctionValidationRow,
-    GoidCrosswalkRow,
-    GoidRow,
-    HotspotRow,
-    ImportEdgeRow,
-    ImportModuleRow,
-    StaticDiagnosticRow,
-    SymbolUseRow,
-    TestCatalogRowModel,
-    TestCoverageEdgeRow,
-    TypednessRow,
-)
+Row models and serializers are now defined in codeintel.config.dataset_contract.
+This module was previously a re-export facade, but all row model imports should
+now go directly to codeintel.config.dataset_contract for explicit sourcing.
+"""
 
-__all__ = [
-    "CFGBlockRow",
-    "CFGEdgeRow",
-    "CallGraphEdgeRow",
-    "CallGraphNodeRow",
-    "ConfigValueRow",
-    "CoverageLineRow",
-    "DFGEdgeRow",
-    "DocstringRow",
-    "FunctionValidationRow",
-    "GoidCrosswalkRow",
-    "GoidRow",
-    "HotspotRow",
-    "ImportEdgeRow",
-    "ImportModuleRow",
-    "StaticDiagnosticRow",
-    "SymbolUseRow",
-    "TestCatalogRowModel",
-    "TestCoverageEdgeRow",
-    "TypednessRow",
-]
+from __future__ import annotations

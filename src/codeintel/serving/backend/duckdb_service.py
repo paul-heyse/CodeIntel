@@ -929,7 +929,15 @@ class _DatasetQueries:
         results: list[DatasetSpecDescriptor] = []
         for spec in sorted_specs:
             normalized: dict[str, object] = dict(spec)
-            normalized["schema_columns"] = list(cast("list[str]", spec["schema_columns"]))
+            if spec.get("schema_columns"):
+                normalized["schema_columns"] = list(
+                    cast("list[str]", spec.get("schema_columns", []))
+                )
+            else:
+                ds = registry.by_name.get(cast("str", spec.get("name")))
+                normalized["schema_columns"] = (
+                    ds.schema.column_names() if ds is not None and ds.schema is not None else []
+                )
             normalized["upstream_dependencies"] = list(
                 cast("list[str]", spec.get("upstream_dependencies", []))
             )

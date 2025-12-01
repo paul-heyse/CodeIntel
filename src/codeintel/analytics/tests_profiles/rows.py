@@ -31,17 +31,19 @@ from codeintel.analytics.tests_profiles.types import (
     TestRecord,
 )
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
-from codeintel.config.schemas.registry_adapter import load_registry_columns
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
     BehavioralCoverageRowModel,
-    TestProfileRowModel,
+    ProfileRowModel,
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
+
+# Alias for backward compatibility
+TestProfileRowModel = ProfileRowModel
 
 
 def build_test_profile_context(
@@ -211,7 +213,6 @@ def write_test_profile_rows(
             commit=cfg.commit,
             delete_sql="DELETE FROM analytics.test_profile WHERE repo = ? AND commit = ?",
             ensure_schema_fn=ensure_schema,
-            load_registry_columns_fn=load_registry_columns,
             prepared_statements_fn=prepared_statements_dynamic,
         ),
     )
@@ -289,7 +290,6 @@ def write_behavioral_coverage_rows(
             commit=cfg.commit,
             delete_sql=("DELETE FROM analytics.behavioral_coverage WHERE repo = ? AND commit = ?"),
             ensure_schema_fn=ensure_schema,
-            load_registry_columns_fn=load_registry_columns,
             prepared_statements_fn=prepared_statements_dynamic,
         ),
     )

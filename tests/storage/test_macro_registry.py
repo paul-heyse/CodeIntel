@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata_bootstrap import METADATA_SCHEMA_DDL, NORMALIZED_MACROS
 
@@ -34,9 +34,12 @@ def _collect_macro_hashes() -> dict[str, str]:
 
 
 def _expected_schema_hash(table_key: str) -> str:
-    schema = TABLE_SCHEMAS[table_key]
-    parts = []
-    for column in schema.columns:
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    if contract is None or contract.schema is None:
+        message = f"No contract schema for {table_key}"
+        raise ValueError(message)
+    parts: list[str] = []
+    for column in contract.schema.columns:
         canonical_type = _canonical_type(column.type)
         parts.append(f"{column.name}:{canonical_type}")
     normalized = "|".join(parts)

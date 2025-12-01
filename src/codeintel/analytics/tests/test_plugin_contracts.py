@@ -24,8 +24,11 @@ from codeintel.analytics.graphs.contracts import (
     table_exists_checker,
     table_not_empty_checker,
 )
-from codeintel.analytics.rows.graph_metrics import FunctionGraphMetricsRow
+from codeintel.config.dataset_contract import GraphMetricsFunctionsRow
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+
+# Alias for backward compatibility
+FunctionGraphMetricsRow = GraphMetricsFunctionsRow
 
 
 def _gateway_with_function_metrics(repo: str, commit: str) -> StorageGateway:

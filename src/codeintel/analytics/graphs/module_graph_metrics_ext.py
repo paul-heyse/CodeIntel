@@ -35,11 +35,14 @@ from codeintel.analytics.graph_service import (
 )
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
 from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
-from codeintel.analytics.rows.graph_metrics_ext import ModuleGraphMetricsExtRow
+from codeintel.config.dataset_contract import GraphMetricsModulesExtRow
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
+
+# Alias for backward compatibility
+ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
 
 CENTRALITY_SAMPLE_LIMIT = 500
 RICH_CLUB_PERCENTILE = 0.1

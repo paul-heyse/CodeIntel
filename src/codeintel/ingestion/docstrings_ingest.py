@@ -12,6 +12,7 @@ from typing import TypedDict
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.builder import DocstringStepConfig
+from codeintel.config.dataset_contract import DocstringRow, docstring_row_to_tuple
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,
     IncrementalIngestOps,
@@ -27,7 +28,6 @@ from codeintel.ingestion.common import (
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.module_index import load_module_map
-from codeintel.storage.rows import DocstringRow, docstring_row_to_tuple
 
 log = logging.getLogger(__name__)
 

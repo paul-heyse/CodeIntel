@@ -13,13 +13,7 @@ from pathlib import Path
 import networkx as nx
 
 from codeintel.config import CFGBuilderStepConfig
-from codeintel.graphs.function_catalog_service import (
-    FunctionCatalogProvider,
-    FunctionCatalogService,
-)
-from codeintel.ingestion.common import run_batch
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     CFGBlockRow,
     CFGEdgeRow,
     DFGEdgeRow,
@@ -27,6 +21,12 @@ from codeintel.storage.rows import (
     cfg_edge_to_tuple,
     dfg_edge_to_tuple,
 )
+from codeintel.graphs.function_catalog_service import (
+    FunctionCatalogProvider,
+    FunctionCatalogService,
+)
+from codeintel.ingestion.common import run_batch
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/call_ast.py
+# hypothesis_version: 6.148.3
+
+['col_offset', 'direct', 'end_lineno', 'lineno', 'python', 'unresolved', 'utf8']

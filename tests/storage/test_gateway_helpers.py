@@ -10,11 +10,15 @@ from codeintel.analytics.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
-from codeintel.analytics.rows.graph_metrics import (
-    FunctionGraphMetricsRow,
-    ModuleGraphMetricsRow,
+from codeintel.config.dataset_contract import (
+    GraphMetricsFunctionsRow,
+    GraphMetricsModulesRow,
 )
 from codeintel.storage.gateway import StorageGateway
+
+# Aliases for backward compatibility
+FunctionGraphMetricsRow = GraphMetricsFunctionsRow
+ModuleGraphMetricsRow = GraphMetricsModulesRow
 
 EXPECTED_FUNCTION_METRICS_LEN = 29
 

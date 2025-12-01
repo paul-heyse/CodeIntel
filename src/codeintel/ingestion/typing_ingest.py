@@ -10,6 +10,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codeintel.config import TypingIngestStepConfig
+from codeintel.config.dataset_contract import (
+    StaticDiagnosticRow,
+    TypednessRow,
+    static_diagnostic_to_tuple,
+    typedness_row_to_tuple,
+)
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,
@@ -26,12 +32,6 @@ from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.module_index import load_module_map
-from codeintel.storage.rows import (
-    StaticDiagnosticRow,
-    TypednessRow,
-    static_diagnostic_to_tuple,
-    typedness_row_to_tuple,
-)
 
 log = logging.getLogger(__name__)
 

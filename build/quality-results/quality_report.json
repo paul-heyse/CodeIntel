@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-01T11:01:36.931606+00:00",
-  "overall_status": "failed",
-  "duration_seconds": 7.479741,
+  "generated_at": "2025-12-01T16:43:16.094415+00:00",
+  "overall_status": "passed",
+  "duration_seconds": 8.841237,
   "results": [
     {
       "name": "ruff_check",
@@ -13,21 +13,13 @@
         "check",
         "--fix"
       ],
-      "status": "failed",
-      "return_code": 1,
-      "started_at": "2025-12-01T11:01:29.451712+00:00",
-      "ended_at": "2025-12-01T11:01:29.476860+00:00",
-      "duration_seconds": 0.025148,
+      "status": "passed",
+      "return_code": 0,
+      "started_at": "2025-12-01T16:43:07.253027+00:00",
+      "ended_at": "2025-12-01T16:43:07.281632+00:00",
+      "duration_seconds": 0.028605,
       "stdout": [
-        "\u001b[4msrc/codeintel/serving/backend/pagination.py\u001b[0m:",
-        "  183\u001b[36m:\u001b[0m22 \u001b[1;31mUP046\u001b[0m Generic class `PaginatedFetch` uses `Generic` subclass instead of type parameters",
-        "  235\u001b[36m:\u001b[0m9  \u001b[1;31mDOC501\u001b[0m Raised exception `TypeError` missing from docstring",
-        "  249\u001b[36m:\u001b[0m9  \u001b[1;31mPLC0415\u001b[0m `import` should be at the top-level of a file",
-        "  354\u001b[36m:\u001b[0m5  \u001b[1;31mUP047\u001b[0m Generic function `paginate_items` should use type parameters",
-        "  397\u001b[36m:\u001b[0m11 \u001b[1;31mRUF022\u001b[0m `__all__` is not sorted",
-        "",
-        "Found 5 errors.",
-        "No fixes available (3 hidden fixes can be enabled with the `--unsafe-fixes` option)."
+        "All checks passed!"
       ],
       "stderr": []
     },
@@ -42,9 +34,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-01T11:01:29.476883+00:00",
-      "ended_at": "2025-12-01T11:01:36.472595+00:00",
-      "duration_seconds": 6.995712,
+      "started_at": "2025-12-01T16:43:07.281657+00:00",
+      "ended_at": "2025-12-01T16:43:15.573022+00:00",
+      "duration_seconds": 8.291365,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -60,9 +52,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-01T11:01:36.472614+00:00",
-      "ended_at": "2025-12-01T11:01:36.931453+00:00",
-      "duration_seconds": 0.458839,
+      "started_at": "2025-12-01T16:43:15.573043+00:00",
+      "ended_at": "2025-12-01T16:43:16.094264+00:00",
+      "duration_seconds": 0.521221,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",

@@ -11,6 +11,11 @@ from pathlib import Path
 import libcst as cst
 
 from codeintel.config import CallGraphStepConfig
+from codeintel.config.dataset_contract import (
+    CallGraphEdgeRow,
+    CallGraphNodeRow,
+    call_graph_node_to_tuple,
+)
 from codeintel.graphs import call_ast, call_cst, call_persist, symbol_uses
 from codeintel.graphs.call_context import EdgeResolutionContext
 from codeintel.graphs.call_resolution import resolve_callee
@@ -24,7 +29,6 @@ from codeintel.graphs.import_resolver import collect_aliases
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.gateway import DuckDBError, StorageGateway
-from codeintel.storage.rows import CallGraphEdgeRow, CallGraphNodeRow, call_graph_node_to_tuple
 
 log = logging.getLogger(__name__)
 

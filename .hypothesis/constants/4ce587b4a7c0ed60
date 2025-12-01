@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/call_cst.py
+# hypothesis_version: 6.148.3
+
+['AsyncFunctionDef', 'direct', 'python', 'unresolved']

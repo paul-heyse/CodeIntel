@@ -9,12 +9,16 @@ from datetime import datetime
 from typing import Any
 
 from codeintel.analytics.graph_service import ComponentBundle, NeighborStats
-from codeintel.analytics.rows.graph_metrics import (
-    FunctionGraphMetricsRow,
-    ModuleGraphMetricsRow,
-)
 from codeintel.config import GraphMetricsStepConfig
+from codeintel.config.dataset_contract import (
+    GraphMetricsFunctionsRow,
+    GraphMetricsModulesRow,
+)
 from codeintel.storage.gateway import DuckDBError, StorageGateway
+
+# Aliases for backward compatibility
+FunctionGraphMetricsRow = GraphMetricsFunctionsRow
+ModuleGraphMetricsRow = GraphMetricsModulesRow
 
 
 @dataclass(frozen=True)

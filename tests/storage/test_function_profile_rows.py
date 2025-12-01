@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     FUNCTION_PROFILE_COLUMNS,
     FunctionProfileRowModel,
     function_profile_row_to_tuple,

@@ -12,9 +12,14 @@ from codeintel.analytics.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
-from codeintel.analytics.rows.function_metrics import FunctionMetricsRow
-from codeintel.analytics.rows.graph_metrics import FunctionGraphMetricsRow
+from codeintel.config.dataset_contract import (
+    FunctionMetricsRow,
+    GraphMetricsFunctionsRow,
+)
 from codeintel.storage.gateway import open_memory_gateway
+
+# Alias for backward compatibility
+FunctionGraphMetricsRow = GraphMetricsFunctionsRow
 
 
 def _count_rows(con: DuckDBPyConnection, table: str, repo: str, commit: str) -> int:

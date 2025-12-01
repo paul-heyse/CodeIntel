@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/profiles/files.py
+# hypothesis_version: 6.148.3
+
+[0.0, 'SerializeRow', '[]', 'annotation_ratio', 'ast_complexity', 'author_count', 'avg_depth', 'avg_loc', 'class_count', 'commit', 'commit_count', 'core.modules', 'created_at', 'file_coverage_ratio', 'function_count', 'has_static_errors', 'hotspot_score', 'language', 'lines_added', 'lines_deleted', 'max_depth', 'max_loc', 'max_risk_score', 'module', 'node_count', 'overlay_needed', 'owners', 'public_functions', 'rel_path', 'repo', 'static_error_count', 'tags', 'tests_touching', 'total_functions', 'type_error_count', 'untyped_defs']

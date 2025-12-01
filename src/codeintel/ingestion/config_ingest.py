@@ -14,6 +14,7 @@ from typing import cast
 import yaml
 
 from codeintel.config import ConfigIngestStepConfig
+from codeintel.config.dataset_contract import ConfigValueRow, config_value_to_tuple
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,
     IncrementalIngestOps,
@@ -29,7 +30,6 @@ from codeintel.ingestion.source_scanner import (
     profile_from_env,
 )
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import ConfigValueRow, config_value_to_tuple
 
 log = logging.getLogger(__name__)
 

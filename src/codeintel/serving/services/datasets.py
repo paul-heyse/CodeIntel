@@ -81,14 +81,11 @@ class _LocalDatasetMixin:
                 registry = load_dataset_registry(self.query.gateway.con)
             results: list[DatasetDescriptor] = []
             for name, table in sorted(mapping.items()):
-                ds: DatasetContract | None = (
-                    registry.by_name.get(name) if registry is not None else None
-                )
+                ds: DatasetContract | None = registry.by_name.get(name) if registry else None
                 description = (
-                    ds.description
-                    if ds is not None and ds.description is not None
-                    else self.describe_dataset_fn(name, table)
-                )
+                    ds.description if ds is not None and ds.description is not None else None
+                ) or self.describe_dataset_fn(name, table)
+                capabilities = ds.capabilities() if ds is not None else {}
                 results.append(
                     DatasetDescriptor(
                         name=name,
@@ -103,7 +100,7 @@ class _LocalDatasetMixin:
                         validation_profile=_normalize_validation_profile(
                             ds.validation_profile if ds is not None else None
                         ),
-                        capabilities=ds.capabilities() if ds is not None else {},
+                        capabilities=capabilities,
                     )
                 )
             return results

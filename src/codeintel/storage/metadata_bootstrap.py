@@ -9,54 +9,10 @@ from dataclasses import dataclass
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS, DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.storage.normalized_macros import render_macro
 from codeintel.storage.sql_helpers import safe_macro_call
 from codeintel.storage.views import create_all_views
-
-DATASET_ROWS_ONLY: tuple[str, ...] = (
-    "analytics.config_graph_metrics_keys",
-    "analytics.config_graph_metrics_modules",
-    "analytics.config_projection_key_edges",
-    "analytics.config_projection_module_edges",
-    "analytics.config_values",
-    "analytics.coverage_lines",
-    "analytics.data_model_fields",
-    "analytics.data_model_relationships",
-    "analytics.data_models",
-    "analytics.external_dependencies",
-    "analytics.file_profile",
-    "analytics.graph_metrics_modules",
-    "analytics.graph_metrics_modules_ext",
-    "analytics.graph_stats",
-    "analytics.hotspots",
-    "analytics.module_profile",
-    "analytics.subsystem_profile_cache",
-    "analytics.subsystem_coverage_cache",
-    "analytics.semantic_roles_modules",
-    "analytics.static_diagnostics",
-    "analytics.subsystem_agreement",
-    "analytics.subsystem_graph_metrics",
-    "analytics.subsystem_modules",
-    "analytics.subsystems",
-    "analytics.symbol_graph_metrics_modules",
-    "analytics.tags_index",
-    "analytics.test_graph_metrics_tests",
-    "analytics.typedness",
-    "core.ast_metrics",
-    "core.ast_nodes",
-    "core.cst_nodes",
-    "core.docstrings",
-    "core.file_state",
-    "core.goid_crosswalk",
-    "core.goids",
-    "core.modules",
-    "core.repo_map",
-    "graph.call_graph_nodes",
-    "graph.import_graph_edges",
-    "graph.import_modules",
-)
 
 
 def _canonical_type(type_str: str) -> str:
@@ -68,8 +24,16 @@ def _canonical_type(type_str: str) -> str:
     return upper
 
 
+def _is_dataset_rows_only(table_key: str) -> bool:
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    return contract is not None and "dataset_rows_only" in contract.tags
+
+
 def _expected_schema_hash(table_key: str) -> str:
-    schema = TABLE_SCHEMAS[table_key]
+    schema = DATASET_CONTRACTS_BY_TABLE_KEY[table_key].schema
+    if schema is None:
+        message = f"Cannot compute schema hash for view or missing schema: {table_key}"
+        raise KeyError(message)
     parts: list[str] = []
     for column in schema.columns:
         canonical_type = _canonical_type(column.type)
@@ -79,9 +43,13 @@ def _expected_schema_hash(table_key: str) -> str:
 
 
 def _assert_macro_coverage() -> None:
-    datasets = set(TABLE_SCHEMAS)
+    datasets = {
+        key
+        for key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+        if contract.schema is not None
+    }
     macro_backed = set(NORMALIZED_MACROS)
-    dataset_rows_only = set(DATASET_ROWS_ONLY)
+    dataset_rows_only = {table_key for table_key in datasets if _is_dataset_rows_only(table_key)}
     unexpected_dataset_rows = datasets - macro_backed - dataset_rows_only
     if unexpected_dataset_rows:
         message = "Datasets missing normalized macros or allowlist entries: " + ", ".join(
@@ -98,7 +66,11 @@ def dataset_rows_only_entries() -> list[str]:
     list[str]
         Sorted dataset identifiers permitted to use dataset_rows-only reads.
     """
-    return sorted(DATASET_ROWS_ONLY)
+    return sorted(
+        table_key
+        for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+        if contract.schema is not None and _is_dataset_rows_only(table_key)
+    )
 
 
 def load_dataset_schema_registry(con: DuckDBPyConnection) -> dict[str, str]:
@@ -152,7 +124,11 @@ def load_macro_registry(con: DuckDBPyConnection) -> dict[str, tuple[str | None, 
 
 
 def _register_dataset_schema_hashes(con: DuckDBPyConnection) -> None:
-    entries = {table_key: _expected_schema_hash(table_key) for table_key in TABLE_SCHEMAS}
+    entries = {
+        table_key: _expected_schema_hash(table_key)
+        for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+        if contract.schema is not None
+    }
     con.execute("DELETE FROM metadata.dataset_schema_registry")
     con.executemany(
         """
@@ -205,10 +181,12 @@ NORMALIZED_MACROS: dict[str, str] = {
 # Auto-generate normalized macros for any remaining datasets to keep bootstrap resilient
 # when new tables are added. Tables explicitly marked dataset-rows-only are skipped.
 AUTO_NORMALIZED_MACRO_DDLS: list[str] = []
-for _table_key in sorted(TABLE_SCHEMAS):
+for _table_key, _contract in sorted(DATASET_CONTRACTS_BY_TABLE_KEY.items()):
     if _table_key.startswith("metadata."):
         continue
-    if _table_key in DATASET_ROWS_ONLY:
+    if _contract.schema is None:
+        continue
+    if _is_dataset_rows_only(_table_key):
         continue
     if _table_key in NORMALIZED_MACROS:
         continue
@@ -217,8 +195,8 @@ for _table_key in sorted(TABLE_SCHEMAS):
     AUTO_NORMALIZED_MACRO_DDLS.append(rendered_macro.ddl)
 INGEST_MACROS: dict[str, str] = {
     table_key: f"metadata.ingest_{table_key.split('.', maxsplit=1)[1]}"
-    for table_key in TABLE_SCHEMAS
-    if not table_key.startswith("metadata.")
+    for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+    if not table_key.startswith("metadata.") and contract.schema is not None
 }
 
 
@@ -937,7 +915,11 @@ def validate_dataset_schema_registry(con: DuckDBPyConnection) -> None:
     RuntimeError
         When schema hashes drift or registry entries are missing.
     """
-    expected = {table_key: _expected_schema_hash(table_key) for table_key in TABLE_SCHEMAS}
+    expected = {
+        table_key: _expected_schema_hash(table_key)
+        for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+        if contract.schema is not None
+    }
     rows = con.execute(
         "SELECT table_key, schema_hash FROM metadata.dataset_schema_registry"
     ).fetchall()
@@ -959,7 +941,10 @@ def validate_dataset_schema_registry(con: DuckDBPyConnection) -> None:
 def _macro_schema_differences(con: DuckDBPyConnection) -> list[str]:
     failures: list[str] = []
     for table_key, macro in sorted(NORMALIZED_MACROS.items()):
-        schema = TABLE_SCHEMAS[table_key]
+        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+        if contract is None or contract.schema is None:
+            continue
+        schema = contract.schema
         sql, params = safe_macro_call(macro, [table_key, 0, 0])
         rel = con.sql(sql, params=params)
         actual: dict[str, str] = {}

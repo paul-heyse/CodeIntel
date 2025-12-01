@@ -5,15 +5,15 @@ from __future__ import annotations
 import networkx as nx
 import pytest
 
-from codeintel.graphs.engine_factory import build_graph_engine
-from codeintel.graphs.import_graph import build_import_module_rows, components_and_layers
-from codeintel.ingestion.common import run_batch
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     ImportEdgeRow,
     import_edge_to_tuple,
     import_module_to_tuple,
 )
+from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.graphs.import_graph import build_import_module_rows, components_and_layers
+from codeintel.ingestion.common import run_batch
+from codeintel.storage.gateway import StorageGateway
 
 REPO = "demo/repo"
 COMMIT = "abc123"

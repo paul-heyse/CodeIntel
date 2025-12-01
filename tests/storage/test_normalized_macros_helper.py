@@ -6,12 +6,12 @@ import re
 
 import pytest
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.metadata_bootstrap import (
-    DATASET_ROWS_ONLY,
     METADATA_SCHEMA_DDL,
+    dataset_rows_only_entries,
     validate_normalized_macro_schemas,
 )
 from codeintel.storage.metadata_bootstrap import NORMALIZED_MACROS as BOOTSTRAP_MACROS
@@ -44,9 +44,13 @@ def test_normalized_macros_defined(fresh_gateway: StorageGateway) -> None:
 
 def test_normalized_macros_match_expected_sets() -> None:
     """Catch drift when adding datasets without macros or allowlisting explicitly."""
-    datasets = set(TABLE_SCHEMAS)
+    datasets = {
+        key
+        for key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+        if contract.schema is not None
+    }
     macro_backed = set(NORMALIZED_MACROS)
-    dataset_rows_only = set(DATASET_ROWS_ONLY)
+    dataset_rows_only = set(dataset_rows_only_entries())
     unexpected_dataset_rows = datasets - macro_backed - dataset_rows_only
     if unexpected_dataset_rows:
         message = "Datasets missing normalized macros or allowlist entries: " + ", ".join(
@@ -69,7 +73,7 @@ def test_dataset_rows_only_tables_parse(fresh_gateway: StorageGateway) -> None:
     """Ensure dataset_rows-only tables at least parse with zero-row selects."""
     con = fresh_gateway.con
     failures: list[str] = []
-    for table_key in DATASET_ROWS_ONLY:
+    for table_key in dataset_rows_only_entries():
         try:
             sql, params = safe_macro_call(
                 "metadata.dataset_rows", [table_key, 0, 0], allowed={"metadata.dataset_rows"}

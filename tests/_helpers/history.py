@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.schemas import apply_all_schemas
 
@@ -30,13 +30,17 @@ class SnapshotSpec:
     loc: int = 10
 
 
-_FP_COLUMNS = TABLE_SCHEMAS["analytics.function_profile"].column_names()
-_MP_COLUMNS = TABLE_SCHEMAS["analytics.module_profile"].column_names()
-_FUNCTION_HISTORY_COLUMNS = TABLE_SCHEMAS["analytics.function_history"].column_names()
+_FP_CONTRACT = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.function_profile"]
+_MP_CONTRACT = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.module_profile"]
+_FH_CONTRACT = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.function_history"]
+
+_FP_COLUMNS = _FP_CONTRACT.schema.column_names() if _FP_CONTRACT.schema else []
+_MP_COLUMNS = _MP_CONTRACT.schema.column_names() if _MP_CONTRACT.schema else []
+_FUNCTION_HISTORY_COLUMNS = _FH_CONTRACT.schema.column_names() if _FH_CONTRACT.schema else []
 
 
 def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
-    columns = TABLE_SCHEMAS["analytics.function_profile"].column_names()
+    columns = _FP_COLUMNS
     defaults: dict[str, object | None] = dict.fromkeys(columns, None)
     defaults.update(
         {
@@ -62,7 +66,7 @@ def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
 
 
 def _module_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
-    columns = TABLE_SCHEMAS["analytics.module_profile"].column_names()
+    columns = _MP_COLUMNS
     defaults: dict[str, object | None] = dict.fromkeys(columns, None)
     defaults.update(
         {

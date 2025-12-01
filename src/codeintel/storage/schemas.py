@@ -13,7 +13,7 @@ from collections.abc import Iterable
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS, TableSchema
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY, TableSchema
 
 SCHEMAS = ("core", "graph", "analytics", "docs")
 log = logging.getLogger(__name__)
@@ -83,14 +83,14 @@ _TABLE_CREATION_DENYLIST = {"docs.v_validation_summary"}
 
 
 TABLE_DDL: dict[str, str] = {
-    key: _build_table_ddl(schema)
-    for key, schema in TABLE_SCHEMAS.items()
-    if key not in _TABLE_CREATION_DENYLIST
+    key: _build_table_ddl(contract.schema)
+    for key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+    if contract.schema is not None and key not in _TABLE_CREATION_DENYLIST
 }
 TABLE_DDL_IF_NOT_EXISTS: dict[str, str] = {
-    key: _build_table_ddl_if_not_exists(schema)
-    for key, schema in TABLE_SCHEMAS.items()
-    if key not in _TABLE_CREATION_DENYLIST
+    key: _build_table_ddl_if_not_exists(contract.schema)
+    for key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+    if contract.schema is not None and key not in _TABLE_CREATION_DENYLIST
 }
 
 
@@ -107,7 +107,10 @@ def _build_index_ddl(table: TableSchema) -> list[str]:
 
 
 INDEX_DDL: tuple[str, ...] = tuple(
-    ddl for schema in TABLE_SCHEMAS.values() for ddl in _build_index_ddl(schema)
+    ddl
+    for contract in DATASET_CONTRACTS_BY_TABLE_KEY.values()
+    if contract.schema is not None
+    for ddl in _build_index_ddl(contract.schema)
 )
 
 
@@ -167,7 +170,7 @@ def assert_schema_alignment(
     logger: logging.Logger | None = None,
 ) -> list[str]:
     """
-    Validate that the live DuckDB schema matches the codified TABLE_SCHEMAS.
+    Validate that the live DuckDB schema matches the DatasetContract definitions.
 
     Returns
     -------
@@ -180,7 +183,10 @@ def assert_schema_alignment(
         If strict is True and schema drift is detected.
     """
     issues: list[str] = []
-    for table in TABLE_SCHEMAS.values():
+    for contract in DATASET_CONTRACTS_BY_TABLE_KEY.values():
+        if contract.schema is None:
+            continue
+        table = contract.schema
         rows = con.execute(
             """
             SELECT column_name
