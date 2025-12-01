@@ -7,7 +7,7 @@ from collections.abc import Iterable, Sequence
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.storage.sql_helpers import quote_identifier, quote_table_key
+from codeintel.storage.sql_helpers import build_insert_sql, quote_identifier, quote_table_key
 
 __all__ = ["macro_insert_rows"]
 
@@ -52,9 +52,11 @@ def macro_insert_rows(
     view_sql = quote_identifier(view_name)
     con.execute(f"DROP TABLE IF EXISTS {view_sql}")
     con.table(table_key).limit(0).create(view_sql)
-    placeholders = ", ".join("?" for _ in columns)
-    column_list = ", ".join(quote_identifier(col) for col in columns)
-    insert_sql = f"INSERT INTO {view_sql} ({column_list}) VALUES ({placeholders})"  # noqa: S608 - identifiers validated via regex/quoting
+    insert_sql = build_insert_sql(
+        view_sql,
+        columns,
+        identifier_is_quoted=True,
+    )
     con.executemany(insert_sql, normalized)
     con.table(view_name).insert_into(table_key)
     con.execute(f"DROP TABLE IF EXISTS {view_sql}")

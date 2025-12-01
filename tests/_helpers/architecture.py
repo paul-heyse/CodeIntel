@@ -95,7 +95,14 @@ def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str)
 
 
 def _assert_ingest_macros_present(gateway: StorageGateway) -> None:
-    """Fail fast if ingest macros are not registered for the gateway connection."""
+    """
+    Fail fast if ingest macros are not registered for the gateway connection.
+
+    Raises
+    ------
+    RuntimeError
+        When one or more required ingest macros are missing.
+    """
     macros = list_ingest_macros(gateway.con)
     missing = {m.lower() for m in INGEST_MACROS.values() if m.lower() not in macros}
     if missing:

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/import_resolver.py
+# hypothesis_version: 6.148.3
+
+['.', 'collect_aliases', 'collect_import_edges', 'cst.CSTNode']

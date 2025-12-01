@@ -14,7 +14,7 @@ from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.pipeline.orchestration import steps as orchestration_steps
 from codeintel.pipeline.orchestration.steps import SemanticRolesStep
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
 def _scan_profile(repo_root: Path) -> ScanProfile:

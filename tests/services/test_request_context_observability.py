@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 import pytest
 
-from codeintel.serving.backend import BackendLimits, DuckDBQueryService
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.context import (
     RequestContext,
     reset_current_request_context,
@@ -19,6 +19,7 @@ from codeintel.serving.services.observability import (
 )
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.gateway import build_duckdb_query_service
 
 
 class CapturingObservability(ServiceObservability):
@@ -41,12 +42,7 @@ def _build_local_service(
     observability: ServiceObservability,
 ) -> LocalQueryService:
     limits = BackendLimits(default_limit=3, max_rows_per_call=5)
-    query = DuckDBQueryService(
-        gateway=gateway,
-        repo="demo/repo",
-        commit="deadbeef",
-        limits=limits,
-    )
+    query = build_duckdb_query_service(gateway, repo="demo/repo", commit="deadbeef", limits=limits)
     return LocalQueryService(
         query=query,
         dataset_tables=dict(gateway.datasets.mapping),

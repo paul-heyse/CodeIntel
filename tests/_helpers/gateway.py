@@ -7,13 +7,21 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
-from codeintel.serving.backend.duckdb_service import DuckDBQueryService
+from codeintel.graphs.engine import GraphEngine
+from codeintel.serving.backend import (
+    BackendContext,
+    DuckDBQueryService,
+    DuckDBRepositories,
+    GraphEngineProvider,
+)
 from codeintel.serving.backend.limits import BackendLimits
+from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import FunctionSummaryResponse
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
+from codeintel.storage.ingest_macros import ensure_ingest_macros
 
 
 def open_fresh_duckdb(db_path: Path) -> StorageGateway:
@@ -62,10 +70,38 @@ def open_ingestion_gateway(
     """
     effective_ensure_views = ensure_views or strict_schema
     effective_validate_schema = validate_schema or strict_schema
-    return _open_memory_gateway(
+    gateway = _open_memory_gateway(
         apply_schema=apply_schema,
         ensure_views=effective_ensure_views,
         validate_schema=effective_validate_schema,
+    )
+    ensure_ingest_macros(gateway.con)
+    return gateway
+
+
+def open_ingestion_gateway_with_macros(
+    *,
+    apply_schema: bool = True,
+    ensure_views: bool = True,
+    validate_schema: bool = True,
+    strict_schema: bool = True,
+) -> StorageGateway:
+    """
+    Return an in-memory gateway with schemas/views/macros ensured for ingestion/graph tests.
+
+    This helper always registers ingest macros and ensures views to avoid missing
+    metadata.* table-function errors in graph and analytics tests.
+
+    Returns
+    -------
+    StorageGateway
+        Gateway configured for ingestion/graph tests with macros registered.
+    """
+    return open_ingestion_gateway(
+        apply_schema=apply_schema,
+        ensure_views=ensure_views,
+        validate_schema=validate_schema,
+        strict_schema=strict_schema,
     )
 
 
@@ -95,8 +131,8 @@ def build_duckdb_backend(
     DuckDBBackend
         Backend ready for adapter/service tests.
     """
-    repo_value = repo or gateway.config.repo
-    commit_value = commit or gateway.config.commit
+    repo_value = repo or gateway.config.repo or "demo/repo"
+    commit_value = commit or gateway.config.commit or "deadbeef"
     return DuckDBBackend(
         gateway=gateway,
         repo=repo_value,
@@ -105,8 +141,8 @@ def build_duckdb_backend(
     )
 
 
-class ScopeCapturingQuery(DuckDBQueryService):
-    """Minimal DuckDBQueryService that delegates to a provided callable and records scopes."""
+class ScopeCapturingQuery:
+    """Minimal query stub that delegates to a provided callable and records scopes."""
 
     def __init__(self, delegate: Callable[..., object]) -> None:
         self._delegate = delegate
@@ -117,6 +153,10 @@ class ScopeCapturingQuery(DuckDBQueryService):
         self.commit = "deadbeef"
         self.limits = BackendLimits()
         self.graph_engine = None
+        self.functions = self
+        self.modules = self
+        self.subsystems = self
+        self.datasets = self
 
     def get_function_summary(
         self,
@@ -153,5 +193,51 @@ def build_scope_parsing_service(delegate: Callable[..., object]) -> LocalQuerySe
     LocalQueryService
         Service that can be used to validate scope parsing behavior.
     """
-    query = ScopeCapturingQuery(delegate=delegate)
+    query = cast("DuckDBQueryApi", ScopeCapturingQuery(delegate=delegate))
     return LocalQueryService(query=query)
+
+
+def build_duckdb_query_service(
+    gateway: StorageGateway,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+    limits: BackendLimits | None = None,
+    graph_engine: GraphEngine | None = None,
+) -> DuckDBQueryService:
+    """
+    Construct a DuckDBQueryService using the new context/repository wiring.
+
+    Parameters
+    ----------
+    gateway
+        Active storage gateway.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    limits
+        Optional BackendLimits; defaults to BackendLimits().
+    graph_engine
+        Optional graph engine instance.
+
+    Returns
+    -------
+    DuckDBQueryService
+        Constructed query service bound to the provided gateway/snapshot.
+    """
+    effective_limits = limits or BackendLimits()
+    repo_value = repo or gateway.config.repo or "demo/repo"
+    commit_value = commit or gateway.config.commit or "deadbeef"
+    context = BackendContext(
+        gateway=gateway,
+        repo=repo_value,
+        commit=commit_value,
+        limits=effective_limits,
+        graph_engine=graph_engine,
+    )
+    repositories = DuckDBRepositories(gateway, repo_value, commit_value)
+    engine_provider = GraphEngineProvider(context=context, graph_engine=graph_engine)
+    return DuckDBQueryService(
+        context=context, repositories=repositories, engine_provider=engine_provider
+    )

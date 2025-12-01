@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.analytics.graph_service_runtime import GraphPluginRunOptions, GraphServiceRuntime
-from codeintel.analytics.graphs.contracts import PluginContractResult
+from codeintel.analytics.graphs.contracts import ContractChecker, PluginContractResult
 from codeintel.analytics.graphs.plugins import (
     GraphMetricExecutionContext,
     GraphMetricPlugin,
@@ -151,7 +152,7 @@ def test_manifest_records_contract_results(
             stage="core",
             enabled_by_default=False,
             run=_noop,
-            contract_checkers=(_checker,),
+            contract_checkers=(cast("ContractChecker", _checker),),
         )
     )
     service = _build_service(snapshot)

@@ -20,7 +20,7 @@ from codeintel.ingestion.common import ChangeRequest, ChangeSet, ModuleRecord
 from codeintel.ingestion.docstrings_ingest import DocstringIngestOps
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 if TYPE_CHECKING:
     from codeintel.ingestion.tool_service import ToolService

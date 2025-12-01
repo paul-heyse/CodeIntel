@@ -161,16 +161,19 @@ def collect_import_edges(current_module: str, module: cst.Module) -> set[tuple[s
 def _collect_imports(current_module: str, module: cst.Module, edges: set[tuple[str, str]]) -> None:
     """Populate edges set with imports discovered in the module."""
 
-    def _visit_import(node: cst.Import) -> None:
-        handle_import(node, current_module, edges)
+    class _ImportVisitor(cst.CSTVisitor):
+        def __init__(self, current: str, edge_set: set[tuple[str, str]]) -> None:
+            self.current = current
+            self.edge_set = edge_set
 
-    def _visit_import_from(node: cst.ImportFrom) -> None:
-        handle_import_from(node, current_module, edges)
+        def on_visit(self, node: cst.CSTNode) -> bool:
+            if isinstance(node, cst.Import):
+                handle_import(node, self.current, self.edge_set)
+            elif isinstance(node, cst.ImportFrom):
+                handle_import_from(node, self.current, self.edge_set)
+            return True
 
-    visitor = cst.CSTVisitor()
-    visitor.visit_Import = _visit_import  # type: ignore[attr-defined]
-    visitor.visit_ImportFrom = _visit_import_from  # type: ignore[attr-defined]
-    module.visit(visitor)
+    module.visit(_ImportVisitor(current_module, edges))
 
 
 def handle_import(node: cst.Import, current_module: str, edges: set[tuple[str, str]]) -> None:

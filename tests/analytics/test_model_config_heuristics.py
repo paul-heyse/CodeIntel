@@ -27,7 +27,7 @@ from tests._helpers.builders import (
     insert_goids,
     insert_modules,
 )
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 REPO = "test/repo"
 COMMIT = "deadbeef"

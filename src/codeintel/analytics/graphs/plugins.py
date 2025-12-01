@@ -8,7 +8,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -28,6 +28,9 @@ from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.storage.db_helpers import safe_row_counts
 from codeintel.storage.gateway import StorageGateway
+
+if TYPE_CHECKING:
+    from codeintel.analytics.plugins import GraphContextFactory
 
 log = logging.getLogger(__name__)
 
@@ -114,9 +117,7 @@ class GraphMetricExecutionContext:
     scratch: GraphRuntimeScratch = field(default_factory=GraphRuntimeScratch)
 
 
-ContextFactory = Callable[
-    [AnalyticsExecutionContext], AnalyticsExecutionContext | GraphMetricExecutionContext
-]
+ContextFactory = Callable[[AnalyticsExecutionContext], GraphMetricExecutionContext]
 
 
 @dataclass(frozen=True)
@@ -793,8 +794,6 @@ def graph_metric_plugin_to_analytics(plugin: GraphMetricPlugin) -> AnalyticsPlug
             scratch=scratch,
         )
 
-    context_factory: ContextFactory = _build_graph_context
-
     hints = None
     if plugin.resource_hints is not None:
         hints = ResourceHints(
@@ -803,10 +802,8 @@ def graph_metric_plugin_to_analytics(plugin: GraphMetricPlugin) -> AnalyticsPlug
         )
 
     def _run_as_analytics(ctx: AnalyticsExecutionContext) -> GraphPluginResult | None:
-        if not isinstance(ctx, GraphMetricExecutionContext):
-            message = "Graph metric plugins require GraphMetricExecutionContext"
-            raise TypeError(message)
-        return plugin.run(ctx)
+        graph_ctx = _build_graph_context(ctx)
+        return plugin.run(graph_ctx)
 
     return AnalyticsPlugin(
         name=plugin.name,
@@ -826,7 +823,7 @@ def graph_metric_plugin_to_analytics(plugin: GraphMetricPlugin) -> AnalyticsPlug
         contract_checkers=plugin.contract_checkers,
         requires_isolation=plugin.requires_isolation,
         isolation_kind=plugin.isolation_kind,
-        context_factory=context_factory,
+        context_factory=cast("GraphContextFactory", _build_graph_context),
     )
 
 

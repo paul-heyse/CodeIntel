@@ -58,8 +58,11 @@ def ensure_ingest_macros(con: DuckDBPyConnection) -> None:
     cached = _MACRO_CACHE.get(cache_key, set())
     macro_set = {macro.lower() for macro in INGEST_MACROS.values()}
     if macro_set.issubset(cached):
-        return
-
+        # Verify the macros actually exist; connection ids can be recycled after close.
+        registered = _registered_macros(con)
+        if macro_set.issubset(registered):
+            return
+        _MACRO_CACHE.pop(cache_key, None)
     con.execute("\n".join(METADATA_SCHEMA_DDL_BASE))
     for ddl in INGEST_MACRO_DDLS:
         con.execute(ddl)
@@ -79,8 +82,9 @@ def ensure_ingest_macros(con: DuckDBPyConnection) -> None:
     _MACRO_CACHE[cache_key] = updated
 
 
-def clear_macro_cache_for_connection(cache_key: int) -> None:
-    """Clear cached macro names for the given connection id."""
+def clear_macro_cache_for_connection(con_or_key: DuckDBPyConnection | int) -> None:
+    """Clear cached macro names for the given connection id or object."""
+    cache_key = con_or_key if isinstance(con_or_key, int) else id(con_or_key)
     _MACRO_CACHE.pop(cache_key, None)
 
 

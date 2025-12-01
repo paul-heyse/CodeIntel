@@ -20,6 +20,7 @@ from codeintel.serving.backend import (
     DuckDBRepositories,
     GraphEngineProvider,
 )
+from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -411,7 +412,7 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
     observability: ServiceObservability | None = None
     service_override: LocalQueryService | None = None
     service: QueryService = field(init=False)
-    query: DuckDBQueryService | None = field(init=False, default=None)
+    query: DuckDBQueryApi | DuckDBQueryService | None = field(init=False, default=None)
     query_engine: GraphEngine | None = None
 
     def __post_init__(self) -> None:

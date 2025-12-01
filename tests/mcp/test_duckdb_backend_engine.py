@@ -7,7 +7,7 @@ import pytest
 from codeintel.config.models import GraphBackendConfig
 from codeintel.graphs.engine_factory import EngineBuildOptions, build_graph_engine
 from codeintel.serving.mcp.backend import DuckDBBackend
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
 def test_duckdb_backend_uses_injected_engine() -> None:

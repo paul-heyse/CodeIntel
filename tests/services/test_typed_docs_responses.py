@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import TypedDict, cast
 
 import pytest
 
 from codeintel.serving.mcp.models import (
     FunctionSummaryResponse,
+    FunctionSummaryRow,
+    ResponseMeta,
     SubsystemCoverageResponse,
+    SubsystemCoverageRow,
     SubsystemProfileResponse,
+    SubsystemProfileRow,
 )
-from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
+from codeintel.serving.mcp.query_service import BackendLimits
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.subsystems import SubsystemRepository
@@ -59,17 +64,38 @@ class _StubFunctions(FunctionRepository):
         return cast("dict[str, object]", self._row)
 
 
-class _StubQueryService(DuckDBQueryService):
+class _StubFunctionQuery:
+    """Lightweight stub implementing the function summary surface."""
+
     def __init__(self, row: StubFunctionRow) -> None:
         gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
-        super().__init__(
+        self.gateway = gateway
+        self.limits = BackendLimits()
+        self._functions = _StubFunctions(
+            row=row,
             gateway=gateway,
             repo=str(row["repo"]),
             commit=str(row["commit"]),
-            limits=BackendLimits(),
         )
-        self._functions = _StubFunctions(
-            row=row, gateway=gateway, repo=str(row["repo"]), commit=str(row["commit"])
+        self.functions = self._functions
+        self.modules = self
+        self.subsystems = self
+        self.datasets = self
+
+    def get_function_summary(
+        self,
+        *,
+        urn: str | None = None,
+        goid_h128: int | None = None,
+        rel_path: str | None = None,
+        qualname: str | None = None,
+    ) -> FunctionSummaryResponse:
+        _ = (urn, rel_path, qualname)
+        row = self._functions.get_function_summary_by_goid(goid_h128 or 0)
+        return FunctionSummaryResponse(
+            found=row is not None,
+            summary=FunctionSummaryRow.model_validate(row) if row is not None else None,
+            meta=ResponseMeta(),
         )
 
 
@@ -98,7 +124,7 @@ class _StubSubsystems(SubsystemRepository):
         return [self._coverage_row]
 
 
-class _StubSubsystemQueryService(DuckDBQueryService):
+class _StubSubsystemQueryService:
     def __init__(
         self,
         *,
@@ -107,14 +133,36 @@ class _StubSubsystemQueryService(DuckDBQueryService):
         profile_row: dict[str, object],
         coverage_row: dict[str, object],
     ) -> None:
+        self.gateway = SimpleNamespace(datasets=SimpleNamespace(mapping={}))
+        self.limits = BackendLimits()
+        self.functions = self
+        self.modules = self
+        self.subsystems = self
+        self.datasets = self
         gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
-        super().__init__(gateway=gateway, repo=repo, commit=commit, limits=BackendLimits())
+        self._profile_row = profile_row
+        self._coverage_row = coverage_row
         self._subsystems = _StubSubsystems(
             profile_row=profile_row,
             coverage_row=coverage_row,
             gateway=gateway,
             repo=repo,
             commit=commit,
+        )
+        self.subsystems = self._subsystems
+
+    def list_subsystem_profiles(self, *, limit: int) -> SubsystemProfileResponse:
+        _ = limit
+        return SubsystemProfileResponse(
+            profiles=[SubsystemProfileRow.model_validate(self._profile_row)],
+            meta=ResponseMeta(requested_limit=limit, applied_limit=limit),
+        )
+
+    def list_subsystem_coverage(self, *, limit: int) -> SubsystemCoverageResponse:
+        _ = limit
+        return SubsystemCoverageResponse(
+            coverage=[SubsystemCoverageRow.model_validate(self._coverage_row)],
+            meta=ResponseMeta(requested_limit=limit, applied_limit=limit),
         )
 
 
@@ -130,7 +178,7 @@ def test_function_summary_response_uses_typed_row() -> None:
         "qualname": "pkg.mod:func",
         "risk_score": 0.5,
     }
-    service = _StubQueryService(row=row)
+    service = _StubFunctionQuery(row=row)
 
     resp = service.get_function_summary(goid_h128=goid)
 

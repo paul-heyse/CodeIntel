@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib import import_module
 from typing import TYPE_CHECKING
 
 import anyio
@@ -22,7 +23,6 @@ from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.datasets import build_registry_and_limits
-from codeintel.serving.services.factory import DatasetRegistryOptions, get_observability_from_config
 from codeintel.serving.services.query_service import (
     LocalQueryService,
     QueryService,
@@ -32,9 +32,59 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
-    from codeintel.serving.mcp.backend import QueryBackend
+    from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend, QueryBackend
+    from codeintel.serving.services.factory import DatasetRegistryOptions, ServiceBuildOptions
 
 __all__ = ["BackendResource", "build_backend_resource"]
+
+
+def _load_mcp_backends() -> tuple[type[DuckDBBackend], type[HttpBackend]]:
+    """
+    Deferred import helper to avoid import cycles and heavy imports at module load.
+
+    Returns
+    -------
+    tuple[type[DuckDBBackend], type[HttpBackend]]
+        Backend classes for DuckDB and HTTP transports.
+    """
+    module = import_module("codeintel.serving.mcp.backend")
+    return module.DuckDBBackend, module.HttpBackend
+
+
+def _load_service_factories() -> tuple[type[ServiceBuildOptions], Callable[..., QueryService]]:
+    """
+    Deferred import helper for service factory utilities (avoids circular imports).
+
+    Returns
+    -------
+    tuple[type[ServiceBuildOptions], Callable[..., QueryService]]
+        Service build options type and the factory function.
+    """
+    module = import_module("codeintel.serving.services.factory")
+    return module.ServiceBuildOptions, module.build_service_from_config
+
+
+def _load_factory_utils() -> tuple[
+    type[DatasetRegistryOptions],
+    Callable[[ServingConfig], ServiceObservability | None],
+    Callable[..., QueryService],
+    type[ServiceBuildOptions],
+]:
+    """
+    Deferred import helper for factory utilities to avoid module cycles.
+
+    Returns
+    -------
+    tuple
+        DatasetRegistryOptions type, observability resolver, service factory, and ServiceBuildOptions type.
+    """
+    module = import_module("codeintel.serving.services.factory")
+    return (
+        module.DatasetRegistryOptions,
+        module.get_observability_from_config,
+        module.build_service_from_config,
+        module.ServiceBuildOptions,
+    )
 
 
 @dataclass
@@ -90,8 +140,14 @@ def build_backend_resource(
         When required inputs are missing for the configured mode or unsupported modes are requested.
     """
     resolved_options = options or BackendResourceOptions()
+    (
+        dataset_registry_options,
+        get_observability_from_config,
+        _build_service_from_config,
+        _service_build_options,
+    ) = _load_factory_utils()
     resolved_observability = resolved_options.observability or get_observability_from_config(cfg)
-    registry_opts = resolved_options.registry or DatasetRegistryOptions()
+    registry_opts = resolved_options.registry or dataset_registry_options()
     _, limits = build_registry_and_limits(cfg)
 
     if cfg.mode == "local_db":
@@ -152,8 +208,8 @@ def _build_local_resource(
     if not effective_read_only:
         create_all_views(connection)
 
-    from codeintel.serving.mcp.backend import DuckDBBackend  # noqa: PLC0415
-    from codeintel.serving.services.factory import build_service_from_config  # noqa: PLC0415
+    duckdb_backend_cls, _ = _load_mcp_backends()
+    service_build_options_cls, build_service_from_config = _load_service_factories()
 
     snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
     runtime_opts = GraphRuntimeOptions(
@@ -171,18 +227,16 @@ def _build_local_resource(
             gateway,
             runtime_opts,
         )
-    from codeintel.serving.services.factory import ServiceBuildOptions  # noqa: PLC0415
-
     service = build_service_from_config(
         cfg,
         gateway=gateway,
-        options=ServiceBuildOptions(
+        options=service_build_options_cls(
             registry=options.registry,
             observability=options.observability,
             graph_runtime=active_runtime,
         ),
     )
-    backend = DuckDBBackend(
+    backend = duckdb_backend_cls(
         gateway=gateway,
         repo=cfg.repo,
         commit=cfg.commit,
@@ -245,9 +299,9 @@ def _build_remote_resource(
         client = httpx.Client(base_url=cfg.api_base_url, timeout=cfg.timeout_seconds)
         owns_client = True
 
-    from codeintel.serving.mcp.backend import HttpBackend  # noqa: PLC0415
+    _, http_backend_cls = _load_mcp_backends()
 
-    backend = HttpBackend(
+    backend = http_backend_cls(
         base_url=cfg.api_base_url,
         repo=cfg.repo,
         commit=cfg.commit,

@@ -79,9 +79,18 @@ def _build_table_ddl_if_not_exists(table: TableSchema) -> str:
     )
 
 
-TABLE_DDL: dict[str, str] = {key: _build_table_ddl(schema) for key, schema in TABLE_SCHEMAS.items()}
+_TABLE_CREATION_DENYLIST = {"docs.v_validation_summary"}
+
+
+TABLE_DDL: dict[str, str] = {
+    key: _build_table_ddl(schema)
+    for key, schema in TABLE_SCHEMAS.items()
+    if key not in _TABLE_CREATION_DENYLIST
+}
 TABLE_DDL_IF_NOT_EXISTS: dict[str, str] = {
-    key: _build_table_ddl_if_not_exists(schema) for key, schema in TABLE_SCHEMAS.items()
+    key: _build_table_ddl_if_not_exists(schema)
+    for key, schema in TABLE_SCHEMAS.items()
+    if key not in _TABLE_CREATION_DENYLIST
 }
 
 

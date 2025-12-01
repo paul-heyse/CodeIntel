@@ -16,7 +16,7 @@ from codeintel.ingestion.runner import (
     run_repo_scan,
 )
 from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
 @dataclass

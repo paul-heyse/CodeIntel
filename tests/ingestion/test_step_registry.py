@@ -17,7 +17,7 @@ from codeintel.ingestion.steps import (
     IngestionContextProtocol,
     IngestStepRegistry,
 )
-from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
 def test_registry_includes_all_expected_steps() -> None:

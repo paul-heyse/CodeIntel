@@ -1990,4 +1990,16 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         indexes=(Index("idx_graph_symbol_use_symbol", ("symbol",)),),
         description="Definition-to-use edges derived from SCIP",
     ),
+    "docs.v_validation_summary": TableSchema(
+        schema="docs",
+        name="v_validation_summary",
+        columns=[
+            Column("domain", "VARCHAR"),
+            Column("repo", "VARCHAR"),
+            Column("commit", "VARCHAR"),
+            Column("entity_id", "VARCHAR"),
+            Column("issue", "VARCHAR"),
+            Column("detail", "VARCHAR"),
+        ],
+    ),
 }
