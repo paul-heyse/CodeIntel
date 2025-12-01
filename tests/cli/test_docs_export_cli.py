@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.main import cmd_docs_export
+from codeintel.cli.main import GatewayFactory, cmd_docs_export
 from codeintel.config.models import CodeIntelConfig
 from codeintel.pipeline.export.runner import ExportOptions
 from codeintel.storage.gateway import StorageGateway
@@ -54,6 +54,8 @@ def test_cmd_docs_export_invokes_validator_before_exports(tmp_path: Path) -> Non
         _ = cfg  # unused in stub
         return ctx.gateway
 
+    typed_factory: GatewayFactory = gateway_factory
+
     args = _make_args(tmp_path)
     args.document_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -62,7 +64,7 @@ def test_cmd_docs_export_invokes_validator_before_exports(tmp_path: Path) -> Non
             args,
             validator=validator,
             export_runner=export_runner,
-            gateway_factory=gateway_factory,  # type: ignore[arg-type]
+            gateway_factory=typed_factory,
         )
     finally:
         ctx.close()

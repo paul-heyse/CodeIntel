@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 
 def test_dataset_rows_macro_handles_registry_datasets(fresh_gateway: StorageGateway) -> None:
@@ -25,7 +25,7 @@ def test_dataset_rows_macro_handles_registry_datasets(fresh_gateway: StorageGate
                 """,
                 [table_key],
             )
-        except Exception as exc:  # noqa: BLE001
+        except (DuckDBError, RuntimeError, ValueError) as exc:
             failures.append(f"{dataset_name} ({table_key}): {exc}")
 
     if failures:

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/serialization.py
+# hypothesis_version: 6.148.3
+
+['DomainT_co', 'RespT_co', 'SupportsFromDomain', 'SupportsModelDump']

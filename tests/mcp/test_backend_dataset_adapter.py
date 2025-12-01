@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     FunctionValidationRow,
@@ -14,6 +13,7 @@ from tests._helpers.builders import (
     insert_function_validation,
     insert_repo_map,
 )
+from tests._helpers.gateway import build_duckdb_backend
 
 
 @pytest.fixture
@@ -42,12 +42,7 @@ def gateway(fresh_gateway: StorageGateway) -> StorageGateway:
 
 def test_read_dataset_rows_delegates(gateway: StorageGateway) -> None:
     """Adapters should delegate dataset reads directly to the service."""
-    backend = DuckDBBackend(
-        gateway=gateway,  # type: ignore[arg-type]
-        repo="r",
-        commit="c",
-        service_override=None,
-    )
+    backend = build_duckdb_backend(gateway, repo="r", commit="c")
     insert_function_validation(
         gateway,
         [

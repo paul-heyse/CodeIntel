@@ -100,7 +100,12 @@ class MultiSink(IngestRunSink):
         for sink in self.sinks:
             try:
                 sink.record(run)
-            except Exception:  # pragma: no cover - sink errors should not break callers
+            except (
+                OSError,
+                RuntimeError,
+                ValueError,
+                TypeError,
+            ):  # pragma: no cover - sink errors should not break callers
                 log.exception("IngestRun sink failed: sink=%s run_id=%s", sink, run.run_id)
 
 

@@ -26,7 +26,12 @@ from codeintel.pipeline.export.manifest import (
 )
 from codeintel.pipeline.export.validate_exports import validate_files
 from codeintel.serving.http.datasets import validate_dataset_registry
-from codeintel.serving.services.errors import ExportError, log_problem, problem
+from codeintel.serving.services.errors import (
+    ExportError,
+    ProblemDetailParams,
+    log_problem,
+    problem,
+)
 from codeintel.storage.contract_validation import _schema_path
 from codeintel.storage.datasets import Dataset
 from codeintel.storage.gateway import (
@@ -35,6 +40,8 @@ from codeintel.storage.gateway import (
     DuckDBRelation,
     StorageGateway,
 )
+from codeintel.storage.metadata_bootstrap import NORMALIZED_MACROS as BOOTSTRAP_MACROS
+from codeintel.storage.sql_helpers import macro_select_sql
 
 log = logging.getLogger(__name__)
 
@@ -88,7 +95,7 @@ def _validate_registry_or_raise(gateway: StorageGateway) -> None:
             code="export.validation_failed",
             title="Export validation failed",
             detail=detail,
-            extras={"stage": "dataset_registry"},
+            params=ProblemDetailParams(extras={"stage": "dataset_registry"}),
         )
         log_problem(log, pd)
         if "schema mismatches" in detail:
@@ -139,9 +146,7 @@ def _schema_digest(dataset: Dataset | None) -> str | None:
 
 def _row_count(con: DuckDBConnection, table_name: str) -> int | None:
     try:
-        row = con.execute(
-            f"SELECT COUNT(*) FROM {table_name}"  # noqa: S608 - table names are trusted
-        ).fetchone()
+        row = con.table(table_name).count("*").fetchone()
     except DuckDBError:
         log.debug("Row count unavailable for %s", table_name, exc_info=True)
         return None
@@ -150,44 +155,7 @@ def _row_count(con: DuckDBConnection, table_name: str) -> int | None:
     return int(row[0])
 
 
-NORMALIZED_MACROS: dict[str, str] = {
-    "graph.call_graph_edges": "metadata.normalized_call_graph_edges",
-    "graph.symbol_use_edges": "metadata.normalized_symbol_use_edges",
-    "analytics.test_coverage_edges": "metadata.normalized_test_coverage_edges",
-    "analytics.function_metrics": "metadata.normalized_function_metrics",
-    "analytics.function_profile": "metadata.normalized_function_profile",
-    "analytics.function_history": "metadata.normalized_function_history",
-    "analytics.function_types": "metadata.normalized_function_types",
-    "analytics.test_catalog": "metadata.normalized_test_catalog",
-    "analytics.coverage_functions": "metadata.normalized_coverage_functions",
-    "analytics.goid_risk_factors": "metadata.normalized_goid_risk_factors",
-    "analytics.function_validation": "metadata.normalized_function_validation",
-    "analytics.graph_validation": "metadata.normalized_graph_validation",
-    "graph.cfg_blocks": "metadata.normalized_cfg_blocks",
-    "graph.cfg_edges": "metadata.normalized_cfg_edges",
-    "graph.dfg_edges": "metadata.normalized_dfg_edges",
-    "analytics.cfg_block_metrics": "metadata.normalized_cfg_block_metrics",
-    "analytics.cfg_function_metrics": "metadata.normalized_cfg_function_metrics",
-    "analytics.cfg_function_metrics_ext": "metadata.normalized_cfg_function_metrics_ext",
-    "analytics.config_data_flow": "metadata.normalized_config_data_flow",
-    "analytics.data_model_usage": "metadata.normalized_data_model_usage",
-    "analytics.dfg_block_metrics": "metadata.normalized_dfg_block_metrics",
-    "analytics.dfg_function_metrics": "metadata.normalized_dfg_function_metrics",
-    "analytics.dfg_function_metrics_ext": "metadata.normalized_dfg_function_metrics_ext",
-    "analytics.entrypoint_tests": "metadata.normalized_entrypoint_tests",
-    "analytics.entrypoints": "metadata.normalized_entrypoints",
-    "analytics.external_dependency_calls": "metadata.normalized_external_dependency_calls",
-    "analytics.function_contracts": "metadata.normalized_function_contracts",
-    "analytics.function_effects": "metadata.normalized_function_effects",
-    "analytics.graph_metrics_functions": "metadata.normalized_graph_metrics_functions",
-    "analytics.graph_metrics_functions_ext": "metadata.normalized_graph_metrics_functions_ext",
-    "analytics.history_timeseries": "metadata.normalized_history_timeseries",
-    "analytics.semantic_roles_functions": "metadata.normalized_semantic_roles_functions",
-    "analytics.symbol_graph_metrics_functions": "metadata.normalized_symbol_graph_metrics_functions",
-    "analytics.test_graph_metrics_functions": "metadata.normalized_test_graph_metrics_functions",
-    "analytics.test_profile": "metadata.normalized_test_profile",
-    "analytics.behavioral_coverage": "metadata.normalized_behavioral_coverage",
-}
+NORMALIZED_MACROS: dict[str, str] = dict(BOOTSTRAP_MACROS)
 
 
 def _macro_relation(
@@ -204,7 +172,7 @@ def _macro_relation(
         try:
             return (
                 con.sql(
-                    f"SELECT * FROM {macro}(?, ?, ?)",  # noqa: S608 - trusted macro name
+                    macro_select_sql(macro, "?, ?, ?"),
                     params=[table_key, row_limit, row_offset],
                 ),
                 macro,
@@ -498,7 +466,9 @@ def _validate_written_exports(
                 code="export.validation_failed",
                 title="Export validation failed",
                 detail=f"Validation failed for schema {schema_name}",
-                extras={"schema": schema_name, "files": [str(p) for p in matching]},
+                params=ProblemDetailParams(
+                    extras={"schema": schema_name, "files": [str(p) for p in matching]}
+                ),
             )
             log_problem(log, pd)
             continue
@@ -507,7 +477,9 @@ def _validate_written_exports(
                 code="export.validation_failed",
                 title="Export validation failed",
                 detail=f"Validation failed for schema {schema_name}",
-                extras={"schema": schema_name, "files": [str(p) for p in matching]},
+                params=ProblemDetailParams(
+                    extras={"schema": schema_name, "files": [str(p) for p in matching]}
+                ),
             )
             log_problem(log, pd)
             raise ExportError(pd)

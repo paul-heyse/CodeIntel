@@ -157,6 +157,30 @@ def _require_change_tracker(
     return tracker
 
 
+def resolve_coverage_file(ctx: IngestionContextProtocol) -> Path | None:
+    """
+    Resolve the coverage file path from tools config or defaults.
+
+    Returns
+    -------
+    Path | None
+        Absolute path to the coverage file when it exists; None when missing.
+    """
+    candidate = ctx.active_tools.coverage_file or ctx.paths.coverage_json
+    resolved = candidate.expanduser()
+    if not resolved.is_absolute():
+        resolved = (ctx.snapshot.repo_root / resolved).resolve()
+    if not resolved.exists():
+        log.warning(
+            "Coverage file missing; skipping coverage_ingest repo=%s commit=%s path=%s",
+            ctx.snapshot.repo,
+            ctx.snapshot.commit,
+            resolved,
+        )
+        return None
+    return resolved
+
+
 @dataclass(frozen=True)
 class RepoScanStep:
     """Scan repository tree into core tables and change-tracker state."""
@@ -331,10 +355,11 @@ class CoverageIngestStep:
     def run(self, ctx: IngestionContextProtocol) -> None:
         log.debug("Running ingestion step %s", self.name)
         tracker = _require_change_tracker(ctx, self.name)
+        coverage_path = resolve_coverage_file(ctx)
         cfg = CoverageIngestStepConfig(
             snapshot=ctx.snapshot,
             paths=ctx.paths,
-            coverage_file=ctx.active_tools.coverage_file,  # type: ignore[arg-type]
+            coverage_file=coverage_path,
             tool_runner=ctx.tool_runner,
         )
         runner = ctx.tool_runner or ToolRunner(

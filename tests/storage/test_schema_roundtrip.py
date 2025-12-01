@@ -6,7 +6,6 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-import duckdb
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -30,6 +29,7 @@ from codeintel.storage.schema_generation import (
     validate_row_with_schema,
 )
 from codeintel.storage.schemas import apply_all_schemas
+from tests._helpers.duckdb import memory_con_with_macros
 
 
 def _json_safe(value: object) -> object:
@@ -104,20 +104,23 @@ def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None
 
 def test_generate_export_schemas_writes_files(tmp_path: Path) -> None:
     """Codegen should write schemas for datasets with row bindings."""
-    con = duckdb.connect(database=":memory:")
-    apply_all_schemas(con)
-    bootstrap_metadata_datasets(con)
-    registry = load_dataset_registry(con)
-    written = generate_export_schemas(
-        registry,
-        output_dir=tmp_path,
-        include_datasets={"call_graph_edges"},
-    )
-    schema_path = tmp_path / "call_graph_edges.json"
-    if not schema_path.exists():
-        pytest.fail("Expected generated schema for call_graph_edges")
-    if schema_path not in written:
-        pytest.fail("Generated schemas list missing call_graph_edges.json")
-    doc = json.loads(schema_path.read_text(encoding="utf-8"))
-    if "properties" not in doc or "repo" not in doc["properties"]:
-        pytest.fail("Generated schema missing expected repo property")
+    con = memory_con_with_macros()
+    try:
+        apply_all_schemas(con)
+        bootstrap_metadata_datasets(con)
+        registry = load_dataset_registry(con)
+        written = generate_export_schemas(
+            registry,
+            output_dir=tmp_path,
+            include_datasets={"call_graph_edges"},
+        )
+        schema_path = tmp_path / "call_graph_edges.json"
+        if not schema_path.exists():
+            pytest.fail("Expected generated schema for call_graph_edges")
+        if schema_path not in written:
+            pytest.fail("Generated schemas list missing call_graph_edges.json")
+        doc = json.loads(schema_path.read_text(encoding="utf-8"))
+        if "properties" not in doc or "repo" not in doc["properties"]:
+            pytest.fail("Generated schema missing expected repo property")
+    finally:
+        con.close()

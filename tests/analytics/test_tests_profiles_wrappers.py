@@ -19,10 +19,11 @@ from codeintel.analytics.tests_profiles.importance import (
 from codeintel.analytics.tests_profiles.types import ImportanceInputs, IoFlags, TestAstInfo
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig, TestProfileStepConfig
+from tests._helpers.duckdb import memory_con_with_macros
 
 
 def _empty_conn() -> duckdb.DuckDBPyConnection:
-    con = duckdb.connect(database=":memory:")
+    con = memory_con_with_macros()
     con.execute("CREATE SCHEMA analytics")
     con.execute("CREATE SCHEMA core")
     con.execute(
@@ -116,16 +117,18 @@ def test_coverage_wrappers_empty(tmp_path: Path) -> None:
     """
     con = _empty_conn()
     test_cfg, beh_cfg = _configs(tmp_path)
-
-    if aggregate_test_coverage_by_function(con, test_cfg, loader=lambda *_: {}) != {}:
-        message = "Expected empty function coverage aggregation."
-        raise AssertionError(message)
-    if aggregate_test_coverage_by_subsystem(con, beh_cfg, loader=lambda *_: {}) != {}:
-        message = "Expected empty subsystem coverage aggregation."
-        raise AssertionError(message)
-    if load_test_graph_metrics(con, test_cfg, loader=lambda *_: {}) != {}:
-        message = "Expected empty test graph metrics aggregation."
-        raise AssertionError(message)
+    try:
+        if aggregate_test_coverage_by_function(con, test_cfg, loader=lambda *_: {}) != {}:
+            message = "Expected empty function coverage aggregation."
+            raise AssertionError(message)
+        if aggregate_test_coverage_by_subsystem(con, beh_cfg, loader=lambda *_: {}) != {}:
+            message = "Expected empty subsystem coverage aggregation."
+            raise AssertionError(message)
+        if load_test_graph_metrics(con, test_cfg, loader=lambda *_: {}) != {}:
+            message = "Expected empty test graph metrics aggregation."
+            raise AssertionError(message)
+    finally:
+        con.close()
 
 
 def test_importance_and_flakiness_scoring() -> None:

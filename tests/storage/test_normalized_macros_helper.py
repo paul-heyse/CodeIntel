@@ -8,13 +8,14 @@ import pytest
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.metadata_bootstrap import (
     DATASET_ROWS_ONLY,
     METADATA_SCHEMA_DDL,
     validate_normalized_macro_schemas,
 )
 from codeintel.storage.metadata_bootstrap import NORMALIZED_MACROS as BOOTSTRAP_MACROS
+from codeintel.storage.sql_helpers import safe_macro_call
 
 pytestmark = pytest.mark.smoke
 
@@ -70,13 +71,11 @@ def test_dataset_rows_only_tables_parse(fresh_gateway: StorageGateway) -> None:
     failures: list[str] = []
     for table_key in DATASET_ROWS_ONLY:
         try:
-            con.execute(
-                """
-                SELECT * FROM metadata.dataset_rows(?, 0, 0)
-                """,
-                [table_key],
-            ).fetchall()
-        except Exception as exc:  # noqa: BLE001
+            sql, params = safe_macro_call(
+                "metadata.dataset_rows", [table_key, 0, 0], allowed={"metadata.dataset_rows"}
+            )
+            con.sql(sql, params=params).fetchall()
+        except (DuckDBError, RuntimeError, ValueError) as exc:
             failures.append(f"{table_key}: {exc}")
     if failures:
         pytest.fail("; ".join(failures))

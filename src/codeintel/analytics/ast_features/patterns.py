@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 DEFAULT_IO_SPEC: dict[str, dict[str, list[str]]] = {
     "network": {
@@ -47,12 +48,14 @@ class AstFeaturePatterns:
     Allows easier testing and later customization (e.g., project-specific patterns).
     """
 
-    io_spec: Mapping[str, dict[str, list[str]]] = DEFAULT_IO_SPEC
-    concurrency_libs: set[str] = CONCURRENCY_LIBS
-    http_client_libs: set[str] = HTTP_CLIENT_LIBS
-    http_server_libs: set[str] = HTTP_SERVER_LIBS
-    db_libs: set[str] = DB_LIBS
-    message_libs: set[str] = MESSAGE_LIBS
+    io_spec: Mapping[str, dict[str, list[str]]] = field(
+        default_factory=lambda: copy.deepcopy(DEFAULT_IO_SPEC)
+    )
+    concurrency_libs: set[str] = field(default_factory=lambda: set(CONCURRENCY_LIBS))
+    http_client_libs: set[str] = field(default_factory=lambda: set(HTTP_CLIENT_LIBS))
+    http_server_libs: set[str] = field(default_factory=lambda: set(HTTP_SERVER_LIBS))
+    db_libs: set[str] = field(default_factory=lambda: set(DB_LIBS))
+    message_libs: set[str] = field(default_factory=lambda: set(MESSAGE_LIBS))
 
 
 DEFAULT_PATTERNS = AstFeaturePatterns()

@@ -27,10 +27,10 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.rows import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
-    TestProfileRowModel,
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
+from tests._helpers.row_factories import blank_test_profile_row
 
 
 @contextmanager
@@ -289,7 +289,7 @@ def test_build_behavior_rows_mixed_sources() -> None:
             llm_model,
             llm_run_id,
             getattr(ctx, "now", datetime.now(tz=UTC)),
-    )
+        )
 
     def _fake_llm_runner(_request: BehavioralLLMRequest) -> BehavioralLLMResult:
         return BehavioralLLMResult(tags=["db"])
@@ -325,7 +325,7 @@ def test_write_test_profile_rows_with_stubs() -> None:
     fake_con = _FakeCon()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
     test_cfg, _ = _snapshot_cfg()
-    sample_row: TestProfileRowModel = dict.fromkeys(TEST_PROFILE_COLUMNS)  # type: ignore[arg-type]
+    sample_row = blank_test_profile_row()
     sample_row["repo"] = "r"
     sample_row["commit"] = "c"
     sample_row["test_id"] = "t"

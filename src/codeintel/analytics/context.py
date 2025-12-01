@@ -190,7 +190,7 @@ def _trim_graph(
 def _import_graph_or_none(engine: GraphEngine) -> nx.DiGraph | None:
     try:
         graph = engine.load_import_graph()
-    except Exception:
+    except (OSError, RuntimeError, ValueError, nx.NetworkXError):
         log.exception(
             "Failed to load import graph for %s@%s", engine.snapshot.repo, engine.snapshot.commit
         )

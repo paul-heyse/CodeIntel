@@ -49,6 +49,7 @@ class IngestionContext:
     ingest_run_sink: IngestRunSink | None = None
     enable_run_metrics: bool = False
     current_ingest_run: IngestRun | None = None
+    step_overrides: Mapping[str, Callable[[IngestionContext], object]] | None = None
 
     @property
     def repo_root(self) -> Path:
@@ -241,7 +242,12 @@ def _finalize_ingest_run(
     if ctx.ingest_run_sink is not None:
         try:
             ctx.ingest_run_sink.record(ingest_run)
-        except Exception:  # pragma: no cover - sink errors should not break ingestion
+        except (
+            OSError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+        ):  # pragma: no cover - sink errors should not break ingestion
             log.exception(
                 "Failed to record ingest run for step=%s run_id=%s",
                 ingest_run.step,
@@ -304,8 +310,12 @@ def _run_ingest_step(
     error: BaseException | None = None
     result: object | None = None
 
+    runner = None
+    if ctx.step_overrides is not None:
+        runner = ctx.step_overrides.get(name)
+
     try:
-        result = step.run(ctx)
+        result = runner(ctx) if runner is not None else step.run(ctx)
     except BaseException as exc:
         error = exc
         raise

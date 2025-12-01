@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
+
+import pandas as pd
 
 from codeintel.storage.gateway import StorageGateway
 
@@ -81,6 +83,24 @@ class _ContractContext(Protocol):
     def commit(self) -> str:
         """Commit identifier."""
         ...
+
+
+@dataclass(frozen=True)
+class SnapshotKey:
+    """Scoped snapshot identifier for contract checks."""
+
+    repo: str
+    commit: str
+
+
+@dataclass(frozen=True)
+class NotNullFractionSpec:
+    """Configuration for non-null fraction validation."""
+
+    table: str
+    column: str
+    min_fraction: float
+    name: str | None = None
 
 
 ContractChecker = Callable[[_ContractContext], PluginContractResult]
@@ -218,15 +238,11 @@ def assert_columns_present(
     return PluginContractResult(name=resolved_name, status="passed")
 
 
-def assert_not_null_fraction(  # noqa: PLR0913
+def assert_not_null_fraction(
     gateway: StorageGateway,
     *,
-    table: str,
-    column: str,
-    repo: str,
-    commit: str,
-    min_fraction: float,
-    name: str | None = None,
+    snapshot: SnapshotKey,
+    spec: NotNullFractionSpec,
 ) -> PluginContractResult:
     """
     Ensure a column has a minimum non-null fraction for repo/commit rows.
@@ -236,21 +252,24 @@ def assert_not_null_fraction(  # noqa: PLR0913
     PluginContractResult
         Contract outcome describing non-null fraction status.
     """
-    resolved_name = name or f"{table}.{column}_not_null_fraction"
-    _ensure_safe_table(table)
-    allowed = SAFE_TABLE_COLUMNS.get(table, set())
-    if column not in allowed:
-        message = f"Column {column} is not allowed for {table}"
+    resolved_name = spec.name or f"{spec.table}.{spec.column}_not_null_fraction"
+    _ensure_safe_table(spec.table)
+    allowed = SAFE_TABLE_COLUMNS.get(spec.table, set())
+    if spec.column not in allowed:
+        message = f"Column {spec.column} is not allowed for {spec.table}"
         return PluginContractResult(name=resolved_name, status="failed", message=message)
-    row = gateway.con.execute(
-        f"SELECT AVG(CASE WHEN {column} IS NOT NULL THEN 1 ELSE 0 END) "  # noqa: S608
-        f"FROM {table} WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    ).fetchone()
-    fraction = float(row[0]) if row is not None and row[0] is not None else 0.0
-    if fraction >= min_fraction:
+    df = gateway.con.table(spec.table).to_df()
+    if df.empty:
+        fraction = 0.0
+    else:
+        filtered = df[(df["repo"] == snapshot.repo) & (df["commit"] == snapshot.commit)]
+        series = cast("pd.Series", filtered[spec.column])
+        fraction = float(series.notna().mean()) if not filtered.empty else 0.0
+    if fraction >= spec.min_fraction:
         return PluginContractResult(name=resolved_name, status="passed", message=str(fraction))
-    message = f"{table}.{column} non-null fraction {fraction:.2f} below {min_fraction}"
+    message = (
+        f"{spec.table}.{spec.column} non-null fraction {fraction:.2f} below {spec.min_fraction}"
+    )
     return PluginContractResult(name=resolved_name, status="failed", message=message)
 
 
@@ -334,12 +353,13 @@ def not_null_fraction_checker(
     def _checker(ctx: _ContractContext) -> PluginContractResult:
         return assert_not_null_fraction(
             ctx.gateway,
-            table=table,
-            column=column,
-            repo=ctx.repo,
-            commit=ctx.commit,
-            min_fraction=min_fraction,
-            name=name,
+            snapshot=SnapshotKey(repo=ctx.repo, commit=ctx.commit),
+            spec=NotNullFractionSpec(
+                table=table,
+                column=column,
+                min_fraction=min_fraction,
+                name=name,
+            ),
         )
 
     return _checker

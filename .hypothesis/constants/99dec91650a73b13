@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/ast_features/patterns.py
+# hypothesis_version: 6.148.3
+
+['AstFeaturePatterns', 'CONCURRENCY_LIBS', 'DB_LIBS', 'DEFAULT_IO_SPEC', 'DEFAULT_PATTERNS', 'HTTP_CLIENT_LIBS', 'HTTP_SERVER_LIBS', 'MESSAGE_LIBS', 'Popen', 'aiohttp', 'anyio', 'asyncio', 'asyncpg', 'boto3', 'call', 'celery', 'check_call', 'check_output', 'commit', 'concurrent', 'copy', 'db', 'delete', 'django', 'execute', 'fastapi', 'filesystem', 'flask', 'funcs', 'get', 'httpx', 'kafka', 'kombu', 'libs', 'mkdir', 'move', 'multiprocessing', 'network', 'open', 'os', 'paramiko', 'pathlib', 'pika', 'post', 'psycopg2', 'put', 'pymongo', 'pymysql', 'query', 'redis', 'remove', 'request', 'requests', 'rmdir', 'run', 'send', 'session', 'shutil', 'socket', 'sqlalchemy', 'starlette', 'subprocess', 'threading', 'trio', 'unlink', 'urllib3']

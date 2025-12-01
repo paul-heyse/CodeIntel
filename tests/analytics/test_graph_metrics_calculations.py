@@ -9,6 +9,7 @@ import pytest
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config import ConfigBuilder
 from tests._helpers.fixtures import (
+    GraphMetricsGatewayOptions,
     graph_metrics_ready_gateway,
     seed_function_graph_cycle,
     seed_module_graph_inputs,
@@ -25,12 +26,14 @@ def test_compute_function_graph_metrics_counts_and_cycles(tmp_path: Path) -> Non
     """Compute function graph metrics with cycles and aggregated edge counts."""
     ctx = graph_metrics_ready_gateway(
         tmp_path / "graph_metrics",
-        repo=REPO,
-        commit=COMMIT,
-        include_symbol_edges=False,
-        run_metrics=False,
-        build_callgraph_enabled=False,
-        file_backed=False,
+        GraphMetricsGatewayOptions(
+            repo=REPO,
+            commit=COMMIT,
+            include_symbol_edges=False,
+            run_metrics=False,
+            build_callgraph_enabled=False,
+            file_backed=False,
+        ),
     )
     seed_function_graph_cycle(ctx.gateway, repo=REPO, commit=COMMIT, rel_path=REL_PATH)
 
@@ -60,12 +63,14 @@ def test_compute_module_graph_metrics_with_symbol_coupling(tmp_path: Path) -> No
     """Compute module graph metrics including symbol coupling fan counts."""
     ctx = graph_metrics_ready_gateway(
         tmp_path / "graph_metrics_mod",
-        repo=REPO,
-        commit=COMMIT,
-        include_symbol_edges=False,
-        run_metrics=False,
-        build_callgraph_enabled=False,
-        file_backed=False,
+        GraphMetricsGatewayOptions(
+            repo=REPO,
+            commit=COMMIT,
+            include_symbol_edges=False,
+            run_metrics=False,
+            build_callgraph_enabled=False,
+            file_backed=False,
+        ),
     )
     seed_module_graph_inputs(
         ctx.gateway,
@@ -99,7 +104,10 @@ def test_compute_module_graph_metrics_with_symbol_coupling(tmp_path: Path) -> No
 
 def test_graph_metrics_ready_gateway_smoke(tmp_path: Path) -> None:
     """End-to-end helper produces graph metrics rows."""
-    ctx = graph_metrics_ready_gateway(tmp_path / "gm_smoke", repo=REPO, commit=COMMIT)
+    ctx = graph_metrics_ready_gateway(
+        tmp_path / "gm_smoke",
+        GraphMetricsGatewayOptions(repo=REPO, commit=COMMIT),
+    )
     con = ctx.gateway.con
     row = con.execute(
         """

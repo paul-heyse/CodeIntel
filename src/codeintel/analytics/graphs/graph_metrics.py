@@ -91,7 +91,14 @@ class GraphMetricFilters:
         """
         if not self.function_goids:
             return graph
-        return nx.subgraph(graph, self.function_goids).copy()
+        allowed = self.function_goids
+        present = tuple(node for node in allowed if node in graph)
+        filtered = nx.DiGraph()
+        filtered.add_nodes_from(present)
+        filtered.add_edges_from(
+            (node, nbr) for node in present for nbr in graph.successors(node) if nbr in allowed
+        )
+        return filtered
 
     def filter_import_graph(self, graph: nx.DiGraph) -> nx.DiGraph:
         """

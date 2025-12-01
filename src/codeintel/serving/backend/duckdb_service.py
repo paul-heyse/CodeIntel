@@ -14,34 +14,33 @@ from typing import Literal, cast
 
 import networkx as nx
 
-from codeintel.analytics.graphs.plugins import list_graph_metric_plugins
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.engine import GraphEngine
-from codeintel.serving.backend.limits import BackendLimits, clamp_limit_value, clamp_offset_value
+from codeintel.serving.backend.limits import BackendLimits, clamp_limit_value
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphEdgeRow,
     CallGraphNeighborsResponse,
-    DatasetRowsResponse,
     DatasetSchemaColumn,
     DatasetSchemaResponse,
     DatasetSpecDescriptor,
     FileHintsResponse,
     FileProfileResponse,
+    FileProfileRow,
     FileSummaryResponse,
     FileSummaryRow,
     FunctionArchitectureResponse,
     FunctionProfileResponse,
+    FunctionProfileRow,
     FunctionSummaryResponse,
     FunctionSummaryRow,
     GraphNeighborhoodResponse,
-    GraphPluginDescriptor,
     HighRiskFunctionsResponse,
-    ImportBoundaryResponse,
     Message,
     ModuleArchitectureResponse,
     ModuleArchitectureRow,
     ModuleProfileResponse,
+    ModuleProfileRow,
     ModuleSubsystemResponse,
     ModuleWithSubsystemRow,
     ResponseMeta,
@@ -55,10 +54,6 @@ from codeintel.serving.mcp.models import (
     SubsystemSummaryRow,
     TestsForFunctionResponse,
     ViewRow,
-)
-from codeintel.serving.mcp.view_utils import (
-    normalize_entrypoints_row,
-    normalize_entrypoints_rows,
 )
 from codeintel.storage.datasets import (
     Dataset,
@@ -173,16 +168,58 @@ def _normalize_validation_profile(
     return None
 
 
-@dataclass  # noqa: PLR0904
-class DuckDBQueryService:
-    """Shared query runner for DuckDB-backed MCP and FastAPI surfaces."""
+@dataclass(frozen=True)
+class BackendContext:
+    """Shared context for DuckDB query services."""
 
     gateway: StorageGateway
     repo: str
     commit: str
     limits: BackendLimits
     graph_engine: GraphEngine | None = None
+
+
+@dataclass
+class GraphEngineProvider:
+    """Resolve and cache a graph engine for DuckDB query services."""
+
+    context: BackendContext
+    graph_engine: GraphEngine | None = None
     _engine: GraphEngine | None = field(default=None, init=False, repr=False)
+
+    def require(self) -> GraphEngine:
+        """
+        Return a graph engine or raise when unavailable.
+
+        Returns
+        -------
+        GraphEngine
+            Resolved graph engine for the configured repo/commit.
+
+        Raises
+        ------
+        backend_failure
+            When no graph engine is available.
+        """
+        if self._engine is not None:
+            return self._engine
+        if self.graph_engine is not None:
+            self._engine = self.graph_engine
+            return self._engine
+        if self.context.graph_engine is None:
+            message = "Graph engine must be provided to DuckDBQueryService."
+            raise errors.backend_failure(message)
+        self._engine = self.context.graph_engine
+        return self._engine
+
+
+@dataclass
+class DuckDBRepositories:
+    """Lazily constructed repositories for DuckDB-backed services."""
+
+    gateway: StorageGateway
+    repo: str
+    commit: str
     _functions: FunctionRepository | None = field(default=None, init=False, repr=False)
     _modules: ModuleRepository | None = field(default=None, init=False, repr=False)
     _subsystems: SubsystemRepository | None = field(default=None, init=False, repr=False)
@@ -191,97 +228,64 @@ class DuckDBQueryService:
     _graphs: GraphRepository | None = field(default=None, init=False, repr=False)
 
     @property
-    def con(self) -> DuckDBConnection:
-        """Underlying DuckDB connection."""
-        return self.gateway.con
-
-    def _require_graph_engine(self) -> GraphEngine:
-        """
-        Return the configured graph engine or raise when missing.
-
-        Returns
-        -------
-        GraphEngine
-            Engine configured for the service repo/commit.
-
-        Raises
-        ------
-        errors.backend_failure
-            If no graph engine is configured.
-        """
-        if self._engine is not None:
-            return self._engine
-        if self.graph_engine is None:
-            message = "Graph engine must be provided to DuckDBQueryService."
-            raise errors.backend_failure(message)
-        self._engine = self.graph_engine
-        return self._engine
-
-    @property
     def functions(self) -> FunctionRepository:
-        """Lazily construct a function repository."""
+        """Return a lazily constructed function repository."""
         if self._functions is None:
             self._functions = FunctionRepository(self.gateway, self.repo, self.commit)
         return self._functions
 
     @property
     def modules(self) -> ModuleRepository:
-        """Lazily construct a module repository."""
+        """Return a lazily constructed module repository."""
         if self._modules is None:
             self._modules = ModuleRepository(self.gateway, self.repo, self.commit)
         return self._modules
 
     @property
     def subsystems(self) -> SubsystemRepository:
-        """Lazily construct a subsystem repository."""
+        """Return a lazily constructed subsystem repository."""
         if self._subsystems is None:
             self._subsystems = SubsystemRepository(self.gateway, self.repo, self.commit)
         return self._subsystems
 
     @property
     def tests(self) -> TestRepository:
-        """Lazily construct a test repository."""
+        """Return a lazily constructed test repository."""
         if self._tests is None:
             self._tests = TestRepository(self.gateway, self.repo, self.commit)
         return self._tests
 
     @property
     def datasets(self) -> DatasetReadRepository:
-        """Lazily construct a dataset repository."""
+        """Return a lazily constructed dataset repository."""
         if self._datasets is None:
             self._datasets = DatasetReadRepository(self.gateway, self.repo, self.commit)
         return self._datasets
 
     @property
     def graphs(self) -> GraphRepository:
-        """Lazily construct a graph repository."""
+        """Return a lazily constructed graph repository."""
         if self._graphs is None:
             self._graphs = GraphRepository(self.gateway, self.repo, self.commit)
         return self._graphs
 
-    @staticmethod
-    def list_graph_plugins() -> list[GraphPluginDescriptor]:
-        """
-        List available graph metric plugins.
 
-        Returns
-        -------
-        list[GraphPluginDescriptor]
-            Registered plugin descriptors.
-        """
-        return [
-            GraphPluginDescriptor(
-                name=plugin.name,
-                stage=plugin.stage,
-                description=plugin.description,
-                enabled_by_default=plugin.enabled_by_default,
-                scope_aware=getattr(plugin, "scope_aware", False),
-                supported_scopes=tuple(getattr(plugin, "supported_scopes", ()) or ()),
-                requires_isolation=getattr(plugin, "requires_isolation", False),
-                isolation_kind=getattr(plugin, "isolation_kind", None),
-            )
-            for plugin in list_graph_metric_plugins()
-        ]
+@dataclass
+class _FunctionQueries:
+    context: BackendContext
+    repositories: DuckDBRepositories
+    engine_provider: GraphEngineProvider
+
+    @property
+    def con(self) -> DuckDBConnection:
+        return self.context.gateway.con
+
+    @property
+    def functions(self) -> FunctionRepository:
+        return self.repositories.functions
+
+    def _require_graph_engine(self) -> GraphEngine:
+        return self.engine_provider.require()
 
     def _resolve_function_goid(
         self,
@@ -309,33 +313,12 @@ class DuckDBQueryService:
         goid_h128: int | None = None,
         rel_path: str | None = None,
         qualname: str | None = None,
-        scope: GraphRunScope | None = None,
+        _scope: GraphRunScope | None = None,
     ) -> FunctionSummaryResponse:
-        """
-        Return a function summary row from docs.v_function_summary.
-
-        Parameters
-        ----------
-        urn, goid_h128, rel_path, qualname :
-            Identifiers used to locate the function.
-        scope :
-            Optional scope applied to upstream graph execution (unused in lookup).
-
-        Returns
-        -------
-        FunctionSummaryResponse
-            Summary payload and metadata.
-
-        Raises
-        ------
-        errors.invalid_argument
-            If no identifier is provided.
-        """
         meta = ResponseMeta()
         if goid_h128 is None and not (urn or (rel_path and qualname)):
             message = "Must provide urn or goid_h128 or (rel_path + qualname)."
             raise errors.invalid_argument(message)
-
         resolved = self._resolve_function_goid(
             urn=urn,
             goid_h128=goid_h128,
@@ -357,7 +340,6 @@ class DuckDBQueryService:
                 )
             )
             return FunctionSummaryResponse(found=False, summary=None, meta=meta)
-
         row = self.functions.get_function_summary_by_goid(resolved)
         if row is None:
             meta.messages.append(
@@ -367,17 +349,14 @@ class DuckDBQueryService:
                     detail="Function not found",
                     context={
                         "urn": urn,
-                        "goid_h128": goid_h128 or resolved,
+                        "goid_h128": goid_h128,
                         "rel_path": rel_path,
                         "qualname": qualname,
                     },
                 )
             )
             return FunctionSummaryResponse(found=False, summary=None, meta=meta)
-
-        _ = scope
-        summary = FunctionSummaryRow.model_validate(row)
-        return FunctionSummaryResponse(found=True, summary=summary, meta=meta)
+        return FunctionSummaryResponse(found=True, summary=row, meta=meta)
 
     def list_high_risk_functions(
         self,
@@ -385,52 +364,20 @@ class DuckDBQueryService:
         min_risk: float = 0.7,
         limit: int | None = None,
         tested_only: bool = False,
-        scope: GraphRunScope | None = None,
+        _scope: GraphRunScope | None = None,
     ) -> HighRiskFunctionsResponse:
-        """
-        List high-risk functions using analytics.goid_risk_factors.
-
-        Parameters
-        ----------
-        min_risk:
-            Minimum risk score threshold.
-        limit:
-            Maximum number of rows to return.
-        tested_only:
-            When True, restrict to functions with test coverage.
-        scope :
-            Optional scope applied to upstream graph execution (unused in lookup).
-
-        Returns
-        -------
-        HighRiskFunctionsResponse
-            Functions, truncation flag, and metadata.
-        """
-        _ = scope
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        meta = ResponseMeta(
-            requested_limit=limit,
-            applied_limit=clamp.applied,
-            messages=list(clamp.messages),
-        )
-        if clamp.has_error:
-            return HighRiskFunctionsResponse(functions=[], truncated=False, meta=meta)
-
-        _ = scope
+        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
         rows = self.functions.list_high_risk_functions(
+            repo=self.context.repo,
+            commit=self.context.commit,
             min_risk=min_risk,
-            limit=clamp.applied,
+            limit=limit_clamp.applied,
             tested_only=tested_only,
         )
-        models = [ViewRow.model_validate(r) for r in rows]
-        truncated = clamp.applied > 0 and len(rows) == clamp.applied
-        meta.truncated = truncated
-        return HighRiskFunctionsResponse(functions=models, truncated=truncated, meta=meta)
+        return HighRiskFunctionsResponse(
+            functions=[FunctionSummaryRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(messages=limit_clamp.messages),
+        )
 
     def get_callgraph_neighbors(
         self,
@@ -438,64 +385,48 @@ class DuckDBQueryService:
         goid_h128: int,
         direction: str = "both",
         limit: int | None = None,
-        scope: GraphRunScope | None = None,
+        _scope: GraphRunScope | None = None,
     ) -> CallGraphNeighborsResponse:
-        """
-        Return incoming and outgoing call graph neighbors.
-
-        Parameters
-        ----------
-        goid_h128:
-            Caller or callee GOID.
-        direction:
-            Whether to fetch incoming, outgoing, or both edge directions.
-        limit:
-            Maximum number of rows per direction.
-        scope :
-            Optional scope applied to upstream graph execution (unused in lookup).
-
-        Returns
-        -------
-        CallGraphNeighborsResponse
-            Neighboring edges with metadata.
-
-        Raises
-        ------
-        errors.invalid_argument
-            If the direction argument is invalid.
-        """
-        _ = scope
-        if direction not in {"in", "out", "both"}:
-            message = "direction must be one of {'in','out','both'}"
-            raise errors.invalid_argument(message)
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        meta = ResponseMeta(
-            requested_limit=limit,
-            applied_limit=clamp.applied,
-            messages=list(clamp.messages),
-        )
-        if clamp.has_error:
-            return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=meta)
-        outgoing: list[CallGraphEdgeRow] = []
-        incoming: list[CallGraphEdgeRow] = []
-
-        if direction in {"out", "both"}:
-            out_rows = self.graphs.get_outgoing_callgraph_neighbors(goid_h128, limit=clamp.applied)
-            outgoing = [CallGraphEdgeRow.model_validate(r) for r in out_rows]
-
-        if direction in {"in", "both"}:
-            in_rows = self.graphs.get_incoming_callgraph_neighbors(goid_h128, limit=clamp.applied)
-            incoming = [CallGraphEdgeRow.model_validate(r) for r in in_rows]
-
-        meta.truncated = clamp.applied > 0 and (
-            len(outgoing) == clamp.applied or len(incoming) == clamp.applied
-        )
-        return CallGraphNeighborsResponse(outgoing=outgoing, incoming=incoming, meta=meta)
+        engine = self._require_graph_engine()
+        graph = engine.call_graph()
+        if goid_h128 not in graph:
+            return CallGraphNeighborsResponse(outgoing=[], incoming=[], meta=ResponseMeta())
+        outgoing = [
+            CallGraphEdgeRow(
+                caller_goid_h128=goid_h128,
+                callee_goid_h128=tgt,
+                path=str(data.get("path")) if isinstance(data, dict) else None,
+                line_number=int(data.get("line_number", 0)) if isinstance(data, dict) else 0,
+                hop_distance=int(data.get("hop_distance", 0)) if isinstance(data, dict) else 0,
+                language=str(data.get("language", "python")) if isinstance(data, dict) else "python",
+                edge_type=str(data.get("edge_type", "direct")) if isinstance(data, dict) else "direct",
+                edge_label=str(data.get("edge_label", "")) if isinstance(data, dict) else "",
+                weight=float(data.get("weight", 1.0)) if isinstance(data, dict) else 1.0,
+            )
+            for tgt, data in graph[goid_h128].items()
+        ]
+        incoming = [
+            CallGraphEdgeRow(
+                caller_goid_h128=src,
+                callee_goid_h128=goid_h128,
+                path=str(data.get("path")) if isinstance(data, dict) else None,
+                line_number=int(data.get("line_number", 0)) if isinstance(data, dict) else 0,
+                hop_distance=int(data.get("hop_distance", 0)) if isinstance(data, dict) else 0,
+                language=str(data.get("language", "python")) if isinstance(data, dict) else "python",
+                edge_type=str(data.get("edge_type", "direct")) if isinstance(data, dict) else "direct",
+                edge_label=str(data.get("edge_label", "")) if isinstance(data, dict) else "",
+                weight=float(data.get("weight", 1.0)) if isinstance(data, dict) else 1.0,
+            )
+            for src, data in graph.pred[goid_h128].items()
+        ]
+        if limit is not None:
+            outgoing = outgoing[:limit]
+            incoming = incoming[:limit]
+        if direction == "outgoing":
+            incoming = []
+        elif direction == "incoming":
+            outgoing = []
+        return CallGraphNeighborsResponse(outgoing=outgoing, incoming=incoming, meta=ResponseMeta())
 
     def get_tests_for_function(
         self,
@@ -503,73 +434,18 @@ class DuckDBQueryService:
         goid_h128: int | None = None,
         urn: str | None = None,
         limit: int | None = None,
-        scope: GraphRunScope | None = None,
+        _scope: GraphRunScope | None = None,
     ) -> TestsForFunctionResponse:
-        """
-        List tests that exercised a given function.
-
-        Parameters
-        ----------
-        goid_h128, urn:
-            Function identifiers.
-        limit:
-            Maximum number of test rows to return.
-        scope :
-            Optional scope applied to upstream graph execution (unused in lookup).
-
-        Returns
-        -------
-        TestsForFunctionResponse
-            Tests and metadata, or empty results when not found.
-
-        Raises
-        ------
-        errors.invalid_argument
-            If no function identifier is provided.
-        """
-        if goid_h128 is None and urn is None:
-            message = "Must provide goid_h128 or urn."
-            raise errors.invalid_argument(message)
-
-        resolved = self._resolve_function_goid(goid_h128=goid_h128, urn=urn)
-        _ = scope
-        meta = ResponseMeta(requested_limit=limit)
+        resolved = goid_h128
         if resolved is None:
-            meta.messages.append(
-                Message(
-                    code="not_found",
-                    severity="info",
-                    detail="Function not found",
-                    context={"urn": urn, "goid_h128": goid_h128},
-                )
-            )
-            return TestsForFunctionResponse(tests=[], meta=meta)
-
-        applied_limit = self.limits.default_limit if limit is None else limit
-        clamp = clamp_limit_value(
-            applied_limit,
-            default=applied_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        meta.applied_limit = clamp.applied
-        meta.messages.extend(clamp.messages)
-        if clamp.has_error:
-            return TestsForFunctionResponse(tests=[], meta=meta)
-
-        rows = self.tests.get_tests_for_function(resolved, limit=clamp.applied)
-        meta.truncated = clamp.applied > 0 and len(rows) == clamp.applied
-        if not rows:
-            meta.messages.append(
-                Message(
-                    code="not_found",
-                    severity="info",
-                    detail="No tests found for function",
-                    context={"urn": urn, "goid_h128": resolved},
-                )
-            )
+            resolved = self._resolve_function_goid(urn=urn)
+        if resolved is None:
+            return TestsForFunctionResponse(tests=[], meta=ResponseMeta())
+        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
+        rows = self.functions.list_tests_for_function(resolved, limit=limit_clamp.applied)
         return TestsForFunctionResponse(
-            tests=[ViewRow.model_validate(r) for r in rows],
-            meta=meta,
+            tests=[FunctionSummaryRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(messages=limit_clamp.messages),
         )
 
     def get_callgraph_neighborhood(
@@ -579,690 +455,181 @@ class DuckDBQueryService:
         radius: int = 1,
         max_nodes: int | None = None,
     ) -> GraphNeighborhoodResponse:
-        """
-        Return a bounded ego neighborhood in the call graph.
-
-        Parameters
-        ----------
-        goid_h128 : int
-            Node identifier to center the neighborhood on.
-        radius : int, optional
-            Hop distance to traverse when building the ego graph.
-        max_nodes : int, optional
-            Maximum nodes to return; defaults to backend limits when omitted.
-
-        Returns
-        -------
-        GraphNeighborhoodResponse
-            Nodes, edges, and metadata describing truncation and limits.
-
-        Raises
-        ------
-        errors.invalid_argument
-            If the requested max_nodes is negative.
-        """
-        clamp = clamp_limit_value(
-            max_nodes,
-            default=self.limits.default_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        if clamp.has_error:
-            message = "max_nodes must be non-negative"
-            raise errors.invalid_argument(message)
-        limit = clamp.applied
-        meta_messages = list(clamp.messages)
-        graph = self._require_graph_engine().call_graph()
+        engine = self._require_graph_engine()
+        graph = engine.call_graph()
         if goid_h128 not in graph:
-            return GraphNeighborhoodResponse(
-                nodes=[],
-                edges=[],
-                meta=ResponseMeta(
-                    requested_limit=max_nodes,
-                    applied_limit=limit,
-                    messages=meta_messages,
-                ),
-            )
-        ego = nx.ego_graph(graph, goid_h128, radius=radius)
-        truncated = ego.number_of_nodes() > limit
-        nodes = list(ego.nodes)[:limit]
-        ego = ego.subgraph(nodes).copy()
-        node_rows = [
-            ViewRow.model_validate(
-                {"id": n, "in_degree": ego.in_degree(n), "out_degree": ego.out_degree(n)}
-            )
-            for n in nodes
+            return GraphNeighborhoodResponse(nodes=[], edges=[], meta=ResponseMeta())
+        subgraph = nx.ego_graph(graph, goid_h128, radius=radius, center=True)
+        if max_nodes is not None and subgraph.number_of_nodes() > max_nodes:
+            trimmed_nodes = list(subgraph.nodes)[:max_nodes]
+            subgraph = subgraph.subgraph(trimmed_nodes).copy()
+        nodes = [
+            FunctionSummaryRow.from_call_graph_node(node, subgraph.nodes[node])
+            for node in subgraph.nodes
         ]
-        edge_rows = [
-            ViewRow.model_validate({"src": u, "dst": v, "weight": data.get("weight", 1)})
-            for u, v, data in ego.edges(data=True)
-        ]
-        if truncated:
-            meta_messages.append(
-                Message(
-                    code="truncated",
-                    severity="warning",
-                    detail="Neighborhood truncated to max_nodes",
-                    context={"max_nodes": limit},
-                )
-            )
-        meta = ResponseMeta(
-            requested_limit=max_nodes,
-            applied_limit=limit,
-            truncated=truncated,
-            messages=meta_messages,
-        )
-        return GraphNeighborhoodResponse(nodes=node_rows, edges=edge_rows, meta=meta)
+        edges = [CallGraphEdgeRow.from_edge(u, v, data) for u, v, data in subgraph.edges(data=True)]
+        return GraphNeighborhoodResponse(nodes=nodes, edges=edges, meta=ResponseMeta())
 
-    def get_import_boundary(
-        self,
-        *,
-        subsystem_id: str,
-        max_edges: int | None = None,
-    ) -> ImportBoundaryResponse:
-        """
-        Return import edges that cross a subsystem boundary.
-
-        Parameters
-        ----------
-        subsystem_id : str
-            Subsystem identifier whose external edges are requested.
-        max_edges : int, optional
-            Maximum number of edges to return; defaults to backend limits.
-
-        Returns
-        -------
-        ImportBoundaryResponse
-            Subgraph capturing boundary-crossing nodes and edges.
-
-        Raises
-        ------
-        errors.invalid_argument
-            If the requested max_edges is negative.
-        """
-        clamp = clamp_limit_value(
-            max_edges,
-            default=self.limits.default_limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        if clamp.has_error:
-            message = "max_edges must be non-negative"
-            raise errors.invalid_argument(message)
-        limit = clamp.applied
-        meta_messages = list(clamp.messages)
-        import_graph = self._require_graph_engine().import_graph()
-        memberships = dict(
-            self.con.execute(
-                """
-                SELECT module, subsystem_id
-                FROM analytics.subsystem_modules
-                WHERE repo = ? AND commit = ?
-                """,
-                [self.repo, self.commit],
-            ).fetchall()
-        )
-        edges: list[tuple[str, str, dict[str, object]]] = []
-        for src, dst, data in import_graph.edges(data=True):
-            left = memberships.get(src)
-            right = memberships.get(dst)
-            if left is None or right is None:
-                continue
-            if (left == subsystem_id and right != subsystem_id) or (
-                right == subsystem_id and left != subsystem_id
-            ):
-                edges.append((src, dst, data))
-        truncated = len(edges) > limit
-        edges = edges[:limit]
-        nodes = {src for src, _, _ in edges} | {dst for _, dst, _ in edges}
-        node_rows = [
-            ViewRow.model_validate({"module": n, "subsystem_id": memberships.get(n)}) for n in nodes
-        ]
-        edge_rows = [
-            ViewRow.model_validate(
-                {
-                    "src": src,
-                    "dst": dst,
-                    "weight": data.get("weight", 1),
-                    "src_sub": memberships.get(src),
-                    "dst_sub": memberships.get(dst),
-                }
-            )
-            for src, dst, data in edges
-        ]
-        if truncated:
-            meta_messages.append(
-                Message(
-                    code="truncated",
-                    severity="warning",
-                    detail="Boundary edges truncated to max_edges",
-                    context={"max_edges": limit},
-                )
-            )
-        meta = ResponseMeta(
-            requested_limit=max_edges,
-            applied_limit=limit,
-            truncated=truncated,
-            messages=meta_messages,
-        )
-        return ImportBoundaryResponse(nodes=node_rows, edges=edge_rows, meta=meta)
-
-    def get_file_summary(
-        self,
-        *,
-        rel_path: str,
-        scope: GraphRunScope | None = None,
-    ) -> FileSummaryResponse:
-        """
-        Return file summary plus function summaries for a path.
-
-        Parameters
-        ----------
-        rel_path:
-            Repo-relative path for the file.
-        scope :
-            Optional scope applied to upstream graph execution (unused in lookup).
-
-        Returns
-        -------
-        FileSummaryResponse
-            Summary payload indicating whether the file was found.
-        """
-        _ = scope
-        file_row = self.modules.get_file_summary(rel_path)
-        if not file_row:
-            meta = ResponseMeta(
-                messages=[
-                    Message(
-                        code="not_found",
-                        severity="info",
-                        detail="File not found",
-                        context={"rel_path": rel_path},
-                    )
-                ]
-            )
-            return FileSummaryResponse(found=False, file=None, meta=meta)
-
-        funcs = self.functions.list_function_summaries_for_file(rel_path)
-        file_payload = dict(file_row)
-        file_payload["functions"] = [FunctionSummaryRow.model_validate(r) for r in funcs]
-        file_model = FileSummaryRow.model_validate(file_payload)
-        return FileSummaryResponse(
-            found=True,
-            file=file_model,
-            meta=ResponseMeta(),
-        )
-
-    def get_function_profile(self, *, goid_h128: int) -> FunctionProfileResponse:
-        """
-        Return a function profile from analytics.function_profile.
-
-        Parameters
-        ----------
-        goid_h128:
-            Function GOID identifier.
-
-        Returns
-        -------
-        FunctionProfileResponse
-            Profile payload indicating whether it was found.
-        """
+    def get_function_profile(self, goid_h128: int) -> FunctionProfileResponse:
         row = self.functions.get_function_profile(goid_h128)
         if row is None:
-            meta = ResponseMeta(
-                messages=[
-                    Message(
-                        code="not_found",
-                        severity="info",
-                        detail="Function profile not found",
-                        context={"goid_h128": goid_h128},
-                    )
-                ]
-            )
-            return FunctionProfileResponse(found=False, profile=None, meta=meta)
+            message = f"Function profile not found: {goid_h128}"
+            raise errors.not_found(message)
         return FunctionProfileResponse(
-            found=True,
-            profile=ViewRow.model_validate(row),
-            meta=ResponseMeta(),
+            function=FunctionProfileRow.model_validate(row), meta=ResponseMeta()
         )
+
+    def get_function_architecture(self, goid_h128: int) -> FunctionArchitectureResponse:
+        graph_engine = self._require_graph_engine()
+        engine_graph = graph_engine.call_graph()
+        if goid_h128 not in engine_graph:
+            message = f"Function not found in call graph: {goid_h128}"
+            raise errors.not_found(message)
+        fan_in = engine_graph.in_degree(goid_h128)
+        fan_out = engine_graph.out_degree(goid_h128)
+        return FunctionArchitectureResponse(fan_in=fan_in, fan_out=fan_out, meta=ResponseMeta())
+
+
+@dataclass
+class _ModuleQueries:
+    context: BackendContext
+    repositories: DuckDBRepositories
+    engine_provider: GraphEngineProvider
+
+    @property
+    def con(self) -> DuckDBConnection:
+        return self.context.gateway.con
+
+    @property
+    def modules(self) -> ModuleRepository:
+        return self.repositories.modules
+
+    @property
+    def subsystems(self) -> SubsystemRepository:
+        return self.repositories.subsystems
 
     def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
-        """
-        Return a file profile from analytics.file_profile.
-
-        Parameters
-        ----------
-        rel_path:
-            Repo-relative file path.
-
-        Returns
-        -------
-        FileProfileResponse
-            Profile payload and metadata.
-        """
         row = self.modules.get_file_profile(rel_path)
         if row is None:
-            meta = ResponseMeta(
-                messages=[
-                    Message(
-                        code="not_found",
-                        severity="info",
-                        detail="File profile not found",
-                        context={"rel_path": rel_path},
-                    )
-                ]
-            )
-            return FileProfileResponse(found=False, profile=None, meta=meta)
-        return FileProfileResponse(
-            found=True,
-            profile=ViewRow.model_validate(row),
-            meta=ResponseMeta(),
-        )
+            message = f"File profile not found: {rel_path}"
+            raise errors.not_found(message)
+        return FileProfileResponse(profile=FileProfileRow.model_validate(row), meta=ResponseMeta())
+
+    def get_file_summary(
+        self, *, rel_path: str, _scope: GraphRunScope | None = None
+    ) -> FileSummaryResponse:
+        row = self.modules.get_file_summary(rel_path)
+        if row is None:
+            message = f"File summary not found: {rel_path}"
+            raise errors.not_found(message)
+        return FileSummaryResponse(summary=FileSummaryRow.model_validate(row), meta=ResponseMeta())
 
     def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
-        """
-        Return a module profile from analytics.module_profile.
-
-        Parameters
-        ----------
-        module:
-            Module name to query.
-
-        Returns
-        -------
-        ModuleProfileResponse
-            Profile payload and metadata.
-        """
         row = self.modules.get_module_profile(module)
         if row is None:
-            meta = ResponseMeta(
-                messages=[
-                    Message(
-                        code="not_found",
-                        severity="info",
-                        detail="Module profile not found",
-                        context={"module": module},
-                    )
-                ]
-            )
-            return ModuleProfileResponse(found=False, profile=None, meta=meta)
+            message = f"Module profile not found: {module}"
+            raise errors.not_found(message)
         return ModuleProfileResponse(
-            found=True,
-            profile=ViewRow.model_validate(row),
-            meta=ResponseMeta(),
-        )
-
-    def get_function_architecture(self, *, goid_h128: int) -> FunctionArchitectureResponse:
-        """
-        Return architecture metrics for a function.
-
-        Returns
-        -------
-        FunctionArchitectureResponse
-            Architecture payload and found flag.
-        """
-        row = self.functions.get_function_architecture(goid_h128)
-        if row is None:
-            return FunctionArchitectureResponse(
-                found=False,
-                architecture=None,
-                meta=ResponseMeta(
-                    messages=[
-                        Message(
-                            code="not_found",
-                            severity="info",
-                            detail="Function architecture not found",
-                            context={"goid_h128": goid_h128},
-                        )
-                    ]
-                ),
-            )
-        return FunctionArchitectureResponse(
-            found=True,
-            architecture=ViewRow.model_validate(row),
-            meta=ResponseMeta(),
+            profile=ModuleProfileRow.model_validate(row), meta=ResponseMeta()
         )
 
     def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
-        """
-        Return architecture metrics for a module.
-
-        Returns
-        -------
-        ModuleArchitectureResponse
-            Architecture payload and found flag.
-        """
         row = self.modules.get_module_architecture(module)
         if row is None:
-            return ModuleArchitectureResponse(
-                found=False,
-                architecture=None,
-                meta=ResponseMeta(
-                    messages=[
-                        Message(
-                            code="not_found",
-                            severity="info",
-                            detail="Module architecture not found",
-                            context={"module": module},
-                        )
-                    ]
-                ),
-            )
+            message = f"Module architecture not found: {module}"
+            raise errors.not_found(message)
         return ModuleArchitectureResponse(
-            found=True,
-            architecture=ModuleArchitectureRow.model_validate(row),
-            meta=ResponseMeta(),
+            architecture=ModuleArchitectureRow.model_validate(row), meta=ResponseMeta()
         )
 
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSummaryResponse:
-        """
-        Return subsystem summaries ordered by module_count desc.
-
-        Returns
-        -------
-        SubsystemSummaryResponse
-            Subsystem rows and metadata.
-        """
-        limit_value = limit if limit is not None else self.limits.default_limit
-        rows = self.subsystems.list_subsystems(limit=limit_value, role=role, query=q)
-        normalize_entrypoints_rows(rows)
+        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
+        rows = self.subsystems.list_subsystems(limit=limit_clamp.applied, role=role, q=q)
         return SubsystemSummaryResponse(
             subsystems=[SubsystemSummaryRow.model_validate(r) for r in rows],
-            meta=ResponseMeta(
-                applied_limit=limit_value,
-                requested_limit=limit,
-            ),
+            meta=ResponseMeta(messages=limit_clamp.messages),
         )
 
     def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
-        """
-        Return subsystem memberships for a module.
-
-        Returns
-        -------
-        ModuleSubsystemResponse
-            Membership rows and metadata.
-        """
-        rows = self.subsystems.list_subsystems_for_module(module)
-        if not rows:
-            return ModuleSubsystemResponse(
-                found=False,
-                memberships=[],
-                meta=ResponseMeta(
-                    messages=[
-                        Message(
-                            code="not_found",
-                            severity="info",
-                            detail="Module has no subsystem mappings",
-                            context={"module": module},
-                        )
-                    ]
-                ),
-            )
+        rows = self.subsystems.get_module_subsystems(module)
         return ModuleSubsystemResponse(
-            found=True,
             memberships=[ModuleWithSubsystemRow.model_validate(r) for r in rows],
             meta=ResponseMeta(),
         )
 
     def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
-        """
-        Return IDE-focused hints for a file path.
+        hints = self.modules.get_file_hints(rel_path)
+        return FileHintsResponse(hints=[str(hint) for hint in hints], meta=ResponseMeta())
 
-        Returns
-        -------
-        FileHintsResponse
-            Hint rows scoped to the provided relative path.
-        """
-        rows = self.modules.get_file_hints(rel_path)
-        if not rows:
-            return FileHintsResponse(
-                found=False,
-                hints=[],
-                meta=ResponseMeta(
-                    messages=[
-                        Message(
-                            code="not_found",
-                            severity="info",
-                            detail="No IDE hints found for path",
-                            context={"rel_path": rel_path},
-                        )
-                    ]
-                ),
-            )
-        return FileHintsResponse(
-            found=True,
-            hints=[ViewRow.model_validate(r) for r in rows],
-            meta=ResponseMeta(),
-        )
+
+@dataclass
+class _SubsystemQueries:
+    context: BackendContext
+    repositories: DuckDBRepositories
+
+    @property
+    def subsystems(self) -> SubsystemRepository:
+        return self.repositories.subsystems
 
     def get_subsystem_modules(
         self, *, subsystem_id: str, module_limit: int | None = None
     ) -> SubsystemModulesResponse:
-        """
-        Return subsystem details and module memberships.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem detail and module rows.
-        """
-        subsystem_row = self.subsystems.get_subsystem_summary(subsystem_id)
-        normalize_entrypoints_row(subsystem_row)
-        modules = self.subsystems.list_subsystem_modules(subsystem_id)
-        if subsystem_row is None:
-            return SubsystemModulesResponse(
-                found=False,
-                subsystem=None,
-                modules=[],
-                meta=ResponseMeta(
-                    messages=[
-                        Message(
-                            code="not_found",
-                            severity="info",
-                            detail="Subsystem not found",
-                            context={"subsystem_id": subsystem_id},
-                        )
-                    ]
-                ),
-            )
-        limited_modules = modules[:module_limit] if module_limit is not None else list(modules)
+        limit_clamp = clamp_limit_value(module_limit, self.context.limits.max_rows_per_call)
+        rows = self.subsystems.get_subsystem_modules(subsystem_id, limit=limit_clamp.applied)
         return SubsystemModulesResponse(
-            found=True,
-            subsystem=SubsystemSummaryRow.model_validate(subsystem_row),
-            modules=[ModuleWithSubsystemRow.model_validate(r) for r in limited_modules],
-            meta=ResponseMeta(),
+            subsystem=subsystem_id,
+            modules=[ModuleWithSubsystemRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(messages=limit_clamp.messages),
         )
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> SubsystemSearchResponse:
-        """
-        Search wrapper returning subsystem summaries.
-
-        Returns
-        -------
-        SubsystemSearchResponse
-            Subsystem rows and metadata for search-oriented use.
-        """
-        result = self.list_subsystems(limit=limit, role=role, q=q)
-        return SubsystemSearchResponse(subsystems=result.subsystems, meta=result.meta)
+        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
+        rows = self.subsystems.search_subsystems(limit=limit_clamp.applied, role=role, q=q)
+        return SubsystemSearchResponse(
+            subsystems=[SubsystemSummaryRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(messages=limit_clamp.messages),
+        )
 
     def summarize_subsystem(
         self, *, subsystem_id: str, module_limit: int | None = None
     ) -> SubsystemModulesResponse:
-        """
-        Return subsystem detail with optional module truncation.
-
-        Returns
-        -------
-        SubsystemModulesResponse
-            Subsystem detail payload, optionally with a limited module list.
-        """
-        return self.get_subsystem_modules(
-            subsystem_id=subsystem_id,
-            module_limit=module_limit,
-        )
+        return self.get_subsystem_modules(subsystem_id=subsystem_id, module_limit=module_limit)
 
     def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
-        """
-        List subsystem profile rows from docs views.
-
-        Parameters
-        ----------
-        limit:
-            Optional clamp applied to the returned rows.
-
-        Returns
-        -------
-        SubsystemProfileResponse
-            Typed profile rows with metadata.
-        """
-        limit_value = limit if limit is not None else self.limits.default_limit
-        rows = self.subsystems.list_subsystem_profiles(limit=limit_value)
-        normalize_entrypoints_rows(rows)
-        messages: list[Message] = []
-        if not rows:
-            messages.append(
-                Message(
-                    code="not_found",
-                    severity="info",
-                    detail="No subsystem profiles found",
-                    context={"repo": self.repo, "commit": self.commit},
-                )
-            )
+        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
+        rows = self.subsystems.list_subsystem_profiles(limit=limit_clamp.applied)
         return SubsystemProfileResponse(
-            profiles=[SubsystemProfileRow.model_validate(row) for row in rows],
-            meta=ResponseMeta(
-                applied_limit=limit_value,
-                requested_limit=limit,
-                messages=messages,
-            ),
+            profiles=[SubsystemProfileRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(messages=limit_clamp.messages),
         )
 
     def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
-        """
-        List subsystem coverage rollups from docs views.
-
-        Parameters
-        ----------
-        limit:
-            Optional clamp applied to the returned rows.
-
-        Returns
-        -------
-        SubsystemCoverageResponse
-            Typed coverage rows with metadata.
-        """
-        limit_value = limit if limit is not None else self.limits.default_limit
-        rows = self.subsystems.list_subsystem_coverage(limit=limit_value)
-        messages: list[Message] = []
-        if not rows:
-            messages.append(
-                Message(
-                    code="not_found",
-                    severity="info",
-                    detail="No subsystem coverage found",
-                    context={"repo": self.repo, "commit": self.commit},
-                )
-            )
+        limit_clamp = clamp_limit_value(limit, self.context.limits.max_rows_per_call)
+        rows = self.subsystems.list_subsystem_coverage(limit=limit_clamp.applied)
         return SubsystemCoverageResponse(
-            coverage=[SubsystemCoverageRow.model_validate(row) for row in rows],
-            meta=ResponseMeta(
-                applied_limit=limit_value,
-                requested_limit=limit,
-                messages=messages,
-            ),
+            coverage=[SubsystemCoverageRow.model_validate(r) for r in rows],
+            meta=ResponseMeta(messages=limit_clamp.messages),
         )
 
-    def read_dataset_rows(
-        self,
-        *,
-        dataset_name: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> DatasetRowsResponse:
-        """
-        Read dataset rows with clamping and messaging.
 
-        Parameters
-        ----------
-        dataset_name:
-            Registry name for the dataset.
-        limit:
-            Requested row limit.
-        offset:
-            Requested offset.
+@dataclass
+class _DatasetQueries:
+    context: BackendContext
+    repositories: DuckDBRepositories
 
-        Returns
-        -------
-        DatasetRowsResponse
-            Dataset slice plus metadata.
+    @property
+    def datasets(self) -> DatasetReadRepository:
+        return self.repositories.datasets
 
-        Raises
-        ------
-        errors.invalid_argument
-            When the dataset name is unknown.
-        """
-        table = self.gateway.datasets.mapping.get(dataset_name)
-        if table is None:
-            message = f"Unknown dataset: {dataset_name}"
-            raise errors.invalid_argument(message)
-
-        limit_clamp = clamp_limit_value(
-            limit,
-            default=limit,
-            max_limit=self.limits.max_rows_per_call,
-        )
-        offset_clamp = clamp_offset_value(offset)
-        meta = ResponseMeta(
-            requested_limit=limit,
-            applied_limit=limit_clamp.applied,
-            requested_offset=offset,
-            applied_offset=offset_clamp.applied,
-            messages=[*limit_clamp.messages, *offset_clamp.messages],
-        )
-
-        if limit_clamp.has_error or offset_clamp.has_error or limit_clamp.applied <= 0:
-            return DatasetRowsResponse(
-                dataset_name=dataset_name,
-                limit=limit_clamp.applied,
-                offset=offset_clamp.applied,
-                rows=[],
-                meta=meta,
-            )
-        rows = self.datasets.read_dataset_rows(
-            table_key=table,
-            limit=limit_clamp.applied,
-            offset=offset_clamp.applied,
-        )
-        meta.truncated = limit_clamp.applied > 0 and len(rows) == limit_clamp.applied
-        if not rows:
-            meta.messages.append(
-                Message(
-                    code="dataset_empty",
-                    severity="info",
-                    detail="Dataset returned no rows for the requested slice.",
-                    context={"dataset": dataset_name, "offset": offset_clamp.applied},
-                )
-            )
-        return DatasetRowsResponse(
-            dataset_name=dataset_name,
-            limit=limit_clamp.applied,
-            offset=offset_clamp.applied,
-            rows=[ViewRow.model_validate(r) for r in rows],
-            meta=meta,
-        )
+    @property
+    def gateway(self) -> StorageGateway:
+        return self.context.gateway
 
     def dataset_specs(self) -> list[DatasetSpecDescriptor]:
-        """
-        Return dataset contract entries for the active gateway.
-
-        Returns
-        -------
-        list[DatasetSpecDescriptor]
-            Canonical dataset specs sorted by name.
-        """
         registry = load_dataset_registry(self.gateway.con)
         specs = list_dataset_specs(registry)
         sorted_specs = sorted(specs, key=lambda spec: cast("str", spec["name"]))
@@ -1281,26 +648,6 @@ class DuckDBQueryService:
         return results
 
     def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
-        """
-        Return a composite schema description for a dataset.
-
-        Parameters
-        ----------
-        dataset_name
-            Logical dataset name to describe.
-        sample_limit
-            Number of sample rows to include from dataset_rows.
-
-        Returns
-        -------
-        DatasetSchemaResponse
-            Composite schema payload with schemas and sample rows.
-
-        Raises
-        ------
-        errors.not_found
-            When the dataset is unknown.
-        """
         registry = load_dataset_registry(self.gateway.con)
         try:
             ds = dataset_for_name(registry, dataset_name)
@@ -1327,3 +674,71 @@ class DuckDBQueryService:
             stable_id=ds.stable_id,
             validation_profile=_normalize_validation_profile(ds.validation_profile),
         )
+
+
+@dataclass
+class DuckDBQueryService:
+    """Shared query runner facade delegating to internal helpers."""
+
+    context: BackendContext
+    repositories: DuckDBRepositories
+    engine_provider: GraphEngineProvider
+    _functions: _FunctionQueries = field(init=False, repr=False)
+    _modules: _ModuleQueries = field(init=False, repr=False)
+    _subsystems: _SubsystemQueries = field(init=False, repr=False)
+    _datasets: _DatasetQueries = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Construct helper delegates backed by shared context/repos."""
+        self._functions = _FunctionQueries(self.context, self.repositories, self.engine_provider)
+        self._modules = _ModuleQueries(self.context, self.repositories, self.engine_provider)
+        self._subsystems = _SubsystemQueries(self.context, self.repositories)
+        self._datasets = _DatasetQueries(self.context, self.repositories)
+
+    def __getattr__(self, name: str) -> object:
+        """
+        Delegate attribute lookups to the internal helpers.
+
+        Returns
+        -------
+        object
+            Attribute fetched from a helper when available.
+
+        Raises
+        ------
+        AttributeError
+            When the attribute is not found on any helper.
+        """
+        for helper in (self._functions, self._modules, self._subsystems, self._datasets):
+            if hasattr(helper, name):
+                return getattr(helper, name)
+        raise AttributeError(name)
+
+    @property
+    def con(self) -> DuckDBConnection:
+        """Return the underlying DuckDB connection."""
+        return self.context.gateway.con
+
+    @property
+    def gateway(self) -> StorageGateway:
+        """Expose the storage gateway for callers needing direct access."""
+        return self.context.gateway
+
+    @property
+    def limits(self) -> BackendLimits:
+        """Expose backend limits for services consuming the query facade."""
+        return self.context.limits
+
+    def __dir__(self) -> list[str]:
+        """
+        Expose combined attributes for better introspection.
+
+        Returns
+        -------
+        list[str]
+            Sorted attribute names across helpers and facade.
+        """
+        attrs = {"context", "repositories", "engine_provider", "con", "gateway", "limits"}
+        for helper in (self._functions, self._modules, self._subsystems, self._datasets):
+            attrs.update(dir(helper))
+        return sorted(attrs)

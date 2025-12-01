@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/server.py
+# hypothesis_version: 6.148.3
+
+['CodeIntel', '__main__', '_gateway', 'gateway', 'local_db', 'service']

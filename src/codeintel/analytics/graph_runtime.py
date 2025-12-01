@@ -8,14 +8,14 @@ import time
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 import networkx as nx
 from networkx.readwrite import json_graph
 
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.engine import GraphEngine, GraphKind
-from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.graphs.engine_factory import EngineBuildOptions, build_graph_engine
 from codeintel.graphs.nx_backend import BackendEnablement
 from codeintel.storage.gateway import StorageGateway
 
@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 
 
 log = logging.getLogger(__name__)
+
+GraphCacheValue = nx.Graph | nx.DiGraph
+GraphT = TypeVar("GraphT", nx.Graph, nx.DiGraph)
 
 
 @dataclass(frozen=True)
@@ -79,7 +82,7 @@ class GraphRuntime:
     symbol_function_graph: nx.Graph | None = None
     config_module_bipartite: nx.Graph | None = None
     test_function_bipartite: nx.Graph | None = None
-    _cache: dict[GraphKind, object] = field(default_factory=dict, repr=False)
+    _cache: dict[GraphKind, GraphCacheValue] = field(default_factory=dict, repr=False)
 
     @property
     def backend(self) -> GraphBackendConfig:
@@ -101,7 +104,7 @@ class GraphRuntime:
             Call graph for the runtime snapshot.
         """
         graph, cache_hit = self._get_graph(GraphKind.CALL_GRAPH, self.engine.load_call_graph)
-        self.call_graph = cast("nx.DiGraph", graph)
+        self.call_graph = graph
         self._log_graph_stats("call_graph", self.call_graph, cache_hit=cache_hit)
         return self.call_graph
 
@@ -115,7 +118,7 @@ class GraphRuntime:
             Import graph for the runtime snapshot.
         """
         graph, cache_hit = self._get_graph(GraphKind.IMPORT_GRAPH, self.engine.load_import_graph)
-        self.import_graph = cast("nx.DiGraph", graph)
+        self.import_graph = graph
         self._log_graph_stats("import_graph", self.import_graph, cache_hit=cache_hit)
         return self.import_graph
 
@@ -131,8 +134,8 @@ class GraphRuntime:
         if self.cfg_graph is not None:
             return self.cfg_graph
         cached = self._cache.get(GraphKind.CFG_GRAPH)
-        if cached is not None:
-            self.cfg_graph = cached  # type: ignore[assignment]
+        if isinstance(cached, nx.DiGraph):
+            self.cfg_graph = cached
         return self.cfg_graph
 
     def ensure_symbol_module_graph(self) -> nx.Graph:
@@ -208,12 +211,12 @@ class GraphRuntime:
     def _get_graph(
         self,
         kind: GraphKind,
-        loader: Callable[[], nx.Graph],
-    ) -> tuple[nx.Graph, bool]:
+        loader: Callable[[], GraphT],
+    ) -> tuple[GraphT, bool]:
         cache_hit = kind in self._cache
         if cache_hit:
             cached = self._cache[kind]
-            return cast("nx.Graph", cached), True
+            return cast("GraphT", cached), True
         graph = self._load_with_disk_cache(kind, loader)
         self._cache[kind] = graph
         return graph, False
@@ -221,12 +224,12 @@ class GraphRuntime:
     def _load_with_disk_cache(
         self,
         kind: GraphKind,
-        loader: Callable[[], nx.Graph],
-    ) -> nx.Graph:
+        loader: Callable[[], GraphT],
+    ) -> GraphT:
         if self.options.graph_cache_dir is not None and self.options.snapshot is not None:
             cached = self._read_cached_graph(kind)
             if cached is not None:
-                return cached
+                return cast("GraphT", cached)
         graph = loader()
         if self.options.graph_cache_dir is not None and self.options.snapshot is not None:
             self._write_cached_graph(kind, graph)
@@ -235,6 +238,9 @@ class GraphRuntime:
     def _cache_base(self, kind: GraphKind) -> Path:
         if self.options.snapshot is None:
             message = "Snapshot is required for graph cache."
+            raise ValueError(message)
+        if self.options.graph_cache_dir is None:
+            message = "Graph cache directory is required for graph cache."
             raise ValueError(message)
         safe_repo = self.options.snapshot.repo.replace("/", "__")
         safe_commit = self.options.snapshot.commit
@@ -245,7 +251,7 @@ class GraphRuntime:
             f"__{self.backend.backend}__{self.backend.use_gpu}"
             f"__{kind_name}"
         )
-        return self.options.graph_cache_dir / base  # type: ignore[operator]
+        return self.options.graph_cache_dir / base
 
     def _read_cached_graph(self, kind: GraphKind) -> nx.Graph | None:
         base = self._cache_base(kind)
@@ -274,6 +280,10 @@ class GraphRuntime:
             return None
 
     def _write_cached_graph(self, kind: GraphKind, graph: nx.Graph) -> None:
+        snapshot = self.options.snapshot
+        if snapshot is None:
+            message = "Snapshot is required for writing graph cache."
+            raise ValueError(message)
         base = self._cache_base(kind)
         graph_path = base.with_suffix(".json")
         meta_path = base.with_suffix(".meta")
@@ -286,8 +296,8 @@ class GraphRuntime:
             meta_path.write_text(
                 "\n".join(
                     [
-                        self.options.snapshot.repo,  # type: ignore[union-attr]
-                        self.options.snapshot.commit,  # type: ignore[union-attr]
+                        snapshot.repo,
+                        snapshot.commit,
                         self.backend.backend,
                         use_gpu_str,
                     ]
@@ -360,10 +370,12 @@ def build_graph_runtime(
         engine = build_graph_engine(
             gateway,
             options.snapshot,
-            graph_backend=resolved_backend,
-            context=resolved_context,
-            env=env,
-            enabler=enabler,
+            EngineBuildOptions(
+                graph_backend=resolved_backend,
+                context=resolved_context,
+                env=env,
+                enabler=enabler,
+            ),
         )
     backend_info = getattr(engine, "backend_info", None)
     runtime = GraphRuntime(options=options, engine=engine, backend_info=backend_info)

@@ -11,6 +11,7 @@ import pytest
 from codeintel.analytics.tests_profiles import coverage_inputs
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.config.primitives import SnapshotRef
+from tests._helpers.duckdb import memory_con_with_macros
 
 
 def _snapshot_cfg() -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]:
@@ -19,7 +20,7 @@ def _snapshot_cfg() -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig
 
 
 def _setup_db() -> duckdb.DuckDBPyConnection:
-    con = duckdb.connect(database=":memory:")
+    con = memory_con_with_macros()
     con.execute("CREATE SCHEMA analytics")
     con.execute("CREATE SCHEMA core")
     con.execute(
@@ -189,42 +190,48 @@ def _aggregate_subsystems(con: duckdb.DuckDBPyConnection, repo: str, commit: str
 def test_aggregate_test_coverage_by_function_in_memory() -> None:
     """Validate function coverage aggregation against small DuckDB fixture."""
     con = _setup_db()
-    _seed_sample_data(con)
-    test_cfg, _ = _snapshot_cfg()
-    result = coverage_inputs.aggregate_test_coverage_by_function(
-        con, test_cfg, loader=_aggregate_functions
-    )
-    if set(result.keys()) != {"t1", "t2"}:
-        pytest.fail("Expected both tests t1 and t2 in coverage results.")
-    t1 = result["t1"]
-    t2 = result["t2"]
-    expected_t1_count = 2
-    expected_t2_count = 1
-    if t1.count != expected_t1_count or t2.count != expected_t2_count:
-        pytest.fail("Function counts did not match expectations.")
-    primary_expected = {1, 2}
-    if set(t1.primary) != primary_expected or t2.primary != [2]:
-        pytest.fail("Primary function selection did not match expectations.")
+    try:
+        _seed_sample_data(con)
+        test_cfg, _ = _snapshot_cfg()
+        result = coverage_inputs.aggregate_test_coverage_by_function(
+            con, test_cfg, loader=_aggregate_functions
+        )
+        if set(result.keys()) != {"t1", "t2"}:
+            pytest.fail("Expected both tests t1 and t2 in coverage results.")
+        t1 = result["t1"]
+        t2 = result["t2"]
+        expected_t1_count = 2
+        expected_t2_count = 1
+        if t1.count != expected_t1_count or t2.count != expected_t2_count:
+            pytest.fail("Function counts did not match expectations.")
+        primary_expected = {1, 2}
+        if set(t1.primary) != primary_expected or t2.primary != [2]:
+            pytest.fail("Primary function selection did not match expectations.")
+    finally:
+        con.close()
 
 
 def test_aggregate_test_coverage_by_subsystem_in_memory() -> None:
     """Validate subsystem coverage aggregation against small DuckDB fixture."""
     con = _setup_db()
-    _seed_sample_data(con)
-    _, beh_cfg = _snapshot_cfg()
-    result = coverage_inputs.aggregate_test_coverage_by_subsystem(
-        con, beh_cfg, loader=_aggregate_subsystems
-    )
-    if set(result.keys()) != {"t1", "t2"}:
-        pytest.fail("Expected both tests t1 and t2 in subsystem results.")
-    t1 = result["t1"]
-    t2 = result["t2"]
-    expected_t1_count = 2
-    expected_t2_count = 1
-    if t1.count != expected_t1_count or t2.count != expected_t2_count:
-        pytest.fail("Subsystem counts did not match expectations.")
-    primary_subs = {"subA", "subB"}
-    if t1.primary_subsystem_id not in primary_subs:
-        pytest.fail("Primary subsystem for t1 not in expected set.")
-    if t2.primary_subsystem_id != "subB":
-        pytest.fail("Primary subsystem for t2 did not match expectations.")
+    try:
+        _seed_sample_data(con)
+        _, beh_cfg = _snapshot_cfg()
+        result = coverage_inputs.aggregate_test_coverage_by_subsystem(
+            con, beh_cfg, loader=_aggregate_subsystems
+        )
+        if set(result.keys()) != {"t1", "t2"}:
+            pytest.fail("Expected both tests t1 and t2 in subsystem results.")
+        t1 = result["t1"]
+        t2 = result["t2"]
+        expected_t1_count = 2
+        expected_t2_count = 1
+        if t1.count != expected_t1_count or t2.count != expected_t2_count:
+            pytest.fail("Subsystem counts did not match expectations.")
+        primary_subs = {"subA", "subB"}
+        if t1.primary_subsystem_id not in primary_subs:
+            pytest.fail("Primary subsystem for t1 not in expected set.")
+        if t2.primary_subsystem_id != "subB":
+            pytest.fail("Primary subsystem for t2 did not match expectations.")
+    finally:
+        con.close()

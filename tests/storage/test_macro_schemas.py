@@ -7,10 +7,13 @@ import pytest
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import safe_macro_call
 
 
 def _canonical_type(type_str: str) -> str:
     upper = type_str.upper()
+    if upper in {"TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"}:
+        return "TIMESTAMPTZ"
     if upper.startswith("DECIMAL") or upper == "BIGINT":
         return "BIGINT"
     return upper
@@ -30,10 +33,10 @@ def test_macro_schemas_match_table_definitions(fresh_gateway: StorageGateway) ->
     failures: list[str] = []
     for table_key, macro in sorted(NORMALIZED_MACROS.items()):
         schema = TABLE_SCHEMAS[table_key]
-        rel = con.sql(
-            f"SELECT * FROM {macro}(?, ?, ?)",  # noqa: S608 - trusted macro name
-            params=[table_key, 0, 0],
+        sql, params = safe_macro_call(
+            macro, [table_key, 0, 0], allowed=set(NORMALIZED_MACROS.values())
         )
+        rel = con.sql(sql, params=params)
         actual: dict[str, str] = {}
         for name, dtype in zip(rel.columns, rel.dtypes, strict=False):
             if name.endswith("_1"):

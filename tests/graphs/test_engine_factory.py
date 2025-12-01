@@ -6,7 +6,7 @@ import networkx as nx
 import pytest
 
 from codeintel.config.models import GraphBackendConfig
-from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.graphs.engine_factory import EngineBuildOptions, build_graph_engine
 from tests._helpers.gateway import open_ingestion_gateway
 
 
@@ -18,8 +18,10 @@ def test_build_graph_engine_uses_backend_flags() -> None:
         engine = build_graph_engine(
             gateway,
             ("demo/repo", "deadbeef"),
-            graph_backend=GraphBackendConfig(use_gpu=True, backend="auto", strict=False),
-            env=env,
+            EngineBuildOptions(
+                graph_backend=GraphBackendConfig(use_gpu=True, backend="auto", strict=False),
+                env=env,
+            ),
         )
         if not engine.use_gpu:
             pytest.fail("Engine did not inherit GPU preference")
@@ -40,8 +42,10 @@ def test_build_graph_engine_cpu_backend_leaves_env_clean() -> None:
         engine = build_graph_engine(
             gateway,
             ("demo/repo", "deadbeef"),
-            graph_backend=GraphBackendConfig(use_gpu=False, backend="cpu", strict=False),
-            env=env,
+            EngineBuildOptions(
+                graph_backend=GraphBackendConfig(use_gpu=False, backend="cpu", strict=False),
+                env=env,
+            ),
         )
         if engine.use_gpu:
             pytest.fail("Engine should not request GPU when use_gpu is False")

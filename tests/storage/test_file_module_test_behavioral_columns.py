@@ -9,14 +9,16 @@ from codeintel.storage.rows import (
     FILE_PROFILE_COLUMNS,
     MODULE_PROFILE_COLUMNS,
     TEST_PROFILE_COLUMNS,
-    BehavioralCoverageRowModel,
-    FileProfileRowModel,
-    ModuleProfileRowModel,
-    TestProfileRowModel,
     behavioral_coverage_row_to_tuple,
     file_profile_row_to_tuple,
     module_profile_row_to_tuple,
     serialize_test_profile_row,
+)
+from tests._helpers.row_factories import (
+    blank_behavioral_coverage_row,
+    blank_file_profile_row,
+    blank_module_profile_row,
+    blank_test_profile_row,
 )
 
 
@@ -29,7 +31,7 @@ def test_file_profile_tuple_length_matches_columns() -> None:
     AssertionError
         If tuple length diverges from column constant.
     """
-    row: FileProfileRowModel = dict.fromkeys(FILE_PROFILE_COLUMNS)  # type: ignore[arg-type]
+    row = blank_file_profile_row()
     row["repo"] = "r"
     row["commit"] = "c"
     row["rel_path"] = "p.py"
@@ -49,7 +51,7 @@ def test_module_profile_tuple_length_matches_columns() -> None:
     AssertionError
         If tuple length diverges from column constant.
     """
-    row: ModuleProfileRowModel = dict.fromkeys(MODULE_PROFILE_COLUMNS)  # type: ignore[arg-type]
+    row = blank_module_profile_row()
     row["repo"] = "r"
     row["commit"] = "c"
     row["module"] = "pkg.mod"
@@ -69,7 +71,7 @@ def test_test_profile_tuple_length_matches_columns() -> None:
     AssertionError
         If tuple length diverges from column constant.
     """
-    row: TestProfileRowModel = dict.fromkeys(TEST_PROFILE_COLUMNS)  # type: ignore[arg-type]
+    row = blank_test_profile_row()
     row["repo"] = "r"
     row["commit"] = "c"
     row["test_id"] = "t"
@@ -94,7 +96,7 @@ def test_behavioral_coverage_tuple_length_matches_columns() -> None:
     AssertionError
         If tuple length diverges from column constant.
     """
-    row: BehavioralCoverageRowModel = dict.fromkeys(BEHAVIORAL_COVERAGE_COLUMNS)  # type: ignore[arg-type]
+    row = blank_behavioral_coverage_row()
     row["repo"] = "r"
     row["commit"] = "c"
     row["test_id"] = "t"

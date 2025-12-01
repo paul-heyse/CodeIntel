@@ -30,11 +30,24 @@ class RenderedMacro(NamedTuple):
 
 
 def _cast_expression(col_name: str, duckdb_type: str) -> str:
+    """
+    Cast a column to match the declared TABLE_SCHEMAS type.
+
+    Returns
+    -------
+    str
+        SQL expression casting the column to the expected type.
+    """
     upper_type = duckdb_type.upper()
-    if "GOID_H128" in col_name.upper():
+    col_upper = col_name.upper()
+    if "GOID_H128" in col_upper:
         return f"CAST(ds.{col_name} AS BIGINT) AS {col_name}"
-    if upper_type in {"TIMESTAMP", "DATE"}:
-        return f"CAST(ds.{col_name} AS VARCHAR) AS {col_name}"
+    if "TIMESTAMPTZ" in upper_type or "TIMESTAMP WITH TIME ZONE" in upper_type:
+        return f"CAST(ds.{col_name} AS TIMESTAMPTZ) AS {col_name}"
+    if upper_type.startswith("TIMESTAMP"):
+        return f"CAST(ds.{col_name} AS TIMESTAMP) AS {col_name}"
+    if upper_type == "DATE":
+        return f"CAST(ds.{col_name} AS DATE) AS {col_name}"
     return f"ds.{col_name}"
 
 

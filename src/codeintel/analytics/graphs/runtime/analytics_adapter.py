@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, cast
 
 from codeintel.analytics.graphs.contracts import PluginContractResult
 from codeintel.analytics.graphs.plugins import GraphMetricPluginSkip
@@ -26,6 +26,7 @@ def _parse_contracts(meta: dict[str, object]) -> tuple[PluginContractResult, ...
     if not isinstance(raw, (tuple, list)):
         return ()
     parsed: list[PluginContractResult] = []
+    allowed_statuses = {"passed", "failed", "soft_failed"}
     for contract in raw:
         if isinstance(contract, PluginContractResult):
             parsed.append(contract)
@@ -35,10 +36,14 @@ def _parse_contracts(meta: dict[str, object]) -> tuple[PluginContractResult, ...
             status = contract.get("status")
             message = contract.get("message")
             if isinstance(name, str) and isinstance(status, str):
+                normalized_status = cast(
+                    "Literal['passed','failed','soft_failed']",
+                    status if status in allowed_statuses else "failed",
+                )
                 parsed.append(
                     PluginContractResult(
                         name=name,
-                        status=status,  # type: ignore[arg-type]
+                        status=normalized_status,
                         message=message if isinstance(message, str) else None,
                     )
                 )
@@ -167,24 +172,27 @@ def _graph_record_from_analytics(rec: AnalyticsRunRecord, run_id: str) -> GraphP
     """
     meta = rec.meta if isinstance(rec.meta, dict) else {}
     stage = str(meta.get("stage") or rec.kind)
-    severity = str(meta.get("severity") or "fatal")
+    severity_raw = meta.get("severity")
+    severity_allowed = {"fatal", "soft_fail", "skip_on_error"}
+    severity = cast(
+        "Literal['fatal','soft_fail','skip_on_error']",
+        severity_raw
+        if isinstance(severity_raw, str) and severity_raw in severity_allowed
+        else "fatal",
+    )
     options_hash = meta.get("options_hash")
     version_hash = meta.get("version_hash")
     input_hash = meta.get("input_hash")
-    row_counts = meta.get("row_counts") if isinstance(meta.get("row_counts"), dict) else None
     timeout_ms = meta.get("timeout_ms")
     skipped_reason = meta.get("skipped_reason")
-    requires_isolation = bool(meta.get("requires_isolation", False))
-    isolation_kind = meta.get("isolation_kind")
-    policy_fail_fast = bool(meta.get("policy_fail_fast", False))
     contracts = _parse_contracts(meta)
     status: AnalyticsStatus = rec.status
 
     return GraphPluginRunRecord(
         name=rec.name,
         stage=stage,
-        severity=severity,  # type: ignore[arg-type]
-        status=status,  # type: ignore[arg-type]
+        severity=severity,
+        status=status,
         attempts=rec.attempts,
         timeout_ms=timeout_ms if isinstance(timeout_ms, int) else None,
         started_at=rec.started_at,
@@ -198,11 +206,13 @@ def _graph_record_from_analytics(rec: AnalyticsRunRecord, run_id: str) -> GraphP
         options_hash=options_hash if isinstance(options_hash, str) else None,
         version_hash=version_hash if isinstance(version_hash, str) else None,
         skipped_reason=skipped_reason if isinstance(skipped_reason, str) else None,
-        row_counts=row_counts,
+        row_counts=meta.get("row_counts") if isinstance(meta.get("row_counts"), dict) else None,
         contracts=contracts,
-        requires_isolation=requires_isolation,
-        isolation_kind=isolation_kind if isinstance(isolation_kind, str) else None,
-        policy_fail_fast=policy_fail_fast,
+        requires_isolation=bool(meta.get("requires_isolation", False)),
+        isolation_kind=meta.get("isolation_kind")
+        if isinstance(meta.get("isolation_kind"), str)
+        else None,
+        policy_fail_fast=bool(meta.get("policy_fail_fast", False)),
     )
 
 

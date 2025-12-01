@@ -38,9 +38,10 @@ class SchemaBootstrapStep:
     phase: StepPhase = StepPhase.INGESTION
     deps: Sequence[str] = ()
 
-    def run(self, ctx: PipelineContext) -> None:  # noqa: ARG002
+    def run(self, ctx: PipelineContext) -> None:
         """No-op here; actual bootstrap is handled in the Prefect task."""
         _log_step(self.name)
+        _ = ctx
 
 
 @dataclass

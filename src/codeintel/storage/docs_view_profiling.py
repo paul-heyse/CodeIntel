@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 from typing import Final
 
-import duckdb
+from codeintel.storage.config import StorageConfig
+from codeintel.storage.gateway import DuckDBConnection, DuckDBError, open_gateway
 
 DOCS_VIEWS: Final[tuple[str, ...]] = (
     "docs.v_subsystem_profile",
@@ -31,7 +32,7 @@ def _write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _explain(*, con: duckdb.DuckDBPyConnection, view: str, analyze: bool) -> str:
+def _explain(*, con: DuckDBConnection, view: str, analyze: bool) -> str:
     """
     Return EXPLAIN or EXPLAIN ANALYZE output for a docs view.
 
@@ -57,13 +58,17 @@ def _run_profile(*, db_path: Path, output_dir: Path, analyze: bool) -> None:
     if not db_path.exists():
         message = f"DuckDB not found at {db_path}"
         raise FileNotFoundError(message)
-    con = duckdb.connect(str(db_path), read_only=True)
-    meta = {"db_path": str(db_path), "analyze": analyze, "views": DOCS_VIEWS}
-    _write_text(output_dir / "profile_meta.json", json.dumps(meta, indent=2))
-    for view in DOCS_VIEWS:
-        plan = _explain(con=con, view=view, analyze=analyze)
-        suffix = "analyze" if analyze else "explain"
-        _write_text(output_dir / f"{view.replace('.', '_')}.{suffix}.txt", plan)
+    gateway = open_gateway(StorageConfig.for_readonly(db_path))
+    try:
+        con = gateway.con
+        meta = {"db_path": str(db_path), "analyze": analyze, "views": DOCS_VIEWS}
+        _write_text(output_dir / "profile_meta.json", json.dumps(meta, indent=2))
+        for view in DOCS_VIEWS:
+            plan = _explain(con=con, view=view, analyze=analyze)
+            suffix = "analyze" if analyze else "explain"
+            _write_text(output_dir / f"{view.replace('.', '_')}.{suffix}.txt", plan)
+    finally:
+        gateway.close()
 
 
 def main() -> int:
@@ -98,7 +103,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         _run_profile(db_path=args.db_path, output_dir=args.output_dir, analyze=bool(args.analyze))
-    except Exception as exc:  # noqa: BLE001
+    except (FileNotFoundError, DuckDBError, RuntimeError, OSError) as exc:
         parser.error(str(exc))
         return 2
     return 0

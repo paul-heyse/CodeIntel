@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol
 
@@ -23,7 +23,7 @@ from codeintel.analytics.graphs.plugins import (
     register_graph_metric_plugin,
     unregister_graph_metric_plugin,
 )
-from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.config.steps_graphs import (
     GraphMetricsStepConfig,
     GraphPluginPolicy,
@@ -31,6 +31,8 @@ from codeintel.config.steps_graphs import (
     GraphRunScope,
 )
 from codeintel.storage.gateway import open_memory_gateway
+from tests._helpers.config_builders import make_snapshot
+from tests._helpers.plugin_packs import GraphPluginPackSettings, build_graph_plugin_pack
 
 RETRY_ATTEMPTS = 2
 TIMEOUT_MS = 10
@@ -48,7 +50,7 @@ def _make_service(
     tuple[GraphServiceRuntime, GraphMetricsStepConfig]
         Service and config prepared for tests.
     """
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    snapshot = make_snapshot(repo=repo, commit=commit)
     gateway = open_memory_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
     runtime = resolve_graph_runtime(
         gateway,
@@ -62,45 +64,16 @@ def _make_service(
 
 def test_soft_fail_severity_continues() -> None:
     """Soft failures should not stop subsequent plugins."""
-    attempts: list[int] = []
-
-    def _fails(_ctx: object) -> None:
-        attempts.append(1)
-        message = "boom"
-        raise RuntimeError(message)
-
-    ran_success: list[int] = []
-
-    def _succeeds(_ctx: object) -> None:
-        ran_success.append(1)
-
-    failing = GraphMetricPlugin(
-        name="soft_fail_plugin",
-        description="fails softly",
-        stage="core",
-        enabled_by_default=False,
-        run=_fails,
-        severity="soft_fail",
-    )
-    succeeding = GraphMetricPlugin(
-        name="after_soft_fail",
-        description="runs after soft failure",
-        stage="core",
-        enabled_by_default=False,
-        run=_succeeds,
-    )
-
-    register_graph_metric_plugin(failing)
-    register_graph_metric_plugin(succeeding)
+    pack = build_graph_plugin_pack()
+    pack.register(pack.soft_fail, pack.success)
     service, cfg = _make_service()
     try:
         report = service.run_plugins(
-            ("soft_fail_plugin", "after_soft_fail"),
+            pack.names(pack.soft_fail, pack.success),
             cfg=cfg,
         )
     finally:
-        unregister_graph_metric_plugin("soft_fail_plugin")
-        unregister_graph_metric_plugin("after_soft_fail")
+        pack.unregister_all()
 
     if len(report.records) != EXPECTED_RECORDS:
         pytest.fail("Expected two plugin records in report")
@@ -113,9 +86,9 @@ def test_soft_fail_severity_continues() -> None:
         pytest.fail("Soft-fail plugin should be marked partial")
     if second.status != "succeeded":
         pytest.fail("Subsequent plugin should still run after soft failure")
-    if not ran_success:
+    if pack.counters.success_calls == 0:
         pytest.fail("Success plugin should run even after soft failure")
-    if not attempts:
+    if pack.counters.soft_fail_calls == 0:
         pytest.fail("Failing plugin should have been invoked")
 
 
@@ -148,87 +121,45 @@ def _assert_telemetry_expectations(
 
 def test_retry_policy_allows_retries() -> None:
     """Plugins should honor retry policy before surfacing failure."""
-    call_count = {"n": 0}
-
-    def _flaky(_ctx: object) -> None:
-        call_count["n"] += 1
-        if call_count["n"] == 1:
-            message = "transient"
-            raise RuntimeError(message)
-
-    plugin_name = "retry_plugin"
-    plugin = GraphMetricPlugin(
-        name=plugin_name,
-        description="flaky plugin",
-        stage="core",
-        enabled_by_default=False,
-        run=_flaky,
-    )
-    register_graph_metric_plugin(plugin)
+    pack = build_graph_plugin_pack(GraphPluginPackSettings(flaky_failures=1))
+    pack.register(pack.flaky)
     service, cfg = _make_service()
     cfg = GraphMetricsStepConfig(
         snapshot=cfg.snapshot,
         plugin_policy=GraphPluginPolicy(
             retries={
-                plugin_name: GraphPluginRetryPolicy(max_attempts=RETRY_ATTEMPTS, backoff_ms=0)
+                pack.flaky.name: GraphPluginRetryPolicy(max_attempts=RETRY_ATTEMPTS, backoff_ms=0)
             },
         ),
     )
     try:
-        report = service.run_plugins((plugin_name,), cfg=cfg)
+        report = service.run_plugins((pack.flaky.name,), cfg=cfg)
     finally:
-        unregister_graph_metric_plugin(plugin_name)
+        pack.unregister_all()
     record = report.records[0]
     if record.status != "succeeded":
         pytest.fail("Flaky plugin should succeed after retry")
     if record.attempts != RETRY_ATTEMPTS:
         pytest.fail("Retry attempts should be recorded")
+    if pack.counters.flaky_calls != RETRY_ATTEMPTS:
+        pytest.fail("Flaky plugin should have been invoked for each retry")
 
 
 def test_timeout_marks_partial_and_continues() -> None:
     """Timeouts should mark partial failure but allow downstream plugins."""
-
-    def _slow(_ctx: object) -> None:
-        time.sleep(0.1)
-
-    ran_second: list[int] = []
-
-    def _fast(_ctx: object) -> None:
-        ran_second.append(1)
-
-    slow_name = "timeout_plugin"
-    fast_name = "next_plugin"
-    register_graph_metric_plugin(
-        GraphMetricPlugin(
-            name=slow_name,
-            description="times out",
-            stage="core",
-            enabled_by_default=False,
-            run=_slow,
-            severity="soft_fail",
-        )
-    )
-    register_graph_metric_plugin(
-        GraphMetricPlugin(
-            name=fast_name,
-            description="runs after timeout",
-            stage="core",
-            enabled_by_default=False,
-            run=_fast,
-        )
-    )
+    pack = build_graph_plugin_pack(GraphPluginPackSettings(slow_sleep_ms=100))
+    pack.register(pack.slow, pack.success)
     service, cfg = _make_service()
     cfg = GraphMetricsStepConfig(
         snapshot=cfg.snapshot,
         plugin_policy=GraphPluginPolicy(
-            timeouts_ms={slow_name: TIMEOUT_MS},
+            timeouts_ms={pack.slow.name: TIMEOUT_MS},
         ),
     )
     try:
-        report = service.run_plugins((slow_name, fast_name), cfg=cfg)
+        report = service.run_plugins(pack.names(pack.slow, pack.success), cfg=cfg)
     finally:
-        unregister_graph_metric_plugin(slow_name)
-        unregister_graph_metric_plugin(fast_name)
+        pack.unregister_all()
     first, second = report.records
     if first.status != "failed":
         pytest.fail("Timeout should mark plugin as failed")
@@ -238,7 +169,7 @@ def test_timeout_marks_partial_and_continues() -> None:
         pytest.fail("Timeout value should be recorded in manifest")
     if second.status != "succeeded":
         pytest.fail("Subsequent plugin should run after soft timeout failure")
-    if not ran_second:
+    if pack.counters.success_calls == 0:
         pytest.fail("Fast plugin should still run after timeout")
 
 
@@ -341,8 +272,12 @@ def test_isolated_plugin_executes_in_subprocess(tmp_path: Path) -> None:
         if not isinstance(ctx, GraphMetricExecutionContext):
             message = "context not provided"
             raise TypeError(message)
-        path = Path(ctx.options["path"])  # type: ignore[index]
-        path.write_text(ctx.repo, encoding="utf-8")
+        if not isinstance(ctx.options, Mapping):
+            pytest.fail("Plugin options should be a mapping")
+        path_value = ctx.options.get("path")
+        if not isinstance(path_value, str):
+            pytest.fail("Plugin option 'path' should be a string")
+        Path(path_value).write_text(ctx.repo, encoding="utf-8")
 
     register_graph_metric_plugin(
         GraphMetricPlugin(

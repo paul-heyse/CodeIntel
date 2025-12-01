@@ -127,7 +127,7 @@ def create_backend_resource(
     """
     try:
         return build_backend_resource(cfg, gateway=gateway)
-    except Exception as exc:
+    except (ProblemError, ValueError, OSError, RuntimeError) as exc:
         problem_detail = mcp_errors.backend_failure(str(exc)).detail
         raise mcp_errors.McpError(problem_detail) from exc
 

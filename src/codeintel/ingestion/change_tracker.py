@@ -193,7 +193,12 @@ def _notify_observer[RowT](
         return
     try:
         observer(ops.dataset_name, view)
-    except Exception:  # pragma: no cover - observer errors are non-fatal
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        TypeError,
+    ):  # pragma: no cover - observer errors are non-fatal
         log.exception("Incremental ingest observer failed for dataset %s", ops.dataset_name)
 
 

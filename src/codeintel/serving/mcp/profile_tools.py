@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.serving.mcp.models import (
@@ -9,6 +11,12 @@ from codeintel.serving.mcp.models import (
     FunctionProfileResponse,
     ModuleProfileResponse,
     ProblemDetail,
+)
+from codeintel.serving.mcp.serialization import (
+    ResponseFactory,
+    SupportsFromDomain,
+    SupportsModelDump,
+    SupportsModelValidate,
 )
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.registry import OperationSpec, get_operation_spec
@@ -32,10 +40,9 @@ def register_profile_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None
     @_wrap
     def get_function_profile(goid_h128: int) -> dict[str, object] | dict[str, ProblemDetail]:
         result = backend.get_function_profile(goid_h128=goid_h128)
-        response = (
-            result
-            if isinstance(result, FunctionProfileResponse)
-            else FunctionProfileResponse.from_domain(result)  # type: ignore[arg-type]
+        response = _coerce_response(
+            result,
+            FunctionProfileResponse,
         )
         return response.model_dump()
 
@@ -43,10 +50,9 @@ def register_profile_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None
     @_wrap
     def get_file_profile(rel_path: str) -> dict[str, object] | dict[str, ProblemDetail]:
         result = backend.get_file_profile(rel_path=rel_path)
-        response = (
-            result
-            if isinstance(result, FileProfileResponse)
-            else FileProfileResponse.from_domain(result)  # type: ignore[arg-type]
+        response = _coerce_response(
+            result,
+            FileProfileResponse,
         )
         return response.model_dump()
 
@@ -54,12 +60,20 @@ def register_profile_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None
     @_wrap
     def get_module_profile(module: str) -> dict[str, object] | dict[str, ProblemDetail]:
         result = backend.get_module_profile(module=module)
-        response = (
-            result
-            if isinstance(result, ModuleProfileResponse)
-            else ModuleProfileResponse.from_domain(result)  # type: ignore[arg-type]
+        response = _coerce_response(
+            result,
+            ModuleProfileResponse,
         )
         return response.model_dump()
+
+
+def _coerce_response(
+    payload: object,
+    model_cls: ResponseFactory,
+) -> SupportsModelDump:
+    if hasattr(model_cls, "from_domain"):
+        return cast("SupportsFromDomain", model_cls).from_domain(payload)
+    return cast("SupportsModelValidate", model_cls).model_validate(payload)
 
 
 __all__ = ["register_profile_tools"]

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/schemas/__init__.py
+# hypothesis_version: 6.148.3
+
+['AST_METRICS_DELETE', 'AST_METRICS_INSERT', 'AST_NODES_DELETE', 'AST_NODES_INSERT', 'COLUMN_TYPE', 'CONFIG_VALUES_INSERT', 'CST_NODES_DELETE', 'CST_NODES_INSERT', 'Column', 'ColumnType', 'TABLE_SCHEMAS', 'TEST_CATALOG_DELETE', 'TEST_CATALOG_INSERT', 'TableSchema']

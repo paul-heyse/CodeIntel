@@ -13,7 +13,13 @@ import httpx
 from codeintel.config.serving_models import ServingConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import BackendLimits, DuckDBQueryService
+from codeintel.serving.backend import (
+    BackendContext,
+    BackendLimits,
+    DuckDBQueryService,
+    DuckDBRepositories,
+    GraphEngineProvider,
+)
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -433,13 +439,23 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
 
         self.repo = repo
         self.commit = commit
-
-        self.query = DuckDBQueryService(
+        context = BackendContext(
             gateway=self.gateway,
             repo=self.repo,
             commit=self.commit,
             limits=self.limits,
             graph_engine=self.query_engine,
+        )
+        repositories = DuckDBRepositories(
+            gateway=self.gateway,
+            repo=self.repo,
+            commit=self.commit,
+        )
+        provider = GraphEngineProvider(context=context, graph_engine=self.query_engine)
+        self.query = DuckDBQueryService(
+            context=context,
+            repositories=repositories,
+            engine_provider=provider,
         )
         self.service = LocalQueryService(
             query=self.query,
@@ -1016,8 +1032,11 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         """
         try:
             _ = self._request_json("/health", {})
-        except Exception as exc:
+        except ProblemError as exc:
             message = "Failed to verify remote API health"
+            raise errors.backend_failure(message) from exc
+        except OSError as exc:
+            message = "Failed to reach remote API health endpoint"
             raise errors.backend_failure(message) from exc
 
     def get_function_summary(

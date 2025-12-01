@@ -1,11 +1,12 @@
 """Tests for graph feature flag validation and propagation."""
 
-from __future__ import annotations
+from pathlib import Path
 
 import pytest
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
-from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
+from codeintel.config.primitives import GraphFeatureFlags
+from tests._helpers.config_builders import make_snapshot
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -21,9 +22,9 @@ def test_graph_feature_flags_validate_limit() -> None:
         flags.validate()
 
 
-def test_graph_runtime_options_resolve_eager_flag(tmp_path: object) -> None:
+def test_graph_runtime_options_resolve_eager_flag(tmp_path: Path) -> None:
     """Resolved eager flag should honor feature override when set."""
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=tmp_path)  # type: ignore[arg-type]
+    snapshot = make_snapshot(repo="r", commit="c", repo_root=tmp_path)
     options = GraphRuntimeOptions(snapshot=snapshot, eager=False)
     _expect(
         condition=options.resolved_eager is False,

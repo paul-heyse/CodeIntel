@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
-from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.sql_helpers import safe_macro_call
 
 pytestmark = pytest.mark.smoke
 
@@ -20,8 +21,11 @@ def test_normalized_macros_execute(fresh_gateway: StorageGateway) -> None:
     failures: list[str] = []
     for table_key, macro in sorted(NORMALIZED_MACROS.items()):
         try:
-            con.execute(f"SELECT * FROM {macro}(?, ?)", [table_key, 0])  # noqa: S608
-        except Exception as exc:  # noqa: BLE001
+            sql, params = safe_macro_call(
+                macro, [table_key, 0], allowed=set(NORMALIZED_MACROS.values())
+            )
+            con.execute(sql, params)
+        except (DuckDBError, RuntimeError, ValueError) as exc:
             failures.append(f"{table_key} via {macro}: {exc}")
     if failures:
         message = "Normalized macro failures: " + "; ".join(failures)

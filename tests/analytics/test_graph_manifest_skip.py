@@ -47,13 +47,17 @@ def test_skip_on_unchanged_reads_manifest(
     """Skip-on-unchanged should skip a plugin when manifest matches input hash."""
     _, _, snapshot = snapshot_repo_commit
     plugin_name = "noop_plugin"
+
+    def _noop(_ctx: GraphMetricExecutionContext) -> None:
+        return None
+
     register_graph_metric_plugin(
         GraphMetricPlugin(
             name=plugin_name,
             description="noop",
             stage="core",
             enabled_by_default=False,
-            run=lambda _ctx: None,
+            run=_noop,
             version_hash="v1",
         )
     )
@@ -90,13 +94,18 @@ def test_dry_run_skips_execution(
     """Dry-run should not execute plugins and mark status skipped."""
     _, _, snapshot = snapshot_repo_commit
     plugin_name = "dry_run_plugin"
+
+    def _should_not_run(_ctx: GraphMetricExecutionContext) -> None:
+        message = "should not run"
+        raise RuntimeError(message)
+
     register_graph_metric_plugin(
         GraphMetricPlugin(
             name=plugin_name,
             description="noop",
             stage="core",
             enabled_by_default=False,
-            run=lambda _ctx: (_ for _ in ()).throw(RuntimeError("should not run")),
+            run=_should_not_run,
             version_hash="v1",
         )
     )
@@ -128,15 +137,21 @@ def test_manifest_records_contract_results(
     """Manifest should include contract result entries."""
     _, _, snapshot = snapshot_repo_commit
     plugin_name = "contract_manifest_plugin"
-    checker = lambda _ctx: PluginContractResult(name="demo_contract", status="passed")  # noqa: E731
+
+    def _noop(_ctx: GraphMetricExecutionContext) -> None:
+        return None
+
+    def _checker(_ctx: GraphMetricExecutionContext) -> PluginContractResult:
+        return PluginContractResult(name="demo_contract", status="passed")
+
     register_graph_metric_plugin(
         GraphMetricPlugin(
             name=plugin_name,
             description="contract manifest",
             stage="core",
             enabled_by_default=False,
-            run=lambda _ctx: None,
-            contract_checkers=(checker,),
+            run=_noop,
+            contract_checkers=(_checker,),
         )
     )
     service = _build_service(snapshot)

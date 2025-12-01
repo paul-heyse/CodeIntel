@@ -71,15 +71,21 @@ class ProblemDetail:
         return payload
 
 
-def problem(  # noqa: PLR0913
+@dataclass(frozen=True)
+class ProblemDetailParams:
+    """Optional parameters for constructing a ProblemDetail."""
+
+    status: int | None = None
+    instance: str | None = None
+    type_uri: str | None = None
+    extras: dict[str, Any] | None = None
+
+
+def problem(
     code: str,
     title: str,
     detail: str | None,
-    *,
-    status: int | None = None,
-    instance: str | None = None,
-    type_uri: str | None = None,
-    extras: dict[str, Any] | None = None,
+    params: ProblemDetailParams | None = None,
 ) -> ProblemDetail:
     """
     Create a ProblemDetail with defaults for type/instance.
@@ -92,30 +98,25 @@ def problem(  # noqa: PLR0913
         Human-readable error summary.
     detail
         Detailed description of the error.
-    status
-        Optional HTTP-style status code.
-    instance
-        Correlation/trace identifier; defaults to a UUID4.
-    type_uri
-        URI identifying the problem type; defaults to a CodeIntel namespace.
-    extras
-        Optional structured context for diagnostics.
+    params
+        Optional bundle containing status, instance, type URI, and extras.
 
     Returns
     -------
     ProblemDetail
         Structured problem payload.
     """
-    resolved_instance = instance or generate_correlation_id()
-    resolved_type = type_uri or f"https://problems.codeintel.dev/{code}"
+    effective = params or ProblemDetailParams()
+    resolved_instance = effective.instance or generate_correlation_id()
+    resolved_type = effective.type_uri or f"https://problems.codeintel.dev/{code}"
     return ProblemDetail(
         type=resolved_type,
         title=title,
         detail=detail,
-        status=status,
+        status=effective.status,
         instance=resolved_instance,
         code=code,
-        extras=extras or {},
+        extras=effective.extras or {},
     )
 
 

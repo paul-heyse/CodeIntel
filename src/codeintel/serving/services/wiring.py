@@ -22,6 +22,7 @@ from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.datasets import build_registry_and_limits
+from codeintel.serving.services.factory import DatasetRegistryOptions, get_observability_from_config
 from codeintel.serving.services.query_service import (
     LocalQueryService,
     QueryService,
@@ -32,7 +33,6 @@ from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
     from codeintel.serving.mcp.backend import QueryBackend
-    from codeintel.serving.services.factory import DatasetRegistryOptions
 
 __all__ = ["BackendResource", "build_backend_resource"]
 
@@ -89,11 +89,6 @@ def build_backend_resource(
     ValueError
         When required inputs are missing for the configured mode or unsupported modes are requested.
     """
-    from codeintel.serving.services.factory import (  # noqa: PLC0415
-        DatasetRegistryOptions,
-        get_observability_from_config,
-    )
-
     resolved_options = options or BackendResourceOptions()
     resolved_observability = resolved_options.observability or get_observability_from_config(cfg)
     registry_opts = resolved_options.registry or DatasetRegistryOptions()

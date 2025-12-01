@@ -7,20 +7,96 @@ import pytest
 from codeintel.analytics.semantic_roles import FunctionContext, classify_function_role
 
 
+class _FunctionContextBuilder:
+    def __init__(self) -> None:
+        self.goid = 0
+        self.rel_path = "pkg/api.py"
+        self.qualname = "pkg.api.fn"
+        self.decorators: list[str] = []
+        self.effects: dict[str, object] = {}
+        self.contracts: dict[str, object] = {}
+        self.module_tags: list[str] = []
+        self.module_name = "pkg.api"
+        self.graph: dict[str, object] = {}
+        self.loc = 10
+
+    def with_decorators(self, *decorators: str) -> _FunctionContextBuilder:
+        self.decorators = list(decorators)
+        return self
+
+    def with_module_tags(self, *tags: str) -> _FunctionContextBuilder:
+        self.module_tags = list(tags)
+        return self
+
+    def with_effects(self, effects: dict[str, object]) -> _FunctionContextBuilder:
+        self.effects = dict(effects)
+        return self
+
+    def with_contracts(self, contracts: dict[str, object]) -> _FunctionContextBuilder:
+        self.contracts = dict(contracts)
+        return self
+
+    def with_location(self, loc: int) -> _FunctionContextBuilder:
+        self.loc = loc
+        return self
+
+    def with_graph(self, graph: dict[str, object]) -> _FunctionContextBuilder:
+        self.graph = dict(graph)
+        return self
+
+    def build(self) -> FunctionContext:
+        return FunctionContext(
+            goid=self.goid,
+            rel_path=self.rel_path,
+            qualname=self.qualname,
+            decorators=self.decorators,
+            effects=self.effects,
+            contracts=self.contracts,
+            module_tags=self.module_tags,
+            module_name=self.module_name,
+            graph=self.graph,
+            loc=self.loc,
+        )
+
+
 def _make_context(**overrides: object) -> FunctionContext:
-    defaults: dict[str, object] = {
-        "rel_path": "pkg/api.py",
-        "qualname": "pkg.api.fn",
-        "decorators": [],
-        "effects": {},
-        "contracts": {},
-        "module_tags": [],
-        "module_name": "pkg.api",
-        "graph": {},
-        "loc": 10,
-    }
-    defaults.update(overrides)
-    return FunctionContext(**defaults)  # type: ignore[arg-type]
+    builder = _FunctionContextBuilder()
+    _apply_iterable_override(builder, overrides, "decorators", builder.with_decorators)
+    _apply_iterable_override(builder, overrides, "module_tags", builder.with_module_tags)
+    _apply_mapping_override(builder, overrides, "effects", builder.with_effects)
+    _apply_mapping_override(builder, overrides, "contracts", builder.with_contracts)
+    _apply_mapping_override(builder, overrides, "graph", builder.with_graph)
+    if "loc" in overrides:
+        builder.with_location(int(overrides.pop("loc")))
+    builder.rel_path = str(overrides.pop("rel_path", builder.rel_path))
+    builder.qualname = str(overrides.pop("qualname", builder.qualname))
+    builder.module_name = str(overrides.pop("module_name", builder.module_name))
+    builder.goid = int(overrides.pop("goid", builder.goid))
+    return builder.build()
+
+
+def _apply_iterable_override(
+    overrides: dict[str, object],
+    key: str,
+    applier: callable[..., object],
+) -> None:
+    if key not in overrides:
+        return
+    items = overrides.pop(key)
+    if isinstance(items, (list, tuple)):
+        applier(*tuple(str(item) for item in items))
+
+
+def _apply_mapping_override(
+    overrides: dict[str, object],
+    key: str,
+    applier: callable[[dict[str, object]], object],
+) -> None:
+    if key not in overrides:
+        return
+    mapping = overrides.pop(key)
+    if isinstance(mapping, dict):
+        applier(mapping)
 
 
 def test_fastapi_role_detected() -> None:

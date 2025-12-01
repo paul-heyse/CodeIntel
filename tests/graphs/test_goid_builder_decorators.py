@@ -36,8 +36,9 @@ def test_goid_start_line_includes_decorator_span() -> None:
     cfg = builder.goid_builder(language="python")
     now = datetime.now(UTC)
 
-    build_entries = goid_builder._build_goid_entries  # noqa: SLF001
-    goid_row, crosswalk_row = build_entries(row, cfg, now, {"m.py": "m"})
+    goid_row, crosswalk_row = goid_builder.build_goid_entries_for_testing(
+        row, cfg, now, {"m.py": "m"}
+    )
 
     expected_start_line = 5
     if goid_row["start_line"] != expected_start_line:

@@ -28,6 +28,7 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileRow,
 )
 from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
+from codeintel.serving.services.observability import RequestContext
 from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,
@@ -98,8 +99,9 @@ class RecordingObservability(ServiceObservability):
         super().__init__(enabled=True, logger=logger)
         self.records: list[ServiceCallMetrics] = []
 
-    def record(self, metrics: ServiceCallMetrics) -> None:
+    def record(self, metrics: ServiceCallMetrics, context: RequestContext | None = None) -> None:
         """Capture a recorded metrics payload."""
+        super().record(metrics, context)
         self.records.append(metrics)
 
 
