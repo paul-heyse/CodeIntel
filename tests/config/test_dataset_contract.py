@@ -102,8 +102,7 @@ def test_contract_derived_columns_match_schemas() -> None:
         original_cols = tuple(original_schema.column_names())
         if contract_cols != original_cols:
             mismatches.append(
-                f"{table_key}: contract={contract_cols[:3]}... vs "
-                f"original={original_cols[:3]}..."
+                f"{table_key}: contract={contract_cols[:3]}... vs original={original_cols[:3]}..."
             )
     _require(
         condition=not mismatches,
@@ -154,8 +153,7 @@ def test_row_models_column_constants_match_contracts() -> None:
         expected = contract.column_names()
         if tuple(constant) != expected:
             mismatches.append(
-                f"{table_key}: constant={tuple(constant)[:3]}... vs "
-                f"contract={expected[:3]}..."
+                f"{table_key}: constant={tuple(constant)[:3]}... vs contract={expected[:3]}..."
             )
     _require(
         condition=not mismatches,

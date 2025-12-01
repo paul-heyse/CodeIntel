@@ -31,9 +31,7 @@ _TEST_SCHEMA = TABLE_SCHEMAS[_TEST_TABLE]
 _TEST_COLUMNS = tuple(col.name for col in _TEST_SCHEMA.columns)
 
 
-def _ctx(
-    table: str = _TEST_TABLE, *, repo: str = "r", commit: str = "c"
-) -> WriterContext:
+def _ctx(table: str = _TEST_TABLE, *, repo: str = "r", commit: str = "c") -> WriterContext:
     schema = TABLE_SCHEMAS.get(table)
     if schema is None:
         msg = f"Table {table} not found in TABLE_SCHEMAS."
