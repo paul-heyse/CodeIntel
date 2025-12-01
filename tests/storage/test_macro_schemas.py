@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import safe_macro_call
@@ -22,17 +22,21 @@ def _canonical_type(type_str: str) -> str:
 @pytest.mark.smoke
 def test_macro_schemas_match_table_definitions(fresh_gateway: StorageGateway) -> None:
     """
-    Normalized macro outputs should align with TABLE_SCHEMAS definitions.
+    Normalized macro outputs should align with DatasetContract schema definitions.
 
     Raises
     ------
     AssertionError
-        If any macro output schema deviates from the table schema contract.
+        If any macro output schema deviates from the contract schema.
     """
     con = fresh_gateway.con
     failures: list[str] = []
     for table_key, macro in sorted(NORMALIZED_MACROS.items()):
-        schema = TABLE_SCHEMAS[table_key]
+        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+        if contract is None or contract.schema is None:
+            failures.append(f"{table_key}: no contract schema found")
+            continue
+        schema = contract.schema
         sql, params = safe_macro_call(
             macro, [table_key, 0, 0], allowed=set(NORMALIZED_MACROS.values())
         )

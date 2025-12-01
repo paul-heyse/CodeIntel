@@ -11,6 +11,7 @@ from typing import cast
 
 import pytest
 
+from codeintel.analytics.profiles import writer_guard
 from codeintel.analytics.tests_profiles import behavioral_tags, coverage_inputs, importance, rows
 from codeintel.analytics.tests_profiles.types import (
     BehavioralLLMRequest,
@@ -22,14 +23,14 @@ from codeintel.analytics.tests_profiles.types import (
     TestRecord,
 )
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
-from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
+from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.row_factories import blank_test_profile_row
 
 
@@ -340,9 +341,9 @@ def test_write_test_profile_rows_with_stubs() -> None:
         stack.enter_context(_override(rows, "ensure_schema", lambda _con, _table_key: None))
         stack.enter_context(
             _override(
-                rows,
-                "load_registry_columns",
-                lambda _con: {"analytics.test_profile": list(TEST_PROFILE_COLUMNS)},
+                writer_guard,
+                "load_columns_by_table",
+                lambda: {"analytics.test_profile": list(TEST_PROFILE_COLUMNS)},
             )
         )
         stack.enter_context(

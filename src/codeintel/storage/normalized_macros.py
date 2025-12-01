@@ -17,7 +17,7 @@ import sys
 from collections.abc import Iterable
 from typing import NamedTuple
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
 
 DEFAULT_LIMIT = 9_223_372_036_854_775_807
 
@@ -66,8 +66,17 @@ def render_macro(table_key: str, *, default_limit: int = DEFAULT_LIMIT) -> Rende
     -------
     RenderedMacro
         Name and SQL DDL for the macro.
+
+    Raises
+    ------
+    KeyError
+        If the table key is unknown or lacks a declared schema in DatasetContract.
     """
-    schema = TABLE_SCHEMAS[table_key]
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    if contract is None or contract.schema is None:
+        message = f"Unknown table key or missing schema for normalized macro: {table_key}"
+        raise KeyError(message)
+    schema = contract.schema
     _, short_name = table_key.split(".", maxsplit=1)
     macro_name = "metadata.normalized_" + short_name
     select_list = ",\n        ".join(
@@ -107,7 +116,11 @@ def _iter_tables(selected: Iterable[str]) -> list[str]:
     """
     if selected:
         return list(selected)
-    return sorted(TABLE_SCHEMAS.keys())
+    return sorted(
+        table_key
+        for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+        if contract.schema is not None and not contract.is_view
+    )
 
 
 def main() -> None:

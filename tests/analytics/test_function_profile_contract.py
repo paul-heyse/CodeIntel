@@ -11,16 +11,14 @@ from typing import cast
 
 import pytest
 
-from codeintel.analytics.profiles import files, functions, modules
+from codeintel.analytics.profiles import files, functions, modules, writer_guard
 from codeintel.analytics.tests_profiles import rows as test_rows
 from codeintel.config import (
     BehavioralCoverageStepConfig,
     ProfilesAnalyticsStepConfig,
     TestProfileStepConfig,
 )
-from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     FILE_PROFILE_COLUMNS,
     FUNCTION_PROFILE_COLUMNS,
@@ -32,6 +30,8 @@ from codeintel.storage.rows import (
     module_profile_row_to_tuple,
     serialize_test_profile_row,
 )
+from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.row_factories import (
     blank_behavioral_coverage_row,
     blank_file_profile_row,
@@ -216,9 +216,9 @@ def test_function_profile_writer_registry_and_prepared_statements() -> None:
         )
         stack.enter_context(
             _override(
-                functions,
-                "load_registry_columns",
-                lambda _con: {"analytics.function_profile": list(FUNCTION_PROFILE_COLUMNS)},
+                writer_guard,
+                "load_columns_by_table",
+                lambda: {"analytics.function_profile": list(FUNCTION_PROFILE_COLUMNS)},
             )
         )
         stack.enter_context(
@@ -270,9 +270,9 @@ def test_file_profile_writer_registry_and_prepared_statements() -> None:
         )
         stack.enter_context(
             _override(
-                files,
-                "load_registry_columns",
-                lambda _con: {"analytics.file_profile": list(FILE_PROFILE_COLUMNS)},
+                writer_guard,
+                "load_columns_by_table",
+                lambda: {"analytics.file_profile": list(FILE_PROFILE_COLUMNS)},
             )
         )
         stack.enter_context(_override(files, "ensure_schema", lambda _con, _table: None))
@@ -318,9 +318,9 @@ def test_module_profile_writer_registry_and_prepared_statements() -> None:
         )
         stack.enter_context(
             _override(
-                modules,
-                "load_registry_columns",
-                lambda _con: {"analytics.module_profile": list(MODULE_PROFILE_COLUMNS)},
+                writer_guard,
+                "load_columns_by_table",
+                lambda: {"analytics.module_profile": list(MODULE_PROFILE_COLUMNS)},
             )
         )
         stack.enter_context(_override(modules, "ensure_schema", lambda _con, _table: None))
@@ -369,9 +369,9 @@ def test_test_profile_writer_registry_and_prepared_statements() -> None:
         )
         stack.enter_context(
             _override(
-                test_rows,
-                "load_registry_columns",
-                lambda _con: {"analytics.test_profile": list(TEST_PROFILE_COLUMNS)},
+                writer_guard,
+                "load_columns_by_table",
+                lambda: {"analytics.test_profile": list(TEST_PROFILE_COLUMNS)},
             )
         )
         stack.enter_context(_override(test_rows, "ensure_schema", lambda _con, _table: None))
@@ -419,9 +419,9 @@ def test_behavioral_coverage_writer_registry_and_prepared_statements() -> None:
         )
         stack.enter_context(
             _override(
-                test_rows,
-                "load_registry_columns",
-                lambda _con: {"analytics.behavioral_coverage": list(BEHAVIORAL_COVERAGE_COLUMNS)},
+                writer_guard,
+                "load_columns_by_table",
+                lambda: {"analytics.behavioral_coverage": list(BEHAVIORAL_COVERAGE_COLUMNS)},
             )
         )
         stack.enter_context(_override(test_rows, "ensure_schema", lambda _con, _table: None))

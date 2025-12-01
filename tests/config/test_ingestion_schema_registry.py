@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.schemas.registry_adapter import load_registry_columns
+from codeintel.config.dataset_contract import load_columns_by_table
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
@@ -36,7 +36,7 @@ def _columns_for(con: DuckDBConnection, schema_name: str, table_name: str) -> se
 def test_ingestion_sql_tables_match_schema(fresh_gateway: StorageGateway) -> None:
     """Ensure registry tables exist with expected columns."""
     con = fresh_gateway.con
-    registry = load_registry_columns(con)
+    registry = load_columns_by_table()
     for fq_name, registry_cols in sorted(registry.items()):
         schema_name, table_name = fq_name.split(".", maxsplit=1)
         if not _table_exists(con, schema_name, table_name):

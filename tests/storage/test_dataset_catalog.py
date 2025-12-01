@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.cli.main import run_datasets_catalog
-from codeintel.config.dataset_contract import DatasetContract
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY, DatasetContract
 from codeintel.storage.catalog import (
     SamplingConfig,
     build_catalog,
@@ -22,11 +21,11 @@ from tests._helpers.duckdb import memory_con_with_macros
 
 def _sample_registry() -> DatasetRegistry:
     table_key = "core.ast_nodes"
-    schema = TABLE_SCHEMAS[table_key]
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY[table_key]
     dataset = DatasetContract(
         table_key=table_key,
         name="ast_nodes",
-        schema=schema,
+        schema=contract.schema,
         json_schema_id="ast_nodes",
         jsonl_filename="ast_nodes.jsonl",
         parquet_filename="ast_nodes.parquet",

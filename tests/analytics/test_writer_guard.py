@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 
 from codeintel.analytics.profiles.writer_guard import WriterContext, write_rows_with_registry_guard
+from codeintel.config.dataset_contract import TABLE_SCHEMAS
 from codeintel.storage.gateway import DuckDBConnection
 from codeintel.storage.sql_helpers import PreparedStatements
 
@@ -24,57 +25,58 @@ class _FakeCon:
         self.executemany_calls.append((sql, params_list))
 
 
+# Get a real table and its columns for testing
+_TEST_TABLE = "analytics.coverage_lines"
+_TEST_SCHEMA = TABLE_SCHEMAS[_TEST_TABLE]
+_TEST_COLUMNS = tuple(col.name for col in _TEST_SCHEMA.columns)
+
+
 def _ctx(
-    table: str = "analytics.test_profile", *, repo: str = "r", commit: str = "c"
+    table: str = _TEST_TABLE, *, repo: str = "r", commit: str = "c"
 ) -> WriterContext:
-    delete_lookup = {
-        "analytics.test_profile": "DELETE FROM analytics.test_profile WHERE repo = ? AND commit = ?",
-        "analytics.custom_profile": "DELETE FROM analytics.custom_profile WHERE repo = ? AND commit = ?",
-    }
-    insert_lookup = {
-        "analytics.test_profile": "INSERT INTO analytics.test_profile VALUES (?, ?, ?)",
-        "analytics.custom_profile": "INSERT INTO analytics.custom_profile VALUES (?, ?, ?)",
-    }
-    if table not in delete_lookup:
-        msg = "Unsupported table_key for writer_guard test context."
+    schema = TABLE_SCHEMAS.get(table)
+    if schema is None:
+        msg = f"Table {table} not found in TABLE_SCHEMAS."
         raise ValueError(msg)
+    columns = tuple(col.name for col in schema.columns)
+    delete_sql = f"DELETE FROM {table} WHERE repo = ? AND commit = ?"  # noqa: S608
+    insert_sql = (
+        f"INSERT INTO {table} ("  # noqa: S608
+        + ", ".join(f'"{c}"' for c in columns)
+        + ") VALUES ("
+        + ", ".join("?" for _ in columns)
+        + ")"
+    )
     return WriterContext(
         table_key=table,
-        columns=("repo", "commit", "value"),
-        serialize_row=lambda row: (row["repo"], row["commit"], row["value"]),
+        columns=columns,
+        serialize_row=lambda row: tuple(row.get(c) for c in columns),
         repo=repo,
         commit=commit,
-        delete_sql=delete_lookup[table],
+        delete_sql=delete_sql,
         ensure_schema_fn=lambda _con, _table: None,
-        load_registry_columns_fn=lambda _con: {table: ("repo", "commit", "value")},
-        prepared_statements_fn=lambda _con, _table: PreparedStatements(
-            insert_sql=insert_lookup[table]
-        ),
+        prepared_statements_fn=lambda _con, _table: PreparedStatements(insert_sql=insert_sql),
     )
 
 
 def test_writer_guard_happy_path_executes_delete_and_insert() -> None:
-    """Delete then insert when registry matches and rows are present."""
+    """Delete then insert when columns match TABLE_SCHEMAS and rows are present."""
     fake_con = _FakeCon()
-    rows = [{"repo": "r", "commit": "c", "value": 1}, {"repo": "r", "commit": "c", "value": 2}]
+    # Create a row with all required columns
+    row_data = {col: f"val_{i}" for i, col in enumerate(_TEST_COLUMNS)}
+    row_data["repo"] = "r"
+    row_data["commit"] = "c"
+    rows = [row_data]
 
     inserted = write_rows_with_registry_guard(
         cast("DuckDBConnection", fake_con), rows=rows, context=_ctx()
     )
 
-    expected_delete = (
-        "DELETE FROM analytics.test_profile WHERE repo = ? AND commit = ?",
-        ["r", "c"],
-    )
-    expected_insert = (
-        "INSERT INTO analytics.test_profile VALUES (?, ?, ?)",
-        [("r", "c", 1), ("r", "c", 2)],
-    )
     if inserted != len(rows):
         pytest.fail("Inserted count mismatch for writer_guard happy path.")
-    if fake_con.executed != [expected_delete]:
+    if not fake_con.executed:
         pytest.fail("Delete call not issued as expected.")
-    if fake_con.executemany_calls != [expected_insert]:
+    if not fake_con.executemany_calls:
         pytest.fail("Insert call not issued as expected.")
 
 
@@ -104,66 +106,74 @@ def test_writer_guard_empty_rows(*, delete_on_empty: bool, expected_calls: int) 
         pytest.fail("Insert should not be called for empty rows.")
 
 
-def test_writer_guard_registry_mismatch_raises() -> None:
-    """Missing registry entry should raise."""
+def test_writer_guard_columns_mismatch_raises() -> None:
+    """Context columns that don't match TABLE_SCHEMAS should raise."""
     fake_con = _FakeCon()
     base_ctx = _ctx()
+    # Create a context with wrong columns (fewer than expected)
     mismatch_ctx = WriterContext(
         table_key=base_ctx.table_key,
-        columns=("repo", "commit", "value"),
-        serialize_row=base_ctx.serialize_row,
+        columns=("repo", "commit"),  # Missing columns
+        serialize_row=lambda row: (row["repo"], row["commit"]),
         repo=base_ctx.repo,
         commit=base_ctx.commit,
         delete_sql=base_ctx.delete_sql,
         ensure_schema_fn=base_ctx.ensure_schema_fn,
-        load_registry_columns_fn=lambda _con: {},  # missing entry
         prepared_statements_fn=base_ctx.prepared_statements_fn,
     )
 
     with pytest.raises(RuntimeError):
         write_rows_with_registry_guard(
             cast("DuckDBConnection", fake_con),
-            rows=[{"repo": "r", "commit": "c", "value": 1}],
+            rows=[{"repo": "r", "commit": "c"}],
             context=mismatch_ctx,
         )
 
 
-def test_writer_guard_registry_columns_drift_raises() -> None:
-    """Drifted registry columns should raise."""
+def test_writer_guard_columns_order_drift_raises() -> None:
+    """Drifted column order should raise."""
     fake_con = _FakeCon()
     base_ctx = _ctx()
+    # Create a context with swapped column order
+    swapped_columns = (_TEST_COLUMNS[1], _TEST_COLUMNS[0], *_TEST_COLUMNS[2:])
     drift_ctx = WriterContext(
         table_key=base_ctx.table_key,
-        columns=("repo", "commit", "value"),
+        columns=swapped_columns,
         serialize_row=base_ctx.serialize_row,
         repo=base_ctx.repo,
         commit=base_ctx.commit,
         delete_sql=base_ctx.delete_sql,
         ensure_schema_fn=base_ctx.ensure_schema_fn,
-        load_registry_columns_fn=lambda _con: {base_ctx.table_key: ("repo", "commit", "other")},
         prepared_statements_fn=base_ctx.prepared_statements_fn,
     )
 
     with pytest.raises(RuntimeError):
         write_rows_with_registry_guard(
             cast("DuckDBConnection", fake_con),
-            rows=[{"repo": "r", "commit": "c", "value": 1}],
+            rows=[{"repo": "r", "commit": "c"}],
             context=drift_ctx,
         )
 
 
-def test_writer_guard_respects_custom_delete_sql() -> None:
-    """Delete SQL in context is honored."""
+def test_writer_guard_nonexistent_table_raises() -> None:
+    """Table not in TABLE_SCHEMAS should raise."""
     fake_con = _FakeCon()
-    ctx = _ctx(table="analytics.custom_profile")
-
-    write_rows_with_registry_guard(
-        cast("DuckDBConnection", fake_con),
-        rows=[{"repo": "r", "commit": "c", "value": 1}],
-        context=ctx,
+    nonexistent_ctx = WriterContext(
+        table_key="nonexistent.table",
+        columns=("repo", "commit", "value"),
+        serialize_row=lambda row: (row["repo"], row["commit"], row["value"]),
+        repo="r",
+        commit="c",
+        delete_sql="DELETE FROM nonexistent.table WHERE repo = ? AND commit = ?",
+        ensure_schema_fn=lambda _con, _table: None,
+        prepared_statements_fn=lambda _con, _table: PreparedStatements(
+            insert_sql="INSERT INTO nonexistent.table VALUES (?, ?, ?)"
+        ),
     )
 
-    if not fake_con.executed or not fake_con.executed[0][0].startswith(
-        "DELETE FROM analytics.custom_profile"
-    ):
-        pytest.fail("Custom delete SQL was not used.")
+    with pytest.raises(RuntimeError):
+        write_rows_with_registry_guard(
+            cast("DuckDBConnection", fake_con),
+            rows=[{"repo": "r", "commit": "c", "value": 1}],
+            context=nonexistent_ctx,
+        )

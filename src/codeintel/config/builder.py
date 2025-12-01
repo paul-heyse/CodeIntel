@@ -64,15 +64,15 @@ from codeintel.config.steps_ingestion import (
 if TYPE_CHECKING:
     from coverage import Coverage
 
-    from codeintel.config.parser_types import FunctionParserKind
-    from codeintel.ingestion.scip_ingest import ScipIngestResult
-    from codeintel.ingestion.source_scanner import ScanProfile
-    from codeintel.storage.rows import (
+    from codeintel.config.dataset_contract import (
         CallGraphEdgeRow,
         CFGBlockRow,
         CFGEdgeRow,
         DFGEdgeRow,
     )
+    from codeintel.config.parser_types import FunctionParserKind
+    from codeintel.ingestion.scip_ingest import ScipIngestResult
+    from codeintel.ingestion.source_scanner import ScanProfile
 
 
 @dataclass

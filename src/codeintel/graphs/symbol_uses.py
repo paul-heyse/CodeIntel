@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from codeintel.config import SymbolUsesStepConfig
+from codeintel.config.dataset_contract import SymbolUseRow, symbol_use_to_tuple
 from codeintel.core.types import (
     ScipDocument,
     ScipOccurrence,
@@ -20,7 +21,6 @@ from codeintel.graphs.function_catalog_service import (
 )
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import SymbolUseRow, symbol_use_to_tuple
 
 log = logging.getLogger(__name__)
 

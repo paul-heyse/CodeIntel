@@ -172,11 +172,12 @@ def generate_export_schemas(
     Parameters
     ----------
     registry
-        DatasetRegistry or mapping exposing ``by_name`` of datasets with row_binding.
+        DatasetRegistry or mapping exposing ``by_name`` of datasets; row bindings fall back here
+        when not attached to the contract.
     output_dir
         Directory to write schema files into (created if missing).
     include_datasets
-        Optional subset of dataset names to emit; defaults to all with row bindings.
+        Optional subset of dataset names to emit; defaults to all contracts with row bindings.
 
     Returns
     -------
@@ -186,13 +187,13 @@ def generate_export_schemas(
     output_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     datasets = getattr(registry, "by_name", {})
-    for name, ds in sorted(datasets.items()):
-        if include_datasets is not None and name not in include_datasets:
-            continue
+    target_names = include_datasets or set(DATASET_CONTRACTS)
+    for name in sorted(target_names):
         contract = DATASET_CONTRACTS.get(name)
         if contract is None or contract.json_schema_id is None:
             continue
-        row_binding = getattr(ds, "row_binding", None)
+        ds = datasets.get(name) if isinstance(datasets, Mapping) else None
+        row_binding = contract.row_binding or getattr(ds, "row_binding", None)
         if row_binding is None or row_binding.row_type is None:
             continue
         schema_id = f"https://schemas.codeintel.dev/export/{contract.json_schema_id}.json"

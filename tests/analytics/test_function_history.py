@@ -7,7 +7,7 @@ from pathlib import Path
 
 from codeintel.analytics.functions import compute_function_history
 from codeintel.config import ConfigBuilder
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.builders import (
@@ -87,7 +87,8 @@ def test_function_history_populates_rows(
 
     rows = con.execute("SELECT * FROM analytics.function_history").fetchall()
     expect_equal(len(rows), 1, "Expected a single function history row.")
-    columns = TABLE_SCHEMAS["analytics.function_history"].column_names()
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.function_history"]
+    columns = contract.schema.column_names() if contract.schema else []
     result = dict(zip(columns, rows[0], strict=True))
     expected_commit_count = len(git_ctx.commits)
     expect_equal(result["commit_count"], expected_commit_count)

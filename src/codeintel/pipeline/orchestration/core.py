@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from coverage import Coverage
 
     from codeintel.config import TestCoverageStepConfig
-    from codeintel.storage.rows import (
+    from codeintel.config.dataset_contract import (
         CallGraphEdgeRow,
         CFGBlockRow,
         CFGEdgeRow,

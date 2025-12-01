@@ -6,8 +6,8 @@ from typing import cast
 
 import pytest
 
+from codeintel.config.dataset_contract import CallGraphEdgeRow
 from codeintel.graphs import call_persist, call_resolution
-from codeintel.storage.rows import CallGraphEdgeRow
 
 ALIAS_GOID = 10
 SCIP_GOID = 1234

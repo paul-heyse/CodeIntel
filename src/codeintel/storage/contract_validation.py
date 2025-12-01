@@ -11,12 +11,12 @@ from codeintel.config.dataset_contract import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     JSON_SCHEMA_BY_DATASET_NAME,
 )
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.storage.datasets import (
     DatasetRegistry,
     build_dataset_dependency_graph,
     load_dataset_registry,
 )
+from codeintel.storage.metadata_bootstrap import NORMALIZED_MACROS
 
 BINDING_REQUIRED_DATASETS: set[str] = {
     name
@@ -82,6 +82,11 @@ def _validate_table_columns(con: DuckDBPyConnection, registry: DatasetRegistry) 
     for name, ds in registry.by_name.items():
         if ds.is_view or ds.schema is None:
             continue
+        if "dataset_rows_only" in ds.tags and ds.table_key in NORMALIZED_MACROS:
+            errors.append(
+                f"Dataset {name} is marked dataset_rows_only but has a normalized macro "
+                f"registered: {NORMALIZED_MACROS[ds.table_key]}"
+            )
         schema_name, table_name = ds.table_key.split(".", maxsplit=1)
         info = con.execute(
             """
@@ -103,17 +108,11 @@ def _validate_table_columns(con: DuckDBPyConnection, registry: DatasetRegistry) 
 
 def _validate_schemas_match_contracts() -> list[str]:
     issues: list[str] = []
-    for table_key, schema in TABLE_SCHEMAS.items():
-        if table_key.startswith("tmp_"):
+    for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items():
+        if table_key.startswith("tmp_") or contract.is_view:
             continue
-        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
-        if contract is None:
-            issues.append(f"No DatasetContract for table {table_key}")
-            continue
-        if contract.is_view or contract.schema is None:
-            continue
-        if contract.schema is not schema:
-            issues.append(f"Schema mismatch for {table_key}")
+        if contract.schema is None:
+            issues.append(f"DatasetContract missing schema for table {table_key}")
     return issues
 
 

@@ -7,8 +7,10 @@ from textwrap import dedent
 
 import pytest
 
-from codeintel.config.schemas.ingestion_sql import AST_NODES_COLUMNS
+from codeintel.config.dataset_contract import get_table_columns
 from codeintel.ingestion.py_ast_extract import AstVisitor
+
+AST_NODES_COLUMNS = get_table_columns("core.ast_nodes")
 
 
 def test_ast_visitor_records_decorator_span() -> None:

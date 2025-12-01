@@ -35,13 +35,12 @@ from codeintel.analytics.profiles.writer_guard import (
     write_rows_with_registry_guard,
 )
 from codeintel.config import ProfilesAnalyticsStepConfig
-from codeintel.config.schemas.registry_adapter import load_registry_columns
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     FUNCTION_PROFILE_COLUMNS,
     FunctionProfileRowModel,
     function_profile_row_to_tuple,
 )
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
 
 log = logging.getLogger(__name__)
@@ -820,7 +819,6 @@ def write_function_profile_rows(
         commit=commit,
         delete_sql="DELETE FROM analytics.function_profile WHERE repo = ? AND commit = ?",
         ensure_schema_fn=ensure_schema,
-        load_registry_columns_fn=load_registry_columns,
         prepared_statements_fn=prepared_statements_dynamic,
     )
     return write_rows_with_registry_guard(

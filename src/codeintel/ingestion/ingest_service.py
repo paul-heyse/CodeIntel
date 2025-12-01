@@ -10,8 +10,10 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from duckdb import Error as DuckDBError
 
-from codeintel.config.schemas.registry_adapter import load_registry_columns
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.config.dataset_contract import (
+    DATASET_CONTRACTS_BY_TABLE_KEY,
+    load_columns_by_table,
+)
 from codeintel.storage.ingest_macros import (
     assert_ingest_macros_present,
     ensure_ingest_macros,
@@ -30,8 +32,8 @@ else:
 
 INGEST_MACROS: dict[str, str] = {
     table_key: f"metadata.ingest_{table_key.split('.', maxsplit=1)[1]}"
-    for table_key in TABLE_SCHEMAS
-    if not table_key.startswith("metadata.")
+    for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+    if not table_key.startswith("metadata.") and contract.schema is not None
 }
 INGEST_MACRO_TABLES: set[str] = set(INGEST_MACROS)
 _MACRO_CACHE: dict[int, set[str]] = {}
@@ -92,7 +94,7 @@ def _quote_identifier(identifier: str) -> str:
 
 def _quote_table_key(table_key: str) -> tuple[str, str, str]:
     """
-    Quote schema and table components after validating against the registry.
+    Quote schema and table components after validating against the DatasetContract registry.
 
     Returns
     -------
@@ -102,9 +104,9 @@ def _quote_table_key(table_key: str) -> tuple[str, str, str]:
     Raises
     ------
     ValueError
-        If the table is not present in TABLE_SCHEMAS or components are unsafe.
+        If the table is not present in DATASET_CONTRACTS_BY_TABLE_KEY or components are unsafe.
     """
-    if table_key not in TABLE_SCHEMAS:
+    if table_key not in DATASET_CONTRACTS_BY_TABLE_KEY:
         message = f"Unknown table key: {table_key}"
         raise ValueError(message)
     schema_name, table_name = table_key.split(".", maxsplit=1)
@@ -182,7 +184,7 @@ def _prepare_registry(con: DuckDBConnection, table_key: str) -> tuple[list[str],
             raise
         apply_all_schemas(con)
         ensure_schema(con, table_key)
-    registry_cols = load_registry_columns(con).get(table_key)
+    registry_cols = load_columns_by_table().get(table_key)
     if registry_cols is None:
         message = f"Table {table_key} missing from registry"
         raise RuntimeError(message)

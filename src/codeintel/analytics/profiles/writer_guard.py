@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from codeintel.config.dataset_contract import load_columns_by_table
 from codeintel.storage.gateway import DuckDBConnection
 from codeintel.storage.sql_helpers import PreparedStatements
 
@@ -22,7 +23,6 @@ class WriterContext:
     commit: str
     delete_sql: str
     ensure_schema_fn: Callable[[DuckDBConnection, str], None]
-    load_registry_columns_fn: Callable[[DuckDBConnection], Mapping[str, Sequence[str]]]
     prepared_statements_fn: Callable[[DuckDBConnection, str], PreparedStatements]
 
 
@@ -34,7 +34,7 @@ def write_rows_with_registry_guard(
     delete_on_empty: bool = True,
 ) -> int:
     """
-    Ensure registry alignment and perform delete/insert for a profile table.
+    Ensure schema alignment and perform delete/insert for a profile table.
 
     Returns
     -------
@@ -44,7 +44,7 @@ def write_rows_with_registry_guard(
     Raises
     ------
     RuntimeError
-        If registry columns diverge from serializer constants.
+        If columns from TABLE_SCHEMAS diverge from serializer constants.
     """
     rows_list = list(rows)
     if not rows_list and not delete_on_empty:
@@ -52,9 +52,9 @@ def write_rows_with_registry_guard(
 
     ensure_schema_fn = context.ensure_schema_fn
     ensure_schema_fn(con, context.table_key)
-    registry_cols = context.load_registry_columns_fn(con).get(context.table_key)
+    registry_cols = load_columns_by_table().get(context.table_key)
     if registry_cols is None or tuple(registry_cols) != tuple(context.columns):
-        message = f"Registry columns for {context.table_key} differ from serializer constants."
+        message = f"Columns for {context.table_key} differ from serializer constants."
         raise RuntimeError(message)
 
     stmt = context.prepared_statements_fn(con, context.table_key)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     FILE_PROFILE_COLUMNS,
     MODULE_PROFILE_COLUMNS,

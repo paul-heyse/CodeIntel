@@ -8,10 +8,14 @@ from decimal import Decimal
 from typing import Any
 
 from codeintel.analytics.graph_service import GraphContext, to_decimal_id
-from codeintel.analytics.rows.graph_metrics_ext import (
-    FunctionGraphMetricsExtRow,
-    ModuleGraphMetricsExtRow,
+from codeintel.config.dataset_contract import (
+    GraphMetricsFunctionsExtRow,
+    GraphMetricsModulesExtRow,
 )
+
+# Aliases for backward compatibility
+FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
+ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
 
 
 def _int_or_none(value: float | str | Decimal | None) -> int | None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     FILE_PROFILE_COLUMNS,
     FUNCTION_PROFILE_COLUMNS,
@@ -14,8 +14,11 @@ from codeintel.storage.rows import (
     FileProfileRowModel,
     FunctionProfileRowModel,
     ModuleProfileRowModel,
-    TestProfileRowModel,
+    ProfileRowModel,
 )
+
+# Alias for backward compatibility
+TestProfileRowModel = ProfileRowModel
 
 
 def blank_file_profile_row() -> FileProfileRowModel:

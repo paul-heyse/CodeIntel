@@ -27,10 +27,14 @@ from codeintel.analytics.graph_rows.symbol_graph_metrics import (
     build_symbol_function_rows,
     build_symbol_module_rows,
 )
-from codeintel.analytics.rows.graph_metrics_ext import (
-    FunctionGraphMetricsExtRow,
-    ModuleGraphMetricsExtRow,
+from codeintel.config.dataset_contract import (
+    GraphMetricsFunctionsExtRow,
+    GraphMetricsModulesExtRow,
 )
+
+# Legacy aliases for backward compatibility
+FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
+ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
 
 __all__ = [
     "FunctionGraphMetricInputs",

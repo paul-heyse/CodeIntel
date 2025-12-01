@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.config import TestsIngestStepConfig
+from codeintel.config.dataset_contract import TestCatalogRowModel, serialize_test_catalog_row
 from codeintel.config.models import ToolsConfig
 from codeintel.core.types import (
     PytestTestEntry,
@@ -27,7 +28,6 @@ from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError, ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import TestCatalogRowModel, serialize_test_catalog_row
 
 log = logging.getLogger(__name__)
 

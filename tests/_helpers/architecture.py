@@ -10,19 +10,23 @@ from codeintel.analytics.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
-from codeintel.analytics.rows.graph_metrics import (
-    FunctionGraphMetricsRow,
-    ModuleGraphMetricsRow,
-)
-from codeintel.analytics.rows.graph_metrics_ext import (
-    FunctionGraphMetricsExtRow,
-    ModuleGraphMetricsExtRow,
+from codeintel.config.dataset_contract import (
+    GraphMetricsFunctionsExtRow,
+    GraphMetricsFunctionsRow,
+    GraphMetricsModulesExtRow,
+    GraphMetricsModulesRow,
 )
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.duckdb import gateway_with_macros
+
+# Aliases for backward compatibility
+FunctionGraphMetricsRow = GraphMetricsFunctionsRow
+ModuleGraphMetricsRow = GraphMetricsModulesRow
+FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
+ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
 
 
 def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str) -> None:

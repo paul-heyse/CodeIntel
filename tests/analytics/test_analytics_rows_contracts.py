@@ -7,24 +7,34 @@ from typing import get_type_hints
 
 import pytest
 
-from codeintel.analytics.rows.function_metrics import FunctionMetricsRow
-from codeintel.analytics.rows.function_types import FunctionTypesRow
-from codeintel.analytics.rows.graph_metrics import (
-    FunctionGraphMetricsRow,
-    ModuleGraphMetricsRow,
+from codeintel.config.dataset_contract import (
+    DATASET_CONTRACTS_BY_TABLE_KEY,
+    BehavioralCoverageRowModel,
+    FunctionMetricsRow,
+    FunctionTypesRow,
+    GraphMetricsFunctionsExtRow,
+    GraphMetricsFunctionsRow,
+    GraphMetricsModulesExtRow,
+    GraphMetricsModulesRow,
+    ProfileRowModel,
 )
-from codeintel.analytics.rows.graph_metrics_ext import (
-    FunctionGraphMetricsExtRow,
-    ModuleGraphMetricsExtRow,
-)
-from codeintel.analytics.rows.test_profiles import BehavioralCoverageRow, TestProfileRow
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
+
+# Aliases for backward compatibility
+FunctionGraphMetricsRow = GraphMetricsFunctionsRow
+ModuleGraphMetricsRow = GraphMetricsModulesRow
+FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
+ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
+TestProfileRow = ProfileRowModel
+BehavioralCoverageRow = BehavioralCoverageRowModel
 
 
 def _assert_row_matches_table(row_type: type[Mapping[str, object]], table_key: str) -> None:
-    """Verify TypedDict annotations align with the registered table schema."""
-    schema = TABLE_SCHEMAS[table_key]
-    expected_cols = [col.name for col in schema.columns]
+    """Verify TypedDict annotations align with the DatasetContract schema."""
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    if contract is None or contract.schema is None:
+        pytest.fail(f"{table_key} has no contract schema")
+        return
+    expected_cols = [col.name for col in contract.schema.columns]
     annotations = get_type_hints(row_type)
     actual_cols = list(annotations.keys())
     if actual_cols != expected_cols:

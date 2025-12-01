@@ -10,10 +10,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
-from codeintel.storage.datasets import load_dataset_registry
-from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
-from codeintel.storage.rows import (
+from codeintel.config.dataset_contract import (
+    DATASET_CONTRACTS_BY_TABLE_KEY,
     BehavioralCoverageRowModel,
     CallGraphEdgeRow,
     SymbolUseRow,
@@ -23,6 +21,8 @@ from codeintel.storage.rows import (
     serialize_test_coverage_edge,
     symbol_use_to_tuple,
 )
+from codeintel.storage.datasets import load_dataset_registry
+from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
 from codeintel.storage.schema_generation import (
     generate_export_schemas,
     json_schema_from_typeddict,
@@ -57,11 +57,12 @@ def _json_safe(value: object) -> object:
 @settings(max_examples=15)
 @given(st.from_type(CallGraphEdgeRow))
 def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
-    """Generated schemas from TypedDict should validate generated call graph edges."""
+    """Generate schemas from TypedDict should validate generated call graph edges."""
     schema = json_schema_from_typeddict(CallGraphEdgeRow)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     values = call_graph_edge_to_tuple(row)
-    expected_len = len(TABLE_SCHEMAS["graph.call_graph_edges"].columns)
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY["graph.call_graph_edges"]
+    expected_len = len(contract.schema.columns) if contract.schema else 0
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
@@ -69,11 +70,12 @@ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
 @settings(max_examples=15)
 @given(st.from_type(SymbolUseRow))
 def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
-    """Generated schemas should align with symbol use TypedDict and serializer."""
+    """Generate schemas should align with symbol use TypedDict and serializer."""
     schema = json_schema_from_typeddict(SymbolUseRow)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     values = symbol_use_to_tuple(row)
-    expected_len = len(TABLE_SCHEMAS["graph.symbol_use_edges"].columns)
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY["graph.symbol_use_edges"]
+    expected_len = len(contract.schema.columns) if contract.schema else 0
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
@@ -81,11 +83,12 @@ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
 @settings(max_examples=15)
 @given(st.from_type(TestCoverageEdgeRow))
 def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
-    """Generated schemas should align with test coverage edge TypedDict and serializer."""
+    """Generate schemas should align with test coverage edge TypedDict and serializer."""
     schema = json_schema_from_typeddict(TestCoverageEdgeRow)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     values = serialize_test_coverage_edge(row)
-    expected_len = len(TABLE_SCHEMAS["analytics.test_coverage_edges"].columns)
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.test_coverage_edges"]
+    expected_len = len(contract.schema.columns) if contract.schema else 0
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
@@ -93,11 +96,12 @@ def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
 @settings(max_examples=15)
 @given(st.from_type(BehavioralCoverageRowModel))
 def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None:
-    """Generated schemas should align with behavioral coverage TypedDict and serializer."""
+    """Generate schemas should align with behavioral coverage TypedDict and serializer."""
     schema = json_schema_from_typeddict(BehavioralCoverageRowModel)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     values = behavioral_coverage_row_to_tuple(row)
-    expected_len = len(TABLE_SCHEMAS["analytics.behavioral_coverage"].columns)
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.behavioral_coverage"]
+    expected_len = len(contract.schema.columns) if contract.schema else 0
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 

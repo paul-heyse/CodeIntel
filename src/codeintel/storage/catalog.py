@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.config.dataset_contract import DatasetContract
-from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.pipeline.export.manifest import compute_file_hash
 from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError
@@ -97,7 +96,7 @@ def describe_dataset_for_catalog(
     str
         Description string including a column preview when available.
     """
-    schema = TABLE_SCHEMAS.get(ds.table_key)
+    schema = ds.schema
     if schema is None:
         if warn is not None:
             warn(f"No schema found for {ds.name} ({ds.table_key}); using fallback description")

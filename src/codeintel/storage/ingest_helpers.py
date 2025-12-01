@@ -7,7 +7,8 @@ from collections.abc import Iterable, Sequence
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.storage.sql_helpers import build_insert_sql, quote_identifier, quote_table_key
+from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.storage.sql_helpers import build_insert_sql, quote_identifier
 
 __all__ = ["macro_insert_rows"]
 
@@ -26,6 +27,7 @@ def macro_insert_rows(
     ------
     ValueError
         If the table name is invalid or rows exceed the column count.
+        If the table has no DatasetContract schema.
     """
     rows_list = list(rows)
     if not rows_list:
@@ -33,13 +35,12 @@ def macro_insert_rows(
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", table_key):
         message = f"Invalid table key: {table_key}"
         raise ValueError(message)
-    _, table_name = table_key.split(".", maxsplit=1)
-    table_sql = quote_table_key(table_key)
-    pragma_sql = f"PRAGMA table_info({table_sql})"
-    columns = [row[1] for row in con.execute(pragma_sql).fetchall()]
-    if not columns:
-        message = f"Table {table_key} missing"
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    if contract is None or contract.schema is None:
+        message = f"Cannot insert into {table_key}: missing DatasetContract schema"
         raise ValueError(message)
+    columns = [col.name for col in contract.schema.columns if col.name is not None]
+    _, table_name = table_key.split(".", maxsplit=1)
     col_count = len(columns)
     normalized: list[tuple[object, ...]] = []
     for row in rows_list:

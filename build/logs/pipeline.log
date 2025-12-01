@@ -4840,3 +4840,123 @@
 2025-12-01T13:17:26.495846+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
 2025-12-01T13:17:36.475661+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
 2025-12-01T13:17:39.608110+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T14:06:03.287070+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T14:06:07.525308+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:06:10.268518+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T14:06:16.070247+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T14:06:22.351143+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:06:23.353270+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T14:06:28.752587+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:06:30.427620+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:06:36.200916+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T14:07:02.509336+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T14:18:11.133493+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T14:18:14.417359+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:18:19.097510+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:18:27.342354+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T14:18:29.164720+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:18:36.033873+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T14:18:42.661354+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:18:44.553383+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T14:19:01.931788+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T14:19:13.411719+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T14:27:46.597888+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:27:46.877325+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T14:27:59.438440+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T14:28:04.232808+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:28:10.945782+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T14:28:17.487632+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:28:24.217548+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:28:43.121390+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T14:28:53.282620+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T14:28:56.818483+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T14:42:53.977336+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:42:54.664891+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T14:43:07.971166+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T14:43:14.016408+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:43:21.280641+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T14:43:27.887589+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:43:34.811903+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T14:43:53.295640+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T14:44:02.200102+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T14:44:07.378369+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T15:00:17.867656+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T15:00:25.672366+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:00:36.249785+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:00:38.514527+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T15:00:43.011276+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T15:00:49.593364+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:00:56.354847+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:01:15.128885+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T15:01:22.538872+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T15:01:28.614565+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T15:24:13.783452+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:24:18.984306+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T15:24:19.185573+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T15:24:20.859763+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:24:40.747498+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:24:47.542318+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T15:24:54.172532+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:25:01.071706+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T15:25:14.744761+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T15:25:17.120206+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T15:40:09.622831+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T15:40:16.644968+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:40:29.701947+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T15:40:33.269974+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:40:40.100356+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T15:40:46.769394+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:40:53.583019+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T15:41:06.705109+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T15:41:14.110494+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T15:41:20.230013+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T16:43:09.751025+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T16:43:16.493864+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:43:17.245602+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T16:43:26.192208+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T16:43:33.022079+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:43:33.817583+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:43:39.245801+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T16:43:40.140360+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:43:57.457343+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T16:44:03.326018+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T16:47:57.848682+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T16:48:01.186766+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:48:01.474055+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T16:48:11.289575+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:48:17.856815+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T16:48:24.461482+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:48:31.071328+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:48:39.331592+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T16:48:44.327331+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T16:48:49.053611+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T16:52:26.436231+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T16:52:29.802779+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:52:30.105968+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T16:52:46.068517+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:52:52.632586+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T16:52:59.195776+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:53:05.134423+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T16:53:05.772126+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T16:53:10.072460+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T16:53:15.016990+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T17:09:43.028365+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T17:09:47.052189+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T17:09:51.476813+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T17:09:53.156695+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T17:09:53.596465+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T17:10:00.188580+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T17:10:06.868080+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T17:10:23.833451+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T17:10:28.831435+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T17:10:29.781711+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2
+2025-12-01T17:13:34.412394+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=1 goids=3 module_goids=0 class_goids=0 function_goids=3
+2025-12-01T17:13:37.738843+00:00 [graph_validation] repo=r commit=c modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T17:13:38.064173+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=1 module_goids=0 class_goids=0 function_goids=1
+2025-12-01T17:13:48.491082+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T17:13:55.116723+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=0 goids=0 module_goids=0 class_goids=0 function_goids=0 call_nodes=0 call_edges=0
+2025-12-01T17:14:01.697919+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T17:14:08.313250+00:00 [graph_validation] repo=demo/repo commit=deadbeef modules=1 goids=1 module_goids=0 class_goids=0 function_goids=1 call_nodes=0 call_edges=1
+2025-12-01T17:14:15.749983+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T17:14:20.700546+00:00 [callgraph] repo=r commit=c modules=3 goids=5 module_goids=3 class_goids=0 function_goids=2
+2025-12-01T17:14:24.069004+00:00 [callgraph] repo=demo/repo commit=deadbeef modules=2 goids=2 module_goids=0 class_goids=0 function_goids=2

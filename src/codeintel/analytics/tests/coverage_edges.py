@@ -14,7 +14,11 @@ from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
 from codeintel.config import TestCoverageStepConfig
-from codeintel.config.schemas.sql_builder import TEST_CATALOG_UPDATE_GOIDS
+from codeintel.config.dataset_contract import (
+    TEST_CATALOG_UPDATE_GOIDS,
+    TestCoverageEdgeRow,
+    serialize_test_coverage_edge,
+)
 from codeintel.graphs.function_catalog_service import (
     FunctionCatalogProvider,
     FunctionCatalogService,
@@ -22,7 +26,6 @@ from codeintel.graphs.function_catalog_service import (
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.rows import TestCoverageEdgeRow, serialize_test_coverage_edge
 from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
