@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
 from duckdb import DuckDBPyConnection
@@ -18,6 +20,116 @@ class PreparedStatements:
 
     insert_sql: str
     delete_sql: str | None = None
+
+
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
+def quote_identifier(identifier: str) -> str:
+    """
+    Validate and quote a SQL identifier.
+
+    Returns
+    -------
+    str
+        Quoted identifier.
+
+    Raises
+    ------
+    ValueError
+        When the identifier is unsafe.
+    """
+    if not _IDENTIFIER_RE.fullmatch(identifier):
+        message = f"Unsafe identifier: {identifier}"
+        raise ValueError(message)
+    return f'"{identifier}"'
+
+
+def quote_table_key(table_key: str) -> str:
+    """
+    Validate and quote a fully qualified table key (schema.table).
+
+    Returns
+    -------
+    str
+        Quoted table identifier.
+
+    Raises
+    ------
+    ValueError
+        When the key is invalid.
+    """
+    if "." not in table_key:
+        message = f"Table key must include schema: {table_key}"
+        raise ValueError(message)
+    schema_name, table_name = table_key.split(".", maxsplit=1)
+    return f"{quote_identifier(schema_name)}.{quote_identifier(table_name)}"
+
+
+def macro_select_sql(macro_name: str, placeholders: str) -> str:
+    """
+    Build a validated SELECT statement invoking a macro.
+
+    Parameters
+    ----------
+    macro_name
+        Fully qualified macro name (schema.macro).
+    placeholders
+        Placeholder string (e.g., "?, ?, ?").
+
+    Returns
+    -------
+    str
+        Safe SELECT statement invoking the macro.
+
+    Raises
+    ------
+    ValueError
+        If the macro name is unsafe.
+    """
+    if "." not in macro_name:
+        message = f"Macro name must include schema: {macro_name}"
+        raise ValueError(message)
+    schema_name, macro = macro_name.split(".", maxsplit=1)
+    return (
+        f"SELECT * FROM {quote_identifier(schema_name)}.{quote_identifier(macro)}({placeholders})"  # noqa: S608 - validated identifiers
+    )
+
+
+def safe_macro_call(
+    macro_name: str,
+    args: Sequence[object],
+    *,
+    allowed: Collection[str] | None = None,
+) -> tuple[str, Sequence[object]]:
+    """
+    Return a safe SELECT statement and args for a macro invocation.
+
+    Parameters
+    ----------
+    macro_name
+        Fully qualified macro name (schema.macro).
+    args
+        Parameters to pass to the macro.
+    allowed
+        Optional allowlist of macro names; when provided, macro_name must be present.
+
+    Returns
+    -------
+    tuple[str, Sequence[object]]
+        Parameterized SQL and the original args.
+
+    Raises
+    ------
+    ValueError
+        If the macro name is unsafe or not allowlisted.
+    """
+    if allowed is not None and macro_name not in allowed:
+        message = f"Macro {macro_name} is not allowlisted"
+        raise ValueError(message)
+    placeholders = ", ".join("?" for _ in args)
+    sql = macro_select_sql(macro_name, placeholders)
+    return sql, args
 
 
 def prepared_statements_dynamic(
@@ -52,10 +164,9 @@ def prepared_statements_dynamic(
 
     cols_sql = ", ".join(registry_cols)
     placeholders = ", ".join("?" for _ in registry_cols)
-    schema_name, table_name = table_key.split(".", maxsplit=1)
-    table_sql = f'"{schema_name}"."{table_name}"'
+    table_sql = quote_table_key(table_key)
 
-    insert_sql = f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders})"  # noqa: S608
+    insert_sql = f"INSERT INTO {table_sql} ({cols_sql}) VALUES ({placeholders})"  # noqa: S608 - validated identifiers
     return PreparedStatements(
         insert_sql=insert_sql,
         delete_sql=None,
@@ -105,4 +216,11 @@ def ensure_schema(con: DuckDBPyConnection, table_key: str) -> None:
         raise RuntimeError(message)
 
 
-__all__ = ["PreparedStatements", "ensure_schema", "prepared_statements_dynamic"]
+__all__ = [
+    "PreparedStatements",
+    "ensure_schema",
+    "macro_select_sql",
+    "prepared_statements_dynamic",
+    "quote_identifier",
+    "quote_table_key",
+]

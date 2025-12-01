@@ -9,7 +9,13 @@ from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions,
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.serving_models import ServingConfig, verify_db_identity
 from codeintel.graphs.engine import GraphEngine
-from codeintel.serving.backend import BackendLimits, DuckDBQueryService
+from codeintel.serving.backend import (
+    BackendContext,
+    BackendLimits,
+    DuckDBQueryService,
+    DuckDBRepositories,
+    GraphEngineProvider,
+)
 from codeintel.serving.backend.datasets import (
     build_registry_and_limits,
     describe_dataset,
@@ -218,12 +224,23 @@ def build_service_from_config(
                 GraphRuntimeOptions(snapshot=snapshot, backend=GraphBackendConfig()),
             )
             engine = runtime.engine
-        query = DuckDBQueryService(
+        context = BackendContext(
             gateway=gateway,
             repo=cfg.repo,
             commit=cfg.commit,
             limits=limits,
             graph_engine=engine,
+        )
+        repositories = DuckDBRepositories(
+            gateway=gateway,
+            repo=cfg.repo,
+            commit=cfg.commit,
+        )
+        provider = GraphEngineProvider(context=context, graph_engine=engine)
+        query = DuckDBQueryService(
+            context=context,
+            repositories=repositories,
+            engine_provider=provider,
         )
         return build_local_query_service(
             gateway,

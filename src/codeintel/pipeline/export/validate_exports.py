@@ -18,7 +18,7 @@ import jsonschema
 import pyarrow.parquet as pq
 from referencing import Registry, Resource
 
-from codeintel.serving.services.errors import log_problem, problem
+from codeintel.serving.services.errors import ProblemDetailParams, log_problem, problem
 
 DEFAULT_SCHEMA_ROOT = (
     Path(__file__).resolve().parent.parent.parent / "config" / "schemas" / "export"
@@ -133,7 +133,7 @@ def validate_files(
             code="export.validation_failed",
             title="Export validation failed",
             detail="; ".join(all_errors),
-            extras={"errors": all_errors},
+            params=ProblemDetailParams(extras={"errors": all_errors}),
         )
         log_problem(logger, pd)
         return 1

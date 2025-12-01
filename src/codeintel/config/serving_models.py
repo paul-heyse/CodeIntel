@@ -14,7 +14,7 @@ from codeintel.storage.gateway import DuckDBError, StorageGateway
 ServingMode = Literal["local_db", "remote_api"]
 
 
-def _parse_env_flag(value: str | None, *, default: bool) -> bool:
+def _parse_env_flag(value: str | None, *, default: bool | None) -> bool | None:
     """
     Interpret a string environment value as a boolean.
 
@@ -33,6 +33,25 @@ def _parse_env_flag(value: str | None, *, default: bool) -> bool:
     if value is None:
         return default
     return value.lower() not in {"0", "false", "no", "off"}
+
+
+def normalize_optional_path(path: str | Path | None) -> Path | None:
+    """
+    Normalize a possibly missing path into a resolved Path.
+
+    Parameters
+    ----------
+    path
+        Raw path value or None.
+
+    Returns
+    -------
+    Path | None
+        Resolved Path when provided; otherwise None.
+    """
+    if path is None:
+        return None
+    return Path(path).expanduser().resolve()
 
 
 class ServingConfig(BaseModel):
@@ -105,19 +124,19 @@ class ServingConfig(BaseModel):
         mode_env = os.environ.get("CODEINTEL_MCP_MODE", "local_db").lower()
         mode: ServingMode = "remote_api" if mode_env == "remote_api" else "local_db"
 
-        db_path_env = os.environ.get("CODEINTEL_DB_PATH")
-        db_path = Path(db_path_env).expanduser().resolve() if db_path_env else None
+        db_path = normalize_optional_path(os.environ.get("CODEINTEL_DB_PATH"))
 
         api_base_url = os.environ.get("CODEINTEL_API_BASE_URL")
 
         default_limit = int(os.environ.get("CODEINTEL_MCP_DEFAULT_LIMIT", "50"))
         max_rows_per_call = int(os.environ.get("CODEINTEL_MCP_MAX_ROWS", "500"))
         timeout_seconds = float(os.environ.get("CODEINTEL_MCP_TIMEOUT_SEC", "10.0"))
-        read_only = _parse_env_flag(os.environ.get("CODEINTEL_API_READ_ONLY"), default=True)
+        read_only_flag = _parse_env_flag(os.environ.get("CODEINTEL_API_READ_ONLY"), default=True)
+        read_only: bool = True if read_only_flag is None else bool(read_only_flag)
         graph_features = GraphFeatureFlags(
             eager_hydration=_parse_env_flag(
                 os.environ.get("CODEINTEL_GRAPH_EAGER"),
-                default=None,  # type: ignore[arg-type]
+                default=None,
             )
             if "CODEINTEL_GRAPH_EAGER" in os.environ
             else None,
@@ -126,7 +145,7 @@ class ServingConfig(BaseModel):
             else None,
             validation_strict=_parse_env_flag(
                 os.environ.get("CODEINTEL_GRAPH_VALIDATION_STRICT"),
-                default=None,  # type: ignore[arg-type]
+                default=None,
             )
             if "CODEINTEL_GRAPH_VALIDATION_STRICT" in os.environ
             else None,
@@ -168,7 +187,7 @@ class ServingConfig(BaseModel):
             if self.db_path is None:
                 self.db_path = (self.repo_root / "build" / "db" / "codeintel.duckdb").resolve()
             else:
-                self.db_path = self.db_path.expanduser().resolve()
+                self.db_path = normalize_optional_path(self.db_path)
         elif self.mode == "remote_api":
             if not self.api_base_url:
                 message = "api_base_url is required when mode='remote_api'"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from codeintel.analytics.plugins import (
     AnalyticsExecutionContext,
     AnalyticsPlugin,
@@ -9,6 +11,7 @@ from codeintel.analytics.plugins import (
     register_analytics_plugin,
 )
 from codeintel.analytics.tests.profiles import build_behavioral_coverage, build_test_profile
+from codeintel.analytics.tests_profiles.types import BehavioralLLMRunner
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig, TestProfileStepConfig
 
 
@@ -92,15 +95,22 @@ def _behavioral_coverage_run(ctx: AnalyticsExecutionContext) -> dict[str, int]:
     cfg: BehavioralCoverageStepConfig = ctx.behavioral_cfg
     gateway = ctx.gateway
 
-    llm_runner = ctx.extra.get("behavioral_llm_runner")
-    if llm_runner is not None and not callable(llm_runner):
+    llm_runner_raw = ctx.extra.get("behavioral_llm_runner")
+    llm_runner: BehavioralLLMRunner | None = None
+    if llm_runner_raw is not None:
+        if not callable(llm_runner_raw):
+            message = "behavioral_llm_runner in ctx.extra must be callable or None"
+            raise TypeError(message)
+        llm_runner = cast("BehavioralLLMRunner", llm_runner_raw)
+
+    if llm_runner_raw is not None and llm_runner is None:
         message = "behavioral_llm_runner in ctx.extra must be callable or None"
         raise TypeError(message)
 
     build_behavioral_coverage(
         gateway,
         cfg,
-        llm_runner=llm_runner,  # type: ignore[arg-type]
+        llm_runner=llm_runner,
     )
 
     con = gateway.con

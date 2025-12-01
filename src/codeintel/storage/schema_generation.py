@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import types
 import typing
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import get_args, get_origin
 
 import jsonschema
+from jsonschema.protocols import Validator
 
 from codeintel.storage.datasets import DatasetRegistry
 
@@ -107,10 +108,55 @@ def json_schema_from_typeddict(
     return {k: v for k, v in schema.items() if v is not None}
 
 
+JsonValue = str | int | float | bool | Mapping[str, "JsonValue"] | Sequence["JsonValue"] | None
+
+
+def _coerce_json_value(value: object) -> JsonValue:
+    """
+    Convert a Python object into a JSON-serializable value for schema validation.
+
+    Raises
+    ------
+    TypeError
+        If the value cannot be coerced into a JSON-compatible type.
+
+    Returns
+    -------
+    JsonValue
+        JSON-serializable value matching schema expectations.
+    """
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, Mapping):
+        return {str(k): _coerce_json_value(v) for k, v in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray, str)):
+        return [_coerce_json_value(v) for v in value]
+    message = f"Unsupported value for JSON Schema validation: {value!r}"
+    raise TypeError(message)
+
+
 def validate_row_with_schema(row: Mapping[str, object], schema: Mapping[str, object]) -> None:
     """Validate a single row mapping against a generated JSON Schema."""
-    validator = jsonschema.Draft202012Validator(schema)  # type: ignore[arg-type]
-    validator.validate(dict(row))
+    validator = build_validator(schema)
+    json_row: dict[str, JsonValue] = {k: _coerce_json_value(v) for k, v in row.items()}
+    validator.validate(json_row)
+
+
+def build_validator(schema: Mapping[str, object]) -> Validator:
+    """
+    Construct a Draft 2020-12 JSON Schema validator with typed schema input.
+
+    Parameters
+    ----------
+    schema
+        JSON Schema mapping to validate against.
+
+    Returns
+    -------
+    Validator
+        Validator instance bound to the provided schema.
+    """
+    return jsonschema.Draft202012Validator(dict(schema))
 
 
 def generate_export_schemas(
@@ -138,7 +184,7 @@ def generate_export_schemas(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    datasets = getattr(registry, "by_name", {})  # type: ignore[assignment]
+    datasets = getattr(registry, "by_name", {})
     for name, ds in sorted(datasets.items()):
         if include_datasets is not None and name not in include_datasets:
             continue

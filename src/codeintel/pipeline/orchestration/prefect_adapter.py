@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from prefect import task
 
 from codeintel.pipeline.orchestration.core import PipelineStep
+from codeintel.pipeline.orchestration.prefect_metadata import attach_task_metadata
 
 if TYPE_CHECKING:
     from codeintel.pipeline.orchestration.core import PipelineContext
@@ -52,10 +53,8 @@ def make_prefect_task(
         log.debug("Running Prefect task for step: %s", step.name)
         step.run(ctx)
 
-    # Preserve step metadata on the task function
-    _task.step = step  # type: ignore[attr-defined]
-    _task.step_name = step.name  # type: ignore[attr-defined]
-    return _task
+    wrapped = attach_task_metadata(_task, step=step, fn=getattr(_task, "fn", None))
+    return cast("Callable[..., None]", wrapped)
 
 
 def build_task_map(

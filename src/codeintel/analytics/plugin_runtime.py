@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from pydantic import BaseModel
 
@@ -54,6 +54,7 @@ from codeintel.analytics.runtime_manifest import (
     AnalyticsRunReport,
     AnalyticsScope,
     AnalyticsSkippedStep,
+    AnalyticsStatus,
 )
 from codeintel.config import (
     BehavioralCoverageStepConfig,
@@ -81,15 +82,9 @@ from codeintel.config.steps_graphs import (
     GraphPluginRetryPolicy,
     GraphRunScope,
 )
+from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.storage.db_helpers import DUCKDB_ERRORS, safe_row_counts
 from codeintel.storage.gateway import StorageGateway
-
-if TYPE_CHECKING:  # pragma: no cover
-    from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
-else:  # pragma: no cover
-
-    class FunctionCatalogProvider:  # type: ignore[too-many-instance-attributes]
-        ...
-
 
 log = logging.getLogger(__name__)
 
@@ -176,6 +171,17 @@ class PluginHashInputs:
     version_hash: str | None
     scope: GraphRunScope
     options_hash: str | None
+
+
+RETRYABLE_PLUGIN_ERRORS: tuple[type[Exception], ...] = (
+    *DUCKDB_ERRORS,
+    AttributeError,
+    LookupError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+    OSError,
+)
 
 
 def _normalize_options_payload(options: object | None) -> dict[str, object]:
@@ -421,7 +427,7 @@ def _analytics_record_from_graph(record: GraphPluginRunRecord) -> AnalyticsRunRe
     return AnalyticsRunRecord(
         name=record.name,
         kind="graph_plugin",
-        status=record.status,  # type: ignore[arg-type]
+        status=record.status,
         started_at=record.started_at,
         ended_at=record.ended_at,
         duration_ms=record.duration_ms,
@@ -525,7 +531,7 @@ def _execute_non_graph_plugin(
 ) -> tuple[AnalyticsRunRecord, bool]:
     started_at = datetime.now(tz=UTC)
     contracts: tuple[PluginContractResult, ...] = ()
-    status: str = "skipped"
+    status: AnalyticsStatus = "skipped"
     attempts = 0
     duration_ms = 0.0
     error: str | None = None
@@ -545,10 +551,7 @@ def _execute_non_graph_plugin(
             settings=settings,
         )
         if status == "succeeded" and plugin.contract_checkers:
-            contracts = run_contract_checkers(
-                ctx=ctx,  # type: ignore[arg-type]
-                checkers=plugin.contract_checkers,
-            )
+            contracts = run_contract_checkers(ctx=ctx, checkers=plugin.contract_checkers)
         if status == "skipped" and settings.severity == "skip_on_error":
             skipped_reason = "skip_on_error"
 
@@ -562,7 +565,7 @@ def _execute_non_graph_plugin(
     record = AnalyticsRunRecord(
         name=plugin.name,
         kind=plugin.stage,
-        status=status,  # type: ignore[arg-type]
+        status=status,
         started_at=started_at,
         ended_at=ended_at,
         duration_ms=duration_ms,
@@ -604,7 +607,7 @@ def _execute_plugin(
         scratch=scratch,
     )
     if plugin.context_factory is not None:
-        ctx = plugin.context_factory(ctx)  # type: ignore[assignment]
+        ctx = plugin.context_factory(ctx)
     if isinstance(ctx, GraphMetricExecutionContext):
         return _execute_graph_plugin_or_skip(
             plugin=plugin,
@@ -709,19 +712,7 @@ def _row_counts_for_tables(
     connection = getattr(gateway, "con", None)
     if connection is None:
         return None
-    counts: dict[str, int] = {}
-    for table in tables:
-        try:
-            escaped_repo = repo.replace("'", "''")
-            escaped_commit = commit.replace("'", "''")
-            relation = connection.table(table).filter(
-                f"repo = '{escaped_repo}' AND commit = '{escaped_commit}'"
-            )
-            counts[table] = int(relation.count().fetchone()[0])
-        except Exception:  # noqa: BLE001
-            log.debug("row_count.failed table=%s repo=%s commit=%s", table, repo, commit)
-            return None
-    return counts
+    return safe_row_counts(connection, repo=repo, commit=commit, tables=tables)
 
 
 def _execute_with_retries(
@@ -729,22 +720,22 @@ def _execute_with_retries(
     plugin: AnalyticsPlugin,
     ctx: AnalyticsExecutionContext,
     settings: AnalyticsPluginExecutionSettings,
-) -> tuple[str, str | None, float, int, object | None]:
+) -> tuple[AnalyticsStatus, str | None, float, int, object | None]:
     start = time.perf_counter()
     attempts = 0
     error: str | None = None
     result: object | None = None
-    status = "succeeded"
+    status: AnalyticsStatus = "succeeded"
 
     max_attempts = max(settings.retry_cfg.max_attempts, 1)
     while attempts < max_attempts:
         attempts += 1
         try:
-            result = plugin.run(ctx)  # type: ignore[arg-type]
+            result = plugin.run(ctx)
             status = "succeeded"
             error = None
             break
-        except Exception as exc:  # noqa: BLE001
+        except RETRYABLE_PLUGIN_ERRORS as exc:
             error = repr(exc)
             if settings.severity == "skip_on_error":
                 status = "skipped"

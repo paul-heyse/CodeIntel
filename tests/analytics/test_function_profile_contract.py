@@ -26,16 +26,18 @@ from codeintel.storage.rows import (
     FUNCTION_PROFILE_COLUMNS,
     MODULE_PROFILE_COLUMNS,
     TEST_PROFILE_COLUMNS,
-    BehavioralCoverageRowModel,
-    FileProfileRowModel,
-    FunctionProfileRowModel,
-    ModuleProfileRowModel,
-    TestProfileRowModel,
     behavioral_coverage_row_to_tuple,
     file_profile_row_to_tuple,
     function_profile_row_to_tuple,
     module_profile_row_to_tuple,
     serialize_test_profile_row,
+)
+from tests._helpers.row_factories import (
+    blank_behavioral_coverage_row,
+    blank_file_profile_row,
+    blank_function_profile_row,
+    blank_module_profile_row,
+    blank_test_profile_row,
 )
 
 
@@ -79,16 +81,20 @@ def _behavior_cfg() -> BehavioralCoverageStepConfig:
 
 def test_function_profile_tuple_alignment() -> None:
     """Serializer should align with FUNCTION_PROFILE_COLUMNS."""
-    row: FunctionProfileRowModel = dict.fromkeys(FUNCTION_PROFILE_COLUMNS)  # type: ignore[arg-type]
-    row["repo"] = "r"
-    row["commit"] = "c"
-    row["function_goid_h128"] = 1
-    row["urn"] = "urn:fn"
-    row["rel_path"] = "path.py"
-    row["language"] = "python"
-    row["kind"] = "function"
-    row["qualname"] = "mod.fn"
-    row["created_at"] = datetime.now(tz=UTC)
+    row = blank_function_profile_row()
+    row.update(
+        {
+            "repo": "r",
+            "commit": "c",
+            "function_goid_h128": 1,
+            "urn": "urn:fn",
+            "rel_path": "path.py",
+            "language": "python",
+            "kind": "function",
+            "qualname": "mod.fn",
+            "created_at": datetime.now(tz=UTC),
+        }
+    )
 
     serialized = function_profile_row_to_tuple(row)
     if len(serialized) != len(FUNCTION_PROFILE_COLUMNS):
@@ -98,14 +104,18 @@ def test_function_profile_tuple_alignment() -> None:
 
 def test_file_profile_tuple_alignment() -> None:
     """Serializer should align with FILE_PROFILE_COLUMNS."""
-    row: FileProfileRowModel = dict.fromkeys(FILE_PROFILE_COLUMNS)  # type: ignore[arg-type]
-    row["repo"] = "r"
-    row["commit"] = "c"
-    row["rel_path"] = "a.py"
-    row["module"] = "m"
-    row["tags"] = "[]"
-    row["owners"] = "[]"
-    row["created_at"] = datetime.now(tz=UTC)
+    row = blank_file_profile_row()
+    row.update(
+        {
+            "repo": "r",
+            "commit": "c",
+            "rel_path": "a.py",
+            "module": "m",
+            "tags": "[]",
+            "owners": "[]",
+            "created_at": datetime.now(tz=UTC),
+        }
+    )
 
     serialized = file_profile_row_to_tuple(row)
     if len(serialized) != len(FILE_PROFILE_COLUMNS):
@@ -115,14 +125,18 @@ def test_file_profile_tuple_alignment() -> None:
 
 def test_module_profile_tuple_alignment() -> None:
     """Serializer should align with MODULE_PROFILE_COLUMNS."""
-    row: ModuleProfileRowModel = dict.fromkeys(MODULE_PROFILE_COLUMNS)  # type: ignore[arg-type]
-    row["repo"] = "r"
-    row["commit"] = "c"
-    row["module"] = "pkg.mod"
-    row["path"] = "pkg/mod.py"
-    row["tags"] = "[]"
-    row["owners"] = "[]"
-    row["created_at"] = datetime.now(tz=UTC)
+    row = blank_module_profile_row()
+    row.update(
+        {
+            "repo": "r",
+            "commit": "c",
+            "module": "pkg.mod",
+            "path": "pkg/mod.py",
+            "tags": "[]",
+            "owners": "[]",
+            "created_at": datetime.now(tz=UTC),
+        }
+    )
 
     serialized = module_profile_row_to_tuple(row)
     if len(serialized) != len(MODULE_PROFILE_COLUMNS):
@@ -132,16 +146,20 @@ def test_module_profile_tuple_alignment() -> None:
 
 def test_test_profile_tuple_alignment() -> None:
     """Serializer should align with TEST_PROFILE_COLUMNS."""
-    row: TestProfileRowModel = dict.fromkeys(TEST_PROFILE_COLUMNS)  # type: ignore[arg-type]
-    row["repo"] = "r"
-    row["commit"] = "c"
-    row["test_id"] = "t::case"
-    row["rel_path"] = "tests/test_a.py"
-    row["markers"] = []
-    row["functions_covered"] = []
-    row["primary_function_goids"] = []
-    row["subsystems_covered"] = []
-    row["created_at"] = datetime.now(tz=UTC)
+    row = blank_test_profile_row()
+    row.update(
+        {
+            "repo": "r",
+            "commit": "c",
+            "test_id": "t::case",
+            "rel_path": "tests/test_a.py",
+            "markers": [],
+            "functions_covered": [],
+            "primary_function_goids": [],
+            "subsystems_covered": [],
+            "created_at": datetime.now(tz=UTC),
+        }
+    )
 
     serialized = serialize_test_profile_row(row)
     if len(serialized) != len(TEST_PROFILE_COLUMNS):
@@ -151,15 +169,19 @@ def test_test_profile_tuple_alignment() -> None:
 
 def test_behavioral_coverage_tuple_alignment() -> None:
     """Serializer should align with BEHAVIORAL_COVERAGE_COLUMNS."""
-    row: BehavioralCoverageRowModel = dict.fromkeys(BEHAVIORAL_COVERAGE_COLUMNS)  # type: ignore[arg-type]
-    row["repo"] = "r"
-    row["commit"] = "c"
-    row["test_id"] = "t::case"
-    row["rel_path"] = "tests/test_a.py"
-    row["qualname"] = "TestA::test_a"
-    row["behavior_tags"] = []
-    row["tag_source"] = "heuristic"
-    row["created_at"] = datetime.now(tz=UTC)
+    row = blank_behavioral_coverage_row()
+    row.update(
+        {
+            "repo": "r",
+            "commit": "c",
+            "test_id": "t::case",
+            "rel_path": "tests/test_a.py",
+            "qualname": "TestA::test_a",
+            "behavior_tags": [],
+            "tag_source": "heuristic",
+            "created_at": datetime.now(tz=UTC),
+        }
+    )
 
     serialized = behavioral_coverage_row_to_tuple(row)
     if len(serialized) != len(BEHAVIORAL_COVERAGE_COLUMNS):
@@ -172,7 +194,7 @@ def test_function_profile_writer_registry_and_prepared_statements() -> None:
     fake_con = _FakeCon()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
     cfg = _cfg()
-    sample_row: FunctionProfileRowModel = dict.fromkeys(FUNCTION_PROFILE_COLUMNS)  # type: ignore[arg-type]
+    sample_row = blank_function_profile_row()
     sample_row["repo"] = cfg.repo
     sample_row["commit"] = cfg.commit
     sample_row["function_goid_h128"] = 1
@@ -227,7 +249,7 @@ def test_file_profile_writer_registry_and_prepared_statements() -> None:
     """Writer should delete then insert with registry alignment."""
     fake_con = _FakeCon()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
-    sample_row: FileProfileRowModel = dict.fromkeys(FILE_PROFILE_COLUMNS)  # type: ignore[arg-type]
+    sample_row = blank_file_profile_row()
     sample_row["repo"] = "r"
     sample_row["commit"] = "c"
     sample_row["rel_path"] = "a.py"
@@ -275,7 +297,7 @@ def test_module_profile_writer_registry_and_prepared_statements() -> None:
     """Writer should delete then insert with registry alignment."""
     fake_con = _FakeCon()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
-    sample_row: ModuleProfileRowModel = dict.fromkeys(MODULE_PROFILE_COLUMNS)  # type: ignore[arg-type]
+    sample_row = blank_module_profile_row()
     sample_row["repo"] = "r"
     sample_row["commit"] = "c"
     sample_row["module"] = "pkg.mod"
@@ -324,7 +346,7 @@ def test_test_profile_writer_registry_and_prepared_statements() -> None:
     fake_con = _FakeCon()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
     cfg = _test_cfg()
-    sample_row: TestProfileRowModel = dict.fromkeys(TEST_PROFILE_COLUMNS)  # type: ignore[arg-type]
+    sample_row = blank_test_profile_row()
     sample_row["repo"] = cfg.repo
     sample_row["commit"] = cfg.commit
     sample_row["test_id"] = "t::case"
@@ -375,7 +397,7 @@ def test_behavioral_coverage_writer_registry_and_prepared_statements() -> None:
     fake_con = _FakeCon()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
     cfg = _behavior_cfg()
-    sample_row: BehavioralCoverageRowModel = dict.fromkeys(BEHAVIORAL_COVERAGE_COLUMNS)  # type: ignore[arg-type]
+    sample_row = blank_behavioral_coverage_row()
     sample_row["repo"] = cfg.repo
     sample_row["commit"] = cfg.commit
     sample_row["test_id"] = "t::case"

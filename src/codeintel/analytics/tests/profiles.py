@@ -62,10 +62,7 @@ def _patterns_from_io_spec(
     io_spec: Mapping[str, object] | None,
 ) -> AstFeaturePatterns:
     base_spec = io_spec or DEFAULT_PATTERNS.io_spec
-    normalized_spec = {
-        key: _normalize_io_entry(value)
-        for key, value in base_spec.items()
-    }
+    normalized_spec = {key: _normalize_io_entry(value) for key, value in base_spec.items()}
     return AstFeaturePatterns(
         io_spec=normalized_spec,
         concurrency_libs=set(DEFAULT_PATTERNS.concurrency_libs),

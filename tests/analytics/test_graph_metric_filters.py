@@ -1,12 +1,12 @@
 """Unit tests for repository-driven graph metric filters."""
 
-from __future__ import annotations
+from pathlib import Path
 
 import networkx as nx
 
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
+from tests._helpers.config_builders import make_snapshot
 from tests._helpers.gateway import open_ingestion_gateway
 
 
@@ -48,11 +48,11 @@ def test_filter_import_graph_noop_without_modules() -> None:
     )
 
 
-def test_build_filters_safe_when_repos_empty(tmp_path: object) -> None:
+def test_build_filters_safe_when_repos_empty(tmp_path: Path) -> None:
     """Building filters from empty repositories should yield no-op filters."""
     gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
     try:
-        cfg_snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)  # type: ignore[arg-type]
+        cfg_snapshot = make_snapshot(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
         cfg = GraphMetricsStepConfig(snapshot=cfg_snapshot)
         filters = build_graph_metric_filters(gateway, cfg)
         _expect(

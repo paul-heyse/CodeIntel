@@ -20,12 +20,9 @@ from codeintel.ingestion.repo_scan import ingest_repo
 from codeintel.ingestion.tool_runner import ToolName, ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
-from codeintel.storage.gateway import (
-    StorageConfig,
-    StorageGateway,
-    open_gateway,
-    open_memory_gateway,
-)
+from codeintel.storage.gateway import DuckDBConnection, StorageConfig, StorageGateway, open_gateway
+from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
+from codeintel.storage.metadata_bootstrap import INGEST_MACROS
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.builders import (
     AstMetricsRow,
@@ -75,10 +72,27 @@ from tests._helpers.builders import (
     insert_test_coverage_edges,
     insert_typedness,
 )
+from tests._helpers.duckdb import gateway_with_macros
 from tests._helpers.fakes import utcnow
 
 DEFAULT_REPO: Final = "demo/repo"
 DEFAULT_COMMIT: Final = "deadbeef"
+
+
+def _assert_ingest_macros_present(con: DuckDBConnection) -> None:
+    """
+    Fail fast if ingest macros are missing for a connection.
+
+    Raises
+    ------
+    RuntimeError
+        When any ingest macro is missing.
+    """
+    macros = list_ingest_macros(con)
+    missing = {m.lower() for m in INGEST_MACROS.values() if m.lower() not in macros}
+    if missing:
+        message = f"Missing ingest macros on gateway: {sorted(missing)}"
+        raise RuntimeError(message)
 
 
 @dataclass(frozen=True)
@@ -160,6 +174,31 @@ class ProvisioningConfig:
     provision_options: ProvisionOptions | None = None
     gateway_options: GatewayOptions | None = None
     run_ingestion: bool = True
+
+
+@dataclass(frozen=True)
+class GraphMetricsGatewayOptions:
+    """Options for provisioning graph-metrics-ready gateways."""
+
+    repo: str = DEFAULT_REPO
+    commit: str = DEFAULT_COMMIT
+    graph_cfg: GraphMetricsStepConfig | None = None
+    include_symbol_edges: bool = True
+    file_backed: bool = False
+    db_path: Path | None = None
+    run_metrics: bool = True
+    build_callgraph_enabled: bool = True
+
+
+@dataclass(frozen=True)
+class CallgraphFixtureOptions:
+    """Options for provisioning callgraph fixture repos."""
+
+    repo: str = DEFAULT_REPO
+    commit: str = DEFAULT_COMMIT
+    file_backed: bool = False
+    db_path: Path | None = None
+    goid_entries: list[tuple[int, str, str, int, int, str]] | None = None
 
 
 @contextmanager
@@ -467,12 +506,16 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
             ensure_views=effective_ensure_views,
             validate_schema=effective_validate_schema,
         )
-        return open_gateway(cfg)
-    return open_memory_gateway(
-        apply_schema=opts.apply_schema,
-        ensure_views=effective_ensure_views,
-        validate_schema=effective_validate_schema,
-    )
+        gateway = open_gateway(cfg)
+        ensure_ingest_macros(gateway.con)
+    else:
+        gateway = gateway_with_macros(
+            apply_schema=opts.apply_schema,
+            ensure_views=effective_ensure_views,
+            validate_schema=effective_validate_schema,
+        )
+    _assert_ingest_macros_present(gateway.con)
+    return gateway
 
 
 def provision_ingested_repo(
@@ -524,6 +567,8 @@ def provision_ingested_repo(
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
+    ensure_ingest_macros(gateway.con)
+    _assert_ingest_macros_present(gateway.con)
     ingest_repo(
         gateway,
         cfg=builder.repo_scan(tool_runner=runner),
@@ -546,6 +591,7 @@ def provision_ingested_repo(
         compute_cfg_metrics(gateway, repo=repo, commit=commit)
         compute_dfg_metrics(gateway, repo=repo, commit=commit)
 
+    _assert_ingest_macros_present(gateway.con)
     return ProvisionedGateway(
         repo=repo,
         commit=commit,
@@ -1992,17 +2038,9 @@ def seed_call_graph_scoping(
     )
 
 
-def graph_metrics_ready_gateway(  # noqa: PLR0913
+def graph_metrics_ready_gateway(
     repo_root: Path,
-    *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
-    graph_cfg: GraphMetricsStepConfig | None = None,
-    include_symbol_edges: bool = True,
-    file_backed: bool = False,
-    db_path: Path | None = None,
-    run_metrics: bool = True,
-    build_callgraph_enabled: bool = True,
+    options: GraphMetricsGatewayOptions | None = None,
 ) -> ProvisionedGateway:
     """
     Provision a gateway with callgraph/import data and run graph metrics end-to-end.
@@ -2013,22 +2051,23 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
         Provisioned gateway with graph metrics populated.
     """
     repo_root.mkdir(parents=True, exist_ok=True)
+    opts = options or GraphMetricsGatewayOptions()
     _graph_metrics_repo(repo_root)
     ctx = provision_existing_repo(
         repo_root,
-        repo=repo,
-        commit=commit,
+        repo=opts.repo,
+        commit=opts.commit,
         options=ProvisionOptions(
             include_typing=False,
             include_coverage=False,
             build_graph_metrics=False,
-            file_backed=file_backed,
-            db_path=db_path,
+            file_backed=opts.file_backed,
+            db_path=opts.db_path,
             include_seed_goid=False,
         ),
     )
     gateway = ctx.gateway
-    if run_metrics:
+    if opts.run_metrics:
         # Clear any prior seeds for these deterministic ids/paths to avoid PK clashes.
         gateway.con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1001, 1002)")
         gateway.con.execute(
@@ -2041,8 +2080,8 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
                 GoidRow(
                     goid_h128=1001,
                     urn="urn:pkg.mod_a.a",
-                    repo=repo,
-                    commit=commit,
+                    repo=opts.repo,
+                    commit=opts.commit,
                     rel_path="pkg/mod_a.py",
                     kind="function",
                     qualname="pkg.mod_a.a",
@@ -2053,8 +2092,8 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
                 GoidRow(
                     goid_h128=1002,
                     urn="urn:pkg.mod_b.b",
-                    repo=repo,
-                    commit=commit,
+                    repo=opts.repo,
+                    commit=opts.commit,
                     rel_path="pkg/mod_b.py",
                     kind="function",
                     qualname="pkg.mod_b.b",
@@ -2089,8 +2128,8 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
             gateway,
             [
                 CallGraphEdgeRow(
-                    repo,
-                    commit,
+                    opts.repo,
+                    opts.commit,
                     1001,
                     1002,
                     "pkg/mod_a.py",
@@ -2103,12 +2142,12 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
                 )
             ],
         )
-    if build_callgraph_enabled and not run_metrics:
+    if opts.build_callgraph_enabled and not opts.run_metrics:
         cfg = ConfigBuilder.from_snapshot(
-            repo=repo, commit=commit, repo_root=repo_root
+            repo=opts.repo, commit=opts.commit, repo_root=repo_root
         ).call_graph()
         build_call_graph(gateway, cfg)
-    if include_symbol_edges:
+    if opts.include_symbol_edges:
         insert_symbol_use_edges(
             gateway,
             [
@@ -2121,11 +2160,11 @@ def graph_metrics_ready_gateway(  # noqa: PLR0913
                 )
             ],
         )
-    if run_metrics:
+    if opts.run_metrics:
         cfg = (
-            graph_cfg
+            opts.graph_cfg
             or ConfigBuilder.from_snapshot(
-                repo=repo, commit=commit, repo_root=repo_root
+                repo=opts.repo, commit=opts.commit, repo_root=repo_root
             ).graph_metrics()
         )
         compute_graph_metrics(gateway, cfg)
@@ -2165,14 +2204,9 @@ def docs_views_ready_gateway(
     return ctx
 
 
-def build_callgraph_fixture_repo(  # noqa: PLR0913
+def build_callgraph_fixture_repo(
     repo_root: Path,
-    *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
-    file_backed: bool = False,
-    db_path: Path | None = None,
-    goid_entries: list[tuple[int, str, str, int, int, str]] | None = None,
+    options: CallgraphFixtureOptions | None = None,
 ) -> ProvisionedGateway:
     """
     Create the alias/relative-import callgraph repo and build callgraph via production APIs.
@@ -2183,25 +2217,28 @@ def build_callgraph_fixture_repo(  # noqa: PLR0913
         Provisioned gateway after callgraph build.
     """
     write_callgraph_alias_repo(repo_root)
+    opts = options or CallgraphFixtureOptions()
     ctx = provision_existing_repo(
         repo_root,
-        repo=repo,
-        commit=commit,
+        repo=opts.repo,
+        commit=opts.commit,
         options=ProvisionOptions(
             include_typing=False,
             include_coverage=False,
             build_graph_metrics=False,
-            file_backed=file_backed,
-            db_path=db_path,
+            file_backed=opts.file_backed,
+            db_path=opts.db_path,
             include_seed_goid=False,
         ),
     )
     gateway = ctx.gateway
-    if goid_entries:
+    if opts.goid_entries:
         gateway.con.execute("DELETE FROM core.goids WHERE goid_h128 IN (1001, 1002, 1003, 1004)")
         gateway.con.execute("DELETE FROM core.modules WHERE path IN ('pkg/a.py', 'pkg/b.py')")
-        seed_callgraph_goids(gateway, repo=repo, commit=commit, entries=goid_entries)
-    cfg = ConfigBuilder.from_snapshot(repo=repo, commit=commit, repo_root=repo_root).call_graph()
+        seed_callgraph_goids(gateway, repo=opts.repo, commit=opts.commit, entries=opts.goid_entries)
+    cfg = ConfigBuilder.from_snapshot(
+        repo=opts.repo, commit=opts.commit, repo_root=repo_root
+    ).call_graph()
     build_call_graph(gateway, cfg)
     return ctx
 

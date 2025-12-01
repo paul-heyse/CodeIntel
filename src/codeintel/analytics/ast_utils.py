@@ -187,7 +187,7 @@ def safe_unparse(node: ast.AST | None) -> str:
         return ""
     try:
         return ast.unparse(node)
-    except Exception:  # noqa: BLE001
+    except (ValueError, TypeError, AttributeError, RecursionError):
         return ""
 
 
@@ -210,11 +210,11 @@ def snippet_from_lines(lines: Iterable[str], lineno: int | None, end_lineno: int
     else:
         try:
             sequence = tuple(lines)
-        except Exception:  # noqa: BLE001
+        except (TypeError, ValueError):
             return ""
     try:
         slice_lines = sequence[start_index:end_index]
-    except Exception:  # noqa: BLE001
+    except (TypeError, IndexError):
         return ""
     return "\n".join(line.rstrip("\n") for line in slice_lines)
 

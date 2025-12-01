@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
+from codeintel.serving.backend.limits import BackendLimits
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
 from codeintel.storage.views import DOCS_VIEWS as GATEWAY_DOCS_VIEWS
 
-if TYPE_CHECKING:
-    from codeintel.serving.backend.limits import BackendLimits
-
 DOCS_VIEWS = {view.split(".", maxsplit=1)[1]: view for view in GATEWAY_DOCS_VIEWS}
+
+
+def _normalize_type(value: str) -> str:
+    normalized = value.upper()
+    if normalized in {"TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"}:
+        return "TIMESTAMP WITH TIME ZONE"
+    if normalized.startswith("DECIMAL"):
+        return "DECIMAL"
+    return normalized
 
 
 def _dataset_name(table_key: str) -> str:
@@ -72,8 +79,6 @@ def build_registry_and_limits(
     tuple[dict[str, str], BackendLimits]
         Registry mapping and backend limits built from the configuration.
     """
-    from codeintel.serving.backend.limits import BackendLimits  # noqa: PLC0415
-
     registry = build_dataset_registry(include_docs_views=include_docs_views)
     limits = BackendLimits.from_config(cfg)
     return registry, limits
@@ -154,11 +159,16 @@ def _collect_dataset_registry_issues(
             [schema_name, table_name],
         ).fetchall()
         actual = [
-            (str(col_name).lower(), str(col_type).upper(), str(nullable).upper() == "YES")
+            (
+                str(col_name).lower(),
+                _normalize_type(str(col_type)),
+                str(nullable).upper() == "YES",
+            )
             for col_name, col_type, nullable in rows
         ]
         expected = [
-            (col.name.lower(), col.type.upper(), col.nullable) for col in expected_schema.columns
+            (col.name.lower(), _normalize_type(col.type), col.nullable)
+            for col in expected_schema.columns
         ]
         if actual != expected:
             mismatched.append(table)

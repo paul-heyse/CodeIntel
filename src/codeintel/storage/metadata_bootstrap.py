@@ -15,6 +15,7 @@ from codeintel.storage.datasets import (
     DEFAULT_PARQUET_FILENAMES,
     DESCRIPTION_BY_DATASET_NAME,
 )
+from codeintel.storage.normalized_macros import render_macro
 from codeintel.storage.views import DERIVED_DOCS_VIEWS
 
 DATASET_ROWS_ONLY: tuple[str, ...] = (
@@ -63,6 +64,8 @@ DATASET_ROWS_ONLY: tuple[str, ...] = (
 
 def _canonical_type(type_str: str) -> str:
     upper = type_str.upper()
+    if upper in {"TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"}:
+        return "TIMESTAMPTZ"
     if upper.startswith("DECIMAL") or upper == "BIGINT":
         return "BIGINT"
     return upper
@@ -201,6 +204,20 @@ NORMALIZED_MACROS: dict[str, str] = {
     "analytics.test_profile": "metadata.normalized_test_profile",
     "analytics.behavioral_coverage": "metadata.normalized_behavioral_coverage",
 }
+
+# Auto-generate normalized macros for any remaining datasets to keep bootstrap resilient
+# when new tables are added. Tables explicitly marked dataset-rows-only are skipped.
+AUTO_NORMALIZED_MACRO_DDLS: list[str] = []
+for _table_key in sorted(TABLE_SCHEMAS):
+    if _table_key.startswith("metadata."):
+        continue
+    if _table_key in DATASET_ROWS_ONLY:
+        continue
+    if _table_key in NORMALIZED_MACROS:
+        continue
+    rendered_macro = render_macro(_table_key)
+    NORMALIZED_MACROS[_table_key] = rendered_macro.macro_name
+    AUTO_NORMALIZED_MACRO_DDLS.append(rendered_macro.ddl)
 INGEST_MACROS: dict[str, str] = {
     table_key: f"metadata.ingest_{table_key.split('.', maxsplit=1)[1]}"
     for table_key in TABLE_SCHEMAS
@@ -240,6 +257,7 @@ def _build_ingest_macro_ddl(macro: str) -> str:
 INGEST_MACRO_DDLS: tuple[str, ...] = tuple(
     _build_ingest_macro_ddl(macro) for macro in sorted(INGEST_MACROS.values())
 )
+
 
 METADATA_SCHEMA_DDL_BASE: tuple[str, ...] = (
     """
@@ -748,6 +766,8 @@ METADATA_SCHEMA_DDL_REST: tuple[str, ...] = (
     FROM metadata.dataset_rows(table_key, row_limit, row_offset) ds;
     """,
 )
+
+METADATA_SCHEMA_DDL_REST += tuple(AUTO_NORMALIZED_MACRO_DDLS)
 
 METADATA_SCHEMA_DDL: tuple[str, ...] = (
     METADATA_SCHEMA_DDL_BASE + INGEST_MACRO_DDLS + METADATA_SCHEMA_DDL_REST

@@ -42,7 +42,18 @@ from codeintel.pipeline.orchestration.prefect_flow import ExportArgs, export_doc
 from codeintel.pipeline.orchestration.steps import REGISTRY, StepPhase
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.services.errors import ExportError, log_problem, problem
+from codeintel.serving.mcp.models import (
+    SubsystemCoverageResponse,
+    SubsystemCoverageRow,
+    SubsystemProfileResponse,
+    SubsystemProfileRow,
+)
+from codeintel.serving.services.errors import (
+    ExportError,
+    ProblemDetailParams,
+    log_problem,
+    problem,
+)
 from codeintel.storage.catalog import (
     SamplingConfig,
     build_catalog,
@@ -1391,9 +1402,18 @@ def _cmd_subsystem_profiles(args: argparse.Namespace) -> int:
         query_engine=engine,
     )
     response = backend.service.list_subsystem_profiles(limit=args.limit)
+    profile_response = (
+        response
+        if isinstance(response, SubsystemProfileResponse)
+        else SubsystemProfileResponse.from_domain(response)
+    )
+    profiles = [
+        row if isinstance(row, SubsystemProfileRow) else SubsystemProfileRow.model_validate(row)
+        for row in profile_response.profiles
+    ]
     payload = {
-        "profiles": [row.model_dump() for row in response.profiles],
-        "meta": response.meta.model_dump(),
+        "profiles": [row.model_dump() for row in profiles],
+        "meta": profile_response.meta.model_dump(),
     }
     sys.stdout.write(json.dumps(payload))
     sys.stdout.write("\n")
@@ -1412,9 +1432,18 @@ def _cmd_subsystem_coverage(args: argparse.Namespace) -> int:
         query_engine=engine,
     )
     response = backend.service.list_subsystem_coverage(limit=args.limit)
+    coverage_response = (
+        response
+        if isinstance(response, SubsystemCoverageResponse)
+        else SubsystemCoverageResponse.from_domain(response)
+    )
+    coverage_rows = [
+        row if isinstance(row, SubsystemCoverageRow) else SubsystemCoverageRow.model_validate(row)
+        for row in coverage_response.coverage
+    ]
     payload = {
-        "coverage": [row.model_dump() for row in response.coverage],
-        "meta": response.meta.model_dump(),
+        "coverage": [row.model_dump() for row in coverage_rows],
+        "meta": coverage_response.meta.model_dump(),
     }
     sys.stdout.write(json.dumps(payload))
     sys.stdout.write("\n")
@@ -1785,7 +1814,7 @@ def _cmd_datasets_conformance(args: argparse.Namespace) -> int:
             sample_rows=bool(args.sample_rows),
             sample_size=int(args.sample_size),
         )
-    except Exception as exc:  # noqa: BLE001
+    except (DuckDBError, json.JSONDecodeError, RuntimeError, ValueError) as exc:
         sys.stderr.write(f"Conformance run failed: {exc}\n")
         return 2
     if not report.ok:
@@ -1865,7 +1894,7 @@ def _cmd_datasets_catalog(args: argparse.Namespace) -> int:
             ),
             warn=_warn,
         )
-    except Exception as exc:  # noqa: BLE001 - surface sampling failures when strict
+    except (DuckDBError, RuntimeError) as exc:
         sys.stderr.write(f"Failed to generate catalog samples: {exc}\n")
         return 1
     output_dir = args.output_dir
@@ -2138,15 +2167,24 @@ def main(argv: Iterable[str] | None = None) -> int:
         parser.print_help()
         return 1
 
+    func: CommandHandler = args.func
     try:
-        func: CommandHandler = args.func
         return int(func(args))
-    except Exception as exc:  # noqa: BLE001 pragma: no cover - error path
+    except ValueError as exc:  # pragma: no cover - error path
+        pd = problem(
+            code="cli.invalid_argument",
+            title="CLI command failed",
+            detail=str(exc),
+            params=ProblemDetailParams(extras={"command": args.command}),
+        )
+        log_problem(LOG, pd)
+        return 1
+    except RuntimeError as exc:  # pragma: no cover - error path
         pd = problem(
             code="cli.failure",
             title="CLI command failed",
             detail=str(exc),
-            extras={"command": args.command},
+            params=ProblemDetailParams(extras={"command": args.command}),
         )
         log_problem(LOG, pd)
         return 1

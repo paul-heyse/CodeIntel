@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import cast
 
-from tests._helpers.fixtures import build_callgraph_fixture_repo
+from tests._helpers.fixtures import CallgraphFixtureOptions, build_callgraph_fixture_repo
 
 
 def _normalize_callee(value: object) -> int | None:
@@ -92,13 +92,15 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
     commit = "deadbeef"
     ctx = build_callgraph_fixture_repo(
         repo_root,
-        repo=repo,
-        commit=commit,
-        goid_entries=[
-            (100, "urn:pkg.a.foo", "pkg/a.py", 1, 2, "function"),
-            (200, "urn:pkg.a.C.helper", "pkg/a.py", 5, 6, "method"),
-            (300, "urn:pkg.b.caller", "pkg/b.py", 4, 9, "function"),
-        ],
+        CallgraphFixtureOptions(
+            repo=repo,
+            commit=commit,
+            goid_entries=[
+                (100, "urn:pkg.a.foo", "pkg/a.py", 1, 2, "function"),
+                (200, "urn:pkg.a.C.helper", "pkg/a.py", 5, 6, "method"),
+                (300, "urn:pkg.b.caller", "pkg/b.py", 4, 9, "function"),
+            ],
+        ),
     )
     gateway = ctx.gateway
     con = gateway.con

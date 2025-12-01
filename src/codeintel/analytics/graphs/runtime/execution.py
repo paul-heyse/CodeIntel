@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from queue import Empty
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.graph_runtime import (
@@ -45,6 +45,8 @@ from codeintel.analytics.graphs.runtime.planning import (
 )
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig, GraphRunScope
+from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.storage.db_helpers import DUCKDB_ERRORS
 from codeintel.storage.gateway import (
     StorageConfig,
     StorageGateway,
@@ -52,15 +54,17 @@ from codeintel.storage.gateway import (
     open_memory_gateway,
 )
 
-if TYPE_CHECKING:
-    from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
-else:  # pragma: no cover - fallback when dependency is absent at runtime
-
-    class FunctionCatalogProvider:  # type: ignore[too-many-ancestors]
-        """Placeholder to satisfy type checkers when catalog provider is unavailable."""
-
-
 log = logging.getLogger(__name__)
+
+ISOLATION_CATCHABLE_ERRORS: tuple[type[Exception], ...] = (
+    *DUCKDB_ERRORS,
+    AttributeError,
+    LookupError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+    OSError,
+)
 
 
 @dataclass(frozen=True)
@@ -255,7 +259,7 @@ def _run_isolation_worker(
                 options_hash=plugin_result.options_hash if plugin_result is not None else None,
             )
         )
-    except Exception as exc:  # noqa: BLE001 pragma: no cover - defensive
+    except ISOLATION_CATCHABLE_ERRORS as exc:
         result_queue.put(
             IsolationResult(
                 status="failed",
@@ -476,10 +480,11 @@ def _execute_plugin(
     start = time.perf_counter()
     started_at = datetime.now(tz=UTC)
     attempts = 0
-    status: Literal["succeeded", "failed", "skipped"] = "succeeded"
+    status: Literal["succeeded", "failed", "skipped"] = "failed"
     error_message: str | None = None
     plugin_result: GraphPluginResult | None = None
-    while attempts < max(settings.retry_cfg.max_attempts, 1):
+    max_attempts = max(settings.retry_cfg.max_attempts, 1)
+    while attempts < max_attempts:
         attempts += 1
         try:
             plugin_result = _coerce_plugin_result(
@@ -489,23 +494,17 @@ def _execute_plugin(
             status = "succeeded"
             error_message = None
             break
-        except Exception as exc:
+        except TimeoutError as exc:
             error_message = repr(exc)
-            if settings.severity == "skip_on_error":
-                status = "skipped"
-                break
-            if attempts < max(settings.retry_cfg.max_attempts, 1):
-                log.warning(
-                    "graph_runtime.plugin.retry name=%s attempt=%d/%d",
-                    plugin.name,
-                    attempts,
-                    max(settings.retry_cfg.max_attempts, 1),
-                )
-                if settings.retry_cfg.backoff_ms > 0:
-                    time.sleep(settings.retry_cfg.backoff_ms / 1000)
-                continue
             status = "failed"
-            if settings.severity == "fatal" and settings.fail_fast:
+            break
+        except ISOLATION_CATCHABLE_ERRORS as exc:
+            error_message = repr(exc)
+            status = "skipped" if settings.severity == "skip_on_error" else "failed"
+            if status == "failed" and attempts < max_attempts:
+                _maybe_retry(plugin.name, attempts, max_attempts, settings)
+                continue
+            if status == "failed" and settings.severity == "fatal" and settings.fail_fast:
                 record = GraphPluginRunRecord(
                     name=plugin.name,
                     stage=plugin.stage,
@@ -601,6 +600,25 @@ def _execute_plugin(
         isolation_kind=plugin.isolation_kind,
         policy_fail_fast=settings.fail_fast,
     )
+
+
+def _maybe_retry(
+    plugin_name: str,
+    attempts: int,
+    max_attempts: int,
+    settings: PluginExecutionSettings,
+) -> None:
+    """Log and back off before a retry attempt."""
+    backoff_ms = settings.retry_cfg.backoff_ms or 0
+    log.warning(
+        "graph_runtime.plugin.retry name=%s attempt=%d/%d backoff_ms=%d",
+        plugin_name,
+        attempts,
+        max_attempts,
+        backoff_ms,
+    )
+    if backoff_ms > 0:
+        time.sleep(backoff_ms / 1000)
 
 
 def _execute_planned_plugin(

@@ -12,12 +12,7 @@ from codeintel.analytics.graph_runtime import (
     GraphRuntimeOptions,
     resolve_graph_runtime,
 )
-from codeintel.analytics.graphs.plugins import (
-    GraphMetricPlugin,
-    GraphPluginResult,
-    register_graph_metric_plugin,
-    unregister_graph_metric_plugin,
-)
+from codeintel.analytics.graphs.plugins import GraphMetricPlugin, GraphPluginResult
 from codeintel.analytics.graphs.runtime.execution import BatchContext, run_graph_plugin_batch
 from codeintel.analytics.graphs.runtime.manifest import InputHashPayload, compute_input_hash
 from codeintel.analytics.graphs.runtime.model import GraphPluginRunOptions
@@ -26,6 +21,7 @@ from codeintel.analytics.graphs.runtime.telemetry import NoOpGraphRuntimeTelemet
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig, GraphPluginPolicy
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from tests._helpers.plugin_packs import build_graph_plugin_pack
 
 
 def _build_runtime(
@@ -45,14 +41,9 @@ def _build_runtime(
 
 def test_run_graph_plugin_batch_executes_plugin() -> None:
     """run_graph_plugin_batch should execute plugins in the plan."""
-    plugin = GraphMetricPlugin(
-        name="exec_plugin",
-        description="execution test",
-        stage="core",
-        enabled_by_default=False,
-        run=lambda _ctx: GraphPluginResult(row_counts={"analytics.graph_metrics_functions": 0}),
-    )
-    register_graph_metric_plugin(plugin)
+    pack = build_graph_plugin_pack()
+    plugin = pack.success
+    pack.register(plugin)
     gateway, runtime, cfg, analytics_ctx = _build_runtime()
     try:
         plan = plan_graph_plugin_run(
@@ -78,7 +69,7 @@ def test_run_graph_plugin_batch_executes_plugin() -> None:
             ),
         )
     finally:
-        unregister_graph_metric_plugin(plugin.name)
+        pack.unregister_all()
     if len(records) != 1:
         pytest.fail("Expected a single record from execution batch")
     record = records[0]
@@ -90,15 +81,16 @@ def test_run_graph_plugin_batch_executes_plugin() -> None:
 
 def test_run_graph_plugin_batch_skips_when_unchanged() -> None:
     """Skip-on-unchanged should produce a skipped record."""
+    pack = build_graph_plugin_pack()
     plugin = GraphMetricPlugin(
         name="skip_manifest_plugin",
         description="skip test",
         stage="core",
         enabled_by_default=False,
-        run=lambda _ctx: None,
+        run=lambda _ctx: GraphPluginResult(row_counts={"analytics.graph_metrics_functions": 0}),
         version_hash="v2",
     )
-    register_graph_metric_plugin(plugin)
+    pack.register(plugin)
     gateway, runtime, cfg, analytics_ctx = _build_runtime()
     scope = cfg.scope
     input_hash = compute_input_hash(
@@ -142,7 +134,7 @@ def test_run_graph_plugin_batch_skips_when_unchanged() -> None:
             ),
         )
     finally:
-        unregister_graph_metric_plugin(plugin.name)
+        pack.unregister_all()
     if len(records) != 1:
         pytest.fail("Expected a single record when skipping unchanged plugin")
     skipped = records[0]

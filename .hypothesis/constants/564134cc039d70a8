@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/gateway.py
+# hypothesis_version: 6.148.3
+
+["'", "''", ':memory:', 'DuckDBConnection', 'DuckDBError', 'DuckDBRelation', 'StorageConfig', 'StorageGateway', 'USE main_db', '[]', 'analytics.subsystems', 'analytics.typedness', 'core.goids', 'core.modules', 'core.repo_map', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'open_gateway', 'open_memory_gateway', 'python']

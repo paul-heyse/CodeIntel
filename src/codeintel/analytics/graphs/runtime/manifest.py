@@ -21,6 +21,7 @@ from codeintel.analytics.graphs.plugins import (
 )
 from codeintel.analytics.graphs.runtime.model import GraphPluginRunRecord
 from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.storage.db_helpers import safe_row_counts
 from codeintel.storage.gateway import StorageGateway
 
 
@@ -172,22 +173,8 @@ def current_row_counts(
     """
     if gateway is None or not tables:
         return None
-    counts: dict[str, int] = {}
     connection = getattr(gateway, "con", None)
-    if connection is None:
-        return None
-    for table in tables:
-        try:
-            escaped_repo = repo.replace("'", "''")
-            escaped_commit = commit.replace("'", "''")
-            relation = connection.table(table).filter(
-                f"repo = '{escaped_repo}' AND commit = '{escaped_commit}'"
-            )
-            count = relation.aggregate("count(*)").fetchone()[0]
-            counts[table] = int(count)
-        except Exception:  # noqa: BLE001 - defensive, should not block skip logic
-            return None
-    return counts
+    return safe_row_counts(connection, repo=repo, commit=commit, tables=tables)
 
 
 def is_unchanged(

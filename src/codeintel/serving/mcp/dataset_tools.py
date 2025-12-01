@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol, cast
+from typing import cast
 
 from mcp.server.fastmcp import FastMCP
 
@@ -14,33 +14,37 @@ from codeintel.serving.context import (
 )
 from codeintel.serving.mcp import models
 from codeintel.serving.mcp.models import ProblemDetail
+from codeintel.serving.mcp.serialization import (
+    ResponseFactory,
+    SupportsFromDomain,
+    SupportsModelDump,
+    SupportsModelValidate,
+)
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.registry import OperationSpec, iter_operation_specs
 from codeintel.serving.services.errors import generate_correlation_id
 
 
-class _ModelLike(Protocol):
-    def model_dump(self) -> dict[str, object]: ...
-
-
 def _serialize_payload(
-    payload: object, model_cls: type[object] | None
+    payload: object,
+    model_cls: ResponseFactory | None,
 ) -> dict[str, object]:
     if hasattr(payload, "model_dump"):
-        return cast("_ModelLike", payload).model_dump()
+        return cast("SupportsModelDump", payload).model_dump()
     if model_cls is not None:
         if hasattr(model_cls, "from_domain"):
-            return cast("_ModelLike", model_cls.from_domain(payload)).model_dump()  # type: ignore[arg-type]
-        return cast("_ModelLike", model_cls.model_validate(payload)).model_dump()  # type: ignore[arg-type]
+            from_domain = cast("SupportsFromDomain", model_cls).from_domain
+            return from_domain(payload).model_dump()
+        validator = cast("SupportsModelValidate", model_cls).model_validate
+        return validator(payload).model_dump()
     return cast("dict[str, object]", payload)
 
 
 def _serialize_list_payload(
-    payload: list[object],
-    model_cls: type[object] | None,
+    payload: list[object], model_cls: ResponseFactory | None
 ) -> list[dict[str, object] | object]:
     if model_cls is None and all(hasattr(item, "model_dump") for item in payload):
-        return [cast("_ModelLike", item).model_dump() for item in payload]
+        return [cast("SupportsModelDump", item).model_dump() for item in payload]
     return [_serialize_payload(item, model_cls) for item in payload]
 
 
@@ -56,7 +60,7 @@ def _build_dataset_tool(
         )
         raise TypeError(message)
     backend_method: Callable[..., object] = backend_attr
-    model_cls: type[object] | None = getattr(models, spec.output_model_name, None)
+    model_cls = cast("ResponseFactory | None", getattr(models, spec.output_model_name, None))
 
     @_wrap
     def _tool(

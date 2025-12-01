@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from codeintel.config import BuildPaths, ScipIngestStepConfig, SnapshotRef, ToolBinaries
@@ -12,6 +11,7 @@ from codeintel.ingestion.common import ModuleRecord
 from codeintel.ingestion.scip_ingest import ScipIngestOps, ScipRuntime
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
+from tests._helpers.duckdb import memory_con_with_macros
 
 
 def test_scip_module_filter_limits_to_src_python_files(tmp_path: Path) -> None:
@@ -27,7 +27,7 @@ def test_scip_module_filter_limits_to_src_python_files(tmp_path: Path) -> None:
         paths=paths,
         binaries=ToolBinaries(),
     )
-    con = duckdb.connect(database=":memory:")
+    con = memory_con_with_macros()
     try:
         runtime = ScipRuntime(
             repo_root=tmp_path,

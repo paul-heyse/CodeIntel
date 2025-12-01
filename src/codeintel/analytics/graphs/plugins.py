@@ -8,7 +8,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -26,6 +26,7 @@ from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.storage.db_helpers import safe_row_counts
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class GraphRuntimeScratch:
         for callback in reversed(self._cleanup):
             try:
                 callback()
-            except Exception:
+            except (RuntimeError, OSError, ValueError):
                 log.exception("scratch.cleanup_failed")
         self._store.clear()
         self._cleanup.clear()
@@ -113,6 +114,11 @@ class GraphMetricExecutionContext:
     scratch: GraphRuntimeScratch = field(default_factory=GraphRuntimeScratch)
 
 
+ContextFactory = Callable[
+    [AnalyticsExecutionContext], AnalyticsExecutionContext | GraphMetricExecutionContext
+]
+
+
 @dataclass(frozen=True)
 class GraphPluginResult:
     """Optional structured result returned by graph metric plugins."""
@@ -140,21 +146,11 @@ def _row_counts_for_tables(
     dict[str, int]
         Mapping of table name to row count for the requested repo/commit.
     """
-    counts: dict[str, int] = {}
     connection = getattr(ctx.gateway, "con", None)
-    if connection is None:
-        return counts
-    for table in tables:
-        try:
-            escaped_repo = ctx.repo.replace("'", "''")
-            escaped_commit = ctx.commit.replace("'", "''")
-            relation = connection.table(table).filter(
-                f"repo = '{escaped_repo}' AND commit = '{escaped_commit}'"
-            )
-            row_count = relation.count().fetchone()[0]
-            counts[table] = int(row_count)
-        except Exception:  # noqa: BLE001 - defensive, counting must not break plugins
-            log.debug("row_count.failed table=%s repo=%s commit=%s", table, ctx.repo, ctx.commit)
+    counts = safe_row_counts(connection, repo=ctx.repo, commit=ctx.commit, tables=tables)
+    if counts is None:
+        log.debug("row_count.failed repo=%s commit=%s tables=%s", ctx.repo, ctx.commit, tables)
+        return {}
     return counts
 
 
@@ -775,30 +771,29 @@ def graph_metric_plugin_to_analytics(plugin: GraphMetricPlugin) -> AnalyticsPlug
         Analytics-compatible wrapper preserving runtime hints and contracts.
     """
 
-    def context_factory(ctx: AnalyticsExecutionContext) -> AnalyticsExecutionContext:
+    def _build_graph_context(ctx: AnalyticsExecutionContext) -> GraphMetricExecutionContext:
         if ctx.graph_runtime is None:
             message = "Graph runtime required for graph analytics plugin execution"
             raise ValueError(message)
         scratch = (
             ctx.scratch if isinstance(ctx.scratch, GraphRuntimeScratch) else GraphRuntimeScratch()
         )
-        return cast(
-            "AnalyticsExecutionContext",
-            GraphMetricExecutionContext(
-                gateway=ctx.gateway,
-                runtime=ctx.graph_runtime,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                config=ctx.graph_cfg,
-                analytics_context=ctx.analytics_context,
-                catalog_provider=ctx.catalog_provider,
-                options=ctx.options,
-                plugin_name=plugin.name,
-                run_id=ctx.run_id,
-                scope=ctx.scope,
-                scratch=scratch,
-            ),
+        return GraphMetricExecutionContext(
+            gateway=ctx.gateway,
+            runtime=ctx.graph_runtime,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            config=ctx.graph_cfg,
+            analytics_context=ctx.analytics_context,
+            catalog_provider=ctx.catalog_provider,
+            options=ctx.options,
+            plugin_name=plugin.name,
+            run_id=ctx.run_id,
+            scope=ctx.scope,
+            scratch=scratch,
         )
+
+    context_factory: ContextFactory = _build_graph_context
 
     hints = None
     if plugin.resource_hints is not None:
@@ -807,12 +802,18 @@ def graph_metric_plugin_to_analytics(plugin: GraphMetricPlugin) -> AnalyticsPlug
             max_memory_mb=plugin.resource_hints.memory_mb_hint,
         )
 
+    def _run_as_analytics(ctx: AnalyticsExecutionContext) -> GraphPluginResult | None:
+        if not isinstance(ctx, GraphMetricExecutionContext):
+            message = "Graph metric plugins require GraphMetricExecutionContext"
+            raise TypeError(message)
+        return plugin.run(ctx)
+
     return AnalyticsPlugin(
         name=plugin.name,
         description=plugin.description,
         stage="graph",
         enabled_by_default=plugin.enabled_by_default,
-        run=plugin.run,  # type: ignore[arg-type]
+        run=_run_as_analytics,
         severity=plugin.severity,
         depends_on=plugin.depends_on,
         provides=plugin.provides,
@@ -829,13 +830,16 @@ def graph_metric_plugin_to_analytics(plugin: GraphMetricPlugin) -> AnalyticsPlug
     )
 
 
+_GRAPH_PLUGIN_STATE: dict[str, bool] = {"registered": False}
+
+
 def _register_graph_plugins_as_analytics() -> None:
     """Register all graph metric plugins in the analytics registry."""
-    if getattr(_register_graph_plugins_as_analytics, "done", False):
+    if _GRAPH_PLUGIN_STATE["registered"]:
         return
     for plugin in list_graph_metric_plugins():
         register_analytics_plugin(graph_metric_plugin_to_analytics(plugin))
-    _register_graph_plugins_as_analytics.done = True  # type: ignore[attr-defined]
+    _GRAPH_PLUGIN_STATE["registered"] = True
 
 
 def _plugin_graph_metrics_modules_ext(

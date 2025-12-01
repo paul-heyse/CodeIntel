@@ -19,7 +19,9 @@ from codeintel.analytics.rows.graph_metrics_ext import (
     ModuleGraphMetricsExtRow,
 )
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
-from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
+from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
+from codeintel.storage.metadata_bootstrap import INGEST_MACROS
+from tests._helpers.duckdb import gateway_with_macros
 
 
 def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str) -> None:
@@ -92,6 +94,15 @@ def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str)
         con.execute(statement, statement_params)
 
 
+def _assert_ingest_macros_present(gateway: StorageGateway) -> None:
+    """Fail fast if ingest macros are not registered for the gateway connection."""
+    macros = list_ingest_macros(gateway.con)
+    missing = {m.lower() for m in INGEST_MACROS.values() if m.lower() not in macros}
+    if missing:
+        message = f"Missing ingest macros on seeded gateway: {sorted(missing)}"
+        raise RuntimeError(message)
+
+
 def open_seeded_architecture_gateway(
     *,
     repo: str,
@@ -120,7 +131,7 @@ def open_seeded_architecture_gateway(
         Gateway with schema, views, and architecture seed data applied.
     """
     if db_path is None:
-        gateway = _open_memory_gateway(
+        gateway = gateway_with_macros(
             apply_schema=True,
             ensure_views=strict_schema,
             validate_schema=strict_schema,
@@ -154,6 +165,8 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
     StorageGateway
         Gateway with architecture tables populated for tests.
     """
+    ensure_ingest_macros(gateway.con)
+    _assert_ingest_macros_present(gateway)
     _clear_architecture_seed(gateway=gateway, repo=repo, commit=commit)
     now = datetime.now(UTC)
     now_iso = now.isoformat()
@@ -590,4 +603,6 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
             now,
         ),
     )
+    ensure_ingest_macros(gateway.con)
+    _assert_ingest_macros_present(gateway)
     return gateway

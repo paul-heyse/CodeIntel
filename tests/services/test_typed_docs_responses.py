@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TypedDict, cast
 
 import pytest
@@ -13,7 +12,9 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
 )
 from codeintel.serving.mcp.query_service import BackendLimits, DuckDBQueryService
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from codeintel.storage.repositories.functions import FunctionRepository
+from codeintel.storage.repositories.subsystems import SubsystemRepository
 
 
 class StubFunctionRow(TypedDict):
@@ -28,11 +29,19 @@ class StubFunctionRow(TypedDict):
     risk_score: float
 
 
-@dataclass
-class _StubFunctions:
-    """Minimal function repository stub for typed response tests."""
+class _StubFunctions(FunctionRepository):
+    """Function repository stub overriding required methods."""
 
-    row: StubFunctionRow
+    def __init__(
+        self,
+        row: StubFunctionRow,
+        *,
+        gateway: StorageGateway,
+        repo: str,
+        commit: str,
+    ) -> None:
+        super().__init__(gateway=gateway, repo=repo, commit=commit)
+        self._row = row
 
     def resolve_function_goid(
         self,
@@ -43,11 +52,11 @@ class _StubFunctions:
         qualname: str | None = None,
     ) -> int | None:
         _ = (urn, rel_path, qualname)
-        return goid_h128 or int(self.row["function_goid_h128"])
+        return goid_h128 or int(self._row["function_goid_h128"])
 
     def get_function_summary_by_goid(self, goid_h128: int) -> dict[str, object] | None:
         _ = goid_h128
-        return cast("dict[str, object]", self.row)
+        return cast("dict[str, object]", self._row)
 
 
 class _StubQueryService(DuckDBQueryService):
@@ -59,27 +68,34 @@ class _StubQueryService(DuckDBQueryService):
             commit=str(row["commit"]),
             limits=BackendLimits(),
         )
-        self._stub_functions = _StubFunctions(row=row)
-
-    @property
-    def functions(self) -> _StubFunctions:  # type: ignore[override]
-        return self._stub_functions
+        self._functions = _StubFunctions(
+            row=row, gateway=gateway, repo=str(row["repo"]), commit=str(row["commit"])
+        )
 
 
-@dataclass
-class _StubSubsystems:
+class _StubSubsystems(SubsystemRepository):
     """Minimal subsystem repository stub for typed response tests."""
 
-    profile_row: dict[str, object]
-    coverage_row: dict[str, object]
+    def __init__(
+        self,
+        *,
+        profile_row: dict[str, object],
+        coverage_row: dict[str, object],
+        gateway: StorageGateway,
+        repo: str,
+        commit: str,
+    ) -> None:
+        super().__init__(gateway=gateway, repo=repo, commit=commit)
+        self._profile_row = profile_row
+        self._coverage_row = coverage_row
 
     def list_subsystem_profiles(self, *, limit: int) -> list[dict[str, object]]:
         _ = limit
-        return [self.profile_row]
+        return [self._profile_row]
 
     def list_subsystem_coverage(self, *, limit: int) -> list[dict[str, object]]:
         _ = limit
-        return [self.coverage_row]
+        return [self._coverage_row]
 
 
 class _StubSubsystemQueryService(DuckDBQueryService):
@@ -93,11 +109,13 @@ class _StubSubsystemQueryService(DuckDBQueryService):
     ) -> None:
         gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
         super().__init__(gateway=gateway, repo=repo, commit=commit, limits=BackendLimits())
-        self._stub_subsystems = _StubSubsystems(profile_row=profile_row, coverage_row=coverage_row)
-
-    @property
-    def subsystems(self) -> _StubSubsystems:  # type: ignore[override]
-        return self._stub_subsystems
+        self._subsystems = _StubSubsystems(
+            profile_row=profile_row,
+            coverage_row=coverage_row,
+            gateway=gateway,
+            repo=repo,
+            commit=commit,
+        )
 
 
 def test_function_summary_response_uses_typed_row() -> None:

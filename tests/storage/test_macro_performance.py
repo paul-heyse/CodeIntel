@@ -8,6 +8,7 @@ import pytest
 
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_helpers import safe_macro_call
 
 pytestmark = pytest.mark.smoke
 
@@ -22,10 +23,8 @@ def test_normalized_macro_latency_smoke(fresh_gateway: StorageGateway, table_key
     con = fresh_gateway.con
     macro = NORMALIZED_MACROS[table_key]
     start = perf_counter()
-    _ = con.sql(
-        f"SELECT * FROM {macro}(?, ?, ?)",  # noqa: S608 - trusted macro name
-        params=[table_key, 0, 0],
-    ).fetchall()
+    sql, params = safe_macro_call(macro, [table_key, 0, 0], allowed=set(NORMALIZED_MACROS.values()))
+    _ = con.sql(sql, params=params).fetchall()
     duration = perf_counter() - start
     if duration > 1.0:
         pytest.fail(f"Macro {macro} exceeded latency threshold: {duration:.3f}s")

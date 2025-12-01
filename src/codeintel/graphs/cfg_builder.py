@@ -482,7 +482,7 @@ def _load_source(spec: FunctionBuildSpec, file_cache: dict[str, str]) -> str:
     if spec.rel_path not in file_cache:
         try:
             file_cache[spec.rel_path] = (spec.repo_root / spec.rel_path).read_text(encoding="utf8")
-        except Exception:  # noqa: BLE001
+        except OSError:
             file_cache[spec.rel_path] = ""
     return file_cache[spec.rel_path]
 
@@ -492,7 +492,7 @@ def _parse_function_ast(source: str) -> ast.Module | None:
         return None
     try:
         return ast.parse(source)
-    except Exception:  # noqa: BLE001
+    except SyntaxError:
         return None
 
 

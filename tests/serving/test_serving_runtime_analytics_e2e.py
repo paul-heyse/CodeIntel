@@ -28,6 +28,32 @@ def _make_snapshot(ctx: ProvisionedGateway) -> SnapshotRef:
     return SnapshotRef(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
 
 
+class TrackingGraphRuntimePool(GraphRuntimePool):
+    """GraphRuntimePool that records get() invocations for assertions."""
+
+    def __init__(self, max_size: int = 4) -> None:
+        super().__init__(max_size=max_size)
+        self.get_calls = 0
+
+    def get(
+        self,
+        gateway: StorageGateway,
+        options: GraphRuntimeOptions,
+        *,
+        context: AnalyticsContext | None = None,
+    ) -> GraphRuntime:
+        """
+        Return a runtime while incrementing call counters for assertions.
+
+        Returns
+        -------
+        GraphRuntime
+            Runtime acquired from the pool.
+        """
+        self.get_calls += 1
+        return super().get(gateway, options, context=context)
+
+
 def test_serving_runtime_analytics_reuses_engine(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
@@ -41,20 +67,7 @@ def test_serving_runtime_analytics_reuses_engine(
         commit=snapshot.commit,
         db_path=gateway.config.db_path,
     )
-    pool_calls = {"get": 0}
-    pool = GraphRuntimePool(max_size=2)
-    original_get = pool.get
-
-    def _tracking_get(
-        gateway: StorageGateway,
-        options: GraphRuntimeOptions,
-        *,
-        context: AnalyticsContext | None = None,
-    ) -> GraphRuntime:
-        pool_calls["get"] += 1
-        return original_get(gateway, options, context=context)
-
-    pool.get = _tracking_get  # type: ignore[assignment]
+    pool = TrackingGraphRuntimePool(max_size=2)
     resource = build_backend_resource(
         cfg,
         gateway=gateway,
@@ -75,7 +88,7 @@ def test_serving_runtime_analytics_reuses_engine(
         detail="Serving backend should reuse pooled runtime engine",
     )
     _expect(
-        condition=pool_calls["get"] > 0,
+        condition=pool.get_calls > 0,
         detail="Runtime pool should be consulted during backend wiring",
     )
 

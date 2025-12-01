@@ -31,6 +31,7 @@ from codeintel.ingestion.tool_service import ToolService
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions, ExportRunner, run_validated_exports
 from codeintel.pipeline.orchestration.prefect_adapter import run_pipeline_as_tasks
+from codeintel.pipeline.orchestration.prefect_metadata import attach_task_metadata
 from codeintel.pipeline.orchestration.steps import REGISTRY, PipelineContext, run_pipeline
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.storage.gateway import (
@@ -258,13 +259,10 @@ def gateway_cache_stats() -> dict[str, int]:
     }
 
 
-_PREFECT_LOGGING_CONFIGURED = False
-
-
 def _configure_prefect_logging() -> None:
     """Configure Prefect logging to use a simple stderr handler instead of Rich console."""
-    global _PREFECT_LOGGING_CONFIGURED  # noqa: PLW0603
-    if _PREFECT_LOGGING_CONFIGURED:
+    configured_flag = getattr(_configure_prefect_logging, "_configured", False)
+    if configured_flag:
         return
     os.environ["PREFECT_LOGGING_SETTINGS_PATH"] = str(_PREFECT_LOGGING_SETTINGS_PATH)
     setup_logging(incremental=False)
@@ -291,7 +289,7 @@ def _configure_prefect_logging() -> None:
             ]
             if stderr_handler not in logger.handlers:
                 logger.addHandler(stderr_handler)
-    _PREFECT_LOGGING_CONFIGURED = True
+    _configure_prefect_logging.__dict__["_configured"] = True
 
 
 def _tools_from_env(base: ToolsConfig | None = None) -> ToolsConfig:
@@ -403,9 +401,8 @@ def t_export_docs(
     )
 
 
-# Provide .fn attribute for non-task functions (t_export_docs is not a @task)
-# Note: t_history_timeseries already has .fn from @task decorator - DO NOT overwrite!
-t_export_docs.fn = t_export_docs  # type: ignore[attr-defined]
+# Attach metadata for non-task function to mirror Prefect task introspection.
+attach_task_metadata(t_export_docs, step_name="export_docs", fn=t_export_docs)
 
 
 @flow(name="export_docs_flow")

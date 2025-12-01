@@ -23,6 +23,7 @@ from codeintel.serving.mcp.models import (
     SubsystemSummaryResponse,
     TestsForFunctionResponse,
 )
+from codeintel.serving.services.errors import ProblemError
 
 LOG = logging.getLogger("codeintel.serving.services.query")
 
@@ -220,6 +221,19 @@ def _observe_call[T](
     -------
     T
         Result returned by the wrapped callable.
+
+    Raises
+    ------
+    ProblemError
+        When the wrapped callable surfaces a domain problem.
+    RuntimeError
+        When the callable signals runtime failures.
+    ValueError
+        When the callable surfaces invalid inputs.
+    OSError
+        When I/O issues occur within the callable.
+    TimeoutError
+        When the callable indicates it exceeded a timeout.
     """
     req_ctx = get_current_request_context()
     start = time.perf_counter()
@@ -237,7 +251,7 @@ def _observe_call[T](
 
     try:
         result = func()
-    except Exception as exc:
+    except (ProblemError, RuntimeError, ValueError, OSError, TimeoutError) as exc:
         duration_ms = (time.perf_counter() - start) * 1000
         if observability is not None:
             metrics = ServiceCallMetrics(

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Iterable
 from pathlib import Path
+from typing import override
 
 import pytest
 
@@ -20,17 +21,24 @@ from codeintel.ingestion.tools import ToolStatus, build_default_registry
 from codeintel.ingestion.tools.pyright import PyrightPlugin
 
 
-class DummyRunner(ToolRunner):
-    """Provide a test double that bypasses real subprocess execution."""
+class PresetRunner(ToolRunner):
+    """
+    ToolRunner that returns preset results without invoking subprocesses.
+
+    This runner is realistic enough to flow through plugin logic while avoiding external
+    binaries; it can be configured with either a ToolRunResult or an Exception to simulate
+    failure modes.
+    """
 
     def __init__(self, result: ToolRunResult | Exception) -> None:
         self._result = result
         super().__init__(tools_config=ToolsConfig.default(), cache_dir=Path("build/.tool_cache"))
 
-    async def run_async(  # type: ignore[override]
+    @override
+    async def run_async(
         self,
         tool: ToolName | str,
-        args: Sequence[str],
+        args: Iterable[str],
         *,
         cwd: Path | None = None,
         output_path: Path | None = None,
@@ -73,7 +81,7 @@ def test_pyright_plugin_not_found_downgrades() -> None:
     """Ensure PyrightPlugin reports NOT_FOUND when the binary is missing."""
     tools_cfg = ToolsConfig.default()
     exc = ToolNotFoundError(ToolName.PYRIGHT, tools_cfg.pyright_bin)
-    runner = DummyRunner(exc)
+    runner = PresetRunner(exc)
     plugin = PyrightPlugin(runner=runner, tools_config=tools_cfg)
 
     result = asyncio.run(plugin.run(repo_root=Path()))
@@ -98,7 +106,7 @@ def test_pyright_plugin_ok_status() -> None:
         duration_s=0.01,
         output_path=None,
     )
-    runner = DummyRunner(run)
+    runner = PresetRunner(run)
     plugin = PyrightPlugin(runner=runner, tools_config=tools_cfg)
 
     result = asyncio.run(plugin.run(repo_root=Path()))
@@ -115,7 +123,7 @@ def test_pyright_plugin_ok_status() -> None:
 
 def test_default_registry_contains_plugins() -> None:
     """Verify the registry builder wires all expected plugin names."""
-    runner = DummyRunner(
+    runner = PresetRunner(
         ToolRunResult(
             tool=ToolName.PYRIGHT,
             args=(),

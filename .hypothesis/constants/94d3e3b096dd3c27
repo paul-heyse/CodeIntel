@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/ast_features/extract.py
+# hypothesis_version: 6.148.3
+
+['.', '.config', '.flag(', '.settings', 'asyncio', 'build_import_map', 'db', 'feature_flag', 'filesystem', 'funcs', 'io_flags_from_call', 'libs', 'network', 'subprocess', 'threading']

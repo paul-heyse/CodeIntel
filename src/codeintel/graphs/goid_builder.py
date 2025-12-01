@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -268,3 +269,20 @@ def build_goids(gateway: StorageGateway, cfg: GoidBuilderStepConfig) -> None:
         cfg.commit,
         len(goid_rows),
     )
+
+
+def build_goid_entries_for_testing(
+    row: object,
+    cfg: GoidBuilderStepConfig,
+    now: datetime,
+    module_by_path: Mapping[str, str],
+) -> tuple[dict[str, object], dict[str, object]]:
+    """
+    Exercise GOID entry construction in tests.
+
+    Returns
+    -------
+    tuple[dict[str, object], dict[str, object]]
+        GOID row and crosswalk row dictionaries.
+    """
+    return _build_goid_entries(row, cfg, now, module_by_path)

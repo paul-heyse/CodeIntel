@@ -221,7 +221,7 @@ def build_import_graph(gateway: StorageGateway, cfg: ImportGraphStepConfig) -> N
 
         try:
             module = cst.parse_module(source)
-        except Exception:
+        except (cst.ParserSyntaxError, ValueError):
             log.exception("Failed to parse %s for import graph", file_path)
             continue
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from codeintel.config.schemas.tables import TABLE_SCHEMAS
 from codeintel.pipeline.export.manifest import compute_file_hash
 from codeintel.storage.datasets import Dataset, DatasetRegistry
-from codeintel.storage.gateway import DuckDBConnection
+from codeintel.storage.gateway import DuckDBConnection, DuckDBError
 from codeintel.storage.repositories.base import fetch_all_dicts
 
 
@@ -153,8 +153,11 @@ def _sample_rows(
                 WHERE table_function_name = 'dataset_rows'
                 """
             ).fetchone()
-        except Exception as exc:
+        except RuntimeError as exc:
             message = f"Failed to check sampling macro availability for {dataset.name}: {exc}"
+            raise RuntimeError(message) from exc
+        except DuckDBError as exc:
+            message = f"Failed to query sampling macro availability for {dataset.name}"
             raise RuntimeError(message) from exc
         if available is None or int(available[0]) == 0:
             message = (
@@ -186,7 +189,7 @@ def _sample_rows(
             "SELECT * FROM metadata.dataset_rows(?, ?, ?)",
             [dataset.table_key, limited, 0],
         )
-    except Exception as exc:  # noqa: BLE001 - surface empty sample on errors
+    except DuckDBError as exc:
         return _handle_sampling_failure(
             dataset_name=dataset.name,
             strict=strict,

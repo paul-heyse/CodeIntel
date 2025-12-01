@@ -7,6 +7,7 @@ import pytest
 
 from codeintel.storage.schemas import apply_all_schemas
 from codeintel.storage.views import create_all_views
+from tests._helpers.duckdb import memory_con_with_macros
 
 EXPECTED_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "docs.v_subsystem_profile": [
@@ -78,10 +79,13 @@ def _fetch_schema(con: duckdb.DuckDBPyConnection, view_key: str) -> list[tuple[s
 
 def test_subsystem_docs_views_schema_stable() -> None:
     """Detect unintended column drift for subsystem docs views."""
-    con = duckdb.connect(database=":memory:")
-    apply_all_schemas(con)
-    create_all_views(con)
-    for view_key, expected in EXPECTED_SCHEMAS.items():
-        actual = _fetch_schema(con, view_key)
-        if actual != expected:
-            pytest.fail(f"{view_key} schema drift detected: {actual} != {expected}")
+    con = memory_con_with_macros()
+    try:
+        apply_all_schemas(con)
+        create_all_views(con)
+        for view_key, expected in EXPECTED_SCHEMAS.items():
+            actual = _fetch_schema(con, view_key)
+            if actual != expected:
+                pytest.fail(f"{view_key} schema drift detected: {actual} != {expected}")
+    finally:
+        con.close()

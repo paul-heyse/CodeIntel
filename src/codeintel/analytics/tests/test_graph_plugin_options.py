@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -13,6 +14,7 @@ from codeintel.analytics.graph_service_runtime import (
     GraphServiceRuntime,
 )
 from codeintel.analytics.graphs.plugins import (
+    GraphMetricExecutionContext,
     GraphMetricPlugin,
     register_graph_metric_plugin,
     resolve_plugin_options,
@@ -48,8 +50,11 @@ def test_options_defaults_merge_with_config_and_runtime_overrides() -> None:
     """Options merge order: default -> config -> runtime, validated via model."""
     seen: list[_OptionsModel] = []
 
-    def _run(ctx: object) -> None:
-        seen.append(ctx.options)  # type: ignore[attr-defined]
+    def _run(ctx: GraphMetricExecutionContext) -> None:
+        if not isinstance(ctx.options, _OptionsModel):
+            message = "Plugin options should be validated into the declared model"
+            raise TypeError(message)
+        seen.append(ctx.options)
 
     plugin_name = "options_plugin"
     register_graph_metric_plugin(
@@ -100,7 +105,7 @@ def test_options_validation_error_surfaces() -> None:
     service, cfg = _make_service()
     cfg = GraphMetricsStepConfig(
         snapshot=cfg.snapshot,
-        plugin_options={plugin_name: {"threshold": "oops"}},  # type: ignore[arg-type]
+        plugin_options={plugin_name: cast("dict[str, object]", {"threshold": "oops"})},
     )
     try:
         with pytest.raises(ValidationError):

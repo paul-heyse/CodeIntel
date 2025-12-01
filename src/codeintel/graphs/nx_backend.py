@@ -40,12 +40,13 @@ def _enable_nx_cugraph_backend() -> None:
         message = "Requested GPU backend, but nx_cugraph is not installed."
         raise RuntimeError(message) from exc
 
-    try:
-        nx_cugraph.set_default_backend()  # type: ignore[attr-defined]
-        LOG.info("NetworkX GPU backend enabled via nx_cugraph.")
-    except AttributeError as exc:  # pragma: no cover - version dependent
+    set_backend = getattr(nx_cugraph, "set_default_backend", None)
+    if set_backend is None:
         message = "nx_cugraph.set_default_backend is not available for this version."
-        raise RuntimeError(message) from exc
+        raise RuntimeError(message)
+
+    set_backend()
+    LOG.info("NetworkX GPU backend enabled via nx_cugraph.")
 
 
 def maybe_enable_nx_gpu(

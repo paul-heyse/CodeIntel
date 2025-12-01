@@ -75,7 +75,7 @@ def test_callgraph_falls_back_to_ast(tmp_path: Path) -> None:
     scope = CallGraphRunScope(repo="r", commit="c", repo_root=repo_root)
 
     # Act
-    edges = callgraph_builder._collect_edges(  # noqa: SLF001
+    edges = callgraph_builder.collect_edges_for_testing(
         catalog,
         scope,
         callgraph_builder.CallGraphInputs(

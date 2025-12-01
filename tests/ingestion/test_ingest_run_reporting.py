@@ -9,7 +9,6 @@ import pytest
 
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.ingestion import docstrings_ingest
 from codeintel.ingestion.ingest_runs import IngestRun, IngestRunSink, IngestRunStatus
 from codeintel.ingestion.runner import (
     IngestionContext,
@@ -85,7 +84,7 @@ def test_ingest_run_success_reporting(tmp_path: Path) -> None:
         pytest.fail("run_id was not set")
 
 
-def test_ingest_run_error_classification(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ingest_run_error_classification(tmp_path: Path) -> None:
     """Force an error in docstrings_ingest and assert error_kind is set."""
     repo_root = tmp_path / "repo" / "src" / "pkg"
     repo_root.mkdir(parents=True)
@@ -100,7 +99,7 @@ def test_ingest_run_error_classification(tmp_path: Path, monkeypatch: pytest.Mon
 
     message = "synthetic parse error"
 
-    def _boom(*_args: object, **_kwargs: object) -> None:
+    def _boom(_ctx: IngestionContext) -> None:
         """
         Raise a synthetic parse error to test classification.
 
@@ -111,7 +110,7 @@ def test_ingest_run_error_classification(tmp_path: Path, monkeypatch: pytest.Mon
         """
         raise ValueError(message)
 
-    monkeypatch.setattr(docstrings_ingest, "ingest_docstrings", _boom)
+    ctx.step_overrides = {"docstrings_ingest": _boom}
 
     with pytest.raises(ValueError, match=message):
         run_docstrings_ingest(ctx)

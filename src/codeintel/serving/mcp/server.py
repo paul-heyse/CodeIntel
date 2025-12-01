@@ -2,21 +2,24 @@
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import Callable
 
+import httpx
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.mcp.registry import register_tools
 from codeintel.serving.services.factory import BackendResource, build_backend_resource
+from codeintel.serving.services.wiring import BackendResourceOptions
 from codeintel.storage.gateway import StorageGateway
+
+BackendFactory = Callable[..., BackendResource]
 
 
 def create_mcp_server(
     cfg: ServingConfig | None = None,
     *,
-    backend_factory: Callable[[ServingConfig], BackendResource] | None = None,
+    backend_factory: BackendFactory | None = None,
     gateway: StorageGateway | None = None,
     register_tools_fn: Callable[[FastMCP, object], None] | None = None,
 ) -> tuple[FastMCP, Callable[[], None]]:
@@ -48,14 +51,29 @@ def create_mcp_server(
     if gateway is None and config.mode == "local_db":
         message = "StorageGateway is required for MCP server in local_db mode"
         raise ValueError(message)
-    factory = backend_factory or build_backend_resource
-    kwargs: dict[str, object] = {}
-    params = inspect.signature(factory).parameters
-    if "gateway" in params:
-        kwargs["gateway"] = gateway
-    elif "_gateway" in params:
-        kwargs["_gateway"] = gateway
-    resource: BackendResource = factory(config, **kwargs)  # type: ignore[arg-type]
+
+    def _adapt_factory(factory: BackendFactory) -> BackendFactory:
+        def _wrapped(
+            wrapped_cfg: ServingConfig,
+            *,
+            gateway: StorageGateway | None = None,
+            http_client: httpx.Client | httpx.AsyncClient | None = None,
+            options: BackendResourceOptions | None = None,
+        ) -> BackendResource:
+            try:
+                return factory(
+                    wrapped_cfg,
+                    gateway=gateway,
+                    http_client=http_client,
+                    options=options,
+                )
+            except TypeError:
+                return factory(wrapped_cfg)
+
+        return _wrapped
+
+    factory: BackendFactory = _adapt_factory(backend_factory or build_backend_resource)
+    resource: BackendResource = factory(config, gateway=gateway)
     backend = resource.backend
     close = resource.close
     server = FastMCP("CodeIntel", json_response=True)

@@ -24,10 +24,10 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.rows import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
-    BehavioralCoverageRowModel,
     behavioral_coverage_row_to_tuple,
     serialize_test_profile_row,
 )
+from tests._helpers.row_factories import blank_behavioral_coverage_row
 
 
 class _FakeCon:
@@ -178,7 +178,7 @@ def test_behavioral_writer_registry_guard() -> None:
     fake_con = _FakeCon()
     gateway = cast("StorageGateway", SimpleNamespace(con=fake_con))
     _, beh_cfg = _snapshot_cfg()
-    row: BehavioralCoverageRowModel = dict.fromkeys(BEHAVIORAL_COVERAGE_COLUMNS)  # type: ignore[arg-type]
+    row = blank_behavioral_coverage_row()
     row["repo"] = "r"
     row["commit"] = "c"
     row["test_id"] = "t1"

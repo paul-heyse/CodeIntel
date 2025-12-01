@@ -9,6 +9,7 @@ from codeintel.storage.rows import (
     FunctionProfileRowModel,
     function_profile_row_to_tuple,
 )
+from tests._helpers.row_factories import blank_function_profile_row
 
 
 def test_function_profile_tuple_length_matches_columns() -> None:
@@ -20,7 +21,7 @@ def test_function_profile_tuple_length_matches_columns() -> None:
     AssertionError
         If the serializer returns a tuple of unexpected length.
     """
-    row: FunctionProfileRowModel = dict.fromkeys(FUNCTION_PROFILE_COLUMNS)  # type: ignore[arg-type]
+    row: FunctionProfileRowModel = blank_function_profile_row()
     # Populate required non-null fields with minimal placeholders.
     row["function_goid_h128"] = 1
     row["repo"] = "r"

@@ -13,6 +13,8 @@ from codeintel.analytics.datasets import (
 )
 from codeintel.analytics.graphs.contracts import (
     ContractChecker,
+    NotNullFractionSpec,
+    SnapshotKey,
     assert_columns_present,
     assert_not_null_fraction,
     assert_table_exists,
@@ -135,11 +137,12 @@ def test_not_null_fraction_checker_flags_missing_values() -> None:
     )
     result = assert_not_null_fraction(
         gateway,
-        table="analytics.graph_metrics_functions",
-        column="pagerank",
-        repo=repo,
-        commit=commit,
-        min_fraction=0.5,
+        snapshot=SnapshotKey(repo=repo, commit=commit),
+        spec=NotNullFractionSpec(
+            table="analytics.graph_metrics_functions",
+            column="pagerank",
+            min_fraction=0.5,
+        ),
     )
     if result.status != "failed":
         pytest.fail("Expected not-null fraction contract to fail")
