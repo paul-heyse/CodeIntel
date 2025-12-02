@@ -29,11 +29,16 @@ The ingestion system follows a port-adapter pattern for clean separation of conc
 - `ConfigIngestStep`: Configuration file flattening
 - `RepoScanStep`: Repository scanning and change detection
 
+**Core** (plugin infrastructure):
+- `BaseIngestPlugin`: Abstract base for all plugins
+- `TableWriterIngestPlugin`: Base for plugins that write tables
+- `ConfiguredIngestPlugin`: Base for plugins with typed configuration
+- `IngestExecutionContext`: Execution context for plugins
+
 **Plugins** (orchestration layer):
 - `IngestPluginProtocol`: Plugin interface
-- `IngestPluginContext`: Execution context
 - `IngestPluginResult`: Execution result
-- `@ingest_plugin`: Decorator for plugin definition
+- `RepoScanPlugin`, `AstExtractPlugin`, etc.: Class-based plugins
 
 **Recipes** (composition):
 - `IngestRecipe`: Declarative recipe definition
@@ -53,20 +58,8 @@ The following plugins are registered by default:
 - `config_ingest` - Flattens configuration files
 """
 
-# Facade module imports for backward compatibility
-# These enable `from codeintel.ingestion import repo_scan` etc.
-from codeintel.ingestion import (
-    config_ingest,
-    coverage_ingest,
-    cst_extract,
-    docstrings_ingest,
-    ingest_service,
-    py_ast_extract,
-    repo_scan,
-    scip_ingest,
-    tests_ingest,
-    typing_ingest,
-)
+from __future__ import annotations
+
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -82,6 +75,19 @@ from codeintel.ingestion.change_tracker import (
     IncrementalIngestPolicy,
     SupportsFullRebuild,
     run_incremental_ingest,
+)
+
+# Core plugin infrastructure exports
+from codeintel.ingestion.core import (
+    BaseIngestPlugin,
+    ConfiguredIngestPlugin,
+    ConfiguredTableWriterPlugin,
+    IngestExecutionContext,
+    ResourceNotFoundError,
+    TableWriterIngestPlugin,
+    ToolDependentIngestPlugin,
+    TrackerRequiringPlugin,
+    ValidationResult,
 )
 from codeintel.ingestion.infrastructure_utilities.paths import (
     ensure_repo_root,
@@ -105,21 +111,20 @@ from codeintel.ingestion.infrastructure_utilities.workers import (
 from codeintel.ingestion.plugins import (
     DEFAULT_CONTEXT_MAPPINGS,
     DEFAULT_INGEST_PLUGINS,
-    ClassBasedIngestPlugin,
+    AstExtractPlugin,
     ColumnConstraint,
     ConfigFactory,
+    ConfigIngestPlugin,
     ConfigMapping,
     ContractValidationResult,
     ContractViolation,
+    CoverageIngestPlugin,
+    CstExtractPlugin,
+    DocstringsIngestPlugin,
     ForeignKeyConstraint,
-    FunctionalIngestPlugin,
-    HarnessConfig,
-    HarnessContext,
     IngestContractSpec,
     IngestContractValidator,
-    IngestExecutionHarness,
     IngestIsolationKind,
-    IngestPluginContext,
     IngestPluginMetadata,
     IngestPluginPlan,
     IngestPluginProtocol,
@@ -130,18 +135,21 @@ from codeintel.ingestion.plugins import (
     IngestRuntimeScratch,
     IngestSeverity,
     IngestStage,
+    PlanOptions,
+    RepoScanPlugin,
+    ScipIngestPlugin,
+    TestsIngestPlugin,
+    TypingIngestPlugin,
     foreign_key_contract,
     get_config_fields,
     get_ingest_registry,
     infer_config_mapping,
-    ingest_plugin,
     list_ingest_plugins,
     not_null_contract,
     plan_ingest_plugins,
-    register_class_plugin,
+    register_class_based_plugins,
     register_ingest_plugin,
     row_count_contract,
-    with_harness,
 )
 
 # Port-Adapter architecture exports
@@ -194,41 +202,44 @@ __all__ = [
     "CST_WORKER_CONFIG",
     "DEFAULT_CONTEXT_MAPPINGS",
     "DEFAULT_INGEST_PLUGINS",
+    "AstExtractPlugin",
     "AstExtractStep",
+    "BaseIngestPlugin",
     "BatchResult",
     "ChangeDetectionPort",
     "ChangeRequest",
     "ChangeSet",
     "ChangeTracker",
     "ChangeTrackerDatasetView",
-    "ClassBasedIngestPlugin",
     "ColumnConstraint",
     "ConfigFactory",
+    "ConfigIngestPlugin",
     "ConfigIngestStep",
     "ConfigMapping",
+    "ConfiguredIngestPlugin",
+    "ConfiguredTableWriterPlugin",
     "ContractValidationResult",
     "ContractViolation",
     "CoverageFileData",
+    "CoverageIngestPlugin",
     "CoverageIngestStep",
     "CoverageResult",
+    "CstExtractPlugin",
     "CstExtractStep",
     "DiagnosticResult",
     "DocstringsExtractStep",
+    "DocstringsIngestPlugin",
     "DuckDBStorageAdapter",
     "FileDigest",
     "FilesystemDiscoveryAdapter",
     "ForeignKeyConstraint",
-    "FunctionalIngestPlugin",
-    "HarnessConfig",
-    "HarnessContext",
     "HashChangeDetectionAdapter",
     "IncrementalIngestOps",
     "IncrementalIngestPolicy",
     "IngestContractSpec",
     "IngestContractValidator",
-    "IngestExecutionHarness",
+    "IngestExecutionContext",
     "IngestIsolationKind",
-    "IngestPluginContext",
     "IngestPluginMetadata",
     "IngestPluginPlan",
     "IngestPluginProtocol",
@@ -244,27 +255,33 @@ __all__ = [
     "IngestToolPort",
     "ModuleDiscoveryPort",
     "ModuleRecord",
+    "PlanOptions",
     "QueryResult",
     "RecipeExecutionResult",
     "RecipeOptions",
     "RecipeStage",
     "RecipeStageResult",
+    "RepoScanPlugin",
     "RepoScanStep",
+    "ResourceNotFoundError",
+    "ScipIngestPlugin",
     "ScipIngestResult",
     "ScipIngestStep",
     "ScipResult",
     "StepResult",
     "SupportsFullRebuild",
+    "TableWriterIngestPlugin",
     "TestResult",
+    "TestsIngestPlugin",
     "TestsIngestStep",
+    "ToolDependentIngestPlugin",
     "ToolRunnerAdapter",
+    "TrackerRequiringPlugin",
+    "TypingIngestPlugin",
     "TypingIngestStep",
+    "ValidationResult",
     "WorkerConfig",
-    "config_ingest",
-    "coverage_ingest",
     "create_executor",
-    "cst_extract",
-    "docstrings_ingest",
     "ensure_repo_root",
     "execute_recipe",
     "executor_factory",
@@ -273,24 +290,16 @@ __all__ = [
     "get_config_fields",
     "get_ingest_registry",
     "infer_config_mapping",
-    "ingest_plugin",
-    "ingest_service",
     "list_ingest_plugins",
     "normalize_rel_path",
     "not_null_contract",
     "plan_ingest_plugins",
-    "py_ast_extract",
-    "register_class_plugin",
+    "register_class_based_plugins",
     "register_ingest_plugin",
     "relpath_to_module",
     "repo_relpath",
-    "repo_scan",
     "resolve_worker_count",
     "row_count_contract",
     "run_incremental_ingest",
-    "scip_ingest",
-    "tests_ingest",
-    "typing_ingest",
-    "with_harness",
     "worker_pool",
 ]

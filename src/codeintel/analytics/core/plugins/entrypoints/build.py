@@ -10,10 +10,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.catalog import CatalogProvider
+    from codeintel.analytics.resources.graphs import GraphProvider
 
 from codeintel.analytics.core.base import (
-    AnalyticsContextRequiringPlugin,
     ConfiguredTableWriterPlugin,
     GraphRuntimeRequiringPlugin,
 )
@@ -29,7 +29,6 @@ from codeintel.config.steps_analytics import EntryPointsStepConfig
 @dataclass
 class EntrypointsPlugin(
     ConfiguredTableWriterPlugin[EntryPointsStepConfig],
-    AnalyticsContextRequiringPlugin,
     GraphRuntimeRequiringPlugin,
 ):
     """Detect HTTP/CLI/job entrypoints and map them to handlers and tests.
@@ -44,7 +43,7 @@ class EntrypointsPlugin(
     # Core identification
     plugin_name: ClassVar[str] = "entrypoints.build"
     plugin_stage: ClassVar[PluginStage] = "entrypoints"
-    plugin_version: ClassVar[str] = "2.0.0"
+    plugin_version: ClassVar[str] = "3.0.0"
 
     # Configuration binding
     config_type: ClassVar[type[EntryPointsStepConfig]] = EntryPointsStepConfig
@@ -78,7 +77,6 @@ class EntrypointsPlugin(
     )
 
     # Optional requirements
-    analytics_context_required: ClassVar[bool] = False
     graph_runtime_required: ClassVar[bool] = False
 
     def _validate_resource_requirements(  # noqa: PLR6301
@@ -113,27 +111,26 @@ class EntrypointsPlugin(
         -------
         Mapping[str, int] | None
             None to trigger auto row count computation.
-
-        Raises
-        ------
-        RuntimeError
-            If AnalyticsContextProvider is not registered.
         """
         cfg = self.config
 
-        # Get required analytics context
-        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
-            msg = "AnalyticsContextProvider is required"
-            raise RuntimeError(msg)
-        analytics_provider = cast(
-            "AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider")
-        )
-        analytics_context = analytics_provider.get()
+        # Get catalog from CatalogProvider
+        catalog_provider = None
+        if ctx.has_resource_by_name("CatalogProvider"):
+            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+            catalog_provider = cat_prov.get()
+
+        # Get graph runtime from GraphProvider
+        graph_runtime = None
+        if ctx.has_resource_by_name("GraphProvider"):
+            graph_prov = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
+            graph_runtime = graph_prov.runtime
 
         build_entrypoints(
             ctx.gateway,
             cfg,
-            context=analytics_context,
+            catalog_provider=catalog_provider,
+            runtime=graph_runtime,
         )
         return None  # Let base class compute row counts
 

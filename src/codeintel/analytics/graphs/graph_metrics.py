@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 import networkx as nx
 
@@ -48,9 +47,6 @@ from codeintel.storage.repositories.modules import ModuleRepository
 from codeintel.storage.repositories.subsystems import SubsystemRepository
 from codeintel.storage.sql_helpers import ensure_schema
 
-if TYPE_CHECKING:
-    from codeintel.analytics.context import AnalyticsContext
-
 log = logging.getLogger(__name__)
 
 
@@ -60,8 +56,8 @@ class GraphMetricsDeps:
 
     catalog_provider: FunctionCatalogProvider | None = None
     runtime: GraphRuntime | GraphRuntimeOptions | None = None
-    analytics_context: AnalyticsContext | None = None
     filters: GraphMetricFilters | None = None
+    module_by_path: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -189,12 +185,11 @@ def compute_graph_metrics(
     cfg :
         Graph metrics configuration for the current repository snapshot.
     deps :
-        Optional dependencies container (catalog_provider, runtime, analytics_context, filters).
+        Optional dependencies container (catalog_provider, runtime, filters, module_by_path).
     """
     deps = deps or GraphMetricsDeps()
     catalog_provider = deps.catalog_provider
     runtime = deps.runtime
-    analytics_context = deps.analytics_context
     runtime_opts: GraphRuntimeOptions = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )
@@ -205,7 +200,6 @@ def compute_graph_metrics(
         gateway,
         cfg.snapshot,
         runtime_input,
-        context=analytics_context or runtime_opts.context,
     )
     use_gpu = resolved_runtime.backend.use_gpu
 
@@ -234,11 +228,8 @@ def compute_graph_metrics(
     _compute_function_graph_metrics(
         gateway, cfg, ctx=ctx, runtime=resolved_runtime, filters=active_filters
     )
-    module_by_path = None
-    active_context = analytics_context or runtime_opts.context
-    if active_context is not None:
-        module_by_path = active_context.module_map
-    elif catalog_provider is not None:
+    module_by_path = deps.module_by_path
+    if module_by_path is None and catalog_provider is not None:
         module_by_path = catalog_provider.catalog().module_by_path
     module_options = ModuleMetricOptions(module_by_path=module_by_path, filters=active_filters)
     _compute_module_graph_metrics(

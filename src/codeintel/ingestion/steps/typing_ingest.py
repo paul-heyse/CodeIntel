@@ -435,7 +435,9 @@ class TypingIngestStep:
             # Schema: repo, commit, path, type_error_count, annotation_ratio, ...
             typedness_paths = [str(row[2]) for row in typedness_rows]
             # Delete existing rows to avoid duplicate key errors (idempotent re-ingest)
-            self._storage.delete_by_paths("analytics.typedness", typedness_paths, path_column="path")
+            self._storage.delete_by_paths(
+                "analytics.typedness", typedness_paths, path_column="path"
+            )
 
             scope = f"{repo}@{commit}"
             result = self._storage.write_batch("analytics.typedness", typedness_rows, scope=scope)

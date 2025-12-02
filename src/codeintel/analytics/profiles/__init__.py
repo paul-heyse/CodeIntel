@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.profiles.files import build_file_profile as _build_file_profile
 from codeintel.analytics.profiles.functions import (
     SLOW_TEST_THRESHOLD_MS,
@@ -27,23 +26,20 @@ def build_function_profile(
     cfg: ProfilesAnalyticsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
+    module_map: dict[str, str] | None = None,
 ) -> None:
     """Populate analytics.function_profile for a snapshot."""
-    effective_catalog = context.catalog if context is not None else catalog_provider
-    module_map_override = context.module_map if context is not None else None
-    if effective_catalog is None:
-        effective_catalog = FunctionCatalogService.from_db(
-            gateway,
-            repo=cfg.repo,
-            commit=cfg.commit,
-        )
+    effective_catalog = catalog_provider or FunctionCatalogService.from_db(
+        gateway,
+        repo=cfg.repo,
+        commit=cfg.commit,
+    )
     module_table = seed_catalog_modules(
         gateway.con,
         effective_catalog,
         cfg.repo,
         cfg.commit,
-        module_map_override=module_map_override,
+        module_map_override=module_map,
     )
     count = build_function_profile_recipe(gateway, cfg, module_table=module_table)
     log.info("function_profile populated: %s rows for %s@%s", count, cfg.repo, cfg.commit)
@@ -54,17 +50,15 @@ def build_file_profile(
     cfg: ProfilesAnalyticsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
+    module_map: dict[str, str] | None = None,
 ) -> None:
     """Populate analytics.file_profile by aggregating function_profile."""
-    effective_catalog = context.catalog if context is not None else catalog_provider
-    module_map_override = context.module_map if context is not None else None
     module_table = seed_catalog_modules(
         gateway.con,
-        effective_catalog,
+        catalog_provider,
         cfg.repo,
         cfg.commit,
-        module_map_override=module_map_override,
+        module_map_override=module_map,
     )
     count = _build_file_profile(gateway, cfg, module_table=module_table)
     log.info("file_profile populated: %s rows for %s@%s", count, cfg.repo, cfg.commit)
@@ -75,17 +69,15 @@ def build_module_profile(
     cfg: ProfilesAnalyticsStepConfig,
     *,
     catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
+    module_map: dict[str, str] | None = None,
 ) -> None:
     """Populate analytics.module_profile by aggregating file/function profiles."""
-    effective_catalog = context.catalog if context is not None else catalog_provider
-    module_map_override = context.module_map if context is not None else None
     module_table = seed_catalog_modules(
         gateway.con,
-        effective_catalog,
+        catalog_provider,
         cfg.repo,
         cfg.commit,
-        module_map_override=module_map_override,
+        module_map_override=module_map,
     )
     count = _build_module_profile(gateway, cfg, module_table=module_table)
     log.info("module_profile populated: %s rows for %s@%s", count, cfg.repo, cfg.commit)

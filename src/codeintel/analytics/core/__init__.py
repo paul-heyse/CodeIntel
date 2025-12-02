@@ -17,7 +17,6 @@ Key Components
 from __future__ import annotations
 
 from codeintel.analytics.core.base import (
-    AnalyticsContextRequiringPlugin,
     BasePlugin,
     CatalogRequiringPlugin,
     ConfigBoundPlugin,
@@ -93,7 +92,6 @@ from codeintel.analytics.core.registry import (
     register_plugin,
 )
 from codeintel.analytics.core.traits import (
-    AnalyticsContextAwarePlugin,
     CacheAwareMixin,
     CacheAwarePlugin,
     CatalogAwarePlugin,
@@ -122,10 +120,7 @@ from codeintel.analytics.core.traits import (
 )
 
 __all__ = [
-    # Legacy exports (kept for compatibility)
-    "AnalyticsContextAwarePlugin",
-    # Base classes
-    "AnalyticsContextRequiringPlugin",
+    # Protocol and base classes
     "AnalyticsPluginProtocol",
     "AnalyticsStepConfigBase",
     "BasePlugin",

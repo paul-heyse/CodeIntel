@@ -44,7 +44,7 @@ class CoreGraphMetricsPlugin(
     # Core identification
     plugin_name: ClassVar[str] = "core_graph_metrics"
     plugin_stage: ClassVar[PluginStage] = "graph"
-    plugin_version: ClassVar[str] = "2.0.0"
+    plugin_version: ClassVar[str] = "3.0.0"
 
     # Configuration binding (optional)
     config_type: ClassVar[type[GraphMetricsStepConfig]] = GraphMetricsStepConfig
@@ -160,11 +160,10 @@ class CoreGraphMetricsPlugin(
 
         runtime = self.get_graph_runtime(ctx)
 
-        # Build dependencies
+        # Build dependencies using specific providers (no AnalyticsContext)
         deps = graph_metrics.GraphMetricsDeps(
             catalog_provider=self.get_catalog(ctx) if ctx.has_resource(CatalogProvider) else None,
             runtime=runtime,
-            analytics_context=self.get_analytics_context_or_none(ctx),
             filters=None,
         )
 
@@ -181,28 +180,6 @@ class CoreGraphMetricsPlugin(
 
         graph_metrics.compute_graph_metrics(ctx.gateway, cfg, deps=deps)
         return None  # Let base class compute row counts
-
-    def get_analytics_context_or_none(  # noqa: PLR6301
-        self, ctx: PluginExecutionContext
-    ) -> object | None:
-        """Get analytics context or None.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        object | None
-            Analytics context or None.
-        """
-        from codeintel.analytics.resources.analytics_context import (  # noqa: PLC0415
-            AnalyticsContextProvider,
-        )
-
-        analytics_provider = ctx.require_or_none(AnalyticsContextProvider)
-        return analytics_provider.get() if analytics_provider else None
 
 
 __all__ = [

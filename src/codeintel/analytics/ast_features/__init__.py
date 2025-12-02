@@ -6,7 +6,6 @@ from codeintel.analytics.ast_features.extract import (
     build_import_map,
     compute_function_features,
     io_flags_from_call,
-    load_function_features_for_repo,
 )
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.ast_features.patterns import (
@@ -34,5 +33,4 @@ __all__ = [
     "build_import_map",
     "compute_function_features",
     "io_flags_from_call",
-    "load_function_features_for_repo",
 ]

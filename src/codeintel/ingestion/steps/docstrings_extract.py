@@ -324,7 +324,9 @@ class DocstringsExtractStep:
 
         # Delete existing docstrings for processed modules (idempotent re-ingest)
         if processed_paths:
-            self._storage.delete_by_paths("core.docstrings", processed_paths, path_column="rel_path")
+            self._storage.delete_by_paths(
+                "core.docstrings", processed_paths, path_column="rel_path"
+            )
 
         # Persist rows
         table_counts: dict[str, int] = {}

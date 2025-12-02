@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from codeintel.ingestion.change_tracker import ChangeTracker
+from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.plugins.protocol import (
-    IngestPluginContext,
     IngestPluginPlan,
     IngestPluginProtocol,
     IngestPluginResult,
@@ -35,6 +35,7 @@ from codeintel.ingestion.recipes.dsl import (
     RecipeStage,
     RecipeStageResult,
 )
+from codeintel.ingestion.resources.registry import ResourceRegistry
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -480,7 +481,7 @@ class RecipeExecutor:
                 error=exc,
             )
 
-    def _build_context(self, plugin: IngestPluginProtocol) -> IngestPluginContext:
+    def _build_context(self, plugin: IngestPluginProtocol) -> IngestExecutionContext:
         """Build execution context for a plugin.
 
         Parameters
@@ -490,24 +491,58 @@ class RecipeExecutor:
 
         Returns
         -------
-        IngestPluginContext
+        IngestExecutionContext
             Plugin execution context.
         """
-        return IngestPluginContext(
+        # Build resource registry with available providers
+        resources = self._build_resource_registry()
+
+        return IngestExecutionContext(
             gateway=self._gateway,
             snapshot=self._snapshot,
             paths=self._paths,
             tools=self._tools,
             code_profile=self._code_profile,
             config_profile=self._config_profile,
-            tool_runner=self._tool_runner,
-            tool_service=self._tool_service,
-            change_tracker=self._change_tracker,
-            ingest_run_sink=self._ingest_run_sink,
+            resources=resources,
             scratch=self._config.scratch,
             plugin_name=plugin.metadata.name,
             run_id=self._config.run_id,
         )
+
+    def _build_resource_registry(self) -> ResourceRegistry:
+        """Build resource registry with available providers.
+
+        Returns
+        -------
+        ResourceRegistry
+            Registry with tracker and tools providers.
+        """
+        from codeintel.ingestion.resources.tools import ToolsProvider
+        from codeintel.ingestion.resources.tracker import TrackerProvider
+
+        registry = ResourceRegistry()
+
+        # Register tracker provider if we have tracker state
+        tracker_provider = TrackerProvider(
+            gateway=self._gateway,
+            snapshot=self._snapshot,
+            scratch=self._config.scratch,
+            profile=self._code_profile,
+            full_rebuild=False,
+        )
+        registry.register(TrackerProvider, tracker_provider)
+
+        # Register tools provider with config and cache dir
+        tools_provider = ToolsProvider(
+            tools_config=self._tools,
+            cache_dir=self._paths.tool_cache,
+            runner=self._tool_runner,
+            service=self._tool_service,
+        )
+        registry.register(ToolsProvider, tools_provider)
+
+        return registry
 
 
 def execute_recipe(

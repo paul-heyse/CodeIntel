@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TypedDict, Unpack
 
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.config import GraphBackendConfig
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
@@ -46,7 +45,6 @@ class GraphRuntimeOptionsKwargs(TypedDict, total=False):
     eager: bool
     validate: bool
     cache_key: str | None
-    context: AnalyticsContext | None
     engine: GraphEngine | None
     graph_cache_dir: Path | None
     features: GraphFeatureFlags

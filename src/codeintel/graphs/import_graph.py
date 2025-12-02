@@ -1,5 +1,15 @@
 """Construct module-level import graphs from LibCST parsing.
 
+This module provides a thin orchestration layer that:
+1. Loads module metadata from storage
+2. Delegates pure import analysis to graphs.compute.imports
+3. Persists results back to storage
+
+Architecture notes:
+- Pure computation functions are in graphs.compute.imports
+- This builder orchestrates file I/O and database persistence
+- The compute layer is stateless and testable in isolation
+
 .. note::
     This module provides internal implementation for the import_graph_builder plugin.
     External code should use the plugin interface instead:
@@ -16,14 +26,16 @@ import libcst as cst
 import networkx as nx
 
 from codeintel.config import ImportGraphStepConfig
+from codeintel.config.datasets import ImportEdgeRow as DatasetImportEdgeRow
+from codeintel.config.datasets import ImportModuleRow as DatasetImportModuleRow
 from codeintel.config.datasets import (
-    ImportEdgeRow,
-    ImportModuleRow,
     import_edge_to_tuple,
     import_module_to_tuple,
 )
-from codeintel.graphs.callgraph import collect_import_edges
 from codeintel.graphs.catalog import load_function_catalog
+from codeintel.graphs.compute.callgraph import collect_import_edges
+
+# Import compute layer for pure import analysis
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
 
@@ -100,21 +112,33 @@ def build_import_module_rows(
     modules: set[str],
     scc_map: dict[str, int],
     layers: dict[str, int],
-) -> list[ImportModuleRow]:
-    """
-    Build rows for graph.import_modules from SCC and layering metadata.
+) -> list[DatasetImportModuleRow]:
+    """Build rows for graph.import_modules from SCC and layering metadata.
+
+    Parameters
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    modules
+        Set of module names.
+    scc_map
+        Module to SCC ID mapping.
+    layers
+        Module to layer mapping.
 
     Returns
     -------
-    list[ImportModuleRow]
+    list[DatasetImportModuleRow]
         Sorted rows ready for insertion into graph.import_modules.
     """
-    rows: list[ImportModuleRow] = []
+    rows: list[DatasetImportModuleRow] = []
     comp_sizes = Counter(scc_map.values())
     for module in sorted(modules):
         component_id = scc_map.get(module, -1)
         rows.append(
-            ImportModuleRow(
+            DatasetImportModuleRow(
                 repo=repo,
                 commit=commit,
                 module=module,
@@ -134,8 +158,28 @@ def _persist_import_modules(
     scc: dict[str, int],
     layer_by_module: dict[str, int],
 ) -> int:
+    """Persist import module rows to storage.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    context
+        (repo, commit) tuple.
+    modules
+        Set of module names.
+    scc
+        Module to SCC ID mapping.
+    layer_by_module
+        Module to layer mapping.
+
+    Returns
+    -------
+    int
+        Number of rows persisted.
+    """
     repo, commit = context
-    module_rows: list[ImportModuleRow] = build_import_module_rows(
+    module_rows: list[DatasetImportModuleRow] = build_import_module_rows(
         repo,
         commit,
         modules,
@@ -159,6 +203,26 @@ def _persist_import_edges(
     scc: dict[str, int],
     layer_by_module: dict[str, int],
 ) -> int:
+    """Persist import edge rows to storage.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    context
+        (repo, commit) tuple.
+    raw_edges
+        Set of (src_module, dst_module) edge tuples.
+    scc
+        Module to SCC ID mapping.
+    layer_by_module
+        Module to layer mapping.
+
+    Returns
+    -------
+    int
+        Number of rows persisted.
+    """
     repo, commit = context
     fan_out: dict[str, int] = defaultdict(int)
     fan_in: dict[str, int] = defaultdict(int)
@@ -166,10 +230,10 @@ def _persist_import_edges(
         fan_out[src] += 1
         fan_in[dst] += 1
 
-    rows: list[ImportEdgeRow] = []
+    rows: list[DatasetImportEdgeRow] = []
     for src, dst in sorted(raw_edges):
         rows.append(
-            ImportEdgeRow(
+            DatasetImportEdgeRow(
                 repo=repo,
                 commit=commit,
                 src_module=src,

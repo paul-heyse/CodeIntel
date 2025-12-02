@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
-from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 
 from codeintel.config import ConfigBuilder
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.ingestion import (
+    CoverageIngestStep,
+    DuckDBStorageAdapter,
+    IngestExecutionContext,
+    ToolRunnerAdapter,
+)
 from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.ingestion.common import ChangeRequest, ChangeSet
 from codeintel.ingestion.infrastructure_utilities.source_scanner import (
@@ -18,7 +24,6 @@ from codeintel.ingestion.infrastructure_utilities.source_scanner import (
 )
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.plugins import (
-    IngestPluginContext,
     IngestRuntimeScratch,
     get_ingest_registry,
 )
@@ -52,7 +57,7 @@ def _build_plugin_context(
     tools: ToolsConfig | None = None,
     scratch: IngestRuntimeScratch | None = None,
     change_tracker: ChangeTracker | None = None,
-) -> IngestPluginContext:
+) -> IngestExecutionContext:
     """Construct a minimal plugin context for coverage tests.
 
     Parameters
@@ -68,21 +73,23 @@ def _build_plugin_context(
 
     Returns
     -------
-    IngestPluginContext
+    IngestExecutionContext
         Context populated with snapshot, paths, gateway, and profiles.
     """
     snapshot = SnapshotRef.from_args(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
     paths = BuildPaths.from_repo_root(repo_root)
     gateway = open_ingestion_gateway()
-    return IngestPluginContext(
+    effective_scratch = scratch if scratch is not None else IngestRuntimeScratch()
+    if change_tracker is not None:
+        effective_scratch.declare("change_tracker", change_tracker)
+    return IngestExecutionContext(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
         tools=tools or ToolsConfig.default(),
         code_profile=default_code_profile(repo_root),
         config_profile=default_config_profile(repo_root),
-        scratch=scratch if scratch is not None else IngestRuntimeScratch(),
-        change_tracker=change_tracker,
+        scratch=effective_scratch,
     )
 
 
@@ -108,26 +115,24 @@ def test_coverage_ingest_runs_full_rebuild_with_tracker(tmp_path: Path) -> None:
             missing_lines={3},
         )
         fake_service = _FakeCoverageService(report, repo_root)
-        tracker = ChangeTracker(
-            gateway=gateway,
-            change_request=ChangeRequest(
+
+        # Use the new Step-based API
+        storage = DuckDBStorageAdapter(gateway)
+        tools = ToolRunnerAdapter(fake_service)
+        step = CoverageIngestStep(storage=storage, tools=tools)
+
+        result = asyncio.get_event_loop().run_until_complete(
+            step.execute_async(
+                [],  # modules not used for coverage
                 repo=cfg.repo,
                 commit=cfg.commit,
                 repo_root=repo_root,
-                modules=(),
-            ),
-            modules=(),
-            change_set=ChangeSet(added=[], modified=[], deleted=[]),
-            policy=IncrementalIngestPolicy(),
+                coverage_file=coverage_file,
+            )
         )
 
-        ingest_coverage_lines(
-            gateway=gateway,
-            cfg=cfg,
-            tools=ToolsConfig.model_validate({}),
-            tool_service=fake_service,
-            tracker=tracker,
-        )
+        if not result.success:
+            pytest.fail(f"Coverage ingest failed: {'; '.join(result.errors)}")
 
         count = gateway.con.execute(
             """
@@ -161,7 +166,7 @@ def test_coverage_plugin_executes_with_tracker(tmp_path: Path) -> None:
         tools = ToolsConfig.default()
         scratch = IngestRuntimeScratch()
 
-        # Create a tracker
+        # Create a tracker and store in scratch
         tracker = ChangeTracker(
             gateway=gateway,
             change_request=ChangeRequest(
@@ -174,8 +179,9 @@ def test_coverage_plugin_executes_with_tracker(tmp_path: Path) -> None:
             change_set=ChangeSet(added=[], modified=[], deleted=[]),
             policy=IncrementalIngestPolicy(),
         )
+        scratch.declare("change_tracker", tracker)
 
-        ctx = IngestPluginContext(
+        ctx = IngestExecutionContext(
             gateway=gateway,
             snapshot=snapshot,
             paths=paths,
@@ -183,7 +189,6 @@ def test_coverage_plugin_executes_with_tracker(tmp_path: Path) -> None:
             code_profile=default_code_profile(repo_root),
             config_profile=default_config_profile(repo_root),
             scratch=scratch,
-            change_tracker=tracker,
         )
 
         registry = get_ingest_registry()

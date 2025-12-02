@@ -1,119 +1,79 @@
-"""Typing analysis facade with convenient function-based API.
+"""Backward compatibility shim for typing signals ingestion.
 
-This module provides a function-based API for type annotation analysis
-that wraps the class-based TypingIngestStep with sensible adapter defaults.
+This module provides the legacy `ingest_typing_signals` function signature
+for backward compatibility with existing code. New code should use
+`TypingIngestStep` from `codeintel.ingestion.steps.typing_ingest`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from pathlib import Path
+import asyncio
+import logging
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
-from codeintel.ingestion.common import iter_modules
-from codeintel.ingestion.steps.typing_ingest import AnnotationInfo, TypingIngestStep
-from codeintel.storage.module_index import load_module_map
-
 if TYPE_CHECKING:
-    from codeintel.config import TypingIngestStepConfig
-    from codeintel.ingestion.change_tracker import ChangeTracker
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
-    from codeintel.ingestion.ports.discovery import ModuleRecord
+    from codeintel.config.steps_typing import TypingIngestConfig
     from codeintel.ingestion.tool_service import ToolService
     from codeintel.storage.gateway import StorageGateway
 
+log = logging.getLogger(__name__)
 
-def ingest_typing_signals(  # noqa: PLR0913
+
+def ingest_typing_signals(
     gateway: StorageGateway,
-    modules: Sequence[ModuleRecord] | None = None,
+    cfg: TypingIngestConfig,
     *,
-    cfg: TypingIngestStepConfig | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
-    repo_root: Path | None = None,
-    code_profile: ScanProfile | None = None,
     tool_service: ToolService | None = None,
-    tracker: ChangeTracker | None = None,
 ) -> None:
-    """Analyze type annotations and persist typedness metrics.
+    """
+    Analyze typing signals and populate analytics.typedness + static_diagnostics.
 
-    This function provides a convenient entry point for type analysis
-    that creates the necessary adapters and executes the step.
+    This is a compatibility shim that wraps the new TypingIngestStep.
+    New code should use TypingIngestStep directly.
 
     Parameters
     ----------
     gateway
-        Storage gateway for database operations.
-    modules
-        Modules to analyze; if not provided, uses tracker modules.
+        StorageGateway providing access to the target DuckDB database.
     cfg
-        Optional typing ingest step configuration (extracts repo/commit/repo_root).
-    repo
-        Repository identifier (overrides cfg.snapshot.repo if provided).
-    commit
-        Commit identifier (overrides cfg.snapshot.commit if provided).
-    repo_root
-        Repository root path (overrides cfg.snapshot.repo_root if provided).
-    code_profile
-        Optional scan profile (reserved for future use).
+        Typing ingestion configuration.
     tool_service
-        Tool service for running external tools (currently unused).
-    tracker
-        Optional change tracker for incremental processing.
-
-    Raises
-    ------
-    ValueError
-        If neither cfg nor all of repo, commit, repo_root are provided.
+        Optional ToolService for running pyright/pyrefly.
     """
-    # Reserved parameters for API compatibility
-    del tool_service, code_profile
-
-    # Resolve parameters from cfg or direct arguments
-    if cfg is not None:
-        actual_repo = repo or cfg.snapshot.repo
-        actual_commit = commit or cfg.snapshot.commit
-        actual_repo_root = repo_root or cfg.snapshot.repo_root
-    else:
-        actual_repo = repo
-        actual_commit = commit
-        actual_repo_root = repo_root
-
-    # Validate required parameters
-    if actual_repo is None or actual_commit is None or actual_repo_root is None:
-        msg = "Must provide either cfg or all of repo, commit, repo_root"
-        raise ValueError(msg)
-
-    # Get modules from tracker, explicit list, or module inventory
-    actual_modules: Sequence[ModuleRecord]
-    if modules is not None:
-        actual_modules = modules
-    elif tracker is not None:
-        actual_modules = tracker.modules
-    else:
-        # Load from module inventory
-        module_map = load_module_map(
-            gateway,
-            actual_repo,
-            actual_commit,
-            language="python",
-        )
-        actual_modules = list(iter_modules(module_map, actual_repo_root))
+    from codeintel.ingestion.adapters import (
+        DuckDBStorageAdapter,
+        FilesystemDiscoveryAdapter,
+        ToolRunnerAdapter,
+    )
+    from codeintel.ingestion.steps.typing_ingest import TypingIngestStep
 
     # Create adapters
     storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(actual_repo_root)
+    discovery = FilesystemDiscoveryAdapter(cfg.repo_root)
+    tools = ToolRunnerAdapter(tool_service)
 
-    # Create and execute step (sync version without external diagnostics)
-    step = TypingIngestStep(storage=storage, discovery=discovery)
-    step.execute(
-        modules=actual_modules,
-        repo=actual_repo,
-        commit=actual_commit,
-        repo_root=str(actual_repo_root),
+    # Execute step (async)
+    step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
+
+    # Get or create event loop
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    result = loop.run_until_complete(
+        step.execute_async(
+            [],  # modules - will be discovered
+            repo=cfg.repo,
+            commit=cfg.commit,
+            repo_root=str(cfg.repo_root),
+        )
     )
 
+    if not result.success:
+        errors = "; ".join(result.errors) if result.errors else "Unknown error"
+        log.warning("Typing ingest failed: %s", errors)
 
-# Re-export for direct usage
-__all__ = ["AnnotationInfo", "TypingIngestStep", "ingest_typing_signals"]
+
+__all__ = ["ingest_typing_signals"]

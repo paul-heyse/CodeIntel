@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.asts import AstProvider
+    from codeintel.analytics.resources.catalog import CatalogProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -43,7 +44,7 @@ class FunctionContractsPlugin:
             name="functions.contracts",
             description="Infer pre/postconditions and nullability contracts for functions.",
             stage="function",
-            version="2.0.0",
+            version="3.0.0",
             enabled_by_default=True,
             severity="fatal",
             inputs=(
@@ -117,19 +118,24 @@ class FunctionContractsPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get required analytics context
-        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
-            return PluginResult.fail("AnalyticsContextProvider is required")
-        analytics_provider = cast(
-            "AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider")
-        )
-        analytics_context = analytics_provider.get()
+        # Get required AST data from AstProvider
+        if not ctx.has_resource_by_name("AstProvider"):
+            return PluginResult.fail("AstProvider is required")
+        ast_provider = cast("AstProvider", ctx.require_by_name("AstProvider"))
+        ast_data = ast_provider.get()
+
+        # Get catalog from CatalogProvider
+        if not ctx.has_resource_by_name("CatalogProvider"):
+            return PluginResult.fail("CatalogProvider is required")
+        catalog_provider = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+        catalog = catalog_provider.get()
 
         try:
             compute_function_contracts(
                 ctx.gateway,
                 cfg,
-                context=analytics_context,
+                function_ast_map=ast_data.function_ast_map,
+                catalog=catalog,
             )
         except (RuntimeError, ValueError, OSError) as e:
             return PluginResult.fail(f"Function contracts computation failed: {e}")

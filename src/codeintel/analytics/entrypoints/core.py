@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.entrypoint_detectors import (
     DetectorSettings,
     EntryPointCandidate,
@@ -94,7 +93,9 @@ def build_entrypoints(
     gateway: StorageGateway,
     cfg: EntryPointsStepConfig,
     *,
-    context: AnalyticsContext,
+    catalog_provider: FunctionCatalogProvider,
+    module_map: dict[str, str],
+    features_map: Mapping[int, FunctionAstFeatures],
 ) -> None:
     """
     Populate analytics.entrypoints and analytics.entrypoint_tests.
@@ -105,8 +106,12 @@ def build_entrypoints(
         Storage gateway with active DuckDB connection.
     cfg
         EntryPointsStepConfig specifying repo context and detection toggles.
-    context
-        Shared analytics context providing catalog, module map, and features.
+    catalog_provider
+        Function catalog providing span lookups.
+    module_map
+        Mapping of file path to module name.
+    features_map
+        Mapping of function GOID to feature vector.
     """
     con = gateway.con
     ensure_schema(con, "analytics.entrypoints")
@@ -121,13 +126,12 @@ def build_entrypoints(
         [cfg.repo, cfg.commit],
     )
 
-    catalog = context.catalog
     entrypoint_context = _build_entrypoint_context(
         con,
         cfg,
-        catalog,
-        module_map_override=context.module_map,
-        features=context.function_features_map,
+        catalog_provider,
+        module_map_override=module_map,
+        features=features_map,
     )
     if entrypoint_context is None:
         log.warning("No modules available to scan for entrypoints in %s@%s", cfg.repo, cfg.commit)

@@ -5,11 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from codeintel.ingestion.docstrings_ingest import ingest_docstrings
-from codeintel.ingestion.repo_scan import ingest_repo
 
-from codeintel.config import DocstringStepConfig, RepoScanStepConfig, SnapshotRef
+from codeintel.config import SnapshotRef
 from codeintel.config.primitives import BuildPaths
+from codeintel.ingestion import (
+    DocstringsExtractStep,
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+    HashChangeDetectionAdapter,
+    RepoScanStep,
+)
 from codeintel.ingestion.infrastructure_utilities.source_scanner import (
     ScanProfile,
     default_code_profile,
@@ -50,23 +55,31 @@ def test_docstrings_respects_scan_profile_and_module_inventory(tmp_path: Path) -
     (src_ignored / "c.py").write_text('"""ignored doc"""\n', encoding="utf8")
 
     snapshot = SnapshotRef(repo="demo/docstrings", commit="abc123", repo_root=repo_root)
-    paths = BuildPaths.from_repo_root(snapshot.repo_root)
     code_profile = _code_profile_ignoring_dir(snapshot.repo_root, "ignored")
     gateway = open_ingestion_gateway()
 
-    cfg_scan = RepoScanStepConfig(snapshot=snapshot, paths=paths)
-    ingest_repo(
-        gateway,
-        cfg=cfg_scan,
-        code_profile=code_profile,
-        apply_schema=True,
+    # Use Step-based API
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+
+    scan_step = RepoScanStep(
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
+    )
+    _, modules, _ = scan_step.execute(
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        repo_root=repo_root,
+        profile=code_profile,
     )
 
-    cfg_docs = DocstringStepConfig(snapshot=snapshot)
-    ingest_docstrings(
-        gateway,
-        cfg_docs,
-        code_profile=code_profile,
+    doc_step = DocstringsExtractStep(storage=storage, discovery=discovery)
+    doc_step.execute(
+        list(modules),
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
 
     rows = gateway.con.execute(
@@ -90,16 +103,24 @@ def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) ->
     (src_pkg / "ghost.py").write_text('"""ghost doc"""\n', encoding="utf8")
 
     snapshot = SnapshotRef(repo="demo/docstrings", commit="deadbeef", repo_root=repo_root)
-    paths = BuildPaths.from_repo_root(snapshot.repo_root)
     code_profile = default_code_profile(snapshot.repo_root)
     gateway = open_ingestion_gateway()
 
-    cfg_scan = RepoScanStepConfig(snapshot=snapshot, paths=paths)
-    ingest_repo(
-        gateway,
-        cfg=cfg_scan,
-        code_profile=code_profile,
-        apply_schema=True,
+    # Use Step-based API
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+
+    scan_step = RepoScanStep(
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
+    )
+    _, modules, _ = scan_step.execute(
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        repo_root=repo_root,
+        profile=code_profile,
     )
 
     gateway.con.execute(
@@ -110,11 +131,14 @@ def test_docstrings_uses_module_inventory_not_filesystem_scan(tmp_path: Path) ->
         [snapshot.repo, snapshot.commit, "src/pkg/ghost.py"],
     )
 
-    cfg_docs = DocstringStepConfig(snapshot=snapshot)
-    ingest_docstrings(
-        gateway,
-        cfg_docs,
-        code_profile=code_profile,
+    # Filter modules to only include visible.py
+    filtered_modules = [m for m in modules if m.rel_path != "src/pkg/ghost.py"]
+
+    doc_step = DocstringsExtractStep(storage=storage, discovery=discovery)
+    doc_step.execute(
+        filtered_modules,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
     )
 
     rows = gateway.con.execute(

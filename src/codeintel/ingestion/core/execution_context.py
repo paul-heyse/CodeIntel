@@ -1,0 +1,319 @@
+"""Execution context for ingestion plugins.
+
+This module provides the execution context that plugins receive during
+execution, enabling typed access to resources, configuration, and
+shared scratch space.
+
+NOTE: Imports inside methods are intentional to avoid circular dependencies.
+"""
+
+# ruff: noqa: PLC0415
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from codeintel.config.models import ToolsConfig
+    from codeintel.config.primitives import BuildPaths, SnapshotRef
+    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+    from codeintel.ingestion.resources.protocol import ResourceProvider
+    from codeintel.ingestion.resources.registry import ResourceRegistry
+    from codeintel.storage.gateway import StorageGateway
+
+
+class ResourceNotFoundError(Exception):
+    """Raised when a required resource is not available."""
+
+    def __init__(self, resource_name: str) -> None:
+        """Initialize with resource name.
+
+        Parameters
+        ----------
+        resource_name
+            Name of the resource that was not found.
+        """
+        self.resource_name = resource_name
+        super().__init__(f"Resource not found: {resource_name}")
+
+
+def _empty_registry() -> ResourceRegistry:
+    """Create an empty resource registry.
+
+    This avoids importing ResourceRegistry at module level to prevent
+    circular imports.
+
+    Returns
+    -------
+    ResourceRegistry
+        Empty registry instance.
+    """
+    from codeintel.ingestion.resources.registry import ResourceRegistry
+
+    return ResourceRegistry()
+
+
+@dataclass
+class IngestExecutionContext:
+    """Execution context for ingestion plugins.
+
+    Provide access to storage, configuration, change tracking, and shared
+    scratch space for inter-plugin communication.
+
+    Attributes
+    ----------
+    gateway
+        StorageGateway providing DuckDB access.
+    snapshot
+        Repository snapshot reference.
+    paths
+        Build paths configuration.
+    tools
+        Tools configuration.
+    code_profile
+        Code scanning profile.
+    config_profile
+        Config scanning profile.
+    resources
+        Resource registry for lazy resource access.
+    scratch
+        Shared scratch space for inter-plugin data.
+    configs
+        Mapping of config types to config instances.
+    plugin_name
+        Name of the executing plugin.
+    run_id
+        Unique identifier for this execution run.
+    """
+
+    gateway: StorageGateway
+    snapshot: SnapshotRef
+    paths: BuildPaths
+    tools: ToolsConfig
+    code_profile: ScanProfile
+    config_profile: ScanProfile
+    resources: ResourceRegistry = field(default_factory=lambda: _empty_registry())
+    scratch: IngestRuntimeScratch = field(default_factory=IngestRuntimeScratch)
+    configs: dict[type[object], object] = field(default_factory=dict)
+    plugin_name: str | None = None
+    run_id: str | None = None
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root for the current snapshot.
+
+        Returns
+        -------
+        Path
+            Absolute path to the repository root.
+        """
+        return self.snapshot.repo_root
+
+    @property
+    def repo(self) -> str:
+        """Repository slug for the current snapshot.
+
+        Returns
+        -------
+        str
+            Repository identifier.
+        """
+        return self.snapshot.repo
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier for the current snapshot.
+
+        Returns
+        -------
+        str
+            Commit hash or identifier.
+        """
+        return self.snapshot.commit
+
+    @property
+    def build_dir(self) -> Path:
+        """Build directory derived from execution config.
+
+        Returns
+        -------
+        Path
+            Path to the build directory.
+        """
+        return self.paths.build_dir
+
+    def require[T: ResourceProvider[object]](self, provider_type: type[T]) -> T:
+        """Get a required resource, raising if unavailable.
+
+        Parameters
+        ----------
+        provider_type
+            The type of resource provider to retrieve.
+
+        Returns
+        -------
+        T
+            The resource provider instance.
+
+        Raises
+        ------
+        ResourceNotFoundError
+            If the resource is not registered.
+        """
+        return self.resources.require(provider_type)
+
+    def require_by_name(self, name: str) -> object:
+        """Get a resource by name for duck-typing scenarios.
+
+        Parameters
+        ----------
+        name
+            Name of the resource provider.
+
+        Returns
+        -------
+        object
+            The resource provider instance. Caller should cast to expected type.
+
+        Raises
+        ------
+        ResourceNotFoundError
+            If the resource is not registered.
+        """
+        return self.resources.require_by_name(name)
+
+    def has_resource[T: ResourceProvider[object]](self, provider_type: type[T]) -> bool:
+        """Check if a resource is available.
+
+        Parameters
+        ----------
+        provider_type
+            The type of resource provider to check.
+
+        Returns
+        -------
+        bool
+            True if the resource is registered.
+        """
+        return self.resources.has(provider_type)
+
+    def has_resource_by_name(self, name: str) -> bool:
+        """Check if a resource is available by name.
+
+        Parameters
+        ----------
+        name
+            Name of the resource provider.
+
+        Returns
+        -------
+        bool
+            True if the resource is registered.
+        """
+        return self.resources.has_by_name(name)
+
+    def register_config[T](self, config_type: type[T], config: T) -> None:
+        """Register a configuration instance.
+
+        Parameters
+        ----------
+        config_type
+            The type to register the config under.
+        config
+            The configuration instance.
+        """
+        self.configs[config_type] = config
+
+    def has_config(self, config_type: type[object]) -> bool:
+        """Check if a config type is registered.
+
+        Parameters
+        ----------
+        config_type
+            The configuration type to check.
+
+        Returns
+        -------
+        bool
+            True if config is registered.
+        """
+        return config_type in self.configs
+
+    def get_config[T](self, config_type: type[T]) -> T:
+        """Get a required configuration.
+
+        Parameters
+        ----------
+        config_type
+            The configuration type to retrieve.
+
+        Returns
+        -------
+        T
+            The configuration instance.
+
+        Raises
+        ------
+        KeyError
+            If the config type is not registered.
+        """
+        if config_type not in self.configs:
+            message = f"Config not found: {config_type.__name__}"
+            raise KeyError(message)
+        # The config was registered with this type, so this cast is safe
+        return self.configs[config_type]  # type: ignore[return-value]
+
+    def get_optional_config[T](self, config_type: type[T]) -> T | None:
+        """Get an optional configuration.
+
+        Parameters
+        ----------
+        config_type
+            The configuration type to retrieve.
+
+        Returns
+        -------
+        T | None
+            The configuration instance or None.
+        """
+        config = self.configs.get(config_type)
+        if config is None:
+            return None
+        # The config was registered with this type, so this cast is safe
+        return config  # type: ignore[return-value]
+
+    def count_produced_tables(
+        self,
+        tables: tuple[str, ...],
+    ) -> Mapping[str, int]:
+        """Count rows in the specified tables.
+
+        Parameters
+        ----------
+        tables
+            Table names to count.
+
+        Returns
+        -------
+        Mapping[str, int]
+            Mapping of table names to row counts.
+        """
+        from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
+
+        counts: dict[str, int] = {}
+        for table in tables:
+            count = safe_count(self.gateway, table)
+            counts[table] = count if count is not None else 0
+        return counts
+
+
+__all__ = [
+    "IngestExecutionContext",
+    "ResourceNotFoundError",
+]

@@ -1,5 +1,15 @@
 """Build symbol definition-to-use edges from SCIP JSON exports.
 
+This module provides a thin orchestration layer that:
+1. Loads SCIP JSON documents from disk
+2. Delegates pure symbol analysis to graphs.compute.symbols
+3. Persists results back to storage
+
+Architecture notes:
+- Pure computation functions are in graphs.compute.symbols
+- This builder orchestrates file I/O and database persistence
+- The compute layer is stateless and testable in isolation
+
 .. note::
     This module provides internal implementation for the symbol_uses_builder plugin.
     External code should use the plugin interface instead:
@@ -14,7 +24,8 @@ import logging
 from pathlib import Path
 
 from codeintel.config import SymbolUsesStepConfig
-from codeintel.config.datasets import SymbolUseRow, symbol_use_to_tuple
+from codeintel.config.datasets import SymbolUseRow as DatasetSymbolUseRow
+from codeintel.config.datasets import symbol_use_to_tuple
 from codeintel.core.types import (
     ScipDocument,
     ScipOccurrence,
@@ -25,6 +36,11 @@ from codeintel.graphs.catalog import (
     FunctionCatalog,
     FunctionCatalogProvider,
     FunctionCatalogService,
+)
+
+# Import compute layer for pure symbol analysis
+from codeintel.graphs.compute.symbols import (
+    parse_symbol_roles,
 )
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
@@ -140,8 +156,9 @@ def load_scip_documents(scip_path: Path | None) -> list[ScipDocument] | None:
 
 
 def _symbol_roles(occurrence: ScipOccurrence) -> int:
-    """
-    Return normalized symbol_roles bits from an occurrence.
+    """Return normalized symbol_roles bits from an occurrence.
+
+    Delegates to the compute layer for parsing logic.
 
     Parameters
     ----------
@@ -153,8 +170,7 @@ def _symbol_roles(occurrence: ScipOccurrence) -> int:
     int
         Symbol role bitmask, defaulting to 0 when missing.
     """
-    symbol_roles = occurrence.get("symbol_roles")
-    return int(symbol_roles) if symbol_roles is not None else 0
+    return parse_symbol_roles(occurrence.get("symbol_roles"))
 
 
 def build_def_map(docs: list[ScipDocument]) -> dict[str, str]:
@@ -188,10 +204,26 @@ def _build_symbol_edges(
     docs: list[ScipDocument],
     def_path_by_symbol: dict[str, str],
     module_by_path: dict[str, str],
-) -> list[SymbolUseRow]:
+) -> list[DatasetSymbolUseRow]:
+    """Build symbol use edges from SCIP documents.
+
+    Parameters
+    ----------
+    docs
+        List of SCIP documents to process.
+    def_path_by_symbol
+        Mapping from symbol to definition path.
+    module_by_path
+        Mapping from path to module name.
+
+    Returns
+    -------
+    list[DatasetSymbolUseRow]
+        Symbol use edge rows for persistence.
+    """
     # Track unique edges to prevent PK violations: (symbol, def_path, use_path)
     seen_edges: set[tuple[str, str, str]] = set()
-    rows: list[SymbolUseRow] = []
+    rows: list[DatasetSymbolUseRow] = []
 
     for doc in docs:
         use_path = doc.get("relative_path")
@@ -224,7 +256,7 @@ def _build_symbol_edges(
             same_module = m_def is not None and m_def == m_use
 
             rows.append(
-                SymbolUseRow(
+                DatasetSymbolUseRow(
                     symbol=symbol,
                     def_path=def_path,
                     use_path=use_path,

@@ -123,7 +123,9 @@ class CoverageIngestStep:
 
         if all_rows:
             scope = f"{repo}@{commit}"
-            write_result = self._storage.write_batch("analytics.coverage_lines", all_rows, scope=scope)
+            write_result = self._storage.write_batch(
+                "analytics.coverage_lines", all_rows, scope=scope
+            )
             table_counts["analytics.coverage_lines"] = write_result.rows_written
             total_rows = write_result.rows_written
 

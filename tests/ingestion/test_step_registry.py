@@ -2,26 +2,30 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.ingestion.core.base import BaseIngestPlugin
+from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.infrastructure_utilities.source_scanner import (
     default_code_profile,
     default_config_profile,
 )
 from codeintel.ingestion.plugins import (
     DEFAULT_INGEST_PLUGINS,
-    IngestPluginContext,
-    IngestPluginResult,
     IngestRuntimeScratch,
     get_ingest_registry,
     plan_ingest_plugins,
 )
-from codeintel.ingestion.plugins.decorators import ingest_plugin
+from codeintel.ingestion.plugins.protocol import IngestStage
 from codeintel.ingestion.plugins.registry import IngestPluginRegistry, PlanOptions
+from codeintel.ingestion.resources.registry import ResourceRegistry
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
@@ -113,48 +117,45 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
 
     executed: list[str] = []
 
-    # Create test plugins using the decorator
-    @ingest_plugin(
-        name="alpha",
-        description="First step",
-        stage="scan",
-        depends_on=(),
-        produces_tables=(),
-        register=False,
-    )
-    def alpha_plugin(_ctx: IngestPluginContext) -> IngestPluginResult:
-        executed.append("alpha")
-        return IngestPluginResult.ok()
+    # Create test plugins using class-based architecture
+    @dataclass
+    class AlphaPlugin(BaseIngestPlugin):
+        plugin_name: ClassVar[str] = "alpha"
+        plugin_description: ClassVar[str] = "First step"
+        plugin_stage: ClassVar[IngestStage] = "scan"
+        depends_on: ClassVar[tuple[str, ...]] = ()
 
-    @ingest_plugin(
-        name="bravo",
-        description="Second step",
-        stage="parse",
-        depends_on=("alpha",),
-        produces_tables=(),
-        register=False,
-    )
-    def bravo_plugin(_ctx: IngestPluginContext) -> IngestPluginResult:
-        executed.append("bravo")
-        return IngestPluginResult.ok()
+        def compute(self, ctx: IngestExecutionContext) -> Mapping[str, int] | None:
+            executed.append("alpha")
+            return None
 
-    @ingest_plugin(
-        name="charlie",
-        description="Final step",
-        stage="enrich",
-        depends_on=("bravo",),
-        produces_tables=(),
-        register=False,
-    )
-    def charlie_plugin(_ctx: IngestPluginContext) -> IngestPluginResult:
-        executed.append("charlie")
-        return IngestPluginResult.ok()
+    @dataclass
+    class BravoPlugin(BaseIngestPlugin):
+        plugin_name: ClassVar[str] = "bravo"
+        plugin_description: ClassVar[str] = "Second step"
+        plugin_stage: ClassVar[IngestStage] = "parse"
+        depends_on: ClassVar[tuple[str, ...]] = ("alpha",)
+
+        def compute(self, ctx: IngestExecutionContext) -> Mapping[str, int] | None:
+            executed.append("bravo")
+            return None
+
+    @dataclass
+    class CharliePlugin(BaseIngestPlugin):
+        plugin_name: ClassVar[str] = "charlie"
+        plugin_description: ClassVar[str] = "Final step"
+        plugin_stage: ClassVar[IngestStage] = "enrich"
+        depends_on: ClassVar[tuple[str, ...]] = ("bravo",)
+
+        def compute(self, ctx: IngestExecutionContext) -> Mapping[str, int] | None:
+            executed.append("charlie")
+            return None
 
     # Create a custom registry with our test plugins
     registry = IngestPluginRegistry()
-    registry.register(alpha_plugin)
-    registry.register(bravo_plugin)
-    registry.register(charlie_plugin)
+    registry.register(AlphaPlugin())
+    registry.register(BravoPlugin())
+    registry.register(CharliePlugin())
 
     # Plan and execute all plugins (registry doesn't auto-expand dependencies)
     plan = registry.plan(
@@ -167,14 +168,16 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
     gateway = open_ingestion_gateway()
     try:
         scratch = IngestRuntimeScratch()
+        resources = ResourceRegistry()
         for plugin in plan.plugins:
-            ctx = IngestPluginContext(
+            ctx = IngestExecutionContext(
                 gateway=gateway,
                 snapshot=snapshot,
                 paths=paths,
                 tools=tools,
                 code_profile=code_profile,
                 config_profile=config_profile,
+                resources=resources,
                 scratch=scratch,
                 plugin_name=plugin.metadata.name,
             )

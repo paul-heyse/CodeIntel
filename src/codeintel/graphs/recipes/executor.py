@@ -499,11 +499,26 @@ class RecipeExecutor:
             self._context.snapshot.commit,
         )
 
+        # Build resources from executor context
+        from codeintel.graphs.resources.container import ResourceContainer  # noqa: PLC0415
+        from codeintel.graphs.resources.graphs import GraphResource  # noqa: PLC0415
+        from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
+
+        container = ResourceContainer()
+        container.register(StorageResource(self._context.gateway, self._context.snapshot.repo_root))
+        if self._context.engine is not None:
+            from typing import cast  # noqa: PLC0415
+
+            from codeintel.graphs.engine import NxGraphEngine  # noqa: PLC0415
+
+            container.register(GraphResource(cast("NxGraphEngine", self._context.engine)))
+
         ctx = GraphExecutionContext(
-            gateway=self._context.gateway,
             snapshot=self._context.snapshot,
-            engine=self._context.engine,
-            catalog_provider=self._context.catalog_provider,
+            resources=container,
+            _gateway=self._context.gateway,
+            _engine=self._context.engine,
+            _catalog_provider=self._context.catalog_provider,
             scratch=self._scratch,
             plugin_name=plugin.metadata.name,
             run_id=run_id,

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.catalog import CatalogProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -39,7 +39,7 @@ class DataModelUsagePlugin:
             name="data_models.usage",
             description="Classify per-function data model read/write usage patterns.",
             stage="data_model_usage",
-            version="2.0.0",
+            version="3.0.0",
             enabled_by_default=True,
             severity="fatal",
             inputs=(
@@ -102,19 +102,17 @@ class DataModelUsagePlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get required analytics context
-        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
-            return PluginResult.fail("AnalyticsContextProvider is required")
-        analytics_provider = cast(
-            "AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider")
-        )
-        analytics_context = analytics_provider.get()
+        # Get catalog from CatalogProvider
+        catalog_provider = None
+        if ctx.has_resource_by_name("CatalogProvider"):
+            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+            catalog_provider = cat_prov.get()
 
         try:
             compute_data_model_usage(
                 ctx.gateway,
                 cfg,
-                context=analytics_context,
+                catalog_provider=catalog_provider,
             )
         except (RuntimeError, ValueError, OSError) as e:
             return PluginResult.fail(f"Data model usage computation failed: {e}")

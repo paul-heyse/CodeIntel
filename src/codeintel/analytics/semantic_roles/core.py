@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.ast_utils import safe_unparse
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import SemanticRolesStepConfig
@@ -170,7 +169,9 @@ def compute_semantic_roles(
     gateway: StorageGateway,
     cfg: SemanticRolesStepConfig,
     *,
-    context: AnalyticsContext,
+    module_by_path: dict[str, str],
+    ast_map: dict[int, FunctionAst],
+    features_map: dict[int, FunctionAstFeatures],
 ) -> None:
     """
     Populate semantic role tables for functions and modules.
@@ -181,16 +182,16 @@ def compute_semantic_roles(
         Storage gateway providing DuckDB access.
     cfg
         Semantic role configuration.
-    context
-        Shared analytics context providing catalog, module map, and ASTs.
+    module_by_path
+        Mapping of file path to module name.
+    ast_map
+        Mapping of function GOID to parsed AST data.
+    features_map
+        Mapping of function GOID to feature vector.
     """
     con = gateway.con
     ensure_schema(con, "analytics.semantic_roles_functions")
     ensure_schema(con, "analytics.semantic_roles_modules")
-
-    module_by_path = context.module_map
-    ast_map = context.function_ast_map
-    features_map = context.function_features_map
 
     module_meta = _load_module_meta(con, repo=cfg.repo, commit=cfg.commit)
     function_rows = _load_function_rows(con, repo=cfg.repo, commit=cfg.commit)

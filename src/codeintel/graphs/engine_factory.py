@@ -5,15 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
-from codeintel.graphs.engine import GraphKind, NxGraphEngine
+from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.nx_backend import BackendEnablement, maybe_enable_nx_gpu
 from codeintel.storage.gateway import StorageGateway
-
-if TYPE_CHECKING:
-    from codeintel.analytics.context import AnalyticsContext
 
 
 @dataclass(frozen=True)
@@ -21,7 +17,6 @@ class EngineBuildOptions:
     """Optional configuration for building graph engines."""
 
     graph_backend: GraphBackendConfig | None = None
-    context: AnalyticsContext | None = None
     env: MutableMapping[str, str] | None = None
     enabler: Callable[[], None] | None = None
 
@@ -72,30 +67,10 @@ def build_graph_engine(
         if isinstance(snapshot, SnapshotRef)
         else SnapshotRef(repo=snapshot[0], commit=snapshot[1], repo_root=Path())
     )
-    engine = NxGraphEngine(
+    return NxGraphEngine(
         gateway=gateway,
         snapshot=normalized_snapshot,
         use_gpu=use_gpu_preference,
         effective_use_gpu=effective_use_gpu,
         backend_info=enablement,
     )
-    if (
-        opts.context is not None
-        and opts.context.repo == normalized_snapshot.repo
-        and opts.context.commit == normalized_snapshot.commit
-    ):
-        engine.seed(GraphKind.CALL_GRAPH, opts.context.call_graph)
-        engine.seed(GraphKind.IMPORT_GRAPH, opts.context.import_graph)
-        engine.seed(GraphKind.SYMBOL_MODULE_GRAPH, opts.context.symbol_module_graph)
-        engine.seed(GraphKind.SYMBOL_FUNCTION_GRAPH, opts.context.symbol_function_graph)
-        engine.seed(
-            GraphKind.CONFIG_MODULE_BIPARTITE,
-            getattr(opts.context, "config_module_bipartite", None)
-            or getattr(opts.context, "config_module_graph", None),
-        )
-        engine.seed(
-            GraphKind.TEST_FUNCTION_BIPARTITE,
-            getattr(opts.context, "test_function_bipartite", None)
-            or getattr(opts.context, "test_function_graph", None),
-        )
-    return engine

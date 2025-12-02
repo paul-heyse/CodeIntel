@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config import DataModelUsageStepConfig
@@ -439,7 +438,9 @@ def compute_data_model_usage(
     gateway: StorageGateway,
     cfg: DataModelUsageStepConfig,
     *,
-    context: AnalyticsContext,
+    module_map: dict[str, str],
+    ast_by_goid: dict[int, FunctionAst],
+    missing_goids: set[int] | None = None,
 ) -> None:
     """
     Populate analytics.data_model_usage with per-function model usage classifications.
@@ -450,8 +451,12 @@ def compute_data_model_usage(
         Storage gateway for the active DuckDB database.
     cfg
         Data model usage configuration.
-    context
-        Shared analytics context providing catalog, module map, and ASTs.
+    module_map
+        Mapping of file path to module name.
+    ast_by_goid
+        Mapping of function GOID to parsed AST data.
+    missing_goids
+        Optional set of function GOIDs that could not be parsed.
     """
     con = gateway.con
     ensure_schema(con, "analytics.data_model_usage")
@@ -466,10 +471,8 @@ def compute_data_model_usage(
         return
     model_index = _build_model_index(models)
 
-    module_map = context.module_map
     subsystem_map = _subsystem_by_module(con, cfg.repo, cfg.commit)
-    ast_by_goid = context.function_ast_map
-    missing = context.missing_function_goids
+    missing = missing_goids or set()
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during model usage analysis",

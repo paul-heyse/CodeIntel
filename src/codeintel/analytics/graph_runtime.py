@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TypeVar, cast
 
 import networkx as nx
 from networkx.readwrite import json_graph
@@ -18,10 +18,6 @@ from codeintel.graphs.engine import GraphEngine, GraphKind
 from codeintel.graphs.engine_factory import EngineBuildOptions, build_graph_engine
 from codeintel.graphs.nx_backend import BackendEnablement
 from codeintel.storage.gateway import StorageGateway
-
-if TYPE_CHECKING:
-    from codeintel.analytics.context import AnalyticsContext
-
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +35,6 @@ class GraphRuntimeOptions:
     eager: bool = False
     validate: bool = False
     cache_key: str | None = None
-    context: AnalyticsContext | None = None
     engine: GraphEngine | None = None
     graph_cache_dir: Path | None = None
     features: GraphFeatureFlags = field(default_factory=GraphFeatureFlags)
@@ -329,7 +324,6 @@ def build_graph_runtime(
     gateway: StorageGateway,
     options: GraphRuntimeOptions,
     *,
-    context: AnalyticsContext | None = None,
     env: MutableMapping[str, str] | None = None,
     enabler: Callable[[], None] | None = None,
 ) -> GraphRuntime:
@@ -342,8 +336,6 @@ def build_graph_runtime(
         Storage gateway for the snapshot database.
     options :
         Runtime options describing snapshot, backend, and graph flags.
-    context :
-        Optional analytics context used to seed graph caches.
     env :
         Optional environment mapping mutated by backend selection hooks.
     enabler :
@@ -362,7 +354,6 @@ def build_graph_runtime(
     if options.snapshot is None:
         message = "GraphRuntimeOptions.snapshot is required to build a runtime."
         raise ValueError(message)
-    resolved_context = context or options.context
     resolved_backend = options.resolved_backend
     if options.engine is not None:
         engine = options.engine
@@ -372,7 +363,6 @@ def build_graph_runtime(
             options.snapshot,
             EngineBuildOptions(
                 graph_backend=resolved_backend,
-                context=resolved_context,
                 env=env,
                 enabler=enabler,
             ),
@@ -408,8 +398,6 @@ def resolve_graph_runtime(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     runtime: GraphRuntime | GraphRuntimeOptions | None,
-    *,
-    context: AnalyticsContext | None = None,
 ) -> GraphRuntime:
     """
     Normalize runtime inputs to a concrete `GraphRuntime`.
@@ -422,8 +410,6 @@ def resolve_graph_runtime(
         Snapshot reference anchoring the runtime.
     runtime:
         Existing runtime or options to materialize one.
-    context:
-        Optional analytics context used to seed caches.
 
     Returns
     -------
@@ -435,7 +421,6 @@ def resolve_graph_runtime(
 
     opts = runtime or GraphRuntimeOptions()
     resolved_snapshot = opts.snapshot or snapshot
-    resolved_context = context or opts.context
 
     normalized_options = GraphRuntimeOptions(
         snapshot=resolved_snapshot,
@@ -444,7 +429,6 @@ def resolve_graph_runtime(
         eager=opts.eager,
         validate=opts.validate,
         cache_key=opts.cache_key,
-        context=resolved_context,
         engine=opts.engine,
         graph_cache_dir=opts.graph_cache_dir,
         features=opts.features,
@@ -455,7 +439,6 @@ def resolve_graph_runtime(
     return build_graph_runtime(
         gateway,
         normalized_options,
-        context=resolved_context,
     )
 
 
@@ -490,8 +473,6 @@ class GraphRuntimePool:
         self,
         gateway: StorageGateway,
         options: GraphRuntimeOptions,
-        *,
-        context: AnalyticsContext | None = None,
     ) -> GraphRuntime:
         """
         Return a pooled runtime or build and cache when missing/expired.
@@ -516,7 +497,7 @@ class GraphRuntimePool:
             entry.last_used = now
             return entry.runtime
 
-        runtime = resolve_graph_runtime(gateway, options.snapshot, options, context=context)
+        runtime = resolve_graph_runtime(gateway, options.snapshot, options)
         self._evict_lru(now)
         self._entries[key] = PooledRuntime(runtime=runtime, created_at=now, last_used=now)
         return runtime

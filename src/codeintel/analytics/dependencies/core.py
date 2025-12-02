@@ -17,7 +17,6 @@ import yaml
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.ast_utils import resolve_call_target, safe_unparse, snippet_from_lines
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config import ExternalDependenciesStepConfig
@@ -163,11 +162,22 @@ class DependencyCallVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+@dataclass(frozen=True)
+class ExternalDependencyInputs:
+    """Inputs for external dependency call analysis."""
+
+    catalog_provider: FunctionCatalogProvider
+    module_map: dict[str, str]
+    ast_by_goid: dict[int, FunctionAst]
+    features_map: dict[int, FunctionAstFeatures]
+    missing_goids: set[int] | None = None
+
+
 def build_external_dependency_calls(
     gateway: StorageGateway,
     cfg: ExternalDependenciesStepConfig,
     *,
-    context: AnalyticsContext,
+    inputs: ExternalDependencyInputs,
 ) -> None:
     """
     Populate analytics.external_dependency_calls from AST traversal.
@@ -178,8 +188,8 @@ def build_external_dependency_calls(
         Storage gateway with live DuckDB connection.
     cfg
         External dependency configuration (repo context, patterns).
-    context
-        Shared analytics context providing catalog, module map, and ASTs.
+    inputs
+        Grouped inputs containing catalog, module map, AST data, and features.
     """
     patterns = _load_dependency_patterns(cfg)
     if not patterns:
@@ -193,30 +203,27 @@ def build_external_dependency_calls(
         [cfg.repo, cfg.commit],
     )
 
-    catalog = context.catalog
-    module_map = context.module_map
-    ast_by_goid = context.function_ast_map
-    missing = context.missing_function_goids
+    missing = inputs.missing_goids or set()
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during dependency analysis", len(missing)
         )
-    alias_maps = _build_alias_maps(cfg.repo_root, module_map)
+    alias_maps = _build_alias_maps(cfg.repo_root, inputs.module_map)
     now = datetime.now(tz=UTC)
     dep_context = DependencyContext(
         repo=cfg.repo,
         commit=cfg.commit,
         alias_maps=alias_maps,
         patterns=patterns,
-        module_map=module_map,
-        catalog=catalog,
+        module_map=inputs.module_map,
+        catalog=inputs.catalog_provider,
         now=now,
-        features=context.function_features_map,
+        features=inputs.features_map,
     )
 
     rows: list[tuple[object, ...]] = []
 
-    for goid, func_ast in ast_by_goid.items():
+    for goid, func_ast in inputs.ast_by_goid.items():
         rows.extend(
             _function_call_rows(
                 goid=goid,

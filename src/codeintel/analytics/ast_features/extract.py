@@ -6,16 +6,12 @@ import ast
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
 from codeintel.analytics.ast_utils import CallTarget, resolve_call_target, safe_unparse
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.ingestion.infrastructure_utilities.ast_utils import parse_python_module
-
-if TYPE_CHECKING:
-    from codeintel.analytics.context import AnalyticsContext
 
 
 def build_import_map(tree: ast.AST) -> dict[str, str]:
@@ -292,28 +288,8 @@ def compute_function_features(
     )
 
 
-def load_function_features_for_repo(
-    context: AnalyticsContext,
-) -> dict[int, FunctionAstFeatures]:
-    """
-    Return function features from an analytics context.
-
-    Parameters
-    ----------
-    context
-        Shared analytics context containing pre-computed features.
-
-    Returns
-    -------
-    dict[int, FunctionAstFeatures]
-        Mapping of GOID to feature vector for the repo/commit.
-    """
-    return context.function_features_map
-
-
 __all__ = [
     "build_import_map",
     "compute_function_features",
     "io_flags_from_call",
-    "load_function_features_for_repo",
 ]

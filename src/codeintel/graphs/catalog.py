@@ -11,6 +11,18 @@ Key Components
 - FunctionCatalog: Centralized access to spans, URNs, and module mappings
 - FunctionCatalogProvider: Protocol for catalog access (DI)
 - FunctionCatalogService: Service wrapper for catalog operations
+
+Hexagonal Architecture Integration
+----------------------------------
+This module is the production implementation of function catalog functionality.
+It integrates with the hexagonal architecture via:
+
+- resources/catalog.py: CatalogResource wraps FunctionCatalog for DI
+- ports/catalog.py: CatalogPort defines the abstraction protocol
+- adapters/catalog_adapter.py: CatalogAdapter provides port implementation
+
+For plugin execution, prefer using CatalogResource via ctx.require() rather
+than direct imports, enabling dependency injection and testability.
 """
 
 from __future__ import annotations

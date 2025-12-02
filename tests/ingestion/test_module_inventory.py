@@ -7,20 +7,24 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from codeintel.ingestion.repo_scan import ingest_repo
 
-from codeintel.config import RepoScanStepConfig, SnapshotRef
-from codeintel.config.primitives import BuildPaths
+from codeintel.config import SnapshotRef
 from codeintel.ingestion import (
-    config_ingest,
-    cst_extract,
-    docstrings_ingest,
-    py_ast_extract,
-    repo_scan,
-    typing_ingest,
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+    HashChangeDetectionAdapter,
+    RepoScanStep,
 )
 from codeintel.ingestion.common import iter_modules
 from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
+from codeintel.ingestion.steps import (
+    ast_extract,
+    config_ingest,
+    cst_extract,
+    docstrings_extract,
+    repo_scan,
+    typing_ingest,
+)
 from codeintel.storage.module_index import load_module_map
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
@@ -39,18 +43,18 @@ def _make_snapshot(tmp_path: Path) -> SnapshotRef:
 
 
 def test_source_scanner_only_used_in_repo_scan_and_config_ingest() -> None:
-    """Ensure SourceScanner only appears in repo_scan and config_ingest modules."""
+    """Ensure SourceScanner only appears in repo_scan and config_ingest step modules."""
     allowed = {
-        "codeintel.ingestion.repo_scan",
-        "codeintel.ingestion.config_ingest",
+        "codeintel.ingestion.steps.repo_scan",
+        "codeintel.ingestion.steps.config_ingest",
     }
     modules = {
-        "codeintel.ingestion.repo_scan": repo_scan,
-        "codeintel.ingestion.config_ingest": config_ingest,
-        "codeintel.ingestion.docstrings_ingest": docstrings_ingest,
-        "codeintel.ingestion.typing_ingest": typing_ingest,
-        "codeintel.ingestion.py_ast_extract": py_ast_extract,
-        "codeintel.ingestion.cst_extract": cst_extract,
+        "codeintel.ingestion.steps.repo_scan": repo_scan,
+        "codeintel.ingestion.steps.config_ingest": config_ingest,
+        "codeintel.ingestion.steps.docstrings_extract": docstrings_extract,
+        "codeintel.ingestion.steps.typing_ingest": typing_ingest,
+        "codeintel.ingestion.steps.ast_extract": ast_extract,
+        "codeintel.ingestion.steps.cst_extract": cst_extract,
     }
 
     offenders: list[str] = []
@@ -65,23 +69,30 @@ def test_source_scanner_only_used_in_repo_scan_and_config_ingest() -> None:
 def test_module_inventory_round_trip(tmp_path: Path) -> None:
     """Verify module inventory round-trips through core.modules and iter_modules."""
     snapshot = _make_snapshot(tmp_path)
-    paths = BuildPaths.from_repo_root(snapshot.repo_root)
     gateway = open_ingestion_gateway()
-
-    cfg = RepoScanStepConfig(snapshot=snapshot, paths=paths, tool_runner=None)
     profile = default_code_profile(snapshot.repo_root)
 
-    tracker = ingest_repo(
-        gateway,
-        cfg=cfg,
-        code_profile=profile,
-        apply_schema=True,
+    # Use Step-based API
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(snapshot.repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+
+    scan_step = RepoScanStep(
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
+    )
+    _, modules, _ = scan_step.execute(
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        repo_root=snapshot.repo_root,
+        profile=profile,
     )
 
     module_map = load_module_map(
         gateway,
-        cfg.repo,
-        cfg.commit,
+        snapshot.repo,
+        snapshot.commit,
         language="python",
         logger=None,
     )
@@ -94,8 +105,8 @@ def test_module_inventory_round_trip(tmp_path: Path) -> None:
     if not all("/" in rel_path for rel_path in rel_paths):
         pytest.fail(f"Non-POSIX module paths: {rel_paths}")
 
-    tracker_paths = sorted(module.rel_path for module in tracker.modules)
-    if tracker_paths != rel_paths:
+    scan_paths = sorted(module.rel_path for module in modules)
+    if scan_paths != rel_paths:
         pytest.fail(
-            f"Tracker modules {tracker_paths} differ from module_map derived paths {rel_paths}"
+            f"Scan modules {scan_paths} differ from module_map derived paths {rel_paths}"
         )

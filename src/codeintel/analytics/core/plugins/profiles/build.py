@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.catalog import CatalogProvider
+    from codeintel.analytics.resources.features import FeaturesProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -43,7 +44,7 @@ class ProfilesPlugin:
             name="profiles.build",
             description="Build aggregated profiles for functions, files, and modules.",
             stage="profiles",
-            version="2.0.0",
+            version="3.0.0",
             enabled_by_default=True,
             severity="fatal",
             inputs=(
@@ -120,31 +121,34 @@ class ProfilesPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        analytics_context = None
+        # Get catalog from CatalogProvider
         catalog_provider = None
-        if ctx.has_resource_by_name("AnalyticsContextProvider"):
-            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
-            analytics_context = provider.get()
-            catalog_provider = analytics_context.catalog if analytics_context else None
+        if ctx.has_resource_by_name("CatalogProvider"):
+            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+            catalog_provider = cat_prov.get()
+
+        # Get features from FeaturesProvider
+        features_map = None
+        if ctx.has_resource_by_name("FeaturesProvider"):
+            features_prov = cast("FeaturesProvider", ctx.require_by_name("FeaturesProvider"))
+            features_map = features_prov.get()
 
         try:
             build_function_profile(
                 ctx.gateway,
                 cfg,
                 catalog_provider=catalog_provider,
-                context=analytics_context,
+                features_map=features_map,
             )
             build_file_profile(
                 ctx.gateway,
                 cfg,
                 catalog_provider=catalog_provider,
-                context=analytics_context,
             )
             build_module_profile(
                 ctx.gateway,
                 cfg,
                 catalog_provider=catalog_provider,
-                context=analytics_context,
             )
         except (RuntimeError, ValueError, OSError) as e:
             return PluginResult.fail(f"Profiles build failed: {e}")

@@ -7,8 +7,8 @@ from typing import cast
 import pytest
 
 from codeintel.config.datasets import CallGraphEdgeRow
-from codeintel.graphs.callgraph import persistence as call_persist
-from codeintel.graphs.callgraph import resolution as call_resolution
+from codeintel.graphs.adapters import callgraph_persistence as call_persist
+from codeintel.graphs.compute import callgraph as call_resolution
 
 ALIAS_GOID = 10
 SCIP_GOID = 1234
@@ -115,7 +115,7 @@ def test_dedupe_includes_repo_commit_scope() -> None:
         cast("CallGraphEdgeRow", {**edge_base, "callsite_line": 2}),
     ]
 
-    unique = call_persist.dedupe_edges(edges)
+    unique = call_persist.dedupe_edge_rows(edges)
 
     if len(unique) != UNIQUE_EDGE_COUNT:
         pytest.fail(f"Expected {UNIQUE_EDGE_COUNT} unique edges, got {len(unique)}")

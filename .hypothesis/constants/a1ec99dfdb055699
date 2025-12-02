@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tests_ingest.py
+# hypothesis_version: 6.148.3
+
+[0.0, 'TestsIngestStep', 'call', 'duration', 'ingest_tests', 'keywords', 'nodeid', 'tests', 'utf-8']

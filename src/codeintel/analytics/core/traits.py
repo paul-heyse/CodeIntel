@@ -273,26 +273,6 @@ class CatalogAwarePlugin(Protocol):
         ...
 
 
-@runtime_checkable
-class AnalyticsContextAwarePlugin(Protocol):
-    """Trait for plugins that require full analytics context.
-
-    Plugins implementing this trait need the complete analytics
-    context including graphs, ASTs, and function features.
-    """
-
-    @property
-    def requires_analytics_context(self) -> bool:
-        """Return whether analytics context is required.
-
-        Returns
-        -------
-        bool
-            True if analytics context is required.
-        """
-        ...
-
-
 # =============================================================================
 # Trait Mixins for Implementation
 # =============================================================================
@@ -894,13 +874,11 @@ def get_plugin_traits(plugin: object) -> tuple[str, ...]:
         (lambda p: isinstance(p, RetryablePlugin), "Retryable"),
         (lambda p: isinstance(p, ProgressReportingPlugin), "ProgressReporting"),
         (lambda p: isinstance(p, CatalogAwarePlugin), "CatalogAware"),
-        (lambda p: isinstance(p, AnalyticsContextAwarePlugin), "AnalyticsContextAware"),
     )
     return tuple(name for predicate, name in checks if predicate(plugin))
 
 
 __all__ = [
-    "AnalyticsContextAwarePlugin",
     "CacheAwareMixin",
     "CacheAwarePlugin",
     "CatalogAwarePlugin",

@@ -32,7 +32,6 @@ from codeintel.analytics.compute.functions.typedness import (
     compute_param_stats,
     compute_typedness_flags,
 )
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.datasets import (
     DeleteScope,
     get_analytics_dataset_contract,
@@ -561,18 +560,38 @@ def _build_span_index(
     return span_index
 
 
-def _build_function_analytics_from_context(
+def _build_function_analytics_from_ast_data(
     *,
     goids_by_file: dict[str, list[GoidRow]],
     process_ctx: ProcessContext,
-    context: AnalyticsContext,
+    ast_data: FunctionAnalyticsOptions,
     span_index: dict[int, SourceSpan],
     reporter: FunctionValidationReporter,
 ) -> FunctionAnalyticsResult:
+    """Build function analytics from pre-loaded AST data.
+
+    Parameters
+    ----------
+    goids_by_file
+        GOIDs grouped by file path.
+    process_ctx
+        Processing context with config and timestamp.
+    ast_data
+        Options containing AST map and missing GOIDs.
+    span_index
+        Mapping of GOID to source span.
+    reporter
+        Validation reporter for issues.
+
+    Returns
+    -------
+    FunctionAnalyticsResult
+        Computed analytics rows and validation reporter.
+    """
     metrics_rows: list[FunctionMetricsRow] = []
     types_rows: list[FunctionTypesRow] = []
-    ast_map = context.function_ast_map
-    missing_goids = context.missing_function_goids
+    ast_map = ast_data.get_ast_map()
+    missing_goids = ast_data.get_missing_goids()
 
     for fun_rows in goids_by_file.values():
         for info in fun_rows:
@@ -751,11 +770,12 @@ def compute_function_metrics_and_types(
     reporter = opts.validation_reporter or FunctionValidationReporter(cfg.repo, cfg.commit)
     span_index = _build_span_index(goids_by_file, cfg.repo_root)
 
-    if opts.context is not None:
-        result = _build_function_analytics_from_context(
+    # Use pre-loaded AST data if available (from context or direct data)
+    if opts.has_ast_data():
+        result = _build_function_analytics_from_ast_data(
             goids_by_file=goids_by_file,
             process_ctx=ctx,
-            context=opts.context,
+            ast_data=opts,
             span_index=span_index,
             reporter=reporter,
         )

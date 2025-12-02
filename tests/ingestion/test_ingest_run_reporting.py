@@ -9,13 +9,13 @@ import pytest
 
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.ingestion import IngestExecutionContext
 from codeintel.ingestion.infrastructure_utilities.source_scanner import (
     default_code_profile,
     default_config_profile,
 )
 from codeintel.ingestion.ingest_runs import IngestRun, IngestRunSink
 from codeintel.ingestion.plugins import (
-    IngestPluginContext,
     IngestPluginResult,
     IngestRuntimeScratch,
     get_ingest_registry,
@@ -38,8 +38,7 @@ def _build_plugin_context(
     tmp_path: Path,
     *,
     scratch: IngestRuntimeScratch | None = None,
-    ingest_run_sink: IngestRunSink | None = None,
-) -> tuple[IngestPluginContext, SnapshotRef]:
+) -> tuple[IngestExecutionContext, SnapshotRef]:
     """Build a plugin context for testing.
 
     Parameters
@@ -48,12 +47,10 @@ def _build_plugin_context(
         Temp directory for test repo.
     scratch
         Optional shared scratch space.
-    ingest_run_sink
-        Optional run reporting sink.
 
     Returns
     -------
-    tuple[IngestPluginContext, SnapshotRef]
+    tuple[IngestExecutionContext, SnapshotRef]
         Plugin context and snapshot reference.
     """
     repo_root = tmp_path / "repo"
@@ -63,7 +60,7 @@ def _build_plugin_context(
     snapshot = SnapshotRef.from_args(repo="demo/repo", commit="abc123", repo_root=repo_root)
     gateway = open_ingestion_gateway()
 
-    ctx = IngestPluginContext(
+    ctx = IngestExecutionContext(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
@@ -71,7 +68,6 @@ def _build_plugin_context(
         code_profile=default_code_profile(repo_root),
         config_profile=default_config_profile(repo_root),
         scratch=scratch if scratch is not None else IngestRuntimeScratch(),
-        ingest_run_sink=ingest_run_sink,
     )
     return ctx, snapshot
 
@@ -101,16 +97,17 @@ def test_plugin_execution_success(tmp_path: Path) -> None:
             pytest.fail("repo_scan did not populate change_tracker in scratch")
 
         # Execute docstrings_ingest with change_tracker available
-        ctx2 = IngestPluginContext(
+        ctx2 = IngestExecutionContext(
             gateway=ctx.gateway,
             snapshot=ctx.snapshot,
             paths=ctx.paths,
             tools=ctx.tools,
             code_profile=ctx.code_profile,
             config_profile=ctx.config_profile,
-            change_tracker=change_tracker,  # type: ignore[arg-type]
             scratch=scratch,
         )
+        # Store change_tracker in scratch for plugins that need it
+        ctx2.scratch.declare("change_tracker", change_tracker)
 
         docstrings_plugin = registry.get("docstrings_ingest")
         doc_result = docstrings_plugin.execute(ctx2)
@@ -148,14 +145,13 @@ def test_plugin_execution_error_handling(tmp_path: Path) -> None:
         cst_plugin = registry.get("cst_extract")
 
         # Create context without change_tracker
-        ctx2 = IngestPluginContext(
+        ctx2 = IngestExecutionContext(
             gateway=ctx.gateway,
             snapshot=ctx.snapshot,
             paths=ctx.paths,
             tools=ctx.tools,
             code_profile=ctx.code_profile,
             config_profile=ctx.config_profile,
-            change_tracker=None,  # Missing change_tracker
             scratch=IngestRuntimeScratch(),  # Fresh scratch without change_tracker
         )
 

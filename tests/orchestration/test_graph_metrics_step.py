@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.context import AnalyticsContextConfig, build_analytics_context
 from codeintel.config import BuildPaths, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
+from codeintel.graphs.catalog import FunctionCatalogService
 from codeintel.graphs.recipes import METRICS_ONLY_RECIPE, RecipeExecutor, RecipeExecutorContext
 from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 from codeintel.pipeline.orchestration.core import ensure_graph_runtime
@@ -53,22 +53,17 @@ def test_graph_metrics_step_runs_plugins(tmp_path: Path) -> None:
     )
 
     # Get runtime context
-    acx = build_analytics_context(
-        gateway,
-        AnalyticsContextConfig(
-            repo=repo,
-            commit=commit,
-            repo_root=tmp_path,
-        ),
-    )
-    runtime = ensure_graph_runtime(ctx, acx=acx)
+    runtime = ensure_graph_runtime(ctx)
+
+    # Build catalog provider
+    catalog_provider = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
 
     # Execute with force_sequential to avoid thread-safety issues
     executor_ctx = RecipeExecutorContext(
         gateway=gateway,
         snapshot=ctx.snapshot,
         engine=runtime.engine,
-        catalog_provider=acx.catalog,
+        catalog_provider=catalog_provider,
         force_sequential=True,
     )
     executor = RecipeExecutor(executor_ctx)

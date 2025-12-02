@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/repo_scan.py
+# hypothesis_version: 6.148.3
+
+['full_rebuild', 'ingest_repo', 'python']

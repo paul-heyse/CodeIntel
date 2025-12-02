@@ -6,7 +6,7 @@ import ast
 from textwrap import dedent
 
 import pytest
-from codeintel.ingestion.py_ast_extract import AstVisitor
+from codeintel.ingestion.steps.ast_extract import AstVisitor
 
 from codeintel.config.datasets import get_table_columns
 

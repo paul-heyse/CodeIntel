@@ -11,11 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.context import AnalyticsContextConfig, build_analytics_context
 from codeintel.analytics.data_model_usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
+from codeintel.analytics.function_ast_cache import load_function_asts
 from codeintel.analytics.graphs import compute_config_data_flow
+from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.config import ConfigBuilder
+from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.plugins.builders.callgraph import build_call_graph
 from codeintel.storage.data_models import NormalizedDataModel, fetch_models_normalized
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from tests._helpers.builders import (
@@ -344,24 +347,34 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
             commit=COMMIT,
             repo_root=repo_root,
         )
-        # Build analytics context for domain functions
-        context_cfg = AnalyticsContextConfig(
-            repo=REPO,
-            commit=COMMIT,
-            repo_root=repo_root,
-        )
-        analytics_context = build_analytics_context(gateway, context_cfg)
+        snapshot = SnapshotRef(repo=REPO, commit=COMMIT, repo_root=repo_root)
+
+        # Load module map
+        module_map_provider = ModuleMapProvider.from_gateway(gateway, snapshot)
+        module_map = module_map_provider.get().module_by_path
+
+        # Load function ASTs
+        ast_data = load_function_asts(gateway, snapshot)
+        ast_by_goid = ast_data.function_ast_map
+        missing_goids = ast_data.missing_goids
+
+        # Build call graph for config data flow
+        call_graph = build_call_graph(gateway, repo=REPO, commit=COMMIT)
 
         compute_data_models(gateway, builder.data_models())
         compute_data_model_usage(
             gateway=gateway,
             cfg=builder.data_model_usage(),
-            context=analytics_context,
+            module_map=module_map,
+            ast_by_goid=ast_by_goid,
+            missing_goids=missing_goids,
         )
         compute_config_data_flow(
             gateway=gateway,
             cfg=builder.config_data_flow(),
-            context=analytics_context,
+            call_graph=call_graph,
+            ast_by_goid=ast_by_goid,
+            missing_goids=missing_goids,
         )
 
         model_ids = _assert_models(gateway)

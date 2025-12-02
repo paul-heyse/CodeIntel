@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.catalog import CatalogProvider
 
 from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -35,7 +35,7 @@ class CoverageFunctionsPlugin(ConfiguredTableWriterPlugin[CoverageAnalyticsStepC
     # Core identification
     plugin_name: ClassVar[str] = "coverage.functions"
     plugin_stage: ClassVar[PluginStage] = "coverage"
-    plugin_version: ClassVar[str] = "2.0.0"
+    plugin_version: ClassVar[str] = "3.0.0"
 
     # Configuration binding
     config_type: ClassVar[type[CoverageAnalyticsStepConfig]] = CoverageAnalyticsStepConfig
@@ -72,15 +72,16 @@ class CoverageFunctionsPlugin(ConfiguredTableWriterPlugin[CoverageAnalyticsStepC
         """
         cfg = self.config
 
-        analytics_context = None
-        if ctx.has_resource_by_name("AnalyticsContextProvider"):
-            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
-            analytics_context = provider.get()
+        # Get catalog from CatalogProvider
+        catalog_provider = None
+        if ctx.has_resource_by_name("CatalogProvider"):
+            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+            catalog_provider = cat_prov.get()
 
         compute_coverage_functions(
             ctx.gateway,
             cfg,
-            context=analytics_context,
+            catalog_provider=catalog_provider,
         )
         return None  # Let base class compute row counts
 

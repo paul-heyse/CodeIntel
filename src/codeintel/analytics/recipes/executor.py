@@ -14,7 +14,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
-from codeintel.analytics.context import AnalyticsContextConfig
 from codeintel.analytics.core.execution_context import (
     PluginExecutionContextBuilder,
     PluginScratch,
@@ -31,8 +30,9 @@ from codeintel.analytics.recipes.model import (
     RecipeScope,
 )
 from codeintel.analytics.recipes.registry import RecipeRegistry, get_recipe_registry
-from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
+from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime_manifest import AnalyticsScope
@@ -40,7 +40,6 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
-    from codeintel.analytics.context import AnalyticsContext
     from codeintel.analytics.graph_runtime import GraphRuntime
     from codeintel.graphs.catalog import FunctionCatalogProvider
 
@@ -67,8 +66,6 @@ class RecipeExecutionContext:
         Optional graph runtime for graph-aware plugins.
     catalog_provider
         Optional function catalog.
-    analytics_context
-        Optional analytics context.
     extra
         Additional context values.
     """
@@ -80,7 +77,6 @@ class RecipeExecutionContext:
     resources: ResourceRegistry = field(default_factory=ResourceRegistry)
     graph_runtime: GraphRuntime | None = None
     catalog_provider: FunctionCatalogProvider | None = None
-    analytics_context: AnalyticsContext | None = None
     extra: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -346,15 +342,11 @@ class RecipeExecutor:
                 CatalogProvider, CatalogProvider.from_catalog(context.catalog_provider)
             )
 
-        if context.analytics_context is not None:
-            ctx_config = AnalyticsContextConfig(
-                repo=context.snapshot.repo,
-                commit=context.snapshot.commit,
-                repo_root=context.snapshot.repo_root,
-            )
-            ctx_provider = AnalyticsContextProvider(context.gateway, ctx_config)
-            ctx_provider.set_preloaded(context.analytics_context)
-            builder = builder.with_resource_provider(AnalyticsContextProvider, ctx_provider)
+        # Register AST and features providers using the snapshot
+        ast_provider = AstProvider(context.gateway, context.snapshot)
+        builder = builder.with_resource_provider(AstProvider, ast_provider)
+        features_provider = FeaturesProvider(context.gateway, context.snapshot)
+        builder = builder.with_resource_provider(FeaturesProvider, features_provider)
 
         builder.with_options(config)
         builder.with_plugin_name(plugin_name)
@@ -383,9 +375,7 @@ class RecipeExecutor:
         started_at = datetime.now(tz=UTC)
         start_time = time.perf_counter()
 
-        builder = RecipeExecutor._build_plugin_context(
-            plugin_name, context, config, run_id
-        )
+        builder = RecipeExecutor._build_plugin_context(plugin_name, context, config, run_id)
         plugin_ctx = builder.build(scratch=scratch)
 
         # Validate inputs
@@ -456,7 +446,6 @@ class RecipeExecutionOptions:
     config_overrides: Mapping[str, Mapping[str, object]] | None = None
     graph_runtime: GraphRuntime | None = None
     catalog_provider: FunctionCatalogProvider | None = None
-    analytics_context: AnalyticsContext | None = None
 
 
 def execute_recipe(
@@ -491,7 +480,6 @@ def execute_recipe(
         config_overrides=opts.config_overrides or {},
         graph_runtime=opts.graph_runtime,
         catalog_provider=opts.catalog_provider,
-        analytics_context=opts.analytics_context,
     )
     executor = RecipeExecutor()
     return executor.execute(recipe, context, config_overrides=opts.config_overrides)

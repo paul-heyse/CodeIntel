@@ -3,9 +3,15 @@
 This module provides additional graph metric plugins for CFG/DFG, test,
 symbol, subsystem, config, and stats metrics using the factory pattern
 for minimal boilerplate.
+
+These plugins delegate computation to the analytics package (per architecture
+decision Option B) and use resource injection pattern via ctx.require()
+with fallback to direct context properties for backward compatibility.
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics
@@ -20,25 +26,55 @@ from codeintel.analytics.tests.graph_metrics import compute_test_graph_metrics
 from codeintel.graphs.core import (
     ComputationResult,
     GraphExecutionContext,
+    GraphPluginProtocol,
     make_metric_plugin,
 )
 from codeintel.graphs.engine import GraphKind
+from codeintel.graphs.resources import StorageResource
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
 # Computation Functions (standardized signature)
 # =============================================================================
 
 
+def _get_gateway(ctx: GraphExecutionContext) -> StorageGateway:
+    """Get storage gateway via resource injection or fallback.
+
+    Parameters
+    ----------
+    ctx
+        Graph execution context.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway instance.
+    """
+    from typing import cast  # noqa: PLC0415
+
+    # Cast is needed because require() returns StoragePort but we need StorageResource
+    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
+        storage = cast("StorageResource", ctx.require(StorageResource))
+        return storage.gateway
+    return ctx.gateway
+
+
 def _compute_cfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
     """
     Compute control-flow graph metrics for functions and blocks.
+
+    Uses resource injection to access storage, with fallback to ctx.gateway.
 
     Returns
     -------
     ComputationResult
         Success result after computing CFG metrics.
     """
-    compute_cfg_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, context=None)
+    gateway = _get_gateway(ctx)
+    compute_cfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
@@ -46,18 +82,23 @@ def _compute_dfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
     """
     Compute data-flow graph metrics for functions and blocks.
 
+    Uses resource injection to access storage, with fallback to ctx.gateway.
+
     Returns
     -------
     ComputationResult
         Success result after computing DFG metrics.
     """
-    compute_dfg_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, context=None)
+    gateway = _get_gateway(ctx)
+    compute_dfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
 def _compute_test_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
     """
     Compute metrics over the test <-> function bipartite graph.
+
+    Uses resource injection to access storage, with fallback to ctx.gateway.
 
     Returns
     -------
@@ -70,18 +111,21 @@ def _compute_test_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
     )
     from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
 
+    gateway = _get_gateway(ctx)
     runtime = resolve_graph_runtime(
-        ctx.gateway,
+        gateway,
         ctx.snapshot,
         GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
     )
-    compute_test_graph_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    compute_test_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
     return ComputationResult.ok()
 
 
 def _compute_subsystem_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
     """
     Compute subsystem-level condensed import graph metrics.
+
+    Uses resource injection to access storage, with fallback to ctx.gateway.
 
     Returns
     -------
@@ -94,13 +138,14 @@ def _compute_subsystem_graph_metrics(ctx: GraphExecutionContext) -> ComputationR
     )
     from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
 
+    gateway = _get_gateway(ctx)
     runtime = resolve_graph_runtime(
-        ctx.gateway,
+        gateway,
         ctx.snapshot,
         GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
     )
     compute_subsystem_graph_metrics(
-        ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime, filters=None
+        gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime, filters=None
     )
     return ComputationResult.ok()
 
@@ -108,6 +153,8 @@ def _compute_subsystem_graph_metrics(ctx: GraphExecutionContext) -> ComputationR
 def _compute_symbol_graph_metrics_modules(ctx: GraphExecutionContext) -> ComputationResult:
     """
     Compute symbol graph metrics at the module level.
+
+    Uses resource injection to access storage, with fallback to ctx.gateway.
 
     Returns
     -------
@@ -120,20 +167,21 @@ def _compute_symbol_graph_metrics_modules(ctx: GraphExecutionContext) -> Computa
     )
     from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
 
+    gateway = _get_gateway(ctx)
     runtime = resolve_graph_runtime(
-        ctx.gateway,
+        gateway,
         ctx.snapshot,
         GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
     )
-    compute_symbol_graph_metrics_modules(
-        ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime
-    )
+    compute_symbol_graph_metrics_modules(gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
     return ComputationResult.ok()
 
 
 def _compute_symbol_graph_metrics_functions(ctx: GraphExecutionContext) -> ComputationResult:
     """
     Compute symbol graph metrics at the function level.
+
+    Uses resource injection to access storage, with fallback to ctx.gateway.
 
     Returns
     -------
@@ -146,13 +194,14 @@ def _compute_symbol_graph_metrics_functions(ctx: GraphExecutionContext) -> Compu
     )
     from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
 
+    gateway = _get_gateway(ctx)
     runtime = resolve_graph_runtime(
-        ctx.gateway,
+        gateway,
         ctx.snapshot,
         GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
     )
     compute_symbol_graph_metrics_functions(
-        ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime
+        gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime
     )
     return ComputationResult.ok()
 
@@ -160,6 +209,8 @@ def _compute_symbol_graph_metrics_functions(ctx: GraphExecutionContext) -> Compu
 def _compute_config_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
     """
     Compute config bipartite/projection graph metrics.
+
+    Uses resource injection to access storage, with fallback to ctx.gateway.
 
     Returns
     -------
@@ -172,12 +223,13 @@ def _compute_config_graph_metrics(ctx: GraphExecutionContext) -> ComputationResu
     )
     from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
 
+    gateway = _get_gateway(ctx)
     runtime = resolve_graph_runtime(
-        ctx.gateway,
+        gateway,
         ctx.snapshot,
         GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
     )
-    compute_config_graph_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    compute_config_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
     return ComputationResult.ok()
 
 
@@ -185,18 +237,23 @@ def _compute_subsystem_agreement(ctx: GraphExecutionContext) -> ComputationResul
     """
     Check agreement between subsystem labels and import communities.
 
+    Uses resource injection to access storage, with fallback to ctx.gateway.
+
     Returns
     -------
     ComputationResult
         Success result after computing subsystem agreement metrics.
     """
-    compute_subsystem_agreement(ctx.gateway, repo=ctx.repo, commit=ctx.commit)
+    gateway = _get_gateway(ctx)
+    compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
 def _compute_graph_stats(ctx: GraphExecutionContext) -> ComputationResult:
     """
     Compute global graph statistics for core graphs.
+
+    Uses resource injection to access storage, with fallback to ctx.gateway.
 
     Returns
     -------
@@ -209,12 +266,13 @@ def _compute_graph_stats(ctx: GraphExecutionContext) -> ComputationResult:
     )
     from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
 
+    gateway = _get_gateway(ctx)
     runtime = resolve_graph_runtime(
-        ctx.gateway,
+        gateway,
         ctx.snapshot,
         GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
     )
-    compute_graph_stats(ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    compute_graph_stats(gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
     return ComputationResult.ok()
 
 
@@ -320,140 +378,110 @@ graph_stats_plugin = make_metric_plugin(
 
 
 # =============================================================================
-# Backward-compatible getters
+# Plugin Getters
 # =============================================================================
 
 
-def get_cfg_metrics_plugin() -> object:
-    """
-    Return the CFG metrics plugin instance.
+def get_cfg_metrics_plugin() -> GraphPluginProtocol:
+    """Return the CFG metrics plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured CFG metrics plugin.
     """
     return cfg_metrics_plugin
 
 
-def get_dfg_metrics_plugin() -> object:
-    """
-    Return the DFG metrics plugin instance.
+def get_dfg_metrics_plugin() -> GraphPluginProtocol:
+    """Return the DFG metrics plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured DFG metrics plugin.
     """
     return dfg_metrics_plugin
 
 
-def get_test_graph_metrics_plugin() -> object:
-    """
-    Return the test graph metrics plugin instance.
+def get_test_graph_metrics_plugin() -> GraphPluginProtocol:
+    """Return the test graph metrics plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured test graph metrics plugin.
     """
     return test_graph_metrics_plugin
 
 
-def get_subsystem_graph_metrics_plugin() -> object:
-    """
-    Return the subsystem graph metrics plugin instance.
+def get_subsystem_graph_metrics_plugin() -> GraphPluginProtocol:
+    """Return the subsystem graph metrics plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured subsystem graph metrics plugin.
     """
     return subsystem_graph_metrics_plugin
 
 
-def get_symbol_graph_metrics_modules_plugin() -> object:
-    """
-    Return the symbol graph metrics modules plugin instance.
+def get_symbol_graph_metrics_modules_plugin() -> GraphPluginProtocol:
+    """Return the symbol graph metrics modules plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured symbol graph metrics modules plugin.
     """
     return symbol_graph_metrics_modules_plugin
 
 
-def get_symbol_graph_metrics_functions_plugin() -> object:
-    """
-    Return the symbol graph metrics functions plugin instance.
+def get_symbol_graph_metrics_functions_plugin() -> GraphPluginProtocol:
+    """Return the symbol graph metrics functions plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured symbol graph metrics functions plugin.
     """
     return symbol_graph_metrics_functions_plugin
 
 
-def get_config_graph_metrics_plugin() -> object:
-    """
-    Return the config graph metrics plugin instance.
+def get_config_graph_metrics_plugin() -> GraphPluginProtocol:
+    """Return the config graph metrics plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured config graph metrics plugin.
     """
     return config_graph_metrics_plugin
 
 
-def get_subsystem_agreement_plugin() -> object:
-    """
-    Return the subsystem agreement plugin instance.
+def get_subsystem_agreement_plugin() -> GraphPluginProtocol:
+    """Return the subsystem agreement plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured subsystem agreement plugin.
     """
     return subsystem_agreement_plugin
 
 
-def get_graph_stats_plugin() -> object:
-    """
-    Return the graph stats plugin instance.
+def get_graph_stats_plugin() -> GraphPluginProtocol:
+    """Return the graph stats plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured graph stats plugin.
     """
     return graph_stats_plugin
 
 
-# Legacy class aliases for backward compatibility
-CFGMetricsPlugin = type(cfg_metrics_plugin)
-DFGMetricsPlugin = type(dfg_metrics_plugin)
-TestGraphMetricsPlugin = type(test_graph_metrics_plugin)
-SubsystemGraphMetricsPlugin = type(subsystem_graph_metrics_plugin)
-SymbolGraphMetricsModulesPlugin = type(symbol_graph_metrics_modules_plugin)
-SymbolGraphMetricsFunctionsPlugin = type(symbol_graph_metrics_functions_plugin)
-ConfigGraphMetricsPlugin = type(config_graph_metrics_plugin)
-SubsystemAgreementPlugin = type(subsystem_agreement_plugin)
-GraphStatsPlugin = type(graph_stats_plugin)
-
-
 __all__ = [
-    "CFGMetricsPlugin",
-    "ConfigGraphMetricsPlugin",
-    "DFGMetricsPlugin",
-    "GraphStatsPlugin",
-    "SubsystemAgreementPlugin",
-    "SubsystemGraphMetricsPlugin",
-    "SymbolGraphMetricsFunctionsPlugin",
-    "SymbolGraphMetricsModulesPlugin",
-    "TestGraphMetricsPlugin",
     "cfg_metrics_plugin",
     "config_graph_metrics_plugin",
     "dfg_metrics_plugin",

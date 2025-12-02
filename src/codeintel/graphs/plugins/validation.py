@@ -2,6 +2,12 @@
 
 This module provides graph validation as a graph plugin, wrapping the existing
 validation functionality with the new plugin protocol.
+
+Architecture Notes
+------------------
+This plugin imports from analytics.graph_runtime for GraphRuntime resolution.
+This is an intentional delegation - the graphs package orchestrates validation
+but delegates runtime construction to analytics (Option B architecture).
 """
 
 from __future__ import annotations

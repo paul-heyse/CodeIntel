@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.context import AnalyticsContext, AnalyticsContextConfig
 from codeintel.analytics.core.execution_context import (
     PluginExecutionContextBuilder,
     PluginScratch,
@@ -23,8 +22,9 @@ from codeintel.analytics.core.plugins.middleware.metrics import MetricsMiddlewar
 from codeintel.analytics.core.plugins.registration import ensure_plugins_registered
 from codeintel.analytics.core.registry import PluginPlan, get_registry
 from codeintel.analytics.graph_runtime import GraphRuntime
-from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
+from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.runtime_manifest import (
     AnalyticsPlanInfo,
@@ -64,11 +64,11 @@ class AnalyticsRunContext:
     """Shared run-time context for analytics plugin execution."""
 
     gateway: StorageGateway
-    analytics_context: AnalyticsContext | None
     graph_runtime: GraphRuntime | None
     cfgs: Mapping[str, Any]
     extra: Mapping[str, Any]
     catalog_provider: FunctionCatalogProvider | None = None
+    snapshot: SnapshotRef | None = None
 
 
 @dataclass(frozen=True)
@@ -182,20 +182,12 @@ def _build_execution_context(
         catalog_provider = CatalogProvider.from_catalog(run_context.catalog_provider)
         builder = builder.with_resource_provider(CatalogProvider, catalog_provider)
 
-    if run_context.analytics_context is not None:
-        # Create provider from existing context
-        context_config = AnalyticsContextConfig(
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            repo_root=snapshot.repo_root,
-        )
-        context_provider = AnalyticsContextProvider(
-            run_context.gateway,
-            context_config,
-        )
-        # Pre-load with existing context
-        context_provider.set_preloaded(run_context.analytics_context)
-        builder = builder.with_resource_provider(AnalyticsContextProvider, context_provider)
+    # Register AST and features providers if snapshot is available
+    if snapshot is not None:
+        ast_provider = AstProvider(run_context.gateway, snapshot)
+        builder = builder.with_resource_provider(AstProvider, ast_provider)
+        features_provider = FeaturesProvider(run_context.gateway, snapshot)
+        builder = builder.with_resource_provider(FeaturesProvider, features_provider)
 
     for config in run_context.cfgs.values():
         if config is not None:

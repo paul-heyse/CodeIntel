@@ -8,15 +8,18 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_utils import literal_int, literal_value, safe_unparse
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
+
+if TYPE_CHECKING:
+    from codeintel.graphs.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +42,8 @@ def compute_function_contracts(
     gateway: StorageGateway,
     cfg: FunctionContractsStepConfig,
     *,
-    context: AnalyticsContext,
+    function_ast_map: dict[int, FunctionAst] | None = None,
+    catalog: FunctionCatalogProvider | None = None,
 ) -> None:
     """
     Populate `analytics.function_contracts` for a repo/commit snapshot.
@@ -50,14 +54,20 @@ def compute_function_contracts(
         Storage gateway providing DuckDB access.
     cfg
         Contracts configuration (repo, commit, repo_root).
-    context
-        Shared analytics context providing catalog and AST caches.
+    function_ast_map
+        Mapping of GOID to parsed function AST (from AstProvider).
+    catalog
+        Function catalog provider (from CatalogProvider).
     """
     con = gateway.con
     ensure_schema(con, "analytics.function_contracts")
 
-    ast_by_goid = context.function_ast_map
-    all_goids = {span.goid for span in context.catalog.catalog().function_spans}
+    ast_by_goid = function_ast_map or {}
+
+    if catalog is not None:
+        all_goids = {span.goid for span in catalog.catalog().function_spans}
+    else:
+        all_goids = set()
 
     doc_map = _load_docstrings(con, repo=cfg.repo, commit=cfg.commit)
     type_map = _load_function_types(con, repo=cfg.repo, commit=cfg.commit)
