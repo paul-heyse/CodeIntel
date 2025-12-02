@@ -59,8 +59,8 @@ class AstSpanIndex:
         enclosing: ast.AST | None = None
         smallest_enclosing_span: tuple[int, int] | None = None
 
-        # Also allow nodes that begin after the requested start (e.g., decorator spans widen start_line)
-        # as long as the requested end is within the candidate span.
+        # Also allow nodes that begin after the requested start (e.g., decorator spans widen
+        # start_line) as long as the requested end is within the candidate span.
         overlap: ast.AST | None = None
         smallest_overlap_span: tuple[int, int] | None = None
 

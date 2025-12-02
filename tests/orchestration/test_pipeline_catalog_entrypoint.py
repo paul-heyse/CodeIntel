@@ -21,8 +21,8 @@ from codeintel.config import (
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.callgraph_builder import build_call_graph
+from codeintel.graphs.catalog import load_function_catalog
 from codeintel.graphs.cfg_builder import build_cfg_and_dfg
-from codeintel.graphs.function_catalog import load_function_catalog
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
 from codeintel.pipeline.orchestration.steps import AstStep, GoidsStep, PipelineContext, RepoScanStep

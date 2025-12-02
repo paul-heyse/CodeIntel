@@ -8,8 +8,7 @@ import pytest
 
 from codeintel.config import BuildPaths, ScanProfiles, SnapshotRef
 from codeintel.config.models import GraphBackendConfig, ToolsConfig
-from codeintel.graphs.function_catalog import FunctionCatalog
-from codeintel.graphs.function_catalog_service import FunctionCatalogService
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
 from codeintel.pipeline.orchestration.steps import PipelineContext, RiskFactorsStep
 from codeintel.storage.gateway import StorageConfig, open_gateway

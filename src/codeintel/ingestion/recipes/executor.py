@@ -269,7 +269,7 @@ class RecipeExecutor:
         self,
         stage: RecipeStage,
         plugins: Sequence[IngestPluginProtocol],
-        options: RecipeOptions,  # noqa: ARG002
+        _options: RecipeOptions,
     ) -> RecipeStageResult:
         """Execute a single stage.
 
@@ -279,8 +279,8 @@ class RecipeExecutor:
             Stage to execute.
         plugins
             Plugins to run in this stage.
-        options
-            Recipe options (reserved for future use).
+        _options
+            Recipe options placeholder (reserved for future use).
 
         Returns
         -------
@@ -411,7 +411,7 @@ class RecipeExecutor:
     def _execute_single_plugin(
         self,
         plugin: IngestPluginProtocol,
-        timeout_s: int | None,  # noqa: ARG002
+        _timeout_s: int | None,
     ) -> PluginExecutionRecord:
         """Execute a single plugin.
 
@@ -419,7 +419,7 @@ class RecipeExecutor:
         ----------
         plugin
             Plugin to execute.
-        timeout_s
+        _timeout_s
             Timeout in seconds (reserved for future use).
 
         Returns

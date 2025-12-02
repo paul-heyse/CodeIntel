@@ -1,8 +1,16 @@
-"""
-Derive per-function complexity metrics and type hints from Python source files.
+"""Derive per-function complexity metrics and type hints from Python source files.
 
 This module reads GOID metadata, walks Python ASTs to compute structural metrics,
 and emits analytics tables used by downstream scoring and documentation tools.
+
+Architecture
+------------
+This module follows the layered architecture:
+- **Compute Layer**: Pure functions in `analytics.compute.functions`
+- **Adapters**: Database I/O in `analytics.adapters.functions`
+- **Orchestration**: This module coordinates between layers
+
+The public API remains unchanged for backward compatibility.
 """
 
 from __future__ import annotations
@@ -14,6 +22,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict
 
+from codeintel.analytics.compute.functions import (
+    compute_complexity,
+)
+from codeintel.analytics.compute.functions.loc import compute_loc
+from codeintel.analytics.compute.functions.typedness import (
+    ParamStats,
+    TypednessFlags,
+    compute_param_stats,
+    compute_typedness_flags,
+)
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.datasets import (
     DeleteScope,
@@ -26,12 +44,6 @@ from codeintel.analytics.functions.config import (
     ProcessState,
 )
 from codeintel.analytics.functions.parsing import parse_python_file
-from codeintel.analytics.functions.typedness import (
-    ParamStats,
-    TypednessFlags,
-    compute_param_stats,
-    compute_typedness_flags,
-)
 from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
@@ -42,6 +54,7 @@ from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 
+# Re-export from compute layer for backward compatibility
 COMPLEXITY_LOW = 5
 COMPLEXITY_MEDIUM = 10
 
@@ -107,13 +120,17 @@ class FunctionDerived:
     typedness: TypednessFlags
 
 
-@dataclass
-class _FunctionStats(ast.NodeVisitor):
-    """
-    Collect per-function structural metrics while walking an AST node.
+# Note: _FunctionStats has been replaced by compute_complexity from the compute layer.
+# The class is kept as a thin wrapper for backward compatibility with any code
+# that may have imported it directly.
 
-    The visitor records cyclomatic complexity, nesting depth, and counts of
-    return, yield, and raise statements for the function under inspection.
+
+@dataclass
+class _FunctionStats:
+    """Legacy wrapper - delegates to compute layer.
+
+    .. deprecated::
+        Use `compute_complexity` from `analytics.compute.functions` instead.
     """
 
     return_count: int = 0
@@ -121,74 +138,44 @@ class _FunctionStats(ast.NodeVisitor):
     raise_count: int = 0
     complexity: int = 1
     max_nesting_depth: int = 0
-    _depth: int = 0
 
-    def _enter_block(self) -> None:
-        self._depth += 1
-        self.max_nesting_depth = max(self.max_nesting_depth, self._depth)
+    @classmethod
+    def from_node(cls, node: ast.AST) -> _FunctionStats:
+        """Create stats from an AST node using the compute layer.
 
-    def _leave_block(self) -> None:
-        self._depth -= 1
+        Parameters
+        ----------
+        node
+            Function AST node.
 
-    def visit_Return(self, node: ast.Return) -> None:
-        del node
-        self.return_count += 1
+        Returns
+        -------
+        _FunctionStats
+            Stats populated from compute_complexity.
+        """
+        metrics = compute_complexity(node)
+        return cls(
+            return_count=metrics.return_count,
+            yield_count=metrics.yield_count,
+            raise_count=metrics.raise_count,
+            complexity=metrics.cyclomatic,
+            max_nesting_depth=metrics.max_nesting_depth,
+        )
 
-    def visit_Yield(self, node: ast.Yield) -> None:
-        del node
-        self.yield_count += 1
+    def visit(self, node: ast.AST) -> None:
+        """Visit a node and populate stats (for backward compatibility).
 
-    def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
-        del node
-        self.yield_count += 1
-
-    def visit_Raise(self, node: ast.Raise) -> None:
-        del node
-        self.raise_count += 1
-
-    def visit_If(self, node: ast.If) -> None:
-        self.complexity += 1
-        self._enter_block()
-        self.generic_visit(node)
-        self._leave_block()
-
-    def visit_For(self, node: ast.For) -> None:
-        self.complexity += 1
-        self._enter_block()
-        self.generic_visit(node)
-        self._leave_block()
-
-    def visit_While(self, node: ast.While) -> None:
-        self.complexity += 1
-        self._enter_block()
-        self.generic_visit(node)
-        self._leave_block()
-
-    def visit_Try(self, node: ast.Try) -> None:
-        self.complexity += 1
-        self._enter_block()
-        self.generic_visit(node)
-        self._leave_block()
-
-    def visit_With(self, node: ast.With) -> None:
-        self.complexity += 1
-        self._enter_block()
-        self.generic_visit(node)
-        self._leave_block()
-
-    def visit_IfExp(self, node: ast.IfExp) -> None:
-        self.complexity += 1
-        self.generic_visit(node)
-
-    def visit_BoolOp(self, node: ast.BoolOp) -> None:
-        self.complexity += max(0, len(node.values) - 1)
-        self.generic_visit(node)
-
-    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
-        self.generic_visit(node)
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        self.generic_visit(node)
+        Parameters
+        ----------
+        node
+            AST node to analyze.
+        """
+        metrics = compute_complexity(node)
+        self.return_count = metrics.return_count
+        self.yield_count = metrics.yield_count
+        self.raise_count = metrics.raise_count
+        self.complexity = metrics.cyclomatic
+        self.max_nesting_depth = metrics.max_nesting_depth
 
 
 class GoidRow(TypedDict):
@@ -207,17 +194,39 @@ class GoidRow(TypedDict):
 
 
 def _compute_loc(lines: list[str], start_line: int, end_line: int) -> tuple[int, int]:
-    loc = end_line - start_line + 1
-    logical_loc = 0
-    for ln in range(start_line, end_line + 1):
-        if 1 <= ln <= len(lines):
-            stripped = lines[ln - 1].strip()
-            if stripped and not stripped.startswith("#"):
-                logical_loc += 1
-    return loc, logical_loc
+    """Compute lines of code using the compute layer.
+
+    Parameters
+    ----------
+    lines
+        Source lines.
+    start_line
+        Start line (1-indexed).
+    end_line
+        End line (1-indexed).
+
+    Returns
+    -------
+    tuple[int, int]
+        Physical LOC and logical LOC.
+    """
+    loc_metrics = compute_loc(lines, start_line, end_line)
+    return loc_metrics.physical, loc_metrics.logical
 
 
 def _complexity_bucket(cc: int) -> str:
+    """Classify complexity into buckets.
+
+    Parameters
+    ----------
+    cc
+        Cyclomatic complexity value.
+
+    Returns
+    -------
+    str
+        One of "low", "medium", or "high".
+    """
     if cc <= COMPLEXITY_LOW:
         return "low"
     if cc <= COMPLEXITY_MEDIUM:

@@ -19,7 +19,7 @@ from codeintel.analytics.context import (
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema

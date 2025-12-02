@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/function_index.py
+# hypothesis_version: 6.148.3
+
+['FunctionSpan', 'FunctionSpanIndex', 'load_function_index', 'load_function_spans']

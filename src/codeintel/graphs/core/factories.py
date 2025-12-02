@@ -8,6 +8,7 @@ be defined in ~5 lines instead of ~50 lines.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -127,10 +128,9 @@ class FactoryPlugin:
                 total_rows,
             )
 
-            return GraphPluginResult.ok(
-                row_counts=row_counts,
-                artifacts=result.artifacts if result.artifacts else None,
-            )
+            artifacts = result.artifacts
+            typed_artifacts = artifacts if isinstance(artifacts, Mapping) else None
+            return GraphPluginResult.ok(row_counts=row_counts, artifacts=typed_artifacts)
 
         except Exception as exc:
             log.exception("%s.failed repo=%s commit=%s", name, ctx.repo, ctx.commit)
@@ -237,7 +237,9 @@ def make_graph_plugin(  # noqa: PLR0913
             resolved_description = f"{name} plugin"
 
     # Default row_count_tables to produces_tables
-    resolved_row_count_tables = row_count_tables if row_count_tables is not None else produces_tables
+    resolved_row_count_tables = (
+        row_count_tables if row_count_tables is not None else produces_tables
+    )
 
     metadata = GraphPluginMetadata(
         name=name,

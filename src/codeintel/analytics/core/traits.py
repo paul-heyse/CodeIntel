@@ -416,6 +416,377 @@ class RetryableMixin:
 
 
 # =============================================================================
+# New Composition Mixins (for base plugin classes)
+# =============================================================================
+
+
+class WithRowCounts:
+    """Mixin that auto-computes row counts for declared output tables.
+
+    Plugins using this mixin should define `output_tables` as a class attribute
+    containing the table names to count.
+
+    Class Attributes
+    ----------------
+    output_tables : tuple[str, ...]
+        Tables to count rows for after execution.
+
+    Example
+    -------
+    >>> class MyPlugin(BasePlugin, WithRowCounts):
+    ...     output_tables = ("analytics.my_table",)
+    ...
+    ...     def compute(self, ctx):
+    ...         # Write to table...
+    ...         return None  # Row counts computed automatically
+    """
+
+    output_tables: tuple[str, ...] = ()
+
+    def compute_row_counts_for_tables(
+        self,
+        ctx: PluginExecutionContext,
+        tables: tuple[str, ...] | None = None,
+    ) -> dict[str, int]:
+        """Compute row counts for the specified or declared tables.
+
+        Parameters
+        ----------
+        ctx
+            Execution context with gateway access.
+        tables
+            Override table list (defaults to self.output_tables).
+
+        Returns
+        -------
+        dict[str, int]
+            Mapping of table names to row counts.
+        """
+        from codeintel.storage.db_helpers import safe_row_counts  # noqa: PLC0415
+
+        target_tables = tables or self.output_tables
+        if not target_tables:
+            return {}
+
+        connection = getattr(ctx.gateway, "con", None)
+        if connection is None:
+            return {}
+
+        snapshot = ctx.snapshot
+        counts = safe_row_counts(
+            connection,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            tables=target_tables,
+        )
+        return counts or {}
+
+
+class WithContractValidation:
+    """Mixin that runs output contracts after successful execution.
+
+    Plugins using this mixin declare contracts that are validated after
+    execution completes successfully.
+
+    Class Attributes
+    ----------------
+    validate_contracts : bool
+        Whether to run contract validation (default True).
+
+    Properties
+    ----------
+    output_contracts : tuple[OutputContractSpec, ...]
+        Override to provide explicit contracts.
+
+    Example
+    -------
+    >>> class MyPlugin(BasePlugin, WithContractValidation):
+    ...     @property
+    ...     def output_contracts(self):
+    ...         return (OutputContractSpec(table="analytics.my_table", min_rows=1),)
+    """
+
+    validate_contracts: bool = True
+
+    @property
+    def output_contracts(self) -> tuple[object, ...]:
+        """Return output contracts for validation.
+
+        Override in subclasses to provide specific contracts.
+
+        Returns
+        -------
+        tuple[OutputContractSpec, ...]
+            Contracts to validate after execution.
+        """
+        return ()
+
+    def run_contract_validation(
+        self,
+        ctx: PluginExecutionContext,
+    ) -> tuple[bool, tuple[str, ...]]:
+        """Run contract validation for this plugin.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+
+        Returns
+        -------
+        tuple[bool, tuple[str, ...]]
+            Success flag and list of error messages.
+        """
+        from codeintel.analytics.core.contracts import (  # noqa: PLC0415
+            ContractValidator,
+            OutputContractSpec,
+        )
+
+        if not self.validate_contracts:
+            return True, ()
+
+        contracts = self.output_contracts
+        if not contracts:
+            return True, ()
+
+        # Filter to OutputContractSpec instances
+        valid_contracts = [c for c in contracts if isinstance(c, OutputContractSpec)]
+        if not valid_contracts:
+            return True, ()
+
+        validator = ContractValidator(ctx.gateway)
+        result = validator.validate(valid_contracts, ctx.snapshot)
+
+        errors = tuple(v.message for v in result.violations)
+        return result.valid, errors
+
+
+class WithCaching:
+    """Mixin for plugins that cache intermediate results in scratch store.
+
+    Enables plugins to store and retrieve intermediate results across
+    plugin executions within the same run.
+
+    Class Attributes
+    ----------------
+    scratch_key : str
+        Key for storing results in scratch (default: plugin class name).
+
+    Example
+    -------
+    >>> class MyPlugin(BasePlugin, WithCaching):
+    ...     scratch_key = "my_plugin_data"
+    ...
+    ...     def compute(self, ctx):
+    ...         # Check if data is cached
+    ...         cached = self.get_cached(ctx)
+    ...         if cached is not None:
+    ...             return cached
+    ...
+    ...         # Compute and cache
+    ...         result = expensive_computation()
+    ...         self.cache_result(ctx, result)
+    ...         return result
+    """
+
+    scratch_key: str = ""
+
+    def _get_scratch_key(self) -> str:
+        """Return the scratch key for this plugin.
+
+        Returns
+        -------
+        str
+            Key for scratch store access.
+        """
+        return self.scratch_key or self.__class__.__name__
+
+    def get_cached[T](self, ctx: PluginExecutionContext, default: T | None = None) -> T | None:
+        """Retrieve cached result from scratch store.
+
+        Parameters
+        ----------
+        ctx
+            Execution context with scratch store.
+        default
+            Value to return if not cached.
+
+        Returns
+        -------
+        T | None
+            Cached value or default.
+        """
+        return ctx.scratch.consume(self._get_scratch_key(), default)
+
+    def cache_result(self, ctx: PluginExecutionContext, value: object) -> None:
+        """Store a result in the scratch store.
+
+        Parameters
+        ----------
+        ctx
+            Execution context with scratch store.
+        value
+            Value to cache.
+        """
+        ctx.scratch.declare(self._get_scratch_key(), value)
+
+    def has_cached(self, ctx: PluginExecutionContext) -> bool:
+        """Check if a cached result exists.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+
+        Returns
+        -------
+        bool
+            True if cached result exists.
+        """
+        return ctx.scratch.has(self._get_scratch_key())
+
+
+class WithDependencyData:
+    """Mixin for plugins that consume data from dependent plugins.
+
+    Enables type-safe access to data populated by upstream plugins.
+
+    Example
+    -------
+    >>> class ConsumerPlugin(BasePlugin, WithDependencyData):
+    ...     def compute(self, ctx):
+    ...         # Get data from upstream plugin
+    ...         metrics = self.get_dependency_data(ctx, "function_metrics")
+    ...         if metrics is None:
+    ...             return PluginResult.fail("Missing function metrics")
+    ...         # Use metrics...
+    """
+
+    def get_dependency_data[T](  # noqa: PLR6301
+        self,
+        ctx: PluginExecutionContext,
+        key: str,
+        default: T | None = None,
+    ) -> T | None:
+        """Retrieve data populated by a dependent plugin.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+        key
+            Key used by the upstream plugin.
+        default
+            Default value if not found.
+
+        Returns
+        -------
+        T | None
+            Data from upstream plugin or default.
+        """
+        return ctx.scratch.consume(key, default)
+
+    def set_dependency_data(  # noqa: PLR6301
+        self,
+        ctx: PluginExecutionContext,
+        key: str,
+        value: object,
+    ) -> None:
+        """Store data for downstream plugins.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+        key
+            Key for downstream access.
+        value
+            Data to store.
+        """
+        ctx.scratch.declare(key, value)
+
+
+class WithProgressReporting:
+    """Mixin for plugins that report execution progress.
+
+    Enables plugins to report progress during long-running operations.
+
+    Class Attributes
+    ----------------
+    progress_callback : Callable[[float, str], None] | None
+        Callback for progress reporting.
+
+    Example
+    -------
+    >>> class MyPlugin(BasePlugin, WithProgressReporting):
+    ...     def compute(self, ctx):
+    ...         for i, item in enumerate(items):
+    ...             self.report_progress(i / len(items), f"Processing {item}")
+    ...             process(item)
+    """
+
+    _progress_callback: Callable[[float, str], None] | None = None
+
+    def set_progress_callback(
+        self,
+        callback: Callable[[float, str], None],
+    ) -> None:
+        """Set the progress reporting callback.
+
+        Parameters
+        ----------
+        callback
+            Function receiving progress (0-1) and status message.
+        """
+        self._progress_callback = callback
+
+    def report_progress(self, progress: float, message: str = "") -> None:
+        """Report execution progress.
+
+        Parameters
+        ----------
+        progress
+            Progress value between 0.0 and 1.0.
+        message
+            Optional status message.
+        """
+        if self._progress_callback is not None:
+            self._progress_callback(progress, message)
+
+
+class WithCleanup:
+    """Mixin for plugins that need cleanup after execution.
+
+    Enables plugins to register cleanup callbacks that run after the
+    entire plugin execution batch completes.
+
+    Example
+    -------
+    >>> class MyPlugin(BasePlugin, WithCleanup):
+    ...     def compute(self, ctx):
+    ...         temp_file = create_temp_file()
+    ...         self.register_cleanup(ctx, lambda: temp_file.unlink())
+    ...         # Use temp_file...
+    """
+
+    def register_cleanup(  # noqa: PLR6301
+        self,
+        ctx: PluginExecutionContext,
+        callback: Callable[[], None],
+    ) -> None:
+        """Register a cleanup callback.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+        callback
+            Cleanup function to call after run completes.
+        """
+        ctx.scratch.register_cleanup(callback)
+
+
+# =============================================================================
 # Trait Detection Utilities
 # =============================================================================
 
@@ -543,6 +914,12 @@ __all__ = [
     "RetryablePlugin",
     "ScopeAwareMixin",
     "ScopeAwarePlugin",
+    "WithCaching",
+    "WithCleanup",
+    "WithContractValidation",
+    "WithDependencyData",
+    "WithProgressReporting",
+    "WithRowCounts",
     "get_plugin_traits",
     "is_contract_validated",
     "is_graph_aware",

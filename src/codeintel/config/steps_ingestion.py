@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Protocol
 from codeintel.config.primitives import BuildPaths, SnapshotRef, ToolBinaries
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.scip_ingest import ScipIngestResult
+    from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
 
 
 @dataclass(frozen=True)

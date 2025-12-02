@@ -1,4 +1,11 @@
-"""Build symbol definition-to-use edges from SCIP JSON exports."""
+"""Build symbol definition-to-use edges from SCIP JSON exports.
+
+.. note::
+    This module provides internal implementation for the symbol_uses_builder plugin.
+    External code should use the plugin interface instead:
+
+        from codeintel.graphs.plugins.builders import get_symbol_uses_builder_plugin
+"""
 
 from __future__ import annotations
 
@@ -14,8 +21,8 @@ from codeintel.core.types import (
     normalize_scip_document,
     validate_scip_document,
 )
-from codeintel.graphs.function_catalog import FunctionCatalog
-from codeintel.graphs.function_catalog_service import (
+from codeintel.graphs.catalog import (
+    FunctionCatalog,
     FunctionCatalogProvider,
     FunctionCatalogService,
 )

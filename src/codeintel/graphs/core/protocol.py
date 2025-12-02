@@ -420,7 +420,10 @@ def graph_plugin(  # noqa: PLR0913
             contract_checkers=contract_checkers,
         )
 
-        plugin_instance = FunctionalGraphPlugin(_metadata=meta, _execute_fn=fn)
+        plugin_instance: GraphPluginProtocol = FunctionalGraphPlugin(
+            _metadata=meta,
+            _execute_fn=fn,
+        )
 
         if register:
             from codeintel.graphs.core.registry import (  # noqa: PLC0415

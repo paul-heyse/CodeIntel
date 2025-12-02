@@ -1,4 +1,11 @@
-"""Construct module-level import graphs from LibCST parsing."""
+"""Construct module-level import graphs from LibCST parsing.
+
+.. note::
+    This module provides internal implementation for the import_graph_builder plugin.
+    External code should use the plugin interface instead:
+
+        from codeintel.graphs.plugins.builders import get_import_graph_builder_plugin
+"""
 
 from __future__ import annotations
 
@@ -15,8 +22,8 @@ from codeintel.config.datasets import (
     import_edge_to_tuple,
     import_module_to_tuple,
 )
-from codeintel.graphs.function_catalog import load_function_catalog
-from codeintel.graphs.import_resolver import collect_import_edges
+from codeintel.graphs.callgraph import collect_import_edges
+from codeintel.graphs.catalog import load_function_catalog
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
 

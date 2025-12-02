@@ -26,7 +26,14 @@ from codeintel.graphs.engine import GraphKind
 
 
 def _compute_core_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute core function/module graph metrics (centrality, neighbors, components)."""
+    """
+    Compute core function/module graph metrics (centrality, neighbors, components).
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing core metrics.
+    """
     cfg = GraphMetricsStepConfig(snapshot=ctx.snapshot)
 
     runtime = resolve_graph_runtime(
@@ -46,7 +53,14 @@ def _compute_core_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
 
 
 def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute extended call graph metrics for functions."""
+    """
+    Compute extended call graph metrics for functions.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing extended function metrics.
+    """
     runtime = resolve_graph_runtime(
         ctx.gateway,
         ctx.snapshot,
@@ -64,7 +78,14 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
 
 
 def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute extended import graph metrics for modules."""
+    """
+    Compute extended import graph metrics for modules.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing extended module metrics.
+    """
     runtime = resolve_graph_runtime(
         ctx.gateway,
         ctx.snapshot,
@@ -125,17 +146,38 @@ module_ext_metrics_plugin = make_metric_plugin(
 
 
 def get_core_graph_metrics_plugin() -> object:
-    """Return the core graph metrics plugin instance."""
+    """
+    Return the core graph metrics plugin instance.
+
+    Returns
+    -------
+    object
+        The configured core graph metrics plugin.
+    """
     return core_graph_metrics_plugin
 
 
 def get_function_ext_metrics_plugin() -> object:
-    """Return the function ext metrics plugin instance."""
+    """
+    Return the function ext metrics plugin instance.
+
+    Returns
+    -------
+    object
+        The configured extended function metrics plugin.
+    """
     return function_ext_metrics_plugin
 
 
 def get_module_ext_metrics_plugin() -> object:
-    """Return the module ext metrics plugin instance."""
+    """
+    Return the module ext metrics plugin instance.
+
+    Returns
+    -------
+    object
+        The configured extended module metrics plugin.
+    """
     return module_ext_metrics_plugin
 
 

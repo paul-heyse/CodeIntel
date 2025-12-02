@@ -73,7 +73,14 @@ def adapt_legacy_computation(
     resolved_extra_kwargs = extra_kwargs or {}
 
     def adapted(ctx: GraphExecutionContext) -> ComputationResult:
-        """Execute the adapted legacy function."""
+        """
+        Execute the adapted legacy function.
+
+        Returns
+        -------
+        ComputationResult
+            Success result for the computation.
+        """
         kwargs: dict[str, object] = {}
 
         if gateway:
@@ -163,7 +170,14 @@ def adapt_with_row_counts(
     resolved_extra_kwargs = extra_kwargs or {}
 
     def adapted(ctx: GraphExecutionContext) -> ComputationResult:
-        """Execute the adapted legacy function."""
+        """
+        Execute the adapted legacy function.
+
+        Returns
+        -------
+        ComputationResult
+            Success result including any row counts.
+        """
         kwargs: dict[str, object] = {}
 
         if gateway:
@@ -224,7 +238,14 @@ def adapt_simple(
     """
 
     def adapted(ctx: GraphExecutionContext) -> ComputationResult:
-        """Execute the simple function."""
+        """
+        Execute the simple function.
+
+        Returns
+        -------
+        ComputationResult
+            Success result for the computation.
+        """
         fn(ctx)
         return ComputationResult.ok()
 

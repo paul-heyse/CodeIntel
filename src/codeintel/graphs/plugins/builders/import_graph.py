@@ -16,7 +16,14 @@ from codeintel.graphs.engine import GraphKind
 
 
 def _build_import_graph(ctx: GraphExecutionContext) -> ComputationResult:
-    """Build module-level import graphs from LibCST parsing."""
+    """
+    Build module-level import graphs from LibCST parsing.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after constructing import graph tables.
+    """
     from codeintel.graphs.import_graph import build_import_graph  # noqa: PLC0415
 
     cfg = ImportGraphStepConfig(snapshot=ctx.snapshot)
@@ -36,7 +43,14 @@ import_graph_builder_plugin = make_builder_plugin(
 
 
 def get_import_graph_builder_plugin() -> object:
-    """Return the import graph builder plugin instance."""
+    """
+    Return the import graph builder plugin instance.
+
+    Returns
+    -------
+    object
+        The configured import graph builder plugin.
+    """
     return import_graph_builder_plugin
 
 

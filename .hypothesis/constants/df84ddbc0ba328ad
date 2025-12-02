@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/steps/coverage_ingest.py
+# hypothesis_version: 6.148.3
+
+['CoverageIngestStep', 'core.coverage']

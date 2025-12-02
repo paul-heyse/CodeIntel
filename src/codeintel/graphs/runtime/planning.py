@@ -199,7 +199,9 @@ def _resolve_plugin_options_map(
     cfg_options = cfg_options or {}
     runtime_options = runtime_options or {}
     allowed_plugins = {plugin.metadata.name for plugin in plugins}
-    unknown_option_plugins = (set(cfg_options.keys()) | set(runtime_options.keys())) - allowed_plugins
+    unknown_option_plugins = (
+        set(cfg_options.keys()) | set(runtime_options.keys())
+    ) - allowed_plugins
     if unknown_option_plugins:
         message = (
             "Options provided for unknown graph plugins: "

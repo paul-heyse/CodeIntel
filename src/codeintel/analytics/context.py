@@ -26,11 +26,11 @@ from codeintel.analytics.graph_runtime import (
     resolve_graph_runtime,
 )
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
-from codeintel.graphs.engine import GraphEngine
-from codeintel.graphs.function_catalog_service import (
+from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
+from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.module_index import load_module_map
 

@@ -26,7 +26,7 @@ from codeintel.analytics.graph_runtime import (
 )
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import FunctionEffectsStepConfig
-from codeintel.graphs.function_catalog_service import (
+from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )

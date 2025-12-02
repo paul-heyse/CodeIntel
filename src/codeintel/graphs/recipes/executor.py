@@ -21,9 +21,9 @@ from codeintel.graphs.recipes.dsl import GraphRecipe, GraphStage
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.graphs.core.protocol import GraphPluginProtocol
     from codeintel.graphs.engine import GraphEngine
-    from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

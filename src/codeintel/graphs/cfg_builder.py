@@ -1,4 +1,11 @@
-"""Build control-flow and data-flow graphs for functions."""
+"""Build control-flow and data-flow graphs for functions.
+
+.. note::
+    This module provides internal implementation for the cfg_dfg_builder plugin.
+    External code should use the plugin interface instead:
+
+        from codeintel.graphs.plugins.builders import get_cfg_dfg_builder_plugin
+"""
 
 from __future__ import annotations
 
@@ -21,7 +28,7 @@ from codeintel.config.datasets import (
     cfg_edge_to_tuple,
     dfg_edge_to_tuple,
 )
-from codeintel.graphs.function_catalog_service import (
+from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )

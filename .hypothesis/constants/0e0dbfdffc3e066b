@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/functions/metrics.py
+# hypothesis_version: 6.148.3
+
+[60000, '2.0.0', 'commit', 'complexity', 'core.goids', 'function', 'functions', 'functions.metrics', 'goid', 'lines', 'metrics', 'metrics_written', 'repo', 'types', 'types_written']

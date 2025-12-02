@@ -46,6 +46,11 @@ def resolve_scip_inputs(
     """
     Normalize all SCIP inputs into a required, typed config.
 
+    Returns
+    -------
+    ResolvedScipConfig
+        Normalized configuration with all required fields populated.
+
     Raises
     ------
     ValueError
@@ -54,7 +59,9 @@ def resolve_scip_inputs(
     # Legacy config object path
     if cfg is not None or isinstance(modules_or_cfg, ScipIngestStepConfig):
         actual_cfg = cfg or modules_or_cfg
-        assert isinstance(actual_cfg, ScipIngestStepConfig)
+        if not isinstance(actual_cfg, ScipIngestStepConfig):
+            message = "Invalid ScipIngestStepConfig"
+            raise ValueError(message)
 
         module_map = load_module_map(
             gateway,

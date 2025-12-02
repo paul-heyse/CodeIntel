@@ -4,12 +4,40 @@ This module provides the plugin-based ingestion architecture for CodeIntel.
 
 Architecture Overview
 ---------------------
-- Plugin protocol: `IngestPluginProtocol`, `IngestPluginContext`, `IngestPluginResult`
-- Registry: `get_ingest_registry()`, `register_ingest_plugin()`, `list_ingest_plugins()`
-- Decorator: `@ingest_plugin` for declarative plugin definition
-- Recipes: `IngestRecipe`, `execute_recipe()`
-- Harness: `HarnessConfig`, `IngestExecutionHarness` for reducing plugin boilerplate
-- Pipeline: `IngestPipeline`, `PipelineExecutor` for unified incremental/full ingestion
+The ingestion system follows a port-adapter pattern for clean separation of concerns:
+
+**Ports** (interfaces):
+- `IngestStoragePort`: Database operations (write, delete, query)
+- `IngestToolPort`: External tool execution (pyright, scip, pytest)
+- `ModuleDiscoveryPort`: Source file enumeration
+- `ChangeDetectionPort`: Incremental change tracking
+
+**Adapters** (implementations):
+- `DuckDBStorageAdapter`: DuckDB-specific storage operations
+- `ToolRunnerAdapter`: External tool execution via ToolService
+- `FilesystemDiscoveryAdapter`: File system module discovery
+- `HashChangeDetectionAdapter`: Blake2b hash-based change detection
+
+**Steps** (pure domain logic):
+- `AstExtractStep`: Python AST extraction
+- `CstExtractStep`: LibCST concrete syntax tree extraction
+- `DocstringsExtractStep`: Docstring parsing and persistence
+- `TypingIngestStep`: Type annotation analysis
+- `CoverageIngestStep`: Coverage data ingestion
+- `TestsIngestStep`: Test results ingestion
+- `ScipIngestStep`: SCIP symbol indexing
+- `ConfigIngestStep`: Configuration file flattening
+- `RepoScanStep`: Repository scanning and change detection
+
+**Plugins** (orchestration layer):
+- `IngestPluginProtocol`: Plugin interface
+- `IngestPluginContext`: Execution context
+- `IngestPluginResult`: Execution result
+- `@ingest_plugin`: Decorator for plugin definition
+
+**Recipes** (composition):
+- `IngestRecipe`: Declarative recipe definition
+- `RecipeExecutor`: Recipe execution with stage orchestration
 
 Builtin Plugins
 ---------------
@@ -25,6 +53,12 @@ The following plugins are registered by default:
 - `config_ingest` - Flattens configuration files
 """
 
+from codeintel.ingestion.adapters import (
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+    HashChangeDetectionAdapter,
+    ToolRunnerAdapter,
+)
 from codeintel.ingestion.paths import (
     ensure_repo_root,
     normalize_rel_path,
@@ -85,6 +119,24 @@ from codeintel.ingestion.plugins import (
     with_harness,
 )
 
+# Port-Adapter architecture exports
+from codeintel.ingestion.ports import (
+    BatchResult,
+    ChangeDetectionPort,
+    ChangeSet,
+    CoverageFileData,
+    CoverageResult,
+    DiagnosticResult,
+    FileDigest,
+    IngestStoragePort,
+    IngestToolPort,
+    ModuleDiscoveryPort,
+    ModuleRecord,
+    QueryResult,
+    ScipResult,
+    TestResult,
+)
+
 # Recipe architecture exports
 from codeintel.ingestion.recipes import (
     BUILTIN_RECIPES,
@@ -95,6 +147,18 @@ from codeintel.ingestion.recipes import (
     RecipeStageResult,
     execute_recipe,
     get_builtin_recipe,
+)
+from codeintel.ingestion.steps import (
+    AstExtractStep,
+    ConfigIngestStep,
+    CoverageIngestStep,
+    CstExtractStep,
+    DocstringsExtractStep,
+    RepoScanStep,
+    ScipIngestStep,
+    StepResult,
+    TestsIngestStep,
+    TypingIngestStep,
 )
 
 # Worker infrastructure exports
@@ -109,27 +173,40 @@ from codeintel.ingestion.workers import (
 )
 
 __all__ = [
-    # Worker infrastructure
     "AST_WORKER_CONFIG",
     "BUILTIN_RECIPES",
     "CST_WORKER_CONFIG",
     "DEFAULT_CONTEXT_MAPPINGS",
     "DEFAULT_INGEST_PLUGINS",
+    "AstExtractStep",
+    "BatchResult",
+    "ChangeDetectionPort",
+    "ChangeSet",
     "ClassBasedIngestPlugin",
     "ColumnConstraint",
     "ConfigFactory",
+    "ConfigIngestStep",
     "ConfigMapping",
     "ContractValidationResult",
     "ContractViolation",
+    "CoverageFileData",
+    "CoverageIngestStep",
+    "CoverageResult",
+    "CstExtractStep",
+    "DiagnosticResult",
+    "DocstringsExtractStep",
+    "DuckDBStorageAdapter",
+    "FileDigest",
+    "FilesystemDiscoveryAdapter",
     "ForeignKeyConstraint",
     "FunctionalIngestPlugin",
     "HarnessConfig",
     "HarnessContext",
+    "HashChangeDetectionAdapter",
     "IngestContractSpec",
     "IngestContractValidator",
     "IngestExecutionHarness",
     "IngestIsolationKind",
-    # Pipeline architecture
     "IngestPipeline",
     "IngestPluginContext",
     "IngestPluginMetadata",
@@ -143,14 +220,27 @@ __all__ = [
     "IngestRuntimeScratch",
     "IngestSeverity",
     "IngestStage",
+    "IngestStoragePort",
+    "IngestToolPort",
+    "ModuleDiscoveryPort",
+    "ModuleRecord",
     "PipelineConfig",
     "PipelineExecutor",
     "PipelineResult",
+    "QueryResult",
     "RecipeExecutionResult",
     "RecipeOptions",
     "RecipeStage",
     "RecipeStageResult",
+    "RepoScanStep",
+    "ScipIngestStep",
+    "ScipResult",
+    "StepResult",
     "SupportsFullRebuild",
+    "TestResult",
+    "TestsIngestStep",
+    "ToolRunnerAdapter",
+    "TypingIngestStep",
     "WorkerConfig",
     "create_executor",
     "ensure_repo_root",

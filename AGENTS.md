@@ -987,6 +987,75 @@ codeintel indexctl publish --version v1
 
 ---
 
+## Analytics Plugin Architecture
+
+The analytics system uses a unified plugin protocol (`AnalyticsPluginProtocol`) for all analytics computations. Plugins are organized under `codeintel.analytics.core.plugins/`.
+
+### Key Components
+
+- **Base Classes** (`core/base.py`): `BasePlugin`, `TableWriterPlugin`, `ConfigBoundPlugin`, `CatalogRequiringPlugin`, `GraphRuntimeRequiringPlugin`
+- **Trait Mixins** (`core/traits.py`): `WithRowCounts`, `WithContractValidation`, `WithCaching`, `WithRetries`
+- **Registry** (`core/registry.py`): `PluginRegistry` for discovery and dependency resolution
+- **Executor** (`core/executor.py`): `PluginExecutor` handles execution with error handling
+
+### Writing a New Plugin
+
+Minimal plugin using base classes:
+
+```python
+from dataclasses import dataclass
+from typing import ClassVar
+
+from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
+from codeintel.analytics.core.execution_context import PluginExecutionContext
+from codeintel.analytics.core.plugin_protocol import PluginStage
+from codeintel.config.steps_analytics import MyStepConfig
+
+
+@dataclass
+class MyPlugin(ConfiguredTableWriterPlugin[MyStepConfig]):
+    """Compute my analytics."""
+
+    plugin_name: ClassVar[str] = "my.plugin"
+    plugin_stage: ClassVar[PluginStage] = "function"
+    output_tables: ClassVar[tuple[str, ...]] = ("analytics.my_table",)
+    config_type: ClassVar[type[MyStepConfig]] = MyStepConfig
+
+    def compute(self, ctx: PluginExecutionContext) -> dict[str, int]:
+        """Execute the plugin computation."""
+        # Access config via self.config (auto-injected by base class)
+        # Access gateway via ctx.gateway
+        # Return row counts for each output table
+        return {"analytics.my_table": 100}
+```
+
+### Registration
+
+Register plugins in `core/plugins/registration.py`:
+
+```python
+from codeintel.analytics.core.plugins.my_module import MyPlugin
+
+MY_PLUGIN = MyPlugin()
+# Add to ALL_PLUGINS tuple for automatic registration
+```
+
+### Testing Plugins
+
+Use the `PluginTestHarness` from `tests/_helpers/plugin_harness.py`:
+
+```python
+from tests._helpers.plugin_harness import PluginTestHarness
+
+def test_my_plugin(tmp_path):
+    harness = PluginTestHarness.for_plugin(MyPlugin())
+    result = harness.execute()
+    harness.assert_succeeded()
+    harness.assert_table_has_rows("analytics.my_table", min_rows=1)
+```
+
+---
+
 ## NetworkX GPU backend
 
 - Use `GraphBackendConfig` plus `codeintel.cli.nx_backend.maybe_enable_nx_gpu`; do not import

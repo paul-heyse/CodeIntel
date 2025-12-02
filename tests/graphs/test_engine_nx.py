@@ -10,8 +10,8 @@ import networkx as nx
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs import nx_views
 from codeintel.graphs.engine import NxGraphEngine
+from codeintel.graphs.engine import views as nx_views
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,

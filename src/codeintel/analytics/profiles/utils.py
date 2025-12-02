@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.storage.gateway import DuckDBConnection
 
 CATALOG_MODULE_TABLE = "temp.catalog_modules"

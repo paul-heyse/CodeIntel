@@ -30,17 +30,17 @@ from codeintel.config import (
 )
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths
-from codeintel.graphs.engine import GraphEngine
-from codeintel.graphs.function_catalog_service import (
+from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
+from codeintel.graphs.engine import GraphEngine
 from codeintel.ingestion.change_tracker import ChangeTracker
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginContext,
     IngestRuntimeScratch,
 )
-from codeintel.ingestion.scip_ingest import ScipIngestResult
+from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService

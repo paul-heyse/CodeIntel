@@ -19,7 +19,7 @@ from codeintel.config.datasets import (
     TestCoverageEdgeRow,
     serialize_test_coverage_edge,
 )
-from codeintel.graphs.function_catalog_service import (
+from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )

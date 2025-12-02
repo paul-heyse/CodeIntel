@@ -1,4 +1,11 @@
-"""Build call graph nodes and edges from GOIDs."""
+"""Build call graph nodes and edges from GOIDs.
+
+.. note::
+    This module provides internal implementation for the callgraph_builder plugin.
+    External code should use the plugin interface instead:
+
+        from codeintel.graphs.plugins.builders import get_callgraph_builder_plugin
+"""
 
 from __future__ import annotations
 
@@ -16,16 +23,23 @@ from codeintel.config.datasets import (
     CallGraphNodeRow,
     call_graph_node_to_tuple,
 )
-from codeintel.graphs import call_ast, call_cst, call_persist, symbol_uses
-from codeintel.graphs.call_context import EdgeResolutionContext
-from codeintel.graphs.call_resolution import resolve_callee
-from codeintel.graphs.function_catalog import FunctionCatalog, FunctionMeta
-from codeintel.graphs.function_catalog_service import (
+from codeintel.graphs import symbol_uses
+from codeintel.graphs.callgraph import (
+    EdgeResolutionContext,
+    collect_aliases,
+    collect_edges_ast,
+    collect_edges_cst,
+    dedupe_edges,
+    persist_call_graph_edges,
+    resolve_callee,
+)
+from codeintel.graphs.catalog import (
+    FunctionCatalog,
     FunctionCatalogProvider,
     FunctionCatalogService,
+    FunctionMeta,
+    FunctionSpan,
 )
-from codeintel.graphs.function_index import FunctionSpan
-from codeintel.graphs.import_resolver import collect_aliases
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.gateway import DuckDBError, StorageGateway
@@ -87,8 +101,8 @@ def build_call_graph(
         ast_collector=cfg.ast_collector,
     )
     edges = _collect_edges(catalog, scope, inputs)
-    unique_edges = call_persist.dedupe_edges(edges)
-    call_persist.persist_call_graph_edges(gateway, unique_edges, cfg.repo, cfg.commit)
+    unique_edges = dedupe_edges(edges)
+    persist_call_graph_edges(gateway, unique_edges, cfg.repo, cfg.commit)
 
     log.info(
         "Call graph build complete for repo=%s commit=%s: %d nodes, %d edges",
@@ -213,8 +227,8 @@ def _collect_edges(
     edges: list[CallGraphEdgeRow] = []
     function_index = catalog.function_index
     functions_by_path = catalog.functions_by_path
-    cst_collect = inputs.cst_collector or call_cst.collect_edges_cst
-    ast_collect = inputs.ast_collector or call_ast.collect_edges_ast
+    cst_collect = inputs.cst_collector or collect_edges_cst
+    ast_collect = inputs.ast_collector or collect_edges_ast
 
     for rel_path in sorted(functions_by_path):
         callee_by_name = function_index.local_name_map(rel_path)

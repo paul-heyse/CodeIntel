@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/builtin.py
+# hypothesis_version: 6.148.3
+
+[180000, 300000, 'SCIP ingest failed', 'analytics.tags_index', 'analytics.typedness', 'ast_extract', 'ast_extract_plugin', 'change_tracker', 'config_ingest', 'config_ingest_plugin', 'core.ast_metrics', 'core.ast_nodes', 'core.cst_nodes', 'core.docstrings', 'core.file_state', 'core.goid_crosswalk', 'core.modules', 'core.repo_map', 'core.scip_symbols', 'coverage', 'coverage_ingest', 'cst_extract', 'cst_extract_plugin', 'docstrings_ingest', 'enrich', 'failed', 'index', 'index.scip', 'index_json', 'index_scip', 'modules', 'parse', 'process', 'pyrefly', 'pyright', 'pytest', 'python', 'repo_scan', 'repo_scan_plugin', 'ruff', 'scan', 'scip', 'scip_ingest', 'scip_ingest_plugin', 'tests_ingest', 'tests_ingest_plugin', 'typing_ingest', 'typing_ingest_plugin', 'unavailable']

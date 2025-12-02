@@ -17,6 +17,7 @@ from anyio import to_thread
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.tool_runner import (
     ToolExecutionError,
+    ToolName,
     ToolNotFoundError,
     ToolRunner,
 )
@@ -379,8 +380,6 @@ class ToolService:
         )
 
         if plugin_result.status is ToolStatus.NOT_FOUND:
-            from codeintel.ingestion.tool_runner import ToolName
-
             raise ToolNotFoundError(ToolName.PYTEST, self.tools_config.pytest_bin)
 
         if plugin_result.status is not ToolStatus.OK:
@@ -513,7 +512,8 @@ class ToolService:
 
         return ScipIndexResult.empty()
 
-    def get_test_report(self, result: ToolPluginResult) -> TestReport:
+    @staticmethod
+    def get_test_report(result: ToolPluginResult) -> TestReport:
         """
         Extract parsed TestReport from a pytest plugin result.
 

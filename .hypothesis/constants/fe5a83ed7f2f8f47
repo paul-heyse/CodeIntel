@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/functions/loc.py
+# hypothesis_version: 6.148.3
+
+['#', 'LinesOfCode', 'compute_loc', 'count_logical_lines']

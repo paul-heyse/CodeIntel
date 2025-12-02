@@ -7,8 +7,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.config import ConfigBuilder
-from codeintel.graphs.function_catalog import FunctionCatalog
-from codeintel.graphs.function_catalog_service import FunctionCatalogService
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageConfig, open_gateway
 

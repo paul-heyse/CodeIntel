@@ -1,8 +1,7 @@
 """Unified plugin protocol for analytics plugins.
 
 This module defines the core protocol and types for analytics plugins,
-replacing the legacy dual system of AnalyticsPlugin and GraphMetricPlugin
-with a single, unified abstraction.
+providing a single, unified abstraction for all analytics computations.
 """
 
 from __future__ import annotations

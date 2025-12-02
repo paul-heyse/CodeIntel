@@ -14,7 +14,7 @@ from codeintel.analytics.core.plugin_protocol import (
     ValidationResult,
 )
 from codeintel.analytics.subsystems import refresh_subsystem_caches
-from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.storage.gateway import StorageGateway
 
 

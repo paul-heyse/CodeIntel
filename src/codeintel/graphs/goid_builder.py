@@ -1,4 +1,11 @@
-"""Build GOIDs and crosswalk entries from AST nodes."""
+"""Build GOIDs and crosswalk entries from AST nodes.
+
+.. note::
+    This module provides internal implementation for the goid_builder plugin.
+    External code should use the plugin interface instead:
+
+        from codeintel.graphs.plugins.builders import get_goid_builder_plugin
+"""
 
 from __future__ import annotations
 
@@ -18,7 +25,7 @@ from codeintel.config.datasets import (
     goid_crosswalk_to_tuple,
     goid_to_tuple,
 )
-from codeintel.graphs.function_catalog import load_function_catalog
+from codeintel.graphs.catalog import load_function_catalog
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.paths import relpath_to_module
 from codeintel.storage.gateway import StorageGateway

@@ -13,7 +13,7 @@ from codeintel.analytics.profiles.functions import (
 from codeintel.analytics.profiles.modules import build_module_profile as _build_module_profile
 from codeintel.analytics.profiles.utils import seed_catalog_modules
 from codeintel.config import ProfilesAnalyticsStepConfig
-from codeintel.graphs.function_catalog_service import (
+from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
