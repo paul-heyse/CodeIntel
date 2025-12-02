@@ -1,13 +1,20 @@
 """Plugin architecture for ingestion pipelines.
 
 This package provides the plugin protocol, registry, decorators,
-and contracts for building extensible ingestion pipelines.
+harness, config factory, and contracts for building extensible ingestion pipelines.
 """
 
 from __future__ import annotations
 
 # Import builtin plugins to trigger registration
 from codeintel.ingestion.plugins import builtin as _builtin  # noqa: F401
+from codeintel.ingestion.plugins.config_factory import (
+    DEFAULT_CONTEXT_MAPPINGS,
+    ConfigFactory,
+    ConfigMapping,
+    get_config_fields,
+    infer_config_mapping,
+)
 from codeintel.ingestion.plugins.contracts import (
     ColumnConstraint,
     ContractValidationResult,
@@ -24,6 +31,12 @@ from codeintel.ingestion.plugins.decorators import (
     FunctionalIngestPlugin,
     ingest_plugin,
     register_class_plugin,
+)
+from codeintel.ingestion.plugins.harness import (
+    HarnessConfig,
+    HarnessContext,
+    IngestExecutionHarness,
+    with_harness,
 )
 from codeintel.ingestion.plugins.protocol import (
     DEFAULT_INGEST_PLUGINS,
@@ -48,15 +61,26 @@ from codeintel.ingestion.plugins.registry import (
 )
 
 __all__ = [
+    "DEFAULT_CONTEXT_MAPPINGS",
+    # Protocol types
     "DEFAULT_INGEST_PLUGINS",
+    # Decorators
     "ClassBasedIngestPlugin",
+    # Contracts
     "ColumnConstraint",
+    # Config factory
+    "ConfigFactory",
+    "ConfigMapping",
     "ContractValidationResult",
     "ContractViolation",
     "ForeignKeyConstraint",
     "FunctionalIngestPlugin",
+    # Harness
+    "HarnessConfig",
+    "HarnessContext",
     "IngestContractSpec",
     "IngestContractValidator",
+    "IngestExecutionHarness",
     "IngestIsolationKind",
     "IngestPluginContext",
     "IngestPluginMetadata",
@@ -70,7 +94,9 @@ __all__ = [
     "IngestSeverity",
     "IngestStage",
     "foreign_key_contract",
+    "get_config_fields",
     "get_ingest_registry",
+    "infer_config_mapping",
     "ingest_plugin",
     "list_ingest_plugins",
     "not_null_contract",
@@ -78,4 +104,5 @@ __all__ = [
     "register_class_plugin",
     "register_ingest_plugin",
     "row_count_contract",
+    "with_harness",
 ]

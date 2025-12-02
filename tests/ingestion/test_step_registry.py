@@ -38,7 +38,6 @@ def test_registry_includes_all_expected_plugins() -> None:
         "config_ingest",
     }
     missing = expected - names
-    extra = names - expected
     if missing:
         pytest.fail(f"Missing ingestion plugins in registry: {sorted(missing)}")
     # Extra plugins are allowed (could be from entry points)
@@ -112,7 +111,7 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
         produces_tables=(),
         register=False,
     )
-    def alpha_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
+    def alpha_plugin(_ctx: IngestPluginContext) -> IngestPluginResult:
         executed.append("alpha")
         return IngestPluginResult.ok()
 
@@ -124,7 +123,7 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
         produces_tables=(),
         register=False,
     )
-    def bravo_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
+    def bravo_plugin(_ctx: IngestPluginContext) -> IngestPluginResult:
         executed.append("bravo")
         return IngestPluginResult.ok()
 
@@ -136,7 +135,7 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
         produces_tables=(),
         register=False,
     )
-    def charlie_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
+    def charlie_plugin(_ctx: IngestPluginContext) -> IngestPluginResult:
         executed.append("charlie")
         return IngestPluginResult.ok()
 
@@ -146,8 +145,8 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
     registry.register(bravo_plugin)
     registry.register(charlie_plugin)
 
-    # Plan and execute plugins
-    plan = registry.plan(plugin_names=("charlie",), defaults=("alpha", "bravo", "charlie"))
+    # Plan and execute all plugins (registry doesn't auto-expand dependencies)
+    plan = registry.plan(plugin_names=("alpha", "bravo", "charlie"), defaults=("alpha", "bravo", "charlie"))
 
     gateway = open_ingestion_gateway()
     try:

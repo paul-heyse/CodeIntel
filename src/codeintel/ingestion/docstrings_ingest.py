@@ -7,27 +7,26 @@ import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TypedDict
+from pathlib import Path
+from typing import TYPE_CHECKING, TypedDict
 
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.builder import DocstringStepConfig
 from codeintel.config.datasets import DocstringRow, docstring_row_to_tuple
-from codeintel.ingestion.change_tracker import (
-    ChangeTracker,
-    IncrementalIngestOps,
-    run_incremental_ingest,
-)
-from codeintel.ingestion.common import (
-    ModuleRecord,
-    iter_modules,
-    read_module_source,
-    run_batch,
-    should_skip_empty,
+from codeintel.ingestion.common import ModuleRecord, iter_modules, read_module_source, run_batch
+from codeintel.ingestion.pipeline import (
+    IngestPipeline,
+    PipelineConfig,
+    PipelineResult,
+    execute_pipeline,
 )
 from codeintel.ingestion.source_scanner import ScanProfile
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.module_index import load_module_map
+
+if TYPE_CHECKING:
+    from codeintel.ingestion.change_tracker import ChangeTracker
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +35,8 @@ log = logging.getLogger(__name__)
 class DocstringContext:
     """Shared ingestion context for building docstring rows."""
 
-    cfg: DocstringStepConfig
+    repo: str
+    commit: str
     created_at: datetime
 
 
@@ -97,25 +97,15 @@ class DocstringVisitor(ast.NodeVisitor):
         if not raw_doc:
             return
 
-        # Build qualname
         if kind == "module":
             qualname = self.module_name
         else:
-            # node has .name attribute for class/func
             name = getattr(node, "name", "<unknown>")
             if self.scope_stack:
-                # For items inside scope_stack (which includes current node name for recursive visits,
-                # but we are visiting *this* node now, so its name is NOT in stack yet for `visit_ClassDef` logic above...
-                # Wait, visit methods append BEFORE generic_visit.
-                # But we record docstring BEFORE append.
-                # So stack contains parents.
                 qualname = f"{self.module_name}." + ".".join([*self.scope_stack, name])
             else:
                 qualname = f"{self.module_name}.{name}"
 
-        # Line numbers
-        # getattr used because Module might not have lineno in some py versions or edge cases,
-        # though standard AST usually does for these types.
         lineno = getattr(node, "lineno", None)
         end_lineno = getattr(node, "end_lineno", None)
 
@@ -123,8 +113,8 @@ class DocstringVisitor(ast.NodeVisitor):
 
         self.rows.append(
             DocstringRow(
-                repo=self.ctx.cfg.repo,
-                commit=self.ctx.cfg.commit,
+                repo=self.ctx.repo,
+                commit=self.ctx.commit,
                 rel_path=self.rel_path,
                 module=self.module_name,
                 qualname=qualname,
@@ -174,22 +164,146 @@ def _delete_existing_docstrings(
     )
 
 
+class DocstringPipeline:
+    """Pipeline implementation for docstring extraction."""
+
+    def __init__(self, *, repo: str, commit: str) -> None:
+        self._repo = repo
+        self._commit = commit
+        self._ctx: DocstringContext = field(init=False)
+
+    def _get_ctx(self) -> DocstringContext:
+        """
+        Get or create the docstring context.
+
+        Returns
+        -------
+        DocstringContext
+            Shared context for the extraction run.
+        """
+        return DocstringContext(
+            repo=self._repo,
+            commit=self._commit,
+            created_at=datetime.now(UTC),
+        )
+
+    @property
+    def dataset_name(self) -> str:
+        """Return the dataset name for this pipeline."""
+        return "core.docstrings"
+
+    @staticmethod
+    def module_filter(module: ModuleRecord) -> bool:
+        """
+        Restrict ingestion to Python source modules.
+
+        Parameters
+        ----------
+        module
+            Module metadata describing the candidate file.
+
+        Returns
+        -------
+        bool
+            True when the module path ends with .py.
+        """
+        return module.rel_path.endswith(".py")
+
+    def process_module(self, module: ModuleRecord) -> Iterable[DocstringRow]:
+        """
+        Parse a module and emit docstring rows.
+
+        Parameters
+        ----------
+        module
+            Module metadata describing the file to analyze.
+
+        Returns
+        -------
+        Iterable[DocstringRow]
+            Parsed docstring rows (empty on failure).
+        """
+        source = read_module_source(module, logger=log)
+        if source is None:
+            return []
+
+        try:
+            tree = ast.parse(source, filename=str(module.file_path))
+        except SyntaxError:
+            log.warning("Failed to parse AST for docstrings: %s", module.file_path)
+            return []
+
+        ctx = self._get_ctx()
+        visitor = DocstringVisitor(
+            rel_path=module.rel_path,
+            module_name=module.module_name,
+            ctx=ctx,
+        )
+        visitor.visit(tree)
+        return visitor.rows
+
+    def persist_rows(self, gateway: StorageGateway, rows: Sequence[DocstringRow]) -> int:
+        """
+        Persist parsed docstring rows.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        rows
+            Rows to persist.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        if not rows:
+            return 0
+
+        run_batch(
+            gateway,
+            "core.docstrings",
+            [docstring_row_to_tuple(row) for row in rows],
+            delete_params=None,
+            scope=f"{self._repo}@{self._commit}",
+        )
+        return len(rows)
+
+    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        """
+        Delete rows corresponding to changed or deleted modules.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        rel_paths
+            Paths to delete.
+        """
+        _delete_existing_docstrings(
+            gateway,
+            repo=self._repo,
+            commit=self._commit,
+            rel_paths=list(rel_paths),
+        )
+
+
+# Type assertion that DocstringPipeline implements IngestPipeline
+_: type[IngestPipeline[DocstringRow]] = DocstringPipeline
+
+
 @dataclass
-class DocstringIngestOps(IncrementalIngestOps[DocstringRow]):
-    """
-    Implement incremental ingest operations for core.docstrings.
+class DocstringIngestOps:
+    """Backward-compatible ops class for incremental docstring ingestion.
 
-    Reuses the DocstringVisitor to parse only modules surfaced by ChangeTracker.
+    This class wraps the pipeline implementation to maintain API compatibility
+    with existing code that uses run_incremental_ingest().
     """
 
-    cfg: DocstringStepConfig
+    cfg: object  # DocstringStepConfig
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     dataset_name: str = field(init=False, default="core.docstrings")
-    _ctx: DocstringContext = field(init=False)
-
-    def __post_init__(self) -> None:
-        """Initialize the shared docstring ingestion context."""
-        self._ctx = DocstringContext(cfg=self.cfg, created_at=self.created_at)
 
     @staticmethod
     def module_filter(module: ModuleRecord) -> bool:
@@ -205,6 +319,8 @@ class DocstringIngestOps(IncrementalIngestOps[DocstringRow]):
 
     def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
         """Delete rows corresponding to changed or deleted modules."""
+        if not isinstance(self.cfg, DocstringStepConfig):
+            return
         _delete_existing_docstrings(
             gateway,
             repo=self.cfg.repo,
@@ -219,8 +335,11 @@ class DocstringIngestOps(IncrementalIngestOps[DocstringRow]):
         Returns
         -------
         Iterable[DocstringRow]
-            Parsed docstring rows for the provided module (empty on failure).
+            Extracted docstring rows for the module.
         """
+        if not isinstance(self.cfg, DocstringStepConfig):
+            return []
+
         source = read_module_source(module, logger=log)
         if source is None:
             return []
@@ -231,16 +350,23 @@ class DocstringIngestOps(IncrementalIngestOps[DocstringRow]):
             log.warning("Failed to parse AST for docstrings: %s", module.file_path)
             return []
 
+        ctx = DocstringContext(
+            repo=self.cfg.repo,
+            commit=self.cfg.commit,
+            created_at=self.created_at,
+        )
         visitor = DocstringVisitor(
             rel_path=module.rel_path,
             module_name=module.module_name,
-            ctx=self._ctx,
+            ctx=ctx,
         )
         visitor.visit(tree)
         return visitor.rows
 
     def insert_rows(self, gateway: StorageGateway, rows: Sequence[DocstringRow]) -> None:
         """Persist parsed docstring rows."""
+        if not isinstance(self.cfg, DocstringStepConfig):
+            return
         if not rows:
             return
 
@@ -253,73 +379,182 @@ class DocstringIngestOps(IncrementalIngestOps[DocstringRow]):
         )
 
 
-def ingest_docstrings(
+def ingest_docstrings(  # noqa: PLR0913
     gateway: StorageGateway,
-    cfg: DocstringStepConfig,
-    code_profile: ScanProfile | None = None,
+    modules_or_cfg: Sequence[ModuleRecord] | object = (),
+    code_profile: object = None,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+    repo_root: Path | None = None,
+    tracker: ChangeTracker | None = None,
+    modules: Sequence[ModuleRecord] | None = None,
+) -> PipelineResult:
+    """
+    Extract docstrings for all Python modules and persist them.
+
+    Supports both new and legacy calling conventions for backward compatibility.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    modules_or_cfg
+        Either modules sequence (new API) or DocstringStepConfig (legacy API).
+    code_profile
+        Optional scan profile (legacy API).
+    repo
+        Repository identifier (new API).
+    commit
+        Commit identifier (new API).
+    repo_root
+        Repository root path (new API).
+    tracker
+        Optional change tracker for incremental mode.
+    modules
+        Alternative modules parameter (new API).
+
+    Returns
+    -------
+    PipelineResult
+        Execution result with row counts.
+
+    Raises
+    ------
+    ValueError
+        When repo, commit, or repo_root are not provided via either the
+        cfg parameter or explicit keyword arguments.
+    """
+    # Handle legacy API: ingest_docstrings(gateway, cfg, code_profile, tracker=...)
+    if isinstance(modules_or_cfg, DocstringStepConfig):
+        cfg = modules_or_cfg
+        profile: ScanProfile | None = None
+        if isinstance(code_profile, ScanProfile):
+            profile = code_profile
+
+        module_map = load_module_map(
+            gateway,
+            cfg.repo,
+            cfg.commit,
+            language="python",
+            logger=log,
+        )
+
+        actual_modules = list(
+            iter_modules(
+                module_map,
+                cfg.repo_root,
+                logger=log,
+                scan_profile=profile,
+            )
+        )
+        actual_repo = cfg.repo
+        actual_commit = cfg.commit
+        actual_repo_root = cfg.repo_root
+    else:
+        # New API
+        if modules is not None:
+            actual_modules = list(modules)
+        elif isinstance(modules_or_cfg, Sequence):
+            actual_modules = list(modules_or_cfg)
+        else:
+            actual_modules = []
+        actual_repo = repo
+        actual_commit = commit
+        actual_repo_root = repo_root
+
+    if actual_repo is None or actual_commit is None or actual_repo_root is None:
+        message = "repo, commit, and repo_root are required"
+        raise ValueError(message)
+
+    pipeline = DocstringPipeline(repo=actual_repo, commit=actual_commit)
+
+    result = execute_pipeline(
+        pipeline,
+        gateway,
+        actual_modules,
+        tracker=tracker,
+        config=PipelineConfig(),
+    )
+
+    log.info(
+        "Docstrings ingested: %d rows for %s@%s",
+        result.rows_persisted,
+        actual_repo,
+        actual_commit,
+    )
+
+    return result
+
+
+# Backward compatibility: keep old function signature
+def ingest_docstrings_legacy(
+    gateway: StorageGateway,
+    cfg: object,
+    code_profile: object = None,
     *,
     tracker: ChangeTracker | None = None,
 ) -> None:
     """
-    Extract docstrings for all Python modules in core.modules and persist them.
+    Legacy entry point for docstring ingestion.
 
-    Parameters
-    ----------
-    gateway :
-        StorageGateway providing access to the DuckDB database.
-    cfg : DocstringStepConfig
-        Repository context for this ingestion run.
-    code_profile : ScanProfile | None
-        Optional scan profile controlling iteration cadence.
-    tracker : ChangeTracker | None
-        Optional change tracker enabling incremental ingestion.
+    Deprecated: Use ingest_docstrings() with explicit parameters instead.
+
+    Raises
+    ------
+    TypeError
+        When cfg is not a DocstringStepConfig instance.
     """
-    if tracker is not None:
-        ops = DocstringIngestOps(cfg=cfg, created_at=datetime.now(UTC))
-        run_incremental_ingest(tracker, ops)
-        log.info("Docstrings ingested incrementally for %s@%s", cfg.repo, cfg.commit)
-        return
+    if not isinstance(cfg, DocstringStepConfig):
+        message = "cfg must be DocstringStepConfig"
+        raise TypeError(message)
 
-    repo_root = cfg.repo_root.resolve()
-    module_map = load_module_map(gateway, cfg.repo, cfg.commit, language="python", logger=log)
-    if should_skip_empty(module_map, logger=log):
-        return
+    # Cast code_profile to proper type
+    profile: ScanProfile | None = None
+    if isinstance(code_profile, ScanProfile):
+        profile = code_profile
 
-    rows: list[DocstringRow] = []
-    ctx = DocstringContext(cfg=cfg, created_at=datetime.now(UTC))
-
-    for record in iter_modules(
-        module_map,
-        repo_root,
-        logger=log,
-        scan_profile=code_profile,
-    ):
-        source = read_module_source(record, logger=log)
-        if source is None:
-            continue
-
-        try:
-            tree = ast.parse(source, filename=str(record.file_path))
-        except SyntaxError:
-            log.warning("Failed to parse AST for docstrings: %s", record.file_path)
-            continue
-        visitor = DocstringVisitor(
-            rel_path=record.rel_path, module_name=record.module_name, ctx=ctx
-        )
-        visitor.visit(tree)
-        rows.extend(visitor.rows)
-
-    run_batch(
+    module_map = load_module_map(
         gateway,
-        "core.docstrings",
-        [docstring_row_to_tuple(row) for row in rows],
-        delete_params=[cfg.repo, cfg.commit],
-        scope=f"{cfg.repo}@{cfg.commit}",
+        cfg.repo,
+        cfg.commit,
+        language="python",
+        logger=log,
     )
-    log.info("Docstrings ingested: %d rows for %s@%s", len(rows), cfg.repo, cfg.commit)
+
+    modules = list(
+        iter_modules(
+            module_map,
+            cfg.repo_root,
+            logger=log,
+            scan_profile=profile,
+        )
+    )
+
+    ingest_docstrings(
+        gateway,
+        modules,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        repo_root=cfg.repo_root,
+        tracker=tracker,
+    )
 
 
 def _parse_docstring(raw: str | None) -> ParsedDocstring:
+    """
+    Parse a raw docstring into structured components.
+
+    Parameters
+    ----------
+    raw
+        Raw docstring text.
+
+    Returns
+    -------
+    ParsedDocstring
+        Structured docstring with extracted components.
+    """
     if not raw:
         return {
             "style": None,

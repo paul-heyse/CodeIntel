@@ -38,17 +38,15 @@ from codeintel.analytics.core.plugins import (
     TEST_PROFILE_PLUGIN,
     ensure_plugins_registered,
 )
-from codeintel.analytics.graph_service_runtime import GraphPluginRunOptions, GraphServiceRuntime
-from codeintel.analytics.graphs.plugins import (
-    DEFAULT_GRAPH_METRIC_PLUGINS,
-    plan_graph_metric_plugins,
-)
 from codeintel.analytics.graphs.runtime.manifest import load_prior_manifest
 from codeintel.analytics.runtime_manifest import encode_manifest
 from codeintel.analytics.subsystems import refresh_subsystem_caches
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
+from codeintel.graphs.core.protocol import DEFAULT_METRIC_PLUGINS
+from codeintel.graphs.core.registry import plan_graph_plugins
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.graphs.recipes import METRICS_ONLY_RECIPE, RecipeExecutor, RecipeExecutorContext
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,
@@ -806,7 +804,7 @@ def _resolve_graph_plugins(
     tuple[str, ...]
         Ordered plugin names to execute.
     """
-    plan = plan_graph_metric_plugins(
+    plan = plan_graph_plugins(
         enabled=cfg.enabled_plugins or None,
         disabled=cfg.disabled_plugins,
         defaults=default_plugins,
@@ -831,26 +829,35 @@ class GraphMetricsStep:
         cfg = ctx.config_builder().graph_metrics(scope=cfg_scope)
         acx = _analytics_context(ctx)
         runtime = ensure_graph_runtime(ctx, acx=acx)
-        service = GraphServiceRuntime(
-            gateway=gateway,
-            runtime=runtime,
-            analytics_context=acx,
-            catalog_provider=acx.catalog,
-        )
-        plugin_names = _resolve_graph_plugins(cfg, DEFAULT_GRAPH_METRIC_PLUGINS)
+
+        plugin_names = _resolve_graph_plugins(cfg, DEFAULT_METRIC_PLUGINS)
         log.info(
             "graph_metrics.plugins repo=%s commit=%s plugins=%s",
             ctx.repo,
             ctx.commit,
             plugin_names,
         )
-        service.run_plugins(
-            plugin_names,
-            cfg=cfg,
-            run_options=GraphPluginRunOptions(
-                plugin_options=cfg.plugin_options,
-                scope=cfg_scope,
-            ),
+
+        # Use the new RecipeExecutor for graph metrics
+        executor_ctx = RecipeExecutorContext(
+            gateway=gateway,
+            snapshot=ctx.snapshot,
+            engine=runtime.engine,
+            catalog_provider=acx.catalog,
+        )
+        executor = RecipeExecutor(executor_ctx)
+        result = executor.execute(METRICS_ONLY_RECIPE)
+
+        log.info(
+            "graph_metrics.complete repo=%s commit=%s success=%s "
+            "succeeded=%d failed=%d skipped=%d duration_ms=%.2f",
+            ctx.repo,
+            ctx.commit,
+            result.success,
+            result.success_count,
+            result.failure_count,
+            result.skip_count,
+            result.duration_ms,
         )
 
 

@@ -1,21 +1,22 @@
-"""High-level façade around ToolRunner for external CLI integrations."""
+"""High-level façade around ToolRunner for external CLI integrations.
+
+This module provides a simplified interface to tool plugins. The plugins
+handle all parsing internally; this service delegates to them and returns
+the parsed domain objects.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.paths import normalize_rel_path, repo_relpath
 from codeintel.ingestion.tool_runner import (
     ToolExecutionError,
-    ToolName,
     ToolNotFoundError,
     ToolRunner,
 )
@@ -25,6 +26,13 @@ from codeintel.ingestion.tools import (
     ToolPluginResult,
     ToolStatus,
     build_default_registry,
+)
+from codeintel.ingestion.tools.results import (
+    CoverageFileSummary,
+    CoverageReport,
+    DiagnosticReport,
+    ScipIndexResult,
+    TestReport,
 )
 
 log = logging.getLogger(__name__)
@@ -40,15 +48,45 @@ def _path_is_file(path: Path) -> bool:
 
 @dataclass(frozen=True)
 class CoverageFileReport:
-    """Normalized coverage summary for a single file."""
+    """Normalized coverage summary for a single file.
+
+    This dataclass provides backward compatibility with existing code
+    that expects this interface from ToolService.
+    """
 
     rel_path: str
     executed_lines: set[int]
     missing_lines: set[int]
 
+    @classmethod
+    def from_summary(cls, summary: CoverageFileSummary) -> CoverageFileReport:
+        """
+        Convert from the new CoverageFileSummary domain type.
+
+        Parameters
+        ----------
+        summary
+            CoverageFileSummary from tool plugin.
+
+        Returns
+        -------
+        CoverageFileReport
+            Converted report with mutable sets.
+        """
+        return cls(
+            rel_path=summary.rel_path,
+            executed_lines=set(summary.executed_lines),
+            missing_lines=set(summary.missing_lines),
+        )
+
 
 class ToolService:
-    """Orchestrate external tooling and parse outputs for ingestion modules."""
+    """Orchestrate external tooling via tool plugins.
+
+    This service is a thin façade that delegates to tool plugins. The plugins
+    handle execution and parsing; this service provides a simple interface
+    for callers.
+    """
 
     def __init__(self, runner: ToolRunner, tools_config: ToolsConfig | None = None) -> None:
         self.runner = runner
@@ -87,7 +125,7 @@ class ToolService:
         Returns
         -------
         ToolPluginResult
-            Normalized plugin result including status and artifacts.
+            Normalized plugin result including status and parsed output.
 
         Raises
         ------
@@ -135,10 +173,16 @@ class ToolService:
             message = "pyright plugin failed without ToolRunResult"
             raise RuntimeError(message)
 
+        # Return parsed diagnostics from plugin
+        parsed = plugin_result.parsed
+        if isinstance(parsed, DiagnosticReport):
+            return parsed.errors_by_path()
+
+        # Fallback for backward compatibility
         if plugin_result.run is None:
             message = "pyright plugin returned no run metadata"
             raise RuntimeError(message)
-        return _parse_pyright_errors(plugin_result.run.stdout, repo_root)
+        return {}
 
     async def run_pyrefly(self, repo_root: Path) -> Mapping[str, int]:
         """
@@ -176,10 +220,16 @@ class ToolService:
             await to_thread.run_sync(_unlink_missing, output_path)
             return {}
 
+        # Clean up temp file
         json_path = plugin_result.artifacts.get("pyrefly_json", output_path)
-        payload = await to_thread.run_sync(ToolRunner.load_json, json_path) or {}
         await to_thread.run_sync(_unlink_missing, json_path)
-        return _parse_pyrefly_errors(payload, repo_root)
+
+        # Return parsed diagnostics from plugin
+        parsed = plugin_result.parsed
+        if isinstance(parsed, DiagnosticReport):
+            return parsed.errors_by_path()
+
+        return {}
 
     async def run_ruff(self, repo_root: Path) -> Mapping[str, int]:
         """
@@ -220,10 +270,15 @@ class ToolService:
             message = "ruff plugin failed without ToolRunResult"
             raise RuntimeError(message)
 
+        # Return parsed diagnostics from plugin
+        parsed = plugin_result.parsed
+        if isinstance(parsed, DiagnosticReport):
+            return parsed.errors_by_path()
+
         if plugin_result.run is None:
             message = "ruff plugin returned no run metadata"
             raise RuntimeError(message)
-        return _parse_ruff_errors(plugin_result.run.stdout, repo_root)
+        return {}
 
     async def run_coverage_json(
         self,
@@ -273,10 +328,16 @@ class ToolService:
             await to_thread.run_sync(_unlink_missing, target_output)
             return []
 
+        # Clean up temp file
         json_path = plugin_result.artifacts.get("coverage_json", target_output)
-        payload = await to_thread.run_sync(ToolRunner.load_json, json_path) or {}
         await to_thread.run_sync(_unlink_missing, json_path)
-        return _parse_coverage_payload(payload, repo_root)
+
+        # Convert parsed CoverageReport to legacy CoverageFileReport list
+        parsed = plugin_result.parsed
+        if isinstance(parsed, CoverageReport):
+            return [CoverageFileReport.from_summary(f) for f in parsed.files]
+
+        return []
 
     async def run_pytest_report(
         self,
@@ -318,6 +379,8 @@ class ToolService:
         )
 
         if plugin_result.status is ToolStatus.NOT_FOUND:
+            from codeintel.ingestion.tool_runner import ToolName
+
             raise ToolNotFoundError(ToolName.PYTEST, self.tools_config.pytest_bin)
 
         if plugin_result.status is not ToolStatus.OK:
@@ -344,9 +407,14 @@ class ToolService:
         output_scip: Path,
         output_json: Path,
         target_dir: Path | None = None,
-    ) -> None:
+    ) -> ScipIndexResult:
         """
         Run scip-python for a full index and export to JSON.
+
+        Returns
+        -------
+        ScipIndexResult
+            Parsed SCIP index result.
 
         Raises
         ------
@@ -381,17 +449,29 @@ class ToolService:
             message = "SCIP plugin failed without ToolRunResult"
             raise RuntimeError(message)
 
+        # Return parsed SCIP result
+        parsed = plugin_result.parsed
+        if isinstance(parsed, ScipIndexResult):
+            return parsed
+
+        return ScipIndexResult.empty()
+
     async def run_scip_shard(
         self,
         repo_root: Path,
         *,
-        rel_paths: Sequence[str],
+        rel_paths: list[str],
         output_scip: Path,
         output_json: Path,
         target_dir: Path | None = None,
-    ) -> None:
+    ) -> ScipIndexResult:
         """
         Run scip-python for a subset of files and export to JSON.
+
+        Returns
+        -------
+        ScipIndexResult
+            Parsed SCIP index result for the shard.
 
         Raises
         ------
@@ -408,7 +488,7 @@ class ToolService:
             output_scip=output_scip,
             output_json=output_json,
             target_dir=target_dir,
-            rel_paths=list(rel_paths),
+            rel_paths=rel_paths,
         )
 
         if plugin_result.status is ToolStatus.NOT_FOUND:
@@ -426,104 +506,28 @@ class ToolService:
             message = "SCIP plugin failed without ToolRunResult"
             raise RuntimeError(message)
 
+        # Return parsed SCIP result
+        parsed = plugin_result.parsed
+        if isinstance(parsed, ScipIndexResult):
+            return parsed
 
-def _parse_pyrefly_errors(payload: Mapping[str, Any], repo_root: Path) -> dict[str, int]:
-    errors_field = payload.get("errors") if isinstance(payload, Mapping) else None
-    errors: Iterable[Mapping[str, Any]] = errors_field if isinstance(errors_field, list) else []
-    counts: dict[str, int] = {}
-    for diag in errors:
-        if diag.get("severity") != "error":
-            continue
-        file_name = diag.get("path")
-        if not file_name:
-            continue
-        rel_path = _safe_relpath(repo_root, Path(str(file_name)))
-        if rel_path is None:
-            continue
-        counts[rel_path] = counts.get(rel_path, 0) + 1
-    return counts
+        return ScipIndexResult.empty()
 
+    def get_test_report(self, result: ToolPluginResult) -> TestReport:
+        """
+        Extract parsed TestReport from a pytest plugin result.
 
-def _parse_pyright_errors(stdout: str, repo_root: Path) -> dict[str, int]:
-    try:
-        payload = json.loads(stdout) if stdout else {}
-    except json.JSONDecodeError as exc:
-        log.warning("Failed to parse pyright JSON output: %s", exc)
-        return {}
+        Parameters
+        ----------
+        result
+            ToolPluginResult from pytest plugin execution.
 
-    diagnostics = payload.get("generalDiagnostics") if isinstance(payload, dict) else None
-    if not isinstance(diagnostics, list):
-        return {}
-
-    counts: dict[str, int] = {}
-    for diag in diagnostics:
-        if not isinstance(diag, Mapping):
-            continue
-        if diag.get("severity") != "error":
-            continue
-        file_name = diag.get("file")
-        if not file_name:
-            continue
-        rel_path = _safe_relpath(repo_root, Path(str(file_name)))
-        if rel_path is None:
-            continue
-        counts[rel_path] = counts.get(rel_path, 0) + 1
-    return counts
-
-
-def _parse_ruff_errors(stdout: str, repo_root: Path) -> dict[str, int]:
-    try:
-        payload = json.loads(stdout) if stdout else []
-    except json.JSONDecodeError as exc:
-        log.warning("Failed to parse ruff JSON output: %s", exc)
-        return {}
-    if not isinstance(payload, list):
-        return {}
-
-    counts: dict[str, int] = {}
-    for diag in payload:
-        if not isinstance(diag, Mapping):
-            continue
-        file_name = diag.get("filename")
-        if not file_name:
-            continue
-        rel_path = _safe_relpath(repo_root, Path(str(file_name)))
-        if rel_path is None:
-            continue
-        counts[rel_path] = counts.get(rel_path, 0) + 1
-    return counts
-
-
-def _parse_coverage_payload(
-    payload: Mapping[str, Any],
-    repo_root: Path,
-) -> list[CoverageFileReport]:
-    files = payload.get("files") if isinstance(payload, Mapping) else None
-    if not isinstance(files, Mapping):
-        return []
-
-    reports: list[CoverageFileReport] = []
-    for file_name, data in files.items():
-        if not isinstance(data, Mapping):
-            continue
-        executed = {int(line) for line in data.get("executed_lines", []) if isinstance(line, int)}
-        missing = {int(line) for line in data.get("missing_lines", []) if isinstance(line, int)}
-        rel_path = _safe_relpath(repo_root, Path(str(file_name)))
-        if rel_path is None:
-            continue
-        reports.append(
-            CoverageFileReport(
-                rel_path=rel_path,
-                executed_lines=executed,
-                missing_lines=missing,
-            )
-        )
-    return reports
-
-
-def _safe_relpath(repo_root: Path, file_path: Path) -> str | None:
-    try:
-        candidate = file_path if file_path.is_absolute() else repo_root / file_path
-        return normalize_rel_path(repo_relpath(repo_root, candidate))
-    except ValueError:
-        return None
+        Returns
+        -------
+        TestReport
+            Parsed test report or empty report.
+        """
+        parsed = result.parsed
+        if isinstance(parsed, TestReport):
+            return parsed
+        return TestReport.empty()

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from anyio import to_thread
 
@@ -23,6 +25,7 @@ from codeintel.ingestion.tools.plugins import (
     ToolPluginResult,
     ToolStatus,
 )
+from codeintel.ingestion.tools.results import ScipIndexResult
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +43,46 @@ def _resolve_target_base(repo_root: Path, target_dir: Path | None) -> Path:
         return target_dir
     src_dir = repo_root / "src"
     return src_dir if src_dir.is_dir() else repo_root
+
+
+def _parse_scip_json(
+    json_path: Path,
+    scip_path: Path | None = None,
+) -> ScipIndexResult:
+    """
+    Parse SCIP JSON export into a ScipIndexResult.
+
+    Parameters
+    ----------
+    json_path
+        Path to the JSON file from scip print --json.
+    scip_path
+        Path to the .scip binary file.
+
+    Returns
+    -------
+    ScipIndexResult
+        Parsed SCIP index with documents and symbols.
+    """
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("Failed to parse SCIP JSON: %s", exc)
+        return ScipIndexResult.empty()
+
+    docs: list[Mapping[str, Any]] = []
+    if isinstance(payload, dict):
+        docs_field = payload.get("documents", [])
+        if isinstance(docs_field, list):
+            docs = docs_field
+    elif isinstance(payload, list):
+        docs = payload
+
+    return ScipIndexResult.from_json_documents(
+        docs,
+        index_scip_path=scip_path,
+        index_json_path=json_path,
+    )
 
 
 @dataclass
@@ -64,7 +107,7 @@ class ScipPlugin(ToolPlugin):
         **kwargs: object,
     ) -> ToolPluginResult:
         """
-        Run scip-python index and scip print to produce SCIP + JSON.
+        Run scip-python index and scip print to produce parsed index.
 
         When rel_paths is provided, only those paths are targeted; otherwise
         the full repo (or target_dir/src) is indexed.
@@ -72,12 +115,12 @@ class ScipPlugin(ToolPlugin):
         Returns
         -------
         ToolPluginResult
-            Normalized execution result from the SCIP plugin.
+            Normalized execution result with parsed ScipIndexResult.
 
         Raises
         ------
         TypeError
-            Raised when required keyword arguments are missing or of the wrong type.
+            Raised when required keyword arguments are missing or of wrong type.
         """
         output_scip_obj = kwargs.get("output_scip")
         output_json_obj = kwargs.get("output_json")
@@ -101,6 +144,7 @@ class ScipPlugin(ToolPlugin):
         output_json = output_json_obj
         target_dir = target_dir_obj
         rel_paths = tuple(rel_paths_obj) if rel_paths_obj is not None else None
+
         try:
             await self._run_scip_python(
                 repo_root,
@@ -116,6 +160,7 @@ class ScipPlugin(ToolPlugin):
                 artifacts={},
                 run=None,
                 error=exc,
+                parsed=ScipIndexResult.empty(),
             )
         except ToolExecutionError as exc:
             return ToolPluginResult(
@@ -124,6 +169,7 @@ class ScipPlugin(ToolPlugin):
                 artifacts={"index_scip": output_scip},
                 run=exc.result,
                 error=exc,
+                parsed=ScipIndexResult.empty(),
             )
 
         try:
@@ -136,6 +182,7 @@ class ScipPlugin(ToolPlugin):
                 artifacts={"index_scip": output_scip},
                 run=None,
                 error=exc,
+                parsed=ScipIndexResult.empty(),
             )
         except ToolExecutionError as exc:
             return ToolPluginResult(
@@ -144,7 +191,14 @@ class ScipPlugin(ToolPlugin):
                 artifacts={"index_scip": output_scip, "index_json": output_json},
                 run=exc.result,
                 error=exc,
+                parsed=ScipIndexResult.empty(),
             )
+
+        # Parse the JSON output
+        def _parse() -> ScipIndexResult:
+            return _parse_scip_json(output_json, output_scip)
+
+        parsed = await to_thread.run_sync(_parse)
 
         artifacts = {
             "index_scip": output_scip,
@@ -156,6 +210,7 @@ class ScipPlugin(ToolPlugin):
             artifacts=artifacts,
             run=print_result,
             error=None,
+            parsed=parsed,
         )
 
     async def _run_scip_python(

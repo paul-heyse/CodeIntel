@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tools/ruff.py
+# hypothesis_version: 6.148.3
+
+['--output-format', 'check', 'filename', 'json', 'ruff', 'ruff_bin']

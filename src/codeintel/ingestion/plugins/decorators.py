@@ -10,8 +10,9 @@ NOTE: Imports inside functions are intentional to avoid circular dependencies.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
@@ -25,6 +26,9 @@ from codeintel.ingestion.plugins.protocol import (
     IngestSeverity,
     IngestStage,
 )
+
+if TYPE_CHECKING:
+    from codeintel.ingestion.plugins.harness import HarnessConfig
 
 
 @dataclass
@@ -83,6 +87,9 @@ def ingest_plugin(  # noqa: PLR0913
     options_default: object | None = None,
     version_hash: str | None = None,
     config_schema_ref: str | None = None,
+    config_class: type | None = None,
+    config_mapping: Mapping[str, str] | None = None,
+    harness: HarnessConfig | None = None,
     register: bool = True,
 ) -> Callable[[Callable[[IngestPluginContext], IngestPluginResult]], FunctionalIngestPlugin]:
     """Decorate a function as an ingestion plugin.
@@ -123,6 +130,12 @@ def ingest_plugin(  # noqa: PLR0913
         Version hash for caching.
     config_schema_ref
         Reference to config schema.
+    config_class
+        Step config class to auto-build from context via harness.
+    config_mapping
+        Custom field mapping for config building.
+    harness
+        Harness configuration for automated error handling.
     register
         Whether to auto-register with global registry.
 
@@ -166,9 +179,41 @@ def ingest_plugin(  # noqa: PLR0913
             options_default=options_default,
             version_hash=version_hash,
             config_schema_ref=config_schema_ref,
+            config_class=config_class,
+            config_mapping=config_mapping,
+            harness_config=harness,
         )
 
-        plugin_instance = FunctionalIngestPlugin(_metadata=meta, _execute_fn=fn)
+        # If harness is configured, wrap the function with harness execution
+        execute_fn: Callable[[IngestPluginContext], IngestPluginResult]
+        if harness is not None:
+            from codeintel.ingestion.plugins.harness import IngestExecutionHarness
+
+            harness_instance = IngestExecutionHarness(
+                metadata=meta,
+                harness_config=harness,
+                config_class=config_class,
+                config_mapping=config_mapping,
+            )
+
+            def harnessed_execute(ctx: IngestPluginContext) -> IngestPluginResult:
+                # Wrap the fn to accept HarnessContext
+                def inner(harness_ctx: object) -> IngestPluginResult:
+                    # For now, pass the base context; plugins using harness
+                    # can access harness_ctx.base or use the enhanced methods
+                    from codeintel.ingestion.plugins.harness import HarnessContext
+
+                    if isinstance(harness_ctx, HarnessContext):
+                        return fn(harness_ctx.base)
+                    return fn(ctx)
+
+                return harness_instance.execute(ctx, inner)
+
+            execute_fn = harnessed_execute
+        else:
+            execute_fn = fn
+
+        plugin_instance = FunctionalIngestPlugin(_metadata=meta, _execute_fn=execute_fn)
 
         if register:
             from codeintel.ingestion.plugins.registry import register_ingest_plugin
@@ -217,6 +262,10 @@ class ClassBasedIngestPlugin:
     options_default: object | None = None
     version_hash: str | None = None
     config_schema_ref: str | None = None
+    # Harness integration fields
+    config_class: type | None = None
+    config_mapping: Mapping[str, str] | None = None
+    harness_config: HarnessConfig | None = None
 
     @property
     def metadata(self) -> IngestPluginMetadata:
@@ -245,6 +294,9 @@ class ClassBasedIngestPlugin:
             options_default=self.options_default,
             version_hash=self.version_hash,
             config_schema_ref=self.config_schema_ref,
+            config_class=self.config_class,
+            config_mapping=self.config_mapping,
+            harness_config=self.harness_config,
         )
 
     def execute(self, ctx: IngestPluginContext) -> IngestPluginResult:

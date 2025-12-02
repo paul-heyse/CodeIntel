@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import fnmatch
 import logging
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.config import TypingIngestStepConfig
 from codeintel.config.datasets import (
@@ -17,12 +19,13 @@ from codeintel.config.datasets import (
     typedness_row_to_tuple,
 )
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.change_tracker import (
-    ChangeTracker,
-    IncrementalIngestOps,
-    run_incremental_ingest,
-)
 from codeintel.ingestion.common import ModuleRecord, iter_modules, run_batch
+from codeintel.ingestion.pipeline import (
+    IngestPipeline,
+    PipelineConfig,
+    PipelineResult,
+    execute_pipeline,
+)
 from codeintel.ingestion.source_scanner import (
     ScanProfile,
     default_code_profile,
@@ -30,10 +33,63 @@ from codeintel.ingestion.source_scanner import (
 )
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.module_index import load_module_map
 
+if TYPE_CHECKING:
+    from codeintel.ingestion.change_tracker import ChangeTracker
+    from codeintel.storage.gateway import StorageGateway
+
 log = logging.getLogger(__name__)
+
+
+def _discover_python_modules(repo_root: Path, profile: ScanProfile) -> list[ModuleRecord]:
+    """
+    Discover Python modules on the filesystem as a fallback.
+
+    Used when no modules are registered in core.modules.
+
+    Parameters
+    ----------
+    repo_root
+        Repository root path.
+    profile
+        Scan profile for filtering.
+
+    Returns
+    -------
+    list[ModuleRecord]
+        Discovered module records.
+    """
+    discovered: list[ModuleRecord] = []
+    patterns = tuple(profile.include_globs) if profile is not None else ("**/*.py",)
+    ignore_set = set(profile.ignore_dirs) if profile is not None else set()
+
+    for root, dirs, files in repo_root.walk():
+        # Skip ignored directories
+        dirs[:] = [d for d in dirs if d not in ignore_set]
+
+        rel_root = root.relative_to(repo_root)
+        for file in files:
+            if not file.endswith(".py"):
+                continue
+            rel_path = str(rel_root / file)
+            if any(fnmatch.fnmatch(rel_path, pat) for pat in patterns):
+                module_name = rel_path.replace("/", ".").removesuffix(".py")
+                discovered.append(
+                    ModuleRecord(
+                        rel_path=rel_path,
+                        module_name=module_name,
+                        file_path=root / file,
+                        index=len(discovered),
+                        total=-1,  # Will be fixed up later
+                    )
+                )
+
+    # Fix up totals on frozen dataclass (requires __setattr__ bypass)
+    for mod in discovered:
+        object.__setattr__(mod, "total", len(discovered))  # noqa: PLC2801
+
+    return discovered
 
 
 @dataclass
@@ -41,13 +97,13 @@ class AnnotationInfo:
     """
     Ratio and count statistics summarizing annotations in a file.
 
-    Parameters
+    Attributes
     ----------
-    params_ratio : float
+    params_ratio
         Fraction of parameters (excluding self/cls) with annotations.
-    returns_ratio : float
+    returns_ratio
         Fraction of functions with return annotations.
-    untyped_defs : int
+    untyped_defs
         Count of function definitions missing full annotations.
     """
 
@@ -57,6 +113,19 @@ class AnnotationInfo:
 
 
 def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
+    """
+    Parse a file and compute annotation statistics.
+
+    Parameters
+    ----------
+    path
+        Path to the Python source file.
+
+    Returns
+    -------
+    AnnotationInfo | None
+        Annotation statistics or None on parse failure.
+    """
     try:
         source = path.read_text(encoding="utf8")
     except (OSError, UnicodeDecodeError):
@@ -78,7 +147,6 @@ def _compute_annotation_info_for_file(path: Path) -> AnnotationInfo | None:
             func_count += 1
 
             params = []
-            # Python 3.8+ supports posonlyargs; older code will ignore.
             posonly = getattr(node.args, "posonlyargs", [])
             params.extend(posonly)
             params.extend(node.args.args)
@@ -116,6 +184,21 @@ async def _collect_error_maps(
     repo_root: Path,
     service: ToolService,
 ) -> dict[str, dict[str, int]]:
+    """
+    Run all diagnostic tools and collect error counts.
+
+    Parameters
+    ----------
+    repo_root
+        Repository root for tool invocation.
+    service
+        Tool service for running diagnostics.
+
+    Returns
+    -------
+    dict[str, dict[str, int]]
+        Error counts keyed by tool name and file path.
+    """
     pyrefly_map, pyright_map, ruff_map = await asyncio.gather(
         service.run_pyrefly(repo_root),
         service.run_pyright(repo_root),
@@ -179,23 +262,36 @@ def _delete_existing_typing_rows(
     )
 
 
-@dataclass
-class TypingIngestOps(IncrementalIngestOps[TypingIngestResult]):
-    """
-    Implement incremental ingest operations for typedness and diagnostics datasets.
+class TypingPipeline:
+    """Pipeline implementation for typedness and diagnostics extraction."""
 
-    Tool outputs are computed once per repo, while AST parsing is limited to changed files.
-    """
+    def __init__(
+        self,
+        *,
+        repo: str,
+        commit: str,
+        repo_root: Path,
+        error_maps: dict[str, dict[str, int]],
+    ) -> None:
+        self._repo = repo
+        self._commit = commit
+        self._repo_root = repo_root
+        self._error_maps = error_maps
 
-    cfg: TypingIngestStepConfig
-    repo_root: Path
-    error_maps: dict[str, dict[str, int]]
-    dataset_name: str = field(init=False, default="analytics.typedness")
+    @property
+    def dataset_name(self) -> str:
+        """Return the dataset name for this pipeline."""
+        return "analytics.typedness"
 
     @staticmethod
     def module_filter(module: ModuleRecord) -> bool:
         """
-        Process only Python source files.
+        Determine whether a module should be processed.
+
+        Parameters
+        ----------
+        module
+            Module metadata describing the candidate file.
 
         Returns
         -------
@@ -204,18 +300,14 @@ class TypingIngestOps(IncrementalIngestOps[TypingIngestResult]):
         """
         return module.rel_path.endswith(".py")
 
-    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
-        """Delete rows for modules scheduled for removal."""
-        _delete_existing_typing_rows(
-            gateway,
-            repo=self.cfg.repo,
-            commit=self.cfg.commit,
-            rel_paths=list(rel_paths),
-        )
-
     def process_module(self, module: ModuleRecord) -> Iterable[TypingIngestResult]:
         """
         Compute typedness and diagnostic rows for a single module.
+
+        Parameters
+        ----------
+        module
+            Module metadata describing the file to analyze.
 
         Returns
         -------
@@ -229,14 +321,14 @@ class TypingIngestOps(IncrementalIngestOps[TypingIngestResult]):
             untyped_defs=0,
         )
 
-        pf_errors = self.error_maps["pyrefly"].get(module.rel_path, 0)
-        py_errors = self.error_maps["pyright"].get(module.rel_path, 0)
-        ruff_errors = self.error_maps["ruff"].get(module.rel_path, 0)
+        pf_errors = self._error_maps["pyrefly"].get(module.rel_path, 0)
+        py_errors = self._error_maps["pyright"].get(module.rel_path, 0)
+        ruff_errors = self._error_maps["ruff"].get(module.rel_path, 0)
         total_errors = pf_errors + py_errors
 
         typedness = TypednessRow(
-            repo=self.cfg.repo,
-            commit=self.cfg.commit,
+            repo=self._repo,
+            commit=self._commit,
             path=module.rel_path,
             type_error_count=total_errors,
             annotation_ratio={
@@ -248,8 +340,8 @@ class TypingIngestOps(IncrementalIngestOps[TypingIngestResult]):
         )
 
         diagnostics = StaticDiagnosticRow(
-            repo=self.cfg.repo,
-            commit=self.cfg.commit,
+            repo=self._repo,
+            commit=self._commit,
             rel_path=module.rel_path,
             pyrefly_errors=pf_errors,
             pyright_errors=py_errors,
@@ -258,17 +350,26 @@ class TypingIngestOps(IncrementalIngestOps[TypingIngestResult]):
             has_errors=total_errors > 0,
         )
 
-        return [
-            TypingIngestResult(
-                typedness=typedness,
-                diagnostics=diagnostics,
-            )
-        ]
+        return [TypingIngestResult(typedness=typedness, diagnostics=diagnostics)]
 
-    def insert_rows(self, gateway: StorageGateway, rows: Sequence[TypingIngestResult]) -> None:
-        """Insert typedness and diagnostic rows."""
+    def persist_rows(self, gateway: StorageGateway, rows: Sequence[TypingIngestResult]) -> int:
+        """
+        Insert typedness and diagnostic rows.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        rows
+            Extraction results to persist.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
         if not rows:
-            return
+            return 0
 
         rel_paths: set[str] = set()
         typedness_rows: list[TypednessRow] = []
@@ -285,19 +386,21 @@ class TypingIngestOps(IncrementalIngestOps[TypingIngestResult]):
         if rel_paths:
             _delete_existing_typing_rows(
                 gateway,
-                repo=self.cfg.repo,
-                commit=self.cfg.commit,
+                repo=self._repo,
+                commit=self._commit,
                 rel_paths=sorted(rel_paths),
             )
 
+        total = 0
         if typedness_rows:
             run_batch(
                 gateway,
                 "analytics.typedness",
                 [typedness_row_to_tuple(row) for row in typedness_rows],
                 delete_params=None,
-                scope=f"{self.cfg.repo}@{self.cfg.commit}",
+                scope=f"{self._repo}@{self._commit}",
             )
+            total += len(typedness_rows)
 
         if diag_rows:
             run_batch(
@@ -305,117 +408,172 @@ class TypingIngestOps(IncrementalIngestOps[TypingIngestResult]):
                 "analytics.static_diagnostics",
                 [static_diagnostic_to_tuple(row) for row in diag_rows],
                 delete_params=None,
-                scope=f"{self.cfg.repo}@{self.cfg.commit}",
+                scope=f"{self._repo}@{self._commit}",
             )
 
+        return total
 
-def _ingest_typing_full(
-    *,
+    def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
+        """
+        Delete rows for modules scheduled for removal.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        rel_paths
+            Relative paths to delete.
+        """
+        _delete_existing_typing_rows(
+            gateway,
+            repo=self._repo,
+            commit=self._commit,
+            rel_paths=list(rel_paths),
+        )
+
+
+# Type assertion that TypingPipeline implements IngestPipeline
+_: type[IngestPipeline[TypingIngestResult]] = TypingPipeline
+
+
+def ingest_typing_signals(  # noqa: PLR0913
     gateway: StorageGateway,
-    cfg: TypingIngestStepConfig,
-    profile: ScanProfile,
-    error_maps: dict[str, dict[str, int]],
-) -> None:
+    modules_or_cfg: Sequence[ModuleRecord] | object = (),
+    *,
+    cfg: object = None,
+    repo: str | None = None,
+    commit: str | None = None,
+    repo_root: Path | None = None,
+    code_profile: ScanProfile | None = None,
+    tool_service: ToolService | None = None,
+    tracker: ChangeTracker | None = None,
+    modules: Sequence[ModuleRecord] | None = None,
+) -> PipelineResult:
     """
-    Execute the legacy full-scan typing ingest path.
+    Populate per-file typedness and static diagnostics.
+
+    Supports both new and legacy calling conventions for backward compatibility.
+
+    Populates:
+    - analytics.typedness
+    - analytics.static_diagnostics
 
     Parameters
     ----------
-    gateway :
-        Storage gateway used for persistence.
-    cfg :
-        Step configuration for the current snapshot.
-    profile :
-        Scan profile controlling file discovery.
-    error_maps :
-        Static diagnostic counts keyed by relative path.
+    gateway
+        Storage gateway for database access.
+    modules_or_cfg
+        Either modules sequence (new API) or first positional arg.
+    cfg
+        Legacy TypingIngestStepConfig parameter.
+    repo
+        Repository identifier (new API).
+    commit
+        Commit identifier (new API).
+    repo_root
+        Repository root path (new API).
+    code_profile
+        Optional scan profile for filtering.
+    tool_service
+        Optional tool service for diagnostics.
+    tracker
+        Optional change tracker for incremental mode.
+    modules
+        Alternative modules parameter (new API).
+
+    Returns
+    -------
+    PipelineResult
+        Execution result with counts and timing.
+
+    Raises
+    ------
+    ValueError
+        When repo, commit, or repo_root are not provided via either the
+        cfg parameter or explicit keyword arguments.
+
+    Notes
+    -----
+    Pyrefly drives static error counts; annotation_ratio is computed from
+    Python AST (params and returns).
     """
-    module_map = load_module_map(
-        gateway,
-        cfg.repo,
-        cfg.commit,
-        language="python",
-        logger=log,
-    )
-    annotation_info: dict[str, AnnotationInfo] = {}
-    for record in iter_modules(
-        module_map,
-        cfg.repo_root,
-        logger=log,
-        scan_profile=profile,
-    ):
-        info = _compute_annotation_info_for_file(record.file_path)
-        if info is not None:
-            annotation_info[record.rel_path] = info
+    # Handle legacy API: ingest_typing_signals(gateway, cfg=cfg, ...)
+    actual_cfg: TypingIngestStepConfig | None = None
+    if isinstance(cfg, TypingIngestStepConfig):
+        actual_cfg = cfg
+    elif isinstance(modules_or_cfg, TypingIngestStepConfig):
+        actual_cfg = modules_or_cfg
 
-    path_set = (
-        set(annotation_info)
-        | set(error_maps["pyrefly"])
-        | set(error_maps["pyright"])
-        | set(error_maps["ruff"])
-    )
-
-    typedness_rows: list[TypednessRow] = []
-    diag_rows: list[StaticDiagnosticRow] = []
-    default_info = AnnotationInfo(params_ratio=0.0, returns_ratio=0.0, untyped_defs=0)
-    for rel_path in sorted(path_set):
-        info = annotation_info.get(rel_path, default_info)
-        pf_errors = error_maps["pyrefly"].get(rel_path, 0)
-        py_errors = error_maps["pyright"].get(rel_path, 0)
-        total_errors = pf_errors + py_errors
-
-        typedness_rows.append(
-            TypednessRow(
-                repo=cfg.repo,
-                commit=cfg.commit,
-                path=rel_path,
-                type_error_count=total_errors,
-                annotation_ratio={
-                    "params": info.params_ratio,
-                    "returns": info.returns_ratio,
-                },
-                untyped_defs=info.untyped_defs,
-                overlay_needed=bool(total_errors > 0 or info.untyped_defs > 0),
-            )
+    if actual_cfg is not None:
+        profile = code_profile or profile_from_env(default_code_profile(actual_cfg.repo_root))
+        module_map = load_module_map(
+            gateway,
+            actual_cfg.repo,
+            actual_cfg.commit,
+            language="python",
+            logger=log,
         )
 
-        diag_rows.append(
-            StaticDiagnosticRow(
-                repo=cfg.repo,
-                commit=cfg.commit,
-                rel_path=rel_path,
-                pyrefly_errors=pf_errors,
-                pyright_errors=py_errors,
-                ruff_errors=error_maps["ruff"].get(rel_path, 0),
-                total_errors=total_errors,
-                has_errors=total_errors > 0,
+        if module_map:
+            actual_modules = list(
+                iter_modules(
+                    module_map,
+                    actual_cfg.repo_root,
+                    logger=log,
+                    scan_profile=profile,
+                )
             )
+        else:
+            # Fallback: scan filesystem for Python files if no modules in database
+            actual_modules = _discover_python_modules(actual_cfg.repo_root, profile)
+
+        actual_repo = actual_cfg.repo
+        actual_commit = actual_cfg.commit
+        actual_repo_root = actual_cfg.repo_root
+    else:
+        # New API
+        if modules is not None:
+            actual_modules = list(modules)
+        elif isinstance(modules_or_cfg, Sequence):
+            actual_modules = list(modules_or_cfg)
+        else:
+            actual_modules = []
+        actual_repo = repo
+        actual_commit = commit
+        actual_repo_root = repo_root
+
+    if actual_repo is None or actual_commit is None or actual_repo_root is None:
+        message = "repo, commit, and repo_root are required"
+        raise ValueError(message)
+
+    service = tool_service
+    if service is None:
+        tools_config = ToolsConfig.model_validate({})
+        shared_runner = ToolRunner(
+            tools_config=tools_config, cache_dir=actual_repo_root / "build" / ".tool_cache"
         )
+        service = ToolService(shared_runner, tools_config)
 
-    run_batch(
+    error_maps = asyncio.run(_collect_error_maps(actual_repo_root, service))
+
+    pipeline = TypingPipeline(
+        repo=actual_repo,
+        commit=actual_commit,
+        repo_root=actual_repo_root,
+        error_maps=error_maps,
+    )
+
+    return execute_pipeline(
+        pipeline,
         gateway,
-        "analytics.typedness",
-        [typedness_row_to_tuple(row) for row in typedness_rows],
-        delete_params=[cfg.repo, cfg.commit],
-        scope=f"{cfg.repo}@{cfg.commit}",
-    )
-    run_batch(
-        gateway,
-        "analytics.static_diagnostics",
-        [static_diagnostic_to_tuple(row) for row in diag_rows],
-        delete_params=[cfg.repo, cfg.commit],
-        scope=f"{cfg.repo}@{cfg.commit}",
-    )
-
-    log.info(
-        "Typedness & static diagnostics ingested for %d files in %s@%s",
-        len(path_set),
-        cfg.repo,
-        cfg.commit,
+        actual_modules,
+        tracker=tracker,
+        config=PipelineConfig(),
     )
 
 
-def ingest_typing_signals(
+# Backward compatibility: keep old function signature
+def ingest_typing_signals_legacy(
     gateway: StorageGateway,
     cfg: TypingIngestStepConfig,
     *,
@@ -424,54 +582,36 @@ def ingest_typing_signals(
     tracker: ChangeTracker | None = None,
 ) -> None:
     """
-    Populate per-file typedness and static diagnostics.
+    Legacy entry point for typing ingestion.
 
-      - analytics.typedness
-      - analytics.static_diagnostics
-
-    Notes
-    -----
-      * Pyrefly drives static error counts; annotation_ratio is computed from Python AST
-        (params & returns).
-    tracker :
-        Optional change tracker enabling incremental ingestion.
+    Deprecated: Use ingest_typing_signals() with explicit parameters instead.
     """
-    repo_root = cfg.repo_root
-    profile = code_profile or profile_from_env(default_code_profile(repo_root))
-    service = tool_service
-    if service is None:
-        tools_config: ToolsConfig
-        if isinstance(cfg.tool_runner, ToolRunner):
-            tools_config = cfg.tool_runner.tools_config
-            shared_runner = cfg.tool_runner
-        else:
-            tools_config = ToolsConfig.model_validate({})
-            shared_runner = ToolRunner(
-                tools_config=tools_config, cache_dir=repo_root / "build" / ".tool_cache"
-            )
-        service = ToolService(shared_runner, tools_config)
+    profile = code_profile or profile_from_env(default_code_profile(cfg.repo_root))
 
-    error_maps = asyncio.run(_collect_error_maps(repo_root, service))
-
-    if tracker is not None:
-        ops = TypingIngestOps(
-            cfg=cfg,
-            repo_root=repo_root,
-            error_maps=error_maps,
-        )
-        run_incremental_ingest(tracker, ops)
-        log.info(
-            "Typedness & static diagnostics ingested incrementally for %s@%s",
-            cfg.repo,
-            cfg.commit,
-        )
-        return
-
-    _ingest_typing_full(
-        gateway=gateway,
-        cfg=cfg,
-        profile=profile,
-        error_maps=error_maps,
+    module_map = load_module_map(
+        gateway,
+        cfg.repo,
+        cfg.commit,
+        language="python",
+        logger=log,
     )
 
-    return
+    modules = list(
+        iter_modules(
+            module_map,
+            cfg.repo_root,
+            logger=log,
+            scan_profile=profile,
+        )
+    )
+
+    ingest_typing_signals(
+        gateway,
+        modules,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        repo_root=cfg.repo_root,
+        code_profile=profile,
+        tool_service=tool_service,
+        tracker=tracker,
+    )

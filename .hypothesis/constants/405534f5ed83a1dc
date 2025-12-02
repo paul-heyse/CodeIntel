@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tools/coverage.py
+# hypothesis_version: 6.148.3
+
+['--quiet', '-o', 'coverage', 'coverage_bin', 'coverage_file', 'coverage_json', 'executed_lines', 'files', 'json', 'missing_lines', 'output_path', 'utf-8']

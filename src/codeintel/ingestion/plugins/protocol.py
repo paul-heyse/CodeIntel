@@ -113,6 +113,12 @@ class IngestPluginMetadata:
         Version hash for cache invalidation.
     config_schema_ref
         Reference to configuration schema.
+    config_class
+        Step config class to auto-build from context via harness.
+    config_mapping
+        Custom field mapping for config building (config_field -> context_attr).
+    harness_config
+        Harness configuration for automated error handling and row counting.
     """
 
     name: str
@@ -132,6 +138,10 @@ class IngestPluginMetadata:
     options_default: object | None = None
     version_hash: str | None = None
     config_schema_ref: str | None = None
+    # Harness integration fields
+    config_class: type | None = None
+    config_mapping: Mapping[str, str] | None = None
+    harness_config: object | None = None  # HarnessConfig, forward ref to avoid circular
 
 
 @dataclass
@@ -344,6 +354,82 @@ class IngestPluginContext:
             Path to the document output directory.
         """
         return self.paths.document_output_dir
+
+    def require_tracker(self) -> ChangeTracker:
+        """Return change tracker or raise if missing.
+
+        Use this when a tracker is required for plugin execution.
+
+        Returns
+        -------
+        ChangeTracker
+            The change tracker.
+
+        Raises
+        ------
+        RuntimeError
+            If change tracker is not available.
+        """
+        if self.change_tracker is not None:
+            return self.change_tracker
+
+        # Try to get from scratch (populated by repo_scan)
+        tracker = self.scratch.consume("change_tracker")
+        if tracker is not None:
+            from codeintel.ingestion.change_tracker import ChangeTracker
+
+            if isinstance(tracker, ChangeTracker):
+                return tracker
+
+        message = "Change tracker required but not available; run repo_scan first"
+        raise RuntimeError(message)
+
+    def tool_service_or_default(self) -> ToolService:
+        """Return tool service or construct a default.
+
+        Returns
+        -------
+        ToolService
+            Existing or newly constructed tool service.
+        """
+        if self.tool_service is not None:
+            return self.tool_service
+
+        from codeintel.ingestion.tool_runner import ToolRunner
+        from codeintel.ingestion.tool_service import ToolService
+
+        runner = self.tool_runner or ToolRunner(
+            cache_dir=self.paths.tool_cache,
+            tools_config=self.tools,
+        )
+        return ToolService(runner, self.tools)
+
+    def count_produced_tables(
+        self,
+        tables: tuple[str, ...],
+    ) -> Mapping[str, int]:
+        """Count rows in the specified tables.
+
+        Parameters
+        ----------
+        tables
+            Table names to count.
+
+        Returns
+        -------
+        Mapping[str, int]
+            Mapping of table names to row counts.
+        """
+        counts: dict[str, int] = {}
+        for table in tables:
+            try:
+                result = self.gateway.con.execute(
+                    f"SELECT COUNT(*) FROM {table}",  # noqa: S608
+                ).fetchone()
+                counts[table] = int(result[0]) if result else 0
+            except Exception:  # noqa: BLE001
+                counts[table] = 0
+        return counts
 
 
 @dataclass(frozen=True)

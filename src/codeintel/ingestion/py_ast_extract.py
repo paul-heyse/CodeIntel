@@ -5,23 +5,31 @@ from __future__ import annotations
 import ast
 import hashlib
 import logging
-import os
 from collections.abc import Iterable, Sequence
-from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, overload
 
-from codeintel.ingestion.change_tracker import (
-    ChangeTracker,
-    IncrementalIngestObserver,
-    IncrementalIngestOps,
-    run_incremental_ingest,
+from codeintel.ingestion.change_tracker import ChangeTracker
+from codeintel.ingestion.common import (
+    ModuleRecord,
+    iter_modules,
+    read_module_source,
+    run_batch,
 )
-from codeintel.ingestion.common import ModuleRecord, read_module_source, run_batch
-from codeintel.storage.gateway import StorageGateway
+from codeintel.ingestion.pipeline import (
+    IngestPipeline,
+    PipelineConfig,
+    PipelineResult,
+    execute_pipeline,
+)
+from codeintel.ingestion.workers import AST_WORKER_CONFIG, resolve_worker_count
+from codeintel.storage.module_index import load_module_map
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
-DEFAULT_MAX_WORKERS = 16
 
 
 @dataclass
@@ -299,76 +307,19 @@ def _collect_module_ast(record: ModuleRecord) -> AstIngestResult | None:
     return AstIngestResult(ast_rows=visitor.ast_rows, metric_row=_metric_row(visitor.metrics))
 
 
-def _resolve_worker_count(max_workers: int | None = None) -> int:
-    """
-    Resolve AST worker pool size.
-
-    Returns
-    -------
-    int
-        Worker count derived from environment, override, or CPU.
-    """
-    if max_workers is not None and max_workers > 0:
-        return max_workers
-
-    env_workers = os.getenv("CODEINTEL_AST_WORKERS")
-    if env_workers:
-        try:
-            value = int(env_workers)
-            if value > 0:
-                return value
-        except ValueError:
-            log.warning("Ignoring invalid CODEINTEL_AST_WORKERS=%s", env_workers)
-
-    cpu_count = os.cpu_count() or 1
-    return min(DEFAULT_MAX_WORKERS, max(2, cpu_count // 2))
-
-
-def _delete_existing_ast_rows(
-    gateway: StorageGateway,
-    *,
-    repo: str,
-    commit: str,
-    rel_paths: list[str],
-) -> None:
-    """Remove stale AST rows prior to incremental inserts."""
-    if rel_paths:
-        gateway.con.execute(
-            """
-            DELETE FROM core.ast_nodes
-            WHERE path IN (
-                SELECT path FROM core.modules
-                WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
-            )
-            """,
-            [repo, commit, rel_paths],
-        )
-        gateway.con.execute(
-            """
-            DELETE FROM core.ast_metrics
-            WHERE rel_path IN (
-                SELECT path FROM core.modules
-                WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
-            )
-            """,
-            [repo, commit, rel_paths],
-        )
-        return
-    run_batch(gateway, "core.ast_nodes", [], delete_params=[repo, commit])
-    run_batch(gateway, "core.ast_metrics", [], delete_params=[repo, commit])
-
-
-class AstIngestOps(IncrementalIngestOps[AstIngestResult]):
-    """Incremental ingest operations for AST nodes and metrics."""
-
-    dataset_name = "core.ast_nodes"
+class AstPipeline:
+    """Pipeline implementation for AST extraction."""
 
     def __init__(self, *, repo: str, commit: str) -> None:
-        self.repo = repo
-        self.commit = commit
+        self._repo = repo
+        self._commit = commit
 
-    @staticmethod
-    def module_filter(module: ModuleRecord) -> bool:
+    @property
+    def dataset_name(self) -> str:
+        """Return the dataset name for this pipeline."""
+        return "core.ast_nodes"
+
+    def module_filter(self, module: ModuleRecord) -> bool:
         """
         Determine whether AST extraction should process the module.
 
@@ -382,7 +333,72 @@ class AstIngestOps(IncrementalIngestOps[AstIngestResult]):
         bool
             True when the module maps to a Python source path.
         """
-        return module.rel_path.endswith(".py")
+        return module.rel_path.endswith(".py") and bool(self._repo)
+
+    def process_module(self, module: ModuleRecord) -> Iterable[AstIngestResult]:
+        """
+        Parse a module and emit AST nodes plus metrics.
+
+        Parameters
+        ----------
+        module
+            Module metadata describing the file to analyze.
+
+        Returns
+        -------
+        Iterable[AstIngestResult]
+            Collected AST rows and optional metrics (empty on failure).
+        """
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug(
+                "ast.process module=%s repo=%s commit=%s",
+                module.rel_path,
+                self._repo,
+                self._commit,
+            )
+        result = _collect_module_ast(module)
+        return [result] if result is not None else []
+
+    def persist_rows(self, gateway: StorageGateway, rows: Sequence[AstIngestResult]) -> int:
+        """
+        Insert serialized AST rows and metrics into DuckDB.
+
+        Parameters
+        ----------
+        gateway
+            Gateway whose connection receives batched inserts.
+        rows
+            Extraction results yielded from worker processes.
+
+        Returns
+        -------
+        int
+            Number of AST rows persisted.
+        """
+        ast_values: list[list[object]] = []
+        metric_values: list[list[object]] = []
+        for row in rows:
+            ast_values.extend(row.ast_rows)
+            if row.metric_row is not None:
+                metric_values.append(row.metric_row)
+
+        total = 0
+        if ast_values:
+            result = run_batch(gateway, "core.ast_nodes", ast_values, delete_params=None)
+            total += result.rows
+        if metric_values:
+            run_batch(gateway, "core.ast_metrics", metric_values, delete_params=None)
+
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug(
+                "ast.persist repo=%s commit=%s rows=%d metrics=%d",
+                self._repo,
+                self._commit,
+                len(ast_values),
+                len(metric_values),
+            )
+
+        return total
 
     def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
         """
@@ -397,79 +413,136 @@ class AstIngestOps(IncrementalIngestOps[AstIngestResult]):
         """
         if not rel_paths:
             return
-        _delete_existing_ast_rows(
-            gateway,
-            repo=self.repo,
-            commit=self.commit,
-            rel_paths=list(rel_paths),
+        gateway.con.execute(
+            """
+            DELETE FROM core.ast_nodes
+            WHERE path IN (
+                SELECT path FROM core.modules
+                WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
+            )
+            """,
+            [self._repo, self._commit, list(rel_paths)],
+        )
+        gateway.con.execute(
+            """
+            DELETE FROM core.ast_metrics
+            WHERE rel_path IN (
+                SELECT path FROM core.modules
+                WHERE repo = ? AND commit = ? AND path IN (SELECT * FROM UNNEST(?))
+            )
+            """,
+            [self._repo, self._commit, list(rel_paths)],
         )
 
-    @staticmethod
-    def process_module(module: ModuleRecord) -> Iterable[AstIngestResult]:
-        """
-        Parse a module and emit AST nodes plus metrics.
 
-        Parameters
-        ----------
-        module
-            Module metadata describing the file to analyze.
-
-        Returns
-        -------
-        list[AstIngestResult]
-            Collected AST rows and optional metrics (empty on failure).
-        """
-        result = _collect_module_ast(module)
-        return [result] if result is not None else []
-
-    @staticmethod
-    def insert_rows(gateway: StorageGateway, rows: Sequence[AstIngestResult]) -> None:
-        """
-        Insert serialized AST rows and metrics into DuckDB.
-
-        Parameters
-        ----------
-        gateway
-            Gateway whose connection receives batched inserts.
-        rows
-            Extraction results yielded from worker processes.
-        """
-        ast_values: list[list[object]] = []
-        metric_values: list[list[object]] = []
-        for row in rows:
-            ast_values.extend(row.ast_rows)
-            if row.metric_row is not None:
-                metric_values.append(row.metric_row)
-        if ast_values:
-            run_batch(gateway, "core.ast_nodes", ast_values, delete_params=None)
-        if metric_values:
-            run_batch(gateway, "core.ast_metrics", metric_values, delete_params=None)
+# Type assertion that AstPipeline implements IngestPipeline
+_: type[IngestPipeline[AstIngestResult]] = AstPipeline
 
 
+@overload
 def ingest_python_ast(
     tracker: ChangeTracker,
     *,
     max_workers: int | None = None,
-    observer: IncrementalIngestObserver | None = None,
+) -> PipelineResult: ...
+
+
+@overload
+def ingest_python_ast(
+    gateway: StorageGateway,
+    modules: Sequence[ModuleRecord],
+    *,
+    repo: str,
+    commit: str,
+    tracker: ChangeTracker | None = None,
+    max_workers: int | None = None,
+) -> PipelineResult: ...
+
+
+def ingest_python_ast(
+    gateway_or_tracker: StorageGateway | ChangeTracker,
+    modules: Sequence[ModuleRecord] | None = None,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+    tracker: ChangeTracker | None = None,
+    max_workers: int | None = None,
+) -> PipelineResult:
+    """
+    Parse modules using the stdlib ast and populate tables.
+
+    Supports both the new API (gateway + modules) and legacy tracker-only calls.
+
+    Returns
+    -------
+    PipelineResult
+        Execution result including counts and duration.
+
+    Raises
+    ------
+    ValueError
+        If modules, repo, or commit are missing.
+    """
+    # Legacy tracker-only invocation
+    if isinstance(gateway_or_tracker, ChangeTracker):
+        tracker = gateway_or_tracker
+
+        module_map = load_module_map(
+            tracker.gateway,
+            tracker.change_request.repo,
+            tracker.change_request.commit,
+            language="python",
+            logger=log,
+        )
+
+        modules = list(
+            iter_modules(
+                module_map,
+                tracker.change_request.repo_root,
+                logger=log,
+                scan_profile=tracker.change_request.scan_profile,
+            )
+        )
+        gateway = tracker.gateway
+        repo = tracker.change_request.repo
+        commit = tracker.change_request.commit
+    else:
+        gateway = gateway_or_tracker
+
+    if modules is None or repo is None or commit is None:
+        message = "modules, repo, and commit are required for AST ingestion"
+        raise ValueError(message)
+
+    workers = resolve_worker_count(
+        AST_WORKER_CONFIG.env_var,
+        explicit_count=max_workers,
+        default_max=AST_WORKER_CONFIG.default_max,
+    )
+
+    pipeline = AstPipeline(repo=repo, commit=commit)
+    config = PipelineConfig(
+        worker_config=AST_WORKER_CONFIG,
+        max_workers=workers,
+    )
+
+    return execute_pipeline(
+        pipeline,
+        gateway,
+        modules,
+        tracker=tracker,
+        config=config,
+    )
+
+
+# Backward compatibility: keep old function signature
+def ingest_python_ast_legacy(
+    tracker: ChangeTracker,
+    *,
+    max_workers: int | None = None,
 ) -> None:
     """
-    Parse modules listed in core.modules using the stdlib ast and populate tables.
+    Legacy entry point for AST ingestion.
 
-    When an observer is provided, it will be invoked with (dataset_name, view) before any rows
-    are deleted or inserted, allowing the caller to record view-level metrics.
+    Deprecated: Use ingest_python_ast() with explicit parameters instead.
     """
-    worker_count = _resolve_worker_count(max_workers)
-    ops = AstIngestOps(
-        repo=tracker.change_request.repo,
-        commit=tracker.change_request.commit,
-    )
-
-    def _executor_factory() -> ProcessPoolExecutor:
-        return ProcessPoolExecutor(max_workers=worker_count)
-
-    run_incremental_ingest(
-        tracker,
-        ops,
-        executor_factory=_executor_factory,
-        observer=observer,
-    )
+    ingest_python_ast(tracker, max_workers=max_workers)

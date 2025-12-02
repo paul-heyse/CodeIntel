@@ -247,7 +247,14 @@ class GraphPlanSkipped(BaseModel):
     """Skipped plugin entry returned by plan endpoint."""
 
     name: str
-    reason: Literal["disabled"]
+    reason: Literal[
+        "disabled",
+        "missing_dependency",
+        "missing_graph",
+        "config_error",
+        "incremental_skip",
+        "unchanged",
+    ]
 
 
 class GraphPlanPluginMetadata(BaseModel):

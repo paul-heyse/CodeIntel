@@ -1,7 +1,16 @@
-"""Adapters between graph runtime reports and the generic analytics manifest."""
+"""Adapters between graph runtime reports and the generic analytics manifest.
+
+.. deprecated::
+    This module is deprecated. Use the new graph plugin architecture in
+    ``codeintel.graphs.runtime`` which provides standalone execution
+    infrastructure without analytics coupling.
+
+    See GRAPH_DECOUPLING_OVERVIEW.md for migration details.
+"""
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal, cast
 
 from codeintel.analytics.graphs.contracts import PluginContractResult
@@ -19,6 +28,15 @@ from codeintel.analytics.runtime_manifest import (
     AnalyticsStatus,
 )
 from codeintel.config.steps_graphs import GraphRunScope
+
+# Emit runtime deprecation warning
+warnings.warn(
+    "codeintel.analytics.graphs.runtime.analytics_adapter is deprecated. "
+    "Use codeintel.graphs.runtime instead. "
+    "See GRAPH_DECOUPLING_OVERVIEW.md for migration details.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 def _parse_contracts(meta: dict[str, object]) -> tuple[PluginContractResult, ...]:
