@@ -17,7 +17,7 @@ from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 from codeintel.ingestion.repo_scan import ingest_repo
-from codeintel.ingestion.tool_runner import ToolName, ToolRunner
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolName, ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
 from codeintel.storage.gateway import DuckDBConnection, StorageConfig, StorageGateway, open_gateway

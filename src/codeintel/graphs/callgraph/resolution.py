@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, cast
 import libcst as cst
 from libcst import helpers
 
-from codeintel.ingestion.paths import normalize_rel_path
+from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionSpanIndex

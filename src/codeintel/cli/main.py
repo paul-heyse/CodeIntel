@@ -43,12 +43,12 @@ from codeintel.ingestion.recipes import (
     recipe,
     stage,
 )
-from codeintel.ingestion.source_scanner import (
+from codeintel.ingestion.infrastructure_utilities.source_scanner import (
     default_code_profile,
     default_config_profile,
     profile_from_env,
 )
-from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import (

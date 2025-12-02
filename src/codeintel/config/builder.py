@@ -72,7 +72,7 @@ if TYPE_CHECKING:
     )
     from codeintel.config.parser_types import FunctionParserKind
     from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
-    from codeintel.ingestion.source_scanner import ScanProfile
+    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 
 
 @dataclass

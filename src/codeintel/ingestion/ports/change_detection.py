@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
     from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.ingestion.source_scanner import ScanProfile
 
 
 @dataclass(frozen=True)

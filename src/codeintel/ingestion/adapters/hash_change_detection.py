@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.paths import normalize_rel_path
+from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 from codeintel.ingestion.ports.change_detection import (
     ChangeRequest,
     ChangeSet,

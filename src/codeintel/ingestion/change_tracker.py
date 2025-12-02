@@ -1,4 +1,8 @@
-"""Shared change tracking and incremental ingest harness."""
+"""Shared change tracking and incremental ingest harness.
+
+This module provides unified change tracking for incremental ingestion,
+supporting both the new port-adapter architecture and legacy fallback.
+"""
 
 from __future__ import annotations
 
@@ -6,10 +10,16 @@ import logging
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import Executor
 from dataclasses import dataclass, replace
-from typing import NamedTuple, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, NamedTuple, Protocol, TypeVar, runtime_checkable
 
-from codeintel.ingestion.common import ChangeRequest, ChangeSet, ModuleRecord, compute_changes
-from codeintel.storage.gateway import StorageGateway
+from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
+from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
+from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
+from codeintel.ingestion.ports.discovery import ModuleRecord
+
+if TYPE_CHECKING:
+    from codeintel.ingestion.ports.change_detection import ChangeDetectionPort
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +34,21 @@ IncrementalIngestObserver = Callable[
 
 @dataclass(frozen=True)
 class IncrementalIngestPolicy:
-    """Tuning knobs for incremental ingestion."""
+    """Tuning knobs for incremental ingestion.
+
+    Attributes
+    ----------
+    max_changed_ratio
+        Maximum ratio of changed modules before triggering full rebuild.
+    max_deleted_ratio
+        Maximum ratio of deleted modules before triggering full rebuild.
+    min_total_modules_for_ratio
+        Minimum module count before applying ratio thresholds.
+    log_every
+        Progress logging interval.
+    flush_every
+        Batch flush interval.
+    """
 
     max_changed_ratio: float = 0.7
     max_deleted_ratio: float = 0.7
@@ -34,7 +58,23 @@ class IncrementalIngestPolicy:
 
 
 class ChangeTrackerDatasetView(NamedTuple):
-    """Per-dataset view of modules to reparse and rows to delete."""
+    """Per-dataset view of modules to reparse and rows to delete.
+
+    Attributes
+    ----------
+    to_reparse
+        Modules that need processing.
+    deleted_paths
+        Paths of deleted modules.
+    total_modules_considered
+        Total modules in scope.
+    changed_modules_count
+        Number of changed modules.
+    deleted_modules_count
+        Number of deleted modules.
+    use_full_rebuild
+        Whether full rebuild mode is active.
+    """
 
     to_reparse: list[ModuleRecord]
     deleted_paths: list[str]
@@ -46,7 +86,24 @@ class ChangeTrackerDatasetView(NamedTuple):
 
 @dataclass
 class ChangeTracker:
-    """Single source of truth for change detection across ingest steps."""
+    """Single source of truth for change detection across ingest steps.
+
+    This class uses the port-adapter architecture for change detection,
+    supporting both explicit port injection and automatic adapter creation.
+
+    Attributes
+    ----------
+    gateway
+        Storage gateway for database access.
+    change_request
+        The request parameters used for change detection.
+    modules
+        All modules considered for this snapshot.
+    change_set
+        Computed changes (added, modified, deleted).
+    policy
+        Policy tuning for incremental behavior.
+    """
 
     gateway: StorageGateway
     change_request: ChangeRequest
@@ -61,9 +118,23 @@ class ChangeTracker:
         change_request: ChangeRequest,
         modules: Sequence[ModuleRecord],
         policy: IncrementalIngestPolicy | None = None,
+        *,
+        change_detection: ChangeDetectionPort | None = None,
     ) -> ChangeTracker:
-        """
-        Build a change tracker with a computed change set.
+        """Build a change tracker with a computed change set.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        change_request
+            Change detection request parameters.
+        modules
+            Modules to track changes for.
+        policy
+            Optional policy for incremental behavior.
+        change_detection
+            Optional change detection port (creates one if not provided).
 
         Returns
         -------
@@ -73,7 +144,14 @@ class ChangeTracker:
         effective_policy = policy or IncrementalIngestPolicy()
         request_modules = change_request.modules or tuple(modules)
         request = replace(change_request, modules=request_modules)
-        change_set = compute_changes(gateway, request)
+
+        # Use provided port or create default adapter
+        if change_detection is None:
+            storage = DuckDBStorageAdapter(gateway)
+            change_detection = HashChangeDetectionAdapter(storage)
+
+        change_set = change_detection.compute_changes(request, list(modules))
+
         return cls(
             gateway=gateway,
             change_request=request,
@@ -88,8 +166,14 @@ class ChangeTracker:
         dataset_name: str,
         module_filter: ModuleFilter | None = None,
     ) -> ChangeTrackerDatasetView:
-        """
-        Compute dataset-scoped changes with full rebuild policy applied.
+        """Compute dataset-scoped changes with full rebuild policy applied.
+
+        Parameters
+        ----------
+        dataset_name
+            Name of the dataset for logging.
+        module_filter
+            Optional filter for relevant modules.
 
         Returns
         -------
@@ -151,26 +235,70 @@ class ChangeTracker:
 
 @runtime_checkable
 class IncrementalIngestOps(Protocol[RowT]):
-    """Operations required to incrementally ingest a dataset."""
+    """Operations required to incrementally ingest a dataset.
+
+    Attributes
+    ----------
+    dataset_name
+        Name of the dataset for logging.
+    """
 
     dataset_name: str
 
     @staticmethod
     def module_filter(module: ModuleRecord) -> bool:
-        """Return True when a module should be considered for this dataset."""
+        """Return True when a module should be considered for this dataset.
+
+        Parameters
+        ----------
+        module
+            Module to evaluate.
+
+        Returns
+        -------
+        bool
+            True if module is relevant.
+        """
         ...
 
     def delete_rows(self, gateway: StorageGateway, rel_paths: Sequence[str]) -> None:
-        """Remove rows corresponding to the provided relative paths."""
+        """Remove rows corresponding to the provided relative paths.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        rel_paths
+            Paths to delete.
+        """
         ...
 
     @staticmethod
     def process_module(module: ModuleRecord) -> Iterable[RowT]:
-        """Generate rows for a single module."""
+        """Generate rows for a single module.
+
+        Parameters
+        ----------
+        module
+            Module to process.
+
+        Returns
+        -------
+        Iterable[RowT]
+            Generated rows.
+        """
         ...
 
     def insert_rows(self, gateway: StorageGateway, rows: Sequence[RowT]) -> None:
-        """Persist generated rows to the target dataset."""
+        """Persist generated rows to the target dataset.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        rows
+            Rows to insert.
+        """
         ...
 
 
@@ -179,7 +307,18 @@ class SupportsFullRebuild(Protocol):
     """Optional hook for datasets that need a specialized full rebuild path."""
 
     def run_full_rebuild(self, tracker: ChangeTracker) -> bool:
-        """Return True when the full rebuild was handled and no further work is needed."""
+        """Execute a full rebuild of the dataset.
+
+        Parameters
+        ----------
+        tracker
+            Change tracker with context.
+
+        Returns
+        -------
+        bool
+            True when the full rebuild was handled and no further work is needed.
+        """
         ...
 
 
@@ -207,8 +346,7 @@ def _handle_full_rebuild[RowT](
     tracker: ChangeTracker,
     ops: IncrementalIngestOps[RowT],
 ) -> bool:
-    """
-    Handle optional full rebuild hook and indicate whether processing should stop.
+    """Handle optional full rebuild hook and indicate whether processing should stop.
 
     Returns
     -------
@@ -247,8 +385,7 @@ def _process_rows[RowT](
     ops: IncrementalIngestOps[RowT],
     executor_factory: ExecutorFactory | None,
 ) -> list[RowT]:
-    """
-    Generate rows for modules marked for reparse.
+    """Generate rows for modules marked for reparse.
 
     Returns
     -------
@@ -273,8 +410,7 @@ def run_incremental_ingest[RowT](
     executor_factory: ExecutorFactory | None = None,
     observer: IncrementalIngestObserver | None = None,
 ) -> None:
-    """
-    Shared driver for per-module ingestion using a precomputed change tracker.
+    """Execute incremental ingestion using a precomputed change tracker.
 
     Parameters
     ----------
@@ -285,8 +421,8 @@ def run_incremental_ingest[RowT](
     executor_factory
         Optional factory yielding an Executor for parallel processing.
     observer
-        Optional callback invoked with (dataset_name, view) before any rows are deleted or
-        inserted. This is ideal for recording metrics.
+        Optional callback invoked with (dataset_name, view) before any rows are
+        deleted or inserted. This is ideal for recording metrics.
     """
     view = tracker.view_for_dataset(dataset_name=ops.dataset_name, module_filter=ops.module_filter)
 
@@ -315,3 +451,13 @@ def run_incremental_ingest[RowT](
         return
 
     ops.insert_rows(tracker.gateway, rows)
+
+
+__all__ = [
+    "ChangeTracker",
+    "ChangeTrackerDatasetView",
+    "IncrementalIngestOps",
+    "IncrementalIngestPolicy",
+    "SupportsFullRebuild",
+    "run_incremental_ingest",
+]

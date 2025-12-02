@@ -21,9 +21,9 @@ if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.ingestion.change_tracker import ChangeTracker
+    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+    from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
     from codeintel.ingestion.ingest_runs import IngestRun, IngestRunSink
-    from codeintel.ingestion.source_scanner import ScanProfile
-    from codeintel.ingestion.tool_runner import ToolRunner
     from codeintel.ingestion.tool_service import ToolService
     from codeintel.storage.gateway import StorageGateway
 
@@ -395,7 +395,7 @@ class IngestPluginContext:
         if self.tool_service is not None:
             return self.tool_service
 
-        from codeintel.ingestion.tool_runner import ToolRunner
+        from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
         from codeintel.ingestion.tool_service import ToolService
 
         runner = self.tool_runner or ToolRunner(

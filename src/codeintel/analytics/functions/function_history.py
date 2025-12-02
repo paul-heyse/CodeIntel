@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_history
 from codeintel.config import FunctionHistoryStepConfig
-from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

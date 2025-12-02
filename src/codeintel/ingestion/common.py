@@ -14,19 +14,18 @@ import logging
 import os
 import time
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
 
 # Re-export types from ports for backward compatibility
+from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.ports.storage import BatchResult
 
 if TYPE_CHECKING:
-    from codeintel.config import SnapshotRef
-    from codeintel.ingestion.source_scanner import ScanProfile
+    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -34,94 +33,31 @@ log = logging.getLogger(__name__)
 # Progress logging cadence defaults
 PROGRESS_LOG_INTERVAL = 5.0
 PROGRESS_LOG_EVERY = 50
-FileStateRow = tuple[str, str, str, str, int, int, str]
 
 
 class ChangeLogFileHandler(logging.FileHandler):
-    """File handler tagged for change-detection logging."""
+    """File handler tagged for change-detection logging.
+
+    Attributes
+    ----------
+    codeintel_change_log
+        Flag indicating this is a change log handler.
+    """
 
     codeintel_change_log: bool
     _codeintel_change_log: bool
 
     def __init__(self, filename: str) -> None:
-        super().__init__(filename, encoding="utf-8")
-        self.codeintel_change_log = True
-        self._codeintel_change_log = True
-
-
-@dataclass(frozen=True)
-class ChangeSet:
-    """Added/modified/deleted modules detected for an ingest cycle."""
-
-    added: list[ModuleRecord]
-    modified: list[ModuleRecord]
-    deleted: list[ModuleRecord]
-
-
-@dataclass(frozen=True)
-class ChangeSummary:
-    """Aggregated change metadata for structured logging."""
-
-    previous_count: int
-    matched_count: int
-    added: Sequence[ModuleRecord]
-    modified_details: Sequence[tuple[str, str, str]]
-    deleted: Sequence[ModuleRecord]
-
-
-@dataclass(frozen=True)
-class ChangeRequest:
-    """Inputs required to compute a change set."""
-
-    repo: str
-    commit: str
-    repo_root: Path
-    language: str = "python"
-    full_rebuild: bool = False
-    scan_profile: ScanProfile | None = None
-    modules: Sequence[ModuleRecord] | None = None
-    logger: logging.Logger | None = None
-
-    @classmethod
-    def from_snapshot(
-        cls,
-        snapshot: SnapshotRef,
-        *,
-        scan_profile: ScanProfile,
-        full_rebuild: bool = False,
-        modules: Sequence[ModuleRecord] | None = None,
-        logger: logging.Logger | None = None,
-    ) -> ChangeRequest:
-        """Build a ChangeRequest using a normalized snapshot configuration.
+        """Initialize the handler.
 
         Parameters
         ----------
-        snapshot
-            Snapshot describing repo root, slug, and commit.
-        scan_profile
-            Scan profile controlling source discovery.
-        full_rebuild
-            Whether to force a full ingest instead of incremental mode.
-        modules
-            Optional explicit module list to override filesystem scanning.
-        logger
-            Optional logger used for change-detection diagnostics.
-
-        Returns
-        -------
-        ChangeRequest
-            Normalized request bound to the provided snapshot.
+        filename
+            Path to log file.
         """
-        return cls(
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            repo_root=snapshot.repo_root,
-            language="python",
-            full_rebuild=full_rebuild,
-            scan_profile=scan_profile,
-            modules=modules,
-            logger=logger,
-        )
+        super().__init__(filename, encoding="utf-8")
+        self.codeintel_change_log = True
+        self._codeintel_change_log = True
 
 
 def log_progress(op: str, *, scope: str, table: str, rows: int, duration_s: float) -> None:
@@ -397,274 +333,19 @@ def should_skip_missing_file(
     return True
 
 
-# =============================================================================
-# Legacy change detection functions
-# =============================================================================
-# These functions are kept for backward compatibility with change_tracker.py.
-# They will be migrated to use ChangeDetectionPort in Phase 6 of the migration.
-
-import hashlib  # noqa: E402
-
-from codeintel.ingestion.ingest_service import ensure_schema, ingest_via_macro  # noqa: E402
-from codeintel.ingestion.paths import normalize_rel_path  # noqa: E402
-from codeintel.storage.module_index import load_module_map  # noqa: E402
-
-
-def _file_digest(path: Path) -> tuple[int, int, str]:
-    """Compute a stable digest for a file.
-
-    Returns
-    -------
-    tuple[int, int, str]
-        Size in bytes, mtime in nanoseconds, and a blake2b hex digest.
-    """
-    stat_result = path.stat()
-    digest = hashlib.blake2b(path.read_bytes(), digest_size=16).hexdigest()
-    return stat_result.st_size, stat_result.st_mtime_ns, digest
-
-
-def _build_current_state(
-    records: Sequence[ModuleRecord],
-    *,
-    logger: logging.Logger,
-) -> dict[str, tuple[ModuleRecord, int, int, str]]:
-    """Compute file digests for the provided records.
-
-    Returns
-    -------
-    dict[str, tuple[ModuleRecord, int, int, str]]
-        Mapping of normalized rel_path to (record, size, mtime_ns, digest).
-    """
-    current: dict[str, tuple[ModuleRecord, int, int, str]] = {}
-    for record in records:
-        try:
-            size, mtime_ns, digest = _file_digest(record.file_path)
-        except OSError as exc:
-            logger.warning("Failed to stat %s: %s", record.file_path, exc)
-            continue
-        normalized_rel = normalize_rel_path(record.rel_path)
-        current[normalized_rel] = (record, size, mtime_ns, digest)
-    return current
-
-
-def _load_previous_state(
-    gateway: StorageGateway,
-    request: ChangeRequest,
-    *,
-    logger: logging.Logger,
-) -> dict[str, tuple[int, int, str]]:
-    """Load the most recent file_state rows for the request.
-
-    Returns
-    -------
-    dict[str, tuple[int, int, str]]
-        Mapping of normalized rel_path to (size, mtime_ns, digest).
-    """
-    ensure_schema(gateway.con, "core.file_state")
-    rows = gateway.con.execute(
-        """
-        WITH ranked AS (
-            SELECT
-                rel_path,
-                size_bytes,
-                mtime_ns,
-                content_hash,
-                ROW_NUMBER() OVER (PARTITION BY rel_path ORDER BY mtime_ns DESC) AS rn
-            FROM core.file_state
-            WHERE repo = ? AND language = ?
-        )
-        SELECT rel_path, size_bytes, mtime_ns, content_hash
-        FROM ranked
-        WHERE rn = 1
-        """,
-        [request.repo, request.language],
-    ).fetchall()
-    previous = {
-        normalize_rel_path(str(rel_path)): (int(size), int(mtime_ns), str(content_hash))
-        for rel_path, size, mtime_ns, content_hash in rows
-    }
-    if not previous:
-        logger.info("No previous file_state rows found for %s@%s", request.repo, request.commit)
-    return previous
-
-
-def _diff_states(
-    current: dict[str, tuple[ModuleRecord, int, int, str]],
-    previous: dict[str, tuple[int, int, str]],
-    request: ChangeRequest,
-    module_map: dict[str, str],
-) -> tuple[list[ModuleRecord], list[ModuleRecord], list[tuple[str, str, str]], list[ModuleRecord]]:
-    """Compute added, modified, and deleted modules between snapshots.
-
-    Returns
-    -------
-    tuple[list[ModuleRecord], list[ModuleRecord], list[tuple[str, str, str]], list[ModuleRecord]]
-        Added modules, modified modules, modified detail tuples, and deleted modules.
-    """
-    added: list[ModuleRecord] = []
-    modified: list[ModuleRecord] = []
-    modified_details: list[tuple[str, str, str]] = []
-    for rel_path, (record, _size, _mtime_ns, digest) in current.items():
-        old = previous.get(rel_path)
-        if old is None:
-            added.append(record)
-        elif old[2] != digest:
-            modified.append(record)
-            modified_details.append((rel_path, old[2], digest))
-
-    deleted: list[ModuleRecord] = [
-        ModuleRecord(
-            rel_path=rel_path,
-            module_name=module_map.get(rel_path, "<deleted>"),
-            file_path=request.repo_root / rel_path,
-            index=0,
-            total=0,
-        )
-        for rel_path in previous.keys() - current.keys()
-    ]
-    return added, modified, modified_details, deleted
-
-
-def _upsert_file_state(
-    gateway: StorageGateway,
-    request: ChangeRequest,
-    file_state_rows: Sequence[FileStateRow],
-) -> None:
-    """Replace file_state rows for provided rel_paths."""
-    ensure_schema(gateway.con, "core.file_state")
-    if not file_state_rows:
-        return
-    rel_paths = [row[2] for row in file_state_rows]
-    delete_params = [(request.repo, rel_path, request.language) for rel_path in rel_paths]
-    gateway.con.executemany(
-        "DELETE FROM core.file_state WHERE repo = ? AND rel_path = ? AND language = ?",
-        delete_params,
-    )
-    ingest_via_macro(gateway.con, "core.file_state", file_state_rows)
-
-
-def _log_change_details(request: ChangeRequest, summary: ChangeSummary) -> None:
-    """Persist change detection details to the configured change logger."""
-    logger = _get_change_logger()
-    logger.info(
-        "compute_changes repo=%s lang=%s prev_rows=%d matched=%d added=%d modified=%d deleted=%d",
-        request.repo,
-        request.language,
-        summary.previous_count,
-        summary.matched_count,
-        len(summary.added),
-        len(summary.modified_details),
-        len(summary.deleted),
-    )
-    max_samples = 20
-    if summary.added:
-        logger.info(
-            "added_paths (first %d of %d): %s",
-            max_samples,
-            len(summary.added),
-            [record.rel_path for record in summary.added[:max_samples]],
-        )
-    if summary.modified_details:
-        logger.info(
-            "modified_paths (first %d of %d): %s",
-            max_samples,
-            len(summary.modified_details),
-            [
-                f"{rel} {old_hash}->{new_hash}"
-                for rel, old_hash, new_hash in summary.modified_details[:max_samples]
-            ],
-        )
-    if summary.deleted:
-        logger.info(
-            "deleted_paths (first %d of %d): %s",
-            max_samples,
-            len(summary.deleted),
-            [record.rel_path for record in summary.deleted[:max_samples]],
-        )
-
-
-def compute_changes(
-    gateway: StorageGateway,
-    request: ChangeRequest,
-) -> ChangeSet:
-    """Detect added/modified/deleted modules and refresh core.file_state.
-
-    This function always updates the file_state snapshot for the provided
-    repo/commit/language so subsequent runs compare against the latest state.
-
-    Returns
-    -------
-    ChangeSet
-        Detected additions, modifications, and deletions.
-    """
-    active_log = request.logger or log
-    module_map = (
-        {record.rel_path: record.module_name for record in request.modules}
-        if request.modules is not None
-        else load_module_map(
-            gateway,
-            request.repo,
-            request.commit,
-            language=request.language,
-            logger=active_log,
-        )
-    )
-    if should_skip_empty(module_map, logger=active_log):
-        return ChangeSet(added=[], modified=[], deleted=[])
-
-    records: Sequence[ModuleRecord]
-    if request.modules is not None:
-        records = request.modules
-    else:
-        records = tuple(
-            iter_modules(
-                module_map,
-                request.repo_root,
-                logger=active_log,
-                scan_profile=request.scan_profile,
-            )
-        )
-
-    current = _build_current_state(records, logger=active_log)
-    previous = _load_previous_state(gateway, request, logger=active_log)
-    added, modified, modified_details, deleted = _diff_states(
-        current,
-        previous,
-        request,
-        module_map,
-    )
-
-    file_state_rows: list[FileStateRow] = [
-        (
-            request.repo,
-            request.commit,
-            rel_path,
-            request.language,
-            size,
-            mtime_ns,
-            digest,
-        )
-        for rel_path, (_, size, mtime_ns, digest) in sorted(current.items())
-    ]
-    _upsert_file_state(gateway, request, file_state_rows)
-    matched_count = sum(1 for rel in current if rel in previous)
-    summary = ChangeSummary(
-        previous_count=len(previous),
-        matched_count=matched_count,
-        added=added,
-        modified_details=modified_details,
-        deleted=deleted,
-    )
-    change_set = ChangeSet(added=added, modified=modified, deleted=deleted)
-    active_log.info(
-        "compute_changes repo=%s lang=%s prev_rows=%d matched=%d added=%d modified=%d deleted=%d",
-        request.repo,
-        request.language,
-        summary.previous_count,
-        summary.matched_count,
-        len(change_set.added),
-        len(change_set.modified),
-        len(change_set.deleted),
-    )
-    _log_change_details(request, summary)
-    return change_set
+__all__ = [
+    "PROGRESS_LOG_EVERY",
+    "PROGRESS_LOG_INTERVAL",
+    "BatchResult",
+    "ChangeLogFileHandler",
+    "ChangeRequest",
+    "ChangeSet",
+    "ModuleRecord",
+    "insert_relation",
+    "iter_modules",
+    "log_progress",
+    "read_module_source",
+    "run_batch",
+    "should_skip_empty",
+    "should_skip_missing_file",
+]

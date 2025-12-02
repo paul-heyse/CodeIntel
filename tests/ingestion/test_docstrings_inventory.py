@@ -10,7 +10,7 @@ from codeintel.config import DocstringStepConfig, RepoScanStepConfig, SnapshotRe
 from codeintel.config.primitives import BuildPaths
 from codeintel.ingestion.docstrings_ingest import ingest_docstrings
 from codeintel.ingestion.repo_scan import ingest_repo
-from codeintel.ingestion.source_scanner import ScanProfile, default_code_profile
+from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile, default_code_profile
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 

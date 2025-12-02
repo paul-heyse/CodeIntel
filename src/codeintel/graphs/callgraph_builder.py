@@ -41,7 +41,7 @@ from codeintel.graphs.catalog import (
     FunctionSpan,
 )
 from codeintel.ingestion.common import run_batch
-from codeintel.ingestion.paths import normalize_rel_path, relpath_to_module
+from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)

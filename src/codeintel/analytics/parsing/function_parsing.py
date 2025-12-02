@@ -10,7 +10,7 @@ from typing import Any
 from codeintel.analytics.parsing.models import ParsedFunction, ParsedModule, SourceSpan
 from codeintel.analytics.parsing.registry import register_parser
 from codeintel.config.parser_types import FunctionParserKind
-from codeintel.ingestion.ast_utils import AstSpanIndex
+from codeintel.ingestion.infrastructure_utilities.ast_utils import AstSpanIndex
 
 
 def _qualname(parts: list[str], name: str) -> str:

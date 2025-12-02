@@ -20,13 +20,13 @@ from codeintel.config.models import ToolsConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig
 from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
-from codeintel.ingestion.source_scanner import (
+from codeintel.ingestion.infrastructure_utilities.source_scanner import (
     ScanProfile,
     default_code_profile,
     default_config_profile,
     profile_from_env,
 )
-from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions, ExportRunner, run_validated_exports

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from codeintel.ingestion.ports.change_detection import (
     ChangeDetectionPort,
+    ChangeRequest,
     ChangeSet,
     FileDigest,
 )
@@ -38,10 +39,9 @@ from codeintel.ingestion.ports.tools import (
 )
 
 __all__ = [
-    # Storage port
     "BatchResult",
     "ChangeDetectionPort",
-    # Change detection port
+    "ChangeRequest",
     "ChangeSet",
     "CoverageFileData",
     "CoverageResult",
@@ -49,11 +49,9 @@ __all__ = [
     "FileDigest",
     "IngestStoragePort",
     "IngestToolPort",
-    # Discovery port
     "ModuleDiscoveryPort",
     "ModuleRecord",
     "QueryResult",
     "ScipResult",
-    # Tools port
     "TestResult",
 ]

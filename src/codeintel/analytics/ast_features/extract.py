@@ -13,7 +13,7 @@ from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
 from codeintel.analytics.ast_utils import CallTarget, resolve_call_target, safe_unparse
 from codeintel.analytics.function_ast_cache import FunctionAst
-from codeintel.ingestion.ast_utils import parse_python_module
+from codeintel.ingestion.infrastructure_utilities.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
     from codeintel.analytics.context import AnalyticsContextConfig

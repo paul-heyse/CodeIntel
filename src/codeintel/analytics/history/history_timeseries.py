@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import SupportsFloat, SupportsIndex
 
 from codeintel.config import HistoryTimeseriesStepConfig
-from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.storage.gateway import (
     DuckDBConnection,
     SnapshotGatewayResolver,

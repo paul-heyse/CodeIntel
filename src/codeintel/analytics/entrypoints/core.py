@@ -28,13 +28,13 @@ from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
 from codeintel.config import EntryPointsStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.common import iter_modules, read_module_source
-from codeintel.ingestion.paths import normalize_rel_path
+from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
-    from codeintel.ingestion.source_scanner import ScanProfile
+    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 
 log = logging.getLogger(__name__)
 

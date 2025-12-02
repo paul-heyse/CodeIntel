@@ -30,6 +30,7 @@ from codeintel.analytics.recipes.model import (
     RecipeScope,
 )
 from codeintel.analytics.recipes.registry import RecipeRegistry, get_recipe_registry
+from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime_manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
@@ -56,6 +57,8 @@ class RecipeExecutionContext:
         Execution scope constraints.
     config_overrides
         Per-plugin configuration overrides.
+    resources
+        Resource registry for lazy resource loading.
     graph_runtime
         Optional graph runtime for graph-aware plugins.
     catalog_provider
@@ -70,6 +73,7 @@ class RecipeExecutionContext:
     snapshot: SnapshotRef
     scope: RecipeScope = field(default_factory=RecipeScope)
     config_overrides: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    resources: ResourceRegistry = field(default_factory=ResourceRegistry)
     graph_runtime: GraphRuntime | None = None
     catalog_provider: FunctionCatalogProvider | None = None
     analytics_context: AnalyticsContext | None = None
@@ -332,6 +336,10 @@ class RecipeExecutor:
             scope=_to_analytics_scope(context.scope),
         )
 
+        # Pass resource registry from recipe context
+        builder = builder.with_resources(context.resources)
+
+        # Legacy support: still pass direct objects for backward compat
         if context.graph_runtime is not None:
             builder.with_graph_runtime(context.graph_runtime)
         if context.catalog_provider is not None:

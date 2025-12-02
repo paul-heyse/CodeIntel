@@ -14,7 +14,10 @@ from typing import Any, Protocol, cast
 
 from codeintel.config.datasets import ingest_run_to_tuple
 from codeintel.ingestion.common import run_batch
-from codeintel.ingestion.tool_runner import ToolExecutionError, ToolNotFoundError
+from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+    ToolExecutionError,
+    ToolNotFoundError,
+)
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)

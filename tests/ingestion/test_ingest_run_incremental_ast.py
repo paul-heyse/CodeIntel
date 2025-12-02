@@ -14,7 +14,7 @@ from codeintel.ingestion.plugins import (
     IngestRuntimeScratch,
     get_ingest_registry,
 )
-from codeintel.ingestion.source_scanner import default_code_profile, default_config_profile
+from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile, default_config_profile
 from tests._helpers.gateway import open_ingestion_gateway
 
 

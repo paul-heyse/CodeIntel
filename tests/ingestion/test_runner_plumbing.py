@@ -10,7 +10,7 @@ from codeintel.config import ConfigBuilder
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 from codeintel.ingestion.repo_scan import ingest_repo
-from codeintel.ingestion.source_scanner import ScanProfile
+from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
