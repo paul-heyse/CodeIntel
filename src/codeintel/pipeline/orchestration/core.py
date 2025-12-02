@@ -40,7 +40,6 @@ from codeintel.ingestion.plugins.protocol import (
     IngestPluginContext,
     IngestRuntimeScratch,
 )
-from codeintel.ingestion.runner import IngestionContext
 from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanProfile
 from codeintel.ingestion.tool_runner import ToolRunner
@@ -257,33 +256,6 @@ def _resolve_config_profile(ctx: PipelineContext) -> ScanProfile:
     return ctx.config_profile
 
 
-def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
-    """
-    Build an ingestion context from a pipeline context.
-
-    Returns
-    -------
-    IngestionContext
-        Normalized ingestion context for downstream runners.
-
-    .. deprecated::
-        Use ``_plugin_ctx()`` instead for the new plugin architecture.
-    """
-    return IngestionContext(
-        snapshot=ctx.snapshot,
-        paths=ctx.paths,
-        gateway=ctx.gateway,
-        tools=ctx.tools_config,
-        code_profile_cfg=ctx.code_profile,
-        config_profile_cfg=ctx.config_profile,
-        tool_runner=ctx.tool_runner,
-        tool_service=ctx.tool_service,
-        scip_runner=ctx.scip_runner,
-        artifact_writer=ctx.artifact_writer,
-        change_tracker=ctx.change_tracker,
-    )
-
-
 def _plugin_ctx(
     ctx: PipelineContext,
     *,
@@ -446,7 +418,6 @@ __all__ = [
     "_function_catalog",
     "_graph_engine",
     "_graph_runtime",
-    "_ingestion_ctx",
     "_log_step",
     "_plugin_ctx",
     "_resolve_code_profile",

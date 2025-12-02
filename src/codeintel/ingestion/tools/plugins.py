@@ -8,10 +8,13 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from importlib import import_module
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.tool_runner import ToolName, ToolRunner, ToolRunResult
+
+if TYPE_CHECKING:
+    from codeintel.ingestion.tools.results import ParsedToolResult
 
 log = logging.getLogger(__name__)
 
@@ -32,16 +35,18 @@ class ToolPluginResult:
 
     Attributes
     ----------
-    tool:
+    tool
         Logical tool identifier (from ToolName).
-    status:
+    status
         Normalized status code describing the outcome.
-    artifacts:
+    artifacts
         Logical name -> on-disk artifact path (e.g., "json_report" -> Path).
-    run:
+    run
         Underlying ToolRunResult when a subprocess ran, otherwise None.
-    error:
+    error
         Exception captured by the plugin, if any.
+    parsed
+        Parsed domain object (DiagnosticReport, CoverageReport, etc.).
     """
 
     tool: ToolName
@@ -49,6 +54,7 @@ class ToolPluginResult:
     artifacts: Mapping[str, Path]
     run: ToolRunResult | None
     error: Exception | None = None
+    parsed: ParsedToolResult | None = None
 
     @property
     def ok(self) -> bool:

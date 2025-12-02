@@ -8,7 +8,50 @@ This document provides a high-level overview of the work required to fully decou
 
 ---
 
-## Current State
+## Implementation Status (Updated)
+
+### ✅ Completed Work
+
+The new graph plugin architecture has been implemented in `src/codeintel/graphs/`:
+
+1. **Core Infrastructure (`graphs/core/`)**:
+   - `protocol.py` - Unified `GraphPluginProtocol` for builders, metrics, and validation
+   - `context.py` - `GraphExecutionContext` with no analytics dependencies
+   - `registry.py` - `GraphPluginRegistry` with dependency resolution
+   - `result.py` - `GraphPluginResult` and `GraphPluginRunRecord`
+
+2. **Runtime Infrastructure (`graphs/runtime/`)**:
+   - `executor.py` - Standalone `GraphPluginExecutor`
+   - `planning.py` - Graph-native `plan_graph_plugin_run`
+   - `manifest.py` - Caching and skip logic
+   - `telemetry.py` - Graph-specific telemetry
+
+3. **Builder Plugins (`graphs/plugins/builders/`)**:
+   - `goid.py` - `GoidBuilderPlugin`
+   - `callgraph.py` - `CallGraphBuilderPlugin`
+   - `cfg_dfg.py` - `CFGDFGBuilderPlugin`
+   - `import_graph.py` - `ImportGraphBuilderPlugin`
+
+4. **Metric Plugins (`graphs/plugins/metrics/`)**:
+   - `core.py` - Core metrics (centrality, components)
+   - `secondary.py` - CFG, DFG, test, subsystem, stats metrics
+
+5. **Validation Plugin (`graphs/plugins/validation.py`)**
+
+6. **Recipe System (`graphs/recipes/`)**:
+   - `dsl.py` - `GraphRecipe`, `GraphStage` DSL
+   - `executor.py` - `RecipeExecutor`
+   - `builtins.py` - Standard recipes (full, incremental, etc.)
+
+### 🔄 Migration Path
+
+The legacy modules (`analytics/graphs/plugins.py`, `analytics/graphs/runtime/analytics_adapter.py`)
+have been marked as deprecated. New code should use the `graphs/core/`, `graphs/runtime/`,
+`graphs/plugins/`, and `graphs/recipes/` modules.
+
+---
+
+## Previous State (Historical Reference)
 
 ### Dependency Chain
 

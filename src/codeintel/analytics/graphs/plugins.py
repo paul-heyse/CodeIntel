@@ -1,10 +1,21 @@
-"""Plugin registry for graph metric computations."""
+"""Plugin registry for graph metric computations.
+
+.. deprecated::
+    This module is deprecated. Use the new graph plugin architecture:
+    - ``codeintel.graphs.core`` - Plugin protocol and registry
+    - ``codeintel.graphs.runtime`` - Execution infrastructure
+    - ``codeintel.graphs.plugins`` - Builder and metric plugins
+    - ``codeintel.graphs.recipes`` - Recipe DSL and executor
+
+    See GRAPH_DECOUPLING_OVERVIEW.md for migration details.
+"""
 
 from __future__ import annotations
 
 import importlib
 import importlib.metadata
 import logging
+import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,6 +44,15 @@ if TYPE_CHECKING:
     from codeintel.analytics.plugins import GraphContextFactory
 
 log = logging.getLogger(__name__)
+
+# Emit runtime deprecation warning
+warnings.warn(
+    "codeintel.analytics.graphs.plugins is deprecated. "
+    "Use codeintel.graphs.core and codeintel.graphs.plugins instead. "
+    "See GRAPH_DECOUPLING_OVERVIEW.md for migration details.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 @dataclass

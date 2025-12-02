@@ -67,7 +67,7 @@ def _build_plugin_context(
         tools=ToolsConfig.default(),
         code_profile=default_code_profile(repo_root),
         config_profile=default_config_profile(repo_root),
-        scratch=scratch or IngestRuntimeScratch(),
+        scratch=scratch if scratch is not None else IngestRuntimeScratch(),
         ingest_run_sink=ingest_run_sink,
     )
     return ctx, snapshot

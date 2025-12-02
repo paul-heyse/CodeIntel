@@ -15,11 +15,6 @@ from textwrap import indent
 from typing import Literal, Protocol, cast
 
 from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions, build_graph_runtime
-from codeintel.analytics.graphs.plugins import (
-    DEFAULT_GRAPH_METRIC_PLUGINS,
-    list_graph_metric_plugins,
-    plan_graph_metric_plugins,
-)
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.config import ConfigBuilder, GraphRunScope
 from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
@@ -30,6 +25,8 @@ from codeintel.config.primitives import (
     GraphFeatureFlags,
     SnapshotRef,
 )
+from codeintel.graphs.core.protocol import DEFAULT_METRIC_PLUGINS
+from codeintel.graphs.core.registry import list_graph_plugins, plan_graph_plugins
 from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
 from codeintel.ingestion.plugins import (
     DEFAULT_INGEST_PLUGINS,
@@ -1569,14 +1566,14 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
     enabled = tuple(args.enable) if args.enable else None
     names = tuple(args.names) if args.names else None
     disabled = tuple(args.disable) if args.disable else ()
-    requested = names if names is not None else DEFAULT_GRAPH_METRIC_PLUGINS
+    requested = names if names is not None else DEFAULT_METRIC_PLUGINS
     if args.plan:
         try:
-            plan = plan_graph_metric_plugins(
+            plan = plan_graph_plugins(
                 plugin_names=requested if enabled is None else None,
                 enabled=enabled,
                 disabled=disabled,
-                defaults=DEFAULT_GRAPH_METRIC_PLUGINS,
+                defaults=DEFAULT_METRIC_PLUGINS,
             )
         except ValueError:
             LOG.exception("Invalid graph plugin plan for names=%s", requested)
@@ -1592,15 +1589,15 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
                 ],
                 "dep_graph": {name: list(deps) for name, deps in plan.dep_graph.items()},
                 "plugin_metadata": {
-                    plugin.name: {
-                        "stage": plugin.stage,
-                        "severity": plugin.severity,
-                        "requires_isolation": plugin.requires_isolation,
-                        "isolation_kind": plugin.isolation_kind,
-                        "scope_aware": plugin.scope_aware,
-                        "supported_scopes": list(plugin.supported_scopes),
-                        "cache_populates": list(plugin.cache_populates),
-                        "cache_consumes": list(plugin.cache_consumes),
+                    plugin.metadata.name: {
+                        "stage": plugin.metadata.stage,
+                        "severity": plugin.metadata.severity,
+                        "requires_isolation": plugin.metadata.requires_isolation,
+                        "isolation_kind": plugin.metadata.isolation_kind,
+                        "scope_aware": plugin.metadata.scope_aware,
+                        "supported_scopes": list(plugin.metadata.supported_scopes),
+                        "cache_populates": list(plugin.metadata.cache_populates),
+                        "cache_consumes": list(plugin.metadata.cache_consumes),
                     }
                     for plugin in plan.plugins
                 },
@@ -1611,10 +1608,11 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
             sys.stdout.write(f"Plan ID: {plan.plan_id}\n")
             sys.stdout.write("Execution order (stage | severity | isolation | scope-aware):\n")
             for plugin in plan.plugins:
-                isolation = plugin.isolation_kind or ("yes" if plugin.requires_isolation else "no")
-                scope_flag = "yes" if plugin.scope_aware else "no"
+                meta = plugin.metadata
+                isolation = meta.isolation_kind or ("yes" if meta.requires_isolation else "no")
+                scope_flag = "yes" if meta.scope_aware else "no"
                 sys.stdout.write(
-                    f"  - {plugin.name} [{plugin.stage} | {plugin.severity} | "
+                    f"  - {meta.name} [{meta.stage} | {meta.severity} | "
                     f"{isolation} | {scope_flag}]\n"
                 )
             if plan.skipped_plugins:
@@ -1623,40 +1621,40 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
                     sys.stdout.write(f"  - {skipped.name} ({skipped.reason})\n")
         return 0
 
-    plugins = list_graph_metric_plugins()
+    plugins = list_graph_plugins()
     if args.output_json:
         payload = {
             "count": len(plugins),
             "plugins": {
-                plugin.name: {
-                    "name": plugin.name,
-                    "description": plugin.description,
-                    "stage": plugin.stage,
-                    "severity": plugin.severity,
-                    "enabled_by_default": plugin.enabled_by_default,
-                    "depends_on": list(plugin.depends_on),
-                    "provides": list(plugin.provides),
-                    "requires": list(plugin.requires),
+                plugin.metadata.name: {
+                    "name": plugin.metadata.name,
+                    "description": plugin.metadata.description,
+                    "stage": plugin.metadata.stage,
+                    "severity": plugin.metadata.severity,
+                    "enabled_by_default": plugin.metadata.enabled_by_default,
+                    "depends_on": list(plugin.metadata.depends_on),
+                    "provides": list(plugin.metadata.provides),
+                    "requires": list(plugin.metadata.requires),
                     "resource_hints": (
                         {
-                            "max_runtime_ms": plugin.resource_hints.max_runtime_ms,
-                            "memory_mb_hint": plugin.resource_hints.memory_mb_hint,
+                            "max_runtime_ms": plugin.metadata.resource_hints.max_runtime_ms,
+                            "memory_mb_hint": plugin.metadata.resource_hints.memory_mb_hint,
                         }
-                        if plugin.resource_hints is not None
+                        if plugin.metadata.resource_hints is not None
                         else None
                     ),
-                    "options_model": plugin.options_model.__name__ if plugin.options_model else None,
-                    "options_default": plugin.options_default,
-                    "version_hash": plugin.version_hash,
-                    "contract_checkers": len(plugin.contract_checkers),
-                    "scope_aware": plugin.scope_aware,
-                    "supported_scopes": list(plugin.supported_scopes),
-                    "requires_isolation": plugin.requires_isolation,
-                    "isolation_kind": plugin.isolation_kind,
-                    "config_schema_ref": plugin.config_schema_ref,
-                    "row_count_tables": list(plugin.row_count_tables),
-                    "cache_populates": list(plugin.cache_populates),
-                    "cache_consumes": list(plugin.cache_consumes),
+                    "options_model": plugin.metadata.options_model.__name__ if plugin.metadata.options_model else None,
+                    "options_default": plugin.metadata.options_default,
+                    "version_hash": plugin.metadata.version_hash,
+                    "contract_checkers": len(plugin.metadata.contract_checkers),
+                    "scope_aware": plugin.metadata.scope_aware,
+                    "supported_scopes": list(plugin.metadata.supported_scopes),
+                    "requires_isolation": plugin.metadata.requires_isolation,
+                    "isolation_kind": plugin.metadata.isolation_kind,
+                    "config_schema_ref": plugin.metadata.config_schema_ref,
+                    "row_count_tables": list(plugin.metadata.row_count_tables),
+                    "cache_populates": list(plugin.metadata.cache_populates),
+                    "cache_consumes": list(plugin.metadata.cache_consumes),
                 }
                 for plugin in plugins
             },
@@ -1666,8 +1664,8 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
         return 0
 
     for plugin in plugins:
-        sys.stdout.write(f"- {plugin.name} [{plugin.stage}]\n")
-        sys.stdout.write(indent(plugin.description, "    "))
+        sys.stdout.write(f"- {plugin.metadata.name} [{plugin.metadata.stage}]\n")
+        sys.stdout.write(indent(plugin.metadata.description, "    "))
         sys.stdout.write("\n")
     return 0
 

@@ -1,11 +1,12 @@
 """Built-in ingestion plugins wrapping existing step implementations.
 
-This module provides plugin wrappers around the existing ingestion
-step implementations for backward compatibility while transitioning
-to the new plugin architecture.
+This module provides plugin wrappers around the pipeline-based ingestion
+implementations. Each plugin integrates with the harness system for
+consistent error handling, row counting, and incremental support.
 
 NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
+
 # ruff: noqa: PLC0415
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.plugins.decorators import ingest_plugin
+from codeintel.ingestion.plugins.harness import HarnessConfig
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginContext,
     IngestPluginResult,
@@ -21,16 +23,16 @@ from codeintel.ingestion.plugins.protocol import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from codeintel.ingestion.change_tracker import ChangeTracker
+    from codeintel.ingestion.common import ModuleRecord
 
 log = logging.getLogger(__name__)
 
 
-def _build_legacy_context(ctx: IngestPluginContext) -> object:
-    """Build a legacy IngestionContext-compatible object from plugin context.
-
-    This helper allows existing step implementations to work with
-    the new plugin context.
+def _resolve_coverage_file(ctx: IngestPluginContext) -> Path | None:
+    """Resolve the coverage file path from tools config or defaults.
 
     Parameters
     ----------
@@ -39,24 +41,55 @@ def _build_legacy_context(ctx: IngestPluginContext) -> object:
 
     Returns
     -------
-    object
-        Legacy-compatible context object.
+    Path | None
+        Absolute path to the coverage file when it exists; None when missing.
     """
-    # Import here to avoid circular imports
-    from codeintel.ingestion.runner import IngestionContext
+    candidate = ctx.tools.coverage_file or ctx.paths.coverage_json
+    resolved = candidate.expanduser()
+    if not resolved.is_absolute():
+        resolved = (ctx.snapshot.repo_root / resolved).resolve()
+    if not resolved.exists():
+        log.warning(
+            "Coverage file missing; skipping coverage_ingest repo=%s commit=%s path=%s",
+            ctx.snapshot.repo,
+            ctx.snapshot.commit,
+            resolved,
+        )
+        return None
+    return resolved
 
-    return IngestionContext(
-        snapshot=ctx.snapshot,
-        paths=ctx.paths,
-        gateway=ctx.gateway,
-        tools=ctx.tools,
-        code_profile_cfg=ctx.code_profile,
-        config_profile_cfg=ctx.config_profile,
-        tool_runner=ctx.tool_runner,
-        tool_service=ctx.tool_service,
-        change_tracker=ctx.change_tracker,
-        ingest_run_sink=ctx.ingest_run_sink,
-        current_ingest_run=ctx.current_ingest_run,
+
+def _get_modules_from_tracker(ctx: IngestPluginContext) -> list[ModuleRecord]:
+    """Retrieve modules from change tracker for pipeline execution.
+
+    Parameters
+    ----------
+    ctx
+        Plugin execution context.
+
+    Returns
+    -------
+    list
+        List of ModuleRecord instances.
+    """
+    from codeintel.ingestion.common import iter_modules
+    from codeintel.storage.module_index import load_module_map
+
+    module_map = load_module_map(
+        ctx.gateway,
+        ctx.snapshot.repo,
+        ctx.snapshot.commit,
+        language="python",
+        logger=log,
+    )
+
+    return list(
+        iter_modules(
+            module_map,
+            ctx.snapshot.repo_root,
+            logger=log,
+            scan_profile=ctx.code_profile,
+        )
     )
 
 
@@ -73,6 +106,7 @@ def _build_legacy_context(ctx: IngestPluginContext) -> object:
     provides=("modules", "change_tracker"),
     supports_incremental=False,
     resource_hints=IngestResourceHints(cpu_intensive=False, io_intensive=True),
+    harness=HarnessConfig(auto_row_counts=True),
     register=True,
 )
 def repo_scan_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
@@ -86,7 +120,7 @@ def repo_scan_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with change tracker stored in scratch.
+        Result with change tracker stored in scratch (row counts added by harness).
     """
     from codeintel.config import RepoScanStepConfig
     from codeintel.ingestion import repo_scan
@@ -97,26 +131,17 @@ def repo_scan_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
         tool_runner=ctx.tool_runner,
     )
 
-    try:
-        tracker = repo_scan.ingest_repo(
-            ctx.gateway,
-            cfg=cfg,
-            code_profile=ctx.code_profile,
-        )
+    tracker = repo_scan.ingest_repo(
+        ctx.gateway,
+        cfg=cfg,
+        code_profile=ctx.code_profile,
+    )
 
-        # Store tracker in scratch for downstream plugins
-        ctx.scratch.declare("change_tracker", tracker)
+    # Store tracker in scratch for downstream plugins
+    ctx.scratch.declare("change_tracker", tracker)
 
-        row_counts = {
-            "core.modules": _safe_count(ctx, "core.modules"),
-            "core.repo_map": _safe_count(ctx, "core.repo_map"),
-        }
-
-        return IngestPluginResult.ok(row_counts=row_counts)
-
-    except Exception as exc:
-        log.exception("repo_scan failed")
-        return IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__)
+    # Harness adds row_counts and handles exceptions
+    return IngestPluginResult.ok()
 
 
 @ingest_plugin(
@@ -137,6 +162,7 @@ def repo_scan_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
         io_intensive=True,
         max_runtime_ms=300000,
     ),
+    harness=HarnessConfig(auto_tracker=True, auto_tool_service=True, require_tracker=False),
     register=True,
 )
 def scip_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
@@ -150,64 +176,42 @@ def scip_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with SCIP artifacts.
+        Result with SCIP artifacts (harness handles exceptions).
     """
-    from codeintel.config import ScipIngestStepConfig, ToolBinaries
     from codeintel.ingestion import scip_ingest
-    from codeintel.ingestion.tool_runner import ToolRunner
-    from codeintel.ingestion.tool_service import ToolService
 
-    tracker = _get_change_tracker(ctx)
+    # Dependencies resolved by harness
+    tracker = _try_get_tracker(ctx)
+    service = ctx.tool_service_or_default()
+    modules = _get_modules_from_tracker(ctx)
 
-    binaries = ToolBinaries(
+    result = scip_ingest.ingest_scip(
+        ctx.gateway,
+        modules,
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
+        repo_root=ctx.snapshot.repo_root,
+        build_dir=ctx.paths.build_dir,
+        document_output_dir=ctx.paths.document_output_dir,
         scip_python_bin=ctx.tools.scip_python_bin,
         scip_bin=ctx.tools.scip_bin,
-        pyright_bin=ctx.tools.pyright_bin,
-        pyrefly_bin=ctx.tools.pyrefly_bin,
-        ruff_bin=ctx.tools.ruff_bin,
-        coverage_bin=ctx.tools.coverage_bin,
-        pytest_bin=ctx.tools.pytest_bin,
-        git_bin=ctx.tools.git_bin,
-        default_timeout_s=ctx.tools.default_timeout_s,
+        tracker=tracker,
+        tool_service=service,
     )
 
-    cfg = ScipIngestStepConfig(
-        snapshot=ctx.snapshot,
-        paths=ctx.paths,
-        binaries=binaries,
-    )
+    if result.status == "unavailable":
+        return IngestPluginResult.skip(result.reason or "SCIP tools unavailable")
 
-    runner = ctx.tool_runner or ToolRunner(
-        cache_dir=ctx.paths.tool_cache,
-        tools_config=ctx.tools,
-    )
-    service = ctx.tool_service or ToolService(runner, ctx.tools)
+    if result.status == "failed":
+        return IngestPluginResult.fail(result.reason or "SCIP ingest failed")
 
-    try:
-        result = scip_ingest.ingest_scip(
-            ctx.gateway,
-            cfg=cfg,
-            tracker=tracker,
-            tool_service=service,
-        )
+    artifacts = {}
+    if result.index_scip:
+        artifacts["index_scip"] = result.index_scip
+    if result.index_json:
+        artifacts["index_json"] = result.index_json
 
-        if result.status == "unavailable":
-            return IngestPluginResult.skip(result.reason or "SCIP tools unavailable")
-
-        if result.status == "failed":
-            return IngestPluginResult.fail(result.reason or "SCIP ingest failed")
-
-        artifacts = {}
-        if result.index_scip:
-            artifacts["index_scip"] = result.index_scip
-        if result.index_json:
-            artifacts["index_json"] = result.index_json
-
-        return IngestPluginResult.ok(artifacts=artifacts)
-
-    except Exception as exc:
-        log.exception("scip_ingest failed")
-        return IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__)
+    return IngestPluginResult.ok(artifacts=artifacts)
 
 
 @ingest_plugin(
@@ -220,6 +224,7 @@ def scip_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     supports_incremental=True,
     isolation_kind="process",
     resource_hints=IngestResourceHints(cpu_intensive=True, io_intensive=False),
+    harness=HarnessConfig(auto_tracker=True, auto_row_counts=True),
     register=True,
 )
 def cst_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
@@ -233,30 +238,28 @@ def cst_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts.
+        Result with row counts (added automatically by harness).
     """
     import os
 
     from codeintel.ingestion import cst_extract
 
-    tracker = _get_change_tracker(ctx)
-    if tracker is None:
-        return IngestPluginResult.fail(
-            "No change tracker available; run repo_scan first",
-            error_kind="MissingDependency",
-        )
-
+    # Tracker is guaranteed by harness with auto_tracker=True
+    tracker = ctx.require_tracker()
+    modules = _get_modules_from_tracker(ctx)
     executor_kind = os.getenv("CODEINTEL_CST_EXECUTOR", "process")
 
-    try:
-        cst_extract.ingest_cst(tracker, executor_kind=executor_kind)
+    cst_extract.ingest_cst(
+        ctx.gateway,
+        modules,
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
+        tracker=tracker,
+        executor_kind=executor_kind,
+    )
 
-        row_counts = {"core.cst_nodes": _safe_count(ctx, "core.cst_nodes")}
-        return IngestPluginResult.ok(row_counts=row_counts)
-
-    except Exception as exc:
-        log.exception("cst_extract failed")
-        return IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__)
+    # Harness adds row_counts and handles exceptions
+    return IngestPluginResult.ok()
 
 
 @ingest_plugin(
@@ -269,6 +272,7 @@ def cst_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     supports_incremental=True,
     isolation_kind="process",
     resource_hints=IngestResourceHints(cpu_intensive=True, io_intensive=False),
+    harness=HarnessConfig(auto_tracker=True, auto_row_counts=True),
     register=True,
 )
 def ast_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
@@ -282,29 +286,24 @@ def ast_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts.
+        Result with row counts (added automatically by harness).
     """
     from codeintel.ingestion import py_ast_extract
 
-    tracker = _get_change_tracker(ctx)
-    if tracker is None:
-        return IngestPluginResult.fail(
-            "No change tracker available; run repo_scan first",
-            error_kind="MissingDependency",
-        )
+    # Tracker is guaranteed by harness with auto_tracker=True
+    tracker = ctx.require_tracker()
+    modules = _get_modules_from_tracker(ctx)
 
-    try:
-        py_ast_extract.ingest_python_ast(tracker)
+    py_ast_extract.ingest_python_ast(
+        ctx.gateway,
+        modules,
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
+        tracker=tracker,
+    )
 
-        row_counts = {
-            "core.ast_nodes": _safe_count(ctx, "core.ast_nodes"),
-            "core.ast_metrics": _safe_count(ctx, "core.ast_metrics"),
-        }
-        return IngestPluginResult.ok(row_counts=row_counts)
-
-    except Exception as exc:
-        log.exception("ast_extract failed")
-        return IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__)
+    # Harness adds row_counts and handles exceptions
+    return IngestPluginResult.ok()
 
 
 @ingest_plugin(
@@ -321,6 +320,7 @@ def ast_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
         io_intensive=True,
         max_runtime_ms=180000,
     ),
+    harness=HarnessConfig(auto_tracker=True, auto_tool_service=True, auto_row_counts=True),
     register=True,
 )
 def typing_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
@@ -334,45 +334,28 @@ def typing_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts.
+        Result with row counts (added automatically by harness).
     """
-    from codeintel.config.builder import TypingIngestStepConfig
     from codeintel.ingestion import typing_ingest
-    from codeintel.ingestion.tool_runner import ToolRunner
-    from codeintel.ingestion.tool_service import ToolService
 
-    tracker = _get_change_tracker(ctx)
+    # Dependencies resolved by harness
+    tracker = ctx.require_tracker()
+    service = ctx.tool_service_or_default()
+    modules = _get_modules_from_tracker(ctx)
 
-    cfg = TypingIngestStepConfig(
-        snapshot=ctx.snapshot,
-        paths=ctx.paths,
-        tool_runner=ctx.tool_runner,
+    typing_ingest.ingest_typing_signals(
+        gateway=ctx.gateway,
+        modules=modules,
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
+        repo_root=ctx.snapshot.repo_root,
+        code_profile=ctx.code_profile,
+        tool_service=service,
+        tracker=tracker,
     )
 
-    runner = ctx.tool_runner or ToolRunner(
-        cache_dir=ctx.paths.tool_cache,
-        tools_config=ctx.tools,
-    )
-    service = ctx.tool_service or ToolService(runner, ctx.tools)
-
-    try:
-        typing_ingest.ingest_typing_signals(
-            gateway=ctx.gateway,
-            cfg=cfg,
-            code_profile=ctx.code_profile,
-            tool_service=service,
-            tracker=tracker,
-        )
-
-        row_counts = {
-            "analytics.typedness": _safe_count(ctx, "analytics.typedness"),
-            "analytics.static_diagnostics": _safe_count(ctx, "analytics.static_diagnostics"),
-        }
-        return IngestPluginResult.ok(row_counts=row_counts)
-
-    except Exception as exc:
-        log.exception("typing_ingest failed")
-        return IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__)
+    # Harness adds row_counts and handles exceptions
+    return IngestPluginResult.ok()
 
 
 @ingest_plugin(
@@ -385,6 +368,9 @@ def typing_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     tool_dependencies=("coverage",),
     supports_incremental=True,
     resource_hints=IngestResourceHints(cpu_intensive=False, io_intensive=True),
+    harness=HarnessConfig(
+        auto_tracker=True, auto_tool_service=True, auto_row_counts=True, require_tracker=False
+    ),
     register=True,
 )
 def coverage_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
@@ -398,50 +384,34 @@ def coverage_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts.
+        Result with row counts (added automatically by harness).
     """
-    from codeintel.config.builder import CoverageIngestStepConfig
     from codeintel.ingestion import coverage_ingest
-    from codeintel.ingestion.steps import resolve_coverage_file
-    from codeintel.ingestion.tool_runner import ToolRunner
-    from codeintel.ingestion.tool_service import ToolService
 
-    tracker = _get_change_tracker(ctx)
+    # Resolve coverage file first - skip if not available
+    coverage_path = _resolve_coverage_file(ctx)
+    if coverage_path is None:
+        return IngestPluginResult.skip("missing_coverage_file")
 
-    # Build a minimal context for resolve_coverage_file
-    legacy_ctx = _build_legacy_context(ctx)
-    coverage_path = resolve_coverage_file(legacy_ctx)  # type: ignore[arg-type]
+    # Dependencies resolved by harness
+    tracker = _try_get_tracker(ctx)
+    service = ctx.tool_service_or_default()
+    modules = _get_modules_from_tracker(ctx)
 
-    cfg = CoverageIngestStepConfig(
-        snapshot=ctx.snapshot,
-        paths=ctx.paths,
+    coverage_ingest.ingest_coverage_lines(
+        ctx.gateway,
+        modules,
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
+        repo_root=ctx.snapshot.repo_root,
         coverage_file=coverage_path,
-        tool_runner=ctx.tool_runner,
+        tool_service=service,
+        json_output_path=ctx.paths.coverage_json,
+        tracker=tracker,
     )
 
-    runner = ctx.tool_runner or ToolRunner(
-        cache_dir=ctx.paths.tool_cache,
-        tools_config=ctx.tools,
-    )
-    service = ctx.tool_service or ToolService(runner, ctx.tools)
-
-    try:
-        coverage_ingest.ingest_coverage_lines(
-            gateway=ctx.gateway,
-            cfg=cfg,
-            tools=ctx.tools,
-            tool_service=service,
-            tracker=tracker,
-        )
-
-        row_counts = {
-            "analytics.coverage_lines": _safe_count(ctx, "analytics.coverage_lines"),
-        }
-        return IngestPluginResult.ok(row_counts=row_counts)
-
-    except Exception as exc:
-        log.exception("coverage_ingest failed")
-        return IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__)
+    # Harness adds row_counts and handles exceptions
+    return IngestPluginResult.ok()
 
 
 @ingest_plugin(
@@ -454,6 +424,9 @@ def coverage_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     tool_dependencies=("pytest",),
     supports_incremental=True,
     resource_hints=IngestResourceHints(cpu_intensive=False, io_intensive=True),
+    harness=HarnessConfig(
+        auto_tracker=True, auto_tool_service=True, auto_row_counts=True, require_tracker=False
+    ),
     register=True,
 )
 def tests_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
@@ -467,44 +440,28 @@ def tests_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts.
+        Result with row counts (added automatically by harness).
     """
-    from codeintel.config.builder import TestsIngestStepConfig
     from codeintel.ingestion import tests_ingest
-    from codeintel.ingestion.tool_runner import ToolRunner
-    from codeintel.ingestion.tool_service import ToolService
 
-    tracker = _get_change_tracker(ctx)
+    # Dependencies resolved by harness
+    tracker = _try_get_tracker(ctx)
+    service = ctx.tool_service_or_default()
+    modules = _get_modules_from_tracker(ctx)
 
-    cfg = TestsIngestStepConfig(
-        snapshot=ctx.snapshot,
-        paths=ctx.paths,
-        pytest_report_path=ctx.paths.pytest_report,
+    tests_ingest.ingest_tests(
+        ctx.gateway,
+        modules,
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
+        repo_root=ctx.snapshot.repo_root,
+        report_path=ctx.paths.pytest_report,
+        tool_service=service,
+        tracker=tracker,
     )
 
-    runner = ctx.tool_runner or ToolRunner(
-        cache_dir=ctx.paths.tool_cache,
-        tools_config=ctx.tools,
-    )
-    service = ctx.tool_service or ToolService(runner, ctx.tools)
-
-    try:
-        tests_ingest.ingest_tests(
-            gateway=ctx.gateway,
-            cfg=cfg,
-            report_path=ctx.paths.pytest_report,
-            tool_service=service,
-            tracker=tracker,
-        )
-
-        row_counts = {
-            "analytics.test_catalog": _safe_count(ctx, "analytics.test_catalog"),
-        }
-        return IngestPluginResult.ok(row_counts=row_counts)
-
-    except Exception as exc:
-        log.exception("tests_ingest failed")
-        return IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__)
+    # Harness adds row_counts and handles exceptions
+    return IngestPluginResult.ok()
 
 
 @ingest_plugin(
@@ -516,6 +473,7 @@ def tests_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     requires=("change_tracker",),
     supports_incremental=True,
     resource_hints=IngestResourceHints(cpu_intensive=True, io_intensive=False),
+    harness=HarnessConfig(auto_tracker=True, auto_row_counts=True),
     register=True,
 )
 def docstrings_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
@@ -529,31 +487,25 @@ def docstrings_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts.
+        Result with row counts (added automatically by harness).
     """
-    from codeintel.config import DocstringStepConfig
     from codeintel.ingestion import docstrings_ingest
 
-    tracker = _get_change_tracker(ctx)
+    # Tracker is guaranteed by harness with auto_tracker=True
+    tracker = ctx.require_tracker()
+    modules = _get_modules_from_tracker(ctx)
 
-    cfg = DocstringStepConfig(snapshot=ctx.snapshot)
+    docstrings_ingest.ingest_docstrings(
+        ctx.gateway,
+        modules,
+        repo=ctx.snapshot.repo,
+        commit=ctx.snapshot.commit,
+        repo_root=ctx.snapshot.repo_root,
+        tracker=tracker,
+    )
 
-    try:
-        docstrings_ingest.ingest_docstrings(
-            ctx.gateway,
-            cfg,
-            code_profile=ctx.code_profile,
-            tracker=tracker,
-        )
-
-        row_counts = {
-            "core.docstrings": _safe_count(ctx, "core.docstrings"),
-        }
-        return IngestPluginResult.ok(row_counts=row_counts)
-
-    except Exception as exc:
-        log.exception("docstrings_ingest failed")
-        return IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__)
+    # Harness adds row_counts and handles exceptions
+    return IngestPluginResult.ok()
 
 
 @ingest_plugin(
@@ -565,6 +517,7 @@ def docstrings_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     requires=("change_tracker",),
     supports_incremental=True,
     resource_hints=IngestResourceHints(cpu_intensive=False, io_intensive=True),
+    harness=HarnessConfig(auto_tracker=True, auto_row_counts=True, require_tracker=False),
     register=True,
 )
 def config_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
@@ -578,35 +531,32 @@ def config_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts.
+        Result with row counts (added automatically by harness).
     """
     from codeintel.config.builder import ConfigIngestStepConfig
     from codeintel.ingestion import config_ingest
 
-    tracker = _get_change_tracker(ctx)
+    # Tracker from harness (optional)
+    tracker = _try_get_tracker(ctx)
 
     cfg = ConfigIngestStepConfig(snapshot=ctx.snapshot)
 
-    try:
-        config_ingest.ingest_config_values(
-            ctx.gateway,
-            cfg=cfg,
-            config_profile=ctx.config_profile,
-            tracker=tracker,
-        )
+    config_ingest.ingest_config_values(
+        ctx.gateway,
+        cfg=cfg,
+        config_profile=ctx.config_profile,
+        tracker=tracker,
+    )
 
-        row_counts = {
-            "analytics.config_values": _safe_count(ctx, "analytics.config_values"),
-        }
-        return IngestPluginResult.ok(row_counts=row_counts)
-
-    except Exception as exc:
-        log.exception("config_ingest failed")
-        return IngestPluginResult.fail(str(exc), error_kind=type(exc).__name__)
+    # Harness adds row_counts and handles exceptions
+    return IngestPluginResult.ok()
 
 
-def _get_change_tracker(ctx: IngestPluginContext) -> ChangeTracker | None:
-    """Get change tracker from context or scratch.
+def _try_get_tracker(ctx: IngestPluginContext) -> ChangeTracker | None:
+    """Try to get change tracker from context or scratch.
+
+    Use this for plugins that can operate with or without a tracker.
+    For plugins that require a tracker, use ctx.require_tracker() instead.
 
     Parameters
     ----------
@@ -616,7 +566,7 @@ def _get_change_tracker(ctx: IngestPluginContext) -> ChangeTracker | None:
     Returns
     -------
     ChangeTracker | None
-        Change tracker if available.
+        Change tracker if available, None otherwise.
     """
     if ctx.change_tracker is not None:
         return ctx.change_tracker
@@ -630,30 +580,6 @@ def _get_change_tracker(ctx: IngestPluginContext) -> ChangeTracker | None:
             return tracker
 
     return None
-
-
-def _safe_count(ctx: IngestPluginContext, table_key: str) -> int:
-    """Safely count rows in a table.
-
-    Parameters
-    ----------
-    ctx
-        Plugin context.
-    table_key
-        Table to count.
-
-    Returns
-    -------
-    int
-        Row count or 0 on error.
-    """
-    try:
-        result = ctx.gateway.con.execute(
-            f"SELECT COUNT(*) FROM {table_key}",  # noqa: S608
-        ).fetchone()
-        return int(result[0]) if result else 0
-    except Exception:  # noqa: BLE001
-        return 0
 
 
 def register_all_builtin_plugins() -> None:

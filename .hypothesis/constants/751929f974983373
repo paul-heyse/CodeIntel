@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tools/scip.py
+# hypothesis_version: 6.148.3
+
+['--json', '--output', '--target-only', 'core.goid_crosswalk', 'core.scip_symbols', 'documents', 'index', 'index_json', 'index_scip', 'output_json', 'output_scip', 'print', 'rel_paths', 'scip', 'scip_bin', 'scip_python_bin', 'src', 'target_dir', 'utf-8', 'utf8']

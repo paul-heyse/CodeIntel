@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/recipes/dsl.py
+# hypothesis_version: 6.148.3
+
+['1.0', 'GraphRecipe', 'GraphRecipeOptions', 'GraphStage', 'graph_recipe', 'graph_stage']

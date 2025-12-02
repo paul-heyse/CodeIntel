@@ -1,0 +1,349 @@
+"""Secondary graph metrics plugins using factory pattern.
+
+This module provides additional graph metric plugins for CFG/DFG, test,
+symbol, subsystem, config, and stats metrics using the factory pattern
+for minimal boilerplate.
+"""
+
+from __future__ import annotations
+
+from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
+from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics
+from codeintel.analytics.graphs.graph_stats import compute_graph_stats
+from codeintel.analytics.graphs.subsystem_agreement import compute_subsystem_agreement
+from codeintel.analytics.graphs.subsystem_graph_metrics import compute_subsystem_graph_metrics
+from codeintel.analytics.graphs.symbol_graph_metrics import (
+    compute_symbol_graph_metrics_functions,
+    compute_symbol_graph_metrics_modules,
+)
+from codeintel.analytics.tests.graph_metrics import compute_test_graph_metrics
+from codeintel.graphs.core import (
+    ComputationResult,
+    GraphExecutionContext,
+    make_metric_plugin,
+)
+from codeintel.graphs.engine import GraphKind
+
+# =============================================================================
+# Computation Functions (standardized signature)
+# =============================================================================
+
+
+def _compute_cfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+    """Compute control-flow graph metrics for functions and blocks."""
+    compute_cfg_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, context=None)
+    return ComputationResult.ok()
+
+
+def _compute_dfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+    """Compute data-flow graph metrics for functions and blocks."""
+    compute_dfg_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, context=None)
+    return ComputationResult.ok()
+
+
+def _compute_test_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+    """Compute metrics over the test <-> function bipartite graph."""
+    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
+        GraphRuntimeOptions,
+        resolve_graph_runtime,
+    )
+    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
+
+    runtime = resolve_graph_runtime(
+        ctx.gateway,
+        ctx.snapshot,
+        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
+    )
+    compute_test_graph_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    return ComputationResult.ok()
+
+
+def _compute_subsystem_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+    """Compute subsystem-level condensed import graph metrics."""
+    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
+        GraphRuntimeOptions,
+        resolve_graph_runtime,
+    )
+    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
+
+    runtime = resolve_graph_runtime(
+        ctx.gateway,
+        ctx.snapshot,
+        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
+    )
+    compute_subsystem_graph_metrics(
+        ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime, filters=None
+    )
+    return ComputationResult.ok()
+
+
+def _compute_symbol_graph_metrics_modules(ctx: GraphExecutionContext) -> ComputationResult:
+    """Compute symbol graph metrics at the module level."""
+    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
+        GraphRuntimeOptions,
+        resolve_graph_runtime,
+    )
+    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
+
+    runtime = resolve_graph_runtime(
+        ctx.gateway,
+        ctx.snapshot,
+        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
+    )
+    compute_symbol_graph_metrics_modules(
+        ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime
+    )
+    return ComputationResult.ok()
+
+
+def _compute_symbol_graph_metrics_functions(ctx: GraphExecutionContext) -> ComputationResult:
+    """Compute symbol graph metrics at the function level."""
+    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
+        GraphRuntimeOptions,
+        resolve_graph_runtime,
+    )
+    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
+
+    runtime = resolve_graph_runtime(
+        ctx.gateway,
+        ctx.snapshot,
+        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
+    )
+    compute_symbol_graph_metrics_functions(
+        ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime
+    )
+    return ComputationResult.ok()
+
+
+def _compute_config_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
+    """Compute config bipartite/projection graph metrics."""
+    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
+        GraphRuntimeOptions,
+        resolve_graph_runtime,
+    )
+    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
+
+    runtime = resolve_graph_runtime(
+        ctx.gateway,
+        ctx.snapshot,
+        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
+    )
+    compute_config_graph_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    return ComputationResult.ok()
+
+
+def _compute_subsystem_agreement(ctx: GraphExecutionContext) -> ComputationResult:
+    """Check agreement between subsystem labels and import communities."""
+    compute_subsystem_agreement(ctx.gateway, repo=ctx.repo, commit=ctx.commit)
+    return ComputationResult.ok()
+
+
+def _compute_graph_stats(ctx: GraphExecutionContext) -> ComputationResult:
+    """Compute global graph statistics for core graphs."""
+    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
+        GraphRuntimeOptions,
+        resolve_graph_runtime,
+    )
+    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
+
+    runtime = resolve_graph_runtime(
+        ctx.gateway,
+        ctx.snapshot,
+        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
+    )
+    compute_graph_stats(ctx.gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    return ComputationResult.ok()
+
+
+# =============================================================================
+# Plugin Definitions (factory pattern - ~5 lines each)
+# =============================================================================
+
+cfg_metrics_plugin = make_metric_plugin(
+    name="cfg_metrics",
+    computation=_compute_cfg_metrics,
+    stage="cfg",
+    depends_on=("cfg_dfg_builder",),
+    provides=("cfg_metrics",),
+    requires_graphs=(GraphKind.CFG_GRAPH,),
+)
+
+dfg_metrics_plugin = make_metric_plugin(
+    name="dfg_metrics",
+    computation=_compute_dfg_metrics,
+    stage="dfg",
+    depends_on=("cfg_dfg_builder",),
+    provides=("dfg_metrics",),
+    requires_graphs=(GraphKind.CFG_GRAPH,),
+)
+
+test_graph_metrics_plugin = make_metric_plugin(
+    name="test_graph_metrics",
+    computation=_compute_test_graph_metrics,
+    stage="test",
+    depends_on=("callgraph_builder",),
+    provides=("test_metrics",),
+    produces_tables=(
+        "analytics.test_graph_metrics_tests",
+        "analytics.test_graph_metrics_functions",
+    ),
+    requires_graphs=(GraphKind.CALL_GRAPH,),
+)
+
+subsystem_graph_metrics_plugin = make_metric_plugin(
+    name="subsystem_graph_metrics",
+    computation=_compute_subsystem_graph_metrics,
+    stage="subsystem",
+    depends_on=("import_graph_builder",),
+    provides=("subsystem_metrics",),
+    produces_tables=("analytics.subsystem_graph_metrics",),
+    requires_graphs=(GraphKind.IMPORT_GRAPH,),
+)
+
+symbol_graph_metrics_modules_plugin = make_metric_plugin(
+    name="symbol_graph_metrics_modules",
+    computation=_compute_symbol_graph_metrics_modules,
+    stage="symbol",
+    depends_on=("import_graph_builder",),
+    provides=("symbol_metrics_modules",),
+    produces_tables=("analytics.symbol_graph_metrics_modules",),
+    requires_graphs=(GraphKind.IMPORT_GRAPH,),
+)
+
+symbol_graph_metrics_functions_plugin = make_metric_plugin(
+    name="symbol_graph_metrics_functions",
+    computation=_compute_symbol_graph_metrics_functions,
+    stage="symbol",
+    depends_on=("callgraph_builder",),
+    provides=("symbol_metrics_functions",),
+    produces_tables=("analytics.symbol_graph_metrics_functions",),
+    requires_graphs=(GraphKind.CALL_GRAPH,),
+)
+
+config_graph_metrics_plugin = make_metric_plugin(
+    name="config_graph_metrics",
+    computation=_compute_config_graph_metrics,
+    stage="config",
+    depends_on=("import_graph_builder",),
+    provides=("config_metrics",),
+    produces_tables=(
+        "analytics.config_graph_metrics_keys",
+        "analytics.config_graph_metrics_modules",
+        "analytics.config_projection_key_edges",
+        "analytics.config_projection_module_edges",
+    ),
+    requires_graphs=(GraphKind.IMPORT_GRAPH,),
+)
+
+subsystem_agreement_plugin = make_metric_plugin(
+    name="subsystem_agreement",
+    computation=_compute_subsystem_agreement,
+    stage="subsystem",
+    depends_on=("subsystem_graph_metrics", "graph_metrics_modules_ext"),
+    provides=("subsystem_agreement",),
+    produces_tables=("analytics.subsystem_agreement",),
+    requires_graphs=(GraphKind.IMPORT_GRAPH,),
+)
+
+graph_stats_plugin = make_metric_plugin(
+    name="graph_stats",
+    computation=_compute_graph_stats,
+    stage="stats",
+    depends_on=("callgraph_builder", "import_graph_builder"),
+    provides=("graph_stats",),
+    produces_tables=("analytics.graph_stats",),
+    requires_graphs=(GraphKind.CALL_GRAPH, GraphKind.IMPORT_GRAPH),
+)
+
+
+# =============================================================================
+# Backward-compatible getters
+# =============================================================================
+
+
+def get_cfg_metrics_plugin() -> object:
+    """Return the CFG metrics plugin instance."""
+    return cfg_metrics_plugin
+
+
+def get_dfg_metrics_plugin() -> object:
+    """Return the DFG metrics plugin instance."""
+    return dfg_metrics_plugin
+
+
+def get_test_graph_metrics_plugin() -> object:
+    """Return the test graph metrics plugin instance."""
+    return test_graph_metrics_plugin
+
+
+def get_subsystem_graph_metrics_plugin() -> object:
+    """Return the subsystem graph metrics plugin instance."""
+    return subsystem_graph_metrics_plugin
+
+
+def get_symbol_graph_metrics_modules_plugin() -> object:
+    """Return the symbol graph metrics modules plugin instance."""
+    return symbol_graph_metrics_modules_plugin
+
+
+def get_symbol_graph_metrics_functions_plugin() -> object:
+    """Return the symbol graph metrics functions plugin instance."""
+    return symbol_graph_metrics_functions_plugin
+
+
+def get_config_graph_metrics_plugin() -> object:
+    """Return the config graph metrics plugin instance."""
+    return config_graph_metrics_plugin
+
+
+def get_subsystem_agreement_plugin() -> object:
+    """Return the subsystem agreement plugin instance."""
+    return subsystem_agreement_plugin
+
+
+def get_graph_stats_plugin() -> object:
+    """Return the graph stats plugin instance."""
+    return graph_stats_plugin
+
+
+# Legacy class aliases for backward compatibility
+CFGMetricsPlugin = type(cfg_metrics_plugin)
+DFGMetricsPlugin = type(dfg_metrics_plugin)
+TestGraphMetricsPlugin = type(test_graph_metrics_plugin)
+SubsystemGraphMetricsPlugin = type(subsystem_graph_metrics_plugin)
+SymbolGraphMetricsModulesPlugin = type(symbol_graph_metrics_modules_plugin)
+SymbolGraphMetricsFunctionsPlugin = type(symbol_graph_metrics_functions_plugin)
+ConfigGraphMetricsPlugin = type(config_graph_metrics_plugin)
+SubsystemAgreementPlugin = type(subsystem_agreement_plugin)
+GraphStatsPlugin = type(graph_stats_plugin)
+
+
+__all__ = [
+    "CFGMetricsPlugin",
+    "ConfigGraphMetricsPlugin",
+    "DFGMetricsPlugin",
+    "GraphStatsPlugin",
+    "SubsystemAgreementPlugin",
+    "SubsystemGraphMetricsPlugin",
+    "SymbolGraphMetricsFunctionsPlugin",
+    "SymbolGraphMetricsModulesPlugin",
+    "TestGraphMetricsPlugin",
+    "cfg_metrics_plugin",
+    "config_graph_metrics_plugin",
+    "dfg_metrics_plugin",
+    "get_cfg_metrics_plugin",
+    "get_config_graph_metrics_plugin",
+    "get_dfg_metrics_plugin",
+    "get_graph_stats_plugin",
+    "get_subsystem_agreement_plugin",
+    "get_subsystem_graph_metrics_plugin",
+    "get_symbol_graph_metrics_functions_plugin",
+    "get_symbol_graph_metrics_modules_plugin",
+    "get_test_graph_metrics_plugin",
+    "graph_stats_plugin",
+    "subsystem_agreement_plugin",
+    "subsystem_graph_metrics_plugin",
+    "symbol_graph_metrics_functions_plugin",
+    "symbol_graph_metrics_modules_plugin",
+    "test_graph_metrics_plugin",
+]

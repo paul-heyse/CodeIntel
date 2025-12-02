@@ -24,6 +24,12 @@ from codeintel.analytics.graphs.plugins import (
 )
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig, GraphPluginPolicy
+from codeintel.graphs.core import (
+    GraphPluginProtocol,
+    register_graph_plugin,
+)
+from codeintel.graphs.core.registry import unregister_graph_plugin
+from codeintel.graphs.recipes import RecipeExecutor, RecipeExecutorContext
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 
 
@@ -283,6 +289,75 @@ def _plugin_harness(tmp_path: Path) -> Iterator[PluginTestHarness]:
         Harness configured with in-memory gateway/runtime.
     """
     harness = PluginTestHarness(tmp_path)
+    try:
+        yield harness
+    finally:
+        harness.cleanup()
+
+
+class NewPluginTestHarness:
+    """Test harness using the new graphs.core infrastructure.
+
+    This harness uses RecipeExecutor instead of GraphServiceRuntime.
+    """
+
+    def __init__(self, tmp_path: Path) -> None:
+        """Initialize the test harness.
+
+        Parameters
+        ----------
+        tmp_path
+            Temporary directory for test artifacts.
+        """
+        self._tmp_path = tmp_path
+        self.snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=Path())
+        self.gateway: StorageGateway = open_memory_gateway(
+            apply_schema=True, ensure_views=True, validate_schema=True
+        )
+        self.executor_ctx = RecipeExecutorContext(
+            gateway=self.gateway,
+            snapshot=self.snapshot,
+            engine=None,
+            catalog_provider=None,
+        )
+        self.executor = RecipeExecutor(self.executor_ctx)
+        self._registered: set[str] = set()
+
+    def register(self, plugin: GraphPluginProtocol) -> None:
+        """Register a plugin for the duration of the harness lifecycle.
+
+        Parameters
+        ----------
+        plugin
+            Plugin to register.
+        """
+        try:
+            register_graph_plugin(plugin)
+            self._registered.add(plugin.metadata.name)
+        except ValueError:
+            # Already registered
+            pass
+
+    def cleanup(self) -> None:
+        """Unregister all plugins registered by this harness."""
+        for name in list(self._registered):
+            try:
+                unregister_graph_plugin(name)
+            except KeyError:
+                pass
+            self._registered.discard(name)
+
+
+@pytest.fixture(name="new_plugin_harness")
+def _new_plugin_harness(tmp_path: Path) -> Iterator[NewPluginTestHarness]:
+    """Yield a new plugin test harness with automatic cleanup.
+
+    Yields
+    ------
+    NewPluginTestHarness
+        Harness configured with in-memory gateway and RecipeExecutor.
+    """
+    harness = NewPluginTestHarness(tmp_path)
     try:
         yield harness
     finally:

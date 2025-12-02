@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from mcp.server.fastmcp import FastMCP
 
-from codeintel.analytics.graphs.plugins import plan_graph_metric_plugins
+from codeintel.graphs.core.registry import plan_graph_plugins
 from codeintel.serving.context import (
     RequestContext,
     reset_current_request_context,
@@ -124,40 +124,44 @@ def _register_graph_plugin_plan_tool(mcp: FastMCP, backend: QueryBackendOrServic
         """
 
         def _build_response() -> GraphPlanResponse:
-            plan = plan_graph_metric_plugins(
+            plan = plan_graph_plugins(
                 plugin_names=tuple(names) if names else None,
                 enabled=tuple(enable) if enable else None,
                 disabled=tuple(disable) if disable else None,
             )
             metadata = {
-                plugin.name: GraphPlanPluginMetadata(
-                    stage=plugin.stage,
-                    severity=plugin.severity,
-                    requires_isolation=plugin.requires_isolation,
-                    isolation_kind=plugin.isolation_kind,
-                    scope_aware=plugin.scope_aware,
-                    supported_scopes=plugin.supported_scopes,
-                    description=plugin.description,
-                    enabled_by_default=plugin.enabled_by_default,
-                    depends_on=plugin.depends_on,
-                    provides=plugin.provides,
-                    requires=plugin.requires,
+                plugin.metadata.name: GraphPlanPluginMetadata(
+                    stage=plugin.metadata.stage,
+                    severity=plugin.metadata.severity,
+                    requires_isolation=plugin.metadata.isolation_kind != "none",
+                    isolation_kind=plugin.metadata.isolation_kind,
+                    scope_aware=plugin.metadata.supports_incremental,
+                    supported_scopes=(),
+                    description=plugin.metadata.description,
+                    enabled_by_default=plugin.metadata.enabled_by_default,
+                    depends_on=plugin.metadata.depends_on,
+                    provides=plugin.metadata.provides,
+                    requires=plugin.metadata.requires,
                     resource_hints=(
                         {
-                            "max_runtime_ms": plugin.resource_hints.max_runtime_ms,
-                            "memory_mb_hint": plugin.resource_hints.memory_mb_hint,
+                            "max_runtime_ms": plugin.metadata.resource_hints.max_runtime_ms,
+                            "memory_mb_hint": plugin.metadata.resource_hints.memory_mb_hint,
                         }
-                        if plugin.resource_hints is not None
+                        if plugin.metadata.resource_hints is not None
                         else None
                     ),
-                    options_model=plugin.options_model.__name__ if plugin.options_model else None,
-                    options_default=plugin.options_default,
-                    version_hash=plugin.version_hash,
-                    contract_checkers=len(plugin.contract_checkers),
-                    config_schema_ref=plugin.config_schema_ref,
-                    row_count_tables=plugin.row_count_tables,
-                    cache_populates=plugin.cache_populates,
-                    cache_consumes=plugin.cache_consumes,
+                    options_model=(
+                        plugin.metadata.options_model.__name__
+                        if plugin.metadata.options_model
+                        else None
+                    ),
+                    options_default=plugin.metadata.options_default,
+                    version_hash=plugin.metadata.version_hash,
+                    contract_checkers=0,
+                    config_schema_ref=plugin.metadata.config_schema_ref,
+                    row_count_tables=plugin.metadata.row_count_tables,
+                    cache_populates=plugin.metadata.cache_populates,
+                    cache_consumes=plugin.metadata.cache_consumes,
                 )
                 for plugin in plan.plugins
             }

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/recipes/builtins.py
+# hypothesis_version: 6.148.3
+
+[', ', 'BUILDERS_ONLY_RECIPE', 'BUILTIN_RECIPES', 'FULL_GRAPH_RECIPE', 'INCREMENTAL_RECIPE', 'METRICS_ONLY_RECIPE', 'builders_only', 'callgraph_builder', 'callgraph_only', 'cfg_dfg_builder', 'cfg_metrics', 'core_graph_metrics', 'core_metrics', 'dfg_metrics', 'edges', 'full', 'get_builtin_recipe', 'goid_builder', 'goids', 'graph_stats', 'import_graph_builder', 'import_graph_only', 'incremental', 'list_builtin_recipes', 'metrics_only', 'secondary_metrics', 'stats', 'structure', 'test_graph_metrics']
