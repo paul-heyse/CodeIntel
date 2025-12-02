@@ -112,7 +112,9 @@ def _create_scan_step(
     storage = DuckDBStorageAdapter(gateway)
     discovery = FilesystemDiscoveryAdapter(repo_root)
     change_detection = HashChangeDetectionAdapter(storage)
-    scan_step = RepoScanStep(storage=storage, discovery=discovery, change_detection=change_detection)
+    scan_step = RepoScanStep(
+        storage=storage, discovery=discovery, change_detection=change_detection
+    )
     return scan_step, storage, discovery
 
 
@@ -139,7 +141,9 @@ def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
 
     typing_step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
     result = asyncio.run(
-        typing_step.execute_async(list(modules), repo="r", commit="c", repo_root=str(context.repo_root))
+        typing_step.execute_async(
+            list(modules), repo="r", commit="c", repo_root=str(context.repo_root)
+        )
     )
 
     if not result.success:

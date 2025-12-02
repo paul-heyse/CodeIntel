@@ -571,14 +571,16 @@ def test_mcp_tool_delegation() -> None:
             goid_h128: int | None = None,
             rel_path: str | None = None,
             qualname: str | None = None,
+            scope: GraphScopePayload | None = None,
         ) -> dm.FunctionSummaryResult:
-            _ = (goid_h128, rel_path)
+            _ = (goid_h128, rel_path, scope)
             calls.append("get_function_summary")
             return super().get_function_summary(
                 urn=urn,
                 goid_h128=goid_h128,
                 rel_path=rel_path,
                 qualname=qualname,
+                scope=scope,
             )
 
     mcp = fastmcp_mod.FastMCP("test")

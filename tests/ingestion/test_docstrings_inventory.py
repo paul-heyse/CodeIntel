@@ -61,7 +61,9 @@ def _create_scan_steps(
     storage = DuckDBStorageAdapter(gateway)
     discovery = FilesystemDiscoveryAdapter(repo_root)
     change_detection = HashChangeDetectionAdapter(storage)
-    scan_step = RepoScanStep(storage=storage, discovery=discovery, change_detection=change_detection)
+    scan_step = RepoScanStep(
+        storage=storage, discovery=discovery, change_detection=change_detection
+    )
     doc_step = DocstringsExtractStep(storage=storage, discovery=discovery)
     return scan_step, doc_step
 

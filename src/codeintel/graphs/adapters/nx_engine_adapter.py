@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
-from codeintel.graphs.ports.engine import EnginePort, GraphData
+from codeintel.graphs.ports.engine import GraphData
 
 if TYPE_CHECKING:
     from codeintel.graphs.engine import NxGraphEngine
@@ -130,15 +130,6 @@ class NxEngineAdapter:
             Import graph data without NetworkX dependency.
         """
         return GraphData.from_nx(self.import_graph())
-
-
-# Verify protocol compliance
-def _check_protocol_compliance() -> None:
-    """Verify NxEngineAdapter implements EnginePort."""
-    adapter: EnginePort = NxEngineAdapter(
-        engine=None,  # type: ignore[arg-type]
-    )
-    _ = adapter
 
 
 __all__ = ["NxEngineAdapter"]

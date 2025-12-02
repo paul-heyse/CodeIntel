@@ -48,7 +48,9 @@ if TYPE_CHECKING:
     from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
     from codeintel.ingestion.ingest_runs import IngestRunSink
     from codeintel.ingestion.tool_service import ToolService
+    from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.run_tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
 
@@ -110,6 +112,8 @@ class RecipeExecutorContext:
         Optional change tracker for incremental ingestion.
     ingest_run_sink
         Optional sink for recording run metrics.
+    run_context
+        Optional unified run context for cross-engine correlation.
     """
 
     gateway: StorageGateway
@@ -122,6 +126,7 @@ class RecipeExecutorContext:
     tool_service: ToolService | None = None
     change_tracker: ChangeTracker | None = None
     ingest_run_sink: IngestRunSink | None = None
+    run_context: RunContext | None = None
 
 
 @dataclass
@@ -177,6 +182,7 @@ class RecipeExecutor:
         self._tool_service = context.tool_service
         self._change_tracker = context.change_tracker
         self._ingest_run_sink = context.ingest_run_sink
+        self._run_context = context.run_context
         self._config = config or ExecutorConfig()
 
     def execute(self, recipe: IngestRecipe) -> RecipeExecutionResult:
@@ -512,6 +518,7 @@ class RecipeExecutor:
             scratch=self._config.scratch,
             plugin_name=plugin.metadata.name,
             run_id=self._config.run_id,
+            run_context=self._run_context,
         )
 
     def _build_resource_registry(self) -> ResourceRegistry:
@@ -586,10 +593,156 @@ def execute_recipe(
     return executor.execute(recipe)
 
 
+def execute_recipe_for_context(
+    recipe: IngestRecipe,
+    run_context: RunContext,
+    context: RecipeExecutorContext,
+    config: ExecutorConfig | None = None,
+) -> RecipeExecutionResult:
+    """Execute a recipe with unified RunContext.
+
+    This is the preferred entrypoint that accepts a unified RunContext
+    for consistent run identity across all engines. It records run and
+    step metadata to the pipeline registry.
+
+    Parameters
+    ----------
+    recipe
+        Recipe to execute.
+    run_context
+        Unified run context for cross-engine correlation.
+    context
+        Execution context with dependencies and services.
+    config
+        Optional executor configuration.
+
+    Returns
+    -------
+    RecipeExecutionResult
+        Execution result.
+
+    Examples
+    --------
+    >>> from codeintel.runtime import new_run_context
+    >>> from codeintel.config.primitives import SnapshotRef
+    >>> from pathlib import Path
+    >>> # Create unified context
+    >>> snapshot = SnapshotRef(repo="org/repo", commit="abc123", repo_root=Path("/tmp"))
+    >>> run_ctx = new_run_context(snapshot=snapshot, kind="ingest", trigger="cli")
+    >>> # Build executor context with run_context
+    >>> # context = RecipeExecutorContext(..., run_context=run_ctx)
+    >>> # result = execute_recipe_for_context(recipe, run_ctx, context)
+    """
+    from dataclasses import replace
+
+    from codeintel.storage.run_tracking import PipelineStatus
+
+    runs = context.gateway.runs
+
+    # Start the run in the registry
+    runs.start_run(
+        run_context,
+        pipeline_name=f"ingest:{recipe.name}",
+    )
+
+    # Ensure context has the run_context set
+    context_with_run = replace(context, run_context=run_context)
+
+    # Execute the recipe
+    result = execute_recipe(recipe, context_with_run, config)
+
+    # Record steps from stage results
+    _record_ingestion_steps(runs, run_context.run_id, result)
+
+    # Determine overall status
+    status: PipelineStatus
+    error_summary: str | None = None
+    if result.success:
+        status = "succeeded"
+    elif result.error:
+        status = "failed"
+        error_summary = result.error
+    else:
+        # Some stages failed but not all
+        status = "partial"
+
+    # Complete the run
+    runs.complete_run(
+        run_context.run_id,
+        status=status,
+        error_summary=error_summary,
+    )
+
+    return result
+
+
+def _record_ingestion_steps(
+    runs: PipelineRunTracking,
+    run_id: str,
+    result: RecipeExecutionResult,
+) -> None:
+    """Record step records from ingestion results.
+
+    Parameters
+    ----------
+    runs
+        Pipeline run tracking accessor from gateway.
+    run_id
+        Run identifier.
+    result
+        Recipe execution result.
+    """
+    from datetime import UTC, datetime
+
+    from codeintel.storage.run_tracking import PipelineStepRecord, StepStatus
+
+    for stage_result in result.stage_results:
+        stage_name = stage_result.stage.name
+        for plugin_name, plugin_data in stage_result.plugin_results.items():
+            # Extract status from plugin result
+            if isinstance(plugin_data, dict):
+                success = plugin_data.get("success", False)
+                skipped = plugin_data.get("skipped", False)
+                error = plugin_data.get("error")
+            else:
+                success = False
+                skipped = False
+                error = None
+
+            step_status: StepStatus
+            if skipped:
+                step_status = "skipped"
+            elif success:
+                step_status = "succeeded"
+            else:
+                step_status = "failed"
+
+            # Use current time as approximation since we don't have exact timestamps
+            now = datetime.now(tz=UTC)
+            extra: dict[str, object] | None = None
+            if error:
+                extra = {"error": error}
+
+            runs.record_step(
+                PipelineStepRecord(
+                    run_id=run_id,
+                    module="ingestion",
+                    stage=stage_name,
+                    name=plugin_name,
+                    status=step_status,
+                    started_at=now,
+                    completed_at=now,
+                    row_counts=None,  # Not available in current result structure
+                    extra=extra,
+                ),
+            )
+
+
 __all__ = [
     "ExecutorConfig",
     "PluginExecutionRecord",
     "RecipeExecutor",
     "RecipeExecutorContext",
     "execute_recipe",
+    "execute_recipe_for_context",
 ]

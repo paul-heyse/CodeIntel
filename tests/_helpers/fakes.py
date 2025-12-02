@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -115,7 +115,7 @@ class FakeToolRunner(ToolRunner):
     async def run_async(
         self,
         tool: ToolName | str,
-        args: list[str],
+        args: Sequence[str],
         *,
         cwd: Path | None = None,
         output_path: Path | None = None,

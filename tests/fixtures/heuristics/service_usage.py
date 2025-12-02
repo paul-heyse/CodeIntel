@@ -77,4 +77,4 @@ def serialize_payload(payload: UserPayload) -> dict[str, object]:
     dict[str, object]
         Dictionary representation of the payload fields.
     """
-    return payload.dict()
+    return payload.model_dump()

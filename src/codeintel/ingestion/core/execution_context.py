@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.core.config_registry import ConfigRegistry
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
 
 if TYPE_CHECKING:
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
     from codeintel.ingestion.resources.protocol import ResourceProvider
     from codeintel.ingestion.resources.registry import ResourceRegistry
+    from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -90,6 +92,8 @@ class IngestExecutionContext:
         Name of the executing plugin.
     run_id
         Unique identifier for this execution run.
+    run_context
+        Optional unified run context for cross-engine correlation.
     """
 
     gateway: StorageGateway
@@ -100,9 +104,10 @@ class IngestExecutionContext:
     config_profile: ScanProfile
     resources: ResourceRegistry = field(default_factory=_empty_registry)
     scratch: IngestRuntimeScratch = field(default_factory=IngestRuntimeScratch)
-    configs: dict[type[object], object] = field(default_factory=dict)
+    configs: ConfigRegistry = field(default_factory=ConfigRegistry)
     plugin_name: str | None = None
     run_id: str | None = None
+    run_context: RunContext | None = None
 
     @property
     def repo_root(self) -> Path:
@@ -147,6 +152,19 @@ class IngestExecutionContext:
             Path to the build directory.
         """
         return self.paths.build_dir
+
+    @property
+    def effective_run_id(self) -> str | None:
+        """Get run ID preferring unified RunContext if present.
+
+        Returns
+        -------
+        str | None
+            Run ID from run_context if set, otherwise falls back to run_id.
+        """
+        if self.run_context is not None:
+            return self.run_context.run_id
+        return self.run_id
 
     def require[T: ResourceProvider[object]](self, provider_type: type[T]) -> T:
         """Get the resource provider, raising if unavailable.
@@ -220,7 +238,7 @@ class IngestExecutionContext:
         config
             The configuration instance.
         """
-        self.configs[config_type] = config
+        self.configs.register(config_type, config)
 
     def has_config(self, config_type: type[object]) -> bool:
         """Check if a config type is registered.
@@ -235,7 +253,7 @@ class IngestExecutionContext:
         bool
             True if config is registered.
         """
-        return config_type in self.configs
+        return self.configs.has(config_type)
 
     def get_config[T](self, config_type: type[T]) -> T:
         """Get a required configuration.
@@ -255,11 +273,13 @@ class IngestExecutionContext:
         KeyError
             If the config type is not registered.
         """
-        if config_type not in self.configs:
-            message = f"Config not found: {config_type.__name__}"
-            raise KeyError(message)
-        # The config was registered with this type, so this cast is safe
-        return self.configs[config_type]  # type: ignore[return-value]
+        from codeintel.core.config_registry import ConfigNotFoundError
+
+        try:
+            return self.configs.get(config_type)
+        except ConfigNotFoundError as exc:
+            # Re-raise as KeyError for backward compatibility
+            raise KeyError(str(exc)) from exc
 
     def get_optional_config[T](self, config_type: type[T]) -> T | None:
         """Get an optional configuration.
@@ -274,11 +294,7 @@ class IngestExecutionContext:
         T | None
             The configuration instance or None.
         """
-        config = self.configs.get(config_type)
-        if config is None:
-            return None
-        # The config was registered with this type, so this cast is safe
-        return config  # type: ignore[return-value]
+        return self.configs.get_optional(config_type)
 
     def count_produced_tables(
         self,

@@ -77,9 +77,7 @@ def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) 
     )
 
     try:
-        result = run_validated_exports(
-            gateway=cast("StorageGateway", ctx.gateway), output_dir=tmp_path, options=options
-        )
+        result = run_validated_exports(gateway=ctx.gateway, output_dir=tmp_path, options=options)
     finally:
         ctx.close()
 

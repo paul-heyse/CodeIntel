@@ -139,12 +139,12 @@ class IngestTestSetup:
         """
         tracker_config = TrackerConfig(
             scratch=self.scratch,
-            profile=self.code_profile,  # type: ignore[arg-type]
+            profile=self.code_profile,
         )
         self.resources.register(
             TrackerProvider,
             TrackerProvider(
-                self.gateway,  # type: ignore[arg-type]
+                self.gateway,
                 self.snapshot,
                 tracker_config,
             ),
@@ -156,9 +156,9 @@ class IngestTestSetup:
         self.resources.register(
             ModuleProvider,
             ModuleProvider(
-                self.gateway,  # type: ignore[arg-type]
+                self.gateway,
                 self.snapshot,
-                profile=self.code_profile,  # type: ignore[arg-type]
+                profile=self.code_profile,
             ),
         )
 

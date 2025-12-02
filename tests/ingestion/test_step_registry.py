@@ -127,8 +127,9 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
 
         def compute(  # noqa: PLR6301
             self,
-            _ctx: IngestExecutionContext,
+            ctx: IngestExecutionContext,
         ) -> Mapping[str, int] | None:
+            _ = ctx  # Unused but required by protocol
             executed.append("alpha")
             return None
 
@@ -141,8 +142,9 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
 
         def compute(  # noqa: PLR6301
             self,
-            _ctx: IngestExecutionContext,
+            ctx: IngestExecutionContext,
         ) -> Mapping[str, int] | None:
+            _ = ctx  # Unused but required by protocol
             executed.append("bravo")
             return None
 
@@ -155,8 +157,9 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
 
         def compute(  # noqa: PLR6301
             self,
-            _ctx: IngestExecutionContext,
+            ctx: IngestExecutionContext,
         ) -> Mapping[str, int] | None:
+            _ = ctx  # Unused but required by protocol
             executed.append("charlie")
             return None
 

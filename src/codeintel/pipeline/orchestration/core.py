@@ -54,6 +54,7 @@ if TYPE_CHECKING:
         CFGEdgeRow,
         DFGEdgeRow,
     )
+    from codeintel.runtime import RunContext
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +136,7 @@ class PipelineContext:
     export_validation_profile: Literal["strict", "lenient"] | None = None
     force_full_export: bool = False
     run_id: str = ""
+    run_context: RunContext | None = None
 
     @property
     def document_output_dir(self) -> Path:
@@ -190,6 +192,19 @@ class PipelineContext:
     def graph_engine(self) -> GraphEngine | None:
         """Convenience accessor for the shared graph engine."""
         return self.graph_runtime.engine if self.graph_runtime is not None else None
+
+    @property
+    def effective_run_id(self) -> str:
+        """Get run ID preferring unified RunContext if present.
+
+        Returns
+        -------
+        str
+            Run ID from run_context if set, otherwise falls back to run_id.
+        """
+        if self.run_context is not None:
+            return self.run_context.run_id
+        return self.run_id
 
     def config_builder(self) -> ConfigBuilder:
         """
@@ -310,6 +325,7 @@ def _plugin_ctx(
         scratch=scratch or IngestRuntimeScratch(),
         plugin_name=plugin_name,
         run_id=ctx.run_id or "",
+        run_context=ctx.run_context,
     )
 
 

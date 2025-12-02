@@ -15,6 +15,7 @@ from codeintel.storage.ingest_helpers import macro_insert_rows
 from codeintel.storage.ingest_macros import assert_ingest_macros_present, ensure_ingest_macros
 from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
 from codeintel.storage.registry_helpers import DatasetRegistry, build_dataset_registry
+from codeintel.storage.run_tracking import PipelineRunTracking
 from codeintel.storage.schemas import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.views import create_all_views
 
@@ -55,6 +56,7 @@ class StorageGateway(Protocol):
     graph: GraphTables
     docs: DocsViews
     analytics: AnalyticsTables
+    runs: PipelineRunTracking
 
     @property
     def con(self) -> DuckDBConnection:
@@ -789,12 +791,14 @@ class _DuckDBGateway:
     graph: GraphTables = field(init=False)
     docs: DocsViews = field(init=False)
     analytics: AnalyticsTables = field(init=False)
+    runs: PipelineRunTracking = field(init=False)
 
     def __post_init__(self) -> None:
         self.core = CoreTables(self.con)
         self.graph = GraphTables(self.con)
         self.docs = DocsViews(self.con)
         self.analytics = AnalyticsTables(self.con)
+        self.runs = PipelineRunTracking(self.con)
 
     def close(self) -> None:
         """Close the underlying connection."""

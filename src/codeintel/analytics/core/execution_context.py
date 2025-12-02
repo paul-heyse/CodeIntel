@@ -27,6 +27,7 @@ from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.analytics.resources.protocol import ResourceProvider
+    from codeintel.runtime import RunContext
 
 log = logging.getLogger(__name__)
 
@@ -255,6 +256,9 @@ class PluginExecutionContext:
     # Additional metadata
     extra: MutableMapping[str, Any] = field(default_factory=dict)
 
+    # Unified run context for cross-engine correlation
+    run_context: RunContext | None = None
+
     @property
     def repo(self) -> str:
         """Repository identifier."""
@@ -264,6 +268,19 @@ class PluginExecutionContext:
     def commit(self) -> str:
         """Commit identifier."""
         return self.snapshot.commit
+
+    @property
+    def effective_run_id(self) -> str:
+        """Get run ID preferring unified RunContext if present.
+
+        Returns
+        -------
+        str
+            Run ID from run_context if set, otherwise falls back to run_id.
+        """
+        if self.run_context is not None:
+            return self.run_context.run_id
+        return self.run_id
 
     def get_config(self, config_type: type[T]) -> T:
         """Return configuration of the requested type.
@@ -430,6 +447,7 @@ class PluginExecutionContextBuilder:
     _extra: dict[str, Any] = field(default_factory=dict)
     _options: object | None = None
     _plugin_name: str | None = None
+    _run_context: RunContext | None = None
 
     def with_config(self, config_type: type[T], config: T) -> PluginExecutionContextBuilder:
         """Add a configuration to the context.
@@ -497,6 +515,22 @@ class PluginExecutionContextBuilder:
             Self for chaining.
         """
         self._extra[key] = value
+        return self
+
+    def with_run_context(self, run_context: RunContext) -> PluginExecutionContextBuilder:
+        """Set the unified run context.
+
+        Parameters
+        ----------
+        run_context
+            Unified run context for cross-engine correlation.
+
+        Returns
+        -------
+        PluginExecutionContextBuilder
+            Self for chaining.
+        """
+        self._run_context = run_context
         return self
 
     def with_resource(
@@ -590,6 +624,7 @@ class PluginExecutionContextBuilder:
             options=self._options,
             plugin_name=self._plugin_name,
             extra=dict(self._extra),
+            run_context=self._run_context,
         )
 
 

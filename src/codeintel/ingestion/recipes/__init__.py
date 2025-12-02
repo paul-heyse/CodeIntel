@@ -35,6 +35,7 @@ from codeintel.ingestion.recipes.executor import (
     PluginExecutionRecord,
     RecipeExecutor,
     execute_recipe,
+    execute_recipe_for_context,
 )
 
 __all__ = [
@@ -56,6 +57,7 @@ __all__ = [
     "RecipeStageResult",
     "StageSpec",
     "execute_recipe",
+    "execute_recipe_for_context",
     "get_builtin_recipe",
     "get_default_recipe",
     "list_builtin_recipes",

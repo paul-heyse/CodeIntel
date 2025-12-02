@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,7 @@ def test_scaffold_writes_artifacts(tmp_path: Path) -> None:
 def test_scaffold_respects_dry_run(tmp_path: Path) -> None:
     """Dry-run should not create files."""
     opts = _base_opts(tmp_path)
-    opts = ScaffoldOptions(**{**opts.__dict__, "dry_run": True})
+    opts = replace(opts, dry_run=True)
     result = scaffold_dataset(opts)
     if result.typed_dict.exists() or result.metadata.exists():
         pytest.fail("Dry-run wrote files unexpectedly")
@@ -73,14 +74,7 @@ def test_scaffold_blocks_overwrite_without_flag(tmp_path: Path) -> None:
 def test_scaffold_view_defaults_skip_exports(tmp_path: Path) -> None:
     """View scaffolds skip default export filenames."""
     opts = _base_opts(tmp_path)
-    opts = ScaffoldOptions(
-        **{
-            **opts.__dict__,
-            "is_view": True,
-            "jsonl_filename": None,
-            "parquet_filename": None,
-        }
-    )
+    opts = replace(opts, is_view=True, jsonl_filename=None, parquet_filename=None)
     result = scaffold_dataset(opts)
     meta = json.loads(result.metadata.read_text(encoding="utf-8"))
     if meta.get("is_view") is not True:
@@ -92,7 +86,7 @@ def test_scaffold_view_defaults_skip_exports(tmp_path: Path) -> None:
 def test_scaffold_emits_bootstrap_snippet_when_requested(tmp_path: Path) -> None:
     """Bootstrap snippet should be written when requested."""
     opts = _base_opts(tmp_path)
-    opts = ScaffoldOptions(**{**opts.__dict__, "emit_bootstrap_snippet": True})
+    opts = replace(opts, emit_bootstrap_snippet=True)
     result = scaffold_dataset(opts)
     if result.bootstrap_snippet is None or not result.bootstrap_snippet.exists():
         pytest.fail("Bootstrap snippet was not written")

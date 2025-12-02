@@ -39,6 +39,8 @@ from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalogProvider
+    from codeintel.runtime import RunContext
+    from codeintel.storage.run_tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
 
@@ -156,11 +158,23 @@ def _build_execution_context(
     plan: AnalyticsPluginExecutionPlan,
     run_context: AnalyticsRunContext,
     snapshot: SnapshotRef,
+    unified_run_context: RunContext | None = None,
 ) -> PluginExecutionContextBuilder:
     """Build the execution context from plan and run context.
 
     Register resource providers for the new architecture. All plugins have
     been migrated to use ctx.require(ProviderType) pattern.
+
+    Parameters
+    ----------
+    plan
+        Analytics plugin execution plan.
+    run_context
+        Analytics run context with gateway and configs.
+    snapshot
+        Repository snapshot reference.
+    unified_run_context
+        Optional unified run context for cross-engine correlation.
 
     Returns
     -------
@@ -172,6 +186,9 @@ def _build_execution_context(
         snapshot=snapshot,
         run_id=plan.run_id,
     )
+
+    if unified_run_context is not None:
+        builder = builder.with_run_context(unified_run_context)
 
     # Register resource providers (new architecture)
     if run_context.graph_runtime is not None:
@@ -309,10 +326,194 @@ def _convert_execution_records(
     return result
 
 
+def run_analytics_plugins_for_context(
+    *,
+    unified_run_context: RunContext,
+    plan: AnalyticsPluginExecutionPlan,
+    run_context: AnalyticsRunContext,
+    enable_middleware: bool = True,
+) -> AnalyticsRunReport:
+    """Execute analytics plugins with unified RunContext.
+
+    This is the preferred entrypoint that accepts a unified RunContext
+    for consistent run identity across all engines. It records run and
+    step metadata to the pipeline registry.
+
+    Parameters
+    ----------
+    unified_run_context
+        Unified run context for cross-engine correlation.
+    plan
+        Planned plugins with settings and dependency ordering.
+    run_context
+        Shared runtime context (gateway, runtimes, configs) for execution.
+    enable_middleware
+        Whether to enable logging and metrics middleware (default: True).
+
+    Returns
+    -------
+    AnalyticsRunReport
+        Telemetry and records for each executed plugin.
+
+    Examples
+    --------
+    >>> from codeintel.runtime import new_run_context
+    >>> from codeintel.config.primitives import SnapshotRef
+    >>> from pathlib import Path
+    >>> # Create unified context
+    >>> snapshot = SnapshotRef(repo="org/repo", commit="abc123", repo_root=Path("/tmp"))
+    >>> run_ctx = new_run_context(snapshot=snapshot, kind="analytics", trigger="cli")
+    >>> # result = run_analytics_plugins_for_context(
+    >>> #     unified_run_context=run_ctx, plan=plan, run_context=analytics_ctx
+    >>> # )
+    """
+    from codeintel.storage.run_tracking import PipelineStatus  # noqa: PLC0415
+
+    runs = run_context.gateway.runs
+
+    # Start the run in the registry
+    runs.start_run(
+        unified_run_context,
+        pipeline_name=f"analytics:{plan.scope}",
+    )
+
+    snapshot = (
+        unified_run_context.snapshot
+        if run_context.snapshot is None
+        else _extract_snapshot(plan, run_context)
+    )
+    builder = _build_execution_context(
+        plan, run_context, snapshot, unified_run_context=unified_run_context
+    )
+    ctx = builder.build()
+
+    policy = ExecutionPolicy(
+        fail_fast=plan.policy.fail_fast,
+        max_retries=0,
+        skip_on_unchanged=plan.policy.skip_on_unchanged,
+        dry_run=plan.policy.dry_run,
+        validate_contracts=True,
+    )
+
+    # Configure middleware
+    middleware = []
+    if enable_middleware:
+        middleware = [LoggingMiddleware(), MetricsMiddleware()]
+
+    executor = PluginExecutor(policy=policy, middleware=middleware)
+    scratch = PluginScratch()
+    report = executor.execute(ctx, plan.internal_plan, scratch=scratch)
+
+    records = _convert_execution_records(report.records)
+
+    # Record steps from analytics records
+    _record_analytics_steps(runs, unified_run_context.run_id, records)
+
+    # Determine overall status
+    status: PipelineStatus
+    error_summary: str | None = None
+    if any(r.status == "failed" for r in records):
+        status = "failed"
+        failed_plugins = [r.name for r in records if r.status == "failed"]
+        error_summary = f"Failed plugins: {', '.join(failed_plugins)}"
+    elif any(r.partial for r in records):
+        status = "partial"
+    else:
+        status = "succeeded"
+
+    # Complete the run
+    runs.complete_run(
+        unified_run_context.run_id,
+        status=status,
+        error_summary=error_summary,
+    )
+
+    analytics_scope = AnalyticsScope(
+        paths=plan.scope.paths,
+        modules=plan.scope.modules,
+        time_window=plan.scope.time_window,
+        labels={"runtime": "analytics"},
+    )
+
+    return AnalyticsRunReport(
+        repo=plan.repo,
+        commit=plan.commit,
+        run_id=unified_run_context.run_id,
+        scope=analytics_scope,
+        records=tuple(records),
+        plan=AnalyticsPlanInfo(
+            plan_id=plan.plan_id,
+            ordered_steps=plan.ordered_names,
+            skipped_steps=plan.skipped,
+            dep_graph=plan.dep_graph,
+        ),
+        tags={"runtime": "analytics"},
+    )
+
+
+def _record_analytics_steps(
+    runs: PipelineRunTracking,
+    run_id: str,
+    records: list[AnalyticsRunRecord],
+) -> None:
+    """Record step records from analytics results.
+
+    Parameters
+    ----------
+    runs
+        Pipeline run tracking accessor from gateway.
+    run_id
+        Run identifier.
+    records
+        Analytics run records.
+    """
+    from codeintel.storage.run_tracking import PipelineStepRecord, StepStatus  # noqa: PLC0415
+
+    for rec in records:
+        # Extract row_counts from meta if present
+        meta = rec.meta or {}
+        row_counts = meta.get("row_counts") if isinstance(meta.get("row_counts"), dict) else None
+
+        # Map analytics status to step status
+        step_status: StepStatus
+        if rec.status == "succeeded":
+            step_status = "succeeded"
+        elif rec.status == "failed":
+            step_status = "failed"
+        elif rec.status == "skipped":
+            step_status = "skipped"
+        else:
+            step_status = "failed"
+
+        # Build extra metadata
+        extra: dict[str, object] = {}
+        if rec.error:
+            extra["error"] = rec.error
+        if rec.partial:
+            extra["partial"] = True
+        if rec.attempts > 1:
+            extra["attempts"] = rec.attempts
+
+        runs.record_step(
+            PipelineStepRecord(
+                run_id=run_id,
+                module="analytics",
+                stage=rec.kind,
+                name=rec.name,
+                status=step_status,
+                started_at=rec.started_at,
+                completed_at=rec.ended_at,
+                row_counts=row_counts,
+                extra=extra if extra else None,
+            ),
+        )
+
+
 __all__ = [
     "AnalyticsPlanRequest",
     "AnalyticsPluginExecutionPlan",
     "AnalyticsRunContext",
     "plan_analytics_plugin_run",
     "run_analytics_plugins",
+    "run_analytics_plugins_for_context",
 ]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -262,7 +262,7 @@ def test_build_behavior_rows_mixed_sources() -> None:
         ),
     ]
 
-    profile_ctx = {
+    profile_ctx: Mapping[str, dict[str, object]] = {
         "t1": {"markers": ["network"], "functions_covered": [], "subsystems_covered": []},
         "t2": {"markers": ["db"], "functions_covered": [], "subsystems_covered": []},
     }

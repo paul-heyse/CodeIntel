@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/pipeline/run_registry.py
+# hypothesis_version: 6.148.3
+
+[',', ':', 'ModuleKind', 'PipelineRunRecord', 'PipelineStatus', 'PipelineStepRecord', 'StepStatus', 'analytics', 'complete_run', 'complete_step', 'failed', 'fetch_run', 'fetch_steps', 'graphs', 'ingestion', 'partial', 'pending', 'record_step', 'running', 'skipped', 'start_run', 'start_step', 'succeeded']

@@ -47,7 +47,7 @@ from codeintel.ingestion.recipes import (
     RecipeOptions,
     RecipeSpec,
     StageSpec,
-    execute_recipe,
+    execute_recipe_for_context,
     get_builtin_recipe,
     recipe,
     stage,
@@ -62,6 +62,7 @@ from codeintel.pipeline.export.runner import (
 )
 from codeintel.pipeline.orchestration.prefect_flow import ExportArgs, export_docs_flow
 from codeintel.pipeline.orchestration.steps import REGISTRY, StepPhase
+from codeintel.runtime import new_run_context
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.models import (
@@ -1404,6 +1405,9 @@ def _cmd_ingest_run(args: argparse.Namespace) -> int:
         ingest_recipe.all_plugins,
     )
 
+    # Create unified run context for cross-engine correlation
+    run_ctx = new_run_context(snapshot=snapshot, kind="ingest", trigger="cli")
+
     context = RecipeExecutorContext(
         gateway=gateway,
         snapshot=snapshot,
@@ -1413,8 +1417,9 @@ def _cmd_ingest_run(args: argparse.Namespace) -> int:
         config_profile=config_profile,
         tool_runner=runner,
         tool_service=tool_service,
+        run_context=run_ctx,
     )
-    result = execute_recipe(ingest_recipe, context)
+    result = execute_recipe_for_context(ingest_recipe, run_ctx, context)
 
     _render_ingest_result(result, output_json=args.output_json)
     return 0 if result.success else 1

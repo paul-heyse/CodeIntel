@@ -9,6 +9,8 @@ from contextlib import contextmanager
 
 import pytest
 from prefect.server.api import server as prefect_server
+
+# pyrefly: ignore[missing-module-attribute]  # Prefect settings are runtime-dynamic
 from prefect.settings import PREFECT_API_KEY, PREFECT_API_URL, temporary_settings
 from prefect.testing.utilities import prefect_test_harness
 

@@ -788,6 +788,50 @@ METADATA_SCHEMA_DDL: tuple[str, ...] = (
     METADATA_SCHEMA_DDL_BASE + INGEST_MACRO_DDLS + METADATA_SCHEMA_DDL_REST
 )
 
+# Pipeline run tracking tables (Epic 8)
+PIPELINE_RUNS_DDL = """
+CREATE TABLE IF NOT EXISTS metadata.pipeline_runs (
+    run_id              TEXT PRIMARY KEY,
+    repo                TEXT NOT NULL,
+    commit              TEXT NOT NULL,
+    kind                TEXT NOT NULL,
+    trigger             TEXT NOT NULL,
+    requested_operation TEXT,
+    requested_datasets  JSON,
+    started_at          TIMESTAMPTZ NOT NULL,
+    completed_at        TIMESTAMPTZ,
+    status              TEXT NOT NULL,
+    error_summary       TEXT,
+    pipeline_name       TEXT
+);
+"""
+
+PIPELINE_STEPS_DDL = """
+CREATE TABLE IF NOT EXISTS metadata.pipeline_steps (
+    run_id          TEXT NOT NULL,
+    module          TEXT NOT NULL,
+    stage           TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    started_at      TIMESTAMPTZ NOT NULL,
+    completed_at    TIMESTAMPTZ,
+    status          TEXT NOT NULL,
+    row_counts      JSON,
+    extra           JSON,
+    PRIMARY KEY (run_id, module, name)
+);
+"""
+
+PIPELINE_INDEXES_DDL = """
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_repo_commit
+    ON metadata.pipeline_runs (repo, commit, started_at);
+
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status
+    ON metadata.pipeline_runs (status, repo, commit);
+
+CREATE INDEX IF NOT EXISTS idx_pipeline_steps_run
+    ON metadata.pipeline_steps (run_id, module, stage);
+"""
+
 
 def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
     """Create metadata schema, datasets catalog, and helper macros."""
@@ -802,6 +846,13 @@ def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
         )
         """
     )
+    # Pipeline run tracking tables
+    con.execute(PIPELINE_RUNS_DDL)
+    con.execute(PIPELINE_STEPS_DDL)
+    for index_stmt in PIPELINE_INDEXES_DDL.strip().split(";"):
+        stripped_stmt = index_stmt.strip()
+        if stripped_stmt:
+            con.execute(stripped_stmt)
 
 
 def _canonicalize_ddl(stmt: str) -> str:

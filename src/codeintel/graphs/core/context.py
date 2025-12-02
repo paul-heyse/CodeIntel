@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from codeintel.graphs.engine import GraphEngine
     from codeintel.graphs.resources.container import ResourceContainer
     from codeintel.graphs.resources.protocol import ResourceProvider
+    from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
 
 T = TypeVar("T")
@@ -152,6 +153,8 @@ class GraphExecutionContext:
         Unique identifier for this execution run.
     scope
         Optional scoping for incremental execution.
+    run_context
+        Optional unified run context for cross-engine correlation.
     """
 
     snapshot: SnapshotRef
@@ -165,6 +168,7 @@ class GraphExecutionContext:
     plugin_name: str | None = None
     run_id: str | None = None
     scope: GraphRunScope | None = None
+    run_context: RunContext | None = None
 
     @property
     def repo(self) -> str:
@@ -198,6 +202,19 @@ class GraphExecutionContext:
             Absolute path to the repository root.
         """
         return self.snapshot.repo_root
+
+    @property
+    def effective_run_id(self) -> str | None:
+        """Get run ID preferring unified RunContext if present.
+
+        Returns
+        -------
+        str | None
+            Run ID from run_context if set, otherwise falls back to run_id.
+        """
+        if self.run_context is not None:
+            return self.run_context.run_id
+        return self.run_id
 
     @property
     def gateway(self) -> StorageGateway:
