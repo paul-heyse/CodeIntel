@@ -8,7 +8,7 @@ import pytest
 
 from codeintel.config import ConfigBuilder
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
-from codeintel.graphs.symbol_uses import build_symbol_use_edges
+from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
 SCIP_TEMPLATE = """

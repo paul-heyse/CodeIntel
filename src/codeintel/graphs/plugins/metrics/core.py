@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import cast
 
 from codeintel.graphs.compute.metrics import centrality, components, coupling
 from codeintel.graphs.core import (
@@ -44,9 +43,8 @@ def _compute_core_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
         Success result after computing core metrics.
     """
     # Get the engine - try resources first, fall back to context
-    # Cast is needed because require() returns EnginePort but we need GraphResource
     if ctx.resources is not None and ctx.resources.has(GraphResource.RESOURCE_NAME):
-        graph_resource = cast("GraphResource", ctx.require(GraphResource))
+        graph_resource = ctx.require(GraphResource)
         call_graph = graph_resource.call_graph()
         import_graph = graph_resource.import_graph()
     elif ctx.engine is not None:
@@ -126,9 +124,8 @@ def _persist_function_metrics(
     from codeintel.ingestion.common import run_batch  # noqa: PLC0415
 
     # Get gateway via resource injection or fallback
-    # Cast is needed because require() returns StoragePort but we need StorageResource
     if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        storage = cast("StorageResource", ctx.require(StorageResource))
+        storage = ctx.require(StorageResource)
         gateway = storage.gateway
     else:
         gateway = ctx.gateway
@@ -153,9 +150,8 @@ def _persist_module_metrics(
     from codeintel.ingestion.common import run_batch  # noqa: PLC0415
 
     # Get gateway via resource injection or fallback
-    # Cast is needed because require() returns StoragePort but we need StorageResource
     if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        storage = cast("StorageResource", ctx.require(StorageResource))
+        storage = ctx.require(StorageResource)
         gateway = storage.gateway
     else:
         gateway = ctx.gateway
@@ -179,9 +175,8 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
         Success result after computing extended function metrics.
     """
     # Get call graph
-    # Cast is needed because require() returns EnginePort but we need GraphResource
     if ctx.resources is not None and ctx.resources.has(GraphResource.RESOURCE_NAME):
-        graph_resource = cast("GraphResource", ctx.require(GraphResource))
+        graph_resource = ctx.require(GraphResource)
         call_graph = graph_resource.call_graph()
     elif ctx.engine is not None:
         call_graph = ctx.engine.call_graph()
@@ -216,9 +211,8 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
         from codeintel.ingestion.common import run_batch  # noqa: PLC0415
 
         # Get gateway via resource injection or fallback
-        # Cast is needed because require() returns StoragePort but we need StorageResource
         if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-            storage = cast("StorageResource", ctx.require(StorageResource))
+            storage = ctx.require(StorageResource)
             gateway = storage.gateway
         else:
             gateway = ctx.gateway
@@ -244,9 +238,8 @@ def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult
         Success result after computing extended module metrics.
     """
     # Get import graph
-    # Cast is needed because require() returns EnginePort but we need GraphResource
     if ctx.resources is not None and ctx.resources.has(GraphResource.RESOURCE_NAME):
-        graph_resource = cast("GraphResource", ctx.require(GraphResource))
+        graph_resource = ctx.require(GraphResource)
         import_graph = graph_resource.import_graph()
     elif ctx.engine is not None:
         import_graph = ctx.engine.import_graph()
@@ -281,9 +274,8 @@ def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult
         from codeintel.ingestion.common import run_batch  # noqa: PLC0415
 
         # Get gateway via resource injection or fallback
-        # Cast is needed because require() returns StoragePort but we need StorageResource
         if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-            storage = cast("StorageResource", ctx.require(StorageResource))
+            storage = ctx.require(StorageResource)
             gateway = storage.gateway
         else:
             gateway = ctx.gateway

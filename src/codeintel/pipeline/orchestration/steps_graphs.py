@@ -7,10 +7,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from codeintel.graphs.plugins.builders.callgraph import build_call_graph
-from codeintel.graphs.cfg_builder import build_cfg_and_dfg
+from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
 from codeintel.graphs.plugins.builders.goid import build_goids
-from codeintel.graphs.import_graph import build_import_graph
-from codeintel.graphs.symbol_uses import build_symbol_use_edges
+from codeintel.graphs.plugins.builders.import_graph import build_import_graph
+from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,

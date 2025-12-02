@@ -345,9 +345,39 @@ class IngestPluginRegistry:
         return tuple(discovered)
 
     def _ensure_entrypoints_loaded(self) -> None:
-        """Load entry points if not already done."""
+        """Load entry points and class-based plugins if not already done."""
         if not self._entrypoints_loaded:
             self.load_from_entrypoints()
+            # Also register the class-based plugins directly
+            self._register_builtin_plugins()
+
+    def _register_builtin_plugins(self) -> None:
+        """Register the built-in class-based plugins."""
+        from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
+        from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
+        from codeintel.ingestion.plugins.coverage_plugin import CoverageIngestPlugin
+        from codeintel.ingestion.plugins.cst_extract import CstExtractPlugin
+        from codeintel.ingestion.plugins.docstrings_plugin import DocstringsIngestPlugin
+        from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
+        from codeintel.ingestion.plugins.scip_plugin import ScipIngestPlugin
+        from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
+        from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
+
+        plugins: list[IngestPluginProtocol] = [
+            RepoScanPlugin(),
+            AstExtractPlugin(),
+            CstExtractPlugin(),
+            ScipIngestPlugin(),
+            TypingIngestPlugin(),
+            CoverageIngestPlugin(),
+            TestsIngestPlugin(),
+            DocstringsIngestPlugin(),
+            ConfigIngestPlugin(),
+        ]
+
+        for plugin in plugins:
+            if plugin.metadata.name not in self._plugins:
+                self.register(plugin)
 
     def _resolve_selection(
         self,

@@ -78,7 +78,6 @@ def test_function_metrics_plugin_executes(tmp_path: Path) -> None:
         plan=plan,
         run_context=AnalyticsRunContext(
             gateway=gateway,
-            analytics_context=None,
             graph_runtime=None,
             cfgs={"function": cfg},
             extra={},

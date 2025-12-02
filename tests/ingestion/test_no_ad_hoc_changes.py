@@ -10,9 +10,9 @@ import pytest
 @pytest.mark.parametrize(
     "path",
     [
-        Path("src/codeintel/ingestion/py_ast_extract.py"),
-        Path("src/codeintel/ingestion/cst_extract.py"),
-        Path("src/codeintel/ingestion/scip_ingest.py"),
+        Path("src/codeintel/ingestion/steps/ast_extract.py"),
+        Path("src/codeintel/ingestion/steps/cst_extract.py"),
+        Path("src/codeintel/ingestion/steps/scip_ingest.py"),
     ],
 )
 def test_no_ad_hoc_change_detection(path: Path) -> None:

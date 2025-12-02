@@ -9,7 +9,7 @@ from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_g
 from codeintel.analytics.profiles import build_function_profile, build_module_profile
 from codeintel.config import ConfigBuilder
 from codeintel.graphs.catalog import FunctionCatalog
-from codeintel.graphs.symbol_uses import build_symbol_use_edges
+from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     ModuleRow,

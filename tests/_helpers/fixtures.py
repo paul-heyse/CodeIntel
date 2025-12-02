@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config import ConfigBuilder, GraphMetricsStepConfig
 from codeintel.config.models import ToolsConfig
-from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.config.primitives import BuildPaths
 from codeintel.graphs.plugins.builders.callgraph import build_call_graph
 from codeintel.ingestion import (
     CoverageIngestStep,
@@ -552,7 +553,6 @@ def provision_ingested_repo(
     opts = options or ProvisionOptions()
     repo_root.mkdir(parents=True, exist_ok=True)
     ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
-    snapshot = SnapshotRef(repo_root=repo_root, repo=repo, commit=commit)
     build_paths = BuildPaths.from_explicit(
         build_dir=ctx.build_dir,
         db_path=ctx.db_path,
@@ -574,7 +574,6 @@ def provision_ingested_repo(
         tools_cfg=tools_cfg,
     )
     tool_service = ToolService(runner, tools_cfg)
-    builder = ConfigBuilder.from_primitives(snapshot=snapshot, paths=build_paths)
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
@@ -614,8 +613,6 @@ def provision_ingested_repo(
         ],
     )
     if opts.include_typing:
-        import asyncio
-
         typing_step = TypingIngestStep(
             storage=storage,
             discovery=discovery,
@@ -630,8 +627,6 @@ def provision_ingested_repo(
             )
         )
     if opts.include_coverage:
-        import asyncio
-
         coverage_step = CoverageIngestStep(storage=storage, tools=tool_adapter)
         asyncio.run(
             coverage_step.execute_async(
@@ -682,7 +677,6 @@ def provision_existing_repo(
     opts = options or ProvisionOptions()
     repo_root.mkdir(parents=True, exist_ok=True)
     ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
-    snapshot = SnapshotRef(repo_root=repo_root, repo=repo, commit=commit)
     build_paths = BuildPaths.from_explicit(
         build_dir=ctx.build_dir,
         db_path=ctx.db_path,
@@ -704,7 +698,6 @@ def provision_existing_repo(
         tools_cfg=tools_cfg,
     )
     tool_service = ToolService(runner, tools_cfg)
-    builder = ConfigBuilder.from_primitives(snapshot=snapshot, paths=build_paths)
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
@@ -729,8 +722,6 @@ def provision_existing_repo(
     )
 
     if opts.include_typing:
-        import asyncio
-
         typing_step = TypingIngestStep(
             storage=storage,
             discovery=discovery,
@@ -745,8 +736,6 @@ def provision_existing_repo(
             )
         )
     if opts.include_coverage:
-        import asyncio
-
         coverage_step = CoverageIngestStep(storage=storage, tools=tool_adapter)
         asyncio.run(
             coverage_step.execute_async(

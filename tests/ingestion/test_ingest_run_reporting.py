@@ -123,8 +123,8 @@ def test_plugin_execution_success(tmp_path: Path) -> None:
         ctx.gateway.close()
 
 
-def test_plugin_execution_error_handling(tmp_path: Path) -> None:
-    """Ensure plugin errors are captured in the result."""
+def test_plugin_execution_succeeds_without_tracker_in_scratch(tmp_path: Path) -> None:
+    """Verify plugin succeeds when tracker is missing from scratch but modules exist in DB."""
     repo_root = tmp_path / "repo" / "src" / "pkg"
     repo_root.mkdir(parents=True)
     # Valid Python file for repo_scan
@@ -136,15 +136,15 @@ def test_plugin_execution_error_handling(tmp_path: Path) -> None:
     try:
         registry = get_ingest_registry()
 
-        # Execute repo_scan first
+        # Execute repo_scan first to populate modules in DB
         repo_scan_plugin = registry.get("repo_scan")
         repo_scan_plugin.execute(ctx)
 
-        # Try to execute cst_extract without change_tracker in context
-        # This should return a failure result, not raise
+        # Execute cst_extract without change_tracker in scratch
+        # New behavior: plugin reads modules from DB when tracker not in scratch
         cst_plugin = registry.get("cst_extract")
 
-        # Create context without change_tracker
+        # Create context without change_tracker in scratch
         ctx2 = IngestExecutionContext(
             gateway=ctx.gateway,
             snapshot=ctx.snapshot,
@@ -157,13 +157,14 @@ def test_plugin_execution_error_handling(tmp_path: Path) -> None:
 
         result = cst_plugin.execute(ctx2)
 
-        # Plugin should return failure, not raise
-        if result.success:
-            pytest.fail("Expected cst_extract to fail without change_tracker")
-        if result.error is None:
-            pytest.fail("Expected error message to be set")
-        if result.error_kind is None:
-            pytest.fail("Expected error_kind to be set")
+        # Plugin should succeed - it reads modules from DB when tracker is missing
+        if not result.success:
+            pytest.fail(f"cst_extract should succeed: {result.error}")
+
+        # Should have processed the module from repo_scan
+        total_rows = sum(result.row_counts.values()) if result.row_counts else 0
+        if total_rows == 0:
+            pytest.fail("Expected some rows, plugin read modules from DB")
 
     finally:
         ctx.gateway.close()
