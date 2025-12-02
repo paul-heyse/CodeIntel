@@ -77,9 +77,7 @@ def _dag_layers(graph: nx.DiGraph) -> dict[str | int, int]:
     dict[str | int, int]
         Mapping of node -> layer depth.
     """
-    layers: dict[str | int, int] = {
-        node: 0 for node in graph.nodes if graph.in_degree(node) == 0
-    }
+    layers: dict[str | int, int] = {node: 0 for node in graph.nodes if graph.in_degree(node) == 0}
     for node in nx.topological_sort(graph):
         base = layers.get(node, 0)
         for succ in graph.successors(node):
@@ -111,13 +109,9 @@ def components_and_layers(
         graph.add_edge(src, dst)
     sccs = list(nx.strongly_connected_components(graph))
     scc_map = {node: idx for idx, comp in enumerate(sccs) for node in comp}
-    condensation = (
-        nx.condensation(graph, scc=sccs) if graph.number_of_nodes() > 0 else nx.DiGraph()
-    )
+    condensation = nx.condensation(graph, scc=sccs) if graph.number_of_nodes() > 0 else nx.DiGraph()
     comp_layers = _dag_layers(condensation) if condensation.number_of_nodes() > 0 else {}
-    layer_by_module = {
-        node: comp_layers.get(scc_map.get(node, -1), 0) for node in graph.nodes
-    }
+    layer_by_module = {node: comp_layers.get(scc_map.get(node, -1), 0) for node in graph.nodes}
     return scc_map, layer_by_module
 
 

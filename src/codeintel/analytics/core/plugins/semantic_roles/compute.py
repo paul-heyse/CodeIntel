@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.catalog import CatalogProvider
-    from codeintel.analytics.resources.features import FeaturesProvider
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
+    from codeintel.analytics.function_ast_cache import FunctionAst
+    from codeintel.analytics.resources.asts import LegacyAstData
+    from codeintel.graphs.catalog import FunctionCatalogProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -103,23 +105,36 @@ class SemanticRolesPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get catalog from CatalogProvider
-        catalog_provider = None
+        # Get module_by_path from CatalogProvider
+        # Note: require_by_name already calls .get() internally
+        module_by_path: dict[str, str] = {}
         if ctx.has_resource_by_name("CatalogProvider"):
-            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-            catalog_provider = cat_prov.get()
+            catalog_provider = cast(
+                "FunctionCatalogProvider", ctx.require_by_name("CatalogProvider")
+            )
+            module_by_path = catalog_provider.catalog().module_by_path
+
+        # Get ast_map from AstProvider
+        # Note: require_by_name returns the loaded resource (LegacyAstData), not provider
+        ast_map: dict[int, FunctionAst] = {}
+        if ctx.has_resource_by_name("AstProvider"):
+            ast_data = cast("LegacyAstData", ctx.require_by_name("AstProvider"))
+            ast_map = ast_data.function_ast_map
 
         # Get features from FeaturesProvider
-        features_map = None
+        # Note: require_by_name already calls .get() internally
+        features_map: dict[int, FunctionAstFeatures] = {}
         if ctx.has_resource_by_name("FeaturesProvider"):
-            features_prov = cast("FeaturesProvider", ctx.require_by_name("FeaturesProvider"))
-            features_map = features_prov.get()
+            features_map = cast(
+                "dict[int, FunctionAstFeatures]", ctx.require_by_name("FeaturesProvider")
+            )
 
         try:
             compute_semantic_roles(
                 ctx.gateway,
                 cfg,
-                catalog_provider=catalog_provider,
+                module_by_path=module_by_path,
+                ast_map=ast_map,
                 features_map=features_map,
             )
         except (RuntimeError, ValueError, OSError) as e:

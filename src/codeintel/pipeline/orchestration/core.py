@@ -1,4 +1,9 @@
-"""Shared orchestration primitives for pipeline steps."""
+"""Shared orchestration primitives for pipeline steps.
+
+NOTE: Imports inside methods are intentional to avoid circular dependencies.
+"""
+
+# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -31,9 +36,9 @@ from codeintel.graphs.catalog import (
 )
 from codeintel.graphs.engine import GraphEngine
 from codeintel.ingestion.change_tracker import ChangeTracker
+from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
 from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
 from codeintel.ingestion.tool_service import ToolService
@@ -270,6 +275,30 @@ def _plugin_ctx(
     IngestExecutionContext
         Context suitable for new plugin architecture.
     """
+    # Import resource providers (inside function to avoid circular imports)
+    from codeintel.ingestion.resources.modules import ModuleProvider
+    from codeintel.ingestion.resources.registry import ResourceRegistry
+    from codeintel.ingestion.resources.tools import ToolsProvider
+
+    # Build resource registry with required providers
+    resources = ResourceRegistry()
+
+    # Register ModuleProvider for module access
+    module_provider = ModuleProvider(
+        gateway=ctx.gateway,
+        snapshot=ctx.snapshot,
+        tracker=ctx.change_tracker,
+        profile=ctx.code_profile,
+    )
+    resources.register(ModuleProvider, module_provider)
+
+    # Register ToolsProvider for external tool access
+    tools_provider = ToolsProvider(
+        tools_config=ctx.tools_config,
+        cache_dir=ctx.paths.tool_cache,
+    )
+    resources.register(ToolsProvider, tools_provider)
+
     return IngestExecutionContext(
         gateway=ctx.gateway,
         snapshot=ctx.snapshot,
@@ -277,6 +306,7 @@ def _plugin_ctx(
         tools=ctx.tools_config,
         code_profile=ctx.code_profile,
         config_profile=ctx.config_profile,
+        resources=resources,
         scratch=scratch or IngestRuntimeScratch(),
         plugin_name=plugin_name,
         run_id=ctx.run_id or "",

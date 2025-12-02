@@ -23,8 +23,10 @@ __all__ = [
     "DuckDBCatalogException",
     "DuckDBConnection",
     "DuckDBConnectionException",
+    "DuckDBDatabaseError",
     "DuckDBError",
     "DuckDBInvalidInputException",
+    "DuckDBProgrammingError",
     "DuckDBRelation",
     "StorageConfig",
     "StorageGateway",
@@ -38,7 +40,9 @@ DuckDBRelation = duckdb.DuckDBPyRelation
 DuckDBError = duckdb.Error
 DuckDBCatalogException = duckdb.CatalogException
 DuckDBConnectionException = duckdb.ConnectionException
+DuckDBDatabaseError = duckdb.DatabaseError
 DuckDBInvalidInputException = duckdb.InvalidInputException
+DuckDBProgrammingError = duckdb.ProgrammingError
 DuckDBBinderException = duckdb.BinderException
 
 

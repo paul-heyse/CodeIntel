@@ -227,8 +227,7 @@ class NxGraphEngine:
         )
 
     def load_test_function_bipartite(self) -> nx.Graph:
-        """
-        Alias for test_function_bipartite to satisfy GraphEngine protocol.
+        """Alias for test_function_bipartite to satisfy GraphEngine protocol.
 
         Returns
         -------
@@ -236,6 +235,13 @@ class NxGraphEngine:
             Test-function bipartite graph.
         """
         return self.test_function_bipartite()
+
+    def clear_cache(self) -> None:
+        """Clear all cached graphs.
+
+        Forces graphs to be reloaded on next access.
+        """
+        self._cache.clear()
 
 
 __all__ = ["NxGraphEngine"]

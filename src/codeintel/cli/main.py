@@ -25,7 +25,7 @@ from codeintel.config.primitives import (
     GraphFeatureFlags,
     SnapshotRef,
 )
-from codeintel.graphs.core.protocol import DEFAULT_METRIC_PLUGINS
+from codeintel.graphs.core.protocol import DEFAULT_GRAPH_PLUGINS
 from codeintel.graphs.core.registry import list_graph_plugins, plan_graph_plugins
 from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
 from codeintel.ingestion.infrastructure_utilities.source_scanner import (
@@ -1572,14 +1572,14 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
     enabled = tuple(args.enable) if args.enable else None
     names = tuple(args.names) if args.names else None
     disabled = tuple(args.disable) if args.disable else ()
-    requested = names if names is not None else DEFAULT_METRIC_PLUGINS
+    requested = names if names is not None else DEFAULT_GRAPH_PLUGINS
     if args.plan:
         try:
             plan = plan_graph_plugins(
                 plugin_names=requested if enabled is None else None,
                 enabled=enabled,
                 disabled=disabled,
-                defaults=DEFAULT_METRIC_PLUGINS,
+                defaults=DEFAULT_GRAPH_PLUGINS,
             )
         except ValueError:
             LOG.exception("Invalid graph plugin plan for names=%s", requested)

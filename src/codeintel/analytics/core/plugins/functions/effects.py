@@ -134,14 +134,14 @@ class FunctionEffectsPlugin:
             graph_prov = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
             graph_runtime = graph_prov.runtime
 
-        # Get AST data from AstProvider
+        # Get AST data from AstProvider (LegacyAstData)
         ast_map = None
         missing_goids = None
         if ctx.has_resource_by_name("AstProvider"):
             ast_prov = cast("AstProvider", ctx.require_by_name("AstProvider"))
             ast_data = ast_prov.get()
-            ast_map = ast_data.ast_by_goid
-            missing_goids = ast_data.missing_goids
+            ast_map = ast_data.function_ast_map
+            missing_goids = ast_data.missing_function_goids
 
         try:
             inputs = FunctionEffectsInputs(

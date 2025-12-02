@@ -183,7 +183,6 @@ def compute_graph_metrics_modules_ext(
         gateway,
         snapshot,
         runtime_opts,
-        context=runtime_opts.context,
     )
     ctx = _resolve_module_context(runtime_opts, repo, commit)
     filtered_graph: nx.DiGraph = active_filters.filter_import_graph(

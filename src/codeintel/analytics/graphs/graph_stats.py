@@ -54,7 +54,6 @@ def compute_graph_stats(
         gateway,
         snapshot,
         runtime_opts,
-        context=runtime_opts.context,
     )
     use_gpu = resolved_runtime.backend.use_gpu
     con = gateway.con

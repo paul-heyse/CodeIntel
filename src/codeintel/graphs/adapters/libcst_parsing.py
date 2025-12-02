@@ -170,9 +170,7 @@ class _FunctionCollector(cst.CSTVisitor):
 
         # Extract parameter names
         params = [
-            param.name.value
-            for param in node.params.params
-            if isinstance(param.name, cst.Name)
+            param.name.value for param in node.params.params if isinstance(param.name, cst.Name)
         ]
 
         self.functions.append(

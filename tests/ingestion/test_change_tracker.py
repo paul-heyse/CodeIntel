@@ -8,8 +8,8 @@ import pytest
 
 from codeintel.config import SnapshotRef
 from codeintel.ingestion import (
-    DuckDBStorageAdapter,
     DocstringsExtractStep,
+    DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
     RepoScanStep,
@@ -161,6 +161,57 @@ def _docstrings_by_path(gateway: StorageGateway) -> dict[str, set[str]]:
     return grouped
 
 
+def _setup_test_files(repo_root: Path) -> tuple[Path, Path]:
+    """Create test files a.py and b.py with initial content.
+
+    Returns
+    -------
+    tuple[Path, Path]
+        Paths to file_a and file_b.
+    """
+    repo_root.mkdir()
+    file_a = repo_root / "a.py"
+    file_b = repo_root / "b.py"
+    file_a.write_text(
+        '"""Module A."""\n\ndef foo(x: int) -> int:\n    """Doc A."""\n    return x + 1',
+        encoding="utf8",
+    )
+    file_b.write_text(
+        '"""Module B."""\n\ndef bar(y):\n    """Doc B."""\n    return y',
+        encoding="utf8",
+    )
+    return file_a, file_b
+
+
+def _create_scan_infrastructure(
+    gateway: StorageGateway,
+    repo_root: Path,
+) -> tuple[RepoScanStep, DocstringsExtractStep, ScanProfile]:
+    """Create steps and profile for repo scanning.
+
+    Returns
+    -------
+    tuple[RepoScanStep, DocstringsExtractStep, ScanProfile]
+        Scan step, docstrings step, and scan profile.
+    """
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+    scan_profile = ScanProfile(
+        repo_root=repo_root,
+        source_roots=(repo_root,),
+        include_globs=("*.py",),
+        ignore_dirs=(),
+    )
+    scan_step = RepoScanStep(
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
+    )
+    doc_step = DocstringsExtractStep(storage=storage, discovery=discovery)
+    return scan_step, doc_step, scan_profile
+
+
 def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
     """Ensure incremental typing ingest only processes modules flagged as changed.
 
@@ -168,114 +219,40 @@ def test_incremental_ingest_ops_reparse_changed_modules(tmp_path: Path) -> None:
     1. Baseline typing metrics are established via initial full ingest
     2. When a file is modified, only that file's metrics change
     3. Unchanged files retain their original metrics
-
-    Note: Docstrings are ingested via the real ingest_docstrings path (not incremental ops)
-    since DocstringIngestOps.process_module() is a placeholder awaiting implementation.
     """
     repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    file_a = repo_root / "a.py"
-    file_b = repo_root / "b.py"
-    file_a.write_text(
-        "\n".join(
-            [
-                '"""Module A."""',
-                "",
-                "def foo(x: int) -> int:",
-                '    """Doc A."""',
-                "    return x + 1",
-            ]
-        ),
-        encoding="utf8",
-    )
-    file_b.write_text(
-        "\n".join(
-            [
-                '"""Module B."""',
-                "",
-                "def bar(y):",
-                '    """Doc B."""',
-                "    return y",
-            ]
-        ),
-        encoding="utf8",
-    )
+    _, file_b = _setup_test_files(repo_root)
+    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
 
     gateway = open_ingestion_gateway()
     try:
-        # Build configuration
-        snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
+        scan_step, doc_step, scan_profile = _create_scan_infrastructure(gateway, repo_root)
 
-        # Step 1: Populate core.modules via realistic repo scan
-        storage = DuckDBStorageAdapter(gateway)
-        discovery = FilesystemDiscoveryAdapter(repo_root)
-        change_detection = HashChangeDetectionAdapter(storage)
-        scan_profile = ScanProfile(
-            repo_root=repo_root,
-            source_roots=(repo_root,),
-            include_globs=("*.py",),
-            ignore_dirs=(),
+        # Step 1: Populate core.modules via repo scan
+        _, modules, _ = scan_step.execute(
+            repo=snapshot.repo, commit=snapshot.commit, repo_root=repo_root, profile=scan_profile
         )
 
-        scan_step = RepoScanStep(
-            storage=storage,
-            discovery=discovery,
-            change_detection=change_detection,
-        )
-        scan_result, modules, _ = scan_step.execute(
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            repo_root=repo_root,
-            profile=scan_profile,
-        )
-        _ = scan_result  # Unused but verifies execution
-
-        # Step 2: Ingest baseline docstrings (uses module inventory)
-        doc_step = DocstringsExtractStep(storage=storage, discovery=discovery)
-        doc_result = doc_step.execute(
-            list(modules),
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        _ = doc_result  # Unused but verifies execution
-
-        # Step 3: Ingest baseline typing metrics
-        # Skip typing ingest for this test - it requires async and tool service setup
-        # The test primarily validates docstring change detection
-
+        # Step 2: Ingest baseline docstrings
+        doc_step.execute(list(modules), repo=snapshot.repo, commit=snapshot.commit)
         baseline_docstrings = _docstrings_by_path(gateway)
 
-        # Step 4: Modify file_b to add type annotations
+        # Step 3: Modify file_b to add type annotations
         file_b.write_text(
-            "\n".join(
-                [
-                    '"""Module B updated."""',
-                    "",
-                    "def bar(y: int) -> int:",
-                    '    """Doc B updated."""',
-                    "    return y + 2",
-                ]
-            ),
+            '"""Module B updated."""\n\ndef bar(y: int) -> int:\n'
+            '    """Doc B updated."""\n    return y + 2',
             encoding="utf8",
         )
 
-        # Step 5: Re-ingest (modules haven't changed in inventory, but file content has)
-        # Re-run docstrings to pick up changes
-        doc_result2 = doc_step.execute(
-            list(modules),
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        _ = doc_result2  # Unused but verifies execution
-
+        # Step 4: Re-ingest to pick up changes
+        doc_step.execute(list(modules), repo=snapshot.repo, commit=snapshot.commit)
         updated_docstrings = _docstrings_by_path(gateway)
 
-        # Verify docstrings: b.py should be updated, a.py unchanged
+        # Verify: b.py should be updated, a.py unchanged
         if updated_docstrings.get("a.py") != baseline_docstrings.get("a.py"):
             pytest.fail(
                 f"Unchanged module docstrings should remain stable. "
-                f"Baseline: {baseline_docstrings.get('a.py')}, "
-                f"Updated: {updated_docstrings.get('a.py')}"
+                f"Baseline: {baseline_docstrings.get('a.py')}, Updated: {updated_docstrings.get('a.py')}"
             )
         if updated_docstrings.get("b.py") == baseline_docstrings.get("b.py"):
             pytest.fail("Changed module docstrings should be updated")

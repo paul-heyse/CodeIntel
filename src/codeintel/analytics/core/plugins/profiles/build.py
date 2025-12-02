@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from codeintel.analytics.resources.catalog import CatalogProvider
-    from codeintel.analytics.resources.features import FeaturesProvider
+    from codeintel.analytics.resources.module_map import ModuleMapProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -121,24 +121,24 @@ class ProfilesPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get catalog from CatalogProvider
+        # Get catalog from CatalogProvider (optional)
         catalog_provider = None
         if ctx.has_resource_by_name("CatalogProvider"):
             cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
             catalog_provider = cat_prov.get()
 
-        # Get features from FeaturesProvider
-        features_map = None
-        if ctx.has_resource_by_name("FeaturesProvider"):
-            features_prov = cast("FeaturesProvider", ctx.require_by_name("FeaturesProvider"))
-            features_map = features_prov.get()
+        # Get module map from ModuleMapProvider (optional)
+        module_map = None
+        if ctx.has_resource_by_name("ModuleMapProvider"):
+            mm_prov = cast("ModuleMapProvider", ctx.require_by_name("ModuleMapProvider"))
+            module_map = mm_prov.get()
 
         try:
             build_function_profile(
                 ctx.gateway,
                 cfg,
                 catalog_provider=catalog_provider,
-                features_map=features_map,
+                module_map=module_map,
             )
             build_file_profile(
                 ctx.gateway,

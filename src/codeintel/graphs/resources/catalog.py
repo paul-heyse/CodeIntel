@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.graphs.ports.catalog import CatalogPort, FunctionSpanData
-from codeintel.graphs.resources.protocol import ResourceProvider
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalog
@@ -201,15 +200,6 @@ class CatalogResource:
             URN if found, None otherwise.
         """
         return self.catalog.urn_for_goid(goid)
-
-
-# Verify protocol compliance
-def _check_protocol_compliance() -> None:
-    """Verify CatalogResource implements protocols."""
-    resource: ResourceProvider[CatalogPort] = CatalogResource(
-        catalog=None,  # type: ignore[arg-type]
-    )
-    _ = resource
 
 
 __all__ = ["CatalogResource"]

@@ -28,8 +28,6 @@ from codeintel.ingestion.plugins.protocol import (
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
-    from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.ingestion.tool_service import ToolService
 
 log = logging.getLogger(__name__)
 
@@ -103,12 +101,20 @@ class TestsIngestPlugin(
         -------
         Mapping[str, int] | None
             Row counts, or None for auto-compute.
+
+        Raises
+        ------
+        RuntimeError
+            When tests ingestion fails.
         """
+        _ = self  # Required by interface, accessed via ctx
         from codeintel.ingestion.adapters import DuckDBStorageAdapter
+        from codeintel.ingestion.resources import ModuleProvider
         from codeintel.ingestion.steps.tests_ingest import TestsIngestStep
 
-        # Get modules
-        modules = self._get_modules(ctx)
+        # Get modules from provider
+        modules_provider = ctx.require(ModuleProvider)
+        modules = list(modules_provider.get())
 
         # Create storage adapter
         storage = DuckDBStorageAdapter(ctx.gateway)
@@ -131,64 +137,6 @@ class TestsIngestPlugin(
             raise RuntimeError(msg)
 
         return result.table_counts
-
-    def _get_tool_service(self, ctx: IngestExecutionContext) -> ToolService:
-        """Get or create tool service.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ToolService
-            Tool service instance.
-        """
-        from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-        from codeintel.ingestion.tool_service import ToolService
-
-        runner = ToolRunner(
-            cache_dir=ctx.build_dir,
-            tools_config=ctx.tools,
-        )
-        return ToolService(runner, ctx.tools)
-
-    def _get_modules(self, ctx: IngestExecutionContext) -> list[ModuleRecord]:
-        """Get module list from tracker or inventory.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        list[ModuleRecord]
-            List of module records.
-        """
-        from codeintel.ingestion.common import iter_modules
-        from codeintel.ingestion.ports.discovery import ModuleRecord
-        from codeintel.storage.module_index import load_module_map
-
-        module_map = load_module_map(
-            ctx.gateway,
-            ctx.repo,
-            ctx.commit,
-            language="python",
-            logger=log,
-        )
-
-        return [
-            m
-            for m in iter_modules(
-                module_map,
-                ctx.repo_root,
-                logger=log,
-                scan_profile=ctx.code_profile,
-            )
-            if isinstance(m, ModuleRecord)
-        ]
 
 
 __all__ = ["TestsIngestPlugin"]

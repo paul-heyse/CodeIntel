@@ -11,7 +11,10 @@ from codeintel.config.datasets import (
     import_module_to_tuple,
 )
 from codeintel.graphs.engine_factory import build_graph_engine
-from codeintel.graphs.plugins.builders.import_graph import build_import_module_rows, components_and_layers
+from codeintel.graphs.plugins.builders.import_graph import (
+    build_import_module_rows,
+    components_and_layers,
+)
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
 

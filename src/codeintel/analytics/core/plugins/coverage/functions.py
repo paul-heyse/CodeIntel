@@ -7,10 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, cast
-
-if TYPE_CHECKING:
-    from codeintel.analytics.resources.catalog import CatalogProvider
+from typing import ClassVar
 
 from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -70,19 +67,7 @@ class CoverageFunctionsPlugin(ConfiguredTableWriterPlugin[CoverageAnalyticsStepC
         Mapping[str, int] | None
             None to trigger auto row count computation.
         """
-        cfg = self.config
-
-        # Get catalog from CatalogProvider
-        catalog_provider = None
-        if ctx.has_resource_by_name("CatalogProvider"):
-            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-            catalog_provider = cat_prov.get()
-
-        compute_coverage_functions(
-            ctx.gateway,
-            cfg,
-            catalog_provider=catalog_provider,
-        )
+        compute_coverage_functions(ctx.gateway, self.config)
         return None  # Let base class compute row counts
 
 

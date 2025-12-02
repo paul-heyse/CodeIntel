@@ -463,9 +463,21 @@ class FunctionCatalogService(FunctionCatalogProvider):
         """
         return cls(load_function_catalog(gateway, repo=repo, commit=commit))
 
-    def catalog(self) -> FunctionCatalog:
+    def get(self) -> FunctionCatalogService:
+        """Return self to satisfy LazyResource-like interface.
+
+        This allows FunctionCatalogService to be used in contexts that expect
+        a .get() method (e.g., analytics CatalogProvider wrapper).
+
+        Returns
+        -------
+        FunctionCatalogService
+            Self reference.
         """
-        Return the underlying catalog instance.
+        return self
+
+    def catalog(self) -> FunctionCatalog:
+        """Return the underlying catalog instance.
 
         Returns
         -------

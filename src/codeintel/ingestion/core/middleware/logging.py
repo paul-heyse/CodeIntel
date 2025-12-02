@@ -82,7 +82,7 @@ class LoggingMiddleware:
     def after_execute(
         self,
         plugin: BaseIngestPlugin,
-        ctx: IngestExecutionContext,
+        _ctx: IngestExecutionContext,
         result: IngestPluginResult,
     ) -> None:
         """Log plugin execution completion.
@@ -91,8 +91,8 @@ class LoggingMiddleware:
         ----------
         plugin
             The plugin that executed.
-        ctx
-            Execution context.
+        _ctx
+            Execution context (unused, required by protocol).
         result
             Execution result.
         """
@@ -170,7 +170,7 @@ class LoggingMiddleware:
             "Plugin error: name=%s error_type=%s error=%s duration=%.2fs repo=%s commit=%s",
             plugin_name,
             type(error).__name__,
-            str(error),
+            error,
             duration,
             ctx.repo,
             ctx.commit,

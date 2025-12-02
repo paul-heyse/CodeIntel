@@ -32,7 +32,7 @@ class IngestMiddleware(Protocol):
         plugin: BaseIngestPlugin,
         ctx: IngestExecutionContext,
     ) -> None:
-        """Called before plugin execution.
+        """Run before plugin execution.
 
         Parameters
         ----------
@@ -49,7 +49,7 @@ class IngestMiddleware(Protocol):
         ctx: IngestExecutionContext,
         result: IngestPluginResult,
     ) -> None:
-        """Called after successful plugin execution.
+        """Run after successful plugin execution.
 
         Parameters
         ----------
@@ -68,7 +68,7 @@ class IngestMiddleware(Protocol):
         ctx: IngestExecutionContext,
         error: Exception,
     ) -> None:
-        """Called when plugin execution fails.
+        """Handle plugin execution failure.
 
         Parameters
         ----------

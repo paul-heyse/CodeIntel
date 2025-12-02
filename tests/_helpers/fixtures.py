@@ -21,6 +21,7 @@ from codeintel.ingestion import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
+    ModuleRecord,
     RepoScanStep,
     ToolRunnerAdapter,
     TypingIngestStep,
@@ -171,6 +172,28 @@ class GatewayOptions:
     validate_schema: bool = True
     file_backed: bool = True
     strict_schema: bool = True
+
+
+@dataclass
+class ProvisioningSetup:
+    """Container for provisioning setup components.
+
+    This dataclass consolidates all the components needed during repo
+    provisioning, reducing the number of local variables in provisioning
+    functions while improving clarity and reusability.
+    """
+
+    ctx: RepoContext
+    build_paths: BuildPaths
+    coverage_file: Path
+    tools_cfg: ToolsConfig
+    runner: ToolRunner
+    tool_service: ToolService
+    gateway: StorageGateway
+    storage: DuckDBStorageAdapter
+    discovery: FilesystemDiscoveryAdapter
+    change_detection: HashChangeDetectionAdapter
+    tool_adapter: ToolRunnerAdapter
 
 
 @dataclass(frozen=True)
@@ -530,6 +553,131 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
     return gateway
 
 
+def _build_provisioning_setup(
+    repo_root: Path,
+    files: list[Path],
+    opts: ProvisionOptions,
+    repo: str,
+    commit: str,
+) -> ProvisioningSetup:
+    """Build all components needed for repo provisioning.
+
+    Consolidate the common setup logic for provisioning functions to
+    reduce local variable count and improve code reuse.
+
+    Parameters
+    ----------
+    repo_root
+        Root path of the repository.
+    files
+        List of Python files discovered in the repo.
+    opts
+        Provisioning options.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+
+    Returns
+    -------
+    ProvisioningSetup
+        Container with all provisioning components.
+    """
+    ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
+    build_paths = BuildPaths.from_explicit(
+        build_dir=ctx.build_dir,
+        db_path=ctx.db_path,
+        document_output_dir=ctx.document_output_dir,
+        coverage_json=repo_root / ".coverage",
+        pytest_report=ctx.build_dir / "test-results" / "pytest-report.json",
+        scip_dir=ctx.build_dir / "scip",
+        tool_cache=ctx.build_dir / ".tool_cache",
+        log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
+    )
+    coverage_file = build_paths.coverage_json
+
+    tools_cfg = ToolsConfig.model_validate({})
+    runner = _make_runner(repo_root, files, coverage_file=coverage_file, tools_cfg=tools_cfg)
+    tool_service = ToolService(runner, tools_cfg)
+
+    gateway_opts = GatewayOptions(file_backed=opts.file_backed)
+    gateway = _open_gateway_from_context(ctx, gateway_opts)
+    ensure_ingest_macros(gateway.con)
+    _assert_ingest_macros_present(gateway.con)
+
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+    tool_adapter = ToolRunnerAdapter(tool_service)
+
+    return ProvisioningSetup(
+        ctx=ctx,
+        build_paths=build_paths,
+        coverage_file=coverage_file,
+        tools_cfg=tools_cfg,
+        runner=runner,
+        tool_service=tool_service,
+        gateway=gateway,
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
+        tool_adapter=tool_adapter,
+    )
+
+
+def _run_ingestion_steps(
+    setup: ProvisioningSetup,
+    modules: list[ModuleRecord],
+    opts: ProvisionOptions,
+    repo: str,
+    commit: str,
+) -> None:
+    """Run optional ingestion steps based on provision options.
+
+    Parameters
+    ----------
+    setup
+        Provisioning setup container.
+    modules
+        List of modules discovered during repo scan.
+    opts
+        Provisioning options.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    """
+    if opts.include_typing:
+        typing_step = TypingIngestStep(
+            storage=setup.storage,
+            discovery=setup.discovery,
+            tools=setup.tool_adapter,
+        )
+        asyncio.run(
+            typing_step.execute_async(
+                list(modules),
+                repo=repo,
+                commit=commit,
+                repo_root=str(setup.ctx.repo_root),
+            )
+        )
+    if opts.include_coverage:
+        coverage_step = CoverageIngestStep(storage=setup.storage, tools=setup.tool_adapter)
+        asyncio.run(
+            coverage_step.execute_async(
+                [],
+                repo=repo,
+                commit=commit,
+                repo_root=setup.ctx.repo_root,
+                coverage_file=setup.coverage_file,
+            )
+        )
+    if opts.build_graph_metrics:
+        _seed_cfg_dfg_for_metrics(setup.gateway, rel_path="pkg/mod.py")
+        compute_cfg_metrics(setup.gateway, repo=repo, commit=commit)
+        compute_dfg_metrics(setup.gateway, repo=repo, commit=commit)
+
+
 def provision_ingested_repo(
     repo_root: Path,
     *,
@@ -552,45 +700,15 @@ def provision_ingested_repo(
     """
     opts = options or ProvisionOptions()
     repo_root.mkdir(parents=True, exist_ok=True)
-    ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
-    build_paths = BuildPaths.from_explicit(
-        build_dir=ctx.build_dir,
-        db_path=ctx.db_path,
-        document_output_dir=ctx.document_output_dir,
-        coverage_json=repo_root / ".coverage",
-        pytest_report=ctx.build_dir / "test-results" / "pytest-report.json",
-        scip_dir=ctx.build_dir / "scip",
-        tool_cache=ctx.build_dir / ".tool_cache",
-        log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
-    )
-    coverage_file = build_paths.coverage_json
 
     files = _write_sample_repo(repo_root)
-    tools_cfg = ToolsConfig.model_validate({})
-    runner = _make_runner(
-        repo_root,
-        files,
-        coverage_file=coverage_file,
-        tools_cfg=tools_cfg,
-    )
-    tool_service = ToolService(runner, tools_cfg)
-
-    gateway_opts = GatewayOptions(file_backed=opts.file_backed)
-    gateway = _open_gateway_from_context(ctx, gateway_opts)
-    ensure_ingest_macros(gateway.con)
-    _assert_ingest_macros_present(gateway.con)
-
-    # Use Step-based API for repo scan
-    storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
-    tool_adapter = ToolRunnerAdapter(tool_service)
+    setup = _build_provisioning_setup(repo_root, files, opts, repo, commit)
     code_profile = default_code_profile(repo_root)
 
     scan_step = RepoScanStep(
-        storage=storage,
-        discovery=discovery,
-        change_detection=change_detection,
+        storage=setup.storage,
+        discovery=setup.discovery,
+        change_detection=setup.change_detection,
     )
     _, modules, _ = scan_step.execute(
         repo=repo,
@@ -602,7 +720,7 @@ def provision_ingested_repo(
     # Insert repo_map entry needed for serving layer verification
     modules_map = {mod.rel_path: mod.module_name for mod in modules}
     insert_repo_map(
-        gateway,
+        setup.gateway,
         [
             RepoMapRow(
                 repo=repo,
@@ -612,47 +730,20 @@ def provision_ingested_repo(
             )
         ],
     )
-    if opts.include_typing:
-        typing_step = TypingIngestStep(
-            storage=storage,
-            discovery=discovery,
-            tools=tool_adapter,
-        )
-        asyncio.run(
-            typing_step.execute_async(
-                list(modules),
-                repo=repo,
-                commit=commit,
-                repo_root=str(repo_root),
-            )
-        )
-    if opts.include_coverage:
-        coverage_step = CoverageIngestStep(storage=storage, tools=tool_adapter)
-        asyncio.run(
-            coverage_step.execute_async(
-                [],
-                repo=repo,
-                commit=commit,
-                repo_root=repo_root,
-                coverage_file=coverage_file,
-            )
-        )
-    if opts.build_graph_metrics:
-        _seed_cfg_dfg_for_metrics(gateway, rel_path="pkg/mod.py")
-        compute_cfg_metrics(gateway, repo=repo, commit=commit)
-        compute_dfg_metrics(gateway, repo=repo, commit=commit)
 
-    _assert_ingest_macros_present(gateway.con)
+    _run_ingestion_steps(setup, list(modules), opts, repo, commit)
+
+    _assert_ingest_macros_present(setup.gateway.con)
     return ProvisionedGateway(
         repo=repo,
         commit=commit,
         repo_root=repo_root,
-        build_dir=ctx.build_dir,
-        db_path=ctx.db_path,
-        document_output_dir=ctx.document_output_dir,
-        coverage_file=coverage_file,
-        gateway=gateway,
-        runner=runner,
+        build_dir=setup.ctx.build_dir,
+        db_path=setup.ctx.db_path,
+        document_output_dir=setup.ctx.document_output_dir,
+        coverage_file=setup.coverage_file,
+        gateway=setup.gateway,
+        runner=setup.runner,
     )
 
 
@@ -676,43 +767,15 @@ def provision_existing_repo(
     """
     opts = options or ProvisionOptions()
     repo_root.mkdir(parents=True, exist_ok=True)
-    ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
-    build_paths = BuildPaths.from_explicit(
-        build_dir=ctx.build_dir,
-        db_path=ctx.db_path,
-        document_output_dir=ctx.document_output_dir,
-        coverage_json=repo_root / ".coverage",
-        pytest_report=ctx.build_dir / "test-results" / "pytest-report.json",
-        scip_dir=ctx.build_dir / "scip",
-        tool_cache=ctx.build_dir / ".tool_cache",
-        log_db_path=ctx.build_dir / "db" / "codeintel_logs.duckdb",
-    )
-    coverage_file = build_paths.coverage_json
 
     files = sorted(path for path in repo_root.rglob("*.py") if path.is_file())
-    tools_cfg = ToolsConfig.model_validate({})
-    runner = _make_runner(
-        repo_root,
-        files,
-        coverage_file=coverage_file,
-        tools_cfg=tools_cfg,
-    )
-    tool_service = ToolService(runner, tools_cfg)
-
-    gateway_opts = GatewayOptions(file_backed=opts.file_backed)
-    gateway = _open_gateway_from_context(ctx, gateway_opts)
-
-    # Use Step-based API for repo scan
-    storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
-    tool_adapter = ToolRunnerAdapter(tool_service)
+    setup = _build_provisioning_setup(repo_root, files, opts, repo, commit)
     code_profile = default_code_profile(repo_root)
 
     scan_step = RepoScanStep(
-        storage=storage,
-        discovery=discovery,
-        change_detection=change_detection,
+        storage=setup.storage,
+        discovery=setup.discovery,
+        change_detection=setup.change_detection,
     )
     _, modules, _ = scan_step.execute(
         repo=repo,
@@ -721,46 +784,18 @@ def provision_existing_repo(
         profile=code_profile,
     )
 
-    if opts.include_typing:
-        typing_step = TypingIngestStep(
-            storage=storage,
-            discovery=discovery,
-            tools=tool_adapter,
-        )
-        asyncio.run(
-            typing_step.execute_async(
-                list(modules),
-                repo=repo,
-                commit=commit,
-                repo_root=str(repo_root),
-            )
-        )
-    if opts.include_coverage:
-        coverage_step = CoverageIngestStep(storage=storage, tools=tool_adapter)
-        asyncio.run(
-            coverage_step.execute_async(
-                [],
-                repo=repo,
-                commit=commit,
-                repo_root=repo_root,
-                coverage_file=coverage_file,
-            )
-        )
-    if opts.build_graph_metrics:
-        _seed_cfg_dfg_for_metrics(gateway, rel_path="pkg/mod.py")
-        compute_cfg_metrics(gateway, repo=repo, commit=commit)
-        compute_dfg_metrics(gateway, repo=repo, commit=commit)
+    _run_ingestion_steps(setup, list(modules), opts, repo, commit)
 
     return ProvisionedGateway(
         repo=repo,
         commit=commit,
         repo_root=repo_root,
-        build_dir=ctx.build_dir,
-        db_path=ctx.db_path,
-        document_output_dir=ctx.document_output_dir,
-        coverage_file=coverage_file,
-        gateway=gateway,
-        runner=runner,
+        build_dir=setup.ctx.build_dir,
+        db_path=setup.ctx.db_path,
+        document_output_dir=setup.ctx.document_output_dir,
+        coverage_file=setup.coverage_file,
+        gateway=setup.gateway,
+        runner=setup.runner,
     )
 
 

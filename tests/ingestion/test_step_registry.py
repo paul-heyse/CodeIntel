@@ -125,7 +125,10 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
         plugin_stage: ClassVar[IngestStage] = "scan"
         depends_on: ClassVar[tuple[str, ...]] = ()
 
-        def compute(self, ctx: IngestExecutionContext) -> Mapping[str, int] | None:
+        def compute(  # noqa: PLR6301
+            self,
+            _ctx: IngestExecutionContext,
+        ) -> Mapping[str, int] | None:
             executed.append("alpha")
             return None
 
@@ -136,7 +139,10 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
         plugin_stage: ClassVar[IngestStage] = "parse"
         depends_on: ClassVar[tuple[str, ...]] = ("alpha",)
 
-        def compute(self, ctx: IngestExecutionContext) -> Mapping[str, int] | None:
+        def compute(  # noqa: PLR6301
+            self,
+            _ctx: IngestExecutionContext,
+        ) -> Mapping[str, int] | None:
             executed.append("bravo")
             return None
 
@@ -147,7 +153,10 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
         plugin_stage: ClassVar[IngestStage] = "enrich"
         depends_on: ClassVar[tuple[str, ...]] = ("bravo",)
 
-        def compute(self, ctx: IngestExecutionContext) -> Mapping[str, int] | None:
+        def compute(  # noqa: PLR6301
+            self,
+            _ctx: IngestExecutionContext,
+        ) -> Mapping[str, int] | None:
             executed.append("charlie")
             return None
 

@@ -678,8 +678,7 @@ def projection_metrics(
 def bipartite_degrees(
     graph: nx.Graph, primary: set[Any], secondary: set[Any], *, weight: str | None = "weight"
 ) -> BipartiteDegrees:
-    """
-    Compute degree metrics for bipartite graphs and their projection.
+    """Compute degree metrics for bipartite graphs and their projection.
 
     Parameters
     ----------
@@ -705,6 +704,15 @@ def bipartite_degrees(
         degree[node] = int(deg)
     for node, deg in weighted_view:
         weighted_degree[node] = float(deg)
+
+    # Handle empty partitions to avoid division by zero in bipartite.degree_centrality
+    if not primary or not secondary:
+        return BipartiteDegrees(
+            degree=degree,
+            weighted_degree=weighted_degree,
+            primary_degree_centrality={},
+            secondary_degree_centrality={},
+        )
 
     primary_degree_centrality = bipartite.degree_centrality(graph, secondary)
     secondary_degree_centrality = bipartite.degree_centrality(graph, primary)

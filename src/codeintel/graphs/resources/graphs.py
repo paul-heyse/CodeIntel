@@ -10,8 +10,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import networkx as nx
 
-from codeintel.graphs.ports.engine import EnginePort, GraphData
-from codeintel.graphs.resources.protocol import ResourceProvider
+from codeintel.graphs.ports.engine import GraphData
 
 if TYPE_CHECKING:
     from codeintel.graphs.engine import NxGraphEngine
@@ -60,10 +59,7 @@ class GraphResource:
 
         Clears the engine's internal cache.
         """
-        # Clear the engine's cache by resetting it
-        # Accessing private _cache is intentional for cache invalidation
-        if hasattr(self.engine, "_cache"):
-            self.engine._cache.clear()  # noqa: SLF001
+        self.engine.clear_cache()
 
     @property
     def repo(self) -> str:
@@ -166,15 +162,6 @@ class GraphResource:
             Import graph data without NetworkX dependency.
         """
         return GraphData.from_nx(self.import_graph())
-
-
-# Verify protocol compliance
-def _check_protocol_compliance() -> None:
-    """Verify GraphResource implements protocols."""
-    resource: ResourceProvider[EnginePort] = GraphResource(
-        engine=None,  # type: ignore[arg-type]
-    )
-    _ = resource
 
 
 __all__ = ["GraphResource"]

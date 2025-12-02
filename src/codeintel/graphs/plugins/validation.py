@@ -33,7 +33,30 @@ class GraphValidationPlugin:
 
     This plugin wraps the existing graph validation functionality,
     emitting warnings for common graph integrity issues.
+
+    This class implements the singleton pattern - use `instance()` to
+    get the global plugin instance.
     """
+
+    _instance: GraphValidationPlugin | None = None
+
+    @classmethod
+    def instance(cls) -> GraphValidationPlugin:
+        """Return the singleton plugin instance.
+
+        Returns
+        -------
+        GraphValidationPlugin
+            The global plugin instance.
+        """
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Reset the singleton instance for testing."""
+        cls._instance = None
 
     @property
     def metadata(self) -> GraphPluginMetadata:
@@ -153,6 +176,12 @@ class GraphValidationPlugin:
         int
             Count of validation findings.
         """
+        from codeintel.storage.gateway import (  # noqa: PLC0415
+            DuckDBCatalogException,
+            DuckDBDatabaseError,
+            DuckDBProgrammingError,
+        )
+
         try:
             result = ctx.gateway.con.execute(
                 """
@@ -163,12 +192,9 @@ class GraphValidationPlugin:
                 [ctx.repo, ctx.commit],
             ).fetchone()
             return int(result[0]) if result else 0
-        except Exception:  # noqa: BLE001
+        except (DuckDBCatalogException, DuckDBProgrammingError, DuckDBDatabaseError):
+            # Table may not exist yet or query may fail - return 0
             return 0
-
-
-# Singleton instance
-_GRAPH_VALIDATION_PLUGIN: GraphValidationPlugin | None = None
 
 
 def get_graph_validation_plugin() -> GraphPluginProtocol:
@@ -179,10 +205,7 @@ def get_graph_validation_plugin() -> GraphPluginProtocol:
     GraphPluginProtocol
         The singleton plugin instance.
     """
-    global _GRAPH_VALIDATION_PLUGIN  # noqa: PLW0603
-    if _GRAPH_VALIDATION_PLUGIN is None:
-        _GRAPH_VALIDATION_PLUGIN = GraphValidationPlugin()
-    return _GRAPH_VALIDATION_PLUGIN
+    return GraphValidationPlugin.instance()
 
 
 def _register_plugin() -> None:

@@ -11,12 +11,10 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 if TYPE_CHECKING:
     from codeintel.analytics.resources.catalog import CatalogProvider
-    from codeintel.analytics.resources.graphs import GraphProvider
+    from codeintel.analytics.resources.features import FeaturesProvider
+    from codeintel.analytics.resources.module_map import ModuleMapProvider
 
-from codeintel.analytics.core.base import (
-    ConfiguredTableWriterPlugin,
-    GraphRuntimeRequiringPlugin,
-)
+from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
     PluginResourceHints,
@@ -27,10 +25,7 @@ from codeintel.config.steps_analytics import EntryPointsStepConfig
 
 
 @dataclass
-class EntrypointsPlugin(
-    ConfiguredTableWriterPlugin[EntryPointsStepConfig],
-    GraphRuntimeRequiringPlugin,
-):
+class EntrypointsPlugin(ConfiguredTableWriterPlugin[EntryPointsStepConfig]):
     """Detect HTTP/CLI/job entrypoints and map them to handlers and tests.
 
     Identifies and maps:
@@ -76,29 +71,6 @@ class EntrypointsPlugin(
         priority=50,
     )
 
-    # Optional requirements
-    graph_runtime_required: ClassVar[bool] = False
-
-    def _validate_resource_requirements(  # noqa: PLR6301
-        self,
-        ctx: PluginExecutionContext,  # noqa: ARG002
-    ) -> list[str]:
-        """Validate resource requirements.
-
-        Entrypoints plugin has optional context and runtime requirements.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        list[str]
-            Empty list (requirements are optional).
-        """
-        return []
-
     def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
         """Execute the entrypoints detection.
 
@@ -110,27 +82,35 @@ class EntrypointsPlugin(
         Returns
         -------
         Mapping[str, int] | None
-            None to trigger auto row count computation.
+            None to trigger auto row count computation, or error dict if
+            required providers are missing.
         """
         cfg = self.config
 
-        # Get catalog from CatalogProvider
-        catalog_provider = None
-        if ctx.has_resource_by_name("CatalogProvider"):
-            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-            catalog_provider = cat_prov.get()
+        # Get catalog from CatalogProvider (required)
+        if not ctx.has_resource_by_name("CatalogProvider"):
+            return {"error": -1}  # Signal failure; base handles this
+        cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+        catalog_provider = cat_prov.get()
 
-        # Get graph runtime from GraphProvider
-        graph_runtime = None
-        if ctx.has_resource_by_name("GraphProvider"):
-            graph_prov = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
-            graph_runtime = graph_prov.runtime
+        # Get module map from ModuleMapProvider (required)
+        if not ctx.has_resource_by_name("ModuleMapProvider"):
+            return {"error": -1}
+        mm_prov = cast("ModuleMapProvider", ctx.require_by_name("ModuleMapProvider"))
+        module_map = mm_prov.get()
+
+        # Get features from FeaturesProvider (required)
+        if not ctx.has_resource_by_name("FeaturesProvider"):
+            return {"error": -1}
+        feat_prov = cast("FeaturesProvider", ctx.require_by_name("FeaturesProvider"))
+        features_map = feat_prov.get()
 
         build_entrypoints(
             ctx.gateway,
             cfg,
             catalog_provider=catalog_provider,
-            runtime=graph_runtime,
+            module_map=module_map,
+            features_map=features_map,
         )
         return None  # Let base class compute row counts
 

@@ -27,6 +27,13 @@ from codeintel.ingestion.plugins import (
     IngestRuntimeScratch,
     get_ingest_registry,
 )
+from codeintel.ingestion.resources import (
+    ModuleProvider,
+    ResourceRegistry,
+    ToolsProvider,
+    TrackerConfig,
+    TrackerProvider,
+)
 from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
 from tests._helpers.gateway import open_ingestion_gateway
 
@@ -79,17 +86,28 @@ def _build_plugin_context(
     snapshot = SnapshotRef.from_args(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
     paths = BuildPaths.from_repo_root(repo_root)
     gateway = open_ingestion_gateway()
+    effective_tools = tools or ToolsConfig.default()
+    code_profile = default_code_profile(repo_root)
     effective_scratch = scratch if scratch is not None else IngestRuntimeScratch()
     if change_tracker is not None:
         effective_scratch.declare("change_tracker", change_tracker)
+
+    # Build resource registry
+    registry = ResourceRegistry()
+    tracker_config = TrackerConfig(scratch=effective_scratch, profile=code_profile)
+    registry.register(TrackerProvider, TrackerProvider(gateway, snapshot, tracker_config))
+    registry.register(ToolsProvider, ToolsProvider(effective_tools, paths.tool_cache))
+    registry.register(ModuleProvider, ModuleProvider(gateway, snapshot, profile=code_profile))
+
     return IngestExecutionContext(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
-        tools=tools or ToolsConfig.default(),
-        code_profile=default_code_profile(repo_root),
+        tools=effective_tools,
+        code_profile=code_profile,
         config_profile=default_config_profile(repo_root),
         scratch=effective_scratch,
+        resources=registry,
     )
 
 
@@ -121,7 +139,7 @@ def test_coverage_ingest_runs_full_rebuild_with_tracker(tmp_path: Path) -> None:
         tools = ToolRunnerAdapter(fake_service)
         step = CoverageIngestStep(storage=storage, tools=tools)
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             step.execute_async(
                 [],  # modules not used for coverage
                 repo=cfg.repo,
@@ -164,6 +182,7 @@ def test_coverage_plugin_executes_with_tracker(tmp_path: Path) -> None:
         snapshot = SnapshotRef.from_args(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
         paths = BuildPaths.from_repo_root(repo_root)
         tools = ToolsConfig.default()
+        code_profile = default_code_profile(repo_root)
         scratch = IngestRuntimeScratch()
 
         # Create a tracker and store in scratch
@@ -181,18 +200,26 @@ def test_coverage_plugin_executes_with_tracker(tmp_path: Path) -> None:
         )
         scratch.declare("change_tracker", tracker)
 
+        # Build resource registry
+        registry = ResourceRegistry()
+        tracker_config = TrackerConfig(scratch=scratch, profile=code_profile)
+        registry.register(TrackerProvider, TrackerProvider(gateway, snapshot, tracker_config))
+        registry.register(ToolsProvider, ToolsProvider(tools, paths.tool_cache))
+        registry.register(ModuleProvider, ModuleProvider(gateway, snapshot, profile=code_profile))
+
         ctx = IngestExecutionContext(
             gateway=gateway,
             snapshot=snapshot,
             paths=paths,
             tools=tools,
-            code_profile=default_code_profile(repo_root),
+            code_profile=code_profile,
             config_profile=default_config_profile(repo_root),
             scratch=scratch,
+            resources=registry,
         )
 
-        registry = get_ingest_registry()
-        coverage_plugin = registry.get("coverage_ingest")
+        plugin_registry = get_ingest_registry()
+        coverage_plugin = plugin_registry.get("coverage_ingest")
         result = coverage_plugin.execute(ctx)
 
         # Should succeed (or skip if no coverage data)

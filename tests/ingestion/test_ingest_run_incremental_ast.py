@@ -6,19 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config.models import ToolsConfig
-from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.ingestion import IngestExecutionContext
-from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-    default_code_profile,
-    default_config_profile,
-)
-from codeintel.ingestion.plugins import (
-    IngestPluginResult,
-    IngestRuntimeScratch,
-    get_ingest_registry,
-)
+from codeintel.ingestion.plugins import IngestPluginResult, get_ingest_registry
 from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.ingest_setup import IngestTestSetup
 
 
 def test_ast_extract_plugin_succeeds_with_tracker(tmp_path: Path) -> None:
@@ -29,25 +19,15 @@ def test_ast_extract_plugin_succeeds_with_tracker(tmp_path: Path) -> None:
     (src_dir / "a.py").write_text("print('a')\n", encoding="utf8")
     (src_dir / "b.py").write_text("print('b')\n", encoding="utf8")
 
-    snapshot = SnapshotRef.from_args(repo="demo/ast", commit="abc123", repo_root=repo_root)
-    paths = BuildPaths.from_repo_root(repo_root)
     gateway = open_ingestion_gateway()
-    scratch = IngestRuntimeScratch()
-
     try:
+        setup = IngestTestSetup.from_repo(
+            repo_root, gateway=gateway, repo="demo/ast", commit="abc123"
+        )
         registry = get_ingest_registry()
 
         # First run repo_scan to get change_tracker
-        repo_scan_ctx = IngestExecutionContext(
-            gateway=gateway,
-            snapshot=snapshot,
-            paths=paths,
-            tools=ToolsConfig.default(),
-            code_profile=default_code_profile(repo_root),
-            config_profile=default_config_profile(repo_root),
-            scratch=scratch,
-        )
-
+        repo_scan_ctx = setup.build_context("repo_scan")
         repo_scan = registry.get("repo_scan")
         scan_result = repo_scan.execute(repo_scan_ctx)
 
@@ -55,21 +35,13 @@ def test_ast_extract_plugin_succeeds_with_tracker(tmp_path: Path) -> None:
             pytest.fail(f"repo_scan failed: {scan_result.error}")
 
         # Get change_tracker from scratch
-        change_tracker = scratch.consume("change_tracker")
+        change_tracker = setup.scratch.consume("change_tracker")
         if change_tracker is None:
             pytest.fail("repo_scan did not populate change_tracker")
 
         # Now run ast_extract with change_tracker in scratch
-        scratch.declare("change_tracker", change_tracker)
-        ast_ctx = IngestExecutionContext(
-            gateway=gateway,
-            snapshot=snapshot,
-            paths=paths,
-            tools=ToolsConfig.default(),
-            code_profile=default_code_profile(repo_root),
-            config_profile=default_config_profile(repo_root),
-            scratch=scratch,
-        )
+        setup.scratch.declare("change_tracker", change_tracker)
+        ast_ctx = setup.build_context("ast_extract")
 
         ast_plugin = registry.get("ast_extract")
         ast_result = ast_plugin.execute(ast_ctx)
@@ -97,26 +69,17 @@ def test_ast_extract_plugin_succeeds_with_no_modules(tmp_path: Path) -> None:
     src_dir.mkdir(parents=True)
     (src_dir / "a.py").write_text("print('a')\n", encoding="utf8")
 
-    snapshot = SnapshotRef.from_args(repo="demo/ast", commit="abc123", repo_root=repo_root)
-    paths = BuildPaths.from_repo_root(repo_root)
     gateway = open_ingestion_gateway()
-
     try:
-        registry = get_ingest_registry()
+        setup = IngestTestSetup.from_repo(
+            repo_root, gateway=gateway, repo="demo/ast", commit="abc123"
+        )
+        plugin_registry = get_ingest_registry()
 
         # Run ast_extract without change_tracker (scratch is empty)
         # New behavior: plugin succeeds with 0 rows when no modules available
-        ctx = IngestExecutionContext(
-            gateway=gateway,
-            snapshot=snapshot,
-            paths=paths,
-            tools=ToolsConfig.default(),
-            code_profile=default_code_profile(repo_root),
-            config_profile=default_config_profile(repo_root),
-            scratch=IngestRuntimeScratch(),
-        )
-
-        ast_plugin = registry.get("ast_extract")
+        ctx = setup.build_context("ast_extract")
+        ast_plugin = plugin_registry.get("ast_extract")
         result = ast_plugin.execute(ctx)
 
         # Plugin should succeed with 0 rows when no modules are available
@@ -154,49 +117,31 @@ def test_cst_extract_plugin_succeeds_with_tracker(tmp_path: Path) -> None:
     src_dir.mkdir(parents=True)
     (src_dir / "mod.py").write_text("x = 1\n", encoding="utf8")
 
-    snapshot = SnapshotRef.from_args(repo="demo/cst", commit="xyz789", repo_root=repo_root)
-    paths = BuildPaths.from_repo_root(repo_root)
     gateway = open_ingestion_gateway()
-    scratch = IngestRuntimeScratch()
-
     try:
-        registry = get_ingest_registry()
+        setup = IngestTestSetup.from_repo(
+            repo_root, gateway=gateway, repo="demo/cst", commit="xyz789"
+        )
+        plugin_registry = get_ingest_registry()
 
         # First run repo_scan
-        repo_scan_ctx = IngestExecutionContext(
-            gateway=gateway,
-            snapshot=snapshot,
-            paths=paths,
-            tools=ToolsConfig.default(),
-            code_profile=default_code_profile(repo_root),
-            config_profile=default_config_profile(repo_root),
-            scratch=scratch,
-        )
-
-        repo_scan = registry.get("repo_scan")
+        repo_scan_ctx = setup.build_context("repo_scan")
+        repo_scan = plugin_registry.get("repo_scan")
         scan_result = repo_scan.execute(repo_scan_ctx)
 
         if not scan_result.success:
             pytest.fail(f"repo_scan failed: {scan_result.error}")
 
         # Get change_tracker
-        change_tracker = scratch.consume("change_tracker")
+        change_tracker = setup.scratch.consume("change_tracker")
         if change_tracker is None:
             pytest.fail("repo_scan did not populate change_tracker")
 
         # Run cst_extract with change_tracker in scratch
-        scratch.declare("change_tracker", change_tracker)
-        cst_ctx = IngestExecutionContext(
-            gateway=gateway,
-            snapshot=snapshot,
-            paths=paths,
-            tools=ToolsConfig.default(),
-            code_profile=default_code_profile(repo_root),
-            config_profile=default_config_profile(repo_root),
-            scratch=scratch,
-        )
+        setup.scratch.declare("change_tracker", change_tracker)
+        cst_ctx = setup.build_context("cst_extract")
 
-        cst_plugin = registry.get("cst_extract")
+        cst_plugin = plugin_registry.get("cst_extract")
         cst_result = cst_plugin.execute(cst_ctx)
 
         if not cst_result.success:

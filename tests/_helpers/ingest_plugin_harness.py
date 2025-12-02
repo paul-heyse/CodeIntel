@@ -23,7 +23,11 @@ Example
 ...     )
 ...     assert result.success
 ...     assert result.row_counts.get("core.ast_nodes", 0) >= 0
+
+Lazy imports (PLC0415) are used intentionally to avoid circular dependencies
+in the test infrastructure. The imports are deferred until methods are called.
 """
+# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -34,7 +38,7 @@ from uuid import uuid4
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
-    from codeintel.ingestion.core.base import BaseIngestPlugin
+    from codeintel.ingestion.core.base import BaseIngestPlugin, ValidationResult
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
     from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
     from codeintel.ingestion.plugins.protocol import (
@@ -411,15 +415,10 @@ class IngestPluginTestHarness:
             repo_root=repo_root,
         )
 
-        paths = BuildPaths(
-            build_dir=build_dir,
-            artifacts_dir=build_dir / "artifacts",
-            coverage_json=build_dir / "coverage.json",
-            pytest_report=build_dir / "pytest-report.json",
-        )
+        paths = BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
 
         # Use provided tools config or create default
-        tools = self._tools_config or ToolsConfig()
+        tools = self._tools_config or ToolsConfig.default()
 
         # Use provided profiles or defaults
         code_profile = self._code_profile or default_code_profile(repo_root)
@@ -447,7 +446,7 @@ class IngestPluginTestHarness:
             run_id=self._run_id,
         )
 
-    def validate(self) -> Any:
+    def validate(self) -> ValidationResult:
         """Run input validation.
 
         Returns
@@ -659,7 +658,8 @@ class IngestPluginResultAssertions:
         AssertionError
             If row count doesn't match expectations.
         """
-        actual = self._result.row_counts.get(table, 0)
+        row_counts = self._result.row_counts or {}
+        actual = row_counts.get(table, 0)
 
         if exact is not None:
             if actual != exact:

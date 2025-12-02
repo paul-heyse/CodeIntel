@@ -6,9 +6,9 @@ import ast
 from textwrap import dedent
 
 import pytest
-from codeintel.ingestion.steps.ast_extract import AstVisitor
 
 from codeintel.config.datasets import get_table_columns
+from codeintel.ingestion.steps.ast_extract import AstVisitor
 
 AST_NODES_COLUMNS = get_table_columns("core.ast_nodes")
 

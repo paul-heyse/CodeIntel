@@ -11,8 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.graphs.ports.storage import BatchResult, QueryResult, StoragePort
-from codeintel.graphs.resources.protocol import ResourceProvider
+from codeintel.graphs.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.common import run_batch
 
 if TYPE_CHECKING:
@@ -198,16 +197,6 @@ class StorageResource:
             Absolute path to the repository root.
         """
         return self._repo_root
-
-
-# Verify protocol compliance
-def _check_protocol_compliance() -> None:
-    """Verify StorageResource implements protocols."""
-    resource: ResourceProvider[StoragePort] = StorageResource(
-        gateway=None,  # type: ignore[arg-type]
-        _repo_root=Path(),
-    )
-    _ = resource
 
 
 __all__ = ["StorageResource"]

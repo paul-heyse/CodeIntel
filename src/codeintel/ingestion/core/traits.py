@@ -240,6 +240,7 @@ class WithIncrementalSupport:
         str
             Hash of inputs.
         """
+        _ = self  # Required by interface, accessed via ctx
         import hashlib
 
         data = f"{ctx.repo}:{ctx.commit}".encode()
@@ -472,6 +473,7 @@ class WithDependencyData:
         T | None
             Data from upstream plugin or default.
         """
+        _ = self  # Required by interface, accessed via ctx
         from typing import cast
 
         result = ctx.scratch.consume(key, default)
@@ -494,6 +496,7 @@ class WithDependencyData:
         value
             Data to store.
         """
+        _ = self  # Required by interface, accessed via ctx
         ctx.scratch.declare(key, value)
 
 
@@ -574,6 +577,7 @@ class WithCleanup:
         callback
             Cleanup function to call after run completes.
         """
+        _ = self  # Required by interface, accessed via ctx
         ctx.scratch.register_cleanup(callback)
 
 

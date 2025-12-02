@@ -24,10 +24,7 @@ from codeintel.ingestion.plugins.protocol import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
-    from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 
@@ -102,18 +99,21 @@ class AstExtractPlugin(TrackerRequiringPlugin, TableWriterIngestPlugin, WithDepe
         Mapping[str, int] | None
             Row counts per table, or None for auto-compute.
         """
+        _ = self  # Required by interface, accessed via ctx
         from codeintel.ingestion.adapters import (
             DuckDBStorageAdapter,
             FilesystemDiscoveryAdapter,
         )
+        from codeintel.ingestion.resources import ModuleProvider
         from codeintel.ingestion.steps import AstExtractStep
 
         # Create adapters
         storage = DuckDBStorageAdapter(ctx.gateway)
         discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
 
-        # Get modules from tracker or scratch
-        modules = self._get_modules(ctx)
+        # Get modules from provider
+        modules_provider = ctx.require(ModuleProvider)
+        modules = list(modules_provider.get())
 
         # Execute step
         step = AstExtractStep(storage=storage, discovery=discovery)
@@ -128,39 +128,6 @@ class AstExtractPlugin(TrackerRequiringPlugin, TableWriterIngestPlugin, WithDepe
                 log.warning("AST extraction error: %s", error)
 
         return result.table_counts
-
-    def _get_modules(self, ctx: IngestExecutionContext) -> Sequence[ModuleRecord]:
-        """Get module list from tracker or inventory.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        Sequence[ModuleRecord]
-            Sequence of ModuleRecord instances.
-        """
-        from codeintel.ingestion.common import iter_modules
-        from codeintel.storage.module_index import load_module_map
-
-        module_map = load_module_map(
-            ctx.gateway,
-            ctx.repo,
-            ctx.commit,
-            language="python",
-            logger=log,
-        )
-
-        return list(
-            iter_modules(
-                module_map,
-                ctx.repo_root,
-                logger=log,
-                scan_profile=ctx.code_profile,
-            )
-        )
 
 
 __all__ = ["AstExtractPlugin"]

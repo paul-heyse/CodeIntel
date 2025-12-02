@@ -13,7 +13,7 @@ import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from codeintel.graphs.compute.metrics import centrality, components, coupling
+from codeintel.graphs.compute.metrics import centrality, components
 from codeintel.graphs.core import (
     ComputationResult,
     GraphExecutionContext,
@@ -58,25 +58,46 @@ def _compute_core_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
     func_centralities = centrality.compute_all_centralities(call_graph)
     module_centralities = centrality.compute_all_centralities(import_graph)
 
-    # Compute SCC for both graphs
-    func_sccs = components.find_strongly_connected(call_graph)
-    module_sccs = components.find_strongly_connected(import_graph)
+    # Compute SCC for both graphs (need condensation for layer computation)
+    func_sccs = components.find_strongly_connected(call_graph, compute_condensation=True)
+    module_sccs = components.find_strongly_connected(import_graph, compute_condensation=True)
+
+    # Compute topological layers based on condensation
+    func_layers = components.condensation_layers(call_graph, func_sccs)
+    module_layers = components.condensation_layers(import_graph, module_sccs)
+
+    # Build set of nodes in non-trivial cycles (SCC size > 1)
+    func_cycle_nodes: set[object] = set()
+    for comp in func_sccs.components:
+        if comp.size > 1:
+            func_cycle_nodes.update(comp.nodes)
+
+    module_cycle_nodes: set[object] = set()
+    for comp in module_sccs.components:
+        if comp.size > 1:
+            module_cycle_nodes.update(comp.nodes)
 
     # Persist function metrics
+    # Columns: repo, commit, function_goid_h128, call_fan_in, call_fan_out,
+    #          call_in_degree, call_out_degree, call_pagerank, call_betweenness,
+    #          call_closeness, call_cycle_member, call_cycle_id, call_layer, created_at
     now = datetime.now(tz=UTC)
     func_rows = [
         (
-            goid,
             ctx.repo,
             ctx.commit,
-            metrics.pagerank,
-            metrics.betweenness,
-            metrics.closeness,
-            metrics.in_degree,
-            metrics.out_degree,
-            metrics.degree,
-            func_sccs.node_to_component.get(goid, -1),
-            now,
+            goid,
+            metrics.in_degree,  # call_fan_in
+            metrics.out_degree,  # call_fan_out
+            metrics.in_degree,  # call_in_degree
+            metrics.out_degree,  # call_out_degree
+            metrics.pagerank,  # call_pagerank
+            metrics.betweenness,  # call_betweenness
+            metrics.closeness,  # call_closeness
+            goid in func_cycle_nodes,  # call_cycle_member
+            func_sccs.node_to_component.get(goid),  # call_cycle_id
+            func_layers.get(goid),  # call_layer
+            now,  # created_at
         )
         for goid, metrics in func_centralities.items()
     ]
@@ -84,20 +105,25 @@ def _compute_core_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
     if func_rows:
         _persist_function_metrics(ctx, func_rows)
 
-    # Persist module metrics
+    # Persist module metrics (see GRAPH_METRICS_MODULES_COLUMNS for column order)
     module_rows = [
         (
-            node,
             ctx.repo,
             ctx.commit,
-            metrics.pagerank,
-            metrics.betweenness,
-            metrics.closeness,
-            metrics.in_degree,
-            metrics.out_degree,
-            metrics.degree,
-            module_sccs.node_to_component.get(node, -1),
-            now,
+            node,
+            metrics.in_degree,  # import_fan_in
+            metrics.out_degree,  # import_fan_out
+            metrics.in_degree,  # import_in_degree
+            metrics.out_degree,  # import_out_degree
+            metrics.pagerank,  # import_pagerank
+            metrics.betweenness,  # import_betweenness
+            metrics.closeness,  # import_closeness
+            node in module_cycle_nodes,  # import_cycle_member
+            module_sccs.node_to_component.get(node),  # import_cycle_id
+            module_layers.get(node),  # import_layer
+            0,  # symbol_fan_in (computed elsewhere, defaulting to 0)
+            0,  # symbol_fan_out (computed elsewhere, defaulting to 0)
+            now,  # created_at
         )
         for node, metrics in module_centralities.items()
     ]
@@ -183,28 +209,57 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
     else:
         return ComputationResult(success=False, message="No graph engine available")
 
-    # Compute coupling metrics
-    coupling_metrics = coupling.compute_coupling(call_graph)
+    # Compute centrality metrics for extended metrics
+    func_centralities = centrality.compute_all_centralities(call_graph)
 
-    # Compute SCC with condensation for layers
+    # Compute SCC with condensation
     scc_result = components.find_strongly_connected(call_graph, compute_condensation=True)
-    layers = components.condensation_layers(call_graph, scc_result)
+
+    # Build SCC size lookup
+    scc_sizes = {comp.component_id: comp.size for comp in scc_result.components}
+
+    # Find weakly connected components for component ID/size
+    wcc_result = components.find_weakly_connected(call_graph)
+    wcc_node_to_comp: dict[object, int] = {}
+    wcc_comp_sizes: dict[int, int] = {}
+    for comp in wcc_result:
+        wcc_comp_sizes[comp.component_id] = comp.size
+        for node in comp.nodes:
+            wcc_node_to_comp[node] = comp.component_id
 
     # Build and persist rows
+    # Columns: repo, commit, function_goid_h128, call_betweenness, call_closeness,
+    #          call_eigenvector, call_harmonic, call_core_number, call_clustering_coeff,
+    #          call_triangle_count, call_is_articulation, call_articulation_impact,
+    #          call_is_bridge_endpoint, call_component_id, call_component_size,
+    #          call_scc_id, call_scc_size, call_ancestor_count, call_descendant_count,
+    #          call_community_id, created_at
     now = datetime.now(tz=UTC)
     rows = [
         (
-            goid,
-            ctx.repo,
-            ctx.commit,
-            metrics.afferent,
-            metrics.efferent,
-            metrics.instability,
-            layers.get(goid, 0),
-            scc_result.node_to_component.get(goid, -1),
-            now,
+            ctx.repo,  # repo
+            ctx.commit,  # commit
+            goid,  # function_goid_h128
+            metrics.betweenness,  # call_betweenness
+            metrics.closeness,  # call_closeness
+            0.0,  # call_eigenvector (placeholder)
+            0.0,  # call_harmonic (placeholder)
+            0,  # call_core_number (placeholder)
+            0.0,  # call_clustering_coeff (placeholder)
+            0,  # call_triangle_count (placeholder)
+            False,  # call_is_articulation (placeholder)
+            0.0,  # call_articulation_impact (placeholder)
+            False,  # call_is_bridge_endpoint (placeholder)
+            wcc_node_to_comp.get(goid, 0),  # call_component_id
+            wcc_comp_sizes.get(wcc_node_to_comp.get(goid, 0), 0),  # call_component_size
+            scc_result.node_to_component.get(goid, 0),  # call_scc_id
+            scc_sizes.get(scc_result.node_to_component.get(goid, 0), 0),  # call_scc_size
+            0,  # call_ancestor_count (placeholder)
+            0,  # call_descendant_count (placeholder)
+            0,  # call_community_id (placeholder)
+            now,  # created_at
         )
-        for goid, metrics in coupling_metrics.items()
+        for goid, metrics in func_centralities.items()
     ]
 
     if rows:
@@ -229,8 +284,7 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
 
 
 def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Compute extended import graph metrics for modules.
+    """Compute extended import graph metrics for modules.
 
     Returns
     -------
@@ -246,28 +300,48 @@ def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult
     else:
         return ComputationResult(success=False, message="No graph engine available")
 
-    # Compute coupling metrics
-    coupling_metrics = coupling.compute_coupling(import_graph)
+    # Compute centrality metrics
+    module_centralities = centrality.compute_all_centralities(import_graph)
 
-    # Compute SCC with condensation for layers
+    # Compute SCC with condensation
     scc_result = components.find_strongly_connected(import_graph, compute_condensation=True)
-    layers = components.condensation_layers(import_graph, scc_result)
 
-    # Build and persist rows
+    # Build SCC size lookup
+    scc_sizes = {comp.component_id: comp.size for comp in scc_result.components}
+
+    # Find weakly connected components
+    wcc_result = components.find_weakly_connected(import_graph)
+    wcc_node_to_comp: dict[object, int] = {}
+    wcc_comp_sizes: dict[int, int] = {}
+    for comp in wcc_result:
+        wcc_comp_sizes[comp.component_id] = comp.size
+        for node in comp.nodes:
+            wcc_node_to_comp[node] = comp.component_id
+
+    # Build and persist rows (see GRAPH_METRICS_MODULES_EXT_COLUMNS for column order)
     now = datetime.now(tz=UTC)
     rows = [
         (
-            module,
-            ctx.repo,
-            ctx.commit,
-            metrics.afferent,
-            metrics.efferent,
-            metrics.instability,
-            layers.get(module, 0),
-            scc_result.node_to_component.get(module, -1),
-            now,
+            ctx.repo,  # repo
+            ctx.commit,  # commit
+            module,  # module
+            metrics.betweenness,  # import_betweenness
+            metrics.closeness,  # import_closeness
+            0.0,  # import_eigenvector (placeholder)
+            0.0,  # import_harmonic (placeholder)
+            0,  # import_k_core (placeholder)
+            0.0,  # import_constraint (placeholder)
+            0.0,  # import_effective_size (placeholder)
+            0.0,  # import_rich_club (placeholder)
+            0,  # import_shell_index (placeholder)
+            0,  # import_community_id (placeholder)
+            wcc_node_to_comp.get(module, 0),  # import_component_id
+            wcc_comp_sizes.get(wcc_node_to_comp.get(module, 0), 0),  # import_component_size
+            scc_result.node_to_component.get(module, 0),  # import_scc_id
+            scc_sizes.get(scc_result.node_to_component.get(module, 0), 0),  # import_scc_size
+            now,  # created_at
         )
-        for module, metrics in coupling_metrics.items()
+        for module, metrics in module_centralities.items()
     ]
 
     if rows:

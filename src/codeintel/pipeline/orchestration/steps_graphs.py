@@ -59,7 +59,7 @@ class CallGraphStep:
             cst_collector=ctx.cst_collector,
             ast_collector=ctx.ast_collector,
         )
-        build_call_graph(gateway, cfg, catalog_provider=catalog)
+        build_call_graph(gateway, cfg, _catalog_provider=catalog)
 
 
 @dataclass

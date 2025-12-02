@@ -200,9 +200,7 @@ def _load_source(spec: FunctionBuildSpec, file_cache: dict[str, str]) -> str:
     """
     if spec.rel_path not in file_cache:
         try:
-            file_cache[spec.rel_path] = (spec.repo_root / spec.rel_path).read_text(
-                encoding="utf8"
-            )
+            file_cache[spec.rel_path] = (spec.repo_root / spec.rel_path).read_text(encoding="utf8")
         except OSError:
             file_cache[spec.rel_path] = ""
     return file_cache[spec.rel_path]

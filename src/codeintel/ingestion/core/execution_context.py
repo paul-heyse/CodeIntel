@@ -98,7 +98,7 @@ class IngestExecutionContext:
     tools: ToolsConfig
     code_profile: ScanProfile
     config_profile: ScanProfile
-    resources: ResourceRegistry = field(default_factory=lambda: _empty_registry())
+    resources: ResourceRegistry = field(default_factory=_empty_registry)
     scratch: IngestRuntimeScratch = field(default_factory=IngestRuntimeScratch)
     configs: dict[type[object], object] = field(default_factory=dict)
     plugin_name: str | None = None
@@ -149,7 +149,7 @@ class IngestExecutionContext:
         return self.paths.build_dir
 
     def require[T: ResourceProvider[object]](self, provider_type: type[T]) -> T:
-        """Get a required resource, raising if unavailable.
+        """Get the resource provider, raising if unavailable.
 
         Parameters
         ----------
@@ -160,13 +160,10 @@ class IngestExecutionContext:
         -------
         T
             The resource provider instance.
-
-        Raises
-        ------
-        ResourceNotFoundError
-            If the resource is not registered.
         """
-        return self.resources.require(provider_type)
+        from typing import cast
+
+        return cast("T", self.resources.get(provider_type))
 
     def require_by_name(self, name: str) -> object:
         """Get a resource by name for duck-typing scenarios.
@@ -180,11 +177,6 @@ class IngestExecutionContext:
         -------
         object
             The resource provider instance. Caller should cast to expected type.
-
-        Raises
-        ------
-        ResourceNotFoundError
-            If the resource is not registered.
         """
         return self.resources.require_by_name(name)
 

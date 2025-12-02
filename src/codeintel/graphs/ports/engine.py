@@ -208,6 +208,13 @@ class EnginePort(Protocol):
         """
         ...
 
+    def clear_cache(self) -> None:
+        """Clear all cached graphs.
+
+        Forces graphs to be reloaded on next access.
+        """
+        ...
+
 
 __all__ = [
     "EnginePort",

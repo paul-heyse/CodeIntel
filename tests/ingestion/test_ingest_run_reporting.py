@@ -20,6 +20,13 @@ from codeintel.ingestion.plugins import (
     IngestRuntimeScratch,
     get_ingest_registry,
 )
+from codeintel.ingestion.resources import (
+    ModuleProvider,
+    ResourceRegistry,
+    ToolsProvider,
+    TrackerConfig,
+    TrackerProvider,
+)
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
@@ -59,15 +66,27 @@ def _build_plugin_context(
     paths = BuildPaths.from_repo_root(repo_root)
     snapshot = SnapshotRef.from_args(repo="demo/repo", commit="abc123", repo_root=repo_root)
     gateway = open_ingestion_gateway()
+    tools = ToolsConfig.default()
+    code_profile = default_code_profile(repo_root)
+
+    actual_scratch = scratch if scratch is not None else IngestRuntimeScratch()
+
+    # Build resource registry with providers
+    registry = ResourceRegistry()
+    tracker_config = TrackerConfig(scratch=actual_scratch, profile=code_profile)
+    registry.register(TrackerProvider, TrackerProvider(gateway, snapshot, tracker_config))
+    registry.register(ToolsProvider, ToolsProvider(tools, paths.tool_cache))
+    registry.register(ModuleProvider, ModuleProvider(gateway, snapshot, profile=code_profile))
 
     ctx = IngestExecutionContext(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
-        tools=ToolsConfig.default(),
-        code_profile=default_code_profile(repo_root),
+        tools=tools,
+        code_profile=code_profile,
         config_profile=default_config_profile(repo_root),
-        scratch=scratch if scratch is not None else IngestRuntimeScratch(),
+        scratch=actual_scratch,
+        resources=registry,
     )
     return ctx, snapshot
 
@@ -104,6 +123,7 @@ def test_plugin_execution_success(tmp_path: Path) -> None:
             tools=ctx.tools,
             code_profile=ctx.code_profile,
             config_profile=ctx.config_profile,
+            resources=ctx.resources,  # Reuse resources from ctx
             scratch=scratch,
         )
         # Store change_tracker in scratch for plugins that need it
@@ -152,6 +172,7 @@ def test_plugin_execution_succeeds_without_tracker_in_scratch(tmp_path: Path) ->
             tools=ctx.tools,
             code_profile=ctx.code_profile,
             config_profile=ctx.config_profile,
+            resources=ctx.resources,  # Reuse resources from ctx
             scratch=IngestRuntimeScratch(),  # Fresh scratch without change_tracker
         )
 

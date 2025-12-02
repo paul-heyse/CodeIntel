@@ -327,7 +327,7 @@ class BaseIngestPlugin(ABC):
         list[str]
             List of validation error messages.
         """
-        del ctx  # Unused in base implementation
+        _ = (self, ctx)  # Unused in base implementation
         return []
 
     def _validate_resource_requirements(
@@ -348,7 +348,7 @@ class BaseIngestPlugin(ABC):
         list[str]
             List of validation error messages.
         """
-        del ctx  # Unused in base implementation
+        _ = (self, ctx)  # Unused in base implementation
         return []
 
     def execute(self, ctx: IngestExecutionContext) -> IngestPluginResult:
@@ -412,7 +412,7 @@ class BaseIngestPlugin(ABC):
         IngestPluginResult
             Successful result with row counts.
         """
-        del ctx  # Unused in base implementation
+        _ = (self, ctx)  # Unused in base implementation
         return IngestPluginResult.ok(row_counts=row_counts or {})
 
 
@@ -595,12 +595,8 @@ class TrackerRequiringPlugin(BaseIngestPlugin, ABC):
         -------
         ChangeTracker
             The change tracker.
-
-        Raises
-        ------
-        ValueError
-            If TrackerProvider is not available.
         """
+        _ = self  # Required by interface, accessed via ctx
         from codeintel.ingestion.resources.tracker import TrackerProvider
 
         provider = cast("TrackerProvider", ctx.require_by_name("TrackerProvider"))
@@ -619,6 +615,7 @@ class TrackerRequiringPlugin(BaseIngestPlugin, ABC):
         ChangeTracker | None
             The change tracker or None.
         """
+        _ = self  # Required by interface, accessed via ctx
         if not ctx.has_resource_by_name("TrackerProvider"):
             return None
 
@@ -760,7 +757,8 @@ class ConfiguredTableWriterPlugin[TConfig](
         list[str]
             Validation errors.
         """
-        return ConfiguredIngestPlugin._validate_config_requirements(self, ctx)
+        # Use super() to call the ConfiguredIngestPlugin implementation
+        return super()._validate_config_requirements(ctx)
 
 
 __all__ = [
