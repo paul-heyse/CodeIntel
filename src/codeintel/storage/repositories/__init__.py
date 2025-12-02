@@ -10,6 +10,7 @@ from codeintel.storage.repositories.base import (
     row_exists,
 )
 from codeintel.storage.repositories.data_models import DataModelRepository
+from codeintel.storage.repositories.dataflow import DataflowRepository
 from codeintel.storage.repositories.datasets import DatasetReadRepository
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.graphs import GraphRepository
@@ -20,6 +21,7 @@ from codeintel.storage.repositories.tests import TestRepository
 __all__ = [
     "BaseRepository",
     "DataModelRepository",
+    "DataflowRepository",
     "DatasetReadRepository",
     "FunctionRepository",
     "GraphRepository",

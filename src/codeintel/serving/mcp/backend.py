@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Protocol
+from dataclasses import asdict, dataclass, field, is_dataclass
+from typing import Protocol, cast
 
 import anyio
 import httpx
@@ -281,7 +281,19 @@ class DatasetBackendMixin:
         list[DatasetDescriptor]
             Dataset metadata entries.
         """
-        return self.service.list_datasets()
+        descriptors: list[DatasetDescriptor] = []
+        for dataset in self.service.list_datasets():
+            if isinstance(dataset, DatasetDescriptor):
+                descriptors.append(dataset)
+                continue
+            if is_dataclass(dataset):
+                payload = asdict(dataset)
+            elif hasattr(dataset, "model_dump"):
+                payload = cast("dict[str, object]", dataset.model_dump())
+            else:
+                payload = cast("dict[str, object]", getattr(dataset, "__dict__", {}))
+            descriptors.append(DatasetDescriptor.model_validate(payload))
+        return descriptors
 
     def read_dataset_rows(
         self,

@@ -9,7 +9,7 @@ from typing import LiteralString, cast
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     TABLE_SCHEMAS,
 )

@@ -17,7 +17,7 @@ import sys
 from collections.abc import Iterable
 from typing import NamedTuple
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 
 DEFAULT_LIMIT = 9_223_372_036_854_775_807
 

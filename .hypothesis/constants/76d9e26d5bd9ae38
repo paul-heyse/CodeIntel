@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugin_protocol.py
+# hypothesis_version: 6.148.3
+
+['1.0.0', 'CapabilityKind', 'InputSource', 'PluginCapability', 'PluginInputSpec', 'PluginMetadata', 'PluginOutputSpec', 'PluginResourceHints', 'PluginResult', 'PluginSeverity', 'PluginStage', 'ValidationResult', 'artifact', 'cfg', 'config', 'coverage', 'data_model', 'data_model_usage', 'dataset', 'dfg', 'entrypoints', 'failed', 'fatal', 'function', 'function_history', 'graph', 'history', 'hotspots', 'other', 'prior_plugin', 'process', 'profiles', 'risk', 'runtime', 'semantic', 'service', 'skip_on_error', 'skipped', 'soft_fail', 'stats', 'subsystem', 'succeeded', 'symbol', 'test', 'thread']

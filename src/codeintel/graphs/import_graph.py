@@ -9,7 +9,7 @@ import libcst as cst
 import networkx as nx
 
 from codeintel.config import ImportGraphStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     ImportEdgeRow,
     ImportModuleRow,
     import_edge_to_tuple,

@@ -31,7 +31,7 @@ from codeintel.analytics.tests_profiles.types import (
     TestRecord,
 )
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
     BehavioralCoverageRowModel,

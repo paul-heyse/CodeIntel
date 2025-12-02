@@ -24,14 +24,35 @@ from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.config import ConfigBuilder, GraphRunScope
 from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.parser_types import FunctionParserKind
-from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags, SnapshotRef
+from codeintel.config.primitives import (
+    BuildPaths,
+    GraphBackendConfig,
+    GraphFeatureFlags,
+    SnapshotRef,
+)
 from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
+from codeintel.ingestion.plugins import (
+    DEFAULT_INGEST_PLUGINS,
+    list_ingest_plugins,
+    plan_ingest_plugins,
+)
+from codeintel.ingestion.recipes import (
+    BUILTIN_RECIPES,
+    IngestRecipe,
+    RecipeExecutionResult,
+    RecipeOptions,
+    execute_recipe,
+    get_builtin_recipe,
+    recipe,
+    stage,
+)
 from codeintel.ingestion.source_scanner import (
     default_code_profile,
     default_config_profile,
     profile_from_env,
 )
 from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.tool_service import ToolService
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import (
     ExportOptions,
@@ -117,6 +138,18 @@ def _setup_logging(verbosity: int) -> None:
         level=level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+
+def _build_paths_from_cli(paths: CliPathsInput) -> BuildPaths:
+    """
+    Convert CLI paths input into BuildPaths used by ingestion.
+
+    Returns
+    -------
+    BuildPaths
+        Normalized internal paths.
+    """
+    return paths.to_build_paths()
 
 
 def _add_common_repo_args(p: argparse.ArgumentParser) -> None:
@@ -820,6 +853,139 @@ def _register_dataset_commands(
     _register_scaffold_parser(ds_sub)
 
 
+def _add_ingest_run_subparser(
+    ingest_sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register ingest run subcommand."""
+    p_run = ingest_sub.add_parser(
+        "run",
+        help="Run ingestion plugins using a recipe or explicit plugin list.",
+    )
+    _add_common_repo_args(p_run)
+    p_run.add_argument(
+        "--recipe",
+        type=str,
+        default=None,
+        help=(
+            "Recipe name to execute (e.g., 'full_python', 'incremental', 'minimal'). "
+            "Use 'codeintel ingest recipes' to list available recipes."
+        ),
+    )
+    p_run.add_argument(
+        "--recipe-file",
+        type=Path,
+        default=None,
+        help="Path to a YAML recipe file to execute.",
+    )
+    p_run.add_argument(
+        "--plugins",
+        nargs="+",
+        help="Explicit plugin names to run (overrides recipe).",
+    )
+    p_run.add_argument(
+        "--disable",
+        nargs="+",
+        dest="disabled_plugins",
+        help="Plugins to disable from the recipe or default set.",
+    )
+    p_run.add_argument(
+        "--skip-scip",
+        action="store_true",
+        help="Skip SCIP ingestion (convenience for --disable scip_ingest).",
+    )
+    p_run.add_argument(
+        "--parallel",
+        action="store_true",
+        default=True,
+        help="Enable parallel execution within stages (default: True).",
+    )
+    p_run.add_argument(
+        "--no-parallel",
+        action="store_false",
+        dest="parallel",
+        help="Disable parallel execution within stages.",
+    )
+    p_run.add_argument(
+        "--fail-fast",
+        action="store_true",
+        default=True,
+        help="Stop on first plugin failure (default: True).",
+    )
+    p_run.add_argument(
+        "--no-fail-fast",
+        action="store_false",
+        dest="fail_fast",
+        help="Continue execution even if plugins fail.",
+    )
+    p_run.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Output execution result as JSON.",
+    )
+    p_run.set_defaults(func=_cmd_ingest_run)
+
+
+def _add_ingest_plugins_subparser(
+    ingest_sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register ingest plugins list subcommand."""
+    p_plugins = ingest_sub.add_parser(
+        "plugins",
+        help="List registered ingestion plugins with metadata.",
+    )
+    p_plugins.add_argument(
+        "--plan",
+        action="store_true",
+        help="Show planned execution order plus dependency graph.",
+    )
+    p_plugins.add_argument(
+        "--names",
+        nargs="+",
+        help="Explicit plugin names to plan/list (defaults to built-in defaults).",
+    )
+    p_plugins.add_argument(
+        "--disable",
+        nargs="+",
+        help="Plugins to disable from the plan.",
+    )
+    p_plugins.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Output as JSON.",
+    )
+    p_plugins.set_defaults(func=_cmd_ingest_plugins)
+
+
+def _add_ingest_recipes_subparser(
+    ingest_sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register ingest recipes list subcommand."""
+    p_recipes = ingest_sub.add_parser(
+        "recipes",
+        help="List available built-in recipes.",
+    )
+    p_recipes.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Output as JSON.",
+    )
+    p_recipes.set_defaults(func=_cmd_ingest_recipes)
+
+
+def _register_ingest_commands(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Register ingestion plugin commands."""
+    ingest_parser = subparsers.add_parser("ingest", help="Ingestion plugin commands")
+    ingest_sub = ingest_parser.add_subparsers(dest="subcommand", required=True)
+    _add_ingest_run_subparser(ingest_sub)
+    _add_ingest_plugins_subparser(ingest_sub)
+    _add_ingest_recipes_subparser(ingest_sub)
+
+
 def _register_graph_commands(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -879,6 +1045,7 @@ def _make_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     _register_pipeline_commands(subparsers)
+    _register_ingest_commands(subparsers)
     _register_graph_commands(subparsers)
     _register_docs_commands(subparsers)
     _register_storage_commands(subparsers)
@@ -1197,6 +1364,199 @@ def _cmd_pipeline_deps(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ingest_run(args: argparse.Namespace) -> int:
+    """
+    Run ingestion using a recipe or explicit plugin list.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success).
+    """
+    cfg = _build_config_from_args(args)
+    gateway = _open_gateway(cfg, read_only=False)
+    ingest_recipe = _resolve_ingest_recipe(args)
+    if ingest_recipe is None:
+        return 1
+
+    disabled = _collect_disabled_plugins(args)
+    ingest_recipe = _apply_disabled_to_recipe(ingest_recipe, disabled)
+
+    snapshot = SnapshotRef(
+        repo=cfg.repo.repo,
+        commit=cfg.repo.commit,
+        repo_root=cfg.paths.repo_root,
+    )
+    paths = _build_paths_from_cli(cfg.paths)
+    code_profile = profile_from_env(default_code_profile(cfg.paths.repo_root))
+    config_profile = profile_from_env(default_config_profile(cfg.paths.repo_root))
+
+    runner = ToolRunner(
+        cache_dir=cfg.paths.build_dir / ".tool_cache",
+        tools_config=cfg.tools,
+    )
+    tool_service = ToolService(runner, cfg.tools)
+
+    LOG.info(
+        "Running ingest recipe=%s plugins=%s",
+        ingest_recipe.name,
+        ingest_recipe.all_plugins,
+    )
+
+    result = execute_recipe(
+        ingest_recipe,
+        gateway=gateway,
+        snapshot=snapshot,
+        paths=paths,
+        tools=cfg.tools,
+        code_profile=code_profile,
+        config_profile=config_profile,
+        tool_runner=runner,
+        tool_service=tool_service,
+    )
+
+    _render_ingest_result(result, output_json=args.output_json)
+    return 0 if result.success else 1
+
+
+def _cmd_ingest_plugins(args: argparse.Namespace) -> int:
+    """
+    List registered ingestion plugins or show a planned execution order.
+
+    Returns
+    -------
+    int
+        Exit code.
+    """
+    names = tuple(args.names) if args.names else None
+    disabled = tuple(args.disable) if args.disable else ()
+    requested = names if names is not None else DEFAULT_INGEST_PLUGINS
+
+    if args.plan:
+        try:
+            plan = plan_ingest_plugins(
+                plugin_names=requested,
+                disabled=disabled,
+                defaults=DEFAULT_INGEST_PLUGINS,
+            )
+        except ValueError:
+            LOG.exception("Invalid ingest plugin plan for names=%s", requested)
+            return 1
+
+        if args.output_json:
+            payload = {
+                "plan_id": plan.plan_id,
+                "ordered_plugins": list(plan.ordered_names),
+                "skipped_plugins": [
+                    {"name": skipped.name, "reason": skipped.reason}
+                    for skipped in plan.skipped_plugins
+                ],
+                "dep_graph": {name: list(deps) for name, deps in plan.dep_graph.items()},
+                "plugin_metadata": {
+                    plugin.metadata.name: {
+                        "stage": plugin.metadata.stage,
+                        "severity": plugin.metadata.severity,
+                        "depends_on": list(plugin.metadata.depends_on),
+                        "provides": list(plugin.metadata.provides),
+                        "requires": list(plugin.metadata.requires),
+                        "produces_tables": list(plugin.metadata.produces_tables),
+                        "tool_dependencies": list(plugin.metadata.tool_dependencies),
+                        "supports_incremental": plugin.metadata.supports_incremental,
+                        "isolation_kind": plugin.metadata.isolation_kind,
+                    }
+                    for plugin in plan.plugins
+                },
+            }
+            sys.stdout.write(json.dumps(payload, indent=2))
+            sys.stdout.write("\n")
+        else:
+            sys.stdout.write(f"Plan ID: {plan.plan_id}\n")
+            sys.stdout.write("Execution order:\n")
+            for plugin in plan.plugins:
+                meta = plugin.metadata
+                sys.stdout.write(f"  - {meta.name} [{meta.stage} | {meta.severity}]\n")
+            if plan.skipped_plugins:
+                sys.stdout.write("Skipped:\n")
+                for skipped in plan.skipped_plugins:
+                    sys.stdout.write(f"  - {skipped.name} ({skipped.reason})\n")
+        return 0
+
+    plugins = list_ingest_plugins()
+    if args.output_json:
+        payload = {
+            "count": len(plugins),
+            "plugins": {
+                plugin.metadata.name: {
+                    "name": plugin.metadata.name,
+                    "description": plugin.metadata.description,
+                    "stage": plugin.metadata.stage,
+                    "severity": plugin.metadata.severity,
+                    "enabled_by_default": plugin.metadata.enabled_by_default,
+                    "depends_on": list(plugin.metadata.depends_on),
+                    "provides": list(plugin.metadata.provides),
+                    "requires": list(plugin.metadata.requires),
+                    "produces_tables": list(plugin.metadata.produces_tables),
+                    "tool_dependencies": list(plugin.metadata.tool_dependencies),
+                    "supports_incremental": plugin.metadata.supports_incremental,
+                    "isolation_kind": plugin.metadata.isolation_kind,
+                }
+                for plugin in plugins
+            },
+        }
+        sys.stdout.write(json.dumps(payload, indent=2))
+        sys.stdout.write("\n")
+        return 0
+
+    for plugin in plugins:
+        meta = plugin.metadata
+        sys.stdout.write(f"- {meta.name} [{meta.stage}]\n")
+        sys.stdout.write(f"    {meta.description}\n")
+    return 0
+
+
+def _cmd_ingest_recipes(args: argparse.Namespace) -> int:
+    """
+    List available built-in ingestion recipes.
+
+    Returns
+    -------
+    int
+        Exit code.
+    """
+    if args.output_json:
+        payload = {
+            "count": len(BUILTIN_RECIPES),
+            "recipes": {
+                name: {
+                    "name": recipe_obj.name,
+                    "description": recipe_obj.description,
+                    "version": recipe_obj.version,
+                    "stages": [
+                        {
+                            "name": recipe_stage.name,
+                            "plugins": list(recipe_stage.plugins),
+                            "parallel": recipe_stage.parallel,
+                        }
+                        for recipe_stage in recipe_obj.stages
+                    ],
+                    "tags": list(recipe_obj.tags),
+                }
+                for name, recipe_obj in BUILTIN_RECIPES.items()
+            },
+        }
+        sys.stdout.write(json.dumps(payload, indent=2))
+        sys.stdout.write("\n")
+        return 0
+
+    for name, recipe_obj in BUILTIN_RECIPES.items():
+        sys.stdout.write(f"- {name} (v{recipe_obj.version})\n")
+        sys.stdout.write(f"    {recipe_obj.description}\n")
+        sys.stdout.write(f"    Stages: {', '.join(recipe_obj.stage_names)}\n")
+        if recipe_obj.tags:
+            sys.stdout.write(f"    Tags: {', '.join(recipe_obj.tags)}\n")
+    return 0
+
+
 def _cmd_graph_plugins(args: argparse.Namespace) -> int:
     """
     List registered graph metric plugins or show a planned execution order.
@@ -1285,9 +1645,7 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
                         if plugin.resource_hints is not None
                         else None
                     ),
-                    "options_model": plugin.options_model.__name__
-                    if plugin.options_model
-                    else None,
+                    "options_model": plugin.options_model.__name__ if plugin.options_model else None,
                     "options_default": plugin.options_default,
                     "version_hash": plugin.version_hash,
                     "contract_checkers": len(plugin.contract_checkers),
@@ -2192,3 +2550,129 @@ def main(argv: Iterable[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def _resolve_ingest_recipe(args: argparse.Namespace) -> IngestRecipe | None:
+    """
+    Resolve ingest recipe from args, handling built-ins and files.
+
+    Returns
+    -------
+    IngestRecipe | None
+        Resolved recipe or None when not found.
+    """
+    if args.recipe_file is not None:
+        return IngestRecipe.from_yaml(args.recipe_file)
+    if args.recipe is not None:
+        ingest_recipe = get_builtin_recipe(args.recipe)
+        if ingest_recipe is None:
+            LOG.error("Unknown recipe: %s", args.recipe)
+        return ingest_recipe
+    if args.plugins:
+        plugin_names = tuple(args.plugins)
+        return recipe(
+            name="cli_explicit",
+            description="CLI-specified plugin list",
+            stages=[
+                stage(name="run", plugins=plugin_names, parallel=args.parallel),
+            ],
+            options=RecipeOptions(
+                fail_fast=args.fail_fast,
+                enable_incremental=True,
+            ),
+            disabled_plugins=tuple(args.disabled_plugins or ()),
+        )
+    return recipe(
+        name="cli_default",
+        description="Default ingestion pipeline",
+        stages=[
+            stage(name="scan", plugins=["repo_scan"]),
+            stage(
+                name="parse",
+                plugins=["ast_extract", "cst_extract"],
+                parallel=args.parallel,
+            ),
+            stage(name="index", plugins=["scip_ingest"]),
+            stage(
+                name="enrich",
+                plugins=[
+                    "typing_ingest",
+                    "coverage_ingest",
+                    "tests_ingest",
+                    "docstrings_ingest",
+                    "config_ingest",
+                ],
+                parallel=args.parallel,
+            ),
+        ],
+        options=RecipeOptions(
+            fail_fast=args.fail_fast,
+            enable_incremental=True,
+        ),
+        disabled_plugins=tuple(args.disabled_plugins or ()),
+    )
+
+
+def _collect_disabled_plugins(args: argparse.Namespace) -> tuple[str, ...]:
+    """
+    Collect disabled plugin names including legacy flags.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Disabled plugin names.
+    """
+    disabled: list[str] = list(args.disabled_plugins or [])
+    if args.skip_scip:
+        disabled.append("scip_ingest")
+    return tuple(disabled)
+
+
+def _apply_disabled_to_recipe(
+    ingest_recipe: IngestRecipe,
+    disabled: tuple[str, ...],
+) -> IngestRecipe:
+    """
+    Return recipe with disabled plugins applied when provided.
+
+    Returns
+    -------
+    IngestRecipe
+        Recipe with disabled plugins applied.
+    """
+    if disabled:
+        return ingest_recipe.with_disabled(*disabled)
+    return ingest_recipe
+
+
+def _render_ingest_result(result: RecipeExecutionResult, *, output_json: bool) -> None:
+    """Render ingest result to stdout."""
+    if output_json:
+        payload = {
+            "success": result.success,
+            "recipe": result.recipe.name,
+            "duration_s": result.duration_s,
+            "error": result.error,
+            "stages": [
+                {
+                    "name": sr.stage.name,
+                    "success": sr.success,
+                    "duration_s": sr.duration_s,
+                    "plugins": dict(sr.plugin_results),
+                }
+                for sr in result.stage_results
+            ],
+            "skipped_stages": list(result.skipped_stages),
+        }
+        sys.stdout.write(json.dumps(payload, indent=2))
+        sys.stdout.write("\n")
+        return
+    sys.stdout.write(f"Recipe: {result.recipe.name}\n")
+    sys.stdout.write(f"Success: {result.success}\n")
+    sys.stdout.write(f"Duration: {result.duration_s:.2f}s\n")
+    if result.error:
+        sys.stdout.write(f"Error: {result.error}\n")
+    for sr in result.stage_results:
+        sys.stdout.write(f"\nStage: {sr.stage.name} (success={sr.success})\n")
+        for plugin_name, plugin_result in sr.plugin_results.items():
+            sys.stdout.write(f"  - {plugin_name}: {plugin_result}\n")

@@ -35,7 +35,7 @@ from codeintel.analytics.profiles.writer_guard import (
     write_rows_with_registry_guard,
 )
 from codeintel.config import ProfilesAnalyticsStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     FUNCTION_PROFILE_COLUMNS,
     FunctionProfileRowModel,
     function_profile_row_to_tuple,

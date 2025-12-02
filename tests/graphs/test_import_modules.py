@@ -5,7 +5,7 @@ from __future__ import annotations
 import networkx as nx
 import pytest
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     ImportEdgeRow,
     import_edge_to_tuple,
     import_module_to_tuple,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from codeintel.config.dataset_contract import CallGraphEdgeRow, call_graph_edge_to_tuple
+from codeintel.config.datasets import CallGraphEdgeRow, call_graph_edge_to_tuple
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import StorageGateway
 

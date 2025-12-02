@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/config_registry.py
+# hypothesis_version: 6.148.3
+
+['BaseStepConfig', 'ConfigPluginMapping', 'ConfigRegistry', 'T', 'get_config_registry', 'register_config']

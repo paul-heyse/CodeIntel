@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.cli.main import ScaffoldConfigError, build_scaffold_options
-from codeintel.config.dataset_contract import DatasetContract
+from codeintel.config.datasets import DatasetContract
 from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.scaffold import ScaffoldOptions, scaffold_dataset
 

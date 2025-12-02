@@ -6,30 +6,9 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.serving import domain_models as dm
 from codeintel.serving.backend.pagination import BackendLimits
-from codeintel.serving.mcp.models import (
-    CallGraphNeighborsResponse,
-    DatasetSchemaResponse,
-    DatasetSpecDescriptor,
-    FileHintsResponse,
-    FileProfileResponse,
-    FileSummaryResponse,
-    FunctionArchitectureResponse,
-    FunctionProfileResponse,
-    FunctionSummaryResponse,
-    GraphNeighborhoodResponse,
-    HighRiskFunctionsResponse,
-    ImportBoundaryResponse,
-    ModuleArchitectureResponse,
-    ModuleProfileResponse,
-    ModuleSubsystemResponse,
-    SubsystemCoverageResponse,
-    SubsystemModulesResponse,
-    SubsystemProfileResponse,
-    SubsystemSearchResponse,
-    SubsystemSummaryResponse,
-    TestsForFunctionResponse,
-)
+from codeintel.serving.mcp.models import DatasetSpecDescriptor
 from codeintel.storage.gateway import StorageGateway
 
 
@@ -44,7 +23,7 @@ class FunctionQueriesApi(Protocol):
         rel_path: str | None = None,
         qualname: str | None = None,
         scope: GraphRunScope | None = None,
-    ) -> FunctionSummaryResponse:
+    ) -> dm.FunctionSummaryResult:
         """Return a function summary."""
         ...
 
@@ -55,7 +34,7 @@ class FunctionQueriesApi(Protocol):
         limit: int | None = None,
         tested_only: bool = False,
         scope: GraphRunScope | None = None,
-    ) -> HighRiskFunctionsResponse:
+    ) -> dm.HighRiskFunctionsResult:
         """List high-risk functions."""
         ...
 
@@ -66,7 +45,7 @@ class FunctionQueriesApi(Protocol):
         direction: str = "both",
         limit: int | None = None,
         scope: GraphRunScope | None = None,
-    ) -> CallGraphNeighborsResponse:
+    ) -> dm.CallGraphNeighbors:
         """Return call graph neighbors."""
         ...
 
@@ -77,7 +56,7 @@ class FunctionQueriesApi(Protocol):
         urn: str | None = None,
         limit: int | None = None,
         scope: GraphRunScope | None = None,
-    ) -> TestsForFunctionResponse:
+    ) -> dm.TestsForFunctionResult:
         """Return tests covering a function."""
         ...
 
@@ -87,7 +66,7 @@ class FunctionQueriesApi(Protocol):
         goid_h128: int,
         radius: int = 1,
         max_nodes: int | None = None,
-    ) -> GraphNeighborhoodResponse:
+    ) -> dm.GraphNeighborhood:
         """Return an ego neighborhood."""
         ...
 
@@ -96,15 +75,15 @@ class FunctionQueriesApi(Protocol):
         *,
         subsystem_id: str,
         max_edges: int | None = None,
-    ) -> ImportBoundaryResponse:
+    ) -> dm.ImportBoundary:
         """Return import edges crossing a subsystem boundary."""
         ...
 
-    def get_function_profile(self, goid_h128: int) -> FunctionProfileResponse:
+    def get_function_profile(self, goid_h128: int) -> dm.FunctionProfileResult:
         """Return a function profile."""
         ...
 
-    def get_function_architecture(self, goid_h128: int) -> FunctionArchitectureResponse:
+    def get_function_architecture(self, goid_h128: int) -> dm.FunctionArchitectureResult:
         """Return function architecture metrics."""
         ...
 
@@ -114,23 +93,23 @@ class ProfileQueriesApi(Protocol):
 
     def get_file_summary(
         self, *, rel_path: str, scope: GraphRunScope | None = None
-    ) -> FileSummaryResponse:
+    ) -> dm.FileSummaryResult:
         """Return a file summary."""
         ...
 
-    def get_file_profile(self, *, rel_path: str) -> FileProfileResponse:
+    def get_file_profile(self, *, rel_path: str) -> dm.FileProfileResult:
         """Return a file profile."""
         ...
 
-    def get_module_profile(self, *, module: str) -> ModuleProfileResponse:
+    def get_module_profile(self, *, module: str) -> dm.ModuleProfileResult:
         """Return a module profile."""
         ...
 
-    def get_module_architecture(self, *, module: str) -> ModuleArchitectureResponse:
+    def get_module_architecture(self, *, module: str) -> dm.ModuleArchitectureResult:
         """Return module architecture metrics."""
         ...
 
-    def get_file_hints(self, *, rel_path: str) -> FileHintsResponse:
+    def get_file_hints(self, *, rel_path: str) -> dm.FileHintsResult:
         """Return IDE hints for a file."""
         ...
 
@@ -140,37 +119,37 @@ class SubsystemQueriesApi(Protocol):
 
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSummaryResponse:
+    ) -> dm.SubsystemSummaryResult:
         """List subsystem summaries."""
         ...
 
-    def get_module_subsystems(self, *, module: str) -> ModuleSubsystemResponse:
+    def get_module_subsystems(self, *, module: str) -> dm.ModuleSubsystemResult:
         """Return subsystem memberships for a module."""
         ...
 
     def get_subsystem_modules(
         self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
+    ) -> dm.SubsystemModulesResult:
         """Return modules for a subsystem."""
         ...
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
-    ) -> SubsystemSearchResponse:
+    ) -> dm.SubsystemSearchResult:
         """Search subsystems."""
         ...
 
     def summarize_subsystem(
         self, *, subsystem_id: str, module_limit: int | None = None
-    ) -> SubsystemModulesResponse:
+    ) -> dm.SubsystemModulesResult:
         """Summarize a subsystem."""
         ...
 
-    def list_subsystem_profiles(self, *, limit: int | None = None) -> SubsystemProfileResponse:
+    def list_subsystem_profiles(self, *, limit: int | None = None) -> dm.SubsystemProfileResult:
         """List subsystem profiles."""
         ...
 
-    def list_subsystem_coverage(self, *, limit: int | None = None) -> SubsystemCoverageResponse:
+    def list_subsystem_coverage(self, *, limit: int | None = None) -> dm.SubsystemCoverageResult:
         """List subsystem coverage rollups."""
         ...
 
@@ -178,7 +157,7 @@ class SubsystemQueriesApi(Protocol):
 class DatasetQueriesApi(Protocol):
     """Dataset listing and schema surface."""
 
-    def list_datasets(self) -> list[DatasetSpecDescriptor]:
+    def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
         """List datasets."""
         ...
 
@@ -196,7 +175,7 @@ class DatasetQueriesApi(Protocol):
         """Read dataset rows."""
         ...
 
-    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> DatasetSchemaResponse:
+    def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
         """Return dataset schema and samples."""
         ...
 

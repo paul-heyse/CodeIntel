@@ -18,7 +18,7 @@ from codeintel.config import (
     ProfilesAnalyticsStepConfig,
     TestProfileStepConfig,
 )
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     FILE_PROFILE_COLUMNS,
     FUNCTION_PROFILE_COLUMNS,

@@ -6,8 +6,18 @@ from fastapi import APIRouter
 
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.dependencies import ConfigDep, ServiceDep
-from codeintel.serving.mcp.models import DatasetMetaResponse, OperationMetaResponse
-from codeintel.serving.registry import build_dataset_meta, iter_operation_specs
+from codeintel.serving.mcp.models import (
+    DataflowEdgePayload,
+    DataflowGraphResponse,
+    DataflowNodePayload,
+    DatasetMetaResponse,
+    OperationMetaResponse,
+)
+from codeintel.serving.registry import (
+    build_dataset_meta,
+    build_serving_dataflow_graph,
+    iter_operation_specs,
+)
 
 LOG_ROUTE_PREFIX = "/meta"
 
@@ -78,6 +88,43 @@ def build_meta_router() -> APIRouter:
                 )
             )
         return results
+
+    @router.get(
+        f"{LOG_ROUTE_PREFIX}/dataflow",
+        response_model=DataflowGraphResponse,
+        summary="Return a dataflow graph for datasets, docs views, operations, and graphs.",
+    )
+    def get_dataflow_graph() -> DataflowGraphResponse:
+        """
+        Return the combined dataflow graph for this deployment.
+
+        Returns
+        -------
+        DataflowGraphResponse
+            Payload containing nodes and edges across datasets, operations, and graphs.
+        """
+        nodes, edges = build_serving_dataflow_graph()
+
+        node_payloads = [
+            DataflowNodePayload(
+                id=node.id,
+                kind=node.kind,
+                family=node.family,
+                owner_package=node.owner_package,
+                description=node.description,
+            )
+            for node in nodes
+        ]
+        edge_payloads = [
+            DataflowEdgePayload(
+                src=edge.src,
+                dst=edge.dst,
+                edge_type=edge.edge_type,
+            )
+            for edge in edges
+        ]
+
+        return DataflowGraphResponse(nodes=node_payloads, edges=edge_payloads)
 
     return router
 

@@ -7,7 +7,7 @@ The serving layer is organized into these key components:
 **backend/** - Core query services and response building
     - `duckdb_service.py` - DuckDB query service implementation
     - `pagination.py` - Pagination utilities and types
-    - `response_builders.py` - Row-to-response transformation functions
+    - `domain_builders.py` - Row-to-domain transformation functions
     - `operations.py` - Operation contracts registry
 
 **services/** - Business logic and service abstractions

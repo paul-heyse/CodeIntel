@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/datasets/__init__.py
+# hypothesis_version: 6.148.3
+
+['AST_METRICS_DELETE', 'AST_NODES_DELETE', 'CFG_BLOCKS_DELETE', 'CFG_EDGES_DELETE', 'COLUMN_TYPE', 'CREATED_AT_COL', 'CST_NODES_DELETE', 'Column', 'ColumnType', 'CompositeSchema', 'DFG_EDGES_DELETE', 'DataflowEdge', 'DataflowNode', 'DatasetContract', 'EdgeType', 'FILE_STATE_DELETE', 'FUNCTION_ENTITY_COLS', 'FUNCTION_GOID_COL', 'Index', 'MODULE_ENTITY_COLS', 'NodeKind', 'OWNERSHIP_COLS', 'REPO_COMMIT_COLS', 'RISK_COLS', 'RowBinding', 'RowDictType', 'RowToTuple', 'SOURCE_SPAN_COLS', 'SYMBOL_USE_DELETE', 'TAGS_INDEX_DELETE', 'TEST_ENTITY_COLS', 'TableSchema', 'build_delete_sql', 'build_insert_sql', 'get_contract_columns', 'get_row_bindings', 'get_table_columns', 'get_table_schemas', 'iter_composite_edges', 'iter_dataset_nodes', 'serialize_row']

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.analytics.datasets import DELETE_SQL_BY_TABLE
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     DATASET_CONTRACTS,
     DATASET_CONTRACTS_BY_TABLE_KEY,

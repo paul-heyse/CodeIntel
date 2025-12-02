@@ -64,7 +64,7 @@ from codeintel.config.steps_ingestion import (
 if TYPE_CHECKING:
     from coverage import Coverage
 
-    from codeintel.config.dataset_contract import (
+    from codeintel.config.datasets import (
         CallGraphEdgeRow,
         CFGBlockRow,
         CFGEdgeRow,

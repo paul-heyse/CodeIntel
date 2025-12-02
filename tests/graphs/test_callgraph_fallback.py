@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.config.dataset_contract import CallGraphEdgeRow
+from codeintel.config.datasets import CallGraphEdgeRow
 from codeintel.graphs import callgraph_builder
 
 

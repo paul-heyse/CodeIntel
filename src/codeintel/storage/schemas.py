@@ -13,7 +13,7 @@ from collections.abc import Iterable
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY, TableSchema
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY, TableSchema
 
 SCHEMAS = ("core", "graph", "analytics", "docs")
 log = logging.getLogger(__name__)

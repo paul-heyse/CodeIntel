@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from codeintel.config.dataset_contract import CallGraphEdgeRow
+from codeintel.config.datasets import CallGraphEdgeRow
 from codeintel.graphs import call_persist, call_resolution
 
 ALIAS_GOID = 10

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.dataset_contract import load_columns_by_table
+from codeintel.config.datasets import load_columns_by_table
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 

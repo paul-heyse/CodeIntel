@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.functions.plugins import FUNCTION_METRICS_PLUGIN
-from codeintel.analytics.plugin_runtime import (
+from codeintel.analytics.core.pipeline_bridge import (
     AnalyticsPlanRequest,
     AnalyticsRunContext,
     plan_analytics_plugin_run,
     run_analytics_plugins,
 )
+from codeintel.analytics.core.plugins import FUNCTION_METRICS_PLUGIN
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
@@ -62,7 +62,7 @@ def test_function_metrics_plugin_executes(tmp_path: Path) -> None:
 
     plan = plan_analytics_plugin_run(
         AnalyticsPlanRequest(
-            plugin_names=(FUNCTION_METRICS_PLUGIN.name,),
+            plugin_names=(FUNCTION_METRICS_PLUGIN.metadata.name,),
             policy=policy,
             repo=cfg.repo,
             commit=cfg.commit,
@@ -90,7 +90,7 @@ def test_function_metrics_plugin_executes(tmp_path: Path) -> None:
         msg = "Expected a single run record for the metrics plugin."
         pytest.fail(msg)
     rec = report.records[0]
-    if rec.name != FUNCTION_METRICS_PLUGIN.name:
+    if rec.name != FUNCTION_METRICS_PLUGIN.metadata.name:
         msg = "Unexpected plugin name in run record."
         pytest.fail(msg)
     if rec.status != "succeeded":

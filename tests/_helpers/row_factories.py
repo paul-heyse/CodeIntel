@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     FILE_PROFILE_COLUMNS,
     FUNCTION_PROFILE_COLUMNS,

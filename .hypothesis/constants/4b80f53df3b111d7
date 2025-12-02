@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/call_persist.py
+# hypothesis_version: 6.148.3
+
+['call_graph_edges', 'callee_goid_h128', 'caller_goid_h128', 'callsite_col', 'callsite_line', 'callsite_path', 'commit', 'repo']

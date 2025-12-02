@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from codeintel.config import SymbolUsesStepConfig
-from codeintel.config.dataset_contract import SymbolUseRow, symbol_use_to_tuple
+from codeintel.config.datasets import SymbolUseRow, symbol_use_to_tuple
 from codeintel.core.types import (
     ScipDocument,
     ScipOccurrence,

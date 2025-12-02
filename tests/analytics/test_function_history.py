@@ -7,7 +7,7 @@ from pathlib import Path
 
 from codeintel.analytics.functions import compute_function_history
 from codeintel.config import ConfigBuilder
-from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.builders import (

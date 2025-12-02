@@ -36,6 +36,10 @@ from codeintel.graphs.function_catalog_service import (
     FunctionCatalogService,
 )
 from codeintel.ingestion.change_tracker import ChangeTracker
+from codeintel.ingestion.plugins.protocol import (
+    IngestPluginContext,
+    IngestRuntimeScratch,
+)
 from codeintel.ingestion.runner import IngestionContext
 from codeintel.ingestion.scip_ingest import ScipIngestResult
 from codeintel.ingestion.source_scanner import ScanProfile
@@ -47,7 +51,7 @@ if TYPE_CHECKING:
     from coverage import Coverage
 
     from codeintel.config import TestCoverageStepConfig
-    from codeintel.config.dataset_contract import (
+    from codeintel.config.datasets import (
         CallGraphEdgeRow,
         CFGBlockRow,
         CFGEdgeRow,
@@ -261,6 +265,9 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
     -------
     IngestionContext
         Normalized ingestion context for downstream runners.
+
+    .. deprecated::
+        Use ``_plugin_ctx()`` instead for the new plugin architecture.
     """
     return IngestionContext(
         snapshot=ctx.snapshot,
@@ -274,6 +281,44 @@ def _ingestion_ctx(ctx: PipelineContext) -> IngestionContext:
         scip_runner=ctx.scip_runner,
         artifact_writer=ctx.artifact_writer,
         change_tracker=ctx.change_tracker,
+    )
+
+
+def _plugin_ctx(
+    ctx: PipelineContext,
+    *,
+    scratch: IngestRuntimeScratch | None = None,
+    plugin_name: str | None = None,
+) -> IngestPluginContext:
+    """Build an IngestPluginContext from a pipeline context.
+
+    Parameters
+    ----------
+    ctx
+        Pipeline context to convert.
+    scratch
+        Optional shared scratch space; creates new one if not provided.
+    plugin_name
+        Optional name of the plugin being executed.
+
+    Returns
+    -------
+    IngestPluginContext
+        Context suitable for new plugin architecture.
+    """
+    return IngestPluginContext(
+        gateway=ctx.gateway,
+        snapshot=ctx.snapshot,
+        paths=ctx.paths,
+        tools=ctx.tools_config,
+        code_profile=ctx.code_profile,
+        config_profile=ctx.config_profile,
+        tool_runner=ctx.tool_runner,
+        tool_service=ctx.tool_service,
+        change_tracker=ctx.change_tracker,
+        scratch=scratch or IngestRuntimeScratch(),
+        plugin_name=plugin_name,
+        run_id=ctx.run_id or "",
     )
 
 
@@ -403,6 +448,7 @@ __all__ = [
     "_graph_runtime",
     "_ingestion_ctx",
     "_log_step",
+    "_plugin_ctx",
     "_resolve_code_profile",
     "_resolve_config_profile",
     "ensure_graph_engine",

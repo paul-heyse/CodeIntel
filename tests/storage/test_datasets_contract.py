@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 import pytest
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     JSON_SCHEMA_BY_DATASET_NAME,
     DatasetContract,
     RowBinding,

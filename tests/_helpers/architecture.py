@@ -10,7 +10,7 @@ from codeintel.analytics.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     GraphMetricsFunctionsExtRow,
     GraphMetricsFunctionsRow,
     GraphMetricsModulesExtRow,

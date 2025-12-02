@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata_bootstrap import METADATA_SCHEMA_DDL, NORMALIZED_MACROS
 

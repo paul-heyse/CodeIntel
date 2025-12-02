@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.dataset_contract import DEFAULT_JSONL_FILENAMES
+from codeintel.config.datasets import DEFAULT_JSONL_FILENAMES
 from codeintel.serving.mcp.query_service import BackendLimits
 from codeintel.storage.gateway import open_memory_gateway
 from tests._helpers.gateway import build_duckdb_query_service

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from duckdb import Error as DuckDBError
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     load_columns_by_table,
 )

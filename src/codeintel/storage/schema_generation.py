@@ -12,7 +12,7 @@ from typing import get_args, get_origin
 import jsonschema
 from jsonschema.protocols import Validator
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS
+from codeintel.config.datasets import DATASET_CONTRACTS
 from codeintel.storage.datasets import DatasetRegistry
 
 TYPE_MAP: dict[type[object], dict[str, object]] = {

@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
-from codeintel.config.dataset_contract import DatasetContract
+from codeintel.config.datasets import DatasetContract
 from codeintel.pipeline.export import default_validation_schemas
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.manifest import (

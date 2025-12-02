@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from codeintel.config import GoidBuilderStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     GoidCrosswalkRow,
     GoidRow,
     goid_crosswalk_to_tuple,

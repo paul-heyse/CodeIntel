@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/backend/domain_builders.py
+# hypothesis_version: 6.148.3
+
+['DatasetSchemaInput', 'RowDict', 'build_dataset_schema', 'build_file_hints', 'build_file_profile', 'build_file_summary', 'build_module_profile', 'dict[str, object]', 'file_not_found', 'hints_not_found', 'id', 'info', 'lenient', 'rel_path', 'strict']

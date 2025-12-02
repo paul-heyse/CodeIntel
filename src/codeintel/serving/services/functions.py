@@ -48,12 +48,11 @@ class _FunctionQueryDelegates:
                 scope=parse_graph_scope(scope),
             ),
         )
-        pydantic_resp = (
-            raw_resp
-            if isinstance(raw_resp, FunctionSummaryResponse)
-            else FunctionSummaryResponse.model_validate(raw_resp)
-        )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.FunctionSummaryResult):
+            return raw_resp
+        if isinstance(raw_resp, FunctionSummaryResponse):
+            return raw_resp.to_domain()
+        return FunctionSummaryResponse.model_validate(raw_resp).to_domain()
 
     def list_high_risk_functions(
         self,
@@ -63,7 +62,7 @@ class _FunctionQueryDelegates:
         tested_only: bool = False,
         scope: GraphScopePayload | None = None,
     ) -> dm.HighRiskFunctionsResult:
-        pydantic_resp: HighRiskFunctionsResponse = self._call(
+        raw_resp = self._call(
             "list_high_risk_functions",
             lambda: self.query.functions.list_high_risk_functions(
                 min_risk=min_risk,
@@ -72,7 +71,11 @@ class _FunctionQueryDelegates:
                 scope=parse_graph_scope(scope),
             ),
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.HighRiskFunctionsResult):
+            return raw_resp
+        if isinstance(raw_resp, HighRiskFunctionsResponse):
+            return raw_resp.to_domain()
+        return HighRiskFunctionsResponse.model_validate(raw_resp).to_domain()
 
     def get_callgraph_neighbors(
         self,
@@ -82,7 +85,7 @@ class _FunctionQueryDelegates:
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
     ) -> dm.CallGraphNeighbors:
-        pydantic_resp: CallGraphNeighborsResponse = self._call(
+        raw_resp = self._call(
             "get_callgraph_neighbors",
             lambda: self.query.functions.get_callgraph_neighbors(
                 goid_h128=goid_h128,
@@ -91,7 +94,11 @@ class _FunctionQueryDelegates:
                 scope=parse_graph_scope(scope),
             ),
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.CallGraphNeighbors):
+            return raw_resp
+        if isinstance(raw_resp, CallGraphNeighborsResponse):
+            return raw_resp.to_domain()
+        return CallGraphNeighborsResponse.model_validate(raw_resp).to_domain()
 
     def get_tests_for_function(
         self,
@@ -101,7 +108,7 @@ class _FunctionQueryDelegates:
         limit: int | None = None,
         scope: GraphScopePayload | None = None,
     ) -> dm.TestsForFunctionResult:
-        pydantic_resp: TestsForFunctionResponse = self._call(
+        raw_resp = self._call(
             "get_tests_for_function",
             lambda: self.query.functions.get_tests_for_function(
                 goid_h128=goid_h128,
@@ -110,7 +117,11 @@ class _FunctionQueryDelegates:
                 scope=parse_graph_scope(scope),
             ),
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.TestsForFunctionResult):
+            return raw_resp
+        if isinstance(raw_resp, TestsForFunctionResponse):
+            return raw_resp.to_domain()
+        return TestsForFunctionResponse.model_validate(raw_resp).to_domain()
 
     def get_callgraph_neighborhood(
         self,
@@ -119,14 +130,18 @@ class _FunctionQueryDelegates:
         radius: int = 1,
         max_nodes: int | None = None,
     ) -> dm.GraphNeighborhood:
-        pydantic_resp: GraphNeighborhoodResponse = self._call(
+        raw_resp = self._call(
             "get_callgraph_neighborhood",
             lambda: self.query.functions.get_callgraph_neighborhood(
                 goid_h128=goid_h128, radius=radius, max_nodes=max_nodes
             ),
             dataset="call_graph_nodes",
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.GraphNeighborhood):
+            return raw_resp
+        if isinstance(raw_resp, GraphNeighborhoodResponse):
+            return raw_resp.to_domain()
+        return GraphNeighborhoodResponse.model_validate(raw_resp).to_domain()
 
     def get_import_boundary(
         self,
@@ -134,26 +149,34 @@ class _FunctionQueryDelegates:
         subsystem_id: str,
         max_edges: int | None = None,
     ) -> dm.ImportBoundary:
-        pydantic_resp: ImportBoundaryResponse = self._call(
+        raw_resp = self._call(
             "get_import_boundary",
             lambda: self.query.functions.get_import_boundary(
                 subsystem_id=subsystem_id, max_edges=max_edges
             ),
             dataset="import_graph_edges",
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.ImportBoundary):
+            return raw_resp
+        if isinstance(raw_resp, ImportBoundaryResponse):
+            return raw_resp.to_domain()
+        return ImportBoundaryResponse.model_validate(raw_resp).to_domain()
 
     def get_file_summary(
         self, *, rel_path: str, scope: GraphScopePayload | None = None
     ) -> dm.FileSummaryResult:
-        pydantic_resp: FileSummaryResponse = self._call(
+        raw_resp = self._call(
             "get_file_summary",
             lambda: self.query.modules.get_file_summary(
                 rel_path=rel_path,
                 scope=parse_graph_scope(scope),
             ),
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.FileSummaryResult):
+            return raw_resp
+        if isinstance(raw_resp, FileSummaryResponse):
+            return raw_resp.to_domain()
+        return FileSummaryResponse.model_validate(raw_resp).to_domain()
 
 
 class _HttpFunctionQueryMixin(_HttpTransportMixin):

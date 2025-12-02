@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 from codeintel.config.primitives import BuildPaths, ScanProfiles, SnapshotRef
 
 if TYPE_CHECKING:
-    from codeintel.config.dataset_contract import (
+    from codeintel.config.datasets import (
         CallGraphEdgeRow,
         CFGBlockRow,
         CFGEdgeRow,

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/graphs/core_metrics.py
+# hypothesis_version: 6.148.3
+
+[120000, '2.0.0', 'centrality', 'commit', 'config', 'core_graph_metrics', 'dataset', 'fatal', 'graph', 'graph_cfg', 'graphs', 'in_degree', 'metrics', 'module', 'node_id', 'out_degree', 'repo']

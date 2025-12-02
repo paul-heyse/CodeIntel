@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TypeVar, cast
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     FunctionValidationRow,
     GraphValidationRow,
     function_validation_row_to_tuple,

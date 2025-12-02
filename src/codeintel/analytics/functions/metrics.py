@@ -36,7 +36,7 @@ from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
 from codeintel.config import FunctionAnalyticsStepConfig
-from codeintel.config.dataset_contract import FunctionMetricsRow, FunctionTypesRow
+from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

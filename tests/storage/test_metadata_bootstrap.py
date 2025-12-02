@@ -6,6 +6,8 @@ import pytest
 
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
+from codeintel.storage.repositories import DataflowRepository
 
 
 def _require(condition: object, message: str) -> None:
@@ -49,3 +51,25 @@ def test_metadata_bootstrap_populates_catalog() -> None:
     _require(view_dataset.family == "docs", f"Unexpected docs family: {view_dataset.family}")
 
     gateway.close()
+
+
+def test_dataflow_metadata_populated() -> None:
+    """bootstrap_metadata_datasets should populate dataset_dataflow_* tables and repositories."""
+    gateway = open_memory_gateway(
+        apply_schema=True,
+        ensure_views=True,
+        validate_schema=False,
+        repo="test/repo",
+        commit="deadbeef",
+    )
+    try:
+        bootstrap_metadata_datasets(gateway.con, include_views=True)
+        repo = DataflowRepository(gateway, "test/repo", "deadbeef")
+
+        nodes = repo.list_nodes()
+        edges = repo.list_edges()
+
+        _require(nodes, "Expected at least one dataflow node")
+        _require(edges, "Expected at least one dataflow edge")
+    finally:
+        gateway.close()

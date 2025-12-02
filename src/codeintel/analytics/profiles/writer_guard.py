@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from codeintel.config.dataset_contract import load_columns_by_table
+from codeintel.config.datasets import load_columns_by_table
 from codeintel.storage.gateway import DuckDBConnection
 from codeintel.storage.sql_helpers import PreparedStatements
 

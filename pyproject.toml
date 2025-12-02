@@ -88,6 +88,15 @@ dependencies = [
 [project.scripts]
 codeintel = "codeintel.cli.main:main"
 
+# Entry points for plugin discovery
+# Third-party packages can register plugins under these groups
+[project.entry-points."codeintel.ingest_plugins"]
+# Built-in plugins are registered via the builtin module, not entry points
+# Example for third-party: my_plugin = "my_package.plugins:MyIngestPlugin"
+
+[project.entry-points."codeintel.graph_metric_plugins"]
+# Example: my_graph_plugin = "my_package.graph:MyGraphPlugin"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
@@ -196,6 +205,8 @@ ban-relative-imports = "all"
 "src/codeintel/config/builder.py" = ["PLR0904", "PLR0913"]
 # Primitives has complex constructors
 "src/codeintel/config/primitives.py" = ["PLR0913", "DOC201"]
+# Test files use assert statements which is standard practice
+"tests/**/*.py" = ["S101"]
 
 [tool.vulture]
 # Strict, but still manageable threshold.

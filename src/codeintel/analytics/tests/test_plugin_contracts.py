@@ -24,7 +24,7 @@ from codeintel.analytics.graphs.contracts import (
     table_exists_checker,
     table_not_empty_checker,
 )
-from codeintel.config.dataset_contract import GraphMetricsFunctionsRow
+from codeintel.config.datasets import GraphMetricsFunctionsRow
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 
 # Alias for backward compatibility

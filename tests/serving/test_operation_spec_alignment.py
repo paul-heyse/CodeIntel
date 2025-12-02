@@ -9,6 +9,7 @@ import pytest
 from fastapi.routing import APIRoute
 from mcp.server.fastmcp import FastMCP
 
+from codeintel.config.datasets import DATASET_CONTRACTS, DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.http.routes.architecture import build_architecture_router
 from codeintel.serving.http.routes.datasets import build_datasets_router
@@ -108,3 +109,31 @@ def test_mcp_tool_names_match_operation_specs() -> None:
             continue
         if spec.tool_name not in tool_names:
             pytest.fail(f"MCP tool {spec.tool_name} (spec {spec.id}) not registered")
+
+
+def test_required_datasets_resolve_to_dataset_contracts() -> None:
+    """Every OperationSpec.required_datasets entry must map to a DatasetContract."""
+    dataset_names = set(DATASET_CONTRACTS.keys())
+    table_keys = set(DATASET_CONTRACTS_BY_TABLE_KEY.keys())
+
+    for spec in iter_operation_specs():
+        for dataset_id in spec.required_datasets:
+            if dataset_id in dataset_names or dataset_id in table_keys:
+                continue
+            pytest.fail(
+                f"OperationSpec {spec.id} refers to unknown dataset identifier: {dataset_id}"
+            )
+
+
+def test_exposed_datasets_resolve_to_dataset_contracts() -> None:
+    """Every OperationSpec.exposed_datasets entry must map to a DatasetContract."""
+    dataset_names = set(DATASET_CONTRACTS.keys())
+    table_keys = set(DATASET_CONTRACTS_BY_TABLE_KEY.keys())
+
+    for spec in iter_operation_specs():
+        for dataset_id in spec.exposed_datasets:
+            if dataset_id == "*":
+                continue
+            if dataset_id in dataset_names or dataset_id in table_keys:
+                continue
+            pytest.fail(f"OperationSpec {spec.id} refers to unknown exposed dataset: {dataset_id}")
