@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Protocol
 
 from codeintel.config.datasets import ingest_run_to_tuple
 from codeintel.ingestion.common import run_batch
@@ -82,6 +82,16 @@ class IngestRun:
     modules_changed_ratio: float | None = None
     modules_deleted_ratio: float | None = None
     use_full_rebuild: bool | None = None
+
+    def to_row_tuple(self) -> tuple[object, ...]:
+        """Convert this run to a database row tuple.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Values in the order expected by core.ingest_runs INSERTs.
+        """
+        return ingest_run_to_tuple(self)
 
 
 class IngestRunSink(Protocol):
@@ -173,11 +183,10 @@ class DuckDBIngestRunSink:
 
     def record(self, run: IngestRun) -> None:
         """Insert the run record into core.ingest_runs."""
-        row = ingest_run_to_tuple(cast("Any", run))
         run_batch(
             self.gateway,
             "core.ingest_runs",
-            [row],
+            [run.to_row_tuple()],
             delete_params=None,
             scope=f"{run.repo}@{run.commit}",
         )

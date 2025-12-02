@@ -67,9 +67,12 @@ class PluginGroup:
         """
         found: list[AnalyticsPluginProtocol] = []
         for name in self.plugins:
-            plugin = registry.get_by_name(name)
-            if plugin is not None:
+            try:
+                plugin = registry.get(name)
                 found.append(plugin)
+            except KeyError:
+                # Plugin not registered, skip it
+                pass
         return found
 
     def get_plugin_names(self) -> tuple[str, ...]:

@@ -14,17 +14,8 @@ from typing import TYPE_CHECKING
 import networkx as nx
 
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
-from codeintel.analytics.context import (
-    AnalyticsContext,
-    AnalyticsContextConfig,
-    ensure_analytics_context,
-)
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.evidence import EvidenceCollector
-from codeintel.analytics.graph_runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
 from codeintel.config import ConfigDataFlowStepConfig
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -303,8 +294,7 @@ def compute_config_data_flow(
     gateway: StorageGateway,
     cfg: ConfigDataFlowStepConfig,
     *,
-    context: AnalyticsContext | None = None,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    context: AnalyticsContext,
 ) -> None:
     """
     Populate analytics.config_data_flow with config usage per function.
@@ -316,9 +306,7 @@ def compute_config_data_flow(
     cfg
         Config data flow analytics configuration.
     context
-        Optional shared analytics context to reuse catalog, call graph, and ASTs.
-    runtime
-        Optional shared graph runtime used to build graphs when context is absent.
+        Shared analytics context providing catalog, call graph, and ASTs.
     """
     con = gateway.con
     ensure_schema(con, "analytics.config_data_flow")
@@ -336,29 +324,10 @@ def compute_config_data_flow(
         )
         return
 
-    shared_context = ensure_analytics_context(
-        gateway,
-        cfg=AnalyticsContextConfig(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-        ),
-        context=context,
-        runtime=runtime,
-    )
-
     entrypoints = _entrypoints(con, cfg.repo, cfg.commit)
-    call_graph = shared_context.call_graph
-    ast_by_goid = shared_context.function_ast_map
-    missing = shared_context.missing_function_goids
-    if call_graph is None and runtime is not None:
-        resolved_runtime = resolve_graph_runtime(
-            gateway,
-            cfg.snapshot,
-            runtime,
-            context=shared_context,
-        )
-        call_graph = resolved_runtime.ensure_call_graph()
+    call_graph = context.call_graph
+    ast_by_goid = context.function_ast_map
+    missing = context.missing_function_goids
     if call_graph is None:
         log.warning(
             "Call graph unavailable for %s@%s; skipping config data flow", cfg.repo, cfg.commit

@@ -236,7 +236,7 @@ class DuckDBStorageAdapter:
         start = time.perf_counter()
 
         if not rows:
-            return BatchResult(table_key=table_key, rows=0, duration_s=0.0)
+            return BatchResult(table_key=table_key, rows_written=0, duration_s=0.0)
 
         rows_inserted = self._ingest_via_macro(table_key, rows)
         duration = time.perf_counter() - start
@@ -252,7 +252,7 @@ class DuckDBStorageAdapter:
         else:
             log.info("ingest table=%s rows=%d duration=%.2fs", table_key, rows_inserted, duration)
 
-        return BatchResult(table_key=table_key, rows=rows_inserted, duration_s=duration)
+        return BatchResult(table_key=table_key, rows_written=rows_inserted, duration_s=duration)
 
     def delete_by_params(
         self,
@@ -280,6 +280,43 @@ class DuckDBStorageAdapter:
             return 0
 
         self.con.execute(stmts.delete_sql, list(params))
+        return 0  # DuckDB doesn't return affected row count easily
+
+    def delete_by_paths(
+        self,
+        table_key: str,
+        paths: Sequence[str],
+        *,
+        path_column: str = "rel_path",
+    ) -> int:
+        """Delete rows where path_column matches any of the provided paths.
+
+        Parameters
+        ----------
+        table_key
+            Registry table key (e.g., "core.docstrings").
+        paths
+            List of path values to delete.
+        path_column
+            Name of the column containing paths (default: "rel_path").
+
+        Returns
+        -------
+        int
+            Number of rows deleted.
+        """
+        if not paths:
+            return 0
+
+        self.ensure_schema(table_key)
+        # Use validated identifiers to construct safe SQL
+        _, _, table_sql = _quote_table_key(table_key)
+        safe_column = _quote_identifier(path_column)
+        placeholders = ", ".join(["?"] * len(paths))
+        # SQL is safe: table_sql and safe_column are validated identifiers,
+        # paths are parameterized via placeholders
+        delete_sql = f"DELETE FROM {table_sql} WHERE {safe_column} IN ({placeholders})"  # noqa: S608
+        self.con.execute(delete_sql, list(paths))
         return 0  # DuckDB doesn't return affected row count easily
 
     def execute_query(

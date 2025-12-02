@@ -16,8 +16,8 @@ from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.callgraph_builder import build_call_graph
 from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
-from codeintel.ingestion.repo_scan import ingest_repo
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolName, ToolRunner
+from codeintel.ingestion.repo_scan import ingest_repo
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.ingestion.typing_ingest import ingest_typing_signals
 from codeintel.storage.gateway import DuckDBConnection, StorageConfig, StorageGateway, open_gateway
@@ -573,9 +573,22 @@ def provision_ingested_repo(
     gateway = _open_gateway_from_context(ctx, gateway_opts)
     ensure_ingest_macros(gateway.con)
     _assert_ingest_macros_present(gateway.con)
-    ingest_repo(
+    tracker = ingest_repo(
         gateway,
         cfg=builder.repo_scan(tool_runner=runner),
+    )
+    # Insert repo_map entry needed for serving layer verification
+    modules_map = {mod.rel_path: mod.module_name for mod in tracker.modules}
+    insert_repo_map(
+        gateway,
+        [
+            RepoMapRow(
+                repo=repo,
+                commit=commit,
+                modules=modules_map,
+                overlays={},
+            )
+        ],
     )
     if opts.include_typing:
         ingest_typing_signals(

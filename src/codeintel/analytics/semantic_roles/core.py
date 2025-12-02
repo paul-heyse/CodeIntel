@@ -12,19 +12,10 @@ from datetime import UTC, datetime
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.ast_utils import safe_unparse
-from codeintel.analytics.context import (
-    AnalyticsContext,
-    AnalyticsContextConfig,
-    ensure_analytics_context,
-)
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.function_ast_cache import FunctionAst
-from codeintel.analytics.graph_runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-)
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import SemanticRolesStepConfig
-from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -179,44 +170,27 @@ def compute_semantic_roles(
     gateway: StorageGateway,
     cfg: SemanticRolesStepConfig,
     *,
-    catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    context: AnalyticsContext,
 ) -> None:
     """
     Populate semantic role tables for functions and modules.
 
     Parameters
     ----------
-    gateway:
+    gateway
         Storage gateway providing DuckDB access.
-    cfg:
+    cfg
         Semantic role configuration.
-    catalog_provider:
-        Optional pre-loaded function catalog to reuse across steps.
-    context:
-        Optional shared analytics context to reuse catalog, module map, and ASTs.
-    runtime:
-        Optional shared graph runtime used to reuse an existing engine when available.
+    context
+        Shared analytics context providing catalog, module map, and ASTs.
     """
     con = gateway.con
     ensure_schema(con, "analytics.semantic_roles_functions")
     ensure_schema(con, "analytics.semantic_roles_modules")
 
-    shared_context = ensure_analytics_context(
-        gateway,
-        cfg=AnalyticsContextConfig(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-            catalog_provider=catalog_provider,
-        ),
-        context=context,
-        runtime=runtime,
-    )
-    module_by_path = shared_context.module_map
-    ast_map = shared_context.function_ast_map
-    features_map = shared_context.function_features_map
+    module_by_path = context.module_map
+    ast_map = context.function_ast_map
+    features_map = context.function_features_map
 
     module_meta = _load_module_meta(con, repo=cfg.repo, commit=cfg.commit)
     function_rows = _load_function_rows(con, repo=cfg.repo, commit=cfg.commit)

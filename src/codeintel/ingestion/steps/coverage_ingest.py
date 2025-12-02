@@ -95,21 +95,27 @@ class CoverageIngestStep:
             log.warning("Coverage export failed: %s", result.error)
             return StepResult.fail(f"Coverage export failed: {result.error}")
 
-        # Build rows using comprehension
-        all_rows: list[list[object]] = [
-            [
-                repo,
-                commit,
-                file_data.rel_path,
-                len(file_data.executed_lines),
-                len(file_data.missing_lines),
-                sorted(file_data.executed_lines),
-                sorted(file_data.missing_lines),
-                sorted(file_data.excluded_lines),
-                created_at,
-            ]
-            for file_data in result.files
-        ]
+        # Build per-line rows matching analytics.coverage_lines schema
+        all_rows: list[list[object]] = []
+        file_count = 0
+
+        for file_data in result.files:
+            file_count += 1
+            rel_path = file_data.rel_path
+
+            # Covered lines: executable and covered (hits=1 since we don't track actual hits)
+            all_rows.extend(
+                [repo, commit, rel_path, line_num, True, True, 1, 0, created_at]
+                for line_num in file_data.executed_lines
+            )
+
+            # Missing lines: executable but not covered
+            all_rows.extend(
+                [repo, commit, rel_path, line_num, True, False, 0, 0, created_at]
+                for line_num in file_data.missing_lines
+            )
+
+            # Excluded lines are intentionally not written (they are not executable)
 
         # Persist rows
         table_counts: dict[str, int] = {}
@@ -117,14 +123,15 @@ class CoverageIngestStep:
 
         if all_rows:
             scope = f"{repo}@{commit}"
-            write_result = self._storage.write_batch("core.coverage", all_rows, scope=scope)
-            table_counts["core.coverage"] = write_result.rows_written
+            write_result = self._storage.write_batch("analytics.coverage_lines", all_rows, scope=scope)
+            table_counts["analytics.coverage_lines"] = write_result.rows_written
             total_rows = write_result.rows_written
 
         log.info(
-            "Coverage ingest: repo=%s commit=%s files=%d",
+            "Coverage ingest: repo=%s commit=%s files=%d lines=%d",
             repo,
             commit,
+            file_count,
             len(all_rows),
         )
 

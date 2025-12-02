@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.graphs import GraphProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -104,8 +109,15 @@ class SubsystemsPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        analytics_context = ctx.analytics_context if ctx.has_analytics_context() else None
-        graph_runtime = ctx.graph_runtime if ctx.has_graph_runtime() else None
+        analytics_context = None
+        if ctx.has_resource_by_name("AnalyticsContextProvider"):
+            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
+            analytics_context = provider.get()
+
+        graph_runtime = None
+        if ctx.has_resource_by_name("GraphProvider"):
+            graph_prov = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
+            graph_runtime = graph_prov.runtime
 
         try:
             build_subsystems(

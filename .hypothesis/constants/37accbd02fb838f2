@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/tools/plugins.py
+# hypothesis_version: 6.148.3
+
+['error', 'not_found', 'ok', 'timeout']

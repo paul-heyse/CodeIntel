@@ -11,10 +11,16 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.resources.protocol import LazyResource
+from codeintel.analytics.function_ast_cache import (
+    FunctionAstLoadRequest,
+    load_function_asts,
+)
+from codeintel.analytics.resources.protocol import LazyResource, ResourceNotLoadedError
 
 if TYPE_CHECKING:
+    from codeintel.analytics.function_ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -94,193 +100,184 @@ class AstMap:
         return goid in self.functions
 
 
-class AstProvider(LazyResource[AstMap]):
+@dataclass
+class LegacyAstData:
+    """Container for legacy-compatible AST data.
+
+    Uses `FunctionAst` from function_ast_cache for compatibility with
+    domain modules that expect the legacy AnalyticsContext format.
+
+    Attributes
+    ----------
+    function_ast_map
+        Mapping from GOID to FunctionAst.
+    missing_function_goids
+        Set of GOIDs that could not be parsed.
+    """
+
+    function_ast_map: dict[int, FunctionAst]
+    missing_function_goids: set[int]
+
+
+class AstProvider(LazyResource[LegacyAstData]):
     """Provider for function ASTs with lazy loading.
 
     Parses source files and builds a map from function GOIDs to their
-    AST nodes. Files are parsed on demand.
+    AST nodes. Uses the legacy FunctionAst format for compatibility
+    with domain modules.
+
+    Parameters can be None when using factory methods like `from_asts()`
+    that set a pre-loaded resource.
 
     Example
     -------
     >>> provider = AstProvider(gateway, snapshot)
-    >>> ast_map = provider.get()
-    >>> func_ast = ast_map.get(function_goid)
+    >>> data = provider.get()
+    >>> func_ast = data.function_ast_map.get(function_goid)
     """
 
     def __init__(
         self,
-        gateway: StorageGateway,
-        snapshot: SnapshotRef,
+        gateway: StorageGateway | None = None,
+        snapshot: SnapshotRef | None = None,
         *,
-        max_files: int | None = None,
+        catalog_provider: FunctionCatalogProvider | None = None,
+        max_functions: int | None = None,
     ) -> None:
         """Initialize the AST provider.
 
         Parameters
         ----------
         gateway
-            Storage gateway for GOID queries.
+            Storage gateway for GOID queries. Can be None if using
+            `set_preloaded()` or `from_asts()` factory method.
         snapshot
-            Repository snapshot reference.
-        max_files
-            Maximum number of files to parse (for resource limits).
+            Repository snapshot reference. Can be None if using
+            `set_preloaded()` or `from_asts()` factory method.
+        catalog_provider
+            Optional pre-loaded catalog provider.
+        max_functions
+            Maximum number of functions to parse (for resource limits).
         """
-        super().__init__("AstMap")
+        super().__init__("AstData")
         self._gateway = gateway
         self._snapshot = snapshot
-        self._max_files = max_files
+        self._catalog_provider = catalog_provider
+        self._max_functions = max_functions
 
-    def _load(self) -> AstMap:
+    @classmethod
+    def from_asts(
+        cls,
+        function_ast_map: dict[int, FunctionAst],
+        missing_goids: set[int],
+    ) -> AstProvider:
+        """Create a provider from existing AST data.
+
+        Use this factory when AST data has already been loaded and you
+        want to wrap it in a provider for the resource registry.
+
+        Parameters
+        ----------
+        function_ast_map
+            Pre-loaded function AST map.
+        missing_goids
+            Set of GOIDs that could not be parsed.
+
+        Returns
+        -------
+        AstProvider
+            Provider wrapping the existing data.
+
+        Example
+        -------
+        >>> existing_asts = context.function_ast_map
+        >>> missing = context.missing_function_goids
+        >>> provider = AstProvider.from_asts(existing_asts, missing)
+        >>> registry.register(AstProvider, provider)
+        """
+        # Create provider with None - valid since we set preloaded
+        provider = cls(gateway=None, snapshot=None)
+        provider.set_preloaded(
+            LegacyAstData(
+                function_ast_map=function_ast_map,
+                missing_function_goids=missing_goids,
+            )
+        )
+        return provider
+
+    def _load(self) -> LegacyAstData:
         """Load and parse function ASTs.
 
         Returns
         -------
-        AstMap
-            Map of function GOIDs to AST info.
+        LegacyAstData
+            Container with function AST map and missing GOIDs.
+
+        Raises
+        ------
+        ResourceNotLoadedError
+            If gateway or snapshot are None (provider created for pre-loading only).
         """
-        # Load GOIDs from database
-        goids_by_file = self._load_goids_by_file()
+        if self._gateway is None or self._snapshot is None:
+            raise ResourceNotLoadedError(
+                self._name,
+                "Cannot load - provider was created for pre-loaded resource only. "
+                "Use from_asts() with pre-loaded data or provide gateway and snapshot.",
+            )
 
-        functions: dict[int, FunctionAstInfo] = {}
-        missing_goids: set[int] = set()
-        files_parsed = 0
-        parse_errors = 0
-
-        repo_root = self._snapshot.repo_root
-
-        for rel_path, goid_list in goids_by_file.items():
-            abs_path = (repo_root / rel_path).resolve()
-
-            try:
-                source = abs_path.read_text(encoding="utf-8")
-                tree = ast.parse(source, filename=str(rel_path))
-                lines = source.splitlines()
-                files_parsed += 1
-            except (OSError, SyntaxError) as e:
-                log.debug("Failed to parse %s: %s", rel_path, e)
-                parse_errors += 1
-                missing_goids.update(g["goid_h128"] for g in goid_list)
-                continue
-
-            # Build line-to-function index
-            func_nodes: dict[tuple[int, int], ast.FunctionDef | ast.AsyncFunctionDef] = {}
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    start = node.lineno
-                    end = getattr(node, "end_lineno", start) or start
-                    func_nodes[start, end] = node
-
-            # Match GOIDs to AST nodes
-            for goid_info in goid_list:
-                goid = int(goid_info["goid_h128"])
-                start = int(goid_info["start_line"])
-                end_raw = goid_info.get("end_line")
-                end = int(end_raw) if end_raw is not None else start
-
-                node = func_nodes.get((start, end))
-                if node is None:
-                    # Try fuzzy match
-                    node = self._fuzzy_match(func_nodes, start, end)
-
-                if node is not None:
-                    functions[goid] = FunctionAstInfo(
-                        goid=goid,
-                        node=node,
-                        lines=lines,
-                        rel_path=rel_path,
-                    )
-                else:
-                    missing_goids.add(goid)
-
-        return AstMap(
-            functions=functions,
-            missing_goids=missing_goids,
-            files_parsed=files_parsed,
-            parse_errors=parse_errors,
+        request = FunctionAstLoadRequest(
+            repo=self._snapshot.repo,
+            commit=self._snapshot.commit,
+            repo_root=self._snapshot.repo_root,
+            catalog_provider=self._catalog_provider,
+            max_functions=self._max_functions,
         )
 
-    def _load_goids_by_file(self) -> dict[str, list[dict[str, object]]]:
-        """Load GOIDs grouped by file.
+        function_ast_map, missing = load_function_asts(self._gateway, request)
+
+        log.debug(
+            "Loaded %d function ASTs (%d missing) for %s@%s",
+            len(function_ast_map),
+            len(missing),
+            self._snapshot.repo,
+            self._snapshot.commit,
+        )
+
+        return LegacyAstData(
+            function_ast_map=function_ast_map,
+            missing_function_goids=missing,
+        )
+
+    @property
+    def function_asts(self) -> dict[int, FunctionAst]:
+        """Return function AST map.
+
+        Convenience property matching the legacy AnalyticsContext API.
 
         Returns
         -------
-        dict[str, list[dict[str, object]]]
-            GOIDs grouped by relative path.
+        dict[int, FunctionAst]
+            Mapping of GOID to FunctionAst.
         """
-        query = """
-            SELECT
-                goid_h128,
-                rel_path,
-                start_line,
-                end_line
-            FROM core.goids
-            WHERE repo = ? AND commit = ?
-              AND kind IN ('function', 'method')
-        """
-        result = self._gateway.con.execute(
-            query,
-            [self._snapshot.repo, self._snapshot.commit],
-        )
+        return self.get().function_ast_map
 
-        by_file: dict[str, list[dict[str, object]]] = {}
-        files_seen = 0
+    @property
+    def missing_goids(self) -> set[int]:
+        """Return set of missing GOIDs.
 
-        for row in result.fetchall():
-            rel_path = str(row[1]).replace("\\", "/")
-
-            # Honor file limit
-            if self._max_files is not None:
-                if rel_path not in by_file:
-                    files_seen += 1
-                    if files_seen > self._max_files:
-                        continue
-
-            goid_info: dict[str, object] = {
-                "goid_h128": row[0],
-                "start_line": row[2],
-                "end_line": row[3],
-            }
-            by_file.setdefault(rel_path, []).append(goid_info)
-
-        return by_file
-
-    def _fuzzy_match(
-        self,
-        func_nodes: dict[tuple[int, int], ast.FunctionDef | ast.AsyncFunctionDef],
-        target_start: int,
-        target_end: int,
-    ) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
-        """Try to fuzzy match a function node.
-
-        Parameters
-        ----------
-        func_nodes
-            Available function nodes indexed by span.
-        target_start
-            Target start line.
-        target_end
-            Target end line.
+        Convenience property matching the legacy AnalyticsContext API.
 
         Returns
         -------
-        ast.FunctionDef | ast.AsyncFunctionDef | None
-            Matched node, or None.
+        set[int]
+            GOIDs that could not be parsed.
         """
-        # Try nodes starting at the same line
-        for (start, end), node in func_nodes.items():
-            if start == target_start:
-                return node
-
-        # Try nodes containing the target span
-        for (start, end), node in func_nodes.items():
-            if start <= target_start and end >= target_end:
-                return node
-
-        return None
+        return self.get().missing_function_goids
 
 
 __all__ = [
     "AstMap",
     "AstProvider",
     "FunctionAstInfo",
+    "LegacyAstData",
 ]

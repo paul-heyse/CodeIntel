@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
+from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
 
 # Re-export types from ports for backward compatibility
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
@@ -333,6 +334,34 @@ def should_skip_missing_file(
     return True
 
 
+def compute_changes(
+    gateway: StorageGateway,
+    request: ChangeRequest,
+) -> ChangeSet:
+    """Compute changes for the given change request.
+
+    This function provides backward compatibility by wrapping the
+    HashChangeDetectionAdapter.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database operations.
+    request
+        Change detection request parameters.
+
+    Returns
+    -------
+    ChangeSet
+        Computed changes (added, modified, deleted modules).
+    """
+    storage = DuckDBStorageAdapter(gateway)
+    adapter = HashChangeDetectionAdapter(storage)
+    # Get modules from request if available
+    modules = getattr(request, "modules", []) or []
+    return adapter.compute_changes(request, modules)
+
+
 __all__ = [
     "PROGRESS_LOG_EVERY",
     "PROGRESS_LOG_INTERVAL",
@@ -341,6 +370,7 @@ __all__ = [
     "ChangeRequest",
     "ChangeSet",
     "ModuleRecord",
+    "compute_changes",
     "insert_relation",
     "iter_modules",
     "log_progress",

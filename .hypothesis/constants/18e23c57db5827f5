@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/registry.py
+# hypothesis_version: 6.148.3
+
+[', ', 'IngestPluginRegistry', 'PlanOptions', 'depends_on', 'description', 'disabled', 'enabled_by_default', 'get_ingest_registry', 'isolation_kind', 'list_ingest_plugins', 'metadata', 'missing_dependency', 'missing_tool', 'name', 'plan_ingest_plugins', 'produces_tables', 'provides', 'requires', 'severity', 'stage', 'supports_incremental', 'tool_dependencies']

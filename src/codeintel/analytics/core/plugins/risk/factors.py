@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.catalog import CatalogProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -148,7 +152,11 @@ class RiskFactorsPlugin:
         _ = self.metadata
         gateway = ctx.gateway
         con = gateway.con
-        catalog = ctx.catalog if ctx.has_catalog() else None
+
+        catalog = None
+        if ctx.has_resource_by_name("CatalogProvider"):
+            catalog_resource = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+            catalog = catalog_resource.get()
 
         try:
             con.execute(

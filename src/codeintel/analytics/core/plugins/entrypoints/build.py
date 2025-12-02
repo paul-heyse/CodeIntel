@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
 
 from codeintel.analytics.core.base import (
     AnalyticsContextRequiringPlugin,
@@ -110,25 +113,27 @@ class EntrypointsPlugin(
         -------
         Mapping[str, int] | None
             None to trigger auto row count computation.
+
+        Raises
+        ------
+        RuntimeError
+            If AnalyticsContextProvider is not registered.
         """
         cfg = self.config
 
-        analytics_context = None
-        catalog_provider = None
-        if ctx.has_analytics_context():
-            analytics_context = ctx.analytics_context
-            catalog_provider = analytics_context.catalog
-
-        graph_runtime = None
-        if ctx.has_graph_runtime():
-            graph_runtime = ctx.graph_runtime
+        # Get required analytics context
+        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
+            msg = "AnalyticsContextProvider is required"
+            raise RuntimeError(msg)
+        analytics_provider = cast(
+            "AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider")
+        )
+        analytics_context = analytics_provider.get()
 
         build_entrypoints(
             ctx.gateway,
             cfg,
-            catalog_provider=catalog_provider,
             context=analytics_context,
-            runtime=graph_runtime,
         )
         return None  # Let base class compute row counts
 

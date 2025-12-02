@@ -158,12 +158,18 @@ class MetricsMiddleware:
         return "metrics"
 
     def _get_store(self) -> MetricsStore:
-        """Get the metrics store to use."""
+        """Get the metrics store to use.
+
+        Returns
+        -------
+        MetricsStore
+            The configured or default metrics store.
+        """
         return self.store or get_metrics_store()
 
     def before_execute(
         self,
-        ctx: PluginExecutionContext,
+        ctx: PluginExecutionContext,  # noqa: ARG002
         plugin: AnalyticsPluginProtocol,
     ) -> None:
         """Record execution start time.
@@ -171,7 +177,7 @@ class MetricsMiddleware:
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context (required by interface).
         plugin
             Plugin about to execute.
         """

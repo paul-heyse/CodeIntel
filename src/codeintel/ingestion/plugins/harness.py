@@ -377,15 +377,18 @@ class IngestExecutionHarness:
             raise ValueError(message)
 
         # Import config factory lazily
-        from codeintel.ingestion.plugins.config_factory import ConfigFactory
+        from codeintel.ingestion.plugins.config_factory import BuildOptions, ConfigFactory
 
         factory = ConfigFactory()
-        return factory.build(
-            config_class=self._config_class,
-            ctx=ctx,
+        options = BuildOptions(
             mapping=self._config_mapping,
             tracker=tracker,
             tool_service=tool_service,
+        )
+        return factory.build(
+            config_class=self._config_class,
+            ctx=ctx,
+            options=options,
         )
 
     def _add_row_counts(
@@ -436,13 +439,10 @@ def _safe_count(ctx: IngestPluginContext, table_key: str) -> int:
     int
         Row count or 0 on error.
     """
-    try:
-        result = ctx.gateway.con.execute(
-            f"SELECT COUNT(*) FROM {table_key}",  # noqa: S608
-        ).fetchone()
-        return int(result[0]) if result else 0
-    except Exception:  # noqa: BLE001
-        return 0
+    from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
+
+    count = safe_count(ctx.gateway, table_key)
+    return count if count is not None else 0
 
 
 def with_harness(

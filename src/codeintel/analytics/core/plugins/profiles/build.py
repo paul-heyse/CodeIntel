@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -116,8 +120,12 @@ class ProfilesPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        analytics_context = ctx.analytics_context if ctx.has_analytics_context() else None
-        catalog_provider = analytics_context.catalog if analytics_context else None
+        analytics_context = None
+        catalog_provider = None
+        if ctx.has_resource_by_name("AnalyticsContextProvider"):
+            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
+            analytics_context = provider.get()
+            catalog_provider = analytics_context.catalog if analytics_context else None
 
         try:
             build_function_profile(

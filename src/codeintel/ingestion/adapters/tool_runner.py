@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -408,10 +409,11 @@ class ToolRunnerAdapter:
                 duration_s=duration,
             )
 
+
 __all__ = ["ToolRunnerAdapter"]
 
 
-def _convert_scip_documents(documents: list[object]) -> list[ScipDocument]:
+def _convert_scip_documents(documents: Sequence[object]) -> list[ScipDocument]:
     """Convert SCIP service documents to port types.
 
     Parameters
@@ -432,8 +434,7 @@ def _convert_scip_documents(documents: list[object]) -> list[ScipDocument]:
                 for sym in (getattr(doc, "symbols", None) or [])
             ),
             occurrences=tuple(
-                _convert_scip_occurrence(occ)
-                for occ in (getattr(doc, "occurrences", None) or [])
+                _convert_scip_occurrence(occ) for occ in (getattr(doc, "occurrences", None) or [])
             ),
         )
         for doc in documents

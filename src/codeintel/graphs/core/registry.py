@@ -332,11 +332,11 @@ class GraphPluginRegistry:
                 else:
                     candidate = loaded
 
-                if not hasattr(candidate, "metadata") or not hasattr(candidate, "execute"):
+                if not isinstance(candidate, GraphPluginProtocol):
                     message = f"Entry point {entry_point.name} did not return GraphPluginProtocol"
                     raise TypeError(message)  # noqa: TRY301
 
-                plugin = candidate  # type: ignore[assignment]
+                plugin = candidate
 
                 self.register(plugin)
                 discovered.append(plugin)

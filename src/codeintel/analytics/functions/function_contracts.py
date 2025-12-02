@@ -8,24 +8,15 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_utils import literal_int, literal_value, safe_unparse
-from codeintel.analytics.context import (
-    AnalyticsContext,
-    AnalyticsContextConfig,
-    ensure_analytics_context,
-)
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.common import run_batch
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
-
-if TYPE_CHECKING:
-    from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 
 log = logging.getLogger(__name__)
 
@@ -48,43 +39,25 @@ def compute_function_contracts(
     gateway: StorageGateway,
     cfg: FunctionContractsStepConfig,
     *,
-    catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    context: AnalyticsContext,
 ) -> None:
     """
     Populate `analytics.function_contracts` for a repo/commit snapshot.
 
     Parameters
     ----------
-    gateway:
+    gateway
         Storage gateway providing DuckDB access.
-    cfg:
+    cfg
         Contracts configuration (repo, commit, repo_root).
-    catalog_provider:
-        Optional function catalog to reuse across steps.
-    context:
-        Optional shared analytics context to reuse catalog and AST caches.
-    runtime:
-        Optional shared graph runtime used to reuse the pipeline engine.
+    context
+        Shared analytics context providing catalog and AST caches.
     """
     con = gateway.con
     ensure_schema(con, "analytics.function_contracts")
 
-    shared_context = ensure_analytics_context(
-        gateway,
-        cfg=AnalyticsContextConfig(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-            catalog_provider=catalog_provider,
-        ),
-        context=context,
-        runtime=runtime,
-    )
-
-    ast_by_goid = shared_context.function_ast_map
-    all_goids = {span.goid for span in shared_context.catalog.catalog().function_spans}
+    ast_by_goid = context.function_ast_map
+    all_goids = {span.goid for span in context.catalog.catalog().function_spans}
 
     doc_map = _load_docstrings(con, repo=cfg.repo, commit=cfg.commit)
     type_map = _load_function_types(con, repo=cfg.repo, commit=cfg.commit)

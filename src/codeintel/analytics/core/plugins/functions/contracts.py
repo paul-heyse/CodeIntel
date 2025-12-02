@@ -7,6 +7,10 @@ new unified plugin protocol.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -113,18 +117,19 @@ class FunctionContractsPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get optional dependencies
-        analytics_context = ctx.analytics_context if ctx.has_analytics_context() else None
-        catalog_provider = analytics_context.catalog if analytics_context else None
-        graph_runtime = ctx.graph_runtime if ctx.has_graph_runtime() else None
+        # Get required analytics context
+        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
+            return PluginResult.fail("AnalyticsContextProvider is required")
+        analytics_provider = cast(
+            "AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider")
+        )
+        analytics_context = analytics_provider.get()
 
         try:
             compute_function_contracts(
                 ctx.gateway,
                 cfg,
-                catalog_provider=catalog_provider,
                 context=analytics_context,
-                runtime=graph_runtime,
             )
         except (RuntimeError, ValueError, OSError) as e:
             return PluginResult.fail(f"Function contracts computation failed: {e}")

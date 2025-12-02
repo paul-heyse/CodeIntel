@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
+from codeintel.analytics.context import AnalyticsContextConfig
 from codeintel.analytics.core.execution_context import (
     PluginExecutionContextBuilder,
     PluginScratch,
@@ -30,6 +31,9 @@ from codeintel.analytics.recipes.model import (
     RecipeScope,
 )
 from codeintel.analytics.recipes.registry import RecipeRegistry, get_recipe_registry
+from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+from codeintel.analytics.resources.catalog import CatalogProvider
+from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime_manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
@@ -310,6 +314,57 @@ class RecipeExecutor:
         )
 
     @staticmethod
+    def _build_plugin_context(
+        plugin_name: str,
+        context: RecipeExecutionContext,
+        config: Mapping[str, object],
+        run_id: str,
+    ) -> PluginExecutionContextBuilder:
+        """Build the plugin execution context.
+
+        Returns
+        -------
+        PluginExecutionContextBuilder
+            Configured context builder ready to build.
+        """
+        builder = PluginExecutionContextBuilder(
+            gateway=context.gateway,
+            snapshot=context.snapshot,
+            run_id=run_id,
+            scope=_to_analytics_scope(context.scope),
+        )
+        builder = builder.with_resources(context.resources)
+
+        # Register resource providers
+        if context.graph_runtime is not None:
+            builder = builder.with_resource_provider(
+                GraphProvider, GraphProvider.from_runtime(context.graph_runtime)
+            )
+
+        if context.catalog_provider is not None:
+            builder = builder.with_resource_provider(
+                CatalogProvider, CatalogProvider.from_catalog(context.catalog_provider)
+            )
+
+        if context.analytics_context is not None:
+            ctx_config = AnalyticsContextConfig(
+                repo=context.snapshot.repo,
+                commit=context.snapshot.commit,
+                repo_root=context.snapshot.repo_root,
+            )
+            ctx_provider = AnalyticsContextProvider(context.gateway, ctx_config)
+            ctx_provider.set_preloaded(context.analytics_context)
+            builder = builder.with_resource_provider(AnalyticsContextProvider, ctx_provider)
+
+        builder.with_options(config)
+        builder.with_plugin_name(plugin_name)
+
+        for key, value in context.extra.items():
+            builder.with_extra(key, value)
+
+        return builder
+
+    @staticmethod
     def execute_plugin(
         plugin: AnalyticsPluginProtocol,
         context: RecipeExecutionContext,
@@ -328,31 +383,9 @@ class RecipeExecutor:
         started_at = datetime.now(tz=UTC)
         start_time = time.perf_counter()
 
-        # Build plugin execution context
-        builder = PluginExecutionContextBuilder(
-            gateway=context.gateway,
-            snapshot=context.snapshot,
-            run_id=run_id,
-            scope=_to_analytics_scope(context.scope),
+        builder = RecipeExecutor._build_plugin_context(
+            plugin_name, context, config, run_id
         )
-
-        # Pass resource registry from recipe context
-        builder = builder.with_resources(context.resources)
-
-        # Legacy support: still pass direct objects for backward compat
-        if context.graph_runtime is not None:
-            builder.with_graph_runtime(context.graph_runtime)
-        if context.catalog_provider is not None:
-            builder.with_catalog(context.catalog_provider)
-        if context.analytics_context is not None:
-            builder.with_analytics_context(context.analytics_context)
-
-        builder.with_options(config)
-        builder.with_plugin_name(plugin_name)
-
-        for key, value in context.extra.items():
-            builder.with_extra(key, value)
-
         plugin_ctx = builder.build(scratch=scratch)
 
         # Validate inputs

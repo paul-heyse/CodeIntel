@@ -10,7 +10,7 @@ import logging
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import Executor
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, NamedTuple, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, NamedTuple, Protocol, TypeVar, runtime_checkable
 
 from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
@@ -243,7 +243,7 @@ class IncrementalIngestOps(Protocol[RowT]):
         Name of the dataset for logging.
     """
 
-    dataset_name: str
+    dataset_name: ClassVar[str]
 
     @staticmethod
     def module_filter(module: ModuleRecord) -> bool:

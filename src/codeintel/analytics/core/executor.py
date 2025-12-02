@@ -266,6 +266,9 @@ class PluginExecutor:
     ) -> PluginExecutionContext:
         """Prepare context for a specific plugin.
 
+        Resources are accessed through the ResourceRegistry, so this method
+        simply creates a new context with the shared scratch and plugin name.
+
         Parameters
         ----------
         ctx
@@ -280,15 +283,6 @@ class PluginExecutor:
         PluginExecutionContext
             Context prepared for the plugin.
         """
-        # Create a new context with plugin-specific settings
-        # Access private fields via object attribute lookup to configure context
-        graph_runtime = getattr(ctx, "_graph_runtime", None)
-        graph_factory = getattr(ctx, "_graph_runtime_factory", None)
-        catalog_provider = getattr(ctx, "_catalog_provider", None)
-        catalog_factory = getattr(ctx, "_catalog_factory", None)
-        analytics_ctx = getattr(ctx, "_analytics_context", None)
-        analytics_factory = getattr(ctx, "_analytics_context_factory", None)
-
         return PluginExecutionContext(
             gateway=ctx.gateway,
             snapshot=ctx.snapshot,
@@ -299,13 +293,7 @@ class PluginExecutor:
             scratch=scratch,
             options=ctx.options,
             plugin_name=plugin.metadata.name,
-            extra=ctx.extra,
-            _graph_runtime=graph_runtime,
-            _graph_runtime_factory=graph_factory,
-            _catalog_provider=catalog_provider,
-            _catalog_factory=catalog_factory,
-            _analytics_context=analytics_ctx,
-            _analytics_context_factory=analytics_factory,
+            extra=dict(ctx.extra),
         )
 
     def _execute_plugin(

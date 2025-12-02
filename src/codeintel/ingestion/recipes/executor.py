@@ -25,6 +25,7 @@ from codeintel.ingestion.plugins.protocol import (
 )
 from codeintel.ingestion.plugins.registry import (
     IngestPluginRegistry,
+    PlanOptions,
     get_ingest_registry,
 )
 from codeintel.ingestion.recipes.dsl import (
@@ -76,6 +77,49 @@ class ExecutorConfig:
 
 
 @dataclass
+class RecipeExecutorContext:
+    """Execution context for recipe execution.
+
+    Encapsulates all dependencies and services needed by the RecipeExecutor,
+    reducing parameter count in initialization.
+
+    Attributes
+    ----------
+    gateway
+        StorageGateway for database access.
+    snapshot
+        Repository snapshot reference.
+    paths
+        Build paths configuration.
+    tools
+        Tools configuration.
+    code_profile
+        Code scanning profile.
+    config_profile
+        Config scanning profile.
+    tool_runner
+        Optional shared tool runner.
+    tool_service
+        Optional shared tool service.
+    change_tracker
+        Optional change tracker for incremental ingestion.
+    ingest_run_sink
+        Optional sink for recording run metrics.
+    """
+
+    gateway: StorageGateway
+    snapshot: SnapshotRef
+    paths: BuildPaths
+    tools: ToolsConfig
+    code_profile: ScanProfile
+    config_profile: ScanProfile
+    tool_runner: ToolRunner | None = None
+    tool_service: ToolService | None = None
+    change_tracker: ChangeTracker | None = None
+    ingest_run_sink: IngestRunSink | None = None
+
+
+@dataclass
 class PluginExecutionRecord:
     """Record of a single plugin execution.
 
@@ -104,58 +148,30 @@ class RecipeExecutor:
     with optional parallelism within stages.
     """
 
-    def __init__(  # noqa: PLR0913, PLR0917
+    def __init__(
         self,
-        gateway: StorageGateway,
-        snapshot: SnapshotRef,
-        paths: BuildPaths,
-        tools: ToolsConfig,
-        code_profile: ScanProfile,
-        config_profile: ScanProfile,
-        *,
-        tool_runner: ToolRunner | None = None,
-        tool_service: ToolService | None = None,
-        change_tracker: ChangeTracker | None = None,
-        ingest_run_sink: IngestRunSink | None = None,
+        context: RecipeExecutorContext,
         config: ExecutorConfig | None = None,
     ) -> None:
         """Initialize the executor.
 
         Parameters
         ----------
-        gateway
-            StorageGateway for database access.
-        snapshot
-            Repository snapshot reference.
-        paths
-            Build paths configuration.
-        tools
-            Tools configuration.
-        code_profile
-            Code scanning profile.
-        config_profile
-            Config scanning profile.
-        tool_runner
-            Optional shared tool runner.
-        tool_service
-            Optional shared tool service.
-        change_tracker
-            Optional change tracker for incremental ingestion.
-        ingest_run_sink
-            Optional sink for recording run metrics.
+        context
+            Execution context with dependencies and services.
         config
             Executor configuration.
         """
-        self._gateway = gateway
-        self._snapshot = snapshot
-        self._paths = paths
-        self._tools = tools
-        self._code_profile = code_profile
-        self._config_profile = config_profile
-        self._tool_runner = tool_runner
-        self._tool_service = tool_service
-        self._change_tracker = change_tracker
-        self._ingest_run_sink = ingest_run_sink
+        self._gateway = context.gateway
+        self._snapshot = context.snapshot
+        self._paths = context.paths
+        self._tools = context.tools
+        self._code_profile = context.code_profile
+        self._config_profile = context.config_profile
+        self._tool_runner = context.tool_runner
+        self._tool_service = context.tool_service
+        self._change_tracker = context.change_tracker
+        self._ingest_run_sink = context.ingest_run_sink
         self._config = config or ExecutorConfig()
 
     def execute(self, recipe: IngestRecipe) -> RecipeExecutionResult:
@@ -261,8 +277,10 @@ class RecipeExecutor:
         disabled = set(recipe.disabled_plugins)
 
         return self._config.registry.plan(
-            plugin_names=plugin_names,
-            disabled=tuple(disabled),
+            PlanOptions(
+                plugin_names=plugin_names,
+                disabled=tuple(disabled),
+            )
         )
 
     def _execute_stage(
@@ -492,73 +510,28 @@ class RecipeExecutor:
         )
 
 
-def execute_recipe(  # noqa: PLR0913
+def execute_recipe(
     recipe: IngestRecipe,
-    *,
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    paths: BuildPaths,
-    tools: ToolsConfig,
-    code_profile: ScanProfile,
-    config_profile: ScanProfile,
-    tool_runner: ToolRunner | None = None,
-    tool_service: ToolService | None = None,
-    change_tracker: ChangeTracker | None = None,
-    ingest_run_sink: IngestRunSink | None = None,
-    registry: IngestPluginRegistry | None = None,
+    context: RecipeExecutorContext,
+    config: ExecutorConfig | None = None,
 ) -> RecipeExecutionResult:
-    """Execute a recipe with the given configuration.
+    """Execute a recipe with the given context.
 
     Parameters
     ----------
     recipe
         Recipe to execute.
-    gateway
-        StorageGateway for database access.
-    snapshot
-        Repository snapshot reference.
-    paths
-        Build paths configuration.
-    tools
-        Tools configuration.
-    code_profile
-        Code scanning profile.
-    config_profile
-        Config scanning profile.
-    tool_runner
-        Optional shared tool runner.
-    tool_service
-        Optional shared tool service.
-    change_tracker
-        Optional change tracker.
-    ingest_run_sink
-        Optional run sink.
-    registry
-        Plugin registry (defaults to global).
+    context
+        Execution context with dependencies and services.
+    config
+        Optional executor configuration.
 
     Returns
     -------
     RecipeExecutionResult
         Execution result.
     """
-    config = ExecutorConfig(
-        registry=registry or get_ingest_registry(),
-    )
-
-    executor = RecipeExecutor(
-        gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        tools=tools,
-        code_profile=code_profile,
-        config_profile=config_profile,
-        tool_runner=tool_runner,
-        tool_service=tool_service,
-        change_tracker=change_tracker,
-        ingest_run_sink=ingest_run_sink,
-        config=config,
-    )
-
+    executor = RecipeExecutor(context, config)
     return executor.execute(recipe)
 
 
@@ -566,5 +539,6 @@ __all__ = [
     "ExecutorConfig",
     "PluginExecutionRecord",
     "RecipeExecutor",
+    "RecipeExecutorContext",
     "execute_recipe",
 ]

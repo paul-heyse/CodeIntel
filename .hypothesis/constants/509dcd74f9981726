@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/docstrings_ingest.py
+# hypothesis_version: 6.148.3
+
+['DocstringContext', 'DocstringIngestOps', 'DocstringVisitor', 'ParsedDocstring', 'ingest_docstrings']

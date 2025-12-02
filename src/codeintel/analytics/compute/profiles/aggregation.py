@@ -88,10 +88,20 @@ def aggregate_function_metrics(
     Examples
     --------
     >>> metrics = [
-    ...     FunctionMetricInput(loc=10, complexity=2, typedness_ratio=1.0,
-    ...                         typedness_bucket="typed", complexity_bucket="low"),
-    ...     FunctionMetricInput(loc=20, complexity=5, typedness_ratio=0.5,
-    ...                         typedness_bucket="partial", complexity_bucket="medium"),
+    ...     FunctionMetricInput(
+    ...         loc=10,
+    ...         complexity=2,
+    ...         typedness_ratio=1.0,
+    ...         typedness_bucket="typed",
+    ...         complexity_bucket="low",
+    ...     ),
+    ...     FunctionMetricInput(
+    ...         loc=20,
+    ...         complexity=5,
+    ...         typedness_ratio=0.5,
+    ...         typedness_bucket="partial",
+    ...         complexity_bucket="medium",
+    ...     ),
     ... ]
     >>> agg = aggregate_function_metrics(metrics)
     >>> agg.total_functions
@@ -159,4 +169,3 @@ __all__ = [
     "aggregate_function_metrics",
     "compute_profile_stats",
 ]
-

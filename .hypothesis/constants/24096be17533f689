@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/resources/graphs.py
+# hypothesis_version: 6.148.3
+
+['GraphProvider', 'GraphResources', 'SingleGraphProvider', 'call_graph', 'import_graph', 'symbol_module_graph']

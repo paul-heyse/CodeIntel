@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/base.py
+# hypothesis_version: 6.148.3
+
+['.', '1.0.0', 'BasePlugin', 'ConfigBoundPlugin', 'GraphMetricsPlugin', 'Plugin %s failed', 'TableWriterPlugin', 'con', 'config', 'fatal', 'graph', 'other', 'plugin_name', 'process', 'thread']

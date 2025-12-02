@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/steps/config_ingest.py
+# hypothesis_version: 6.148.3
+
+['.', '.cfg', '.ini', '.json', '.toml', '.yaml', '.yml', 'ConfigIngestStep', 'core.config_values', 'null']

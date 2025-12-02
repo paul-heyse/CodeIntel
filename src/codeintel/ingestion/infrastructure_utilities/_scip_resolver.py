@@ -29,7 +29,7 @@ class ResolvedScipConfig:
     cfg: ScipIngestStepConfig | None
 
 
-def resolve_scip_inputs(
+def resolve_scip_inputs(  # noqa: PLR0913
     gateway: StorageGateway,
     modules_or_cfg: Sequence[ModuleRecord] | object,
     *,

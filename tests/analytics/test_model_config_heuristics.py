@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.analytics.context import AnalyticsContextConfig, build_analytics_context
 from codeintel.analytics.data_model_usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
 from codeintel.analytics.graphs import compute_config_data_flow
@@ -343,14 +344,24 @@ def test_data_models_and_usage_and_config_flow(tmp_path: Path) -> None:
             commit=COMMIT,
             repo_root=repo_root,
         )
+        # Build analytics context for domain functions
+        context_cfg = AnalyticsContextConfig(
+            repo=REPO,
+            commit=COMMIT,
+            repo_root=repo_root,
+        )
+        analytics_context = build_analytics_context(gateway, context_cfg)
+
         compute_data_models(gateway, builder.data_models())
         compute_data_model_usage(
             gateway=gateway,
             cfg=builder.data_model_usage(),
+            context=analytics_context,
         )
         compute_config_data_flow(
             gateway=gateway,
             cfg=builder.config_data_flow(),
+            context=analytics_context,
         )
 
         model_ids = _assert_models(gateway)

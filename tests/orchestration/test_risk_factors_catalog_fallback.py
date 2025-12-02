@@ -9,7 +9,10 @@ import pytest
 from codeintel.config import BuildPaths, ScanProfiles, SnapshotRef
 from codeintel.config.models import GraphBackendConfig, ToolsConfig
 from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogService
-from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile, default_config_profile
+from codeintel.ingestion.infrastructure_utilities.source_scanner import (
+    default_code_profile,
+    default_config_profile,
+)
 from codeintel.pipeline.orchestration.steps import PipelineContext, RiskFactorsStep
 from codeintel.storage.gateway import StorageConfig, open_gateway
 

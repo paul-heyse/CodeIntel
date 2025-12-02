@@ -88,7 +88,13 @@ class FunctionSignature:
 
 
 def _annotation_to_str(node: ast.AST | None) -> str | None:
-    """Convert an annotation AST node to string."""
+    """Convert an annotation AST node to string.
+
+    Returns
+    -------
+    str | None
+        String representation of the annotation, or None.
+    """
     if node is None:
         return None
     try:
@@ -98,7 +104,13 @@ def _annotation_to_str(node: ast.AST | None) -> str | None:
 
 
 def _decorator_name(node: ast.expr) -> str:
-    """Extract decorator name from decorator node."""
+    """Extract decorator name from decorator node.
+
+    Returns
+    -------
+    str
+        Decorator name as string.
+    """
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
@@ -115,7 +127,13 @@ def _decorator_name(node: ast.expr) -> str:
 
 
 def _extract_parameters(args: ast.arguments) -> tuple[ParameterInfo, ...]:
-    """Extract parameter information from function arguments."""
+    """Extract parameter information from function arguments.
+
+    Returns
+    -------
+    tuple[ParameterInfo, ...]
+        Extracted parameter information.
+    """
     params: list[ParameterInfo] = []
 
     # Positional-only parameters (Python 3.8+)
@@ -191,7 +209,7 @@ def extract_signature(
     *,
     qualname: str | None = None,
 ) -> FunctionSignature:
-    """Extract complete signature information from a function AST node.
+    r"""Extract complete signature information from a function AST node.
 
     Analyze a function definition to extract its full signature including
     parameters, decorators, return type, and other metadata.
@@ -212,7 +230,7 @@ def extract_signature(
     Examples
     --------
     >>> import ast
-    >>> source = "@decorator\\ndef greet(name: str) -> str: '''Say hello.'''\\n    pass"
+    >>> source = "@decorator\ndef greet(name: str) -> str: '''Say hello.'''\n    pass"
     >>> func = ast.parse(source).body[0]
     >>> sig = extract_signature(func)
     >>> sig.name

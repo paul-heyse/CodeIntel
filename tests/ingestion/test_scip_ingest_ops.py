@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from codeintel.ingestion.scip_ingest import ScipIngestOps, ScipRuntime
 
 from codeintel.config import BuildPaths, ScipIngestStepConfig, SnapshotRef, ToolBinaries
 from codeintel.ingestion.common import ModuleRecord
-from codeintel.ingestion.scip_ingest import ScipIngestOps, ScipRuntime
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from tests._helpers.duckdb import memory_con_with_macros

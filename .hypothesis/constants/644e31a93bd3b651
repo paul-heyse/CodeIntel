@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/data_models/usage.py
+# hypothesis_version: 6.148.3
+
+[90000, '2.0.0', 'DataModelUsagePlugin', 'callgraph', 'cfg', 'config', 'data_model_usage', 'data_model_usage_cfg', 'data_models', 'data_models.build', 'data_models.usage', 'dataset', 'fatal', 'functions.metrics', 'patterns', 'usage']

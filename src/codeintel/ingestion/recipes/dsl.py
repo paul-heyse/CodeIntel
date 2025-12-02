@@ -476,23 +476,14 @@ class RecipeExecutionResult:
 # Recipe builder helpers
 
 
-def stage(  # noqa: PLR0913
-    name: str,
-    plugins: Sequence[str],
-    *,
-    parallel: bool = False,
-    required: bool = True,
-    timeout_s: int | None = None,
-    description: str = "",
-) -> RecipeStage:
-    """Create a recipe stage.
+@dataclass(frozen=True)
+class StageSpec:
+    """Specification for building a recipe stage.
 
-    Parameters
+    Encapsulates all parameters for stage creation.
+
+    Attributes
     ----------
-    name
-        Stage identifier.
-    plugins
-        Plugin names for this stage.
     parallel
         Whether plugins can run in parallel.
     required
@@ -501,42 +492,22 @@ def stage(  # noqa: PLR0913
         Maximum execution time.
     description
         Stage description.
-
-    Returns
-    -------
-    RecipeStage
-        New stage instance.
     """
-    return RecipeStage(
-        name=name,
-        plugins=tuple(plugins),
-        parallel=parallel,
-        required=required,
-        timeout_s=timeout_s,
-        description=description,
-    )
+
+    parallel: bool = False
+    required: bool = True
+    timeout_s: int | None = None
+    description: str = ""
 
 
-def recipe(  # noqa: PLR0913
-    name: str,
-    stages: Sequence[RecipeStage],
-    *,
-    description: str = "",
-    version: str = "1.0.0",
-    options: RecipeOptions | None = None,
-    disabled_plugins: Sequence[str] = (),
-    enabled_plugins: Sequence[str] | None = None,
-    includes: Sequence[str] = (),
-    tags: Sequence[str] = (),
-) -> IngestRecipe:
-    """Create an ingestion recipe.
+@dataclass(frozen=True)
+class RecipeSpec:
+    """Specification for building a recipe.
 
-    Parameters
+    Encapsulates optional parameters for recipe creation.
+
+    Attributes
     ----------
-    name
-        Recipe identifier.
-    stages
-        Execution stages.
     description
         Recipe description.
     version
@@ -548,25 +519,84 @@ def recipe(  # noqa: PLR0913
     enabled_plugins
         Plugins to enable explicitly.
     includes
-        Recipes to include.
+        Other recipes to include.
     tags
-        Classification tags.
+        Recipe tags.
+    """
+
+    description: str = ""
+    version: str = "1.0.0"
+    options: RecipeOptions | None = None
+    disabled_plugins: tuple[str, ...] = ()
+    enabled_plugins: tuple[str, ...] | None = None
+    includes: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+
+
+def stage(
+    name: str,
+    plugins: Sequence[str],
+    spec: StageSpec | None = None,
+) -> RecipeStage:
+    """Create a recipe stage.
+
+    Parameters
+    ----------
+    name
+        Stage identifier.
+    plugins
+        Plugin names for this stage.
+    spec
+        Stage specification with optional parameters.
+
+    Returns
+    -------
+    RecipeStage
+        New stage instance.
+    """
+    s = spec or StageSpec()
+    return RecipeStage(
+        name=name,
+        plugins=tuple(plugins),
+        parallel=s.parallel,
+        required=s.required,
+        timeout_s=s.timeout_s,
+        description=s.description,
+    )
+
+
+def recipe(
+    name: str,
+    stages: Sequence[RecipeStage],
+    spec: RecipeSpec | None = None,
+) -> IngestRecipe:
+    """Create an ingestion recipe.
+
+    Parameters
+    ----------
+    name
+        Recipe identifier.
+    stages
+        Execution stages.
+    spec
+        Recipe specification with optional parameters.
 
     Returns
     -------
     IngestRecipe
         New recipe instance.
     """
+    r = spec or RecipeSpec()
     return IngestRecipe(
         name=name,
-        description=description,
-        version=version,
+        description=r.description,
+        version=r.version,
         stages=tuple(stages),
-        options=options or RecipeOptions(),
-        disabled_plugins=tuple(disabled_plugins),
-        enabled_plugins=tuple(enabled_plugins) if enabled_plugins is not None else None,
-        includes=tuple(includes),
-        tags=tuple(tags),
+        options=r.options or RecipeOptions(),
+        disabled_plugins=r.disabled_plugins,
+        enabled_plugins=r.enabled_plugins,
+        includes=r.includes,
+        tags=r.tags,
     )
 
 
@@ -574,8 +604,10 @@ __all__ = [
     "IngestRecipe",
     "RecipeExecutionResult",
     "RecipeOptions",
+    "RecipeSpec",
     "RecipeStage",
     "RecipeStageResult",
+    "StageSpec",
     "recipe",
     "stage",
 ]

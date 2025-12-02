@@ -58,6 +58,30 @@ class ConfigMapping:
     auto_infer: bool = True
 
 
+@dataclass(frozen=True)
+class BuildOptions:
+    """Options for config factory build operations.
+
+    Encapsulates optional parameters for ConfigFactory.build().
+
+    Attributes
+    ----------
+    mapping
+        Custom field mapping (config_field -> context_attr).
+    extra
+        Extra static values to pass to constructor.
+    tracker
+        Resolved change tracker.
+    tool_service
+        Resolved tool service.
+    """
+
+    mapping: Mapping[str, str] | None = None
+    extra: Mapping[str, object] | None = None
+    tracker: ChangeTracker | None = None
+    tool_service: ToolService | None = None
+
+
 class ConfigFactory:
     """Factory for building step configs from plugin context.
 
@@ -88,14 +112,11 @@ class ConfigFactory:
         """
         self._default_mappings = dict(default_mappings or DEFAULT_CONTEXT_MAPPINGS)
 
-    def build(  # noqa: PLR0913, PLR0917
+    def build(
         self,
         config_class: type,
         ctx: IngestPluginContext,
-        mapping: Mapping[str, str] | None = None,
-        extra: Mapping[str, object] | None = None,
-        tracker: ChangeTracker | None = None,
-        tool_service: ToolService | None = None,
+        options: BuildOptions | None = None,
     ) -> object:
         """Build a config instance from context.
 
@@ -105,27 +126,25 @@ class ConfigFactory:
             The config class to instantiate.
         ctx
             Plugin context providing attribute values.
-        mapping
-            Optional custom field mapping (config_field -> context_attr).
-        extra
-            Extra static values to pass to constructor.
-        tracker
-            Optional resolved change tracker.
-        tool_service
-            Optional resolved tool service.
+        options
+            Build options with mapping, extra values, and resolved services.
 
         Returns
         -------
         object
             Instantiated config object.
         """
+        opts = options or BuildOptions()
+
         # Get config class fields
         fields = get_config_fields(config_class)
 
         # Build kwargs for constructor
-        kwargs = self._apply_custom_mapping(fields, mapping, ctx, tracker, tool_service)
-        self._apply_default_mappings(fields, kwargs, ctx, tracker, tool_service)
-        self._apply_extra_values(fields, kwargs, extra)
+        kwargs = self._apply_custom_mapping(
+            fields, opts.mapping, ctx, opts.tracker, opts.tool_service
+        )
+        self._apply_default_mappings(fields, kwargs, ctx, opts.tracker, opts.tool_service)
+        self._apply_extra_values(fields, kwargs, opts.extra)
 
         log.debug(
             "ConfigFactory building %s with fields: %s",
@@ -322,6 +341,7 @@ def infer_config_mapping(config_class: type) -> ConfigMapping:
 
 __all__ = [
     "DEFAULT_CONTEXT_MAPPINGS",
+    "BuildOptions",
     "ConfigFactory",
     "ConfigMapping",
     "get_config_fields",

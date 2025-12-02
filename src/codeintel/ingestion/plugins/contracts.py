@@ -2,12 +2,15 @@
 
 This module provides a contract system for validating plugin outputs,
 ensuring data quality and consistency across the ingestion pipeline.
+
+NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
+# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
@@ -16,6 +19,40 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+# Type alias for constraint checker functions
+ConstraintCheckerFn = Callable[
+    ["ConstraintCheckerContext"],
+    "ContractViolation | None",
+]
+
+
+@dataclass(frozen=True)
+class ConstraintCheckerContext:
+    """Context for constraint checking operations.
+
+    Encapsulates all data needed by constraint checker functions.
+
+    Attributes
+    ----------
+    contract
+        The contract being validated.
+    constraint
+        The column constraint to check.
+    table
+        Table name (schema.table format).
+    column
+        Column name.
+    gateway
+        Storage gateway for database queries.
+    """
+
+    contract: IngestContractSpec
+    constraint: ColumnConstraint
+    table: str
+    column: str
+    gateway: StorageGateway
 
 
 @dataclass(frozen=True)
@@ -215,6 +252,174 @@ class ContractValidationResult:
         )
 
 
+# Constraint checker functions using strategy pattern
+
+
+def _check_not_null(ctx: ConstraintCheckerContext) -> ContractViolation | None:
+    """Check not_null constraint.
+
+    Returns
+    -------
+    ContractViolation | None
+        Violation if constraint fails, None otherwise.
+    """
+    from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count_nulls
+
+    null_count = safe_count_nulls(ctx.gateway, ctx.table, ctx.column)
+    if null_count > 0:
+        return ContractViolation(
+            contract=ctx.contract,
+            message=f"Column {ctx.table}.{ctx.column} has {null_count} NULL values",
+            severity=ctx.contract.severity,
+            details={"null_count": null_count},
+        )
+    return None
+
+
+def _check_min_value(ctx: ConstraintCheckerContext) -> ContractViolation | None:
+    """Check min_value constraint.
+
+    Returns
+    -------
+    ContractViolation | None
+        Violation if constraint fails, None otherwise.
+    """
+    if ctx.constraint.value is None:
+        return None
+
+    from codeintel.ingestion.infrastructure_utilities.db_queries import safe_min_value
+
+    min_val = safe_min_value(ctx.gateway, ctx.table, ctx.column)
+    expected = (
+        float(ctx.constraint.value) if isinstance(ctx.constraint.value, (int, float, str)) else 0.0
+    )
+    if min_val is not None and min_val < expected:
+        return ContractViolation(
+            contract=ctx.contract,
+            message=(
+                f"Column {ctx.table}.{ctx.column} has min value {min_val}, "
+                f"expected >= {ctx.constraint.value}"
+            ),
+            severity=ctx.contract.severity,
+        )
+    return None
+
+
+def _check_max_value(ctx: ConstraintCheckerContext) -> ContractViolation | None:
+    """Check max_value constraint.
+
+    Returns
+    -------
+    ContractViolation | None
+        Violation if constraint fails, None otherwise.
+    """
+    if ctx.constraint.value is None:
+        return None
+
+    from codeintel.ingestion.infrastructure_utilities.db_queries import safe_max_value
+
+    max_val = safe_max_value(ctx.gateway, ctx.table, ctx.column)
+    expected = (
+        float(ctx.constraint.value) if isinstance(ctx.constraint.value, (int, float, str)) else 0.0
+    )
+    if max_val is not None and max_val > expected:
+        return ContractViolation(
+            contract=ctx.contract,
+            message=(
+                f"Column {ctx.table}.{ctx.column} has max value {max_val}, "
+                f"expected <= {ctx.constraint.value}"
+            ),
+            severity=ctx.contract.severity,
+        )
+    return None
+
+
+def _check_positive(ctx: ConstraintCheckerContext) -> ContractViolation | None:
+    """Check positive constraint.
+
+    Returns
+    -------
+    ContractViolation | None
+        Violation if constraint fails, None otherwise.
+    """
+    from codeintel.ingestion.infrastructure_utilities.db_queries import (
+        safe_count_non_positive,
+    )
+
+    non_positive = safe_count_non_positive(ctx.gateway, ctx.table, ctx.column)
+    if non_positive > 0:
+        return ContractViolation(
+            contract=ctx.contract,
+            message=f"Column {ctx.table}.{ctx.column} has {non_positive} non-positive values",
+            severity=ctx.contract.severity,
+        )
+    return None
+
+
+def _check_unique(ctx: ConstraintCheckerContext) -> ContractViolation | None:
+    """Check unique constraint.
+
+    Returns
+    -------
+    ContractViolation | None
+        Violation if constraint fails, None otherwise.
+    """
+    from codeintel.ingestion.infrastructure_utilities.db_queries import (
+        safe_count_duplicates,
+    )
+
+    dup_count = safe_count_duplicates(ctx.gateway, ctx.table, ctx.column)
+    if dup_count > 0:
+        return ContractViolation(
+            contract=ctx.contract,
+            message=f"Column {ctx.table}.{ctx.column} has {dup_count} duplicate values",
+            severity=ctx.contract.severity,
+        )
+    return None
+
+
+def _check_min_fraction_not_null(ctx: ConstraintCheckerContext) -> ContractViolation | None:
+    """Check min_fraction_not_null constraint.
+
+    Returns
+    -------
+    ContractViolation | None
+        Violation if constraint fails, None otherwise.
+    """
+    if ctx.constraint.value is None:
+        return None
+
+    from codeintel.ingestion.infrastructure_utilities.db_queries import (
+        safe_not_null_fraction,
+    )
+
+    fraction = safe_not_null_fraction(ctx.gateway, ctx.table, ctx.column)
+    expected = (
+        float(ctx.constraint.value) if isinstance(ctx.constraint.value, (int, float, str)) else 0.0
+    )
+    if fraction < expected:
+        return ContractViolation(
+            contract=ctx.contract,
+            message=(
+                f"Column {ctx.table}.{ctx.column} has {fraction:.2%} non-null, "
+                f"expected >= {expected:.2%}"
+            ),
+            severity=ctx.contract.severity,
+        )
+    return None
+
+
+# Registry mapping constraint types to checker functions
+CONSTRAINT_CHECKERS: dict[str, ConstraintCheckerFn] = {
+    "not_null": _check_not_null,
+    "min_value": _check_min_value,
+    "max_value": _check_max_value,
+    "positive": _check_positive,
+    "unique": _check_unique,
+    "min_fraction_not_null": _check_min_fraction_not_null,
+}
+
+
 class IngestContractValidator:
     """Validator for ingestion plugin output contracts.
 
@@ -351,13 +556,12 @@ class IngestContractValidator:
             constraint_violations = self._validate_column_constraint(
                 contract,
                 constraint,
-                snapshot,
             )
             violations.extend(constraint_violations)
 
         # Check foreign key constraints
         for fk in contract.foreign_keys:
-            fk_violations = self._validate_foreign_key(contract, fk, snapshot)
+            fk_violations = self._validate_foreign_key(contract, fk)
             violations.extend(fk_violations)
 
         return violations
@@ -370,18 +574,11 @@ class IngestContractValidator:
         bool
             True if table exists.
         """
-        schema, table = table_key.split(".", maxsplit=1)
-        try:
-            result = self._gateway.con.execute(
-                """
-                SELECT 1 FROM information_schema.tables
-                WHERE table_schema = ? AND table_name = ?
-                """,
-                [schema, table],
-            ).fetchone()
-        except Exception:  # noqa: BLE001
-            return False
-        return result is not None
+        from codeintel.ingestion.infrastructure_utilities.db_queries import (
+            safe_table_exists,
+        )
+
+        return safe_table_exists(self._gateway, table_key)
 
     def _get_row_count(self, table_key: str, snapshot: SnapshotRef) -> int:
         """Get row count for a table scoped to snapshot.
@@ -391,47 +588,19 @@ class IngestContractValidator:
         int
             Row count.
         """
+        from codeintel.ingestion.infrastructure_utilities.db_queries import (
+            safe_count,
+            safe_count_with_scope,
+        )
+
         # Try with repo/commit scope first
-        count = self._try_scoped_count(table_key, snapshot)
+        count = safe_count_with_scope(self._gateway, table_key, snapshot)
         if count is not None:
             return count
 
         # Fall back to unscoped count
-        count = self._try_unscoped_count(table_key)
+        count = safe_count(self._gateway, table_key)
         return count if count is not None else 0
-
-    def _try_scoped_count(self, table_key: str, snapshot: SnapshotRef) -> int | None:
-        """Try counting rows scoped to snapshot.
-
-        Returns
-        -------
-        int | None
-            Row count or None if failed.
-        """
-        try:
-            result = self._gateway.con.execute(
-                f"SELECT COUNT(*) FROM {table_key} WHERE repo = ? AND commit = ?",  # noqa: S608
-                [snapshot.repo, snapshot.commit],
-            ).fetchone()
-            return int(result[0]) if result else None
-        except Exception:  # noqa: BLE001
-            return None
-
-    def _try_unscoped_count(self, table_key: str) -> int | None:
-        """Try counting rows without scope.
-
-        Returns
-        -------
-        int | None
-            Row count or None if failed.
-        """
-        try:
-            result = self._gateway.con.execute(
-                f"SELECT COUNT(*) FROM {table_key}",  # noqa: S608
-            ).fetchone()
-            return int(result[0]) if result else None
-        except Exception:  # noqa: BLE001
-            return None
 
     def _get_columns(self, table_key: str) -> set[str]:
         """Get column names for a table.
@@ -441,24 +610,16 @@ class IngestContractValidator:
         set[str]
             Column names.
         """
-        schema, table = table_key.split(".", maxsplit=1)
-        try:
-            rows = self._gateway.con.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = ? AND table_name = ?
-                """,
-                [schema, table],
-            ).fetchall()
-            return {str(row[0]) for row in rows}
-        except Exception:  # noqa: BLE001
-            return set()
+        from codeintel.ingestion.infrastructure_utilities.db_queries import (
+            safe_get_columns,
+        )
+
+        return safe_get_columns(self._gateway, table_key)
 
     def _validate_column_constraint(
         self,
         contract: IngestContractSpec,
         constraint: ColumnConstraint,
-        snapshot: SnapshotRef,  # noqa: ARG002
     ) -> list[ContractViolation]:
         """Validate a column constraint.
 
@@ -468,8 +629,6 @@ class IngestContractValidator:
             Contract being validated.
         constraint
             Column constraint to check.
-        snapshot
-            Snapshot reference (reserved for future scoping).
 
         Returns
         -------
@@ -480,18 +639,13 @@ class IngestContractValidator:
         col = constraint.column
         table = contract.table
 
-        try:
-            violation = self._check_single_constraint(contract, constraint, table, col)
-            if violation is not None:
-                violations.append(violation)
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "Failed to validate constraint %s on %s.%s: %s", constraint, table, col, exc
-            )
+        violation = self._check_single_constraint(contract, constraint, table, col)
+        if violation is not None:
+            violations.append(violation)
 
         return violations
 
-    def _check_single_constraint(  # noqa: C901, PLR0911
+    def _check_single_constraint(
         self,
         contract: IngestContractSpec,
         constraint: ColumnConstraint,
@@ -499,6 +653,9 @@ class IngestContractValidator:
         col: str,
     ) -> ContractViolation | None:
         """Check a single constraint and return violation if any.
+
+        Uses the CONSTRAINT_CHECKERS registry to dispatch to the appropriate
+        checker function based on constraint type.
 
         Parameters
         ----------
@@ -516,77 +673,28 @@ class IngestContractValidator:
         ContractViolation | None
             Violation if constraint fails, None otherwise.
         """
-        if constraint.constraint_type == "not_null":
-            null_count = self._count_nulls(table, col)
-            if null_count > 0:
-                return ContractViolation(
-                    contract=contract,
-                    message=f"Column {table}.{col} has {null_count} NULL values",
-                    severity=contract.severity,
-                    details={"null_count": null_count},
-                )
-
-        elif constraint.constraint_type == "min_value" and constraint.value is not None:
-            min_val = self._get_min_value(table, col)
-            expected = (
-                float(constraint.value) if isinstance(constraint.value, (int, float, str)) else 0.0
+        checker = CONSTRAINT_CHECKERS.get(constraint.constraint_type)
+        if checker is None:
+            # Unsupported constraint type (e.g., "in_set", "regex")
+            log.debug(
+                "No checker registered for constraint type: %s",
+                constraint.constraint_type,
             )
-            if min_val is not None and min_val < expected:
-                return ContractViolation(
-                    contract=contract,
-                    message=f"Column {table}.{col} has min value {min_val}, expected >= {constraint.value}",
-                    severity=contract.severity,
-                )
+            return None
 
-        elif constraint.constraint_type == "max_value" and constraint.value is not None:
-            max_val = self._get_max_value(table, col)
-            expected = (
-                float(constraint.value) if isinstance(constraint.value, (int, float, str)) else 0.0
-            )
-            if max_val is not None and max_val > expected:
-                return ContractViolation(
-                    contract=contract,
-                    message=f"Column {table}.{col} has max value {max_val}, expected <= {constraint.value}",
-                    severity=contract.severity,
-                )
-
-        elif constraint.constraint_type == "positive":
-            non_positive = self._count_non_positive(table, col)
-            if non_positive > 0:
-                return ContractViolation(
-                    contract=contract,
-                    message=f"Column {table}.{col} has {non_positive} non-positive values",
-                    severity=contract.severity,
-                )
-
-        elif constraint.constraint_type == "unique":
-            dup_count = self._count_duplicates(table, col)
-            if dup_count > 0:
-                return ContractViolation(
-                    contract=contract,
-                    message=f"Column {table}.{col} has {dup_count} duplicate values",
-                    severity=contract.severity,
-                )
-
-        elif constraint.constraint_type == "min_fraction_not_null" and constraint.value is not None:
-            fraction = self._not_null_fraction(table, col)
-            expected = (
-                float(constraint.value) if isinstance(constraint.value, (int, float, str)) else 0.0
-            )
-            if fraction < expected:
-                return ContractViolation(
-                    contract=contract,
-                    message=f"Column {table}.{col} has {fraction:.2%} non-null, expected >= {expected:.2%}",
-                    severity=contract.severity,
-                )
-
-        return None
+        ctx = ConstraintCheckerContext(
+            contract=contract,
+            constraint=constraint,
+            table=table,
+            column=col,
+            gateway=self._gateway,
+        )
+        return checker(ctx)
 
     def _validate_foreign_key(
         self,
         contract: IngestContractSpec,
         fk: ForeignKeyConstraint,
-        snapshot: SnapshotRef,  # noqa: ARG002
     ) -> list[ContractViolation]:
         """Validate a foreign key constraint.
 
@@ -596,148 +704,43 @@ class IngestContractValidator:
             Contract being validated.
         fk
             Foreign key constraint to check.
-        snapshot
-            Snapshot reference (reserved for future scoping).
 
         Returns
         -------
         list[ContractViolation]
             Violations found.
         """
+        from codeintel.ingestion.infrastructure_utilities.db_queries import (
+            ForeignKeyRef,
+            safe_count_orphan_refs,
+        )
+
         violations: list[ContractViolation] = []
 
-        try:
-            # Count orphaned references
-            null_clause = f"AND t.{fk.column} IS NOT NULL" if not fk.allow_null else ""
-            query = f"""
-                SELECT COUNT(*) FROM {contract.table} t
-                LEFT JOIN {fk.reference_table} r
-                    ON t.{fk.column} = r.{fk.reference_column}
-                WHERE r.{fk.reference_column} IS NULL {null_clause}
-            """  # noqa: S608
-            result = self._gateway.con.execute(query).fetchone()
-            orphan_count = int(result[0]) if result else 0
+        fk_ref = ForeignKeyRef(
+            source_table=contract.table,
+            source_column=fk.column,
+            ref_table=fk.reference_table,
+            ref_column=fk.reference_column,
+            allow_null=fk.allow_null,
+        )
+        orphan_count = safe_count_orphan_refs(self._gateway, fk_ref)
 
-            if orphan_count > 0:
-                violations.append(
-                    ContractViolation(
-                        contract=contract,
-                        message=(
-                            f"Foreign key {contract.table}.{fk.column} -> "
-                            f"{fk.reference_table}.{fk.reference_column} has "
-                            f"{orphan_count} orphaned references"
-                        ),
-                        severity=contract.severity,
-                        details={"orphan_count": orphan_count},
-                    )
+        if orphan_count > 0:
+            violations.append(
+                ContractViolation(
+                    contract=contract,
+                    message=(
+                        f"Foreign key {contract.table}.{fk.column} -> "
+                        f"{fk.reference_table}.{fk.reference_column} has "
+                        f"{orphan_count} orphaned references"
+                    ),
+                    severity=contract.severity,
+                    details={"orphan_count": orphan_count},
                 )
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Failed to validate FK %s: %s", fk, exc)
+            )
 
         return violations
-
-    def _count_nulls(self, table: str, column: str) -> int:
-        """Count NULL values in a column.
-
-        Returns
-        -------
-        int
-            Count of NULL values.
-        """
-        try:
-            result = self._gateway.con.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE {column} IS NULL",  # noqa: S608
-            ).fetchone()
-            return int(result[0]) if result else 0
-        except Exception:  # noqa: BLE001
-            return 0
-
-    def _get_min_value(self, table: str, column: str) -> float | None:
-        """Get minimum value in a column.
-
-        Returns
-        -------
-        float | None
-            Minimum value or None if not available.
-        """
-        try:
-            result = self._gateway.con.execute(
-                f"SELECT MIN({column}) FROM {table}",  # noqa: S608
-            ).fetchone()
-            return float(result[0]) if result and result[0] is not None else None
-        except Exception:  # noqa: BLE001
-            return None
-
-    def _get_max_value(self, table: str, column: str) -> float | None:
-        """Get maximum value in a column.
-
-        Returns
-        -------
-        float | None
-            Maximum value or None if not available.
-        """
-        try:
-            result = self._gateway.con.execute(
-                f"SELECT MAX({column}) FROM {table}",  # noqa: S608
-            ).fetchone()
-            return float(result[0]) if result and result[0] is not None else None
-        except Exception:  # noqa: BLE001
-            return None
-
-    def _count_non_positive(self, table: str, column: str) -> int:
-        """Count non-positive values in a column.
-
-        Returns
-        -------
-        int
-            Count of non-positive values.
-        """
-        try:
-            result = self._gateway.con.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE {column} <= 0",  # noqa: S608
-            ).fetchone()
-            return int(result[0]) if result else 0
-        except Exception:  # noqa: BLE001
-            return 0
-
-    def _count_duplicates(self, table: str, column: str) -> int:
-        """Count duplicate values in a column.
-
-        Returns
-        -------
-        int
-            Count of duplicate values.
-        """
-        try:
-            result = self._gateway.con.execute(
-                f"""
-                SELECT COUNT(*) - COUNT(DISTINCT {column}) FROM {table}
-                WHERE {column} IS NOT NULL
-                """,  # noqa: S608
-            ).fetchone()
-            return int(result[0]) if result else 0
-        except Exception:  # noqa: BLE001
-            return 0
-
-    def _not_null_fraction(self, table: str, column: str) -> float:
-        """Get fraction of non-null values in a column.
-
-        Returns
-        -------
-        float
-            Fraction of non-null values (0.0 to 1.0).
-        """
-        try:
-            result = self._gateway.con.execute(
-                f"""
-                SELECT
-                    CAST(COUNT({column}) AS DOUBLE) / NULLIF(COUNT(*), 0)
-                FROM {table}
-                """,  # noqa: S608
-            ).fetchone()
-            return float(result[0]) if result and result[0] is not None else 0.0
-        except Exception:  # noqa: BLE001
-            return 0.0
 
 
 # Common contract builders for convenience
@@ -815,15 +818,31 @@ def not_null_contract(
     )
 
 
-def foreign_key_contract(  # noqa: PLR0913
+@dataclass(frozen=True)
+class ForeignKeyContractSpec:
+    """Specification for creating a foreign key contract.
+
+    Attributes
+    ----------
+    allow_null
+        Whether NULL values are allowed.
+    plugin_name
+        Plugin producing this output.
+    severity
+        Violation severity.
+    """
+
+    allow_null: bool = True
+    plugin_name: str = ""
+    severity: Literal["error", "warning"] = "error"
+
+
+def foreign_key_contract(
     table: str,
     column: str,
     reference_table: str,
     reference_column: str,
-    *,
-    allow_null: bool = True,
-    plugin_name: str = "",
-    severity: Literal["error", "warning"] = "error",
+    spec: ForeignKeyContractSpec | None = None,
 ) -> IngestContractSpec:
     """Create a foreign key contract.
 
@@ -837,38 +856,38 @@ def foreign_key_contract(  # noqa: PLR0913
         Target table key.
     reference_column
         Target column.
-    allow_null
-        Whether NULL values are allowed.
-    plugin_name
-        Plugin producing this output.
-    severity
-        Violation severity.
+    spec
+        Optional specification with additional options.
 
     Returns
     -------
     IngestContractSpec
         Foreign key contract.
     """
+    s = spec or ForeignKeyContractSpec()
     return IngestContractSpec(
         table=table,
-        plugin_name=plugin_name,
+        plugin_name=s.plugin_name,
         foreign_keys=(
             ForeignKeyConstraint(
                 column=column,
                 reference_table=reference_table,
                 reference_column=reference_column,
-                allow_null=allow_null,
+                allow_null=s.allow_null,
             ),
         ),
-        severity=severity,
+        severity=s.severity,
     )
 
 
 __all__ = [
+    "CONSTRAINT_CHECKERS",
     "ColumnConstraint",
+    "ConstraintCheckerContext",
     "ContractValidationResult",
     "ContractViolation",
     "ForeignKeyConstraint",
+    "ForeignKeyContractSpec",
     "IngestContractSpec",
     "IngestContractValidator",
     "foreign_key_contract",

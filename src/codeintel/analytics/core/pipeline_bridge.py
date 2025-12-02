@@ -159,8 +159,8 @@ def _build_execution_context(
 ) -> PluginExecutionContextBuilder:
     """Build the execution context from plan and run context.
 
-    Register both legacy context objects and new resource providers for
-    backward compatibility during migration.
+    Register resource providers for the new architecture. All plugins have
+    been migrated to use ctx.require(ProviderType) pattern.
 
     Returns
     -------
@@ -177,14 +177,10 @@ def _build_execution_context(
     if run_context.graph_runtime is not None:
         graph_provider = GraphProvider.from_runtime(run_context.graph_runtime)
         builder = builder.with_resource_provider(GraphProvider, graph_provider)
-        # Also keep legacy for backward compat
-        builder = builder.with_graph_runtime(run_context.graph_runtime)
 
     if run_context.catalog_provider is not None:
         catalog_provider = CatalogProvider.from_catalog(run_context.catalog_provider)
         builder = builder.with_resource_provider(CatalogProvider, catalog_provider)
-        # Also keep legacy for backward compat
-        builder = builder.with_catalog(run_context.catalog_provider)
 
     if run_context.analytics_context is not None:
         # Create provider from existing context
@@ -198,11 +194,8 @@ def _build_execution_context(
             context_config,
         )
         # Pre-load with existing context
-        context_provider._value = run_context.analytics_context
-        context_provider._is_loaded = True
+        context_provider.set_preloaded(run_context.analytics_context)
         builder = builder.with_resource_provider(AnalyticsContextProvider, context_provider)
-        # Also keep legacy for backward compat
-        builder = builder.with_analytics_context(run_context.analytics_context)
 
     for config in run_context.cfgs.values():
         if config is not None:

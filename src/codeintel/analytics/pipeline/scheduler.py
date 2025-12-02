@@ -333,9 +333,7 @@ class PipelineScheduler:
 
                 # Record lineage
                 if result.success:
-                    self._record_lineage(
-                        ctx, lineage_store, step, result, outputs
-                    )
+                    self._record_lineage(ctx, lineage_store, step, result, outputs)
 
         report.completed_at = datetime.now(tz=UTC)
         log.info(
@@ -369,11 +367,71 @@ class PipelineScheduler:
             result.add(name)
 
             if name in self._specs:
-                for dep in self._specs[name].inputs:
-                    if dep not in result and dep in self._specs:
-                        queue.append(dep)
+                queue.extend(
+                    dep
+                    for dep in self._specs[name].inputs
+                    if dep not in result and dep in self._specs
+                )
 
         return result
+
+    def _build_adjacency(
+        self,
+        datasets: set[str],
+    ) -> tuple[dict[str, int], dict[str, list[str]]]:
+        """Build in-degree and dependents maps for datasets.
+
+        Returns
+        -------
+        tuple[dict[str, int], dict[str, list[str]]]
+            Tuple of (in_degree, dependents) mappings.
+        """
+        in_degree: dict[str, int] = defaultdict(int)
+        dependents: dict[str, list[str]] = defaultdict(list)
+
+        for name in datasets:
+            if name not in self._specs:
+                continue
+            for dep in self._specs[name].inputs:
+                if dep in datasets:
+                    in_degree[name] += 1
+                    dependents[dep].append(name)
+
+        return in_degree, dependents
+
+    @staticmethod
+    def _process_levels(
+        datasets: set[str],
+        in_degree: dict[str, int],
+        dependents: dict[str, list[str]],
+    ) -> dict[int, set[str]]:
+        """Process datasets into topological levels.
+
+        Returns
+        -------
+        dict[int, set[str]]
+            Mapping of level to dataset names at that level.
+        """
+        # Initialize level 0 with no dependencies
+        levels: dict[int, set[str]] = {0: {name for name in datasets if in_degree[name] == 0}}
+
+        # Process each level
+        current_level = 0
+        while levels.get(current_level):
+            next_level = current_level + 1
+            levels[next_level] = set()
+
+            for name in levels[current_level]:
+                for dep in dependents[name]:
+                    in_degree[dep] -= 1
+                    if in_degree[dep] == 0:
+                        levels[next_level].add(dep)
+
+            current_level = next_level
+
+        # Remove empty final level
+        levels.pop(current_level, None)
+        return levels
 
     def _compute_levels(self, datasets: set[str]) -> dict[int, set[str]]:
         """Compute topological levels for datasets.
@@ -388,50 +446,11 @@ class PipelineScheduler:
         dict[int, set[str]]
             Mapping of level to dataset names at that level.
         """
-        # Build adjacency for datasets in scope
-        in_degree: dict[str, int] = defaultdict(int)
-        dependents: dict[str, list[str]] = defaultdict(list)
+        in_degree, dependents = self._build_adjacency(datasets)
+        return self._process_levels(datasets, in_degree, dependents)
 
-        for name in datasets:
-            if name not in self._specs:
-                continue
-            for dep in self._specs[name].inputs:
-                if dep in datasets:
-                    in_degree[name] += 1
-                    dependents[dep].append(name)
-
-        # Initialize level 0 with no dependencies
-        levels: dict[int, set[str]] = {0: set()}
-        for name in datasets:
-            if in_degree[name] == 0:
-                levels[0].add(name)
-
-        # Process each level
-        current_level = 0
-        processed: set[str] = set()
-
-        while levels.get(current_level):
-            next_level = current_level + 1
-            if next_level not in levels:
-                levels[next_level] = set()
-
-            for name in levels[current_level]:
-                processed.add(name)
-                for dep in dependents[name]:
-                    in_degree[dep] -= 1
-                    if in_degree[dep] == 0:
-                        levels[next_level].add(dep)
-
-            current_level = next_level
-
-        # Remove empty final level
-        if not levels.get(current_level):
-            levels.pop(current_level, None)
-
-        return levels
-
+    @staticmethod
     def _execute_step(
-        self,
         step: ExecutionStep,
         ctx: PipelineContext,
         outputs: dict[str, Any],
@@ -496,8 +515,8 @@ class PipelineScheduler:
                 error=str(e),
             )
 
+    @staticmethod
     def _compute_input_hashes(
-        self,
         gateway: StorageGateway,
         spec: DatasetSpec[Any],
         repo: str,
@@ -532,7 +551,7 @@ class PipelineScheduler:
         store: LineageStore,
         step: ExecutionStep,
         result: DatasetResult[Any],
-        outputs: dict[str, Any],
+        _outputs: dict[str, Any],
     ) -> None:
         """Record lineage for a completed computation.
 
@@ -546,12 +565,10 @@ class PipelineScheduler:
             Completed step.
         result
             Computation result.
-        outputs
-            Cached outputs.
+        _outputs
+            Cached outputs (reserved for future use).
         """
-        input_hashes = self._compute_input_hashes(
-            ctx.gateway, step.spec, ctx.repo, ctx.commit
-        )
+        input_hashes = self._compute_input_hashes(ctx.gateway, step.spec, ctx.repo, ctx.commit)
 
         output_hash = compute_table_hash(
             ctx.gateway,
@@ -567,7 +584,7 @@ class PipelineScheduler:
             input_hashes=tuple(input_hashes.values()),
             output_hash=output_hash,
             row_count=result.row_count,
-            computed_at=datetime.now(),
+            computed_at=datetime.now(tz=UTC),
             duration_ms=result.duration_ms,
             version=step.spec.version,
         )

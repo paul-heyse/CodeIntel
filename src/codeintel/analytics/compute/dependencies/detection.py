@@ -22,7 +22,6 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_utils import resolve_call_target, safe_unparse, snippet_from_lines
 from codeintel.analytics.compute.dependencies.classification import (
@@ -30,11 +29,6 @@ from codeintel.analytics.compute.dependencies.classification import (
     classify_modes,
     risk_score,
 )
-
-if TYPE_CHECKING:
-    from codeintel.analytics.compute.dependencies.classification import (
-        DependencyModePattern,
-    )
 
 
 @dataclass(frozen=True)
@@ -100,12 +94,14 @@ class DependencyCallVisitor(ast.NodeVisitor):
     ... requests.get("http://example.com")
     ... '''
     >>> tree = ast.parse(source)
-    >>> patterns = {"requests": LibraryPattern(
-    ...     library="requests",
-    ...     service_name="HTTP",
-    ...     category="http",
-    ...     matchers=[],
-    ... )}
+    >>> patterns = {
+    ...     "requests": LibraryPattern(
+    ...         library="requests",
+    ...         service_name="HTTP",
+    ...         category="http",
+    ...         matchers=[],
+    ...     )
+    ... }
     >>> visitor = DependencyCallVisitor(
     ...     alias_map={"requests": "requests"},
     ...     patterns=patterns,
@@ -222,12 +218,11 @@ def build_alias_map(tree: ast.AST) -> dict[str, str]:
             for alias in node.names:
                 key = alias.asname or alias.name
                 alias_map[key] = alias.name.split(".")[0]
-        elif isinstance(node, ast.ImportFrom):
-            if node.module is not None:
-                base = node.module.split(".")[0]
-                for alias in node.names:
-                    key = alias.asname or alias.name
-                    alias_map[key] = base
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            base = node.module.split(".")[0]
+            for alias in node.names:
+                key = alias.asname or alias.name
+                alias_map[key] = base
     return alias_map
 
 
@@ -281,12 +276,15 @@ def group_calls_by_library(
     Examples
     --------
     >>> calls = [
-    ...     DependencyCall(library="requests", target="get", modes=["read"],
-    ...                    severity=None, criticality=None),
-    ...     DependencyCall(library="requests", target="post", modes=["write"],
-    ...                    severity=None, criticality=None),
-    ...     DependencyCall(library="pandas", target="read_csv", modes=["read"],
-    ...                    severity=None, criticality=None),
+    ...     DependencyCall(
+    ...         library="requests", target="get", modes=["read"], severity=None, criticality=None
+    ...     ),
+    ...     DependencyCall(
+    ...         library="requests", target="post", modes=["write"], severity=None, criticality=None
+    ...     ),
+    ...     DependencyCall(
+    ...         library="pandas", target="read_csv", modes=["read"], severity=None, criticality=None
+    ...     ),
     ... ]
     >>> grouped = group_calls_by_library(calls)
     >>> len(grouped["requests"])
@@ -307,4 +305,3 @@ __all__ = [
     "build_alias_maps",
     "group_calls_by_library",
 ]
-

@@ -7,6 +7,11 @@ new unified plugin protocol.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.graphs import GraphProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -115,10 +120,18 @@ class FunctionEffectsPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get optional dependencies
-        analytics_context = ctx.analytics_context if ctx.has_analytics_context() else None
-        catalog_provider = analytics_context.catalog if analytics_context else None
-        graph_runtime = ctx.graph_runtime if ctx.has_graph_runtime() else None
+        # Get optional dependencies via resource providers
+        analytics_context = None
+        catalog_provider = None
+        if ctx.has_resource_by_name("AnalyticsContextProvider"):
+            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
+            analytics_context = provider.get()
+            catalog_provider = analytics_context.catalog if analytics_context else None
+
+        graph_runtime = None
+        if ctx.has_resource_by_name("GraphProvider"):
+            graph_prov = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
+            graph_runtime = graph_prov.runtime
 
         try:
             compute_function_effects(

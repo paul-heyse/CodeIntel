@@ -58,7 +58,23 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> object:
-    """Lazily load attributes to avoid circular imports."""
+    """Lazily load attributes to avoid circular imports.
+
+    Parameters
+    ----------
+    name
+        The attribute name to load.
+
+    Returns
+    -------
+    object
+        The requested attribute.
+
+    Raises
+    ------
+    AttributeError
+        If the attribute does not exist.
+    """
     module_path = _LAZY_ATTRS.get(name)
     if module_path is None:
         message = f"module {__name__!r} has no attribute {name!r}"

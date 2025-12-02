@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import importlib.metadata
 import logging
+import threading
 from collections.abc import Sequence
+from dataclasses import dataclass
 from uuid import uuid4
 
 from codeintel.ingestion.plugins.protocol import (
@@ -17,9 +19,41 @@ from codeintel.ingestion.plugins.protocol import (
     IngestPluginPlan,
     IngestPluginProtocol,
     IngestPluginSkip,
+    is_ingest_plugin,
 )
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PlanOptions:
+    """Options for plugin plan creation.
+
+    Encapsulates all parameters for the registry's plan() method,
+    reducing argument count and improving API clarity.
+
+    Attributes
+    ----------
+    plugin_names
+        Explicit plugin names to include.
+    enabled
+        Override list of enabled plugins.
+    disabled
+        Plugins to exclude from the plan.
+    defaults
+        Default plugins if no explicit list provided.
+    check_tools
+        Whether to check tool availability.
+    available_tools
+        List of available tool plugins.
+    """
+
+    plugin_names: Sequence[str] | None = None
+    enabled: Sequence[str] | None = None
+    disabled: Sequence[str] | None = None
+    defaults: Sequence[str] | None = None
+    check_tools: bool = False
+    available_tools: Sequence[str] | None = None
 
 
 class IngestPluginRegistry:
@@ -212,32 +246,14 @@ class IngestPluginRegistry:
         names = self._by_table.get(table_key, set())
         return tuple(self._plugins[name] for name in names if name in self._plugins)
 
-    def plan(  # noqa: PLR0913
-        self,
-        plugin_names: Sequence[str] | None = None,
-        *,
-        enabled: Sequence[str] | None = None,
-        disabled: Sequence[str] | None = None,
-        defaults: Sequence[str] | None = None,
-        check_tools: bool = False,
-        available_tools: Sequence[str] | None = None,
-    ) -> IngestPluginPlan:
+    def plan(self, options: PlanOptions | None = None) -> IngestPluginPlan:
         """Build an execution plan with dependency resolution.
 
         Parameters
         ----------
-        plugin_names
-            Explicit plugin names to include.
-        enabled
-            Override list of enabled plugins.
-        disabled
-            Plugins to exclude from the plan.
-        defaults
-            Default plugins if no explicit list provided.
-        check_tools
-            Whether to check tool availability.
-        available_tools
-            List of available tool plugins.
+        options
+            Plan options encapsulating plugin selection criteria.
+            If None, uses default options.
 
         Returns
         -------
@@ -245,16 +261,10 @@ class IngestPluginRegistry:
             Ordered execution plan.
         """
         self._ensure_entrypoints_loaded()
+        opts = options or PlanOptions()
 
         # Resolve which plugins to include
-        selected, skipped = self._resolve_selection(
-            plugin_names=plugin_names,
-            enabled=enabled,
-            disabled=disabled,
-            defaults=defaults or DEFAULT_INGEST_PLUGINS,
-            check_tools=check_tools,
-            available_tools=available_tools or (),
-        )
+        selected, skipped = self._resolve_selection(opts)
 
         # Build dependency graph
         dependencies = self._resolve_dependencies(selected)
@@ -288,11 +298,6 @@ class IngestPluginRegistry:
         -------
         tuple[IngestPluginProtocol, ...]
             Newly loaded plugins.
-
-        Raises
-        ------
-        TypeError
-            If an entry point does not return a valid plugin.
         """
         if self._entrypoints_loaded and not force:
             return ()
@@ -306,7 +311,6 @@ class IngestPluginRegistry:
             try:
                 loaded = entry_point.load()
                 # Support both direct plugin instances and factory functions
-                plugin: IngestPluginProtocol
                 if isinstance(loaded, type) or (
                     callable(loaded) and not hasattr(loaded, "metadata")
                 ):
@@ -314,16 +318,18 @@ class IngestPluginRegistry:
                 else:
                     candidate = loaded
 
-                if not hasattr(candidate, "metadata") or not hasattr(candidate, "execute"):
-                    message = f"Entry point {entry_point.name} did not return IngestPluginProtocol"
-                    raise TypeError(message)  # noqa: TRY301
+                # Use TypeGuard for proper type narrowing
+                if not is_ingest_plugin(candidate):
+                    log.warning(
+                        "Entry point %s did not return IngestPluginProtocol",
+                        entry_point.name,
+                    )
+                    continue
 
-                # Cast is safe after validation
-                plugin = candidate  # type: ignore[assignment]
-
-                self.register(plugin)
-                discovered.append(plugin)
-                log.info("Discovered ingest plugin from entrypoint: %s", plugin.metadata.name)
+                # TypeGuard narrows candidate to IngestPluginProtocol
+                self.register(candidate)
+                discovered.append(candidate)
+                log.info("Discovered ingest plugin from entrypoint: %s", candidate.metadata.name)
             except (ImportError, AttributeError, TypeError) as exc:
                 log.warning(
                     "Failed to load ingest plugin from entrypoint %s: %s",
@@ -339,17 +345,16 @@ class IngestPluginRegistry:
         if not self._entrypoints_loaded:
             self.load_from_entrypoints()
 
-    def _resolve_selection(  # noqa: PLR0913
+    def _resolve_selection(
         self,
-        *,
-        plugin_names: Sequence[str] | None,
-        enabled: Sequence[str] | None,
-        disabled: Sequence[str] | None,
-        defaults: Sequence[str],
-        check_tools: bool,
-        available_tools: Sequence[str],
+        options: PlanOptions,
     ) -> tuple[dict[str, IngestPluginProtocol], tuple[IngestPluginSkip, ...]]:
         """Resolve which plugins to include in the plan.
+
+        Parameters
+        ----------
+        options
+            Plan options with selection criteria.
 
         Returns
         -------
@@ -361,16 +366,18 @@ class IngestPluginRegistry:
         ValueError
             If a plugin name appears more than once.
         """
+        defaults = options.defaults or DEFAULT_INGEST_PLUGINS
+
         # Determine base selection
-        if enabled:
-            names = list(enabled)
-        elif plugin_names:
-            names = list(plugin_names)
+        if options.enabled:
+            names = list(options.enabled)
+        elif options.plugin_names:
+            names = list(options.plugin_names)
         else:
             names = list(defaults)
 
-        disabled_set = set(disabled or ())
-        available_tools_set = set(available_tools)
+        disabled_set = set(options.disabled or ())
+        available_tools_set = set(options.available_tools or ())
         selected: dict[str, IngestPluginProtocol] = {}
         skipped: list[IngestPluginSkip] = []
 
@@ -391,7 +398,7 @@ class IngestPluginRegistry:
                 continue
 
             # Check tool dependencies if requested
-            if check_tools and plugin.metadata.tool_dependencies:
+            if options.check_tools and plugin.metadata.tool_dependencies:
                 missing_tools = set(plugin.metadata.tool_dependencies) - available_tools_set
                 if missing_tools:
                     skipped.append(IngestPluginSkip(name=name, reason="missing_tool"))
@@ -464,8 +471,8 @@ class IngestPluginRegistry:
 
         return dependencies
 
-    def _build_provider_index(  # noqa: PLR6301
-        self,
+    @staticmethod
+    def _build_provider_index(
         selected: dict[str, IngestPluginProtocol],
     ) -> dict[str, set[str]]:
         """Build index of capability -> provider plugins.
@@ -481,8 +488,8 @@ class IngestPluginRegistry:
                 index.setdefault(cap, set()).add(name)
         return index
 
-    def _topological_sort(  # noqa: PLR6301
-        self,
+    @staticmethod
+    def _topological_sort(
         selected: dict[str, IngestPluginProtocol],
         dependencies: dict[str, set[str]],
     ) -> list[IngestPluginProtocol]:
@@ -557,8 +564,44 @@ class IngestPluginRegistry:
         }
 
 
-# Global registry instance
-_INGEST_REGISTRY: IngestPluginRegistry | None = None
+# Thread-safe singleton holder for the global registry
+
+
+class _RegistrySingleton:
+    """Thread-safe singleton holder for the ingest plugin registry.
+
+    Uses double-checked locking to ensure thread-safe initialization
+    while minimizing lock contention after initialization.
+    """
+
+    _instance: IngestPluginRegistry | None = None
+    _lock: threading.Lock = threading.Lock()
+
+    @classmethod
+    def get(cls) -> IngestPluginRegistry:
+        """Return the singleton registry instance.
+
+        Thread-safe with double-checked locking.
+
+        Returns
+        -------
+        IngestPluginRegistry
+            The singleton registry instance.
+        """
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = IngestPluginRegistry()
+        return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset the singleton for testing.
+
+        Should only be called in test fixtures.
+        """
+        with cls._lock:
+            cls._instance = None
 
 
 def get_ingest_registry() -> IngestPluginRegistry:
@@ -569,10 +612,7 @@ def get_ingest_registry() -> IngestPluginRegistry:
     IngestPluginRegistry
         The singleton registry instance.
     """
-    global _INGEST_REGISTRY  # noqa: PLW0603
-    if _INGEST_REGISTRY is None:
-        _INGEST_REGISTRY = IngestPluginRegistry()
-    return _INGEST_REGISTRY
+    return _RegistrySingleton.get()
 
 
 def register_ingest_plugin(plugin: IngestPluginProtocol) -> None:
@@ -597,49 +637,26 @@ def list_ingest_plugins() -> tuple[IngestPluginProtocol, ...]:
     return get_ingest_registry().list_all()
 
 
-def plan_ingest_plugins(  # noqa: PLR0913
-    plugin_names: Sequence[str] | None = None,
-    *,
-    enabled: Sequence[str] | None = None,
-    disabled: Sequence[str] | None = None,
-    defaults: Sequence[str] | None = None,
-    check_tools: bool = False,
-    available_tools: Sequence[str] | None = None,
-) -> IngestPluginPlan:
+def plan_ingest_plugins(options: PlanOptions | None = None) -> IngestPluginPlan:
     """Build an execution plan for ingest plugins.
 
     Parameters
     ----------
-    plugin_names
-        Explicit plugin names to include.
-    enabled
-        Override list of enabled plugins.
-    disabled
-        Plugins to exclude.
-    defaults
-        Default plugins if no explicit list provided.
-    check_tools
-        Whether to check tool availability.
-    available_tools
-        List of available tool plugins.
+    options
+        Plan options encapsulating plugin selection criteria.
+        If None, uses default options.
 
     Returns
     -------
     IngestPluginPlan
         Ordered execution plan.
     """
-    return get_ingest_registry().plan(
-        plugin_names=plugin_names,
-        enabled=enabled,
-        disabled=disabled,
-        defaults=defaults,
-        check_tools=check_tools,
-        available_tools=available_tools,
-    )
+    return get_ingest_registry().plan(options)
 
 
 __all__ = [
     "IngestPluginRegistry",
+    "PlanOptions",
     "get_ingest_registry",
     "list_ingest_plugins",
     "plan_ingest_plugins",

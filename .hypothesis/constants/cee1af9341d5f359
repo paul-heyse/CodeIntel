@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/middleware/__init__.py
+# hypothesis_version: 6.148.3
+
+['LoggingMiddleware', 'MetricsMiddleware', 'MiddlewareChain', 'PluginMiddleware', 'TracingMiddleware']

@@ -7,6 +7,10 @@ new unified plugin protocol.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.catalog import CatalogProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -108,7 +112,10 @@ class CoverageTestEdgesPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        catalog_provider = ctx.catalog if ctx.has_catalog() else None
+        catalog_provider = None
+        if ctx.has_resource_by_name("CatalogProvider"):
+            cat_resource = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+            catalog_provider = cat_resource.get()
 
         try:
             compute_test_coverage_edges(

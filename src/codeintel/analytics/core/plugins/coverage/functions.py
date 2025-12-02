@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
 
 from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -70,8 +73,9 @@ class CoverageFunctionsPlugin(ConfiguredTableWriterPlugin[CoverageAnalyticsStepC
         cfg = self.config
 
         analytics_context = None
-        if ctx.has_analytics_context():
-            analytics_context = ctx.analytics_context
+        if ctx.has_resource_by_name("AnalyticsContextProvider"):
+            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
+            analytics_context = provider.get()
 
         compute_coverage_functions(
             ctx.gateway,

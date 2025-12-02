@@ -27,8 +27,8 @@ warnings.warn(
 )
 
 __all__ = [
-    "ParamStats",
     "SKIP_PARAM_NAMES",
+    "ParamStats",
     "TypednessFlags",
     "compute_param_stats",
     "compute_typedness_flags",

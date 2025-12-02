@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/middleware/metrics.py
+# hypothesis_version: 6.148.3
+
+[0.0, 1000, 'MetricsMiddleware', 'MetricsStore', 'PluginMetrics', 'avg_duration_ms', 'count', 'executions', 'failures', 'get_metrics_store', 'metrics', 'reset_metrics_store', 'success_rate', 'total_duration_ms', 'total_rows']

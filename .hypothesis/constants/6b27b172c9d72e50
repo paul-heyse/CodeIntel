@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/recipes/dsl.py
+# hypothesis_version: 6.148.3
+
+[0.0, '1.0.0', 'IngestRecipe', 'RecipeOptions', 'RecipeSpec', 'RecipeStage', 'RecipeStageResult', 'StageSpec', 'description', 'disabled_plugins', 'dry_run', 'enable_contracts', 'enable_incremental', 'enabled_plugins', 'fail_fast', 'includes', 'max_parallel_plugins', 'name', 'options', 'parallel', 'plugins', 'recipe', 'required', 'stage', 'stages', 'tags', 'timeout_s', 'utf-8', 'version']

@@ -32,7 +32,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal, cast
 
 from codeintel.analytics.core.contracts import OutputContractSpec
 from codeintel.analytics.core.plugin_protocol import (
@@ -58,6 +58,81 @@ if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Config Container
+# =============================================================================
+
+
+@dataclass
+class ResolvedConfig[T]:
+    """Container for resolved plugin configuration with type-safe access.
+
+    Handles generic configuration types properly, avoiding the type
+    inference issues that occur when storing generics directly in
+    dataclass fields.
+
+    Attributes
+    ----------
+    value
+        The resolved configuration value, or None if not set.
+    resolved
+        Whether the configuration has been resolved.
+
+    Example
+    -------
+    >>> container: ResolvedConfig[MyConfig] = ResolvedConfig()
+    >>> container.set(my_config)
+    >>> config = container.get()  # returns MyConfig
+    """
+
+    value: T | None = None
+    resolved: bool = False
+
+    def set(self, config: T) -> None:
+        """Set the configuration value.
+
+        Parameters
+        ----------
+        config
+            The configuration to store.
+        """
+        self.value = config
+        self.resolved = True
+
+    def get(self, plugin_name: str = "unknown") -> T:
+        """Return the configuration value.
+
+        Parameters
+        ----------
+        plugin_name
+            Name of plugin for error messages.
+
+        Returns
+        -------
+        T
+            The stored configuration.
+
+        Raises
+        ------
+        ValueError
+            If configuration was not resolved.
+        """
+        if not self.resolved or self.value is None:
+            message = f"Config not resolved for {plugin_name}. Call validate_inputs first."
+            raise ValueError(message)
+        return self.value
+
+    def get_or_none(self) -> T | None:
+        """Return configuration value or None if not resolved.
+
+        Returns
+        -------
+        T | None
+            The configuration or None.
+        """
+        return self.value if self.resolved else None
 
 
 # =============================================================================
@@ -323,10 +398,11 @@ class BasePlugin(ABC):
 
 
 @dataclass
-class TableWriterPlugin(BasePlugin):
-    """Base for plugins that write to analytics.* tables.
+class TableWriterPlugin(BasePlugin, ABC):
+    """Abstract base for plugins that write to analytics.* tables.
 
     Automatically handles row count computation for declared output tables.
+    Subclasses must implement `compute()`.
 
     Class Attributes
     ----------------
@@ -438,10 +514,13 @@ class TableWriterPlugin(BasePlugin):
 
 
 @dataclass
-class ConfigBoundPlugin[TConfig](BasePlugin):
-    """Base for plugins that require typed configuration.
+class ConfigBoundPlugin[TConfig](BasePlugin, ABC):
+    """Abstract base for plugins that require typed configuration.
 
     Automatically validates config availability and provides typed access.
+    Subclasses must implement `compute()`.
+
+    The generic type parameter `TConfig` is preserved through direct field typing.
 
     Class Attributes
     ----------------
@@ -459,7 +538,9 @@ class ConfigBoundPlugin[TConfig](BasePlugin):
     config_type: ClassVar[type[object]] = object
     config_required: ClassVar[bool] = True
 
-    _resolved_config: TConfig | None = field(default=None, init=False, repr=False)
+    # Config state - directly typed with TConfig for proper type inference
+    _config: TConfig | None = field(default=None, init=False, repr=False)
+    _config_resolved: bool = field(default=False, init=False, repr=False)
 
     @property
     def config(self) -> TConfig:
@@ -473,12 +554,12 @@ class ConfigBoundPlugin[TConfig](BasePlugin):
         Raises
         ------
         ValueError
-            If config was not resolved (validation not called).
+            If config was not resolved (validate_inputs not called).
         """
-        if self._resolved_config is None:
+        if not self._config_resolved or self._config is None:
             message = f"Config not resolved for {self.metadata.name}. Call validate_inputs first."
             raise ValueError(message)
-        return self._resolved_config
+        return self._config
 
     def _build_input_specs(self) -> tuple[PluginInputSpec, ...]:
         """Build input specs including config requirement.
@@ -516,12 +597,15 @@ class ConfigBoundPlugin[TConfig](BasePlugin):
             if not ctx.has_config(self.config_type):
                 errors.append(f"{self.config_type.__name__} is required for {self.metadata.name}")
             else:
-                # Type-safe cast since we checked has_config
-                resolved = ctx.get_config(self.config_type)
-                self._resolved_config = resolved  # type: ignore[assignment]
+                # Cast to TConfig - config_type ClassVar can't use type parameter,
+                # but ctx.get_config returns the config instance matching config_type
+                self._config = cast("TConfig", ctx.get_config(self.config_type))
+                self._config_resolved = True
         else:
-            resolved = ctx.get_optional_config(self.config_type)
-            self._resolved_config = resolved  # type: ignore[assignment]
+            config = ctx.get_optional_config(self.config_type)
+            if config is not None:
+                self._config = cast("TConfig", config)
+                self._config_resolved = True
 
         return errors
 
@@ -533,7 +617,7 @@ class ConfigBoundPlugin[TConfig](BasePlugin):
         TConfig | None
             The config or None.
         """
-        return self._resolved_config
+        return self._config if self._config_resolved else None
 
 
 # =============================================================================
@@ -542,11 +626,11 @@ class ConfigBoundPlugin[TConfig](BasePlugin):
 
 
 @dataclass
-class CatalogRequiringPlugin(BasePlugin):
-    """Base for plugins that require function catalog access.
+class CatalogRequiringPlugin(BasePlugin, ABC):
+    """Abstract base for plugins that require function catalog access.
 
-    Automatically validates catalog availability via ResourceRegistry (preferred)
-    or legacy context access (for backward compatibility).
+    Validates catalog availability via ResourceRegistry.
+    Subclasses must implement `compute()`.
 
     Class Attributes
     ----------------
@@ -573,10 +657,7 @@ class CatalogRequiringPlugin(BasePlugin):
         return self.catalog_required
 
     def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
-        """Validate catalog availability.
-
-        Check for CatalogProvider in ResourceRegistry first, then fall back
-        to legacy context access.
+        """Validate catalog availability via ResourceRegistry.
 
         Parameters
         ----------
@@ -588,25 +669,18 @@ class CatalogRequiringPlugin(BasePlugin):
         list[str]
             Validation errors.
         """
-        from codeintel.analytics.resources.catalog import CatalogProvider
-
         errors = super()._validate_resource_requirements(ctx)
         if not self.catalog_required:
             return errors
 
-        # Check new resource system first
-        if ctx.has_resource(CatalogProvider):
-            return errors
-
-        # Fall back to legacy
-        if not ctx.has_catalog():
-            errors.append(f"Function catalog is required for {self.metadata.name}")
+        if not ctx.has_resource_by_name("CatalogProvider"):
+            errors.append(f"CatalogProvider is required for {self.metadata.name}")
         return errors
 
-    def get_catalog(self, ctx: PluginExecutionContext) -> FunctionCatalogProvider:
-        """Get the catalog from context.
-
-        Prefer CatalogProvider from ResourceRegistry, fall back to legacy access.
+    def get_catalog(  # noqa: PLR6301
+        self, ctx: PluginExecutionContext
+    ) -> FunctionCatalogProvider:
+        """Get the catalog from context via CatalogProvider.
 
         Parameters
         ----------
@@ -616,17 +690,14 @@ class CatalogRequiringPlugin(BasePlugin):
         Returns
         -------
         FunctionCatalogProvider
-            The function catalog. Raises ValueError if not available.
+            The function catalog.
+
+        Notes
+        -----
+        Raises `ResourceNotFoundError` if CatalogProvider is not available.
         """
-        from codeintel.analytics.resources.catalog import CatalogProvider
-
-        # Try new resource system first
-        if ctx.has_resource(CatalogProvider):
-            provider = ctx.require(CatalogProvider)
-            return provider.get()
-
-        # Fall back to legacy
-        return ctx.catalog
+        provider = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+        return provider.get()
 
 
 # =============================================================================
@@ -635,15 +706,15 @@ class CatalogRequiringPlugin(BasePlugin):
 
 
 @dataclass
-class AnalyticsContextRequiringPlugin(BasePlugin):
-    """Base for plugins that require full analytics context.
+class AnalyticsContextRequiringPlugin(BasePlugin, ABC):
+    """Abstract base for plugins that require full analytics context.
 
     .. deprecated::
         Prefer using specific resource providers (GraphProvider, CatalogProvider,
         AstProvider) instead of the monolithic AnalyticsContext.
 
     Provides access to graphs, ASTs, and function features via
-    AnalyticsContextProvider from ResourceRegistry (preferred) or legacy access.
+    AnalyticsContextProvider from ResourceRegistry. Subclasses must implement `compute()`.
 
     Class Attributes
     ----------------
@@ -670,10 +741,7 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
         return self.analytics_context_required
 
     def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
-        """Validate analytics context availability.
-
-        Check for AnalyticsContextProvider in ResourceRegistry first,
-        then fall back to legacy context access.
+        """Validate analytics context availability via ResourceRegistry.
 
         Parameters
         ----------
@@ -685,28 +753,18 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
         list[str]
             Validation errors.
         """
-        from codeintel.analytics.resources.analytics_context import (
-            AnalyticsContextProvider,
-        )
-
         errors = super()._validate_resource_requirements(ctx)
         if not self.analytics_context_required:
             return errors
 
-        # Check new resource system first
-        if ctx.has_resource(AnalyticsContextProvider):
-            return errors
-
-        # Fall back to legacy
-        if not ctx.has_analytics_context():
-            errors.append(f"Analytics context is required for {self.metadata.name}")
+        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
+            errors.append(f"AnalyticsContextProvider is required for {self.metadata.name}")
         return errors
 
-    def get_analytics_context(self, ctx: PluginExecutionContext) -> AnalyticsContext:
-        """Get the analytics context.
-
-        Prefer AnalyticsContextProvider from ResourceRegistry,
-        fall back to legacy access.
+    def get_analytics_context(  # noqa: PLR6301
+        self, ctx: PluginExecutionContext
+    ) -> AnalyticsContext:
+        """Get the analytics context via AnalyticsContextProvider.
 
         Parameters
         ----------
@@ -716,21 +774,16 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
         Returns
         -------
         AnalyticsContext
-            The analytics context. Raises ValueError if not available.
+            The analytics context.
+
+        Notes
+        -----
+        Raises `ResourceNotFoundError` if AnalyticsContextProvider is not available.
         """
-        from codeintel.analytics.resources.analytics_context import (
-            AnalyticsContextProvider,
-        )
+        provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
+        return provider.get()
 
-        # Try new resource system first
-        if ctx.has_resource(AnalyticsContextProvider):
-            provider = ctx.require(AnalyticsContextProvider)
-            return provider.get()
-
-        # Fall back to legacy
-        return ctx.analytics_context
-
-    def get_analytics_context_or_none(
+    def get_analytics_context_or_none(  # noqa: PLR6301
         self, ctx: PluginExecutionContext
     ) -> AnalyticsContext | None:
         """Get the analytics context or None if not available.
@@ -745,19 +798,10 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
         AnalyticsContext | None
             The analytics context or None.
         """
-        from codeintel.analytics.resources.analytics_context import (
-            AnalyticsContextProvider,
-        )
-
-        # Try new resource system first
-        if ctx.has_resource(AnalyticsContextProvider):
-            provider = ctx.require(AnalyticsContextProvider)
-            return provider.get()
-
-        # Fall back to legacy
-        if ctx.has_analytics_context():
-            return ctx.analytics_context
-        return None
+        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
+            return None
+        provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
+        return provider.get()
 
 
 # =============================================================================
@@ -766,11 +810,11 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
 
 
 @dataclass
-class GraphRuntimeRequiringPlugin(BasePlugin):
-    """Base for plugins that require graph runtime access.
+class GraphRuntimeRequiringPlugin(BasePlugin, ABC):
+    """Abstract base for plugins that require graph runtime access.
 
     Provides access to graph loading and engine capabilities via
-    GraphProvider from ResourceRegistry (preferred) or legacy access.
+    GraphProvider from ResourceRegistry. Subclasses must implement `compute()`.
 
     Class Attributes
     ----------------
@@ -781,10 +825,7 @@ class GraphRuntimeRequiringPlugin(BasePlugin):
     graph_runtime_required: ClassVar[bool] = True
 
     def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
-        """Validate graph runtime availability.
-
-        Check for GraphProvider in ResourceRegistry first, then fall back
-        to legacy context access.
+        """Validate graph runtime availability via ResourceRegistry.
 
         Parameters
         ----------
@@ -796,25 +837,18 @@ class GraphRuntimeRequiringPlugin(BasePlugin):
         list[str]
             Validation errors.
         """
-        from codeintel.analytics.resources.graphs import GraphProvider
-
         errors = super()._validate_resource_requirements(ctx)
         if not self.graph_runtime_required:
             return errors
 
-        # Check new resource system first
-        if ctx.has_resource(GraphProvider):
-            return errors
-
-        # Fall back to legacy
-        if not ctx.has_graph_runtime():
-            errors.append(f"Graph runtime is required for {self.metadata.name}")
+        if not ctx.has_resource_by_name("GraphProvider"):
+            errors.append(f"GraphProvider is required for {self.metadata.name}")
         return errors
 
-    def get_graph_runtime(self, ctx: PluginExecutionContext) -> GraphRuntime:
-        """Get the graph runtime.
-
-        Prefer GraphProvider from ResourceRegistry, fall back to legacy access.
+    def get_graph_runtime(  # noqa: PLR6301
+        self, ctx: PluginExecutionContext
+    ) -> GraphRuntime:
+        """Get the graph runtime via GraphProvider.
 
         Parameters
         ----------
@@ -824,18 +858,19 @@ class GraphRuntimeRequiringPlugin(BasePlugin):
         Returns
         -------
         GraphRuntime
-            The graph runtime. Raises ValueError if not available.
+            The graph runtime.
+
+        Raises
+        ------
+        ValueError
+            If GraphProvider has no runtime available.
         """
-        from codeintel.analytics.resources.graphs import GraphProvider
-
-        # Try new resource system first
-        if ctx.has_resource(GraphProvider):
-            provider = ctx.require(GraphProvider)
-            if provider.runtime is not None:
-                return provider.runtime
-
-        # Fall back to legacy
-        return ctx.graph_runtime
+        provider = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
+        runtime = provider.runtime
+        if runtime is None:
+            message = "GraphProvider has no runtime available"
+            raise ValueError(message)
+        return runtime
 
 
 # =============================================================================
@@ -848,11 +883,13 @@ class GraphMetricsPlugin(
     TableWriterPlugin,
     GraphRuntimeRequiringPlugin,
     CatalogRequiringPlugin,
+    ABC,
 ):
-    """Base for graph-based metric computation plugins.
+    """Abstract base for graph-based metric computation plugins.
 
     Combines table writing with graph runtime and catalog access.
     Most graph metric plugins should inherit from this class.
+    Subclasses must implement `compute()`.
 
     This class provides:
     - Automatic row count computation for output tables
@@ -896,11 +933,12 @@ class GraphMetricsPlugin(
 
 
 @dataclass
-class ConfiguredTableWriterPlugin[TConfig](ConfigBoundPlugin[TConfig], TableWriterPlugin):
-    """Plugin that writes tables and requires typed configuration.
+class ConfiguredTableWriterPlugin[TConfig](ConfigBoundPlugin[TConfig], TableWriterPlugin, ABC):
+    """Abstract base for plugins that write tables and require typed configuration.
 
     Combines config binding with table writing. Use when you need both
     typed configuration and automatic row count handling.
+    Subclasses must implement `compute()`.
     """
 
     def _validate_config_requirements(self, ctx: PluginExecutionContext) -> list[str]:
@@ -930,11 +968,12 @@ class ConfiguredTableWriterPlugin[TConfig](ConfigBoundPlugin[TConfig], TableWrit
 
 
 @dataclass
-class ConfiguredGraphMetricsPlugin[TConfig](ConfigBoundPlugin[TConfig], GraphMetricsPlugin):
-    """Graph metrics plugin with typed configuration.
+class ConfiguredGraphMetricsPlugin[TConfig](ConfigBoundPlugin[TConfig], GraphMetricsPlugin, ABC):
+    """Abstract base for graph metrics plugins with typed configuration.
 
     The most common base for graph metric plugins that need configuration.
     Provides config binding, table writing, graph runtime, and catalog access.
+    Subclasses must implement `compute()`.
     """
 
     def _validate_config_requirements(self, ctx: PluginExecutionContext) -> list[str]:

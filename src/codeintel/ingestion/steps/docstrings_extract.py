@@ -57,11 +57,13 @@ def _detect_style(raw: str) -> str | None:
     str | None
         Style name or None if undetected.
     """
-    for style in (DocstringStyle.NUMPY, DocstringStyle.GOOGLE, DocstringStyle.EPYDOC):
+    for style in (DocstringStyle.NUMPYDOC, DocstringStyle.GOOGLE, DocstringStyle.EPYDOC):
         try:
             parsed = parse(raw, style=style)
             if parsed.params or parsed.returns or parsed.raises:
-                return style.name.lower()
+                # Return canonical name ("numpy" instead of "numpydoc")
+                name = style.name.lower()
+                return "numpy" if name == "numpydoc" else name
         except ParseError:
             continue
     return None
@@ -87,10 +89,7 @@ def _parse_docstring(raw: str) -> ParsedDocstring:
                 "type_name": parsed.returns.type_name,
                 "description": parsed.returns.description,
             }
-        raises = [
-            {"type_name": r.type_name, "description": r.description}
-            for r in parsed.raises
-        ]
+        raises = [{"type_name": r.type_name, "description": r.description} for r in parsed.raises]
         examples = [e.description for e in parsed.examples if e.description]
 
         return ParsedDocstring(
@@ -309,17 +308,23 @@ class DocstringsExtractStep:
 
         all_rows: list[list[object]] = []
         errors: list[str] = []
+        processed_paths: list[str] = []
 
         for module in modules:
             if not module.rel_path.endswith(".py"):
                 continue
 
+            processed_paths.append(module.rel_path)
             source = self._discovery.read_module_source(module)
             if source is None:
                 continue
 
             docstrings = _extract_module_docstrings(module, source, ctx)
-        all_rows.extend(list(docstring_row_to_tuple(ds)) for ds in docstrings)
+            all_rows.extend(list(docstring_row_to_tuple(ds)) for ds in docstrings)
+
+        # Delete existing docstrings for processed modules (idempotent re-ingest)
+        if processed_paths:
+            self._storage.delete_by_paths("core.docstrings", processed_paths, path_column="rel_path")
 
         # Persist rows
         table_counts: dict[str, int] = {}

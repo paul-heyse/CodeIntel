@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.ports.change_detection import ChangeRequest
@@ -92,8 +91,6 @@ class RepoScanStep:
         tuple[StepResult, Sequence[ModuleRecord], ChangeSet]
             Execution result, discovered modules, and change set.
         """
-        created_at = datetime.now(UTC)
-
         # Discover modules
         modules = self._discovery.discover_modules(repo_root, profile)
         log.info("Discovered %d modules in %s", len(modules), repo_root)
@@ -109,28 +106,17 @@ class RepoScanStep:
         )
         change_set = self._change_detection.compute_changes(change_request, modules)
 
-        # Build module rows
+        # Build module rows - columns: module, path, repo, commit, language, tags, owners
         module_rows: list[list[object]] = [
-            [repo, commit, module.rel_path, module.module_name, "python", created_at]
+            [module.module_name, module.rel_path, repo, commit, "python", "[]", "[]"]
             for module in modules
         ]
 
-        # Build file state rows (for repo_map)
-        file_state_rows: list[list[object]] = []
-        for module in modules:
-            digest = self._change_detection.compute_file_digest(module.file_path)
-            if digest is not None:
-                file_state_rows.append([
-                    repo,
-                    commit,
-                    module.rel_path,
-                    "python",
-                    digest.size_bytes,
-                    digest.mtime_ns,
-                    digest.content_hash,
-                ])
+        # Note: file_state is persisted by change_detection.compute_changes() via save_current_state()
+        # We don't write it here to avoid duplicate key violations that would trigger
+        # apply_all_schemas() and drop existing data.
 
-        # Persist rows
+        # Persist module rows
         table_counts: dict[str, int] = {}
         total_rows = 0
 
@@ -138,11 +124,6 @@ class RepoScanStep:
             scope = f"{repo}@{commit}"
             result = self._storage.write_batch("core.modules", module_rows, scope=scope)
             table_counts["core.modules"] = result.rows_written
-            total_rows += result.rows_written
-
-        if file_state_rows:
-            result = self._storage.write_batch("core.file_state", file_state_rows)
-            table_counts["core.file_state"] = result.rows_written
             total_rows += result.rows_written
 
         log.info(

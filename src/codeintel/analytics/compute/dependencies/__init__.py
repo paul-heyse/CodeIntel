@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from codeintel.analytics.compute.dependencies.classification import (
     SEVERITY_SCORES,
-    LibraryPattern,
     DependencyModePattern,
+    LibraryPattern,
     classify_modes,
     risk_level,
     risk_score,
@@ -28,11 +28,11 @@ from codeintel.analytics.compute.dependencies.detection import (
 )
 
 __all__ = [
+    "SEVERITY_SCORES",
     "DependencyCall",
     "DependencyCallVisitor",
     "DependencyModePattern",
     "LibraryPattern",
-    "SEVERITY_SCORES",
     "build_alias_map",
     "build_alias_maps",
     "classify_modes",
@@ -41,4 +41,3 @@ __all__ = [
     "risk_score",
     "severity_score",
 ]
-

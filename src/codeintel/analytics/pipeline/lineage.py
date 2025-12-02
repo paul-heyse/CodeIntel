@@ -13,10 +13,33 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import msgspec
+
+from codeintel.storage.gateway import DuckDBError
+
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+class _LineageRaw(msgspec.Struct):
+    """Raw lineage record for JSON deserialization with validation.
+
+    This struct provides type-safe parsing of JSON lineage data.
+    All fields have defaults to handle missing data gracefully.
+    """
+
+    dataset: str = ""
+    run_id: str = ""
+    input_datasets: list[str] = msgspec.field(default_factory=list)
+    input_hashes: list[str] = msgspec.field(default_factory=list)
+    output_hash: str = ""
+    row_count: int = 0
+    computed_at: str | None = None
+    duration_ms: float = 0.0
+    version: str = "1.0.0"
+    metadata: dict[str, object] = msgspec.field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -89,6 +112,8 @@ class DatasetLineage:
     def from_dict(cls, data: dict[str, object]) -> DatasetLineage:
         """Create from dictionary.
 
+        Uses msgspec for type-safe deserialization with validation.
+
         Parameters
         ----------
         data
@@ -99,27 +124,25 @@ class DatasetLineage:
         DatasetLineage
             Reconstructed instance.
         """
-        computed_at = data.get("computed_at")
-        if isinstance(computed_at, str):
-            computed_at = datetime.fromisoformat(computed_at)
-        elif not isinstance(computed_at, datetime):
-            computed_at = datetime.now(tz=UTC)
+        # Use msgspec for type-safe conversion
+        raw = msgspec.convert(data, _LineageRaw)
 
-        metadata = data.get("metadata", {})
-        if not isinstance(metadata, dict):
-            metadata = {}
+        # Parse timestamp
+        computed_at = (
+            datetime.fromisoformat(raw.computed_at) if raw.computed_at else datetime.now(tz=UTC)
+        )
 
         return cls(
-            dataset=str(data.get("dataset", "")),
-            run_id=str(data.get("run_id", "")),
-            input_datasets=tuple(data.get("input_datasets", [])),  # type: ignore[arg-type]
-            input_hashes=tuple(data.get("input_hashes", [])),  # type: ignore[arg-type]
-            output_hash=str(data.get("output_hash", "")),
-            row_count=int(data.get("row_count", 0)),  # type: ignore[arg-type]
+            dataset=raw.dataset,
+            run_id=raw.run_id,
+            input_datasets=tuple(raw.input_datasets),
+            input_hashes=tuple(raw.input_hashes),
+            output_hash=raw.output_hash,
+            row_count=raw.row_count,
             computed_at=computed_at,
-            duration_ms=float(data.get("duration_ms", 0.0)),  # type: ignore[arg-type]
-            version=str(data.get("version", "1.0.0")),
-            metadata=metadata,
+            duration_ms=raw.duration_ms,
+            version=raw.version,
+            metadata=dict(raw.metadata),
         )
 
 
@@ -182,7 +205,7 @@ def compute_table_hash(
             hasher.update(row_str.encode())
 
         return hasher.hexdigest()[:16]
-    except Exception:
+    except DuckDBError:
         log.warning("Failed to hash table %s", table, exc_info=True)
         return "error"
 
@@ -223,7 +246,7 @@ class LineageStore:
         """
         try:
             self._gateway.con.execute(query)
-        except Exception:
+        except DuckDBError:
             log.debug("Lineage table creation skipped (may already exist)")
 
     def record(self, lineage: DatasetLineage) -> None:
@@ -256,7 +279,7 @@ class LineageStore:
                     json.dumps(lineage.metadata),
                 ],
             )
-        except Exception:
+        except DuckDBError:
             log.warning("Failed to record lineage for %s", lineage.dataset, exc_info=True)
 
     def get_latest(self, dataset: str) -> DatasetLineage | None:
@@ -293,12 +316,12 @@ class LineageStore:
                 input_hashes=tuple(json.loads(row[3] or "[]")),
                 output_hash=str(row[4] or ""),
                 row_count=int(row[5] or 0),
-                computed_at=row[6] if isinstance(row[6], datetime) else datetime.now(),
+                computed_at=row[6] if isinstance(row[6], datetime) else datetime.now(tz=UTC),
                 duration_ms=float(row[7] or 0.0),
                 version=str(row[8] or "1.0.0"),
                 metadata=json.loads(row[9] or "{}"),
             )
-        except Exception:
+        except DuckDBError:
             log.warning("Failed to get lineage for %s", dataset, exc_info=True)
             return None
 
@@ -324,26 +347,25 @@ class LineageStore:
         """
         try:
             result = self._gateway.con.execute(query, [run_id])
-            records = []
-            for row in result.fetchall():
-                records.append(
-                    DatasetLineage(
-                        dataset=str(row[0]),
-                        run_id=str(row[1]),
-                        input_datasets=tuple(json.loads(row[2] or "[]")),
-                        input_hashes=tuple(json.loads(row[3] or "[]")),
-                        output_hash=str(row[4] or ""),
-                        row_count=int(row[5] or 0),
-                        computed_at=row[6] if isinstance(row[6], datetime) else datetime.now(),
-                        duration_ms=float(row[7] or 0.0),
-                        version=str(row[8] or "1.0.0"),
-                        metadata=json.loads(row[9] or "{}"),
-                    )
-                )
-            return records
-        except Exception:
+        except DuckDBError:
             log.warning("Failed to get lineage for run %s", run_id, exc_info=True)
             return []
+        else:
+            return [
+                DatasetLineage(
+                    dataset=str(row[0]),
+                    run_id=str(row[1]),
+                    input_datasets=tuple(json.loads(row[2] or "[]")),
+                    input_hashes=tuple(json.loads(row[3] or "[]")),
+                    output_hash=str(row[4] or ""),
+                    row_count=int(row[5] or 0),
+                    computed_at=row[6] if isinstance(row[6], datetime) else datetime.now(tz=UTC),
+                    duration_ms=float(row[7] or 0.0),
+                    version=str(row[8] or "1.0.0"),
+                    metadata=json.loads(row[9] or "{}"),
+                )
+                for row in result.fetchall()
+            ]
 
     def needs_recompute(
         self,
@@ -374,9 +396,7 @@ class LineageStore:
         if len(latest.input_datasets) != len(input_hashes):
             return True
 
-        for inp, stored_hash in zip(
-            latest.input_datasets, latest.input_hashes, strict=True
-        ):
+        for inp, stored_hash in zip(latest.input_datasets, latest.input_hashes, strict=True):
             if inp not in input_hashes:
                 return True
             if input_hashes[inp] != stored_hash:

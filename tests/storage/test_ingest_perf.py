@@ -6,7 +6,7 @@ from time import perf_counter
 
 import pytest
 
-from codeintel.ingestion.ingest_service import ingest_via_macro
+from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import prepared_statements_dynamic
 
@@ -50,6 +50,7 @@ def _sample_rows(con: DuckDBConnection, table_key: str, count: int) -> list[tupl
 def test_ingest_macro_perf_reasonable(fresh_gateway: StorageGateway) -> None:
     """Macro-based ingest should be within a reasonable factor of prepared inserts."""
     con = fresh_gateway.con
+    adapter = DuckDBStorageAdapter(fresh_gateway)
     table_keys = ["analytics.function_metrics", "analytics.function_effects"]
     for table_key in table_keys:
         rows = _sample_rows(con, table_key, count=15)
@@ -60,7 +61,8 @@ def test_ingest_macro_perf_reasonable(fresh_gateway: StorageGateway) -> None:
             else "DELETE FROM analytics.function_effects WHERE 1=1"
         )
         start_macro = perf_counter()
-        macro_inserted = ingest_via_macro(con, table_key, rows)
+        result = adapter.write_batch(table_key, rows)
+        macro_inserted = result.rows_written
         macro_elapsed = perf_counter() - start_macro
 
         con.execute(

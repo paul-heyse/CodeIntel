@@ -24,4 +24,3 @@ __all__ = [
     "compute_profile_stats",
     "extract_profile_features",
 ]
-
