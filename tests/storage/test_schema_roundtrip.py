@@ -10,7 +10,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     BehavioralCoverageRowModel,
     CallGraphEdgeRow,

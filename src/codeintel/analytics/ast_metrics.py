@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from codeintel.config import HotspotsStepConfig
-from codeintel.config.dataset_contract import HotspotRow, hotspot_row_to_tuple
+from codeintel.config.datasets import HotspotRow, hotspot_row_to_tuple
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.tool_runner import ToolRunner
 from codeintel.storage.gateway import StorageGateway

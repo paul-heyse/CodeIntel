@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from codeintel.config import ScipIngestStepConfig, ToolsConfig
-from codeintel.config.dataset_contract import GOID_CROSSWALK_UPDATE_SCIP
+from codeintel.config.datasets import GOID_CROSSWALK_UPDATE_SCIP
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,
     IncrementalIngestOps,

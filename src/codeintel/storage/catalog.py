@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.config.dataset_contract import DatasetContract
+from codeintel.config.datasets import DatasetContract
 from codeintel.pipeline.export.manifest import compute_file_hash
 from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError

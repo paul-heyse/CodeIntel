@@ -186,6 +186,8 @@ def test_function_summary_response_uses_typed_row() -> None:
         pytest.fail("Expected FunctionSummaryResponse")
     if not resp.found or resp.summary is None:
         pytest.fail("Expected function summary to be present")
+    if not isinstance(resp.summary, FunctionSummaryRow):
+        pytest.fail("Expected typed FunctionSummaryRow payload")
     if resp.summary.function_goid_h128 != goid:
         pytest.fail("Incorrect GOID propagated in summary")
     if resp.summary.repo != "demo/repo":

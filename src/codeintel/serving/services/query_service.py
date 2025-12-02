@@ -11,7 +11,6 @@ from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.datasets import describe_dataset
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import (
-    DatasetDescriptor,
     DatasetSpecDescriptor,
     GraphScopePayload,
 )
@@ -183,7 +182,7 @@ class SubsystemQueryApi(Protocol):
 class DatasetQueryApi(Protocol):
     """Dataset listing and retrieval surface."""
 
-    def list_datasets(self) -> list[DatasetDescriptor]:
+    def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
         """List available datasets."""
         ...
 

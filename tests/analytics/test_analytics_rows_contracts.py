@@ -7,7 +7,7 @@ from typing import get_type_hints
 
 import pytest
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     BehavioralCoverageRowModel,
     FunctionMetricsRow,

@@ -14,7 +14,7 @@ from typing import cast
 import yaml
 
 from codeintel.config import ConfigIngestStepConfig
-from codeintel.config.dataset_contract import ConfigValueRow, config_value_to_tuple
+from codeintel.config.datasets import ConfigValueRow, config_value_to_tuple
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,
     IncrementalIngestOps,

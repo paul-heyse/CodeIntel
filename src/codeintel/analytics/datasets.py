@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TypeVar, cast
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     BehavioralCoverageRowModel,
     DatasetContract,

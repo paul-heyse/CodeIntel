@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.config import TestsIngestStepConfig
-from codeintel.config.dataset_contract import TestCatalogRowModel, serialize_test_catalog_row
+from codeintel.config.datasets import TestCatalogRowModel, serialize_test_catalog_row
 from codeintel.config.models import ToolsConfig
 from codeintel.core.types import (
     PytestTestEntry,

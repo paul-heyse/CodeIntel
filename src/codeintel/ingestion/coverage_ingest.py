@@ -13,7 +13,7 @@ from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
 from codeintel.config import CoverageIngestStepConfig
-from codeintel.config.dataset_contract import CoverageLineRow, coverage_line_to_tuple
+from codeintel.config.datasets import CoverageLineRow, coverage_line_to_tuple
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,

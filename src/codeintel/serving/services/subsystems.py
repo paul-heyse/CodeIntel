@@ -32,71 +32,103 @@ class _SubsystemQueryDelegates:
     def list_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> dm.SubsystemSummaryResult:
-        pydantic_resp: SubsystemSummaryResponse = self._call(
+        raw_resp = self._call(
             "list_subsystems",
             lambda: self.query.subsystems.list_subsystems(limit=limit, role=role, q=q),
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.SubsystemSummaryResult):
+            return raw_resp
+        if isinstance(raw_resp, SubsystemSummaryResponse):
+            return raw_resp.to_domain()
+        return SubsystemSummaryResponse.model_validate(raw_resp).to_domain()
 
     def get_module_subsystems(self, *, module: str) -> dm.ModuleSubsystemResult:
-        pydantic_resp: ModuleSubsystemResponse = self._call(
+        raw_resp = self._call(
             "get_module_subsystems",
             lambda: self.query.subsystems.get_module_subsystems(module=module),
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.ModuleSubsystemResult):
+            return raw_resp
+        if isinstance(raw_resp, ModuleSubsystemResponse):
+            return raw_resp.to_domain()
+        return ModuleSubsystemResponse.model_validate(raw_resp).to_domain()
 
     def get_file_hints(self, *, rel_path: str) -> dm.FileHintsResult:
-        pydantic_resp: FileHintsResponse = self._call(
+        raw_resp = self._call(
             "get_file_hints", lambda: self.query.modules.get_file_hints(rel_path=rel_path)
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.FileHintsResult):
+            return raw_resp
+        if isinstance(raw_resp, FileHintsResponse):
+            return raw_resp.to_domain()
+        return FileHintsResponse.model_validate(raw_resp).to_domain()
 
     def get_subsystem_modules(
         self, *, subsystem_id: str, module_limit: int | None = None
     ) -> dm.SubsystemModulesResult:
-        pydantic_resp: SubsystemModulesResponse = self._call(
+        raw_resp = self._call(
             "get_subsystem_modules",
             lambda: self.query.subsystems.get_subsystem_modules(
                 subsystem_id=subsystem_id, module_limit=module_limit
             ),
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.SubsystemModulesResult):
+            return raw_resp
+        if isinstance(raw_resp, SubsystemModulesResponse):
+            return raw_resp.to_domain()
+        return SubsystemModulesResponse.model_validate(raw_resp).to_domain()
 
     def search_subsystems(
         self, *, limit: int | None = None, role: str | None = None, q: str | None = None
     ) -> dm.SubsystemSearchResult:
-        pydantic_resp: SubsystemSearchResponse = self._call(
+        raw_resp = self._call(
             "search_subsystems",
             lambda: self.query.subsystems.search_subsystems(limit=limit, role=role, q=q),
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.SubsystemSearchResult):
+            return raw_resp
+        if isinstance(raw_resp, SubsystemSearchResponse):
+            return raw_resp.to_domain()
+        return SubsystemSearchResponse.model_validate(raw_resp).to_domain()
 
     def summarize_subsystem(
         self, *, subsystem_id: str, module_limit: int | None = None
     ) -> dm.SubsystemModulesResult:
-        pydantic_resp: SubsystemModulesResponse = self._call(
+        raw_resp = self._call(
             "summarize_subsystem",
             lambda: self.query.subsystems.summarize_subsystem(
                 subsystem_id=subsystem_id, module_limit=module_limit
             ),
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.SubsystemModulesResult):
+            return raw_resp
+        if isinstance(raw_resp, SubsystemModulesResponse):
+            return raw_resp.to_domain()
+        return SubsystemModulesResponse.model_validate(raw_resp).to_domain()
 
     def list_subsystem_profiles(self, *, limit: int | None = None) -> dm.SubsystemProfileResult:
-        pydantic_resp: SubsystemProfileResponse = self._call(
+        raw_resp = self._call(
             "list_subsystem_profiles",
             lambda: self.query.subsystems.list_subsystem_profiles(limit=limit),
             dataset="docs.v_subsystem_profile",
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.SubsystemProfileResult):
+            return raw_resp
+        if isinstance(raw_resp, SubsystemProfileResponse):
+            return raw_resp.to_domain()
+        return SubsystemProfileResponse.model_validate(raw_resp).to_domain()
 
     def list_subsystem_coverage(self, *, limit: int | None = None) -> dm.SubsystemCoverageResult:
-        pydantic_resp: SubsystemCoverageResponse = self._call(
+        raw_resp = self._call(
             "list_subsystem_coverage",
             lambda: self.query.subsystems.list_subsystem_coverage(limit=limit),
             dataset="docs.v_subsystem_coverage",
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.SubsystemCoverageResult):
+            return raw_resp
+        if isinstance(raw_resp, SubsystemCoverageResponse):
+            return raw_resp.to_domain()
+        return SubsystemCoverageResponse.model_validate(raw_resp).to_domain()
 
 
 class _HttpSubsystemQueryMixin(_HttpTransportMixin):

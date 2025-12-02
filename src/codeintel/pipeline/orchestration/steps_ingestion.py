@@ -1,4 +1,8 @@
-"""Pipeline ingestion step implementations."""
+"""Pipeline ingestion step implementations using the new plugin architecture.
+
+This module provides pipeline step wrappers that delegate to the ingestion plugin
+registry, enabling a unified plugin-driven ingestion approach.
+"""
 
 from __future__ import annotations
 
@@ -6,27 +10,84 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from codeintel.ingestion.runner import (
-    run_ast_extract,
-    run_config_ingest,
-    run_coverage_ingest,
-    run_cst_extract,
-    run_docstrings_ingest,
-    run_repo_scan,
-    run_scip_ingest,
-    run_tests_ingest,
-    run_typing_ingest,
-)
-from codeintel.ingestion.scip_ingest import ScipIngestResult
+from codeintel.ingestion.change_tracker import ChangeTracker
+from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
+from codeintel.ingestion.plugins.registry import get_ingest_registry
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,
     StepPhase,
-    _ingestion_ctx,
     _log_step,
+    _plugin_ctx,
 )
 
 log = logging.getLogger(__name__)
+
+# Shared scratch space for ingestion plugins within a pipeline run.
+# This allows plugins to communicate (e.g., repo_scan -> change_tracker -> other plugins).
+_SHARED_SCRATCH: IngestRuntimeScratch | None = None
+
+
+def _get_shared_scratch() -> IngestRuntimeScratch:
+    """Get or create the shared scratch space for the current pipeline run.
+
+    Returns
+    -------
+    IngestRuntimeScratch
+        Shared scratch space instance.
+    """
+    global _SHARED_SCRATCH  # noqa: PLW0603
+    if _SHARED_SCRATCH is None:
+        _SHARED_SCRATCH = IngestRuntimeScratch()
+    return _SHARED_SCRATCH
+
+
+def reset_shared_scratch() -> None:
+    """Reset the shared scratch space between pipeline runs."""
+    global _SHARED_SCRATCH  # noqa: PLW0603
+    if _SHARED_SCRATCH is not None:
+        _SHARED_SCRATCH.cleanup()
+    _SHARED_SCRATCH = None
+
+
+def _execute_plugin(ctx: PipelineContext, plugin_name: str) -> None:
+    """Execute an ingestion plugin by name.
+
+    Parameters
+    ----------
+    ctx
+        Pipeline context.
+    plugin_name
+        Name of the plugin to execute.
+    """
+    registry = get_ingest_registry()
+    plugin = registry.get(plugin_name)
+    scratch = _get_shared_scratch()
+
+    # Build plugin context with shared scratch
+    plugin_ctx = _plugin_ctx(ctx, scratch=scratch, plugin_name=plugin_name)
+
+    # If change_tracker is available in pipeline context, populate scratch
+    if ctx.change_tracker is not None and not scratch.has("change_tracker"):
+        scratch.declare("change_tracker", ctx.change_tracker)
+
+    result = plugin.execute(plugin_ctx)
+
+    # Extract change_tracker from scratch if repo_scan populated it
+    if plugin_name == "repo_scan" and result.success:
+        tracker = scratch.consume("change_tracker")
+        if tracker is not None and isinstance(tracker, ChangeTracker):
+            ctx.change_tracker = tracker
+
+    if not result.success:
+        log.warning(
+            "Plugin %s failed: %s (kind=%s)",
+            plugin_name,
+            result.error,
+            result.error_kind,
+        )
+    elif result.skipped:
+        log.info("Plugin %s skipped: %s", plugin_name, result.skip_reason)
 
 
 @dataclass
@@ -39,8 +100,9 @@ class SchemaBootstrapStep:
     deps: Sequence[str] = ()
 
     def run(self, ctx: PipelineContext) -> None:
-        """No-op here; actual bootstrap is handled in the Prefect task."""
+        """Reset shared scratch and prepare for new run."""
         _log_step(self.name)
+        reset_shared_scratch()
         _ = ctx
 
 
@@ -54,10 +116,9 @@ class RepoScanStep:
     deps: Sequence[str] = ("schema_bootstrap",)
 
     def run(self, ctx: PipelineContext) -> None:
-        """Execute repository scan ingestion."""
+        """Execute repository scan ingestion via plugin."""
         _log_step(self.name)
-        tracker = run_repo_scan(_ingestion_ctx(ctx))
-        ctx.change_tracker = tracker
+        _execute_plugin(ctx, "repo_scan")
 
 
 @dataclass
@@ -72,15 +133,7 @@ class SCIPIngestStep:
     def run(self, ctx: PipelineContext) -> None:
         """Register SCIP artifacts and populate SCIP symbols in crosswalk."""
         _log_step(self.name)
-        ingest_ctx = _ingestion_ctx(ctx)
-        result: ScipIngestResult = run_scip_ingest(ingest_ctx)
-        ctx.extra["scip_ingest"] = result
-        if result.status != "success":
-            log.info(
-                "SCIP ingestion %s: %s",
-                result.status,
-                result.reason or "no reason provided",
-            )
+        _execute_plugin(ctx, "scip_ingest")
 
 
 @dataclass
@@ -95,7 +148,7 @@ class CSTStep:
     def run(self, ctx: PipelineContext) -> None:
         """Extract CST rows into core.cst_nodes."""
         _log_step(self.name)
-        run_cst_extract(_ingestion_ctx(ctx))
+        _execute_plugin(ctx, "cst_extract")
 
 
 @dataclass
@@ -110,7 +163,7 @@ class AstStep:
     def run(self, ctx: PipelineContext) -> None:
         """Extract AST rows and metrics into core tables."""
         _log_step(self.name)
-        run_ast_extract(_ingestion_ctx(ctx))
+        _execute_plugin(ctx, "ast_extract")
 
 
 @dataclass
@@ -120,12 +173,12 @@ class CoverageIngestStep:
     name: str = "coverage_ingest"
     description: str = "Load coverage.py data into analytics.coverage_lines."
     phase: StepPhase = StepPhase.INGESTION
-    deps: Sequence[str] = ()
+    deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext) -> None:
         """Ingest line-level coverage signals."""
         _log_step(self.name)
-        run_coverage_ingest(_ingestion_ctx(ctx))
+        _execute_plugin(ctx, "coverage_ingest")
 
 
 @dataclass
@@ -135,12 +188,12 @@ class TestsIngestStep:
     name: str = "tests_ingest"
     description: str = "Load pytest JSON report into analytics.test_catalog."
     phase: StepPhase = StepPhase.INGESTION
-    deps: Sequence[str] = ()
+    deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext) -> None:
         """Ingest pytest test catalog."""
         _log_step(self.name)
-        run_tests_ingest(_ingestion_ctx(ctx))
+        _execute_plugin(ctx, "tests_ingest")
 
 
 @dataclass
@@ -150,12 +203,12 @@ class TypingIngestStep:
     name: str = "typing_ingest"
     description: str = "Collect typedness and static diagnostics from AST and pyright."
     phase: StepPhase = StepPhase.INGESTION
-    deps: Sequence[str] = ()
+    deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext) -> None:
         """Ingest typing signals from ast + pyright."""
         _log_step(self.name)
-        run_typing_ingest(_ingestion_ctx(ctx))
+        _execute_plugin(ctx, "typing_ingest")
 
 
 @dataclass
@@ -170,7 +223,7 @@ class DocstringsIngestStep:
     def run(self, ctx: PipelineContext) -> None:
         """Ingest docstrings for all Python modules."""
         _log_step(self.name)
-        run_docstrings_ingest(_ingestion_ctx(ctx))
+        _execute_plugin(ctx, "docstrings_ingest")
 
 
 @dataclass
@@ -180,12 +233,12 @@ class ConfigIngestStep:
     name: str = "config_ingest"
     description: str = "Flatten configuration files into analytics.config_values."
     phase: StepPhase = StepPhase.INGESTION
-    deps: Sequence[str] = ()
+    deps: Sequence[str] = ("repo_scan",)
 
     def run(self, ctx: PipelineContext) -> None:
         """Ingest configuration files from repo root."""
         _log_step(self.name)
-        run_config_ingest(_ingestion_ctx(ctx))
+        _execute_plugin(ctx, "config_ingest")
 
 
 INGESTION_STEPS: dict[str, PipelineStep] = {
@@ -214,4 +267,5 @@ __all__ = [
     "SchemaBootstrapStep",
     "TestsIngestStep",
     "TypingIngestStep",
+    "reset_shared_scratch",
 ]

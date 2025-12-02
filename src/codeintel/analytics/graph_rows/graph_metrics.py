@@ -10,7 +10,7 @@ from typing import Any
 
 from codeintel.analytics.graph_service import ComponentBundle, NeighborStats
 from codeintel.config import GraphMetricsStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     GraphMetricsFunctionsRow,
     GraphMetricsModulesRow,
 )

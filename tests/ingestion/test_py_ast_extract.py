@@ -7,7 +7,7 @@ from textwrap import dedent
 
 import pytest
 
-from codeintel.config.dataset_contract import get_table_columns
+from codeintel.config.datasets import get_table_columns
 from codeintel.ingestion.py_ast_extract import AstVisitor
 
 AST_NODES_COLUMNS = get_table_columns("core.ast_nodes")

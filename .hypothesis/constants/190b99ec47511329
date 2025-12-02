@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/cfg_builder.py
+# hypothesis_version: 6.148.3
+
+['assignment', 'back', 'block', 'body', 'cfg_blocks', 'cfg_edges', 'data-flow', 'dfg_edges', 'dst_block_id', 'dst_var', 'edge_kind', 'end_lineno', 'entry', 'exit', 'fallthrough', 'false', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'if_false', 'if_join', 'if_true', 'intra-block', 'jump', 'lineno', 'loop', 'loop_body', 'loop_else', 'loop_exit', 'loop_head', 'param', 'src_block_id', 'src_var', 'true', 'utf8']

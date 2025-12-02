@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from codeintel.serving.backend.duckdb_service import (
+from codeintel.serving.backend.core import (
     BackendContext,
-    DuckDBQueryService,
     DuckDBRepositories,
     GraphEngineProvider,
 )
+from codeintel.serving.backend.duckdb_service import DuckDBQueryService
 from codeintel.serving.backend.pagination import (
     BackendLimits,
     ClampResult,
@@ -17,28 +17,6 @@ from codeintel.serving.backend.pagination import (
     clamp_limit_value,
     clamp_offset_value,
     paginate_items,
-)
-from codeintel.serving.backend.response_builders import (
-    build_callgraph_neighbors_response,
-    build_file_hints_response,
-    build_file_profile_response,
-    build_file_summary_response,
-    build_function_architecture_response,
-    build_function_profile_response,
-    build_function_summary_response,
-    build_graph_neighborhood_response,
-    build_high_risk_functions_response,
-    build_import_boundary_response,
-    build_module_architecture_response,
-    build_module_profile_response,
-    build_module_subsystem_response,
-    build_paginated_functions_response,
-    build_paginated_subsystems_response,
-    build_subsystem_coverage_response,
-    build_subsystem_modules_response,
-    build_subsystem_profile_response,
-    build_subsystem_summary_response,
-    build_tests_for_function_response,
 )
 
 __all__ = [
@@ -50,26 +28,6 @@ __all__ = [
     "GraphEngineProvider",
     "LimitClamp",
     "PaginatedFetch",
-    "build_callgraph_neighbors_response",
-    "build_file_hints_response",
-    "build_file_profile_response",
-    "build_file_summary_response",
-    "build_function_architecture_response",
-    "build_function_profile_response",
-    "build_function_summary_response",
-    "build_graph_neighborhood_response",
-    "build_high_risk_functions_response",
-    "build_import_boundary_response",
-    "build_module_architecture_response",
-    "build_module_profile_response",
-    "build_module_subsystem_response",
-    "build_paginated_functions_response",
-    "build_paginated_subsystems_response",
-    "build_subsystem_coverage_response",
-    "build_subsystem_modules_response",
-    "build_subsystem_profile_response",
-    "build_subsystem_summary_response",
-    "build_tests_for_function_response",
     "clamp_limit",
     "clamp_limit_value",
     "clamp_offset_value",

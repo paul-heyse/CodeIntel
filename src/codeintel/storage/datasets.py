@@ -8,7 +8,7 @@ from typing import cast
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY, DatasetContract
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY, DatasetContract
 
 __all__ = [
     "DatasetRegistry",

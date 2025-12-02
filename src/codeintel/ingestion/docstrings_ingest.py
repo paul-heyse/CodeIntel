@@ -12,7 +12,7 @@ from typing import TypedDict
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.builder import DocstringStepConfig
-from codeintel.config.dataset_contract import DocstringRow, docstring_row_to_tuple
+from codeintel.config.datasets import DocstringRow, docstring_row_to_tuple
 from codeintel.ingestion.change_tracker import (
     ChangeTracker,
     IncrementalIngestOps,

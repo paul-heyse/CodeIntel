@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/graph_metrics_ext.py
+# hypothesis_version: 6.148.3
+
+[200, 500, 'betweenness', 'closeness', 'clustering', 'community_id', 'component_id', 'component_size', 'core_number', 'eigenvector', 'harmonic', 'nx.DiGraph', 'scc_id', 'scc_size', 'triangles', 'weight']

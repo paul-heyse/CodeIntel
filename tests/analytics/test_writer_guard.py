@@ -7,7 +7,7 @@ from typing import cast
 import pytest
 
 from codeintel.analytics.profiles.writer_guard import WriterContext, write_rows_with_registry_guard
-from codeintel.config.dataset_contract import TABLE_SCHEMAS
+from codeintel.config.datasets import TABLE_SCHEMAS
 from codeintel.storage.gateway import DuckDBConnection
 from codeintel.storage.sql_helpers import PreparedStatements
 

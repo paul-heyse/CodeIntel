@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.config.dataset_contract import JSON_SCHEMA_BY_DATASET_NAME
+from codeintel.config.datasets import JSON_SCHEMA_BY_DATASET_NAME
 from codeintel.pipeline.export import DEFAULT_VALIDATION_SCHEMAS, default_validation_schemas
 
 

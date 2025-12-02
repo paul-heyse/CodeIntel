@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Literal
+from dataclasses import asdict, is_dataclass
+from typing import Literal, cast
 
 from fastapi import APIRouter, Request, status
 from starlette.responses import Response
@@ -37,16 +38,15 @@ def _compute_etag(payload: object) -> str:
 
 
 def _filter_datasets(
-    datasets: list[DatasetDescriptor],
+    datasets: list[dm.DatasetDescriptorDomain],
     *,
     docs_view: Literal["include", "exclude", "only"],
     read_only: Literal["include", "exclude", "only"],
-) -> list[DatasetDescriptor]:
-    filtered: list[DatasetDescriptor] = []
+) -> list[dm.DatasetDescriptorDomain]:
+    filtered: list[dm.DatasetDescriptorDomain] = []
     for ds in datasets:
-        caps = ds.capabilities or {}
-        is_docs = bool(caps.get("docs_view"))
-        is_read_only = bool(caps.get("read_only"))
+        is_docs = bool(getattr(ds, "is_docs_view", False))
+        is_read_only = bool(getattr(ds, "is_read_only", False))
         docs_ok = (docs_view != "only" or is_docs) and (docs_view != "exclude" or not is_docs)
         read_only_ok = (read_only != "only" or is_read_only) and (
             read_only != "exclude" or not is_read_only
@@ -122,7 +122,13 @@ def build_datasets_router() -> APIRouter:
             docs_view=docs_view,
             read_only=read_only,
         )
-        payload = [ds.model_dump() for ds in filtered]
+        response_models = [
+            DatasetDescriptor.model_validate(
+                asdict(ds) if is_dataclass(ds) else cast("dict[str, object]", ds)
+            )
+            for ds in filtered
+        ]
+        payload = [descriptor.model_dump() for descriptor in response_models]
         etag = _compute_etag(payload)
         response.headers["Cache-Control"] = "public, max-age=60"
         response.headers["ETag"] = etag
@@ -131,7 +137,7 @@ def build_datasets_router() -> APIRouter:
         LOG.info(
             "Listed %d datasets (docs_view=%s read_only=%s)", len(filtered), docs_view, read_only
         )
-        return filtered
+        return response_models
 
     @router.get(
         specs_path,

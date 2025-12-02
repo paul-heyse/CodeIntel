@@ -6,7 +6,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     DATASET_CONTRACTS,
     DATASET_CONTRACTS_BY_TABLE_KEY,
     JSON_SCHEMA_BY_DATASET_NAME,

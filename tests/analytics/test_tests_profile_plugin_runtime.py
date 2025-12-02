@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.plugin_runtime import (
+from codeintel.analytics.core.pipeline_bridge import (
     AnalyticsPlanRequest,
     AnalyticsRunContext,
     plan_analytics_plugin_run,
     run_analytics_plugins,
 )
-from codeintel.analytics.tests.plugins import TEST_PROFILE_PLUGIN
+from codeintel.analytics.core.plugins import TEST_PROFILE_PLUGIN
 from codeintel.config import ConfigBuilder
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from tests._helpers.fixtures import provisioned_gateway
@@ -35,7 +35,7 @@ def test_tests_profile_plugin_runtime(tmp_path: Path) -> None:
 
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(TEST_PROFILE_PLUGIN.name,),
+                plugin_names=(TEST_PROFILE_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -63,7 +63,7 @@ def test_tests_profile_plugin_runtime(tmp_path: Path) -> None:
             msg = "Expected single run record for test profile plugin."
             pytest.fail(msg)
         rec = report.records[0]
-        if rec.name != TEST_PROFILE_PLUGIN.name:
+        if rec.name != TEST_PROFILE_PLUGIN.metadata.name:
             msg = "Unexpected plugin recorded."
             pytest.fail(msg)
         if rec.status != "succeeded":

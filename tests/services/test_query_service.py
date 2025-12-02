@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import logging
 from collections.abc import Callable
+from dataclasses import asdict, is_dataclass
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
@@ -90,7 +91,15 @@ def _invoke_method(
 def _invoke_list_datasets(
     local: LocalQueryService, _params: dict[str, object]
 ) -> list[dict[str, object]]:
-    return [descriptor.model_dump() for descriptor in local.list_datasets()]
+    results: list[dict[str, object]] = []
+    for descriptor in local.list_datasets():
+        if is_dataclass(descriptor):
+            results.append(asdict(descriptor))
+        elif hasattr(descriptor, "model_dump"):
+            results.append(cast("dict[str, object]", descriptor.model_dump()))
+        else:
+            results.append(cast("dict[str, object]", getattr(descriptor, "__dict__", {})))
+    return results
 
 
 class RecordingObservability(ServiceObservability):

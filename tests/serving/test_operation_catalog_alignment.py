@@ -1,0 +1,217 @@
+"""Tests verifying alignment between canonical catalog, registry, and backend contracts."""
+
+from __future__ import annotations
+
+import re
+
+import pytest
+
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.serving.backend.operations import OPERATION_CONTRACTS, OperationContract
+from codeintel.serving.operations import (
+    DataSourceType,
+    Operation,
+    get_operation,
+    iter_operations,
+)
+from codeintel.serving.registry import (
+    OperationSpec,
+    get_operation_spec,
+    iter_operation_specs,
+)
+
+# =============================================================================
+# Catalog ↔ Registry Alignment
+# =============================================================================
+
+
+def test_operation_spec_is_operation_alias() -> None:
+    """OperationSpec should be an alias for the canonical Operation."""
+    if OperationSpec is not Operation:
+        pytest.fail("OperationSpec should be an alias for Operation")
+
+
+def test_registry_and_catalog_agree_on_ids() -> None:
+    """Registry operation IDs must match catalog operation IDs."""
+    catalog_ids = {op.id for op in iter_operations()}
+    registry_ids = {spec.id for spec in iter_operation_specs()}
+    if catalog_ids != registry_ids:
+        diff = catalog_ids.symmetric_difference(registry_ids)
+        pytest.fail(f"Catalog and registry IDs differ: {diff}")
+
+
+def test_registry_returns_catalog_objects() -> None:
+    """Get_operation_spec should return objects with same attributes as catalog."""
+    for op in iter_operations():
+        spec = get_operation_spec(op.id)
+        catalog_op = get_operation(op.id)
+        # For non-patched operations, should have same attributes
+        # datasets.rows is patched with exposed_datasets, so compare by ID
+        if spec is None:
+            pytest.fail(f"get_operation_spec returned None for {op.id}")
+        if catalog_op is None:
+            pytest.fail(f"get_operation returned None for {op.id}")
+        if spec.id != catalog_op.id:
+            pytest.fail(f"ID mismatch for {op.id}")
+        if spec.category != catalog_op.category:
+            pytest.fail(f"Category mismatch for {op.id}")
+        if spec.backend_method != catalog_op.backend_method:
+            pytest.fail(f"backend_method mismatch for {op.id}")
+
+
+def test_all_operation_ids_are_unique() -> None:
+    """Every operation ID must be unique."""
+    ids = [op.id for op in iter_operations()]
+    if len(ids) != len(set(ids)):
+        pytest.fail("Duplicate operation IDs found")
+
+
+# =============================================================================
+# Contract ↔ Catalog Alignment
+# =============================================================================
+
+
+def test_contracts_derived_from_catalog() -> None:
+    """OPERATION_CONTRACTS should have entries for all catalog operations."""
+    catalog_ids = {op.id for op in iter_operations()}
+    contract_names = set(OPERATION_CONTRACTS.keys())
+    if catalog_ids != contract_names:
+        diff = catalog_ids.symmetric_difference(contract_names)
+        pytest.fail(f"Catalog and contracts differ: {diff}")
+
+
+def test_contract_data_sources_match_catalog() -> None:
+    """Contract data_source should match the catalog operation."""
+    for op in iter_operations():
+        contract = OPERATION_CONTRACTS.get(op.id)
+        if contract is None:
+            pytest.fail(f"Missing contract for {op.id}")
+        if contract.data_source != op.data_source:
+            pytest.fail(
+                f"Data source mismatch for {op.id}: "
+                f"contract={contract.data_source}, catalog={op.data_source}"
+            )
+
+
+def test_contract_source_names_match_catalog() -> None:
+    """Contract source_name should match the catalog operation."""
+    for op in iter_operations():
+        contract = OPERATION_CONTRACTS.get(op.id)
+        if contract is None:
+            pytest.fail(f"Missing contract for {op.id}")
+        expected_source = op.source_name or ""
+        if contract.source_name != expected_source:
+            pytest.fail(
+                f"Source name mismatch for {op.id}: "
+                f"contract={contract.source_name}, catalog={expected_source}"
+            )
+
+
+def test_contract_from_operation_factory() -> None:
+    """OperationContract.from_operation should correctly derive fields."""
+    for op in iter_operations():
+        contract = OperationContract.from_operation(op)
+        if contract.name != op.id:
+            pytest.fail(f"Name mismatch for {op.id}")
+        if contract.data_source != op.data_source:
+            pytest.fail(f"data_source mismatch for {op.id}")
+        if contract.source_name != (op.source_name or ""):
+            pytest.fail(f"source_name mismatch for {op.id}")
+        if contract.supports_pagination != op.supports_pagination:
+            pytest.fail(f"supports_pagination mismatch for {op.id}")
+        if contract.repository_method != op.repository_method:
+            pytest.fail(f"repository_method mismatch for {op.id}")
+
+
+# =============================================================================
+# Operation Data Source Validation
+# =============================================================================
+
+
+def test_view_operations_have_source_names() -> None:
+    """Operations with VIEW data_source should have a source_name."""
+    for op in iter_operations():
+        if op.data_source == DataSourceType.VIEW:
+            if not op.source_name:
+                pytest.fail(f"VIEW operation {op.id} missing source_name")
+            if not op.source_name.startswith(("docs.", "analytics.")):
+                pytest.fail(
+                    f"VIEW operation {op.id} has unexpected source_name prefix: {op.source_name}"
+                )
+
+
+def test_table_operations_have_source_names() -> None:
+    """Operations with TABLE data_source should have a source_name."""
+    for op in iter_operations():
+        if op.data_source == DataSourceType.TABLE and not op.source_name:
+            pytest.fail(f"TABLE operation {op.id} missing source_name")
+
+
+def test_graph_engine_operations_have_required_graphs() -> None:
+    """Operations with GRAPH_ENGINE data_source should have required_graphs."""
+    for op in iter_operations():
+        if op.data_source == DataSourceType.GRAPH_ENGINE and not op.required_graphs:
+            pytest.fail(f"GRAPH_ENGINE operation {op.id} should have required_graphs")
+
+
+def test_required_datasets_are_valid() -> None:
+    """All required_datasets should exist in DATASET_CONTRACTS_BY_TABLE_KEY."""
+    valid_keys = set(DATASET_CONTRACTS_BY_TABLE_KEY.keys())
+
+    for op in iter_operations():
+        for dataset_key in op.required_datasets:
+            # Some dataset keys are informal (like "call_graph_nodes")
+            # Only validate if it looks like a table_key
+            if "." in dataset_key and dataset_key not in valid_keys:
+                pytest.fail(f"Operation {op.id} requires unknown dataset: {dataset_key}")
+
+
+# =============================================================================
+# Tool Name Uniqueness
+# =============================================================================
+
+
+def test_all_tool_names_are_unique() -> None:
+    """Every non-None tool_name must be unique across operations."""
+    tool_names = [op.tool_name for op in iter_operations() if op.tool_name]
+    if len(tool_names) != len(set(tool_names)):
+        duplicates = [n for n in tool_names if tool_names.count(n) > 1]
+        pytest.fail(f"Duplicate MCP tool names detected: {duplicates}")
+
+
+def test_tool_names_follow_convention() -> None:
+    """Tool names should follow snake_case convention."""
+    for op in iter_operations():
+        if op.tool_name and not (op.tool_name.islower() or "_" in op.tool_name):
+            pytest.fail(f"Tool name {op.tool_name} for {op.id} should be snake_case")
+
+
+# =============================================================================
+# HTTP Path Configuration
+# =============================================================================
+
+
+def test_http_paths_are_unique() -> None:
+    """Every non-None http_path must be unique (ignoring path params)."""
+
+    def normalize_path(path: str) -> str:
+        # Replace {param} with a placeholder
+        return re.sub(r"\{[^}]+\}", "{}", path)
+
+    paths_with_methods: list[tuple[str, str]] = []
+    for op in iter_operations():
+        if op.http_path and op.http_method:
+            normalized = normalize_path(op.http_path)
+            paths_with_methods.append((op.http_method, normalized))
+
+    if len(paths_with_methods) != len(set(paths_with_methods)):
+        pytest.fail("Duplicate HTTP method+path combinations detected")
+
+
+def test_http_operations_have_both_method_and_path() -> None:
+    """Operations with http_method must have http_path and vice versa."""
+    for op in iter_operations():
+        if op.http_method is not None and op.http_path is None:
+            pytest.fail(f"Operation {op.id} has http_method but no http_path")
+        if op.http_path is not None and op.http_method is None:
+            pytest.fail(f"Operation {op.id} has http_path but no http_method")

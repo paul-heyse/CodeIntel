@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 import json
 import logging
 import os
@@ -10,22 +9,34 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.analytics.coverage.plugins import (
+from codeintel.analytics.core.pipeline_bridge import (
+    AnalyticsPlanRequest,
+    AnalyticsRunContext,
+    plan_analytics_plugin_run,
+    run_analytics_plugins,
+)
+from codeintel.analytics.core.plugins import (
+    BEHAVIORAL_COVERAGE_PLUGIN,
+    CONFIG_DATA_FLOW_PLUGIN,
     COVERAGE_FUNCTIONS_PLUGIN,
     COVERAGE_TEST_EDGES_PLUGIN,
-)
-from codeintel.analytics.data_models.plugins import (
     DATA_MODEL_USAGE_PLUGIN,
     DATA_MODELS_PLUGIN,
-)
-from codeintel.analytics.dependencies.plugins import EXTERNAL_DEPS_PLUGIN
-from codeintel.analytics.entrypoints.plugins import ENTRYPOINTS_PLUGIN
-from codeintel.analytics.functions.contracts_plugins import FUNCTION_CONTRACTS_PLUGIN
-from codeintel.analytics.functions.effects_plugins import FUNCTION_EFFECTS_PLUGIN
-from codeintel.analytics.functions.history_plugins import FUNCTION_HISTORY_PLUGIN
-from codeintel.analytics.functions.plugins import (
+    ENTRYPOINTS_PLUGIN,
+    EXTERNAL_DEPS_PLUGIN,
     FUNCTION_AST_FEATURES_PLUGIN,
+    FUNCTION_CONTRACTS_PLUGIN,
+    FUNCTION_EFFECTS_PLUGIN,
+    FUNCTION_HISTORY_PLUGIN,
     FUNCTION_METRICS_PLUGIN,
+    HISTORY_TIMESERIES_PLUGIN,
+    HOTSPOTS_PLUGIN,
+    PROFILES_PLUGIN,
+    RISK_FACTORS_PLUGIN,
+    SEMANTIC_ROLES_PLUGIN,
+    SUBSYSTEMS_PLUGIN,
+    TEST_PROFILE_PLUGIN,
+    ensure_plugins_registered,
 )
 from codeintel.analytics.graph_service_runtime import GraphPluginRunOptions, GraphServiceRuntime
 from codeintel.analytics.graphs.plugins import (
@@ -33,25 +44,8 @@ from codeintel.analytics.graphs.plugins import (
     plan_graph_metric_plugins,
 )
 from codeintel.analytics.graphs.runtime.manifest import load_prior_manifest
-from codeintel.analytics.history.plugins import HISTORY_TIMESERIES_PLUGIN
-from codeintel.analytics.hotspots.plugins import HOTSPOTS_PLUGIN
-from codeintel.analytics.plugin_runtime import (
-    AnalyticsPlanRequest,
-    AnalyticsRunContext,
-    plan_analytics_plugin_run,
-    run_analytics_plugins,
-)
-from codeintel.analytics.plugins import get_analytics_plugin
-from codeintel.analytics.profiles.plugins import PROFILES_PLUGIN
-from codeintel.analytics.risk.plugins import RISK_FACTORS_PLUGIN
 from codeintel.analytics.runtime_manifest import encode_manifest
-from codeintel.analytics.semantic_roles.plugins import SEMANTIC_ROLES_PLUGIN
 from codeintel.analytics.subsystems import refresh_subsystem_caches
-from codeintel.analytics.subsystems.plugins import SUBSYSTEMS_PLUGIN
-from codeintel.analytics.tests.plugins import (
-    BEHAVIORAL_COVERAGE_PLUGIN,
-    TEST_PROFILE_PLUGIN,
-)
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
@@ -69,19 +63,19 @@ from codeintel.storage.gateway import StorageGateway, build_snapshot_gateway_res
 
 log = logging.getLogger(__name__)
 
+# Ensure plugins are registered on module import
+ensure_plugins_registered()
+
 
 def _config_data_flow_plugin_name() -> str:
-    """
-    Lazy-load config data flow plugin without direct analytics import strings.
+    """Return the config data flow plugin name.
 
     Returns
     -------
     str
-        Resolved plugin name after registration.
+        Plugin name for config data flow.
     """
-    module_path = ".".join(("codeintel", "analytics", "config_data_flow", "plugins"))
-    importlib.import_module(module_path)
-    return get_analytics_plugin("config.data_flow").name
+    return CONFIG_DATA_FLOW_PLUGIN.metadata.name
 
 
 def _parse_commits(commits_extra: object, commits_env: str) -> tuple[str, ...]:
@@ -165,7 +159,7 @@ class HotspotsStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(HOTSPOTS_PLUGIN.name,),
+                plugin_names=(HOTSPOTS_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -213,7 +207,7 @@ class FunctionHistoryStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(FUNCTION_HISTORY_PLUGIN.name,),
+                plugin_names=(FUNCTION_HISTORY_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -277,7 +271,7 @@ class HistoryTimeseriesStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(HISTORY_TIMESERIES_PLUGIN.name,),
+                plugin_names=(HISTORY_TIMESERIES_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -335,8 +329,8 @@ class FunctionAnalyticsStep:
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
                 plugin_names=(
-                    FUNCTION_AST_FEATURES_PLUGIN.name,
-                    FUNCTION_METRICS_PLUGIN.name,
+                    FUNCTION_AST_FEATURES_PLUGIN.metadata.name,
+                    FUNCTION_METRICS_PLUGIN.metadata.name,
                 ),
                 policy=policy,
                 repo=cfg.repo,
@@ -423,7 +417,7 @@ class FunctionEffectsStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(FUNCTION_EFFECTS_PLUGIN.name,),
+                plugin_names=(FUNCTION_EFFECTS_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -472,7 +466,7 @@ class FunctionContractsStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(FUNCTION_CONTRACTS_PLUGIN.name,),
+                plugin_names=(FUNCTION_CONTRACTS_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -519,7 +513,7 @@ class DataModelsStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(DATA_MODELS_PLUGIN.name,),
+                plugin_names=(DATA_MODELS_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -568,7 +562,7 @@ class DataModelUsageStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(DATA_MODEL_USAGE_PLUGIN.name,),
+                plugin_names=(DATA_MODEL_USAGE_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -666,7 +660,7 @@ class CoverageAnalyticsStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(COVERAGE_FUNCTIONS_PLUGIN.name,),
+                plugin_names=(COVERAGE_FUNCTIONS_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -714,7 +708,7 @@ class TestCoverageEdgesStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(COVERAGE_TEST_EDGES_PLUGIN.name,),
+                plugin_names=(COVERAGE_TEST_EDGES_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -768,7 +762,7 @@ class RiskFactorsStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(RISK_FACTORS_PLUGIN.name,),
+                plugin_names=(RISK_FACTORS_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -800,10 +794,10 @@ def _resolve_graph_plugins(
     cfg: GraphMetricsStepConfig,
     default_plugins: Sequence[str],
 ) -> tuple[str, ...]:
-    """
-    Resolve effective graph metric plugins from config and defaults.
+    """Resolve effective graph metric plugins from config and defaults.
 
-    Rules:
+    Rules
+    -----
     - If cfg.enabled_plugins is non-empty, use that list exactly (in order).
     - Otherwise, start from default_plugins and drop any in cfg.disabled_plugins.
 
@@ -888,7 +882,7 @@ class SemanticRolesStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(SEMANTIC_ROLES_PLUGIN.name,),
+                plugin_names=(SEMANTIC_ROLES_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -937,7 +931,7 @@ class SubsystemsStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(SUBSYSTEMS_PLUGIN.name,),
+                plugin_names=(SUBSYSTEMS_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -992,7 +986,7 @@ class TestProfileStep:
 
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(TEST_PROFILE_PLUGIN.name,),
+                plugin_names=(TEST_PROFILE_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -1067,7 +1061,7 @@ class BehavioralCoverageStep:
         prior_manifest = load_prior_manifest(manifest_path)
 
         cfg_options: dict[str, dict[str, object]] = {
-            BEHAVIORAL_COVERAGE_PLUGIN.name: {
+            BEHAVIORAL_COVERAGE_PLUGIN.metadata.name: {
                 "enable_llm": cfg.enable_llm,
                 "llm_model": cfg.llm_model,
             }
@@ -1075,7 +1069,7 @@ class BehavioralCoverageStep:
 
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(BEHAVIORAL_COVERAGE_PLUGIN.name,),
+                plugin_names=(BEHAVIORAL_COVERAGE_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -1144,7 +1138,7 @@ class EntryPointsStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(ENTRYPOINTS_PLUGIN.name,),
+                plugin_names=(ENTRYPOINTS_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -1195,7 +1189,7 @@ class ExternalDependenciesStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(EXTERNAL_DEPS_PLUGIN.name,),
+                plugin_names=(EXTERNAL_DEPS_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,
@@ -1251,7 +1245,7 @@ class ProfilesStep:
         prior_manifest = load_prior_manifest(manifest_path)
         plan = plan_analytics_plugin_run(
             AnalyticsPlanRequest(
-                plugin_names=(PROFILES_PLUGIN.name,),
+                plugin_names=(PROFILES_PLUGIN.metadata.name,),
                 policy=policy,
                 repo=cfg.repo,
                 commit=cfg.commit,

@@ -20,7 +20,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from codeintel.serving.mcp.models import Message, ResponseMeta
+from codeintel.serving import domain_models as dm
+
+Message = dm.Message
+ResponseMeta = dm.ResponseMeta
 
 # =============================================================================
 # Backend Configuration

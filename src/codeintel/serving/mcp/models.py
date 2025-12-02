@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.serving import domain_models as dm
@@ -383,8 +384,10 @@ class FunctionSummaryRow(MappingModel):
     Typed row for ``docs.v_function_summary`` used by MCP consumers.
 
     Fields capture the most commonly consumed attributes; extra columns emitted
-    by the view are ignored to allow forward-compatible extensions.
+    by the view are preserved so forward-compatible extensions remain visible.
     """
+
+    model_config = ConfigDict(extra="allow")
 
     repo: str
     commit: str
@@ -513,6 +516,8 @@ class FileSummaryRow(MappingModel):
     fields to keep the contract resilient to view extensions.
     """
 
+    model_config = ConfigDict(extra="allow")
+
     repo: str
     commit: str
     rel_path: str
@@ -536,6 +541,8 @@ class FileSummaryRow(MappingModel):
 
 class ModuleArchitectureRow(MappingModel):
     """Typed subset of ``docs.v_module_architecture``."""
+
+    model_config = ConfigDict(extra="allow")
 
     repo: str
     commit: str
@@ -697,7 +704,7 @@ class FunctionSummaryResponse(BaseModel):
     """Response wrapper for function summary lookups."""
 
     found: bool
-    summary: FunctionSummaryRow | None = None
+    summary: FunctionSummaryRow | ViewRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
     def to_domain(self) -> dm.FunctionSummaryResult:
@@ -725,15 +732,13 @@ class FunctionSummaryResponse(BaseModel):
         FunctionSummaryResponse
             Transport summary payload.
         """
-        return cls(
-            found=result.found,
-            summary=(
-                FunctionSummaryRow.model_validate(result.summary)
-                if result.summary is not None
-                else None
-            ),
-            meta=ResponseMeta.from_domain(result.meta),
-        )
+        summary = None
+        if result.summary is not None:
+            try:
+                summary = FunctionSummaryRow.model_validate(result.summary)
+            except ValidationError:
+                summary = ViewRow.model_validate(result.summary)
+        return cls(found=result.found, summary=summary, meta=ResponseMeta.from_domain(result.meta))
 
 
 class HighRiskFunctionsResponse(BaseModel):
@@ -778,8 +783,8 @@ class HighRiskFunctionsResponse(BaseModel):
 class CallGraphNeighborsResponse(BaseModel):
     """Incoming/outgoing call graph edges."""
 
-    outgoing: list[CallGraphEdgeRow]
-    incoming: list[CallGraphEdgeRow]
+    outgoing: list[CallGraphEdgeRow | ViewRow]
+    incoming: list[CallGraphEdgeRow | ViewRow]
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
 
     def to_domain(self) -> dm.CallGraphNeighbors:
@@ -807,9 +812,21 @@ class CallGraphNeighborsResponse(BaseModel):
         CallGraphNeighborsResponse
             Transport call graph neighbor payload.
         """
+        outgoing_edges: list[CallGraphEdgeRow | ViewRow] = []
+        for edge in result.outgoing:
+            try:
+                outgoing_edges.append(CallGraphEdgeRow.model_validate(edge))
+            except ValidationError:
+                outgoing_edges.append(ViewRow.model_validate(edge))
+        incoming_edges: list[CallGraphEdgeRow | ViewRow] = []
+        for edge in result.incoming:
+            try:
+                incoming_edges.append(CallGraphEdgeRow.model_validate(edge))
+            except ValidationError:
+                incoming_edges.append(ViewRow.model_validate(edge))
         return cls(
-            outgoing=[CallGraphEdgeRow.model_validate(edge) for edge in result.outgoing],
-            incoming=[CallGraphEdgeRow.model_validate(edge) for edge in result.incoming],
+            outgoing=outgoing_edges,
+            incoming=incoming_edges,
             meta=ResponseMeta.from_domain(result.meta),
         )
 
@@ -932,8 +949,28 @@ class FileSummaryResponse(BaseModel):
     """Summary of a file plus nested function rows."""
 
     found: bool
-    file: FileSummaryRow | None = None
+    file: FileSummaryRow | ViewRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_file(cls, values: object) -> object:
+        """
+        Preserve extra columns and avoid injecting defaults when functions are absent.
+
+        Returns
+        -------
+        object
+            Normalized mapping suitable for model validation.
+        """
+        if not isinstance(values, Mapping):
+            return values
+        file_value = values.get("file")
+        if isinstance(file_value, Mapping) and "functions" not in file_value:
+            normalized = dict(values)
+            normalized["file"] = ViewRow.model_validate(file_value)
+            return normalized
+        return values
 
     def to_domain(self) -> dm.FileSummaryResult:
         """
@@ -960,9 +997,18 @@ class FileSummaryResponse(BaseModel):
         FileSummaryResponse
             Transport file summary payload.
         """
+        file_value: FileSummaryRow | ViewRow | None = None
+        if result.file is not None:
+            if isinstance(result.file, Mapping) and "functions" not in result.file:
+                file_value = ViewRow.model_validate(result.file)
+            else:
+                try:
+                    file_value = FileSummaryRow.model_validate(result.file)
+                except ValidationError:
+                    file_value = ViewRow.model_validate(result.file)
         return cls(
             found=result.found,
-            file=(FileSummaryRow.model_validate(result.file) if result.file is not None else None),
+            file=file_value,
             meta=ResponseMeta.from_domain(result.meta),
         )
 
@@ -971,8 +1017,30 @@ class FunctionProfileResponse(BaseModel):
     """Profile payload for a single function GOID."""
 
     found: bool
-    profile: FunctionProfileRow | None = None
+    profile: FunctionProfileRow | ViewRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_profile(cls, values: object) -> object:
+        """
+        Preserve profile payloads without injecting default fields.
+
+        Returns
+        -------
+        object
+            Normalized mapping suitable for model validation.
+        """
+        if not isinstance(values, Mapping):
+            return values
+        profile_value = values.get("profile")
+        if isinstance(profile_value, Mapping) and not any(
+            key in profile_value for key in ("test_count", "fan_in", "fan_out")
+        ):
+            normalized = dict(values)
+            normalized["profile"] = ViewRow.model_validate(profile_value)
+            return normalized
+        return values
 
     def to_domain(self) -> dm.FunctionProfileResult:
         """
@@ -999,13 +1067,20 @@ class FunctionProfileResponse(BaseModel):
         FunctionProfileResponse
             Transport function profile payload.
         """
+        profile_value: FunctionProfileRow | ViewRow | None = None
+        if result.profile is not None:
+            if isinstance(result.profile, Mapping) and not any(
+                key in result.profile for key in ("test_count", "fan_in", "fan_out")
+            ):
+                profile_value = ViewRow.model_validate(result.profile)
+            else:
+                try:
+                    profile_value = FunctionProfileRow.model_validate(result.profile)
+                except ValidationError:
+                    profile_value = ViewRow.model_validate(result.profile)
         return cls(
             found=result.found,
-            profile=(
-                FunctionProfileRow.model_validate(result.profile)
-                if result.profile is not None
-                else None
-            ),
+            profile=profile_value,
             meta=ResponseMeta.from_domain(result.meta),
         )
 
@@ -1057,8 +1132,30 @@ class ModuleProfileResponse(BaseModel):
     """Profile payload for a module."""
 
     found: bool
-    profile: ModuleProfileRow | None = None
+    profile: ModuleProfileRow | ViewRow | None = None
     meta: ResponseMeta = Field(default_factory=ResponseMeta)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_profile(cls, values: object) -> object:
+        """
+        Preserve module profiles that do not include optional typed fields.
+
+        Returns
+        -------
+        object
+            Normalized mapping suitable for model validation.
+        """
+        if not isinstance(values, Mapping):
+            return values
+        profile_value = values.get("profile")
+        if isinstance(profile_value, Mapping) and not any(
+            key in profile_value for key in ("rel_path", "symbol_fan_in", "symbol_fan_out")
+        ):
+            normalized = dict(values)
+            normalized["profile"] = ViewRow.model_validate(profile_value)
+            return normalized
+        return values
 
     def to_domain(self) -> dm.ModuleProfileResult:
         """
@@ -1085,13 +1182,20 @@ class ModuleProfileResponse(BaseModel):
         ModuleProfileResponse
             Transport module profile payload.
         """
+        profile_value: ModuleProfileRow | ViewRow | None = None
+        if result.profile is not None:
+            if isinstance(result.profile, Mapping) and not any(
+                key in result.profile for key in ("rel_path", "symbol_fan_in", "symbol_fan_out")
+            ):
+                profile_value = ViewRow.model_validate(result.profile)
+            else:
+                try:
+                    profile_value = ModuleProfileRow.model_validate(result.profile)
+                except ValidationError:
+                    profile_value = ViewRow.model_validate(result.profile)
         return cls(
             found=result.found,
-            profile=(
-                ModuleProfileRow.model_validate(result.profile)
-                if result.profile is not None
-                else None
-            ),
+            profile=profile_value,
             meta=ResponseMeta.from_domain(result.meta),
         )
 
@@ -1651,3 +1755,34 @@ class OperationMetaResponse(BaseModel):
     required_graphs: list[str] = Field(default_factory=list)
     default_limit: int | None = None
     max_limit: int | None = None
+
+
+class DataflowNodePayload(BaseModel):
+    """HTTP/MCP payload representing a single dataflow node."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    id: str
+    kind: Literal["table", "view", "operation", "graph"]
+    family: str | None = None
+    owner_package: str | None = None
+    description: str | None = None
+
+
+class DataflowEdgePayload(BaseModel):
+    """HTTP/MCP payload representing a dataflow edge."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    src: str
+    dst: str
+    edge_type: Literal["builds", "reads", "exposes", "depends_on"]
+
+
+class DataflowGraphResponse(BaseModel):
+    """Bundle of dataflow nodes and edges."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    nodes: list[DataflowNodePayload]
+    edges: list[DataflowEdgePayload]

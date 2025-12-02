@@ -13,7 +13,7 @@ from pathlib import Path
 import networkx as nx
 
 from codeintel.config import CFGBuilderStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     CFGBlockRow,
     CFGEdgeRow,
     DFGEdgeRow,

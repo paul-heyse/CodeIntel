@@ -5,13 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
-from codeintel.config.dataset_contract import DatasetContract
+from codeintel.config.datasets import DatasetContract
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import BackendLimits, clamp_limit_value, clamp_offset_value
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp import errors as mcp_errors
 from codeintel.serving.mcp.models import (
-    DatasetDescriptor,
     DatasetRowsResponse,
     DatasetSchemaResponse,
     DatasetSpecDescriptor,
@@ -59,17 +58,17 @@ class _LocalDatasetMixin:
     limits: BackendLimits
     _call: Callable[..., Any]
 
-    def list_datasets(self) -> list[DatasetDescriptor]:
+    def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
         """
         List datasets available through the dataset registry.
 
         Returns
         -------
-        list[DatasetDescriptor]
+        list[dm.DatasetDescriptorDomain]
             Dataset descriptors with names, tables, and descriptions.
         """
 
-        def _list() -> list[DatasetDescriptor]:
+        def _list() -> list[dm.DatasetDescriptorDomain]:
             mapping: dict[str, str] = self.dataset_tables or {}
             registry = None
             if not mapping:
@@ -79,7 +78,7 @@ class _LocalDatasetMixin:
                     registry = load_dataset_registry(query_gateway.con)
             if registry is None:
                 registry = load_dataset_registry(self.query.gateway.con)
-            results: list[DatasetDescriptor] = []
+            results: list[dm.DatasetDescriptorDomain] = []
             for name, table in sorted(mapping.items()):
                 ds: DatasetContract | None = registry.by_name.get(name) if registry else None
                 description = (
@@ -87,20 +86,24 @@ class _LocalDatasetMixin:
                 ) or self.describe_dataset_fn(name, table)
                 capabilities = ds.capabilities() if ds is not None else {}
                 results.append(
-                    DatasetDescriptor(
+                    dm.DatasetDescriptorDomain(
                         name=name,
                         table=table,
                         family=ds.family if ds is not None else None,
                         description=description,
                         owner=ds.owner if ds is not None else None,
-                        freshness_sla=ds.freshness_sla if ds is not None else None,
-                        retention_policy=ds.retention_policy if ds is not None else None,
                         schema_version=ds.schema_version if ds is not None else None,
                         stable_id=ds.stable_id if ds is not None else None,
-                        validation_profile=_normalize_validation_profile(
-                            ds.validation_profile if ds is not None else None
+                        is_docs_view=bool(
+                            capabilities.get("docs_view")
+                            if isinstance(capabilities, dict)
+                            else False
                         ),
-                        capabilities=capabilities,
+                        is_read_only=bool(
+                            capabilities.get("read_only")
+                            if isinstance(capabilities, dict)
+                            else False
+                        ),
                     )
                 )
             return results
@@ -144,18 +147,22 @@ class _LocalDatasetMixin:
             problem_detail = DatasetNotFoundError.for_name(dataset_name).detail
             raise mcp_errors.McpError(problem_detail)
 
-        def _schema() -> DatasetSchemaResponse:
+        def _schema() -> object:
             return self.query.datasets.dataset_schema(
                 dataset_name=dataset_name, sample_limit=sample_limit
             )
 
-        pydantic_resp: DatasetSchemaResponse = self._call(
+        raw_resp = self._call(
             "dataset_schema",
             _schema,
             dataset=dataset_name,
             schema_version=schema_version,
         )
-        return pydantic_resp.to_domain()
+        if isinstance(raw_resp, dm.DatasetSchema):
+            return raw_resp
+        if isinstance(raw_resp, DatasetSchemaResponse):
+            return raw_resp.to_domain()
+        return DatasetSchemaResponse.model_validate(raw_resp).to_domain()
 
     def read_dataset_rows(
         self,
@@ -193,19 +200,20 @@ class _LocalDatasetMixin:
         )
         messages = [*clamped_offset.messages, *clamped_limit.messages]
         if clamped_limit.has_error or clamped_offset.has_error:
+            domain_meta = dm.ResponseMeta(
+                requested_limit=limit,
+                applied_limit=clamped_limit.applied,
+                requested_offset=offset,
+                applied_offset=clamped_offset.applied,
+                truncated=False,
+                messages=messages,
+            )
             response = DatasetRowsResponse(
                 dataset_name=dataset_name,
                 limit=clamped_limit.applied or 0,
                 offset=clamped_offset.applied,
                 rows=[],
-                meta=ResponseMeta(
-                    requested_limit=limit,
-                    applied_limit=clamped_limit.applied,
-                    requested_offset=offset,
-                    applied_offset=clamped_offset.applied,
-                    truncated=False,
-                    messages=messages,
-                ),
+                meta=ResponseMeta.from_domain(domain_meta),
             )
             return response.to_domain()
 
@@ -220,13 +228,15 @@ class _LocalDatasetMixin:
                 limit=clamped_limit.applied or 0,
                 offset=clamped_offset.applied,
                 rows=[ViewRow.model_validate(row) for row in raw_rows],
-                meta=ResponseMeta(
-                    requested_limit=limit,
-                    applied_limit=clamped_limit.applied,
-                    requested_offset=offset,
-                    applied_offset=clamped_offset.applied,
-                    truncated=False,
-                    messages=messages,
+                meta=ResponseMeta.from_domain(
+                    dm.ResponseMeta(
+                        requested_limit=limit,
+                        applied_limit=clamped_limit.applied,
+                        requested_offset=offset,
+                        applied_offset=clamped_offset.applied,
+                        truncated=False,
+                        messages=messages,
+                    )
                 ),
             )
 
@@ -244,10 +254,42 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
 
     limits: BackendLimits
 
-    def list_datasets(self) -> list[DatasetDescriptor]:
-        def _run() -> list[DatasetDescriptor]:
-            data = cast("list[dict[str, object]]", self.request_json("/datasets", {}))
-            return [DatasetDescriptor.model_validate(item) for item in data]
+    def list_datasets(self) -> list[dm.DatasetDescriptorDomain]:
+        def _run() -> list[dm.DatasetDescriptorDomain]:
+            data = cast("list[object]", self.request_json("/datasets", {}))
+            descriptors: list[dm.DatasetDescriptorDomain] = []
+            for item in data:
+                if isinstance(item, dm.DatasetDescriptorDomain):
+                    descriptors.append(item)
+                    continue
+                payload = cast("dict[str, object]", item) if isinstance(item, dict) else {}
+                if not payload:
+                    continue
+                descriptors.append(
+                    dm.DatasetDescriptorDomain(
+                        name=cast("str", payload.get("name")),
+                        table=cast("str", payload.get("table") or payload.get("table_key")),
+                        description=cast("str", payload.get("description", "")),
+                        family=cast("str | None", payload.get("family")),
+                        owner=cast("str | None", payload.get("owner")),
+                        schema_version=cast("str | None", payload.get("schema_version")),
+                        stable_id=cast("str | None", payload.get("stable_id")),
+                        is_docs_view=bool(
+                            payload.get("is_docs_view")
+                            or cast("dict[str, bool]", payload.get("capabilities", {})).get(
+                                "docs_view", False
+                            )
+                            or payload.get("is_view")
+                        ),
+                        is_read_only=bool(
+                            payload.get("is_read_only")
+                            or cast("dict[str, bool]", payload.get("capabilities", {})).get(
+                                "read_only", False
+                            )
+                        ),
+                    )
+                )
+            return descriptors
 
         return self._http_call("list_datasets", _run)
 
@@ -277,13 +319,15 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
             offset_clamp = clamp_offset_value(offset)
             messages = [*clamp.messages, *offset_clamp.messages]
             if clamp.has_error or offset_clamp.has_error:
-                meta = ResponseMeta(
-                    requested_limit=limit,
-                    applied_limit=clamp.applied,
-                    requested_offset=offset,
-                    applied_offset=offset_clamp.applied,
-                    messages=messages,
-                    truncated=False,
+                meta = ResponseMeta.from_domain(
+                    dm.ResponseMeta(
+                        requested_limit=limit,
+                        applied_limit=clamp.applied,
+                        requested_offset=offset,
+                        applied_offset=offset_clamp.applied,
+                        messages=messages,
+                        truncated=False,
+                    )
                 )
                 return DatasetRowsResponse(
                     dataset_name=dataset_name,
@@ -300,13 +344,16 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
                 data = {**data, "dataset_name": data["dataset"]}
             response = DatasetRowsResponse.model_validate(data)
             existing_meta = response.meta if response.meta is not None else ResponseMeta()
-            merged_meta = ResponseMeta(
-                requested_limit=limit,
-                applied_limit=clamp.applied,
-                requested_offset=offset,
-                applied_offset=offset_clamp.applied,
-                truncated=existing_meta.truncated,
-                messages=[*messages, *(existing_meta.messages or [])],
+            existing_domain_meta = existing_meta.to_domain()
+            merged_meta = ResponseMeta.from_domain(
+                dm.ResponseMeta(
+                    requested_limit=limit,
+                    applied_limit=clamp.applied,
+                    requested_offset=offset,
+                    applied_offset=offset_clamp.applied,
+                    truncated=existing_meta.truncated,
+                    messages=[*messages, *existing_domain_meta.messages],
+                )
             )
             return response.model_copy(update={"meta": merged_meta})
 
@@ -316,17 +363,19 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
         return pydantic_resp.to_domain()
 
     def dataset_schema(self, *, dataset_name: str, sample_limit: int = 5) -> dm.DatasetSchema:
-        def _run() -> DatasetSchemaResponse:
+        def _run() -> object:
             data = self.request_json(
                 f"/datasets/{dataset_name}/schema",
                 {"limit": sample_limit},
             )
+            if isinstance(data, dm.DatasetSchema):
+                return data
             return DatasetSchemaResponse.model_validate(data)
 
-        pydantic_resp: DatasetSchemaResponse = self._http_call(
-            "dataset_schema", _run, dataset=dataset_name
-        )
-        return pydantic_resp.to_domain()
+        raw_resp = self._http_call("dataset_schema", _run, dataset=dataset_name)
+        if isinstance(raw_resp, dm.DatasetSchema):
+            return raw_resp
+        return cast("DatasetSchemaResponse", raw_resp).to_domain()
 
 
 __all__ = ["_HttpDatasetQueryMixin", "_LocalDatasetMixin"]

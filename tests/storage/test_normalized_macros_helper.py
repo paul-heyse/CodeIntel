@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.metadata_bootstrap import (

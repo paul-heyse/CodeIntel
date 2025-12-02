@@ -20,7 +20,7 @@ from codeintel.analytics.profiles.writer_guard import (
     write_rows_with_registry_guard,
 )
 from codeintel.config import ProfilesAnalyticsStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     MODULE_PROFILE_COLUMNS,
     ModuleProfileRowModel,
     module_profile_row_to_tuple,

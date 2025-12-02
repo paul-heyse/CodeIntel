@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.schemas import apply_all_schemas
 

@@ -9,7 +9,11 @@ from dataclasses import dataclass
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS, DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import (
+    DATASET_CONTRACTS,
+    DATASET_CONTRACTS_BY_TABLE_KEY,
+    build_contract_dataflow_graph,
+)
 from codeintel.storage.normalized_macros import render_macro
 from codeintel.storage.sql_helpers import safe_macro_call
 from codeintel.storage.views import create_all_views
@@ -263,7 +267,9 @@ METADATA_SCHEMA_DDL_REST: tuple[str, ...] = (
         jsonl_filename   TEXT,
         parquet_filename TEXT,
         family           TEXT,
-        description      TEXT
+        description      TEXT,
+        schema_version   TEXT,
+        deprecated       BOOLEAN DEFAULT FALSE
     );
     """,
     """
@@ -271,6 +277,12 @@ METADATA_SCHEMA_DDL_REST: tuple[str, ...] = (
     """,
     """
     ALTER TABLE metadata.datasets ADD COLUMN IF NOT EXISTS description TEXT;
+    """,
+    """
+    ALTER TABLE metadata.datasets ADD COLUMN IF NOT EXISTS schema_version TEXT;
+    """,
+    """
+    ALTER TABLE metadata.datasets ADD COLUMN IF NOT EXISTS deprecated BOOLEAN DEFAULT FALSE;
     """,
     """
     CREATE OR REPLACE MACRO metadata.dataset_rows(
@@ -744,6 +756,34 @@ METADATA_SCHEMA_DDL_REST: tuple[str, ...] = (
 
 METADATA_SCHEMA_DDL_REST += tuple(AUTO_NORMALIZED_MACRO_DDLS)
 
+METADATA_SCHEMA_DDL_REST += (
+    """
+    CREATE TABLE IF NOT EXISTS metadata.dataset_dataflow_nodes (
+        id            TEXT PRIMARY KEY,
+        kind          TEXT NOT NULL,
+        family        TEXT,
+        owner_package TEXT,
+        description   TEXT
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS metadata.dataset_dataflow_edges (
+        src       TEXT NOT NULL,
+        dst       TEXT NOT NULL,
+        edge_type TEXT NOT NULL,
+        PRIMARY KEY (src, dst, edge_type)
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_dataset_dataflow_edges_src
+        ON metadata.dataset_dataflow_edges (src);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_dataset_dataflow_edges_dst
+        ON metadata.dataset_dataflow_edges (dst);
+    """,
+)
+
 METADATA_SCHEMA_DDL: tuple[str, ...] = (
     METADATA_SCHEMA_DDL_BASE + INGEST_MACRO_DDLS + METADATA_SCHEMA_DDL_REST
 )
@@ -992,6 +1032,8 @@ class _DatasetUpsert:
     parquet_filename: str | None
     family: str | None
     description: str | None
+    schema_version: str | None
+    deprecated: bool
 
 
 def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> None:
@@ -1006,16 +1048,20 @@ def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> Non
             jsonl_filename,
             parquet_filename,
             family,
-            description
+            description,
+            schema_version,
+            deprecated
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(table_key) DO UPDATE SET
             name             = excluded.name,
             is_view          = excluded.is_view,
             jsonl_filename   = excluded.jsonl_filename,
             parquet_filename = excluded.parquet_filename,
             family           = excluded.family,
-            description      = excluded.description;
+            description      = excluded.description,
+            schema_version   = excluded.schema_version,
+            deprecated       = excluded.deprecated;
         """,
         [
             payload.table_key,
@@ -1025,8 +1071,49 @@ def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> Non
             parquet_filename,
             payload.family,
             payload.description,
+            payload.schema_version,
+            payload.deprecated,
         ],
     )
+
+
+def sync_dataset_dataflow_graph(con: DuckDBPyConnection) -> None:
+    """Refresh dataset-level dataflow graph metadata tables based on static contracts."""
+    nodes, edges = build_contract_dataflow_graph()
+
+    con.execute("DELETE FROM metadata.dataset_dataflow_nodes")
+    con.execute("DELETE FROM metadata.dataset_dataflow_edges")
+
+    if nodes:
+        con.executemany(
+            """
+            INSERT INTO metadata.dataset_dataflow_nodes (
+                id,
+                kind,
+                family,
+                owner_package,
+                description
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (node.id, node.kind, node.family, node.owner_package, node.description)
+                for node in nodes
+            ],
+        )
+
+    if edges:
+        con.executemany(
+            """
+            INSERT INTO metadata.dataset_dataflow_edges (
+                src,
+                dst,
+                edge_type
+            )
+            VALUES (?, ?, ?)
+            """,
+            [(edge.src, edge.dst, edge.edge_type) for edge in edges],
+        )
 
 
 def bootstrap_metadata_datasets(
@@ -1068,6 +1155,9 @@ def bootstrap_metadata_datasets(
         jsonl_filename = jsonl_mapping.get(table_key) or contract.jsonl_filename
         parquet_filename = parquet_mapping.get(table_key) or contract.parquet_filename
 
+        # Check for deprecated field (added in new contracts.py)
+        deprecated = getattr(contract, "deprecated", False)
+
         _upsert_dataset_row(
             con,
             _DatasetUpsert(
@@ -1078,5 +1168,9 @@ def bootstrap_metadata_datasets(
                 parquet_filename=parquet_filename,
                 family=contract.family or schema_prefix,
                 description=contract.description,
+                schema_version=contract.schema_version,
+                deprecated=deprecated,
             ),
         )
+
+    sync_dataset_dataflow_graph(con)

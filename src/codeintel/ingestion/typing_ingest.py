@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codeintel.config import TypingIngestStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     StaticDiagnosticRow,
     TypednessRow,
     static_diagnostic_to_tuple,

@@ -27,7 +27,7 @@ from codeintel.analytics.graph_rows.symbol_graph_metrics import (
     build_symbol_function_rows,
     build_symbol_module_rows,
 )
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     GraphMetricsFunctionsExtRow,
     GraphMetricsModulesExtRow,
 )

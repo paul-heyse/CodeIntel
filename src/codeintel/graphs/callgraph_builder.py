@@ -11,7 +11,7 @@ from pathlib import Path
 import libcst as cst
 
 from codeintel.config import CallGraphStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     call_graph_node_to_tuple,

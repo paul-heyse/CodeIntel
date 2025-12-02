@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/__init__.py
+# hypothesis_version: 6.148.3
+
+['BackendResource', 'BootstrapOptions', 'DuckDBBackend', 'HasModelDump', 'HttpBackend', 'HttpQueryService', 'LocalQueryService', 'PaginatedFetch', 'QueryBackend', 'QueryService', 'ServiceStack', 'build_service_stack']

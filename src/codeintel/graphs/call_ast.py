@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from codeintel.config.dataset_contract import CallGraphEdgeRow
+from codeintel.config.datasets import CallGraphEdgeRow
 from codeintel.graphs.call_context import EdgeResolutionContext
 from codeintel.graphs.call_resolution import build_evidence, resolve_callee, resolve_via_scip
 

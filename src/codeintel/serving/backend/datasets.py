@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Literal
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS, DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import DATASET_CONTRACTS, DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
 

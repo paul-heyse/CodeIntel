@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.dataset_contract import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import safe_macro_call

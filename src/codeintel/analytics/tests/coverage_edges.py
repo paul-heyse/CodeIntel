@@ -14,7 +14,7 @@ from coverage import Coverage, CoverageData
 from coverage.exceptions import CoverageException
 
 from codeintel.config import TestCoverageStepConfig
-from codeintel.config.dataset_contract import (
+from codeintel.config.datasets import (
     TEST_CATALOG_UPDATE_GOIDS,
     TestCoverageEdgeRow,
     serialize_test_coverage_edge,

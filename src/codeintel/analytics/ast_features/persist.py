@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
-from codeintel.config.dataset_contract import FunctionAstFeaturesRow
+from codeintel.config.datasets import FunctionAstFeaturesRow
 
 
 def features_to_row(
