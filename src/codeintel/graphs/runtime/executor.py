@@ -35,7 +35,9 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.graphs.engine import GraphEngine
+    from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.run_tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
 
@@ -128,12 +130,15 @@ class GraphExecutorContext:
         Graph engine.
     catalog_provider
         Function catalog provider.
+    run_context
+        Optional unified run context for cross-engine correlation.
     """
 
     gateway: StorageGateway
     snapshot: SnapshotRef
     engine: GraphEngine | None = None
     catalog_provider: FunctionCatalogProvider | None = None
+    run_context: RunContext | None = None
 
 
 def _run_with_timeout(
@@ -430,12 +435,15 @@ def _execute_planned_plugin(
     return record
 
 
-def run_graph_plugins(  # noqa: PLR0914
+def run_graph_plugins(  # noqa: PLR0914, PLR0915
     *,
     plan: GraphPluginExecutionPlan,
     context: GraphExecutorContext,
 ) -> GraphRunReport:
     """Execute all plugins in an execution plan.
+
+    If a `run_context` is provided in the executor context, this function
+    records run and step metadata to the pipeline registry.
 
     Parameters
     ----------
@@ -449,12 +457,23 @@ def run_graph_plugins(  # noqa: PLR0914
     GraphRunReport
         Report of execution results.
     """
+    from codeintel.storage.run_tracking import PipelineStatus  # noqa: PLC0415
+
     start = time.perf_counter()
     started_at = datetime.now(tz=UTC)
     records: list[GraphPluginRunRecord] = []
     scratch = GraphRuntimeScratch()
     manifest: dict[str, dict[str, object]] = {}
     fatal_error = False
+
+    # Start the run in the registry if RunContext is available
+    run_context = context.run_context
+    runs = context.gateway.runs if run_context is not None else None
+    if run_context is not None and runs is not None:
+        runs.start_run(
+            run_context,
+            pipeline_name=f"graphs:{plan.scope}",
+        )
 
     run_span = plan.telemetry.start_run(
         run_id=plan.run_id,
@@ -495,6 +514,7 @@ def run_graph_plugins(  # noqa: PLR0914
                 plugin_name=plugin.metadata.name,
                 run_id=plan.run_id,
                 scope=plan.scope,
+                run_context=context.run_context,
             )
 
             try:
@@ -529,6 +549,28 @@ def run_graph_plugins(  # noqa: PLR0914
 
     plan.telemetry.finish_run(run_span, success_count, failure_count, skip_count)
 
+    # Record steps and complete the run in the registry
+    if run_context is not None and runs is not None:
+        _record_graph_steps(runs, run_context.run_id, records, plan)
+
+        # Determine overall status
+        status: PipelineStatus
+        error_summary: str | None = None
+        if fatal_error or failure_count > 0:
+            status = "failed"
+            failed_plugins = [r.name for r in records if r.status == "failed"]
+            error_summary = f"Failed plugins: {', '.join(failed_plugins)}"
+        elif skip_count > 0 and success_count == 0:
+            status = "partial"
+        else:
+            status = "succeeded"
+
+        runs.complete_run(
+            run_context.run_id,
+            status=status,
+            error_summary=error_summary,
+        )
+
     return GraphRunReport(
         run_id=plan.run_id,
         repo=plan.repo,
@@ -543,6 +585,80 @@ def run_graph_plugins(  # noqa: PLR0914
         fatal_error=fatal_error,
         manifest=manifest,
     )
+
+
+def _record_graph_steps(
+    runs: PipelineRunTracking,
+    run_id: str,
+    records: list[GraphPluginRunRecord],
+    plan: GraphPluginExecutionPlan,
+) -> None:
+    """Record step records from graph results.
+
+    Parameters
+    ----------
+    runs
+        Pipeline run tracking accessor from gateway.
+    run_id
+        Run identifier.
+    records
+        Graph plugin run records.
+    plan
+        Execution plan with plugin metadata.
+    """
+    from codeintel.storage.run_tracking import PipelineStepRecord, StepStatus  # noqa: PLC0415
+
+    for rec in records:
+        # Get plugin metadata for stage information
+        plugin_meta = next(
+            (p.metadata for p in plan.plugins if p.metadata.name == rec.name),
+            None,
+        )
+        stage = plugin_meta.stage if plugin_meta else "unknown"
+
+        # Extract row_counts from meta if present
+        row_counts_raw = rec.meta.get("row_counts")
+        row_counts: dict[str, int] | None = None
+        if isinstance(row_counts_raw, dict):
+            row_counts = {str(k): int(v) for k, v in row_counts_raw.items()}
+
+        # Map graph status to step status
+        step_status: StepStatus
+        if rec.status == "succeeded":
+            step_status = "succeeded"
+        elif rec.status == "failed":
+            step_status = "failed"
+        elif rec.status == "skipped":
+            step_status = "skipped"
+        else:
+            step_status = "failed"
+
+        # Build extra metadata
+        extra: dict[str, object] = {}
+        if rec.error:
+            extra["error"] = rec.error
+        if rec.partial:
+            extra["partial"] = True
+        if rec.attempts > 1:
+            extra["attempts"] = rec.attempts
+
+        # Parse timestamps
+        started_at = datetime.fromisoformat(rec.started_at)
+        ended_at = datetime.fromisoformat(rec.ended_at)
+
+        runs.record_step(
+            PipelineStepRecord(
+                run_id=run_id,
+                module="graphs",
+                stage=stage,
+                name=rec.name,
+                status=step_status,
+                started_at=started_at,
+                completed_at=ended_at,
+                row_counts=row_counts,
+                extra=extra if extra else None,
+            ),
+        )
 
 
 def run_graph_plugin_batch(

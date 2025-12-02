@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import cast
 
 import pytest
 from prefect import task
 
-from codeintel.pipeline.orchestration.core import PipelineStep, StepPhase
+from codeintel.pipeline.orchestration.core import PipelineContext, PipelineStep, StepPhase
 from codeintel.pipeline.orchestration.prefect_metadata import (
     attach_task_metadata,
     get_task_metadata,
@@ -19,10 +19,9 @@ class _StubStep(PipelineStep):
     name = "stub"
     description = "stub step"
     phase = StepPhase.INGESTION
-    deps: tuple[str, ...] = ()
+    deps: Sequence[str] = ()
 
-    @staticmethod
-    def run(ctx: object) -> None:  # pragma: no cover - not used
+    def run(self, ctx: PipelineContext) -> None:  # noqa: PLR6301  # pragma: no cover
         _ = ctx
 
 

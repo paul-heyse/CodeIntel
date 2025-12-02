@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.graphs.ports.storage import BatchResult, QueryResult, StoragePort
+from codeintel.graphs.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.common import run_batch
 
 if TYPE_CHECKING:
@@ -170,16 +170,6 @@ class DuckDBStorageAdapter:
             Absolute path to the repository root.
         """
         return self._repo_root
-
-
-# Verify protocol compliance
-def _check_protocol_compliance() -> None:
-    """Verify DuckDBStorageAdapter implements StoragePort."""
-    adapter: StoragePort = DuckDBStorageAdapter(
-        gateway=None,  # type: ignore[arg-type]
-        _repo_root=Path(),
-    )
-    _ = adapter
 
 
 __all__ = ["DuckDBStorageAdapter"]

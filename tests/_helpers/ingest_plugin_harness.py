@@ -36,6 +36,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, TypeVar
 from uuid import uuid4
 
+from codeintel.core.config_registry import ConfigRegistry
+
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.core.base import BaseIngestPlugin, ValidationResult
@@ -70,8 +72,8 @@ class IngestPluginTestHarness:
         Commit identifier.
     _repo_root : Path | None
         Repository root path.
-    _configs : dict[type, object]
-        Configuration objects keyed by type.
+    _configs : ConfigRegistry
+        Configuration registry for plugin configs.
     _resources : ResourceRegistry | None
         Resource registry for provider access.
     _scratch_data : dict[str, object]
@@ -84,7 +86,7 @@ class IngestPluginTestHarness:
     _commit: str = "test-commit"
     _repo_root: Path | None = None
     _build_dir: Path | None = None
-    _configs: dict[type[object], object] = field(default_factory=dict)
+    _configs: ConfigRegistry = field(default_factory=ConfigRegistry)
     _resources: ResourceRegistry | None = None
     _code_profile: ScanProfile | None = None
     _config_profile: ScanProfile | None = None
@@ -182,7 +184,7 @@ class IngestPluginTestHarness:
         Self
             Self for chaining.
         """
-        self._configs[type(config)] = config
+        self._configs.register(type(config), config)
         return self
 
     def with_configs(self, *configs: object) -> Self:
@@ -441,7 +443,7 @@ class IngestPluginTestHarness:
             config_profile=config_profile,
             resources=resources,
             scratch=scratch,
-            configs=dict(self._configs),
+            configs=self._configs.copy(),
             plugin_name=self._plugin.metadata.name,
             run_id=self._run_id,
         )

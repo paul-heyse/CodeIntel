@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.graphs.ports.catalog import CatalogPort, FunctionSpanData
+from codeintel.graphs.ports.catalog import FunctionSpanData
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalog
@@ -154,15 +154,6 @@ class CatalogAdapter:
             URN if found, None otherwise.
         """
         return self.catalog.urn_for_goid(goid)
-
-
-# Verify protocol compliance
-def _check_protocol_compliance() -> None:
-    """Verify CatalogAdapter implements CatalogPort."""
-    adapter: CatalogPort = CatalogAdapter(
-        catalog=None,  # type: ignore[arg-type]
-    )
-    _ = adapter
 
 
 __all__ = ["CatalogAdapter"]

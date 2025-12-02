@@ -204,7 +204,6 @@ class CoverageIngestPlugin(
         return None
 
 
-
 class _SkipError(Exception):
     """Internal signal to indicate plugin should skip."""
 

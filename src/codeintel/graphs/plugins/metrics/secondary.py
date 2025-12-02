@@ -83,9 +83,7 @@ def _compute_test_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
         Success result after computing test graph metrics.
     """
     with resolve_analytics_runtime(ctx) as rt:
-        compute_test_graph_metrics(
-            rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime
-        )
+        compute_test_graph_metrics(rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime)
     return ComputationResult.ok()
 
 
@@ -143,9 +141,7 @@ def _compute_config_graph_metrics(ctx: GraphExecutionContext) -> ComputationResu
         Success result after computing config graph metrics.
     """
     with resolve_analytics_runtime(ctx) as rt:
-        compute_config_graph_metrics(
-            rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime
-        )
+        compute_config_graph_metrics(rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime)
     return ComputationResult.ok()
 
 

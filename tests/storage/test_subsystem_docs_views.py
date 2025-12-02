@@ -27,7 +27,7 @@ def _seed_subsystem(
     *,
     overrides: dict[str, object] | None = None,
 ) -> None:
-    base = {
+    base: dict[str, object] = {
         "repo": "demo/repo",
         "commit": "deadbeef",
         "subsystem_id": "subsysdemo",

@@ -12,7 +12,7 @@ from codeintel.analytics.core.execution_context import (
     PluginExecutionContext,
     PluginScratch,
 )
-from codeintel.analytics.core.plugin_protocol import PluginResult
+from codeintel.analytics.core.plugin_protocol import PluginResult, PluginStage
 from codeintel.analytics.core.registry import (
     FunctionalPlugin,
     PluginRegistry,
@@ -51,7 +51,7 @@ def make_functional_plugin() -> Callable[..., FunctionalPlugin]:
     def _factory(
         *,
         name: str,
-        stage: str = "function",
+        stage: PluginStage = "function",
         provides: tuple[str, ...] = (),
         requires: tuple[str, ...] = (),
         enabled: bool = True,
@@ -59,7 +59,7 @@ def make_functional_plugin() -> Callable[..., FunctionalPlugin]:
         @plugin(
             name=name,
             description=f"Functional plugin {name}",
-            stage=stage,  # type: ignore[arg-type]
+            stage=stage,
             provides=list(provides),
             requires=list(requires),
             enabled_by_default=enabled,

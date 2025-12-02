@@ -18,7 +18,7 @@ from codeintel.ingestion import (
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.steps.scip_ingest import ScipIngestConfig, ScipIngestResult
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 
 def _setup_repo_structure(tmp_path: Path) -> tuple[Path, Path]:
@@ -46,17 +46,24 @@ def _setup_repo_structure(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _create_scip_adapters(
-    gateway: object,
+    gateway: StorageGateway,
     repo_root: Path,
 ) -> tuple[DuckDBStorageAdapter, ToolRunnerAdapter]:
     """Create storage and tool adapters for SCIP ingestion.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing DuckDB connection.
+    repo_root
+        Path to the repository root directory.
 
     Returns
     -------
     tuple[DuckDBStorageAdapter, ToolRunnerAdapter]
         Storage and tool adapters configured for SCIP ingestion.
     """
-    storage = DuckDBStorageAdapter(gateway)  # type: ignore[arg-type]
+    storage = DuckDBStorageAdapter(gateway)
     tools_config = ToolsConfig.default()
     cache_dir = repo_root / "build" / ".tool_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -113,7 +120,7 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
         if not (scip_dir / "index.scip.json").is_file():
             pytest.fail("index.scip.json was not created under build/scip")
 
-        con = gateway.con  # type: ignore[attr-defined]
+        con = gateway.con
         row = con.execute("SELECT COUNT(*) FROM scip_index_view").fetchone()
         if row is None:
             pytest.fail("scip_index_view did not return a row")

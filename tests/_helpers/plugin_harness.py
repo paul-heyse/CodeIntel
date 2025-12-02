@@ -242,7 +242,10 @@ class PluginTestHarness:
         Self
             Self for chaining.
         """
-        return self.with_resource(GraphProvider, provider)
+        if self._resources is None:
+            self._resources = ResourceRegistry()
+        self._resources.register(GraphProvider, provider)
+        return self
 
     def with_catalog_provider(self, provider: CatalogProvider) -> Self:
         """Register a catalog provider.
@@ -257,7 +260,10 @@ class PluginTestHarness:
         Self
             Self for chaining.
         """
-        return self.with_resource(CatalogProvider, provider)
+        if self._resources is None:
+            self._resources = ResourceRegistry()
+        self._resources.register(CatalogProvider, provider)
+        return self
 
     def with_options(self, options: object) -> Self:
         """Set plugin-specific options.

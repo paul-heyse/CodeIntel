@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -19,6 +20,9 @@ from codeintel.graphs.core import (
     register_graph_plugin,
 )
 from codeintel.graphs.core.registry import unregister_graph_plugin
+
+# Type alias for plugin execute functions
+ExecuteFn = Callable[[GraphExecutionContext], GraphPluginResult]
 
 
 @dataclass
@@ -58,7 +62,7 @@ class TestGraphPlugin:
     """Test plugin implementing GraphPluginProtocol."""
 
     _metadata: GraphPluginMetadata
-    _execute_fn: object  # Callable that takes ctx and returns result
+    _execute_fn: ExecuteFn
 
     @property
     def metadata(self) -> GraphPluginMetadata:
@@ -84,12 +88,7 @@ class TestGraphPlugin:
         GraphPluginResult
             Result of execution.
         """
-        result = self._execute_fn(ctx)  # type: ignore[operator]
-        if result is None:
-            return GraphPluginResult.ok()
-        if isinstance(result, GraphPluginResult):
-            return result
-        return GraphPluginResult.ok()
+        return self._execute_fn(ctx)
 
 
 @dataclass

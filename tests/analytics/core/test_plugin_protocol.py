@@ -42,7 +42,7 @@ def test_plugin_capability_is_frozen() -> None:
     cap = PluginCapability(name="test")
 
     with pytest.raises(AttributeError):
-        cap.name = "other"  # type: ignore[misc]
+        setattr(cap, "name", "other")  # noqa: B010 - testing frozen dataclass
 
 
 @dataclass(frozen=True)

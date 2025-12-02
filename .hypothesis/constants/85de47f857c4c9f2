@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/config_registry.py
+# hypothesis_version: 6.148.3
+
+['ConfigNotFoundError', 'ConfigRegistry', 'ConfigTypeError', 'T']
