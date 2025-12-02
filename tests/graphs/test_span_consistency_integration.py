@@ -14,8 +14,8 @@ import duckdb
 from codeintel.analytics.tests import compute_test_coverage_edges
 from codeintel.config import ConfigBuilder
 from codeintel.graphs.plugins.builders.callgraph import build_call_graph
-from codeintel.graphs.cfg_builder import build_cfg_and_dfg
-from codeintel.graphs.symbol_uses import build_symbol_use_edges
+from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
+from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.tooling import generate_coverage_for_function
 

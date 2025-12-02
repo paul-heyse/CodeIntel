@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/metrics/__init__.py
+# hypothesis_version: 6.148.3
+
+['cfg_metrics_plugin', 'dfg_metrics_plugin', 'graph_stats_plugin']

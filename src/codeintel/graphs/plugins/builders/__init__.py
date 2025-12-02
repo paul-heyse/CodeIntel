@@ -29,6 +29,10 @@ from codeintel.graphs.plugins.builders.import_graph import (
     get_import_graph_builder_plugin,
     import_graph_builder_plugin,
 )
+from codeintel.graphs.plugins.builders.symbol_uses import (
+    get_symbol_uses_builder_plugin,
+    symbol_uses_builder_plugin,
+)
 
 __all__ = [
     "callgraph_builder_plugin",
@@ -37,6 +41,8 @@ __all__ = [
     "get_cfg_dfg_builder_plugin",
     "get_goid_builder_plugin",
     "get_import_graph_builder_plugin",
+    "get_symbol_uses_builder_plugin",
     "goid_builder_plugin",
     "import_graph_builder_plugin",
+    "symbol_uses_builder_plugin",
 ]

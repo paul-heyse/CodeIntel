@@ -33,10 +33,8 @@ from codeintel.graphs.engine import GraphEngine
 from codeintel.ingestion.change_tracker import ChangeTracker
 from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-from codeintel.ingestion.plugins.protocol import (
-    IngestPluginContext,
-    IngestRuntimeScratch,
-)
+from codeintel.ingestion.core.execution_context import IngestExecutionContext
+from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
 from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
@@ -255,8 +253,8 @@ def _plugin_ctx(
     *,
     scratch: IngestRuntimeScratch | None = None,
     plugin_name: str | None = None,
-) -> IngestPluginContext:
-    """Build an IngestPluginContext from a pipeline context.
+) -> IngestExecutionContext:
+    """Build an IngestExecutionContext from a pipeline context.
 
     Parameters
     ----------
@@ -269,19 +267,16 @@ def _plugin_ctx(
 
     Returns
     -------
-    IngestPluginContext
+    IngestExecutionContext
         Context suitable for new plugin architecture.
     """
-    return IngestPluginContext(
+    return IngestExecutionContext(
         gateway=ctx.gateway,
         snapshot=ctx.snapshot,
         paths=ctx.paths,
         tools=ctx.tools_config,
         code_profile=ctx.code_profile,
         config_profile=ctx.config_profile,
-        tool_runner=ctx.tool_runner,
-        tool_service=ctx.tool_service,
-        change_tracker=ctx.change_tracker,
         scratch=scratch or IngestRuntimeScratch(),
         plugin_name=plugin_name,
         run_id=ctx.run_id or "",

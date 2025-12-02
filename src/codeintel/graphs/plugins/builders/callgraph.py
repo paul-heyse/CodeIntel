@@ -28,7 +28,6 @@ from codeintel.config.datasets import (
     CallGraphNodeRow,
     call_graph_node_to_tuple,
 )
-from codeintel.graphs import symbol_uses
 from codeintel.graphs.adapters.callgraph_persistence import (
     dedupe_edge_rows,
     persist_call_graph_edges,
@@ -54,6 +53,7 @@ from codeintel.graphs.core import (
     make_builder_plugin,
 )
 from codeintel.graphs.engine import GraphKind
+from codeintel.graphs.plugins.builders import symbol_uses
 from codeintel.graphs.resources import StorageResource
 from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path, relpath_to_module

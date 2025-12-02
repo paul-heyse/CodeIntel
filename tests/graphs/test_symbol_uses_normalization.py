@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.graphs.symbol_uses import load_scip_documents
+from codeintel.graphs.plugins.builders.symbol_uses import load_scip_documents
 
 
 def test_load_scip_documents_skips_invalid_entries(tmp_path: Path) -> None:

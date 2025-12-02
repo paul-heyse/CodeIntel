@@ -33,10 +33,12 @@ Hexagonal Architecture (Ports, Adapters, Compute, Resources):
 - resources/: DI container and resource providers
 
 Consolidated Domain Packages:
-- callgraph/: Call graph edge collection, resolution, and persistence
 - catalog/: Function catalog (spans, metadata, service) - unified module
 - validation/: Graph validation checks, findings, and orchestration
 - engine/: Graph engine protocol, NetworkX implementation, and views
+
+Callgraph logic is in compute/callgraph.py (pure functions) and
+adapters/callgraph_persistence.py (persistence).
 
 Example
 -------
@@ -74,9 +76,9 @@ The graphs package uses hexagonal architecture:
 - Compute functions are pure and stateless, taking data and returning data
 - Ports define protocol interfaces, adapters provide concrete implementations
 
-Builder modules (goid_builder, callgraph_builder) have been consolidated into
-their corresponding plugins under plugins/builders/. The callgraph/ subpackage
-has been merged into compute/callgraph.py and adapters/callgraph_persistence.py.
+All builder modules have been consolidated into their corresponding plugins
+under plugins/builders/. Pure computation logic is in compute/, persistence
+logic is in adapters/.
 """
 
 from __future__ import annotations

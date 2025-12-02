@@ -53,11 +53,8 @@ def _get_gateway(ctx: GraphExecutionContext) -> StorageGateway:
     StorageGateway
         Storage gateway instance.
     """
-    from typing import cast  # noqa: PLC0415
-
-    # Cast is needed because require() returns StoragePort but we need StorageResource
     if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        storage = cast("StorageResource", ctx.require(StorageResource))
+        storage = ctx.require(StorageResource)
         return storage.gateway
     return ctx.gateway
 

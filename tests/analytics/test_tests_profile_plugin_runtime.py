@@ -51,7 +51,6 @@ def test_tests_profile_plugin_runtime(tmp_path: Path) -> None:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=None,
                 graph_runtime=None,
                 cfgs={"test_profile": cfg},
                 extra={},

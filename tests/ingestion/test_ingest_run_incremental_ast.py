@@ -90,8 +90,8 @@ def test_ast_extract_plugin_succeeds_with_tracker(tmp_path: Path) -> None:
         gateway.close()
 
 
-def test_ast_extract_plugin_fails_without_tracker(tmp_path: Path) -> None:
-    """AST plugin should return failure when change_tracker is missing."""
+def test_ast_extract_plugin_succeeds_with_no_modules(tmp_path: Path) -> None:
+    """AST plugin succeeds with 0 rows when no modules available (no tracker)."""
     repo_root = tmp_path / "repo"
     src_dir = repo_root / "src" / "pkg"
     src_dir.mkdir(parents=True)
@@ -105,6 +105,7 @@ def test_ast_extract_plugin_fails_without_tracker(tmp_path: Path) -> None:
         registry = get_ingest_registry()
 
         # Run ast_extract without change_tracker (scratch is empty)
+        # New behavior: plugin succeeds with 0 rows when no modules available
         ctx = IngestExecutionContext(
             gateway=gateway,
             snapshot=snapshot,
@@ -118,12 +119,14 @@ def test_ast_extract_plugin_fails_without_tracker(tmp_path: Path) -> None:
         ast_plugin = registry.get("ast_extract")
         result = ast_plugin.execute(ctx)
 
-        if result.success:
-            pytest.fail("ast_extract should fail without change_tracker")
-        if result.error is None:
-            pytest.fail("error message should be set on failure")
-        if result.error_kind is None:
-            pytest.fail("error_kind should be set on failure")
+        # Plugin should succeed with 0 rows when no modules are available
+        if not result.success:
+            pytest.fail(f"ast_extract should succeed with no modules: {result.error}")
+
+        # Verify 0 rows were written
+        total_rows = sum(result.row_counts.values()) if result.row_counts else 0
+        if total_rows != 0:
+            pytest.fail(f"Expected 0 rows with no modules, got {total_rows}")
 
     finally:
         gateway.close()
