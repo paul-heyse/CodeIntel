@@ -193,7 +193,7 @@ def test_graph_runtime_reuses_engine(tmp_path: Path) -> None:
 
     try:
         engine = orchestration_steps.ensure_graph_engine(ctx)
-        runtime = orchestration_steps.ensure_graph_runtime(ctx, acx=None)
+        runtime = orchestration_steps.ensure_graph_runtime(ctx)
         if runtime.engine is not engine:
             pytest.fail("Runtime did not reuse the shared engine instance")
     finally:

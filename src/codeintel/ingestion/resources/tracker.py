@@ -11,6 +11,7 @@ NOTE: Imports inside methods are intentional to avoid circular dependencies.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.resources.protocol import LazyResource
@@ -23,6 +24,31 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class TrackerConfig:
+    """Configuration for change tracker creation.
+
+    Encapsulate optional parameters for TrackerProvider to reduce
+    constructor argument count.
+
+    Attributes
+    ----------
+    scratch
+        Shared scratch space (may contain tracker from repo_scan).
+    profile
+        Optional scan profile for filtering.
+    policy
+        Optional incremental ingest policy.
+    full_rebuild
+        Whether to force full rebuild mode.
+    """
+
+    scratch: IngestRuntimeScratch | None = field(default=None)
+    profile: ScanProfile | None = field(default=None)
+    policy: IncrementalIngestPolicy | None = field(default=None)
+    full_rebuild: bool = field(default=False)
 
 
 class TrackerProvider(LazyResource["ChangeTracker"]):
@@ -40,25 +66,15 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
         Storage gateway for database access.
     snapshot
         Repository snapshot reference.
-    scratch
-        Shared scratch space (may contain tracker from repo_scan).
-    profile
-        Optional scan profile for filtering.
-    policy
-        Optional incremental ingest policy.
-    full_rebuild
-        Whether to force full rebuild mode.
+    config
+        Optional tracker configuration with scratch, profile, policy settings.
     """
 
     def __init__(
         self,
         gateway: StorageGateway,
         snapshot: SnapshotRef,
-        scratch: IngestRuntimeScratch | None = None,
-        profile: ScanProfile | None = None,
-        policy: IncrementalIngestPolicy | None = None,
-        *,
-        full_rebuild: bool = False,
+        config: TrackerConfig | None = None,
     ) -> None:
         """Initialize the tracker provider.
 
@@ -68,22 +84,33 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
             Storage gateway for database access.
         snapshot
             Repository snapshot reference.
-        scratch
-            Shared scratch space (may contain tracker from repo_scan).
-        profile
-            Optional scan profile for filtering.
-        policy
-            Optional incremental ingest policy.
-        full_rebuild
-            Whether to force full rebuild mode.
+        config
+            Optional tracker configuration with scratch, profile, policy settings.
         """
         super().__init__("TrackerProvider")
         self._gateway = gateway
         self._snapshot = snapshot
-        self._scratch = scratch
-        self._profile = profile
-        self._policy = policy
-        self._full_rebuild = full_rebuild
+        self._config = config or TrackerConfig()
+
+    @property
+    def _scratch(self) -> IngestRuntimeScratch | None:
+        """Access scratch from config for backward compatibility."""
+        return self._config.scratch
+
+    @property
+    def _profile(self) -> ScanProfile | None:
+        """Access profile from config for backward compatibility."""
+        return self._config.profile
+
+    @property
+    def _policy(self) -> IncrementalIngestPolicy | None:
+        """Access policy from config for backward compatibility."""
+        return self._config.policy
+
+    @property
+    def _full_rebuild(self) -> bool:
+        """Access full_rebuild from config for backward compatibility."""
+        return self._config.full_rebuild
 
     def _load(self) -> ChangeTracker:
         """Load or build change tracker.
@@ -92,11 +119,6 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
         -------
         ChangeTracker
             The change tracker.
-
-        Raises
-        ------
-        ResourceNotLoadedError
-            If tracker cannot be created.
         """
         from codeintel.ingestion.change_tracker import ChangeTracker
 
@@ -183,4 +205,4 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
         return self.get()
 
 
-__all__ = ["TrackerProvider"]
+__all__ = ["TrackerConfig", "TrackerProvider"]

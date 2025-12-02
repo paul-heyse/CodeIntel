@@ -11,8 +11,6 @@ with fallback to direct context properties for backward compatibility.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from codeintel.analytics.cfg_dfg import compute_cfg_metrics, compute_dfg_metrics
 from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics
 from codeintel.analytics.graphs.graph_stats import compute_graph_stats
@@ -30,38 +28,16 @@ from codeintel.graphs.core import (
     make_metric_plugin,
 )
 from codeintel.graphs.engine import GraphKind
+from codeintel.graphs.plugins.metrics._runtime import resolve_analytics_runtime
 from codeintel.graphs.resources import StorageResource
 
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
-
 # =============================================================================
-# Computation Functions (standardized signature)
+# Computation Functions (standardized signature using runtime helper)
 # =============================================================================
-
-
-def _get_gateway(ctx: GraphExecutionContext) -> StorageGateway:
-    """Get storage gateway via resource injection or fallback.
-
-    Parameters
-    ----------
-    ctx
-        Graph execution context.
-
-    Returns
-    -------
-    StorageGateway
-        Storage gateway instance.
-    """
-    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
-        storage = ctx.require(StorageResource)
-        return storage.gateway
-    return ctx.gateway
 
 
 def _compute_cfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Compute control-flow graph metrics for functions and blocks.
+    """Compute control-flow graph metrics for functions and blocks.
 
     Uses resource injection to access storage, with fallback to ctx.gateway.
 
@@ -70,14 +46,17 @@ def _compute_cfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
     ComputationResult
         Success result after computing CFG metrics.
     """
-    gateway = _get_gateway(ctx)
+    # CFG/DFG metrics don't need runtime - use simple gateway access
+    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
+        gateway = ctx.require(StorageResource).gateway
+    else:
+        gateway = ctx.gateway
     compute_cfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
 def _compute_dfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Compute data-flow graph metrics for functions and blocks.
+    """Compute data-flow graph metrics for functions and blocks.
 
     Uses resource injection to access storage, with fallback to ctx.gateway.
 
@@ -86,190 +65,117 @@ def _compute_dfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
     ComputationResult
         Success result after computing DFG metrics.
     """
-    gateway = _get_gateway(ctx)
+    # CFG/DFG metrics don't need runtime - use simple gateway access
+    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
+        gateway = ctx.require(StorageResource).gateway
+    else:
+        gateway = ctx.gateway
     compute_dfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
 def _compute_test_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Compute metrics over the test <-> function bipartite graph.
-
-    Uses resource injection to access storage, with fallback to ctx.gateway.
+    """Compute metrics over the test <-> function bipartite graph.
 
     Returns
     -------
     ComputationResult
         Success result after computing test graph metrics.
     """
-    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
-        GraphRuntimeOptions,
-        resolve_graph_runtime,
-    )
-    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
-
-    gateway = _get_gateway(ctx)
-    runtime = resolve_graph_runtime(
-        gateway,
-        ctx.snapshot,
-        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
-    )
-    compute_test_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    with resolve_analytics_runtime(ctx) as rt:
+        compute_test_graph_metrics(
+            rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime
+        )
     return ComputationResult.ok()
 
 
 def _compute_subsystem_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Compute subsystem-level condensed import graph metrics.
-
-    Uses resource injection to access storage, with fallback to ctx.gateway.
+    """Compute subsystem-level condensed import graph metrics.
 
     Returns
     -------
     ComputationResult
         Success result after computing subsystem metrics.
     """
-    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
-        GraphRuntimeOptions,
-        resolve_graph_runtime,
-    )
-    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
-
-    gateway = _get_gateway(ctx)
-    runtime = resolve_graph_runtime(
-        gateway,
-        ctx.snapshot,
-        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
-    )
-    compute_subsystem_graph_metrics(
-        gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime, filters=None
-    )
+    with resolve_analytics_runtime(ctx) as rt:
+        compute_subsystem_graph_metrics(
+            rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime, filters=None
+        )
     return ComputationResult.ok()
 
 
 def _compute_symbol_graph_metrics_modules(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Compute symbol graph metrics at the module level.
-
-    Uses resource injection to access storage, with fallback to ctx.gateway.
+    """Compute symbol graph metrics at the module level.
 
     Returns
     -------
     ComputationResult
         Success result after computing module symbol metrics.
     """
-    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
-        GraphRuntimeOptions,
-        resolve_graph_runtime,
-    )
-    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
-
-    gateway = _get_gateway(ctx)
-    runtime = resolve_graph_runtime(
-        gateway,
-        ctx.snapshot,
-        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
-    )
-    compute_symbol_graph_metrics_modules(gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    with resolve_analytics_runtime(ctx) as rt:
+        compute_symbol_graph_metrics_modules(
+            rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime
+        )
     return ComputationResult.ok()
 
 
 def _compute_symbol_graph_metrics_functions(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Compute symbol graph metrics at the function level.
-
-    Uses resource injection to access storage, with fallback to ctx.gateway.
+    """Compute symbol graph metrics at the function level.
 
     Returns
     -------
     ComputationResult
         Success result after computing function symbol metrics.
     """
-    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
-        GraphRuntimeOptions,
-        resolve_graph_runtime,
-    )
-    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
-
-    gateway = _get_gateway(ctx)
-    runtime = resolve_graph_runtime(
-        gateway,
-        ctx.snapshot,
-        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
-    )
-    compute_symbol_graph_metrics_functions(
-        gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime
-    )
+    with resolve_analytics_runtime(ctx) as rt:
+        compute_symbol_graph_metrics_functions(
+            rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime
+        )
     return ComputationResult.ok()
 
 
 def _compute_config_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Compute config bipartite/projection graph metrics.
-
-    Uses resource injection to access storage, with fallback to ctx.gateway.
+    """Compute config bipartite/projection graph metrics.
 
     Returns
     -------
     ComputationResult
         Success result after computing config graph metrics.
     """
-    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
-        GraphRuntimeOptions,
-        resolve_graph_runtime,
-    )
-    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
-
-    gateway = _get_gateway(ctx)
-    runtime = resolve_graph_runtime(
-        gateway,
-        ctx.snapshot,
-        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
-    )
-    compute_config_graph_metrics(gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    with resolve_analytics_runtime(ctx) as rt:
+        compute_config_graph_metrics(
+            rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime
+        )
     return ComputationResult.ok()
 
 
 def _compute_subsystem_agreement(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Check agreement between subsystem labels and import communities.
-
-    Uses resource injection to access storage, with fallback to ctx.gateway.
+    """Check agreement between subsystem labels and import communities.
 
     Returns
     -------
     ComputationResult
         Success result after computing subsystem agreement metrics.
     """
-    gateway = _get_gateway(ctx)
+    # Subsystem agreement doesn't need runtime - use simple gateway access
+    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
+        gateway = ctx.require(StorageResource).gateway
+    else:
+        gateway = ctx.gateway
     compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
 def _compute_graph_stats(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Compute global graph statistics for core graphs.
-
-    Uses resource injection to access storage, with fallback to ctx.gateway.
+    """Compute global graph statistics for core graphs.
 
     Returns
     -------
     ComputationResult
         Success result after computing graph statistics.
     """
-    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
-        GraphRuntimeOptions,
-        resolve_graph_runtime,
-    )
-    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
-
-    gateway = _get_gateway(ctx)
-    runtime = resolve_graph_runtime(
-        gateway,
-        ctx.snapshot,
-        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
-    )
-    compute_graph_stats(gateway, repo=ctx.repo, commit=ctx.commit, runtime=runtime)
+    with resolve_analytics_runtime(ctx) as rt:
+        compute_graph_stats(rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime)
     return ComputationResult.ok()
 
 

@@ -245,7 +245,9 @@ def _collect_edges(
 def _load_scip_candidates(gateway: StorageGateway, repo_root: Path) -> dict[str, tuple[str, ...]]:
     rows: list[tuple[str | None, str | None]]
     try:
-        rows = gateway.con.execute("SELECT def_path, use_path FROM graph.symbol_use_edges").fetchall()
+        rows = gateway.con.execute(
+            "SELECT def_path, use_path FROM graph.symbol_use_edges"
+        ).fetchall()
     except DuckDBError:
         rows = []
 
@@ -346,7 +348,10 @@ def _build_call_graph(ctx: GraphExecutionContext) -> ComputationResult:
     )
 
     return ComputationResult.ok(
-        row_counts={"graph.call_graph_nodes": len(node_rows), "graph.call_graph_edges": len(unique_edges)}
+        row_counts={
+            "graph.call_graph_nodes": len(node_rows),
+            "graph.call_graph_edges": len(unique_edges),
+        }
     )
 
 

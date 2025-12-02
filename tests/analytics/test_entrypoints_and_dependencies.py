@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.dependencies import build_external_dependencies
 from codeintel.analytics.dependencies.core import (
     ExternalDependencyInputs,
     build_external_dependency_calls,
 )
 from codeintel.analytics.entrypoints import build_entrypoints
+from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.config import ConfigBuilder
+from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.catalog import FunctionCatalogService
 from codeintel.graphs.plugins.builders.goid import build_goids
 from codeintel.ingestion import (
@@ -27,7 +31,8 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
     RepoScanStep,
 )
-from codeintel.storage.gateway import DuckDBConnection
+from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
+from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from tests._helpers.builders import (
     CoverageFunctionRow,
     ModuleRow,
@@ -43,6 +48,60 @@ from tests._helpers.fixtures import ProvisionedGateway, provision_gateway_with_r
 HTTP_CREATED = 201
 COVERAGE_TOLERANCE = 1e-6
 GoidRow = tuple[int, str, str, str | None, str, str, int | None, int | None]
+
+
+@dataclass
+class EntrypointTestProviders:
+    """Providers needed for entrypoint and dependency testing.
+
+    Consolidate provider instances to reduce local variable count
+    in test functions.
+    """
+
+    catalog: FunctionCatalogService
+    module_map: dict[str, str]
+    ast_by_goid: dict[int, FunctionAst]
+    missing_goids: set[int]
+    features_map: dict[int, FunctionAstFeatures]
+
+
+def _build_test_providers(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    repo: str,
+    commit: str,
+) -> EntrypointTestProviders:
+    """Build all providers needed for entrypoint testing.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway instance.
+    snapshot
+        Snapshot reference.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+
+    Returns
+    -------
+    EntrypointTestProviders
+        Container with all required providers.
+    """
+    catalog = FunctionCatalogService.from_db(gateway, repo=repo, commit=commit)
+    module_map_provider = ModuleMapProvider(gateway, snapshot)
+    ast_provider = AstProvider(gateway, snapshot)
+    ast_data = ast_provider.get()
+    features_provider = FeaturesProvider(gateway, snapshot)
+
+    return EntrypointTestProviders(
+        catalog=catalog,
+        module_map=module_map_provider.get(),
+        ast_by_goid=ast_data.function_ast_map,
+        missing_goids=ast_data.missing_function_goids,
+        features_map=features_provider.get(),
+    )
 
 
 def _write_sample_repo(repo_root: Path) -> None:
@@ -302,15 +361,10 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
             build_dir=ctx.build_dir,
         )
 
-        # Use Step-based API for repo scan
-        from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-            default_code_profile,
-        )
-
+        # Set up ingestion adapters and run repo scan
         storage = DuckDBStorageAdapter(ctx.gateway)
         discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
         change_detection = HashChangeDetectionAdapter(storage)
-
         scan_step = RepoScanStep(
             storage=storage,
             discovery=discovery,
@@ -326,49 +380,26 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
 
         insert_modules(
             ctx.gateway,
-            [
-                ModuleRow(
-                    module="pkg.app",
-                    path="pkg/app.py",
-                    repo=ctx.repo,
-                    commit=ctx.commit,
-                )
-            ],
+            [ModuleRow(module="pkg.app", path="pkg/app.py", repo=ctx.repo, commit=ctx.commit)],
         )
 
-        # Use Step-based API for AST extraction
+        # Extract ASTs and build GOIDs
         ast_step = AstExtractStep(storage=storage, discovery=discovery)
-        ast_step.execute(
-            list(modules),
-            repo=ctx.repo,
-            commit=ctx.commit,
-        )
-
+        ast_step.execute(list(modules), repo=ctx.repo, commit=ctx.commit)
         build_goids(ctx.gateway, builder.goid_builder())
 
-        con = ctx.gateway.con
-        hello_row = _get_goid_row(con, "pkg.app.hello")
-
+        hello_row = _get_goid_row(ctx.gateway.con, "pkg.app.hello")
         _seed_coverage_and_tests(ctx, hello_row, datetime.now(tz=UTC))
 
-        # Build providers for domain functions
-        snapshot = builder.snapshot
-        catalog_provider = FunctionCatalogService.from_db(
-            ctx.gateway, repo=ctx.repo, commit=ctx.commit
-        )
-        module_map_provider = ModuleMapProvider(ctx.gateway, snapshot)
-        module_map = module_map_provider.get()
-        ast_provider = AstProvider(ctx.gateway, snapshot)
-        ast_data = ast_provider.get()
-        features_provider = FeaturesProvider(ctx.gateway, snapshot)
-        features_map = features_provider.get()
+        # Build providers and run analytics
+        providers = _build_test_providers(ctx.gateway, builder.snapshot, ctx.repo, ctx.commit)
 
         build_entrypoints(
             ctx.gateway,
             builder.entrypoints(),
-            catalog_provider=catalog_provider,
-            module_map=module_map,
-            features_map=features_map,
+            catalog_provider=providers.catalog,
+            module_map=providers.module_map,
+            features_map=providers.features_map,
         )
 
         dep_cfg = builder.external_dependencies()
@@ -376,14 +407,14 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
             ctx.gateway,
             dep_cfg,
             inputs=ExternalDependencyInputs(
-                catalog_provider=catalog_provider,
-                module_map=module_map,
-                ast_by_goid=ast_data.function_ast_map,
-                features_map=features_map,
-                missing_goids=ast_data.missing_function_goids,
+                catalog_provider=providers.catalog,
+                module_map=providers.module_map,
+                ast_by_goid=providers.ast_by_goid,
+                features_map=providers.features_map,
+                missing_goids=providers.missing_goids,
             ),
         )
         build_external_dependencies(ctx.gateway, dep_cfg)
 
-        _validate_entrypoint_rows(con, ctx.repo, ctx.commit)
-        _validate_dependency_rows(con, ctx.repo, ctx.commit)
+        _validate_entrypoint_rows(ctx.gateway.con, ctx.repo, ctx.commit)
+        _validate_dependency_rows(ctx.gateway.con, ctx.repo, ctx.commit)

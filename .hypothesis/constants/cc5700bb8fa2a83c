@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/entrypoints/build.py
+# hypothesis_version: 6.148.3
+
+[90000, '3.0.0', 'CatalogProvider', 'EntrypointsPlugin', 'FeaturesProvider', 'ModuleMapProvider', 'cli', 'core.goids', 'coverage.functions', 'coverage.test_edges', 'entrypoints', 'entrypoints.build', 'error', 'goids', 'http', 'subsystems.build']

@@ -47,7 +47,7 @@ from codeintel.ingestion.resources.registry import (
 )
 from codeintel.ingestion.resources.storage import StorageProvider
 from codeintel.ingestion.resources.tools import ToolsProvider
-from codeintel.ingestion.resources.tracker import TrackerProvider
+from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
 
 __all__ = [
     "LazyResource",
@@ -59,5 +59,6 @@ __all__ = [
     "ResourceRegistry",
     "StorageProvider",
     "ToolsProvider",
+    "TrackerConfig",
     "TrackerProvider",
 ]

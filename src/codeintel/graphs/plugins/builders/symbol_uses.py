@@ -80,9 +80,7 @@ def build_symbol_use_edges(
     provider = catalog_provider or FunctionCatalogService.from_db(
         gateway, repo=cfg.repo, commit=cfg.commit
     )
-    module_by_path = _merge_module_map(
-        gateway, docs, cfg.repo, cfg.commit, provider.catalog()
-    )
+    module_by_path = _merge_module_map(gateway, docs, cfg.repo, cfg.commit, provider.catalog())
     def_path_by_symbol = build_def_map(docs)
     rows = _build_symbol_edges(docs, def_path_by_symbol, module_by_path)
 
@@ -171,9 +169,7 @@ def load_scip_documents(scip_path: Path | None) -> list[ScipDocument] | None:
             continue
         normalized_docs.append(normalized)
     if skipped:
-        log.warning(
-            "Skipped %d invalid SCIP documents while loading %s", skipped, scip_path
-        )
+        log.warning("Skipped %d invalid SCIP documents while loading %s", skipped, scip_path)
     return normalized_docs
 
 
@@ -333,9 +329,7 @@ def build_use_def_mapping(
     return mapping
 
 
-def _collect_missing_paths(
-    docs: list[ScipDocument], module_by_path: dict[str, str]
-) -> set[str]:
+def _collect_missing_paths(docs: list[ScipDocument], module_by_path: dict[str, str]) -> set[str]:
     """Collect paths referenced in SCIP documents but missing from module map.
 
     Parameters
@@ -433,9 +427,7 @@ def _merge_module_map(
     dict[str, str]
         Normalized path -> module mapping combining catalog and DB.
     """
-    base_map = {
-        path.replace("\\", "/"): module for path, module in catalog.module_by_path.items()
-    }
+    base_map = {path.replace("\\", "/"): module for path, module in catalog.module_by_path.items()}
     if not base_map:
         return _load_modules_map(gateway, repo, commit)
 

@@ -20,8 +20,8 @@ from codeintel.config import (
 )
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.graphs.plugins.builders.callgraph import build_call_graph
 from codeintel.graphs.catalog import load_function_catalog
+from codeintel.graphs.plugins.builders.callgraph import build_call_graph
 from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.ingestion.infrastructure_utilities.source_scanner import (

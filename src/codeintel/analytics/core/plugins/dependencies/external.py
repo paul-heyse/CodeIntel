@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+    from codeintel.analytics.ast_features.model import FunctionAstFeatures
+    from codeintel.analytics.function_ast_cache import FunctionAst
     from codeintel.analytics.resources.asts import AstProvider
     from codeintel.analytics.resources.catalog import CatalogProvider
     from codeintel.analytics.resources.features import FeaturesProvider
@@ -117,39 +119,39 @@ class ExternalDepsPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get catalog from CatalogProvider
-        catalog_provider = None
-        if ctx.has_resource_by_name("CatalogProvider"):
-            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
-            catalog_provider = cat_prov.get()
+        # Get catalog from CatalogProvider (required)
+        if not ctx.has_resource_by_name("CatalogProvider"):
+            return PluginResult.fail("CatalogProvider is required for external dependencies")
+        cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+        catalog_provider = cat_prov.get()
 
-        # Get module map from ModuleMapProvider
+        # Get module map from ModuleMapProvider (returns dict directly)
         module_map: dict[str, str] = {}
         if ctx.has_resource_by_name("ModuleMapProvider"):
             mm_prov = cast("ModuleMapProvider", ctx.require_by_name("ModuleMapProvider"))
-            module_map = mm_prov.get().module_by_path
+            module_map = mm_prov.get()
 
-        # Get AST data from AstProvider
-        ast_by_goid: dict[int, object] = {}
+        # Get AST data from AstProvider (LegacyAstData)
+        ast_by_goid: dict[int, FunctionAst] = {}
         missing_goids: set[int] = set()
         if ctx.has_resource_by_name("AstProvider"):
             ast_prov = cast("AstProvider", ctx.require_by_name("AstProvider"))
             ast_data = ast_prov.get()
-            ast_by_goid = ast_data.ast_by_goid
-            missing_goids = ast_data.missing_goids
+            ast_by_goid = ast_data.function_ast_map
+            missing_goids = ast_data.missing_function_goids
 
-        # Get features from FeaturesProvider
-        features_map: dict[int, object] = {}
+        # Get features from FeaturesProvider (returns dict directly)
+        features_map: dict[int, FunctionAstFeatures] = {}
         if ctx.has_resource_by_name("FeaturesProvider"):
             feat_prov = cast("FeaturesProvider", ctx.require_by_name("FeaturesProvider"))
-            features_map = feat_prov.get().features_by_goid
+            features_map = feat_prov.get()
 
         try:
             inputs = ExternalDependencyInputs(
                 catalog_provider=catalog_provider,
                 module_map=module_map,
-                ast_by_goid=ast_by_goid,  # type: ignore[arg-type]
-                features_map=features_map,  # type: ignore[arg-type]
+                ast_by_goid=ast_by_goid,
+                features_map=features_map,
                 missing_goids=missing_goids,
             )
             build_external_dependency_calls(ctx.gateway, cfg, inputs=inputs)

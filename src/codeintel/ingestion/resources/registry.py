@@ -261,11 +261,6 @@ class ResourceRegistry:
         -------
         object
             The loaded resource. Caller should cast to the expected type.
-
-        Raises
-        ------
-        ResourceNotFoundError
-            If no provider is registered with that name.
         """
         provider = self.get_by_name(name)
         return provider.get()
@@ -285,13 +280,6 @@ class ResourceRegistry:
         T
             The loaded resource. For type safety, cast the result to the
             expected resource type at the call site.
-
-        Raises
-        ------
-        ResourceNotFoundError
-            If no provider is registered.
-        ResourceNotLoadedError
-            If the resource cannot be loaded.
         """
         provider = self.get(resource_type)
         return cast("T", provider.get())

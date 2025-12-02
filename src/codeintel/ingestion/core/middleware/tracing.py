@@ -243,7 +243,7 @@ class TracingMiddleware:
     def after_execute(
         self,
         plugin: BaseIngestPlugin,
-        ctx: IngestExecutionContext,
+        _ctx: IngestExecutionContext,
         result: IngestPluginResult,
     ) -> None:
         """End the span with result information.
@@ -252,8 +252,8 @@ class TracingMiddleware:
         ----------
         plugin
             The plugin that executed.
-        ctx
-            Execution context.
+        _ctx
+            Execution context (unused, required by protocol).
         result
             Execution result.
         """
@@ -284,7 +284,7 @@ class TracingMiddleware:
     def on_error(
         self,
         plugin: BaseIngestPlugin,
-        ctx: IngestExecutionContext,
+        _ctx: IngestExecutionContext,
         error: Exception,
     ) -> None:
         """End the span with error information.
@@ -293,8 +293,8 @@ class TracingMiddleware:
         ----------
         plugin
             The plugin that failed.
-        ctx
-            Execution context.
+        _ctx
+            Execution context (unused, required by protocol).
         error
             The exception that was raised.
         """

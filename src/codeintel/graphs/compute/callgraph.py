@@ -218,7 +218,9 @@ def resolve_callee(
             alias_target = import_aliases.get(root)
             if alias_target:
                 qualified = (
-                    alias_target if len(attr_chain) == 1 else ".".join([alias_target, *attr_chain[1:]])
+                    alias_target
+                    if len(attr_chain) == 1
+                    else ".".join([alias_target, *attr_chain[1:]])
                 )
                 goid = local_callees.get(qualified) or global_callees.get(qualified)
                 if goid is not None:

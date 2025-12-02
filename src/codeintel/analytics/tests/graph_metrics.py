@@ -136,11 +136,6 @@ def compute_test_graph_metrics(
 
     snapshot = resolved_options.snapshot or SnapshotRef(repo=repo, commit=commit, repo_root=Path())
     resolved_runtime = resolve_graph_runtime(gateway, snapshot, resolved_options)
-    if resolved_runtime.options.context is not None and (
-        resolved_runtime.options.context.repo != repo
-        or resolved_runtime.options.context.commit != commit
-    ):
-        return
 
     graph = resolved_runtime.ensure_test_function_bipartite()
     graph_ctx = resolve_graph_context(

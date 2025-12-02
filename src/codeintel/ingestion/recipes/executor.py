@@ -3,7 +3,11 @@
 This module provides the executor for running ingestion recipes,
 with support for parallel plugin execution, failure handling,
 and observability.
+
+NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
+
+# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -518,18 +522,22 @@ class RecipeExecutor:
         ResourceRegistry
             Registry with tracker and tools providers.
         """
+        from codeintel.ingestion.resources.modules import ModuleProvider
         from codeintel.ingestion.resources.tools import ToolsProvider
-        from codeintel.ingestion.resources.tracker import TrackerProvider
+        from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
 
         registry = ResourceRegistry()
 
         # Register tracker provider if we have tracker state
-        tracker_provider = TrackerProvider(
-            gateway=self._gateway,
-            snapshot=self._snapshot,
+        tracker_config = TrackerConfig(
             scratch=self._config.scratch,
             profile=self._code_profile,
             full_rebuild=False,
+        )
+        tracker_provider = TrackerProvider(
+            gateway=self._gateway,
+            snapshot=self._snapshot,
+            config=tracker_config,
         )
         registry.register(TrackerProvider, tracker_provider)
 
@@ -541,6 +549,14 @@ class RecipeExecutor:
             service=self._tool_service,
         )
         registry.register(ToolsProvider, tools_provider)
+
+        # Register module provider for module access
+        module_provider = ModuleProvider(
+            gateway=self._gateway,
+            snapshot=self._snapshot,
+            profile=self._code_profile,
+        )
+        registry.register(ModuleProvider, module_provider)
 
         return registry
 

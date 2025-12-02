@@ -29,7 +29,33 @@ class GraphPluginRegistry:
 
     Provides plugin registration, lookup, dependency resolution,
     and topological ordering for execution planning.
+
+    This class implements the singleton pattern - use `instance()` to
+    get the global registry, or create new instances for testing.
     """
+
+    _instance: GraphPluginRegistry | None = None
+
+    @classmethod
+    def instance(cls) -> GraphPluginRegistry:
+        """Return the singleton registry instance.
+
+        Returns
+        -------
+        GraphPluginRegistry
+            The global registry instance.
+        """
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Reset the singleton instance for testing.
+
+        This clears the global registry, allowing tests to start fresh.
+        """
+        cls._instance = None
 
     def __init__(self) -> None:
         """Initialize an empty registry."""
@@ -556,10 +582,6 @@ class GraphPluginRegistry:
         return plugin.metadata
 
 
-# Global registry instance
-_GRAPH_REGISTRY: GraphPluginRegistry | None = None
-
-
 def get_graph_registry() -> GraphPluginRegistry:
     """Return the global graph plugin registry.
 
@@ -568,10 +590,7 @@ def get_graph_registry() -> GraphPluginRegistry:
     GraphPluginRegistry
         The singleton registry instance.
     """
-    global _GRAPH_REGISTRY  # noqa: PLW0603
-    if _GRAPH_REGISTRY is None:
-        _GRAPH_REGISTRY = GraphPluginRegistry()
-    return _GRAPH_REGISTRY
+    return GraphPluginRegistry.instance()
 
 
 def register_graph_plugin(plugin: GraphPluginProtocol) -> None:

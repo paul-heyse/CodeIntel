@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/validation.py
+# hypothesis_version: 6.148.3
+
+['call_graph', 'callgraph_builder', 'goid_builder', 'goids', 'graph_validation', 'import_graph', 'import_graph_builder', 'none', 'validation', 'validation_error', 'validation_report']

@@ -49,7 +49,6 @@ def compute_symbol_graph_metrics_modules(
         gateway,
         snapshot,
         runtime_opts,
-        context=runtime_opts.context,
     )
     con = gateway.con
     ensure_schema(con, "analytics.symbol_graph_metrics_modules")
@@ -65,10 +64,6 @@ def compute_symbol_graph_metrics_modules(
             community_detection_limit=runtime_opts.features.community_detection_limit,
         )
     )
-    if runtime_opts.context is not None and (
-        runtime_opts.context.repo != repo or runtime_opts.context.commit != commit
-    ):
-        return
 
     graph = resolved_runtime.ensure_symbol_module_graph()
     module_repo = ModuleRepository(gateway=gateway, repo=repo, commit=commit)
@@ -147,7 +142,6 @@ def compute_symbol_graph_metrics_functions(
         gateway,
         snapshot,
         runtime_opts,
-        context=runtime_opts.context,
     )
     con = gateway.con
     ensure_schema(con, "analytics.symbol_graph_metrics_functions")
@@ -163,10 +157,6 @@ def compute_symbol_graph_metrics_functions(
             community_detection_limit=runtime_opts.features.community_detection_limit,
         )
     )
-    if runtime_opts.context is not None and (
-        runtime_opts.context.repo != repo or runtime_opts.context.commit != commit
-    ):
-        return
 
     graph = resolved_runtime.ensure_symbol_function_graph()
     function_repo = FunctionRepository(gateway=gateway, repo=repo, commit=commit)

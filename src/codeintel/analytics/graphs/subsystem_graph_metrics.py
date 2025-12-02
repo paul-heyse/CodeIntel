@@ -112,7 +112,6 @@ def compute_subsystem_graph_metrics(
         gateway,
         snapshot,
         runtime_opts,
-        context=runtime_opts.context,
     )
     con = gateway.con
     ensure_schema(con, "analytics.subsystem_graph_metrics")
@@ -125,11 +124,6 @@ def compute_subsystem_graph_metrics(
             community_detection_limit=runtime_opts.features.community_detection_limit,
         )
     )
-
-    if runtime_opts.context is not None and (
-        runtime_opts.context.repo != repo or runtime_opts.context.commit != commit
-    ):
-        return
 
     repository = SubsystemRepository(gateway=gateway, repo=repo, commit=commit)
     membership_rows: list[tuple[str, str]] = [

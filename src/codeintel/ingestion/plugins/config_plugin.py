@@ -91,7 +91,13 @@ class ConfigIngestPlugin(
         -------
         Mapping[str, int] | None
             Row counts, or None for auto-compute.
+
+        Raises
+        ------
+        RuntimeError
+            When config ingestion fails.
         """
+        _ = self  # Required by interface, accessed via ctx
         from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
         from codeintel.ingestion.ports.discovery import ModuleRecord
         from codeintel.ingestion.steps.config_ingest import ConfigIngestStep

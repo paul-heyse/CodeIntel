@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
 
-import asyncio
-
-from codeintel.config import ConfigBuilder
-from codeintel.config.models import ToolsConfig
 from codeintel.ingestion import (
     CoverageIngestStep,
     DuckDBStorageAdapter,
@@ -101,51 +98,48 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
         pytest.fail(f"Expected {expected_lines} coverage rows, got {count}")
 
 
+def _create_scan_step(
+    gateway: StorageGateway,
+    repo_root: Path,
+) -> tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]:
+    """Create scan step and adapters for a repository.
+
+    Returns
+    -------
+    tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]
+        Scan step and the adapters used to create it.
+    """
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+    scan_step = RepoScanStep(storage=storage, discovery=discovery, change_detection=change_detection)
+    return scan_step, storage, discovery
+
+
 @pytest.mark.skip(
     reason="Schema mismatch: StaticDiagnosticRow (6 cols) vs static_diagnostics table (8 cols)"
 )
 def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
     """Ensure typing ingestion reuses the provided ToolRunner."""
     context = build_tooling_context(tmp_path)
-    repo_root = context.repo_root
-    tool_service = context.service
-
     gateway = _setup_gateway()
     scan_profile = ScanProfile(
-        repo_root=repo_root,
-        source_roots=(repo_root,),
+        repo_root=context.repo_root,
+        source_roots=(context.repo_root,),
         include_globs=("*.py",),
         ignore_dirs=(),
     )
 
-    # Create adapters
-    storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
-    tools = ToolRunnerAdapter(tool_service)
+    scan_step, storage, discovery = _create_scan_step(gateway, context.repo_root)
+    tools = ToolRunnerAdapter(context.service)
 
-    # First populate modules in core.modules via repo_scan
-    scan_step = RepoScanStep(
-        storage=storage,
-        discovery=discovery,
-        change_detection=change_detection,
-    )
     _, modules, _ = scan_step.execute(
-        repo="r",
-        commit="c",
-        repo_root=repo_root,
-        profile=scan_profile,
+        repo="r", commit="c", repo_root=context.repo_root, profile=scan_profile
     )
 
-    # Now run typing ingest
     typing_step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
     result = asyncio.run(
-        typing_step.execute_async(
-            list(modules),
-            repo="r",
-            commit="c",
-            repo_root=str(repo_root),
-        )
+        typing_step.execute_async(list(modules), repo="r", commit="c", repo_root=str(context.repo_root))
     )
 
     if not result.success:
@@ -153,6 +147,5 @@ def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
         pytest.fail(f"Typing ingest failed: {errors}")
 
     row = gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
-    typedness_rows = row[0] if row is not None else 0
-    if typedness_rows < 1:
+    if (row[0] if row else 0) < 1:
         pytest.fail("Typedness ingestion wrote no rows")

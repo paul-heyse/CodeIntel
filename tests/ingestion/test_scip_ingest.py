@@ -21,15 +21,14 @@ from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
 
-def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
-    """
-    Ensure scip_ingest generates SCIP artifacts and registers scip_index_view.
+def _setup_repo_structure(tmp_path: Path) -> tuple[Path, Path]:
+    """Set up test repository structure.
 
-    Skips if scip-python or scip binaries are unavailable.
+    Returns
+    -------
+    tuple[Path, Path]
+        Repository root path and database path.
     """
-    if shutil.which("scip-python") is None or shutil.which("scip") is None:
-        pytest.skip("scip-python or scip not available on PATH")
-
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
     (repo_root / ".git").mkdir()
@@ -40,9 +39,44 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
     (pkg_dir / "mod.py").write_text("def foo(x: int) -> int:\n    return x + 1\n", encoding="utf8")
 
     build_dir = repo_root / "build"
-    document_output_dir = repo_root / "document_output"
     db_path = build_dir / "db" / "codeintel_prefect.duckdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    return repo_root, db_path
+
+
+def _create_scip_adapters(
+    gateway: object,
+    repo_root: Path,
+) -> tuple[DuckDBStorageAdapter, ToolRunnerAdapter]:
+    """Create storage and tool adapters for SCIP ingestion.
+
+    Returns
+    -------
+    tuple[DuckDBStorageAdapter, ToolRunnerAdapter]
+        Storage and tool adapters configured for SCIP ingestion.
+    """
+    storage = DuckDBStorageAdapter(gateway)  # type: ignore[arg-type]
+    tools_config = ToolsConfig.default()
+    cache_dir = repo_root / "build" / ".tool_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    runner = ToolRunner(tools_config=tools_config, cache_dir=cache_dir)
+    tool_service = ToolService(runner, tools_config)
+    tools = ToolRunnerAdapter(tool_service)
+    return storage, tools
+
+
+def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
+    """Ensure scip_ingest generates SCIP artifacts and registers scip_index_view.
+
+    Skip if scip-python or scip binaries are unavailable.
+    """
+    if shutil.which("scip-python") is None or shutil.which("scip") is None:
+        pytest.skip("scip-python or scip not available on PATH")
+
+    repo_root, db_path = _setup_repo_structure(tmp_path)
+    build_dir = repo_root / "build"
+    document_output_dir = repo_root / "document_output"
 
     _ = BuildPaths.from_layout(
         repo_root=repo_root,
@@ -55,18 +89,10 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
         StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
     )
     try:
-        # Create adapters
-        storage = DuckDBStorageAdapter(gateway)
-        tools_config = ToolsConfig.default()
-        cache_dir = repo_root / "build" / ".tool_cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        runner = ToolRunner(tools_config=tools_config, cache_dir=cache_dir)
-        tool_service = ToolService(runner, tools_config)
-        tools = ToolRunnerAdapter(tool_service)
-
-        # Create config
+        storage, tools = _create_scip_adapters(gateway, repo_root)
         scip_dir = build_dir / "scip"
         scip_dir.mkdir(parents=True, exist_ok=True)
+
         config = ScipIngestConfig(
             repo="demo/repo",
             commit="deadbeef",
@@ -75,28 +101,23 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
             output_json=scip_dir / "index.scip.json",
         )
 
-        # Execute step
         step = ScipIngestStep(storage=storage, tools=tools)
-        result = asyncio.get_event_loop().run_until_complete(
-            step.execute_async([], config)
-        )
+        result = asyncio.run(step.execute_async([], config))
 
         if not result.success:
             errors = "; ".join(result.errors) if result.errors else "unknown"
             pytest.skip(f"SCIP ingestion not successful in test environment: {errors}")
 
-        build_scip = scip_dir
-        if not (build_scip / "index.scip").is_file():
+        if not (scip_dir / "index.scip").is_file():
             pytest.fail("index.scip was not created under build/scip")
-        if not (build_scip / "index.scip.json").is_file():
+        if not (scip_dir / "index.scip.json").is_file():
             pytest.fail("index.scip.json was not created under build/scip")
 
-        con = gateway.con
+        con = gateway.con  # type: ignore[attr-defined]
         row = con.execute("SELECT COUNT(*) FROM scip_index_view").fetchone()
         if row is None:
             pytest.fail("scip_index_view did not return a row")
-        row_count = row[0]
-        if row_count == 0:
+        if row[0] == 0:
             pytest.fail("scip_index_view is empty; expected rows after ingest")
 
     finally:

@@ -207,7 +207,6 @@ def compute_graph_metrics_functions_ext(
         gateway,
         snapshot,
         runtime_opts,
-        context=runtime_opts.context,
     )
     ctx = _resolve_function_context(runtime_opts, repo, commit)
     filtered_graph: nx.DiGraph = active_filters.filter_call_graph(

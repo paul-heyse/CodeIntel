@@ -130,7 +130,6 @@ def build_subsystems(
                 eager=runtime_opts.eager,
                 validate=runtime_opts.validate,
                 cache_key=runtime_opts.cache_key,
-                context=runtime_opts.context,
                 engine=engine,
             )
 

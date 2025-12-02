@@ -40,41 +40,35 @@ class FunctionAnalyticsOptions:
     missing_function_goids: set[int] = field(default_factory=set)
 
     def get_ast_map(self) -> dict[int, FunctionAst]:
-        """Return the function AST map from either source.
+        """Return the function AST map.
 
         Returns
         -------
         dict[int, FunctionAst]
-            The AST map, empty if neither source is provided.
+            The AST map, empty if not provided.
         """
-        if self.context is not None:
-            return self.context.function_ast_map
         if self.function_ast_map is not None:
             return self.function_ast_map
         return {}
 
     def get_missing_goids(self) -> set[int]:
-        """Return the set of missing GOIDs from either source.
+        """Return the set of missing GOIDs.
 
         Returns
         -------
         set[int]
             The missing GOIDs set.
         """
-        if self.context is not None:
-            return self.context.missing_function_goids
         return self.missing_function_goids
 
     def has_ast_data(self) -> bool:
-        """Check if AST data is available from any source.
+        """Check if AST data is available.
 
         Returns
         -------
         bool
             True if AST data is available.
         """
-        if self.context is not None:
-            return bool(self.context.function_ast_map)
         return self.function_ast_map is not None
 
 

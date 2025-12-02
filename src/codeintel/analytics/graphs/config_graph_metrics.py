@@ -149,7 +149,6 @@ def compute_config_graph_metrics(
         gateway,
         snapshot,
         runtime_opts,
-        context=runtime_opts.context,
     )
     use_gpu = resolved_runtime.backend.use_gpu
     con = gateway.con
@@ -157,11 +156,6 @@ def compute_config_graph_metrics(
     ensure_schema(con, "analytics.config_graph_metrics_modules")
     ensure_schema(con, "analytics.config_projection_key_edges")
     ensure_schema(con, "analytics.config_projection_module_edges")
-
-    if runtime_opts.context is not None and (
-        runtime_opts.context.repo != repo or runtime_opts.context.commit != commit
-    ):
-        return
 
     graph = resolved_runtime.ensure_config_module_bipartite()
     if graph.number_of_nodes() == 0:

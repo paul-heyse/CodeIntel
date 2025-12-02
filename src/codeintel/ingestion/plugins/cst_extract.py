@@ -25,7 +25,6 @@ from codeintel.ingestion.plugins.protocol import (
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
-    from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
 
@@ -94,18 +93,21 @@ class CstExtractPlugin(TrackerRequiringPlugin, TableWriterIngestPlugin, WithDepe
         Mapping[str, int] | None
             Row counts per table, or None for auto-compute.
         """
+        _ = self  # Required by interface, accessed via ctx
         from codeintel.ingestion.adapters import (
             DuckDBStorageAdapter,
             FilesystemDiscoveryAdapter,
         )
+        from codeintel.ingestion.resources import ModuleProvider
         from codeintel.ingestion.steps import CstExtractStep
 
         # Create adapters
         storage = DuckDBStorageAdapter(ctx.gateway)
         discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
 
-        # Get modules
-        modules = self._get_modules(ctx)
+        # Get modules from provider
+        modules_provider = ctx.require(ModuleProvider)
+        modules = list(modules_provider.get())
 
         # Execute step
         step = CstExtractStep(storage=storage, discovery=discovery)
@@ -120,42 +122,6 @@ class CstExtractPlugin(TrackerRequiringPlugin, TableWriterIngestPlugin, WithDepe
                 log.warning("CST extraction error: %s", error)
 
         return result.table_counts
-
-    def _get_modules(self, ctx: IngestExecutionContext) -> list[ModuleRecord]:
-        """Get module list from tracker or inventory.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        list[ModuleRecord]
-            List of module records.
-        """
-        from codeintel.ingestion.common import iter_modules
-        from codeintel.ingestion.ports.discovery import ModuleRecord
-        from codeintel.storage.module_index import load_module_map
-
-        module_map = load_module_map(
-            ctx.gateway,
-            ctx.repo,
-            ctx.commit,
-            language="python",
-            logger=log,
-        )
-
-        return [
-            m
-            for m in iter_modules(
-                module_map,
-                ctx.repo_root,
-                logger=log,
-                scan_profile=ctx.code_profile,
-            )
-            if isinstance(m, ModuleRecord)
-        ]
 
 
 __all__ = ["CstExtractPlugin"]
