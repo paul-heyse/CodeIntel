@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codeintel.analytics.functions.parsing import parse_python_file
-from codeintel.graphs.function_catalog_service import (
+from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )

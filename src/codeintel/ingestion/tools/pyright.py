@@ -7,7 +7,6 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.paths import normalize_rel_path, repo_relpath
@@ -16,6 +15,7 @@ from codeintel.ingestion.tool_runner import (
     ToolName,
     ToolNotFoundError,
     ToolRunner,
+    ToolRunResult,
 )
 from codeintel.ingestion.tools.plugins import (
     ToolPlugin,
@@ -185,7 +185,7 @@ class PyrightPlugin(ToolPlugin):
         )
 
     @staticmethod
-    def parse_diagnostics(result: Any) -> dict[str, int]:
+    def parse_diagnostics(result: ToolRunResult) -> dict[str, int]:
         """
         Parse pyright JSON from stdout into path -> error_count mapping.
 

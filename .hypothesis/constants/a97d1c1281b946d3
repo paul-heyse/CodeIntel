@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/ports/__init__.py
+# hypothesis_version: 6.148.3
+
+['BatchResult', 'ChangeDetectionPort', 'ChangeSet', 'CoverageFileData', 'CoverageResult', 'DiagnosticResult', 'FileDigest', 'IngestStoragePort', 'IngestToolPort', 'ModuleDiscoveryPort', 'ModuleRecord', 'QueryResult', 'ScipResult', 'TestResult']

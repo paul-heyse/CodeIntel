@@ -38,14 +38,14 @@ from codeintel.analytics.core.plugins import (
     TEST_PROFILE_PLUGIN,
     ensure_plugins_registered,
 )
-from codeintel.analytics.graphs.runtime.manifest import load_prior_manifest
+from codeintel.analytics.graphs.runtime import load_prior_manifest
 from codeintel.analytics.runtime_manifest import encode_manifest
 from codeintel.analytics.subsystems import refresh_subsystem_caches
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
+from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.graphs.core.protocol import DEFAULT_METRIC_PLUGINS
 from codeintel.graphs.core.registry import plan_graph_plugins
-from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
 from codeintel.graphs.recipes import METRICS_ONLY_RECIPE, RecipeExecutor, RecipeExecutorContext
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,

@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.config.steps_graphs import GraphRunScope
+    from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.graphs.engine import GraphEngine
-    from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 

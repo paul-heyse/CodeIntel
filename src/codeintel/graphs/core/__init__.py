@@ -19,9 +19,11 @@ Factory Pattern Example
 from codeintel.graphs.core import make_metric_plugin, ComputationResult
 from codeintel.graphs.core.context import GraphExecutionContext
 
+
 def compute_my_metrics(ctx: GraphExecutionContext) -> ComputationResult:
     # Compute metrics
     return ComputationResult.ok(row_counts={"analytics.my_metrics": 100})
+
 
 my_metrics = make_metric_plugin(
     name="my_metrics",
@@ -35,6 +37,7 @@ Decorator Example
 -----------------
 ```python
 from codeintel.graphs.core import graph_plugin, GraphExecutionContext, GraphPluginResult
+
 
 @graph_plugin(
     name="my_builder",

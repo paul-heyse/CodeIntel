@@ -33,8 +33,8 @@ from codeintel.storage.db_helpers import DUCKDB_ERRORS
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.graphs.engine import GraphEngine
-    from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -390,9 +390,7 @@ def _execute_planned_plugin(
                 plugin=plugin, params=params, reason="unchanged", run_id=plan.run_id
             )
         else:
-            record = _execute_plugin(
-                plugin=plugin, ctx=ctx, settings=settings, run_id=plan.run_id
-            )
+            record = _execute_plugin(plugin=plugin, ctx=ctx, settings=settings, run_id=plan.run_id)
     except PluginFatalError:
         raise
     except PLUGIN_CATCHABLE_ERRORS:

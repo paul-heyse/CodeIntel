@@ -16,7 +16,14 @@ from codeintel.graphs.engine import GraphKind
 
 
 def _build_cfg_and_dfg(ctx: GraphExecutionContext) -> ComputationResult:
-    """Build control-flow and data-flow graphs for functions."""
+    """
+    Build control-flow and data-flow graphs for functions.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after building CFG and DFG artifacts.
+    """
     from codeintel.graphs.cfg_builder import build_cfg_and_dfg  # noqa: PLC0415
 
     cfg = CFGBuilderStepConfig(snapshot=ctx.snapshot)
@@ -36,7 +43,14 @@ cfg_dfg_builder_plugin = make_builder_plugin(
 
 
 def get_cfg_dfg_builder_plugin() -> object:
-    """Return the CFG/DFG builder plugin instance."""
+    """
+    Return the CFG/DFG builder plugin instance.
+
+    Returns
+    -------
+    object
+        The configured CFG/DFG builder plugin.
+    """
     return cfg_dfg_builder_plugin
 
 

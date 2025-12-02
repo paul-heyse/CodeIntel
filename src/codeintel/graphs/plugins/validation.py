@@ -123,9 +123,7 @@ class GraphValidationPlugin:
                 finding_count,
             )
 
-            return GraphPluginResult.ok(
-                row_counts={"analytics.graph_validation": finding_count}
-            )
+            return GraphPluginResult.ok(row_counts={"analytics.graph_validation": finding_count})
 
         except Exception as exc:
             log.exception(

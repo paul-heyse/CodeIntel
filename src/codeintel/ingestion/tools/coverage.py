@@ -85,16 +85,8 @@ def _parse_coverage_json(
         if not isinstance(data, Mapping):
             continue
 
-        executed = {
-            int(line)
-            for line in data.get("executed_lines", [])
-            if isinstance(line, int)
-        }
-        missing = {
-            int(line)
-            for line in data.get("missing_lines", [])
-            if isinstance(line, int)
-        }
+        executed = {int(line) for line in data.get("executed_lines", []) if isinstance(line, int)}
+        missing = {int(line) for line in data.get("missing_lines", []) if isinstance(line, int)}
 
         rel_path = _safe_relpath(repo_root, Path(str(file_name)))
         if rel_path is None:

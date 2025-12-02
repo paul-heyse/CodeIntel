@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/call_resolution.py
+# hypothesis_version: 6.148.3
+
+['ResolutionResult', 'build_evidence', 'resolve_callee', 'resolve_via_scip']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/functions/complexity.py
+# hypothesis_version: 6.148.3
+
+['COMPLEXITY_LOW', 'COMPLEXITY_MEDIUM', 'ComplexityMetrics', 'body', 'compute_complexity', 'decorator_list', 'high', 'low', 'medium']

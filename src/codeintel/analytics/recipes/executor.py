@@ -37,7 +37,7 @@ from codeintel.storage.gateway import StorageGateway
 if TYPE_CHECKING:
     from codeintel.analytics.context import AnalyticsContext
     from codeintel.analytics.graph_runtime import GraphRuntime
-    from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+    from codeintel.graphs.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 

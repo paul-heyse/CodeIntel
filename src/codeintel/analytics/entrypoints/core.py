@@ -26,7 +26,7 @@ from codeintel.analytics.entrypoint_detectors import (
 )
 from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
 from codeintel.config import EntryPointsStepConfig
-from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.common import iter_modules, read_module_source
 from codeintel.ingestion.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway

@@ -1,30 +1,27 @@
-"""Coverage functions plugin using the new protocol.
+"""Coverage functions plugin using new base classes.
 
-This module provides the coverage functions plugin migrated to the
-new unified plugin protocol.
+This module aggregates line coverage data to function-level metrics.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import ClassVar
 
+from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
     PluginResourceHints,
-    PluginResult,
-    ValidationResult,
+    PluginStage,
 )
 from codeintel.analytics.coverage_analytics import compute_coverage_functions
 from codeintel.config.steps_analytics import CoverageAnalyticsStepConfig
 
 
 @dataclass
-class CoverageFunctionsPlugin:
-    """Plugin for aggregating line coverage to function-level metrics.
+class CoverageFunctionsPlugin(ConfiguredTableWriterPlugin[CoverageAnalyticsStepConfig]):
+    """Aggregate line coverage to function-level metrics.
 
     Analyzes code coverage data to compute:
     - Function-level coverage percentages
@@ -32,96 +29,56 @@ class CoverageFunctionsPlugin:
     - Coverage quality metrics
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="coverage.functions",
-            description="Aggregate line coverage to function-level metrics.",
-            stage="coverage",
-            version="2.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="coverage_functions_cfg",
-                    type_ref="CoverageAnalyticsStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="coverage_functions",
-                    tables=("analytics.coverage_functions",),
-                ),
-            ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.coverage_functions", kind="dataset"),
-            ),
-            capabilities_required=(PluginCapability(name="coverage.lines", kind="dataset"),),
-            depends_on=("goids", "coverage_ingest"),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=60_000,
-                priority=40,
-            ),
-            tags=("coverage", "functions"),
+    # Core identification
+    plugin_name: ClassVar[str] = "coverage.functions"
+    plugin_stage: ClassVar[PluginStage] = "coverage"
+    plugin_version: ClassVar[str] = "2.0.0"
+
+    # Configuration binding
+    config_type: ClassVar[type[CoverageAnalyticsStepConfig]] = CoverageAnalyticsStepConfig
+
+    # Output tables
+    output_tables: ClassVar[tuple[str, ...]] = ("analytics.coverage_functions",)
+
+    # Capabilities and dependencies
+    provides: ClassVar[tuple[str, ...]] = ("analytics.coverage_functions",)
+    requires: ClassVar[tuple[str, ...]] = ("coverage.lines",)
+    depends_on: ClassVar[tuple[str, ...]] = ("goids", "coverage_ingest")
+
+    # Categorization
+    tags: ClassVar[tuple[str, ...]] = ("coverage", "functions")
+
+    # Resource hints
+    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
+        max_runtime_ms=60_000,
+        priority=40,
+    )
+
+    def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
+        """Execute the coverage functions computation.
+
+        Parameters
+        ----------
+        ctx
+            Execution context with gateway and config.
+
+        Returns
+        -------
+        Mapping[str, int] | None
+            None to trigger auto row count computation.
+        """
+        cfg = self.config
+
+        analytics_context = None
+        if ctx.has_analytics_context():
+            analytics_context = ctx.analytics_context
+
+        compute_coverage_functions(
+            ctx.gateway,
+            cfg,
+            context=analytics_context,
         )
-
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate that required inputs are available.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result.
-        """
-        _ = self.metadata  # Access self for protocol compliance
-        errors: list[str] = []
-
-        if not ctx.has_config(CoverageAnalyticsStepConfig):
-            errors.append("CoverageAnalyticsStepConfig is required")
-
-        if errors:
-            return ValidationResult.failure(tuple(errors))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
-        """Execute the plugin.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        PluginResult
-            Execution result.
-        """
-        _ = self.metadata  # Access self for protocol compliance
-        try:
-            cfg = ctx.get_config(CoverageAnalyticsStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
-
-        analytics_context = ctx.analytics_context if ctx.has_analytics_context() else None
-
-        try:
-            compute_coverage_functions(
-                ctx.gateway,
-                cfg,
-                context=analytics_context,
-            )
-        except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Coverage functions computation failed: {e}")
-
-        return PluginResult.ok()
+        return None  # Let base class compute row counts
 
 
 __all__ = ["CoverageFunctionsPlugin"]

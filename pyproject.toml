@@ -94,10 +94,6 @@ codeintel = "codeintel.cli.main:main"
 # Built-in plugins are registered via the builtin module, not entry points
 # Example for third-party: my_plugin = "my_package.plugins:MyIngestPlugin"
 
-[project.entry-points."codeintel.graph_metric_plugins"]
-# DEPRECATED: Use codeintel.graph_plugins instead
-# Example: my_graph_plugin = "my_package.graph:MyGraphPlugin"
-
 [project.entry-points."codeintel.graph_plugins"]
 # New unified graph plugin entry point group
 # Plugins are discovered via the GraphPluginRegistry in graphs.core.registry

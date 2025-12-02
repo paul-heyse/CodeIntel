@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/validation/__init__.py
+# hypothesis_version: 6.148.3
+
+['CALL_SCC_MIN', 'HUB_DEGREE_RATIO', 'HUB_MIN_DEGREE_FLOOR', 'SAMPLE_LIMIT', 'SYMBOL_COMMUNITY_MIN', 'call_graph_findings', 'cap_findings', 'config_key_findings', 'has_error_findings', 'hub_threshold', 'import_hub_findings', 'log_db_snapshot', 'persist_findings', 'warn_graph_structure', 'warn_orphan_modules']

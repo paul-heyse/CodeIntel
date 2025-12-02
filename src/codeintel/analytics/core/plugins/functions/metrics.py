@@ -1,24 +1,28 @@
-"""Function metrics plugin using the new protocol.
+"""Function metrics plugin - thin orchestration layer.
 
-This module provides the function metrics plugin migrated to the
-new unified plugin protocol, demonstrating the migration pattern.
+This plugin delegates computation to the pure compute layer and
+persistence to the adapters layer. The plugin itself is minimal:
+- Declares metadata via class attributes
+- Orchestrates execution in compute()
+- Base classes handle validation, contracts, and error handling
+
+Architecture
+------------
+- Compute: `analytics.compute.functions` (pure, no I/O)
+- Adapters: `analytics.adapters.functions` (database I/O)
+- Plugin: This module (thin orchestration)
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import ClassVar
 
-from codeintel.analytics.core.contracts import OutputContractSpec
+from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
-from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
-    PluginResult,
-    ValidationResult,
-)
+from codeintel.analytics.core.plugin_protocol import PluginResourceHints, PluginStage
+from codeintel.analytics.core.traits import WithContractValidation
 from codeintel.analytics.functions import (
     FunctionAnalyticsOptions,
     compute_function_metrics_and_types,
@@ -27,153 +31,72 @@ from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 
 
 @dataclass
-class FunctionMetricsPlugin:
-    """Plugin for computing function metrics and type annotations.
+class FunctionMetricsPlugin(
+    ConfiguredTableWriterPlugin[FunctionAnalyticsStepConfig],
+    WithContractValidation,
+):
+    """Compute function metrics, complexity, and type annotations.
 
-    This plugin analyzes functions in the codebase to compute:
-    - Code complexity metrics (cyclomatic, cognitive)
-    - Type annotation coverage
-    - Function signatures and parameters
+    Orchestrates function analysis by delegating to:
+    - Compute layer for pure metric computation
+    - Adapters for database persistence
+
+    Output Tables
+    -------------
+    - analytics.function_metrics: Complexity and size metrics
+    - analytics.function_types: Type annotation data
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="functions.metrics",
-            description="Compute function metrics, complexity, and type annotations.",
-            stage="function",
-            version="2.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="function_cfg",
-                    type_ref="FunctionAnalyticsStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="function_metrics",
-                    tables=("analytics.function_metrics",),
-                    min_rows=1,
-                    required_columns=("repo", "commit", "goid", "complexity", "lines"),
-                ),
-                PluginOutputSpec(
-                    name="function_types",
-                    tables=("analytics.function_types",),
-                    min_rows=1,
-                    required_columns=("repo", "commit", "goid"),
-                ),
-            ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.function_metrics", kind="dataset"),
-                PluginCapability(name="analytics.function_types", kind="dataset"),
-            ),
-            capabilities_required=(PluginCapability(name="core.goids", kind="dataset"),),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=60_000,
-                requires_gpu=False,
-                priority=10,
-            ),
-            tags=("functions", "metrics", "types"),
-        )
+    # Identification
+    plugin_name: ClassVar[str] = "functions.metrics"
+    plugin_stage: ClassVar[PluginStage] = "function"
+    plugin_version: ClassVar[str] = "2.1.0"
+    plugin_description: ClassVar[str] = "Compute function complexity and type coverage metrics"
 
-    @property
-    def requires_catalog(self) -> bool:
-        """Return whether catalog is required."""
-        return True
+    # Configuration
+    config_type: ClassVar[type[FunctionAnalyticsStepConfig]] = FunctionAnalyticsStepConfig
 
-    @property
-    def output_contracts(self) -> tuple[OutputContractSpec, ...]:
-        """Return output contracts for validation."""
-        return (
-            OutputContractSpec(
-                table="analytics.function_metrics",
-                min_rows=1,
-                required_columns=("repo", "commit", "goid", "complexity", "lines"),
-                description="Function complexity and size metrics",
-            ),
-            OutputContractSpec(
-                table="analytics.function_types",
-                min_rows=1,
-                required_columns=("repo", "commit", "goid"),
-                description="Function type annotation data",
-            ),
-        )
+    # Output tables (contracts auto-generated from these)
+    output_tables: ClassVar[tuple[str, ...]] = (
+        "analytics.function_metrics",
+        "analytics.function_types",
+    )
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate that required inputs are available.
+    # Capabilities
+    provides: ClassVar[tuple[str, ...]] = output_tables
+    requires: ClassVar[tuple[str, ...]] = ("core.goids",)
+    tags: ClassVar[tuple[str, ...]] = ("functions", "metrics", "types")
+
+    # Resource hints
+    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
+        max_runtime_ms=60_000,
+        priority=10,
+    )
+
+    def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
+        """Execute function metrics computation.
 
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context providing gateway, config, and resources.
 
         Returns
         -------
-        ValidationResult
-            Validation result.
+        Mapping[str, int] | None
+            Row counts per output table.
         """
-        _ = self.metadata  # Access self for protocol compliance
-        errors: list[str] = []
-
-        # Check for required config
-        if not ctx.has_config(FunctionAnalyticsStepConfig):
-            errors.append("FunctionAnalyticsStepConfig is required")
-
-        if errors:
-            return ValidationResult.failure(tuple(errors))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
-        """Execute the plugin.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        PluginResult
-            Execution result.
-        """
-        _ = self.metadata  # Access self for protocol compliance
-        try:
-            cfg = ctx.get_config(FunctionAnalyticsStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
-
-        # Build options from context
-        analytics_context = ctx.analytics_context if ctx.has_analytics_context() else None
-        opts = FunctionAnalyticsOptions(context=analytics_context)
-
-        try:
-            counters = compute_function_metrics_and_types(
-                ctx.gateway,
-                cfg,
-                options=opts,
-            )
-        except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Function metrics computation failed: {e}")
-
-        # Convert counters to row counts
-        row_counts: dict[str, int] = {}
-        if isinstance(counters, dict):
-            if "metrics_written" in counters:
-                row_counts["analytics.function_metrics"] = counters["metrics_written"]
-            if "types_written" in counters:
-                row_counts["analytics.function_types"] = counters["types_written"]
-
-        return PluginResult.ok(
-            row_counts=row_counts,
-            meta=counters if isinstance(counters, dict) else {},
+        opts = FunctionAnalyticsOptions(
+            context=ctx.analytics_context if ctx.has_analytics_context() else None
         )
 
+        result = compute_function_metrics_and_types(ctx.gateway, self.config, options=opts)
 
-__all__ = [
-    "FunctionMetricsPlugin",
-]
+        # Map legacy counter names to table names
+        return {
+            "analytics.function_metrics": result.get("metrics_rows", 0),
+            "analytics.function_types": result.get("types_rows", 0),
+        }
+
+
+__all__ = ["FunctionMetricsPlugin"]

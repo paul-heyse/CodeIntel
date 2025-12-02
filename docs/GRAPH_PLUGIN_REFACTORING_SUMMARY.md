@@ -301,25 +301,55 @@ CLI (`cli/main.py`) now uses:
 - `list_graph_plugins` from `graphs.core.registry`
 - `DEFAULT_METRIC_PLUGINS` from `graphs.core.protocol`
 
-### Pending - Future Cleanup Phase
+### ✅ Legacy Code Elimination (December 2025)
 
-#### Legacy Module Deletion
+All legacy graph plugin infrastructure has been removed:
 
-The following modules have deprecation warnings but are retained for backward compatibility during the transition:
+#### Deleted Modules
 
-- `analytics/graphs/plugins.py` - Has `DeprecationWarning`, still used by tests
-- `analytics/graphs/runtime/analytics_adapter.py` - Has `DeprecationWarning`
-- `analytics/graph_service_runtime.py` - Still used by legacy tests
+- `analytics/graphs/plugins.py` - Deleted (deprecated plugin system)
+- `analytics/graphs/runtime/` - Directory deleted (contained deprecated plugin runtime)
+- `analytics/graphs/core/` - Directory deleted (duplicated graphs/core/)
+- `analytics/graphs/catalog.py` - Deleted
+- `analytics/graph_service_runtime.py` - Deleted
+- `analytics/plugin_runtime.py` - Deleted
 
-These modules can be deleted once all test files are migrated to use the new test infrastructure.
+#### Preserved Utilities
 
-#### Legacy Test Migration
+- `analytics/graphs/runtime.py` - Retained (core graph context utilities: `GraphContext`, `GraphContextSpec`, `resolve_graph_context`, etc.)
 
-The following test files still test the legacy `GraphServiceRuntime` infrastructure and can be migrated or deleted in a future phase:
+#### Deleted Test Files
 
-- `tests/analytics/test_graph_plugin_policy_runtime.py`
+Legacy test files that tested deprecated infrastructure have been removed:
+
 - `tests/analytics/test_graph_service_runtime.py`
 - `tests/analytics/test_graph_runtime_execution.py`
+- `tests/analytics/test_graph_runtime_planning.py`
+- `tests/analytics/test_graph_runtime_manifest.py`
+- `tests/analytics/test_graph_runtime_context.py`
+- `tests/analytics/test_graph_runtime_perf.py`
+- `tests/analytics/test_graph_plugin_policy_runtime.py`
+- `tests/analytics/test_plugin_dependencies.py`
+- `tests/analytics/test_plugin_contracts_behavior.py`
+- `tests/analytics/test_plugin_scope_isolation.py`
+- `tests/analytics/test_plugin_skip_on_unchanged_options.py`
+- `tests/analytics/test_plugin_harness.py`
+- `tests/analytics/test_graph_manifest_skip.py`
+- `tests/analytics/test_graph_plugin_cache.py`
+- `tests/analytics/test_manifest_fields.py`
+- `tests/analytics/test_graph_engine_guardrails.py`
+- `tests/analytics/test_subsystem_agreement_plugin.py`
+- `tests/serving/test_serving_runtime_analytics_e2e.py`
+- `src/codeintel/analytics/tests/test_graph_plugins.py`
+- `src/codeintel/analytics/tests/test_graph_plugin_options.py`
+- `src/codeintel/analytics/tests/test_plugin_contracts.py`
+
+#### Cleaned Up Files
+
+- `analytics/plugins.py` - Removed graph-specific imports and auto-registration
+- `tests/analytics/conftest.py` - Removed legacy `PluginTestHarness`, kept only `NewPluginTestHarness`
+- `tests/_helpers/plugin_packs.py` - Deleted (replaced by `graph_plugin_packs.py`)
+- `pyproject.toml` - Removed deprecated `codeintel.graph_metric_plugins` entry point
 
 ### Documentation
 
@@ -374,10 +404,11 @@ The registry contains 17 plugins:
 | Direct metric computation (no importlib) | ✅ Complete |
 | Parallel stage execution in RecipeExecutor | ✅ Complete |
 | Entry points for plugin discovery | ✅ Complete |
-| Legacy modules have deprecation warnings | ✅ Complete |
-| All tests pass with new infrastructure | ⚠️ Legacy tests still use old system |
-| `analytics/plugins.py` has zero graph-related code | ⬜ Future cleanup |
-| `analytics/plugin_runtime.py` has zero graph imports | ⬜ Future cleanup |
+| Legacy modules deleted | ✅ Complete |
+| All legacy tests removed/migrated | ✅ Complete |
+| `analytics/plugins.py` has zero graph-related code | ✅ Complete |
+| `analytics/plugin_runtime.py` deleted | ✅ Complete |
+| Factory pattern for minimal plugin boilerplate | ✅ Complete |
 
 ---
 
@@ -408,7 +439,10 @@ The registry contains 17 plugins:
 | `graphs/plugins/builders/import_graph.py` | ~160 | Import graph builder |
 | `graphs/plugins/metrics/__init__.py` | ~40 | Package exports |
 | `graphs/plugins/metrics/core.py` | ~380 | Core metrics |
-| `graphs/plugins/metrics/secondary.py` | ~930 | Secondary metrics (expanded) |
+| `graphs/plugins/metrics/secondary.py` | ~350 | Secondary metrics (factory pattern) |
+| `graphs/core/computation.py` | ~50 | ComputationResult and ComputationFn contract |
+| `graphs/core/factories.py` | ~200 | make_graph_plugin, make_metric_plugin, make_builder_plugin |
+| `graphs/core/adapters.py` | ~50 | adapt_legacy_computation wrapper |
 | `tests/_helpers/graph_plugin_packs.py` | ~220 | Test plugin packs for new infrastructure |
 
 ---
@@ -438,4 +472,4 @@ Process isolation and timeout handling prevent individual plugin failures from c
 ---
 
 *Generated: December 2, 2025*
-*Last updated: December 2, 2025 - Phase A through H implementation complete*
+*Last updated: December 2, 2025 - Legacy code elimination complete, factory pattern implemented*

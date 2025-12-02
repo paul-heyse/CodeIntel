@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/steps/cst_extract.py
+# hypothesis_version: 6.148.3
+
+[200, '.py', 'AsyncFunctionDef', 'CST_CAPTURE_CONFIG', 'CstExtractStep', 'CstVisitor', 'ModuleCstResult', 'core.cst_nodes']

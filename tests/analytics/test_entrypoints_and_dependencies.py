@@ -14,7 +14,7 @@ from codeintel.analytics.dependencies import (
 )
 from codeintel.analytics.entrypoints import build_entrypoints
 from codeintel.config import ConfigBuilder
-from codeintel.graphs.function_catalog_service import FunctionCatalogService
+from codeintel.graphs.catalog import FunctionCatalogService
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.ingestion.py_ast_extract import ingest_python_ast
 from codeintel.ingestion.repo_scan import ingest_repo

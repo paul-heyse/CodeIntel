@@ -1643,7 +1643,9 @@ def _cmd_graph_plugins(args: argparse.Namespace) -> int:
                         if plugin.metadata.resource_hints is not None
                         else None
                     ),
-                    "options_model": plugin.metadata.options_model.__name__ if plugin.metadata.options_model else None,
+                    "options_model": plugin.metadata.options_model.__name__
+                    if plugin.metadata.options_model
+                    else None,
                     "options_default": plugin.metadata.options_default,
                     "version_hash": plugin.metadata.version_hash,
                     "contract_checkers": len(plugin.metadata.contract_checkers),

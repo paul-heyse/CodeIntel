@@ -30,19 +30,40 @@ from codeintel.graphs.engine import GraphKind
 
 
 def _compute_cfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute control-flow graph metrics for functions and blocks."""
+    """
+    Compute control-flow graph metrics for functions and blocks.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing CFG metrics.
+    """
     compute_cfg_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, context=None)
     return ComputationResult.ok()
 
 
 def _compute_dfg_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute data-flow graph metrics for functions and blocks."""
+    """
+    Compute data-flow graph metrics for functions and blocks.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing DFG metrics.
+    """
     compute_dfg_metrics(ctx.gateway, repo=ctx.repo, commit=ctx.commit, context=None)
     return ComputationResult.ok()
 
 
 def _compute_test_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute metrics over the test <-> function bipartite graph."""
+    """
+    Compute metrics over the test <-> function bipartite graph.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing test graph metrics.
+    """
     from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
         GraphRuntimeOptions,
         resolve_graph_runtime,
@@ -59,7 +80,14 @@ def _compute_test_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
 
 
 def _compute_subsystem_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute subsystem-level condensed import graph metrics."""
+    """
+    Compute subsystem-level condensed import graph metrics.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing subsystem metrics.
+    """
     from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
         GraphRuntimeOptions,
         resolve_graph_runtime,
@@ -78,7 +106,14 @@ def _compute_subsystem_graph_metrics(ctx: GraphExecutionContext) -> ComputationR
 
 
 def _compute_symbol_graph_metrics_modules(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute symbol graph metrics at the module level."""
+    """
+    Compute symbol graph metrics at the module level.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing module symbol metrics.
+    """
     from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
         GraphRuntimeOptions,
         resolve_graph_runtime,
@@ -97,7 +132,14 @@ def _compute_symbol_graph_metrics_modules(ctx: GraphExecutionContext) -> Computa
 
 
 def _compute_symbol_graph_metrics_functions(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute symbol graph metrics at the function level."""
+    """
+    Compute symbol graph metrics at the function level.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing function symbol metrics.
+    """
     from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
         GraphRuntimeOptions,
         resolve_graph_runtime,
@@ -116,7 +158,14 @@ def _compute_symbol_graph_metrics_functions(ctx: GraphExecutionContext) -> Compu
 
 
 def _compute_config_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute config bipartite/projection graph metrics."""
+    """
+    Compute config bipartite/projection graph metrics.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing config graph metrics.
+    """
     from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
         GraphRuntimeOptions,
         resolve_graph_runtime,
@@ -133,13 +182,27 @@ def _compute_config_graph_metrics(ctx: GraphExecutionContext) -> ComputationResu
 
 
 def _compute_subsystem_agreement(ctx: GraphExecutionContext) -> ComputationResult:
-    """Check agreement between subsystem labels and import communities."""
+    """
+    Check agreement between subsystem labels and import communities.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing subsystem agreement metrics.
+    """
     compute_subsystem_agreement(ctx.gateway, repo=ctx.repo, commit=ctx.commit)
     return ComputationResult.ok()
 
 
 def _compute_graph_stats(ctx: GraphExecutionContext) -> ComputationResult:
-    """Compute global graph statistics for core graphs."""
+    """
+    Compute global graph statistics for core graphs.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after computing graph statistics.
+    """
     from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
         GraphRuntimeOptions,
         resolve_graph_runtime,
@@ -262,47 +325,110 @@ graph_stats_plugin = make_metric_plugin(
 
 
 def get_cfg_metrics_plugin() -> object:
-    """Return the CFG metrics plugin instance."""
+    """
+    Return the CFG metrics plugin instance.
+
+    Returns
+    -------
+    object
+        The configured CFG metrics plugin.
+    """
     return cfg_metrics_plugin
 
 
 def get_dfg_metrics_plugin() -> object:
-    """Return the DFG metrics plugin instance."""
+    """
+    Return the DFG metrics plugin instance.
+
+    Returns
+    -------
+    object
+        The configured DFG metrics plugin.
+    """
     return dfg_metrics_plugin
 
 
 def get_test_graph_metrics_plugin() -> object:
-    """Return the test graph metrics plugin instance."""
+    """
+    Return the test graph metrics plugin instance.
+
+    Returns
+    -------
+    object
+        The configured test graph metrics plugin.
+    """
     return test_graph_metrics_plugin
 
 
 def get_subsystem_graph_metrics_plugin() -> object:
-    """Return the subsystem graph metrics plugin instance."""
+    """
+    Return the subsystem graph metrics plugin instance.
+
+    Returns
+    -------
+    object
+        The configured subsystem graph metrics plugin.
+    """
     return subsystem_graph_metrics_plugin
 
 
 def get_symbol_graph_metrics_modules_plugin() -> object:
-    """Return the symbol graph metrics modules plugin instance."""
+    """
+    Return the symbol graph metrics modules plugin instance.
+
+    Returns
+    -------
+    object
+        The configured symbol graph metrics modules plugin.
+    """
     return symbol_graph_metrics_modules_plugin
 
 
 def get_symbol_graph_metrics_functions_plugin() -> object:
-    """Return the symbol graph metrics functions plugin instance."""
+    """
+    Return the symbol graph metrics functions plugin instance.
+
+    Returns
+    -------
+    object
+        The configured symbol graph metrics functions plugin.
+    """
     return symbol_graph_metrics_functions_plugin
 
 
 def get_config_graph_metrics_plugin() -> object:
-    """Return the config graph metrics plugin instance."""
+    """
+    Return the config graph metrics plugin instance.
+
+    Returns
+    -------
+    object
+        The configured config graph metrics plugin.
+    """
     return config_graph_metrics_plugin
 
 
 def get_subsystem_agreement_plugin() -> object:
-    """Return the subsystem agreement plugin instance."""
+    """
+    Return the subsystem agreement plugin instance.
+
+    Returns
+    -------
+    object
+        The configured subsystem agreement plugin.
+    """
     return subsystem_agreement_plugin
 
 
 def get_graph_stats_plugin() -> object:
-    """Return the graph stats plugin instance."""
+    """
+    Return the graph stats plugin instance.
+
+    Returns
+    -------
+    object
+        The configured graph stats plugin.
+    """
     return graph_stats_plugin
 
 

@@ -11,6 +11,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+MIN_SCIP_RANGE_FIELDS = 3
+FULL_SCIP_RANGE_FIELDS = 4
+
 
 @dataclass(frozen=True)
 class FileDiagnosticCount:
@@ -510,7 +513,7 @@ class ScipIndexResult:
                         continue
 
                     rng = occ.get("range", [])
-                    if not isinstance(rng, list) or len(rng) < 3:
+                    if not isinstance(rng, list) or len(rng) < MIN_SCIP_RANGE_FIELDS:
                         continue
 
                     roles = occ.get("symbol_roles", 0)
@@ -518,10 +521,12 @@ class ScipIndexResult:
 
                     # SCIP range is [start_line, start_col, end_col] or
                     # [start_line, start_col, end_line, end_col]
-                    if len(rng) == 3:
+                    if len(rng) == MIN_SCIP_RANGE_FIELDS:
                         range_tuple = (int(rng[0]), int(rng[1]), int(rng[0]), int(rng[2]))
-                    else:
+                    elif len(rng) == FULL_SCIP_RANGE_FIELDS:
                         range_tuple = (int(rng[0]), int(rng[1]), int(rng[2]), int(rng[3]))
+                    else:
+                        continue
 
                     occurrences.append(
                         ScipOccurrence(

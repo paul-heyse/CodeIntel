@@ -16,7 +16,14 @@ from codeintel.graphs.engine import GraphKind
 
 
 def _build_call_graph(ctx: GraphExecutionContext) -> ComputationResult:
-    """Build call graph nodes and edges from GOIDs."""
+    """
+    Build call graph nodes and edges from GOIDs.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after building call graph artifacts.
+    """
     from codeintel.graphs.callgraph_builder import build_call_graph  # noqa: PLC0415
 
     cfg = CallGraphStepConfig(snapshot=ctx.snapshot)
@@ -36,7 +43,14 @@ callgraph_builder_plugin = make_builder_plugin(
 
 
 def get_callgraph_builder_plugin() -> object:
-    """Return the call graph builder plugin instance."""
+    """
+    Return the call graph builder plugin instance.
+
+    Returns
+    -------
+    object
+        The configured call graph builder plugin.
+    """
     return callgraph_builder_plugin
 
 

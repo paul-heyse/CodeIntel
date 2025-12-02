@@ -7,7 +7,8 @@ from typing import cast
 import pytest
 
 from codeintel.config.datasets import CallGraphEdgeRow
-from codeintel.graphs import call_persist, call_resolution
+from codeintel.graphs.callgraph import persistence as call_persist
+from codeintel.graphs.callgraph import resolution as call_resolution
 
 ALIAS_GOID = 10
 SCIP_GOID = 1234

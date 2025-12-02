@@ -8,7 +8,7 @@ from pathlib import Path
 from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_graph_metrics
 from codeintel.analytics.profiles import build_function_profile, build_module_profile
 from codeintel.config import ConfigBuilder
-from codeintel.graphs.function_catalog import FunctionCatalog
+from codeintel.graphs.catalog import FunctionCatalog
 from codeintel.graphs.symbol_uses import build_symbol_use_edges
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (

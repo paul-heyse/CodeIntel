@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/core/factories.py
+# hypothesis_version: 6.148.3
+
+['FactoryPlugin', 'builder', 'computation failed', 'compute_error', 'con', 'fatal', 'make_builder_plugin', 'make_graph_plugin', 'make_metric_plugin', 'metric', 'none', 'validation']

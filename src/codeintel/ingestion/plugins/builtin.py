@@ -1,8 +1,10 @@
-"""Built-in ingestion plugins wrapping existing step implementations.
+"""Built-in ingestion plugins using port-adapter architecture.
 
-This module provides plugin wrappers around the pipeline-based ingestion
-implementations. Each plugin integrates with the harness system for
-consistent error handling, row counting, and incremental support.
+This module provides plugin wrappers that delegate to pure step implementations
+via the port-adapter pattern. Each plugin:
+1. Creates adapters from the plugin context
+2. Instantiates the appropriate step with injected ports
+3. Executes the step and returns the result
 
 NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
@@ -25,10 +27,90 @@ from codeintel.ingestion.plugins.protocol import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.ingestion.adapters import (
+        DuckDBStorageAdapter,
+        FilesystemDiscoveryAdapter,
+        HashChangeDetectionAdapter,
+        ToolRunnerAdapter,
+    )
     from codeintel.ingestion.change_tracker import ChangeTracker
     from codeintel.ingestion.common import ModuleRecord
 
 log = logging.getLogger(__name__)
+
+
+def _create_storage_adapter(ctx: IngestPluginContext) -> DuckDBStorageAdapter:
+    """Create a DuckDB storage adapter from context.
+
+    Parameters
+    ----------
+    ctx
+        Plugin execution context.
+
+    Returns
+    -------
+    DuckDBStorageAdapter
+        Storage adapter for the context's gateway.
+    """
+    from codeintel.ingestion.adapters import DuckDBStorageAdapter
+
+    return DuckDBStorageAdapter(ctx.gateway)
+
+
+def _create_discovery_adapter(ctx: IngestPluginContext) -> FilesystemDiscoveryAdapter:
+    """Create a filesystem discovery adapter from context.
+
+    Parameters
+    ----------
+    ctx
+        Plugin execution context.
+
+    Returns
+    -------
+    FilesystemDiscoveryAdapter
+        Discovery adapter for the context's repo root.
+    """
+    from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
+
+    return FilesystemDiscoveryAdapter(ctx.snapshot.repo_root)
+
+
+def _create_tool_adapter(ctx: IngestPluginContext) -> ToolRunnerAdapter:
+    """Create a tool runner adapter from context.
+
+    Parameters
+    ----------
+    ctx
+        Plugin execution context.
+
+    Returns
+    -------
+    ToolRunnerAdapter
+        Tool adapter for the context's tool service.
+    """
+    from codeintel.ingestion.adapters import ToolRunnerAdapter
+
+    service = ctx.tool_service_or_default()
+    return ToolRunnerAdapter(service)
+
+
+def _create_change_adapter(ctx: IngestPluginContext) -> HashChangeDetectionAdapter:
+    """Create a change detection adapter from context.
+
+    Parameters
+    ----------
+    ctx
+        Plugin execution context.
+
+    Returns
+    -------
+    HashChangeDetectionAdapter
+        Change detection adapter using the storage adapter.
+    """
+    from codeintel.ingestion.adapters import HashChangeDetectionAdapter
+
+    storage = _create_storage_adapter(ctx)
+    return HashChangeDetectionAdapter(storage)
 
 
 def _resolve_coverage_file(ctx: IngestPluginContext) -> Path | None:
@@ -112,6 +194,8 @@ def _get_modules_from_tracker(ctx: IngestPluginContext) -> list[ModuleRecord]:
 def repo_scan_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     """Scan repository tree into core tables and change-tracker state.
 
+    Uses port-adapter architecture with RepoScanStep for pure logic.
+
     Parameters
     ----------
     ctx
@@ -120,7 +204,7 @@ def repo_scan_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with change tracker stored in scratch (row counts added by harness).
+        Result with change tracker stored in scratch.
     """
     from codeintel.config import RepoScanStepConfig
     from codeintel.ingestion import repo_scan
@@ -140,7 +224,6 @@ def repo_scan_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     # Store tracker in scratch for downstream plugins
     ctx.scratch.declare("change_tracker", tracker)
 
-    # Harness adds row_counts and handles exceptions
     return IngestPluginResult.ok()
 
 
@@ -176,25 +259,29 @@ def scip_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with SCIP artifacts (harness handles exceptions).
+        Result with SCIP artifacts.
     """
+    from codeintel.config import ScipIngestStepConfig, ToolBinaries
     from codeintel.ingestion import scip_ingest
 
-    # Dependencies resolved by harness
     tracker = _try_get_tracker(ctx)
     service = ctx.tool_service_or_default()
-    modules = _get_modules_from_tracker(ctx)
 
-    result = scip_ingest.ingest_scip(
-        ctx.gateway,
-        modules,
-        repo=ctx.snapshot.repo,
-        commit=ctx.snapshot.commit,
-        repo_root=ctx.snapshot.repo_root,
-        build_dir=ctx.paths.build_dir,
-        document_output_dir=ctx.paths.document_output_dir,
+    binaries = ToolBinaries(
         scip_python_bin=ctx.tools.scip_python_bin,
         scip_bin=ctx.tools.scip_bin,
+    )
+    cfg = ScipIngestStepConfig(
+        snapshot=ctx.snapshot,
+        paths=ctx.paths,
+        binaries=binaries,
+        scip_runner=None,
+        artifact_writer=None,
+    )
+
+    result = scip_ingest.ingest_scip(
+        gateway=ctx.gateway,
+        cfg=cfg,
         tracker=tracker,
         tool_service=service,
     )
@@ -228,7 +315,7 @@ def scip_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     register=True,
 )
 def cst_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
-    """Parse CST and persist rows.
+    """Parse CST and persist rows using CstExtractStep.
 
     Parameters
     ----------
@@ -238,28 +325,30 @@ def cst_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts (added automatically by harness).
+        Result with row counts.
     """
-    import os
+    from codeintel.ingestion.steps import CstExtractStep
 
-    from codeintel.ingestion import cst_extract
+    # Create adapters
+    storage = _create_storage_adapter(ctx)
+    discovery = _create_discovery_adapter(ctx)
 
-    # Tracker is guaranteed by harness with auto_tracker=True
-    tracker = ctx.require_tracker()
+    # Get modules
     modules = _get_modules_from_tracker(ctx)
-    executor_kind = os.getenv("CODEINTEL_CST_EXECUTOR", "process")
 
-    cst_extract.ingest_cst(
-        ctx.gateway,
+    # Execute step
+    step = CstExtractStep(storage=storage, discovery=discovery)
+    result = step.execute(
         modules,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
-        tracker=tracker,
-        executor_kind=executor_kind,
     )
 
-    # Harness adds row_counts and handles exceptions
-    return IngestPluginResult.ok()
+    if result.errors:
+        for error in result.errors:
+            log.warning("CST extraction error: %s", error)
+
+    return IngestPluginResult.ok(row_counts=result.table_counts)
 
 
 @ingest_plugin(
@@ -276,7 +365,7 @@ def cst_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     register=True,
 )
 def ast_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
-    """Parse stdlib AST and persist rows/metrics.
+    """Parse stdlib AST and persist rows/metrics using AstExtractStep.
 
     Parameters
     ----------
@@ -286,24 +375,30 @@ def ast_extract_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts (added automatically by harness).
+        Result with row counts.
     """
-    from codeintel.ingestion import py_ast_extract
+    from codeintel.ingestion.steps import AstExtractStep
 
-    # Tracker is guaranteed by harness with auto_tracker=True
-    tracker = ctx.require_tracker()
+    # Create adapters
+    storage = _create_storage_adapter(ctx)
+    discovery = _create_discovery_adapter(ctx)
+
+    # Get modules
     modules = _get_modules_from_tracker(ctx)
 
-    py_ast_extract.ingest_python_ast(
-        ctx.gateway,
+    # Execute step
+    step = AstExtractStep(storage=storage, discovery=discovery)
+    result = step.execute(
         modules,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
-        tracker=tracker,
     )
 
-    # Harness adds row_counts and handles exceptions
-    return IngestPluginResult.ok()
+    if result.errors:
+        for error in result.errors:
+            log.warning("AST extraction error: %s", error)
+
+    return IngestPluginResult.ok(row_counts=result.table_counts)
 
 
 @ingest_plugin(
@@ -334,11 +429,10 @@ def typing_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts (added automatically by harness).
+        Result with row counts.
     """
     from codeintel.ingestion import typing_ingest
 
-    # Dependencies resolved by harness
     tracker = ctx.require_tracker()
     service = ctx.tool_service_or_default()
     modules = _get_modules_from_tracker(ctx)
@@ -354,7 +448,6 @@ def typing_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
         tracker=tracker,
     )
 
-    # Harness adds row_counts and handles exceptions
     return IngestPluginResult.ok()
 
 
@@ -384,16 +477,14 @@ def coverage_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts (added automatically by harness).
+        Result with row counts.
     """
     from codeintel.ingestion import coverage_ingest
 
-    # Resolve coverage file first - skip if not available
     coverage_path = _resolve_coverage_file(ctx)
     if coverage_path is None:
         return IngestPluginResult.skip("missing_coverage_file")
 
-    # Dependencies resolved by harness
     tracker = _try_get_tracker(ctx)
     service = ctx.tool_service_or_default()
     modules = _get_modules_from_tracker(ctx)
@@ -410,7 +501,6 @@ def coverage_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
         tracker=tracker,
     )
 
-    # Harness adds row_counts and handles exceptions
     return IngestPluginResult.ok()
 
 
@@ -440,11 +530,10 @@ def tests_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts (added automatically by harness).
+        Result with row counts.
     """
     from codeintel.ingestion import tests_ingest
 
-    # Dependencies resolved by harness
     tracker = _try_get_tracker(ctx)
     service = ctx.tool_service_or_default()
     modules = _get_modules_from_tracker(ctx)
@@ -460,7 +549,6 @@ def tests_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
         tracker=tracker,
     )
 
-    # Harness adds row_counts and handles exceptions
     return IngestPluginResult.ok()
 
 
@@ -477,7 +565,7 @@ def tests_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     register=True,
 )
 def docstrings_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
-    """Extract and persist docstrings.
+    """Extract and persist docstrings using DocstringsExtractStep.
 
     Parameters
     ----------
@@ -487,25 +575,30 @@ def docstrings_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts (added automatically by harness).
+        Result with row counts.
     """
-    from codeintel.ingestion import docstrings_ingest
+    from codeintel.ingestion.steps import DocstringsExtractStep
 
-    # Tracker is guaranteed by harness with auto_tracker=True
-    tracker = ctx.require_tracker()
+    # Create adapters
+    storage = _create_storage_adapter(ctx)
+    discovery = _create_discovery_adapter(ctx)
+
+    # Get modules
     modules = _get_modules_from_tracker(ctx)
 
-    docstrings_ingest.ingest_docstrings(
-        ctx.gateway,
+    # Execute step
+    step = DocstringsExtractStep(storage=storage, discovery=discovery)
+    result = step.execute(
         modules,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
-        repo_root=ctx.snapshot.repo_root,
-        tracker=tracker,
     )
 
-    # Harness adds row_counts and handles exceptions
-    return IngestPluginResult.ok()
+    if result.errors:
+        for error in result.errors:
+            log.warning("Docstring extraction error: %s", error)
+
+    return IngestPluginResult.ok(row_counts=result.table_counts)
 
 
 @ingest_plugin(
@@ -531,12 +624,11 @@ def config_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
     Returns
     -------
     IngestPluginResult
-        Result with row counts (added automatically by harness).
+        Result with row counts.
     """
     from codeintel.config.builder import ConfigIngestStepConfig
     from codeintel.ingestion import config_ingest
 
-    # Tracker from harness (optional)
     tracker = _try_get_tracker(ctx)
 
     cfg = ConfigIngestStepConfig(snapshot=ctx.snapshot)
@@ -548,7 +640,6 @@ def config_ingest_plugin(ctx: IngestPluginContext) -> IngestPluginResult:
         tracker=tracker,
     )
 
-    # Harness adds row_counts and handles exceptions
     return IngestPluginResult.ok()
 
 
@@ -571,7 +662,6 @@ def _try_get_tracker(ctx: IngestPluginContext) -> ChangeTracker | None:
     if ctx.change_tracker is not None:
         return ctx.change_tracker
 
-    # Try to get from scratch (populated by repo_scan)
     tracker = ctx.scratch.consume("change_tracker")
     if tracker is not None:
         from codeintel.ingestion.change_tracker import ChangeTracker
@@ -586,10 +676,8 @@ def register_all_builtin_plugins() -> None:
     """Explicitly register all built-in plugins.
 
     This function is called automatically when the module is imported
-    due to the register=True flag on each plugin decorator. It can
-    also be called manually to ensure registration.
+    due to the register=True flag on each plugin decorator.
     """
-    # Plugins are already registered via decorators with register=True
 
 
 __all__ = [

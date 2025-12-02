@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/steps/repo_scan.py
+# hypothesis_version: 6.148.3
+
+['RepoScanStep', 'core.file_state', 'core.modules', 'python']

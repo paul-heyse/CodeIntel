@@ -1,8 +1,8 @@
 """Unified plugin registry for analytics plugins.
 
-This module provides a single, centralized registry for all analytics plugins,
-replacing the legacy dual-registry system. It supports both decorator-based
-registration and explicit registration, as well as entry point discovery.
+This module provides a single, centralized registry for all analytics plugins.
+It supports both decorator-based registration and explicit registration,
+as well as entry point discovery.
 """
 
 from __future__ import annotations

@@ -15,7 +15,14 @@ from codeintel.graphs.core import (
 
 
 def _build_goids(ctx: GraphExecutionContext) -> ComputationResult:
-    """Build GOIDs and crosswalk entries from AST nodes."""
+    """
+    Build GOIDs and crosswalk entries from AST nodes.
+
+    Returns
+    -------
+    ComputationResult
+        Success result after populating GOID tables.
+    """
     from codeintel.graphs.goid_builder import build_goids  # noqa: PLC0415
 
     cfg = GoidBuilderStepConfig(snapshot=ctx.snapshot)
@@ -35,7 +42,14 @@ goid_builder_plugin = make_builder_plugin(
 
 
 def get_goid_builder_plugin() -> object:
-    """Return the GOID builder plugin instance."""
+    """
+    Return the GOID builder plugin instance.
+
+    Returns
+    -------
+    object
+        The configured GOID builder plugin.
+    """
     return goid_builder_plugin
 
 

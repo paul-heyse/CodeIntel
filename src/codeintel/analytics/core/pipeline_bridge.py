@@ -1,8 +1,7 @@
-"""Bridge module for pipeline integration with new plugin system.
+"""Bridge module for pipeline integration with the unified plugin system.
 
-This module provides compatibility functions that allow the pipeline
-orchestration steps to work with the new unified plugin system while
-maintaining the existing interface.
+This module provides functions that allow the pipeline orchestration
+steps to work with the unified analytics plugin system.
 """
 
 from __future__ import annotations
@@ -34,18 +33,14 @@ from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
-    from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+    from codeintel.graphs.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class AnalyticsPlanRequest:
-    """Inputs required to plan an analytics plugin run.
-
-    This dataclass maintains backward compatibility with the pipeline
-    orchestration interface.
-    """
+    """Inputs required to plan an analytics plugin run."""
 
     plugin_names: Sequence[str]
     policy: GraphPluginPolicy
@@ -61,11 +56,7 @@ class AnalyticsPlanRequest:
 
 @dataclass(frozen=True)
 class AnalyticsRunContext:
-    """Shared run-time context for analytics plugin execution.
-
-    This dataclass maintains backward compatibility with the pipeline
-    orchestration interface.
-    """
+    """Shared run-time context for analytics plugin execution."""
 
     gateway: StorageGateway
     analytics_context: AnalyticsContext | None
@@ -77,11 +68,7 @@ class AnalyticsRunContext:
 
 @dataclass(frozen=True)
 class AnalyticsPluginExecutionPlan:
-    """Execution plan for a batch of analytics plugins.
-
-    Maintains backward compatibility with the pipeline interface while
-    wrapping the new PluginPlan.
-    """
+    """Execution plan for a batch of analytics plugins."""
 
     plan_id: str
     run_id: str

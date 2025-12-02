@@ -224,6 +224,7 @@ class ConfigFactory:
         if extra:
             kwargs.update({k: v for k, v in extra.items() if k in fields})
 
+
 def get_config_fields(config_class: type) -> set[str]:
     """Get the set of field names for a config class.
 

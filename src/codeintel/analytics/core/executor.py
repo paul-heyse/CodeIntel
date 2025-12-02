@@ -1,21 +1,22 @@
-"""Plugin executor for the new unified plugin protocol.
+"""Plugin executor for the unified plugin protocol.
 
 This module provides the execution engine for plugins implementing
-the new AnalyticsPluginProtocol. It handles:
+AnalyticsPluginProtocol. It handles:
 - Plugin execution with error handling
 - Retry logic with configurable policies
 - Telemetry and contract validation
-- Integration with the new slim execution context
+- Middleware chain for cross-cutting concerns
+- Integration with the slim execution context
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.analytics.core.contracts import (
     ContractValidationResult,
@@ -32,8 +33,12 @@ from codeintel.analytics.core.plugin_protocol import (
     PluginExecutionRecord,
     PluginResult,
 )
+from codeintel.analytics.core.plugins.middleware.protocol import MiddlewareChain
 from codeintel.analytics.core.registry import PluginPlan, PluginRegistry, get_registry
 from codeintel.analytics.core.traits import is_contract_validated
+
+if TYPE_CHECKING:
+    from codeintel.analytics.core.plugins.middleware.protocol import PluginMiddleware
 
 ExecutionStatus = Literal["succeeded", "failed", "partial"]
 
@@ -118,7 +123,8 @@ class PluginExecutor:
     """Execute plugins with error handling, retries, and telemetry.
 
     The executor handles running plugins in dependency order, managing
-    retries for transient failures, and validating output contracts.
+    retries for transient failures, validating output contracts, and
+    applying middleware for cross-cutting concerns.
     """
 
     def __init__(
@@ -126,6 +132,7 @@ class PluginExecutor:
         registry: PluginRegistry | None = None,
         *,
         policy: ExecutionPolicy | None = None,
+        middleware: Sequence[PluginMiddleware] = (),
     ) -> None:
         """Initialize the executor.
 
@@ -135,10 +142,23 @@ class PluginExecutor:
             Plugin registry to use. Defaults to global registry.
         policy
             Execution policy. Defaults to standard policy.
+        middleware
+            Middleware to apply to plugin execution.
         """
         self._registry = registry or get_registry()
         self._policy = policy or ExecutionPolicy()
+        self._middleware = MiddlewareChain(list(middleware))
         self._contract_cache: dict[str, tuple[PluginOutputContract, ...]] = {}
+
+    def add_middleware(self, mw: PluginMiddleware) -> None:
+        """Add middleware to the execution chain.
+
+        Parameters
+        ----------
+        mw
+            Middleware to add.
+        """
+        self._middleware.add(mw)
 
     def execute(
         self,
@@ -275,6 +295,7 @@ class PluginExecutor:
             run_id=ctx.run_id,
             scope=ctx.scope,
             configs=ctx.configs,
+            resources=ctx.resources,
             scratch=scratch,
             options=ctx.options,
             plugin_name=plugin.metadata.name,
@@ -292,7 +313,7 @@ class PluginExecutor:
         plugin: AnalyticsPluginProtocol,
         ctx: PluginExecutionContext,
     ) -> PluginExecutionRecord:
-        """Execute a single plugin with error handling.
+        """Execute a single plugin with error handling and middleware.
 
         Parameters
         ----------
@@ -332,8 +353,15 @@ class PluginExecutor:
                 error=f"Validation failed: {', '.join(validation.errors)}",
             )
 
+        # Call middleware before_execute
+        self._middleware.before_execute(ctx, plugin)
+
         # Execute with retries
         result, attempts, duration_ms, error = self._execute_with_retries(plugin, ctx)
+
+        # Call middleware after_execute if we have a result
+        if result is not None:
+            result = self._middleware.after_execute(ctx, plugin, result)
 
         ended_at = datetime.now(tz=UTC)
         status: Literal["succeeded", "failed", "skipped"]
@@ -361,7 +389,7 @@ class PluginExecutor:
         plugin: AnalyticsPluginProtocol,
         ctx: PluginExecutionContext,
     ) -> tuple[PluginResult | None, int, float, str | None]:
-        """Execute plugin with retry logic.
+        """Execute plugin with retry logic and middleware error handling.
 
         Parameters
         ----------
@@ -392,7 +420,15 @@ class PluginExecutor:
                 # Don't retry if plugin explicitly failed
                 break
             except (RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:
-                error = repr(exc)
+                # Let middleware handle the error
+                handled_error = self._middleware.on_error(ctx, plugin, exc)
+
+                if handled_error is None:
+                    # Error was suppressed by middleware
+                    error = None
+                    break
+
+                error = repr(handled_error)
                 log.warning(
                     "Plugin %s failed (attempt %d/%d): %s",
                     plugin.metadata.name,

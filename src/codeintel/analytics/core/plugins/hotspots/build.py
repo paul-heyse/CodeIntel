@@ -1,26 +1,28 @@
-"""Hotspots plugin using the new protocol."""
+"""Hotspots plugin using new base classes.
+
+This module computes file-level hotspots based on AST complexity
+metrics and Git churn patterns.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import ClassVar
 
 from codeintel.analytics.ast_metrics import build_hotspots
+from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
-    PluginInputSpec,
-    PluginMetadata,
-    PluginOutputSpec,
     PluginResourceHints,
-    PluginResult,
-    ValidationResult,
+    PluginStage,
 )
 from codeintel.config.steps_analytics import HotspotsStepConfig
 
 
 @dataclass
-class HotspotsPlugin:
-    """Plugin for computing file-level hotspots.
+class HotspotsPlugin(ConfiguredTableWriterPlugin[HotspotsStepConfig]):
+    """Compute file-level hotspots from AST metrics and churn.
 
     Identifies high-risk code areas based on:
     - AST complexity metrics
@@ -28,82 +30,46 @@ class HotspotsPlugin:
     - Change frequency
     """
 
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata."""
-        return PluginMetadata(
-            name="hotspots.build",
-            description="Compute file-level hotspots from AST metrics and churn.",
-            stage="hotspots",
-            version="2.0.0",
-            enabled_by_default=True,
-            severity="fatal",
-            inputs=(
-                PluginInputSpec(
-                    name="hotspots_cfg",
-                    type_ref="HotspotsStepConfig",
-                    required=True,
-                    source="config",
-                ),
-            ),
-            outputs=(
-                PluginOutputSpec(
-                    name="hotspots",
-                    tables=("analytics.hotspots",),
-                ),
-            ),
-            capabilities_provided=(PluginCapability(name="analytics.hotspots", kind="dataset"),),
-            capabilities_required=(PluginCapability(name="core.ast_metrics", kind="dataset"),),
-            resource_hints=PluginResourceHints(
-                max_runtime_ms=60_000,
-                priority=50,
-            ),
-            tags=("hotspots", "risk", "churn"),
-        )
+    # Core identification
+    plugin_name: ClassVar[str] = "hotspots.build"
+    plugin_stage: ClassVar[PluginStage] = "hotspots"
+    plugin_version: ClassVar[str] = "2.0.0"
 
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate required inputs.
+    # Configuration binding
+    config_type: ClassVar[type[HotspotsStepConfig]] = HotspotsStepConfig
+
+    # Output tables
+    output_tables: ClassVar[tuple[str, ...]] = ("analytics.hotspots",)
+
+    # Capabilities
+    provides: ClassVar[tuple[str, ...]] = ("analytics.hotspots",)
+    requires: ClassVar[tuple[str, ...]] = ("core.ast_metrics",)
+
+    # Categorization
+    tags: ClassVar[tuple[str, ...]] = ("hotspots", "risk", "churn")
+
+    # Resource hints
+    resource_hints: ClassVar[PluginResourceHints] = PluginResourceHints(
+        max_runtime_ms=60_000,
+        priority=50,
+    )
+
+    def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
+        """Execute the hotspots computation.
 
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context with gateway and config.
 
         Returns
         -------
-        ValidationResult
-            Validation result.
+        Mapping[str, int] | None
+            None to trigger auto row count computation.
         """
-        _ = self.metadata
-        if not ctx.has_config(HotspotsStepConfig):
-            return ValidationResult.failure(("HotspotsStepConfig is required",))
-        return ValidationResult.success()
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
-        """Execute the plugin.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        PluginResult
-            Execution result.
-        """
-        _ = self.metadata
-        try:
-            cfg = ctx.get_config(HotspotsStepConfig)
-        except ValueError as e:
-            return PluginResult.fail(str(e))
-
-        try:
-            build_hotspots(ctx.gateway, cfg, runner=ctx.extra.get("tool_runner"))
-        except (RuntimeError, ValueError, OSError) as e:
-            return PluginResult.fail(f"Hotspots build failed: {e}")
-
-        return PluginResult.ok()
+        cfg = self.config
+        build_hotspots(ctx.gateway, cfg, runner=ctx.extra.get("tool_runner"))
+        return None  # Let base class compute row counts
 
 
 __all__ = ["HotspotsPlugin"]

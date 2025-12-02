@@ -6,7 +6,7 @@ from pathlib import Path
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs.function_catalog import FunctionCatalog
+from codeintel.graphs.catalog import FunctionCatalog
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas

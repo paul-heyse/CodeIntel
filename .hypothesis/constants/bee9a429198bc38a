@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/callgraph/collectors.py
+# hypothesis_version: 6.148.3
+
+['AsyncFunctionDef', 'col_offset', 'collect_edges_ast', 'collect_edges_cst', 'direct', 'end_lineno', 'extract_callee_ast', 'extract_callee_cst', 'lineno', 'python', 'unresolved', 'utf8']

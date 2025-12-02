@@ -3,8 +3,8 @@
 This package provides the unified graph plugin architecture for building
 and analyzing code graphs without dependency on the analytics subsystem.
 
-Key Components
---------------
+Package Structure
+-----------------
 Core Infrastructure (graphs/core/):
 - GraphPluginProtocol: Unified interface for all graph plugins
 - GraphExecutionContext: Execution context providing storage and engine access
@@ -26,6 +26,12 @@ Plugins (graphs/plugins/):
 - metrics: Graph metric computation plugins
 - validation: Graph validation plugin
 
+Consolidated Domain Packages:
+- callgraph/: Call graph edge collection, resolution, and persistence
+- catalog/: Function catalog (spans, metadata, service) - unified module
+- validation/: Graph validation checks, findings, and orchestration
+- engine/: Graph engine protocol, NetworkX implementation, and views
+
 Example
 -------
 ```python
@@ -42,7 +48,26 @@ result = execute_graph_recipe(
 # Or plan and run specific plugins
 plan = plan_graph_plugins(["goid_builder", "callgraph_builder"])
 ```
+
+Migration Notes
+---------------
+Several modules have been consolidated into domain-specific packages:
+
+- Call graph modules (call_ast, call_cst, call_resolution, call_context,
+  call_persist, import_resolver) -> ``codeintel.graphs.callgraph``
+
+- Catalog modules (function_index, function_catalog, function_catalog_service)
+  -> ``codeintel.graphs.catalog``
+
+- Validation module (validation.py) -> ``codeintel.graphs.validation``
+
+- Engine modules (engine.py, nx_views.py) -> ``codeintel.graphs.engine``
+
+The original import paths remain functional via deprecation shims but will
+emit warnings. Please update to the new canonical import paths.
 """
+
+from __future__ import annotations
 
 # Re-export key types from submodules for convenience
 from codeintel.graphs.core import (

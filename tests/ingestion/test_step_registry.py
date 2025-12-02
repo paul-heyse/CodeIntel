@@ -74,7 +74,13 @@ def test_metadata_exposes_tables_and_deps() -> None:
 def test_plan_respects_dependencies() -> None:
     """Confirm plan ordering respects declared prerequisites."""
     plan = plan_ingest_plugins(
-        plugin_names=("repo_scan", "scip_ingest", "ast_extract", "cst_extract", "docstrings_ingest"),
+        plugin_names=(
+            "repo_scan",
+            "scip_ingest",
+            "ast_extract",
+            "cst_extract",
+            "docstrings_ingest",
+        ),
         defaults=DEFAULT_INGEST_PLUGINS,
     )
     order = plan.ordered_names
@@ -146,7 +152,9 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
     registry.register(charlie_plugin)
 
     # Plan and execute all plugins (registry doesn't auto-expand dependencies)
-    plan = registry.plan(plugin_names=("alpha", "bravo", "charlie"), defaults=("alpha", "bravo", "charlie"))
+    plan = registry.plan(
+        plugin_names=("alpha", "bravo", "charlie"), defaults=("alpha", "bravo", "charlie")
+    )
 
     gateway = open_ingestion_gateway()
     try:

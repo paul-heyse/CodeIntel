@@ -3,6 +3,14 @@
 This module provides a minimal, protocol-driven execution context that
 replaces the bloated AnalyticsExecutionContext with 19+ nullable config fields.
 Plugins request what they need through typed accessors.
+
+Architecture
+------------
+The context supports two resource access patterns:
+1. **Legacy**: Direct lazy properties (graph_runtime, catalog, analytics_context)
+2. **New**: ResourceRegistry for typed resource access (resources.require(T))
+
+Both patterns are supported for backward compatibility.
 """
 
 from __future__ import annotations
@@ -12,6 +20,7 @@ from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
+from codeintel.analytics.resources.registry import ResourceNotFoundError, ResourceRegistry
 from codeintel.analytics.runtime_manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
@@ -19,7 +28,8 @@ from codeintel.storage.gateway import StorageGateway
 if TYPE_CHECKING:
     from codeintel.analytics.context import AnalyticsContext
     from codeintel.analytics.graph_runtime import GraphRuntime
-    from codeintel.graphs.function_catalog_service import FunctionCatalogProvider
+    from codeintel.analytics.resources.protocol import ResourceProvider
+    from codeintel.graphs.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 
@@ -212,8 +222,14 @@ class PluginExecutionContext:
     This replaces the bloated AnalyticsExecutionContext by providing:
     - Core required fields (gateway, snapshot, run_id, scope)
     - Typed config accessor (get_config)
+    - ResourceRegistry for typed resource access (require)
     - Lazy resolution of expensive resources (graph_runtime, catalog)
     - Scratch store for inter-plugin communication
+
+    Resource Access Patterns
+    ------------------------
+    1. **Typed registry** (preferred): `ctx.require(GraphProvider)`
+    2. **Legacy properties**: `ctx.graph_runtime`, `ctx.catalog`
     """
 
     gateway: StorageGateway
@@ -223,6 +239,9 @@ class PluginExecutionContext:
 
     # Typed config accessor
     configs: ConfigProvider = field(default_factory=lambda: ConfigProvider({}))
+
+    # Resource registry for typed resource access
+    resources: ResourceRegistry = field(default_factory=ResourceRegistry)
 
     # Scratch for inter-plugin communication
     scratch: PluginScratch = field(default_factory=PluginScratch)
@@ -236,7 +255,7 @@ class PluginExecutionContext:
     # Additional metadata
     extra: MutableMapping[str, Any] = field(default_factory=dict)
 
-    # Lazy-initialized resources
+    # Lazy-initialized resources (legacy support)
     _graph_runtime: GraphRuntime | None = field(default=None, repr=False)
     _graph_runtime_factory: Callable[[], GraphRuntime] | None = field(default=None, repr=False)
     _catalog_provider: FunctionCatalogProvider | None = field(default=None, repr=False)
@@ -397,12 +416,77 @@ class PluginExecutionContext:
         """
         return self._analytics_context is not None or self._analytics_context_factory is not None
 
+    def require(self, resource_type: type[T]) -> T:
+        """Get a resource from the registry.
+
+        Typed access to resources registered with the ResourceRegistry.
+        Preferred over legacy properties for new code.
+
+        Parameters
+        ----------
+        resource_type
+            Type of resource to retrieve.
+
+        Returns
+        -------
+        T
+            The loaded resource.
+        """
+        return self.resources.require(resource_type)
+
+    def require_or_none(self, resource_type: type[T]) -> T | None:
+        """Get a resource or None if unavailable.
+
+        Parameters
+        ----------
+        resource_type
+            Type of resource to retrieve.
+
+        Returns
+        -------
+        T | None
+            The resource, or None if unavailable.
+        """
+        return self.resources.require_or_none(resource_type)
+
+    def has_resource(self, resource_type: type) -> bool:
+        """Check if a resource type is registered.
+
+        Parameters
+        ----------
+        resource_type
+            Type to check.
+
+        Returns
+        -------
+        bool
+            True if the resource is available.
+        """
+        return self.resources.has(resource_type)
+
+    def register_resource(
+        self,
+        resource_type: type[T],
+        provider: ResourceProvider[T],
+    ) -> None:
+        """Register a resource provider.
+
+        Parameters
+        ----------
+        resource_type
+            Type key for the provider.
+        provider
+            Resource provider instance.
+        """
+        self.resources.register(resource_type, provider)
+
 
 @dataclass
 class PluginExecutionContextBuilder:
     """Builder for constructing PluginExecutionContext instances.
 
-    Provides a fluent API for configuring execution contexts.
+    Provides a fluent API for configuring execution contexts with
+    support for both legacy lazy properties and the ResourceRegistry.
     """
 
     gateway: StorageGateway
@@ -410,6 +494,7 @@ class PluginExecutionContextBuilder:
     run_id: str
     scope: AnalyticsScope = field(default_factory=AnalyticsScope)
     _configs: dict[type[Any], object] = field(default_factory=dict)
+    _resources: ResourceRegistry = field(default_factory=ResourceRegistry)
     _extra: dict[str, Any] = field(default_factory=dict)
     _graph_runtime: GraphRuntime | None = None
     _graph_runtime_factory: Callable[[], GraphRuntime] | None = None
@@ -560,6 +645,49 @@ class PluginExecutionContextBuilder:
         self._extra[key] = value
         return self
 
+    def with_resource(
+        self,
+        resource_type: type[T],
+        provider: ResourceProvider[T],
+    ) -> PluginExecutionContextBuilder:
+        """Register a resource provider.
+
+        Parameters
+        ----------
+        resource_type
+            Type key for the provider.
+        provider
+            Resource provider instance.
+
+        Returns
+        -------
+        PluginExecutionContextBuilder
+            Self for chaining.
+        """
+        self._resources.register(resource_type, provider)
+        return self
+
+    def with_resources(
+        self,
+        resources: ResourceRegistry,
+    ) -> PluginExecutionContextBuilder:
+        """Set the resource registry.
+
+        Replaces any previously configured resources.
+
+        Parameters
+        ----------
+        resources
+            Resource registry to use.
+
+        Returns
+        -------
+        PluginExecutionContextBuilder
+            Self for chaining.
+        """
+        self._resources = resources
+        return self
+
     def build(self, *, scratch: PluginScratch | None = None) -> PluginExecutionContext:
         """Build the execution context.
 
@@ -579,6 +707,7 @@ class PluginExecutionContextBuilder:
             run_id=self.run_id,
             scope=self.scope,
             configs=ConfigProvider(self._configs),
+            resources=self._resources,
             scratch=scratch or PluginScratch(),
             options=self._options,
             plugin_name=self._plugin_name,
@@ -597,4 +726,5 @@ __all__ = [
     "PluginExecutionContext",
     "PluginExecutionContextBuilder",
     "PluginScratch",
+    "ResourceNotFoundError",
 ]
