@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.registry import ResourceRegistry
 
 from codeintel.analytics.ast_features.extract import compute_function_features
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
@@ -113,6 +117,127 @@ class AnalyticsContext:
     stats: AnalyticsContextStats
     resources: AnalyticsResourceCounters
     use_gpu: bool
+
+    @classmethod
+    def from_resources(
+        cls,
+        registry: ResourceRegistry,
+        config: AnalyticsContextConfig,
+        gateway: StorageGateway,
+    ) -> AnalyticsContext:
+        """Build AnalyticsContext from resource providers.
+
+        Construct an AnalyticsContext by pulling pre-loaded resources from
+        the ResourceRegistry. This is the preferred method for obtaining an
+        AnalyticsContext in the new architecture.
+
+        Parameters
+        ----------
+        registry
+            Resource registry containing GraphProvider, CatalogProvider, etc.
+        config
+            Analytics context configuration.
+        gateway
+            Storage gateway for loading additional data.
+
+        Returns
+        -------
+        AnalyticsContext
+            The constructed analytics context.
+
+        Examples
+        --------
+        >>> registry = ResourceRegistry()
+        >>> registry.register(GraphProvider, GraphProvider(gateway, snapshot))
+        >>> registry.register(CatalogProvider, CatalogProvider(gateway, snapshot))
+        >>> ctx = AnalyticsContext.from_resources(registry, config, gateway)
+        """
+        from codeintel.analytics.resources.asts import AstProvider
+        from codeintel.analytics.resources.catalog import CatalogProvider
+        from codeintel.analytics.resources.graphs import GraphProvider
+
+        # Get resources from registry
+        graph_provider = registry.require(GraphProvider)
+        catalog_provider = registry.require(CatalogProvider)
+
+        # Get optional AST provider
+        ast_provider = registry.require_or_none(AstProvider)
+
+        # Load catalog
+        catalog = catalog_provider.get()
+
+        # Load graphs
+        call_graph = graph_provider.call_graph
+        import_graph = graph_provider.import_graph
+        symbol_module_graph = graph_provider.symbol_module_graph
+        symbol_function_graph = graph_provider.symbol_function_graph
+
+        # Load module map
+        module_map = load_module_map(gateway, config.repo, config.commit)
+
+        # Load ASTs if provider available
+        if ast_provider is not None:
+            function_ast_map = ast_provider.function_asts
+            missing_function_goids = ast_provider.missing_goids
+            function_features_map = ast_provider.function_features
+        else:
+            function_ast_map = {}
+            missing_function_goids = set()
+            function_features_map = {}
+
+        # Build stats (simplified - no truncation tracking from providers)
+        def _counts(graph: nx.Graph | None) -> tuple[int, int]:
+            return (graph.number_of_nodes(), graph.number_of_edges()) if graph else (0, 0)
+
+        stats = AnalyticsContextStats(
+            function_asts=len(function_ast_map),
+            missing_functions=len(missing_function_goids),
+            call_graph_nodes=_counts(call_graph)[0],
+            call_graph_edges=_counts(call_graph)[1],
+            import_graph_nodes=_counts(import_graph)[0],
+            import_graph_edges=_counts(import_graph)[1],
+            symbol_module_graph_nodes=_counts(symbol_module_graph)[0],
+            symbol_module_graph_edges=_counts(symbol_module_graph)[1],
+            symbol_function_graph_nodes=_counts(symbol_function_graph)[0],
+            symbol_function_graph_edges=_counts(symbol_function_graph)[1],
+            truncated_function_asts=False,
+            truncated_call_graph=False,
+            truncated_import_graph=False,
+            truncated_symbol_module_graph=False,
+            truncated_symbol_function_graph=False,
+        )
+
+        # Resource counters (not tracked when using providers)
+        resource_counters = AnalyticsResourceCounters(
+            catalog_ms=0.0,
+            module_map_ms=0.0,
+            call_graph_ms=0.0,
+            import_graph_ms=0.0,
+            function_asts_ms=0.0,
+            function_features_ms=0.0,
+            symbol_module_graph_ms=0.0,
+            symbol_function_graph_ms=0.0,
+        )
+
+        return cls(
+            repo=config.repo,
+            commit=config.commit,
+            repo_root=config.repo_root,
+            catalog=catalog,
+            module_map=module_map,
+            function_ast_map=function_ast_map,
+            missing_function_goids=missing_function_goids,
+            function_features_map=function_features_map,
+            call_graph=call_graph,
+            import_graph=import_graph,
+            symbol_module_graph=symbol_module_graph,
+            symbol_function_graph=symbol_function_graph,
+            created_at=datetime.now(tz=UTC),
+            snapshot_id=f"{config.repo}@{config.commit}",
+            stats=stats,
+            resources=resource_counters,
+            use_gpu=config.use_gpu,
+        )
 
 
 def _rotate[T](items: list[T], offset: int) -> list[T]:
@@ -353,8 +478,11 @@ def build_analytics_context(
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     engine: GraphEngine | None = None,
 ) -> AnalyticsContext:
-    """
-    Construct an `AnalyticsContext` with cached artifacts for a run.
+    """Construct an `AnalyticsContext` with cached artifacts for a run.
+
+    .. deprecated::
+        Use `AnalyticsContextProvider` with `ResourceRegistry` instead.
+        This function is deprecated and will be removed in a future version.
 
     Parameters
     ----------
@@ -372,7 +500,19 @@ def build_analytics_context(
     -------
     AnalyticsContext
         Shared analytics artifacts scoped to the provided repository snapshot.
+
+    See Also
+    --------
+    AnalyticsContextProvider : Preferred method for obtaining AnalyticsContext.
+    AnalyticsContext.from_resources : Class method to build from ResourceRegistry.
     """
+    warnings.warn(
+        "build_analytics_context is deprecated. "
+        "Use AnalyticsContextProvider with ResourceRegistry instead, "
+        "or use AnalyticsContext.from_resources().",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     timers: dict[str, float] = {}
     active_engine = _resolve_engine(
         gateway=gateway,

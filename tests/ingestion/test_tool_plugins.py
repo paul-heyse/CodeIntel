@@ -10,7 +10,7 @@ from typing import override
 import pytest
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.tool_runner import (
+from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,

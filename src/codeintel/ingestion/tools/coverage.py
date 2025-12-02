@@ -12,8 +12,8 @@ from typing import Any
 from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.paths import normalize_rel_path, repo_relpath
-from codeintel.ingestion.tool_runner import (
+from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path, repo_relpath
+from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,

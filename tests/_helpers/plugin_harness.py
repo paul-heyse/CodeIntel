@@ -38,6 +38,10 @@ if TYPE_CHECKING:
         ValidationResult,
     )
     from codeintel.analytics.graph_runtime import GraphRuntime
+    from codeintel.analytics.resources.catalog import CatalogProvider
+    from codeintel.analytics.resources.graphs import GraphProvider
+    from codeintel.analytics.resources.protocol import ResourceProvider
+    from codeintel.analytics.resources.registry import ResourceRegistry
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
@@ -85,6 +89,7 @@ class PluginTestHarness:
     _commit: str = "test-commit"
     _repo_root: Path | None = None
     _configs: dict[type[object], object] = field(default_factory=dict)
+    _resources: ResourceRegistry | None = None
     _graph_runtime: GraphRuntime | None = None
     _graph_runtime_factory: Callable[[], GraphRuntime] | None = None
     _catalog: FunctionCatalogProvider | None = None
@@ -190,6 +195,82 @@ class PluginTestHarness:
         for cfg in configs:
             self.with_config(cfg)
         return self
+
+    def with_resources(self, registry: ResourceRegistry) -> Self:
+        """Set the resource registry.
+
+        Parameters
+        ----------
+        registry
+            Resource registry with providers.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._resources = registry
+        return self
+
+    def with_resource(
+        self,
+        resource_type: type[T],
+        provider: ResourceProvider[T],
+    ) -> Self:
+        """Register a resource provider.
+
+        Parameters
+        ----------
+        resource_type
+            Type key for the resource.
+        provider
+            Provider instance.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        from codeintel.analytics.resources.registry import ResourceRegistry
+
+        if self._resources is None:
+            self._resources = ResourceRegistry()
+        self._resources.register(resource_type, provider)
+        return self
+
+    def with_graph_provider(self, provider: GraphProvider) -> Self:
+        """Register a graph provider.
+
+        Parameters
+        ----------
+        provider
+            Graph provider instance.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        from codeintel.analytics.resources.graphs import GraphProvider
+
+        return self.with_resource(GraphProvider, provider)
+
+    def with_catalog_provider(self, provider: CatalogProvider) -> Self:
+        """Register a catalog provider.
+
+        Parameters
+        ----------
+        provider
+            Catalog provider instance.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        from codeintel.analytics.resources.catalog import CatalogProvider
+
+        return self.with_resource(CatalogProvider, provider)
 
     def with_graph_runtime(
         self,
@@ -374,6 +455,13 @@ class PluginTestHarness:
         for key, value in self._scratch_data.items():
             scratch.declare(key, value)
 
+        from codeintel.analytics.resources.registry import (  # noqa: PLC0415
+            ResourceRegistry,
+        )
+
+        # Use provided resources or create empty registry
+        resources = self._resources if self._resources is not None else ResourceRegistry()
+
         return PluginExecutionContext(
             gateway=self._gateway,
             snapshot=snapshot,
@@ -381,6 +469,7 @@ class PluginTestHarness:
             scope=scope,
             configs=ConfigProvider(self._configs),
             scratch=scratch,
+            resources=resources,
             options=self._options,
             plugin_name=self._plugin.metadata.name,
             extra=dict(self._extra),

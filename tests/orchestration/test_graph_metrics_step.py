@@ -9,7 +9,7 @@ import pytest
 from codeintel.config import BuildPaths, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.ingestion.source_scanner import ScanProfile
+from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 from codeintel.pipeline.orchestration.steps import PipelineContext
 from codeintel.pipeline.orchestration.steps_analytics import GraphMetricsStep
 from tests._helpers.architecture import open_seeded_architecture_gateway

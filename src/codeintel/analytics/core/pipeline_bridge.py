@@ -12,15 +12,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.context import AnalyticsContext
+from codeintel.analytics.context import AnalyticsContext, AnalyticsContextConfig
 from codeintel.analytics.core.execution_context import (
     PluginExecutionContextBuilder,
     PluginScratch,
 )
 from codeintel.analytics.core.executor import ExecutionPolicy, PluginExecutor
+from codeintel.analytics.core.plugins.middleware.logging import LoggingMiddleware
+from codeintel.analytics.core.plugins.middleware.metrics import MetricsMiddleware
 from codeintel.analytics.core.plugins.registration import ensure_plugins_registered
 from codeintel.analytics.core.registry import PluginPlan, get_registry
 from codeintel.analytics.graph_runtime import GraphRuntime
+from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+from codeintel.analytics.resources.catalog import CatalogProvider
+from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.runtime_manifest import (
     AnalyticsPlanInfo,
     AnalyticsRunRecord,
@@ -154,6 +159,9 @@ def _build_execution_context(
 ) -> PluginExecutionContextBuilder:
     """Build the execution context from plan and run context.
 
+    Register both legacy context objects and new resource providers for
+    backward compatibility during migration.
+
     Returns
     -------
     PluginExecutionContextBuilder
@@ -165,11 +173,35 @@ def _build_execution_context(
         run_id=plan.run_id,
     )
 
+    # Register resource providers (new architecture)
     if run_context.graph_runtime is not None:
+        graph_provider = GraphProvider.from_runtime(run_context.graph_runtime)
+        builder = builder.with_resource_provider(GraphProvider, graph_provider)
+        # Also keep legacy for backward compat
         builder = builder.with_graph_runtime(run_context.graph_runtime)
+
     if run_context.catalog_provider is not None:
+        catalog_provider = CatalogProvider.from_catalog(run_context.catalog_provider)
+        builder = builder.with_resource_provider(CatalogProvider, catalog_provider)
+        # Also keep legacy for backward compat
         builder = builder.with_catalog(run_context.catalog_provider)
+
     if run_context.analytics_context is not None:
+        # Create provider from existing context
+        context_config = AnalyticsContextConfig(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            repo_root=snapshot.repo_root,
+        )
+        context_provider = AnalyticsContextProvider(
+            run_context.gateway,
+            context_config,
+        )
+        # Pre-load with existing context
+        context_provider._value = run_context.analytics_context
+        context_provider._is_loaded = True
+        builder = builder.with_resource_provider(AnalyticsContextProvider, context_provider)
+        # Also keep legacy for backward compat
         builder = builder.with_analytics_context(run_context.analytics_context)
 
     for config in run_context.cfgs.values():
@@ -193,6 +225,7 @@ def run_analytics_plugins(
     *,
     plan: AnalyticsPluginExecutionPlan,
     run_context: AnalyticsRunContext,
+    enable_middleware: bool = True,
 ) -> AnalyticsRunReport:
     """Execute all plugins in `plan` using the new unified executor.
 
@@ -202,6 +235,8 @@ def run_analytics_plugins(
         Planned plugins with settings and dependency ordering.
     run_context
         Shared runtime context (gateway, runtimes, configs) for execution.
+    enable_middleware
+        Whether to enable logging and metrics middleware (default: True).
 
     Returns
     -------
@@ -220,7 +255,12 @@ def run_analytics_plugins(
         validate_contracts=True,
     )
 
-    executor = PluginExecutor(policy=policy)
+    # Configure middleware
+    middleware = []
+    if enable_middleware:
+        middleware = [LoggingMiddleware(), MetricsMiddleware()]
+
+    executor = PluginExecutor(policy=policy, middleware=middleware)
     scratch = PluginScratch()
     report = executor.execute(ctx, plan.internal_plan, scratch=scratch)
 

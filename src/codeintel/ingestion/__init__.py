@@ -59,21 +59,32 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
     ToolRunnerAdapter,
 )
-from codeintel.ingestion.paths import (
+
+# Change tracker exports
+from codeintel.ingestion.change_tracker import (
+    ChangeTracker,
+    ChangeTrackerDatasetView,
+    IncrementalIngestOps,
+    IncrementalIngestPolicy,
+    SupportsFullRebuild,
+    run_incremental_ingest,
+)
+from codeintel.ingestion.infrastructure_utilities.paths import (
     ensure_repo_root,
     normalize_rel_path,
     relpath_to_module,
     repo_relpath,
 )
 
-# Pipeline architecture exports
-from codeintel.ingestion.pipeline import (
-    IngestPipeline,
-    PipelineConfig,
-    PipelineExecutor,
-    PipelineResult,
-    SupportsFullRebuild,
-    execute_pipeline,
+# Worker infrastructure exports
+from codeintel.ingestion.infrastructure_utilities.workers import (
+    AST_WORKER_CONFIG,
+    CST_WORKER_CONFIG,
+    WorkerConfig,
+    create_executor,
+    executor_factory,
+    resolve_worker_count,
+    worker_pool,
 )
 
 # Plugin architecture exports
@@ -123,6 +134,7 @@ from codeintel.ingestion.plugins import (
 from codeintel.ingestion.ports import (
     BatchResult,
     ChangeDetectionPort,
+    ChangeRequest,
     ChangeSet,
     CoverageFileData,
     CoverageResult,
@@ -155,21 +167,11 @@ from codeintel.ingestion.steps import (
     CstExtractStep,
     DocstringsExtractStep,
     RepoScanStep,
+    ScipIngestResult,
     ScipIngestStep,
     StepResult,
     TestsIngestStep,
     TypingIngestStep,
-)
-
-# Worker infrastructure exports
-from codeintel.ingestion.workers import (
-    AST_WORKER_CONFIG,
-    CST_WORKER_CONFIG,
-    WorkerConfig,
-    create_executor,
-    executor_factory,
-    resolve_worker_count,
-    worker_pool,
 )
 
 __all__ = [
@@ -181,7 +183,10 @@ __all__ = [
     "AstExtractStep",
     "BatchResult",
     "ChangeDetectionPort",
+    "ChangeRequest",
     "ChangeSet",
+    "ChangeTracker",
+    "ChangeTrackerDatasetView",
     "ClassBasedIngestPlugin",
     "ColumnConstraint",
     "ConfigFactory",
@@ -203,11 +208,12 @@ __all__ = [
     "HarnessConfig",
     "HarnessContext",
     "HashChangeDetectionAdapter",
+    "IncrementalIngestOps",
+    "IncrementalIngestPolicy",
     "IngestContractSpec",
     "IngestContractValidator",
     "IngestExecutionHarness",
     "IngestIsolationKind",
-    "IngestPipeline",
     "IngestPluginContext",
     "IngestPluginMetadata",
     "IngestPluginPlan",
@@ -224,15 +230,13 @@ __all__ = [
     "IngestToolPort",
     "ModuleDiscoveryPort",
     "ModuleRecord",
-    "PipelineConfig",
-    "PipelineExecutor",
-    "PipelineResult",
     "QueryResult",
     "RecipeExecutionResult",
     "RecipeOptions",
     "RecipeStage",
     "RecipeStageResult",
     "RepoScanStep",
+    "ScipIngestResult",
     "ScipIngestStep",
     "ScipResult",
     "StepResult",
@@ -244,7 +248,6 @@ __all__ = [
     "WorkerConfig",
     "create_executor",
     "ensure_repo_root",
-    "execute_pipeline",
     "execute_recipe",
     "executor_factory",
     "foreign_key_contract",
@@ -263,6 +266,7 @@ __all__ = [
     "repo_relpath",
     "resolve_worker_count",
     "row_count_contract",
+    "run_incremental_ingest",
     "with_harness",
     "worker_pool",
 ]

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.tool_runner import ToolName, ToolNotFoundError, ToolRunner
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolName, ToolNotFoundError, ToolRunner
 
 
 def test_tool_runner_missing_binary(tmp_path: Path) -> None:

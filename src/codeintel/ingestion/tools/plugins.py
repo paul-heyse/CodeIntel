@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.tool_runner import ToolName, ToolRunner, ToolRunResult
+from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+    ToolName,
+    ToolRunner,
+    ToolRunResult,
+)
 
 if TYPE_CHECKING:
     from codeintel.ingestion.tools.results import ParsedToolResult

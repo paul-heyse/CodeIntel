@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 
 log = logging.getLogger(__name__)
 

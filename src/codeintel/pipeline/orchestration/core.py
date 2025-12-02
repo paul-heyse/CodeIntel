@@ -41,8 +41,8 @@ from codeintel.ingestion.plugins.protocol import (
     IngestRuntimeScratch,
 )
 from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
-from codeintel.ingestion.source_scanner import ScanProfile
-from codeintel.ingestion.tool_runner import ToolRunner
+from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
 

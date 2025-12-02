@@ -52,6 +52,9 @@ if TYPE_CHECKING:
     from codeintel.analytics.context import AnalyticsContext
     from codeintel.analytics.core.execution_context import PluginExecutionContext
     from codeintel.analytics.graph_runtime import GraphRuntime
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.catalog import CatalogProvider
+    from codeintel.analytics.resources.graphs import GraphProvider
     from codeintel.graphs.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
@@ -542,7 +545,8 @@ class ConfigBoundPlugin[TConfig](BasePlugin):
 class CatalogRequiringPlugin(BasePlugin):
     """Base for plugins that require function catalog access.
 
-    Automatically validates catalog availability in the context.
+    Automatically validates catalog availability via ResourceRegistry (preferred)
+    or legacy context access (for backward compatibility).
 
     Class Attributes
     ----------------
@@ -571,6 +575,9 @@ class CatalogRequiringPlugin(BasePlugin):
     def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate catalog availability.
 
+        Check for CatalogProvider in ResourceRegistry first, then fall back
+        to legacy context access.
+
         Parameters
         ----------
         ctx
@@ -581,15 +588,25 @@ class CatalogRequiringPlugin(BasePlugin):
         list[str]
             Validation errors.
         """
+        from codeintel.analytics.resources.catalog import CatalogProvider
+
         errors = super()._validate_resource_requirements(ctx)
-        if self.catalog_required and not ctx.has_catalog():
+        if not self.catalog_required:
+            return errors
+
+        # Check new resource system first
+        if ctx.has_resource(CatalogProvider):
+            return errors
+
+        # Fall back to legacy
+        if not ctx.has_catalog():
             errors.append(f"Function catalog is required for {self.metadata.name}")
         return errors
 
-    def get_catalog(  # noqa: PLR6301
-        self, ctx: PluginExecutionContext
-    ) -> FunctionCatalogProvider:
+    def get_catalog(self, ctx: PluginExecutionContext) -> FunctionCatalogProvider:
         """Get the catalog from context.
+
+        Prefer CatalogProvider from ResourceRegistry, fall back to legacy access.
 
         Parameters
         ----------
@@ -601,6 +618,14 @@ class CatalogRequiringPlugin(BasePlugin):
         FunctionCatalogProvider
             The function catalog. Raises ValueError if not available.
         """
+        from codeintel.analytics.resources.catalog import CatalogProvider
+
+        # Try new resource system first
+        if ctx.has_resource(CatalogProvider):
+            provider = ctx.require(CatalogProvider)
+            return provider.get()
+
+        # Fall back to legacy
         return ctx.catalog
 
 
@@ -613,7 +638,12 @@ class CatalogRequiringPlugin(BasePlugin):
 class AnalyticsContextRequiringPlugin(BasePlugin):
     """Base for plugins that require full analytics context.
 
-    Provides access to graphs, ASTs, and function features.
+    .. deprecated::
+        Prefer using specific resource providers (GraphProvider, CatalogProvider,
+        AstProvider) instead of the monolithic AnalyticsContext.
+
+    Provides access to graphs, ASTs, and function features via
+    AnalyticsContextProvider from ResourceRegistry (preferred) or legacy access.
 
     Class Attributes
     ----------------
@@ -642,6 +672,9 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
     def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate analytics context availability.
 
+        Check for AnalyticsContextProvider in ResourceRegistry first,
+        then fall back to legacy context access.
+
         Parameters
         ----------
         ctx
@@ -652,15 +685,28 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
         list[str]
             Validation errors.
         """
+        from codeintel.analytics.resources.analytics_context import (
+            AnalyticsContextProvider,
+        )
+
         errors = super()._validate_resource_requirements(ctx)
-        if self.analytics_context_required and not ctx.has_analytics_context():
+        if not self.analytics_context_required:
+            return errors
+
+        # Check new resource system first
+        if ctx.has_resource(AnalyticsContextProvider):
+            return errors
+
+        # Fall back to legacy
+        if not ctx.has_analytics_context():
             errors.append(f"Analytics context is required for {self.metadata.name}")
         return errors
 
-    def get_analytics_context(  # noqa: PLR6301
-        self, ctx: PluginExecutionContext
-    ) -> AnalyticsContext:
+    def get_analytics_context(self, ctx: PluginExecutionContext) -> AnalyticsContext:
         """Get the analytics context.
+
+        Prefer AnalyticsContextProvider from ResourceRegistry,
+        fall back to legacy access.
 
         Parameters
         ----------
@@ -672,9 +718,19 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
         AnalyticsContext
             The analytics context. Raises ValueError if not available.
         """
+        from codeintel.analytics.resources.analytics_context import (
+            AnalyticsContextProvider,
+        )
+
+        # Try new resource system first
+        if ctx.has_resource(AnalyticsContextProvider):
+            provider = ctx.require(AnalyticsContextProvider)
+            return provider.get()
+
+        # Fall back to legacy
         return ctx.analytics_context
 
-    def get_analytics_context_or_none(  # noqa: PLR6301
+    def get_analytics_context_or_none(
         self, ctx: PluginExecutionContext
     ) -> AnalyticsContext | None:
         """Get the analytics context or None if not available.
@@ -689,6 +745,16 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
         AnalyticsContext | None
             The analytics context or None.
         """
+        from codeintel.analytics.resources.analytics_context import (
+            AnalyticsContextProvider,
+        )
+
+        # Try new resource system first
+        if ctx.has_resource(AnalyticsContextProvider):
+            provider = ctx.require(AnalyticsContextProvider)
+            return provider.get()
+
+        # Fall back to legacy
         if ctx.has_analytics_context():
             return ctx.analytics_context
         return None
@@ -703,7 +769,8 @@ class AnalyticsContextRequiringPlugin(BasePlugin):
 class GraphRuntimeRequiringPlugin(BasePlugin):
     """Base for plugins that require graph runtime access.
 
-    Provides access to graph loading and engine capabilities.
+    Provides access to graph loading and engine capabilities via
+    GraphProvider from ResourceRegistry (preferred) or legacy access.
 
     Class Attributes
     ----------------
@@ -716,6 +783,9 @@ class GraphRuntimeRequiringPlugin(BasePlugin):
     def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate graph runtime availability.
 
+        Check for GraphProvider in ResourceRegistry first, then fall back
+        to legacy context access.
+
         Parameters
         ----------
         ctx
@@ -726,15 +796,25 @@ class GraphRuntimeRequiringPlugin(BasePlugin):
         list[str]
             Validation errors.
         """
+        from codeintel.analytics.resources.graphs import GraphProvider
+
         errors = super()._validate_resource_requirements(ctx)
-        if self.graph_runtime_required and not ctx.has_graph_runtime():
+        if not self.graph_runtime_required:
+            return errors
+
+        # Check new resource system first
+        if ctx.has_resource(GraphProvider):
+            return errors
+
+        # Fall back to legacy
+        if not ctx.has_graph_runtime():
             errors.append(f"Graph runtime is required for {self.metadata.name}")
         return errors
 
-    def get_graph_runtime(  # noqa: PLR6301
-        self, ctx: PluginExecutionContext
-    ) -> GraphRuntime:
+    def get_graph_runtime(self, ctx: PluginExecutionContext) -> GraphRuntime:
         """Get the graph runtime.
+
+        Prefer GraphProvider from ResourceRegistry, fall back to legacy access.
 
         Parameters
         ----------
@@ -746,6 +826,15 @@ class GraphRuntimeRequiringPlugin(BasePlugin):
         GraphRuntime
             The graph runtime. Raises ValueError if not available.
         """
+        from codeintel.analytics.resources.graphs import GraphProvider
+
+        # Try new resource system first
+        if ctx.has_resource(GraphProvider):
+            provider = ctx.require(GraphProvider)
+            if provider.runtime is not None:
+                return provider.runtime
+
+        # Fall back to legacy
         return ctx.graph_runtime
 
 

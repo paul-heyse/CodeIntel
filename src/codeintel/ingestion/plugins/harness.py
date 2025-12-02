@@ -336,7 +336,7 @@ class IngestExecutionHarness:
         if ctx.tool_service is not None:
             return ctx.tool_service
 
-        from codeintel.ingestion.tool_runner import ToolRunner
+        from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
         from codeintel.ingestion.tool_service import ToolService
 
         runner = ctx.tool_runner or ToolRunner(

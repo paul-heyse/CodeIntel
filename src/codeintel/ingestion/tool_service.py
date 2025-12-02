@@ -15,7 +15,7 @@ from pathlib import Path
 from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.tool_runner import (
+from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,

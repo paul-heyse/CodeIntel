@@ -13,7 +13,7 @@ from codeintel.analytics.tests_profiles.types import (
     TestRecord,
 )
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
-from codeintel.ingestion.paths import relpath_to_module
+from codeintel.ingestion.infrastructure_utilities.paths import relpath_to_module
 from codeintel.storage.gateway import DuckDBConnection
 
 PRIMARY_COVERAGE_THRESHOLD = 0.4

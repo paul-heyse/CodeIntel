@@ -989,18 +989,66 @@ codeintel indexctl publish --version v1
 
 ## Analytics Plugin Architecture
 
-The analytics system uses a unified plugin protocol (`AnalyticsPluginProtocol`) for all analytics computations. Plugins are organized under `codeintel.analytics.core.plugins/`.
+The analytics system uses a unified plugin protocol (`AnalyticsPluginProtocol`) for all analytics computations. The architecture follows a layered design that separates pure computation from I/O concerns.
+
+### Architectural Layers
+
+```
+┌──────────────────────────────────────────┐
+│        Plugins (Thin Orchestration)      │
+│   codeintel/analytics/core/plugins/      │
+├──────────────────────────────────────────┤
+│         Resource Providers               │
+│     codeintel/analytics/resources/       │
+├──────────────────────────────────────────┤
+│      Pure Computation Layer              │
+│      codeintel/analytics/compute/        │
+├──────────────────────────────────────────┤
+│        Persistence Adapters              │
+│      codeintel/analytics/adapters/       │
+└──────────────────────────────────────────┘
+```
 
 ### Key Components
 
-- **Base Classes** (`core/base.py`): `BasePlugin`, `TableWriterPlugin`, `ConfigBoundPlugin`, `CatalogRequiringPlugin`, `GraphRuntimeRequiringPlugin`
+- **Plugin Base Classes** (`core/base.py`): `BasePlugin`, `TableWriterPlugin`, `ConfigBoundPlugin`, `CatalogRequiringPlugin`, `GraphRuntimeRequiringPlugin`, `AnalyticsContextRequiringPlugin`
 - **Trait Mixins** (`core/traits.py`): `WithRowCounts`, `WithContractValidation`, `WithCaching`, `WithRetries`
 - **Registry** (`core/registry.py`): `PluginRegistry` for discovery and dependency resolution
-- **Executor** (`core/executor.py`): `PluginExecutor` handles execution with error handling
+- **Executor** (`core/executor.py`): `PluginExecutor` handles execution with middleware support
+- **Middleware** (`core/plugins/middleware/`): `LoggingMiddleware`, `MetricsMiddleware`, `TracingMiddleware`
+- **Resource Providers** (`resources/`): `GraphProvider`, `CatalogProvider`, `AstProvider`, `AnalyticsContextProvider`
+- **Compute Layer** (`compute/`): Pure functions for metrics, typedness, dependencies, profiles, graphs
+- **Adapters** (`adapters/`): Database I/O abstractions for persisting analytics results
+
+### Resource Provider Pattern
+
+Plugins should use `ctx.require()` to access resources lazily:
+
+```python
+from codeintel.analytics.resources.graphs import GraphProvider
+from codeintel.analytics.resources.catalog import CatalogProvider
+
+def compute(self, ctx: PluginExecutionContext) -> dict[str, int]:
+    # Access resources via the registry (preferred)
+    graph_provider = ctx.require(GraphProvider)
+    call_graph = graph_provider.call_graph
+    
+    catalog_provider = ctx.require(CatalogProvider)
+    catalog = catalog_provider.get()
+    
+    # Use pure compute functions from the compute layer
+    from codeintel.analytics.compute.graphs import compute_pagerank
+    pagerank = compute_pagerank(call_graph)
+    
+    # Persist via adapters
+    from codeintel.analytics.adapters.graph_metrics import GraphMetricsAdapter
+    adapter = GraphMetricsAdapter()
+    return {"analytics.graph_metrics": adapter.persist(ctx.gateway, pagerank)}
+```
 
 ### Writing a New Plugin
 
-Minimal plugin using base classes:
+Minimal plugin using the new architecture:
 
 ```python
 from dataclasses import dataclass
@@ -1023,9 +1071,9 @@ class MyPlugin(ConfiguredTableWriterPlugin[MyStepConfig]):
 
     def compute(self, ctx: PluginExecutionContext) -> dict[str, int]:
         """Execute the plugin computation."""
-        # Access config via self.config (auto-injected by base class)
-        # Access gateway via ctx.gateway
-        # Return row counts for each output table
+        # Access resources via ctx.require() (preferred)
+        # Use pure compute functions from compute layer
+        # Persist via adapters
         return {"analytics.my_table": 100}
 ```
 
@@ -1042,16 +1090,41 @@ MY_PLUGIN = MyPlugin()
 
 ### Testing Plugins
 
-Use the `PluginTestHarness` from `tests/_helpers/plugin_harness.py`:
+Use the `PluginTestHarness` with resource provider support:
 
 ```python
 from tests._helpers.plugin_harness import PluginTestHarness
+from codeintel.analytics.resources.graphs import GraphProvider
+from codeintel.analytics.resources.catalog import CatalogProvider
 
-def test_my_plugin(tmp_path):
-    harness = PluginTestHarness.for_plugin(MyPlugin())
-    result = harness.execute()
-    harness.assert_succeeded()
-    harness.assert_table_has_rows("analytics.my_table", min_rows=1)
+def test_my_plugin(tmp_path, analytics_gateway):
+    # Create providers
+    graph_provider = GraphProvider(analytics_gateway, snapshot)
+    catalog_provider = CatalogProvider(analytics_gateway, snapshot)
+    
+    # Test with resources
+    result = (
+        PluginTestHarness.for_plugin(MyPlugin())
+        .with_gateway(analytics_gateway)
+        .with_graph_provider(graph_provider)
+        .with_catalog_provider(catalog_provider)
+        .execute()
+    )
+    assert result.success
+```
+
+### Middleware Support
+
+The executor supports middleware for cross-cutting concerns:
+
+```python
+from codeintel.analytics.core.executor import PluginExecutor, ExecutionPolicy
+from codeintel.analytics.core.plugins.middleware import LoggingMiddleware, MetricsMiddleware
+
+executor = PluginExecutor(
+    policy=ExecutionPolicy(),
+    middleware=[LoggingMiddleware(), MetricsMiddleware()],
+)
 ```
 
 ---

@@ -35,8 +35,8 @@ from codeintel.analytics.tests_profiles.types import (
     TestRecord,
 )
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
-from codeintel.ingestion.ast_utils import parse_python_module
-from codeintel.ingestion.paths import relpath_to_module
+from codeintel.ingestion.infrastructure_utilities.ast_utils import parse_python_module
+from codeintel.ingestion.infrastructure_utilities.paths import relpath_to_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

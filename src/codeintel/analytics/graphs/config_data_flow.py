@@ -26,7 +26,7 @@ from codeintel.analytics.graph_runtime import (
     resolve_graph_runtime,
 )
 from codeintel.config import ConfigDataFlowStepConfig
-from codeintel.ingestion.paths import normalize_rel_path
+from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

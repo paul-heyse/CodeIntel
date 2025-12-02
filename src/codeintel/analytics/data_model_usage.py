@@ -21,7 +21,7 @@ from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config import DataModelUsageStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
-from codeintel.ingestion.paths import normalize_rel_path
+from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 from codeintel.storage.data_models import DataModelRow, fetch_models
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
