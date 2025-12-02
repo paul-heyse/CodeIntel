@@ -28,27 +28,31 @@ from codeintel.config.primitives import (
 from codeintel.graphs.core.protocol import DEFAULT_METRIC_PLUGINS
 from codeintel.graphs.core.registry import list_graph_plugins, plan_graph_plugins
 from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
-from codeintel.ingestion.plugins import (
-    DEFAULT_INGEST_PLUGINS,
-    list_ingest_plugins,
-    plan_ingest_plugins,
-)
-from codeintel.ingestion.recipes import (
-    BUILTIN_RECIPES,
-    IngestRecipe,
-    RecipeExecutionResult,
-    RecipeOptions,
-    execute_recipe,
-    get_builtin_recipe,
-    recipe,
-    stage,
-)
 from codeintel.ingestion.infrastructure_utilities.source_scanner import (
     default_code_profile,
     default_config_profile,
     profile_from_env,
 )
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
+from codeintel.ingestion.plugins import (
+    DEFAULT_INGEST_PLUGINS,
+    list_ingest_plugins,
+    plan_ingest_plugins,
+)
+from codeintel.ingestion.plugins.registry import PlanOptions
+from codeintel.ingestion.recipes import (
+    BUILTIN_RECIPES,
+    IngestRecipe,
+    RecipeExecutionResult,
+    RecipeOptions,
+    RecipeSpec,
+    StageSpec,
+    execute_recipe,
+    get_builtin_recipe,
+    recipe,
+    stage,
+)
+from codeintel.ingestion.recipes.executor import RecipeExecutorContext
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import (
@@ -1400,8 +1404,7 @@ def _cmd_ingest_run(args: argparse.Namespace) -> int:
         ingest_recipe.all_plugins,
     )
 
-    result = execute_recipe(
-        ingest_recipe,
+    context = RecipeExecutorContext(
         gateway=gateway,
         snapshot=snapshot,
         paths=paths,
@@ -1411,6 +1414,7 @@ def _cmd_ingest_run(args: argparse.Namespace) -> int:
         tool_runner=runner,
         tool_service=tool_service,
     )
+    result = execute_recipe(ingest_recipe, context)
 
     _render_ingest_result(result, output_json=args.output_json)
     return 0 if result.success else 1
@@ -1432,9 +1436,11 @@ def _cmd_ingest_plugins(args: argparse.Namespace) -> int:
     if args.plan:
         try:
             plan = plan_ingest_plugins(
-                plugin_names=requested,
-                disabled=disabled,
-                defaults=DEFAULT_INGEST_PLUGINS,
+                PlanOptions(
+                    plugin_names=requested,
+                    disabled=disabled,
+                    defaults=DEFAULT_INGEST_PLUGINS,
+                )
             )
         except ValueError:
             LOG.exception("Invalid ingest plugin plan for names=%s", requested)
@@ -2572,25 +2578,26 @@ def _resolve_ingest_recipe(args: argparse.Namespace) -> IngestRecipe | None:
         plugin_names = tuple(args.plugins)
         return recipe(
             name="cli_explicit",
-            description="CLI-specified plugin list",
             stages=[
-                stage(name="run", plugins=plugin_names, parallel=args.parallel),
+                stage(name="run", plugins=plugin_names, spec=StageSpec(parallel=args.parallel)),
             ],
-            options=RecipeOptions(
-                fail_fast=args.fail_fast,
-                enable_incremental=True,
+            spec=RecipeSpec(
+                description="CLI-specified plugin list",
+                options=RecipeOptions(
+                    fail_fast=args.fail_fast,
+                    enable_incremental=True,
+                ),
+                disabled_plugins=tuple(args.disabled_plugins or ()),
             ),
-            disabled_plugins=tuple(args.disabled_plugins or ()),
         )
     return recipe(
         name="cli_default",
-        description="Default ingestion pipeline",
         stages=[
             stage(name="scan", plugins=["repo_scan"]),
             stage(
                 name="parse",
                 plugins=["ast_extract", "cst_extract"],
-                parallel=args.parallel,
+                spec=StageSpec(parallel=args.parallel),
             ),
             stage(name="index", plugins=["scip_ingest"]),
             stage(
@@ -2602,14 +2609,17 @@ def _resolve_ingest_recipe(args: argparse.Namespace) -> IngestRecipe | None:
                     "docstrings_ingest",
                     "config_ingest",
                 ],
-                parallel=args.parallel,
+                spec=StageSpec(parallel=args.parallel),
             ),
         ],
-        options=RecipeOptions(
-            fail_fast=args.fail_fast,
-            enable_incremental=True,
+        spec=RecipeSpec(
+            description="Default ingestion pipeline",
+            options=RecipeOptions(
+                fail_fast=args.fail_fast,
+                enable_incremental=True,
+            ),
+            disabled_plugins=tuple(args.disabled_plugins or ()),
         ),
-        disabled_plugins=tuple(args.disabled_plugins or ()),
     )
 
 

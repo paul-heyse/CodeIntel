@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/scip_ingest.py
+# hypothesis_version: 6.148.3
+
+[', ', '.py', '?', 'ScipIngestConfig', 'ScipIngestOps', 'ScipIngestResult', 'ScipIngestStep', 'ScipResult', 'ScipRuntime', 'commit', 'core.scip_symbols', 'descriptor', 'documentation', 'failed', 'index_json', 'index_scip', 'ingest_scip', 'kind', 'package_manager', 'package_name', 'package_version', 'reason', 'rel_path', 'repo', 'scheme', 'src/', 'success', 'symbol', 'unavailable']

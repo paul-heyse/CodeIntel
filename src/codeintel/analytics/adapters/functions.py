@@ -13,8 +13,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
-from codeintel.analytics.adapters.base import BatchAdapter, DeleteScope
+from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.analytics.datasets import (
+    DeleteScope,
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
@@ -223,6 +224,11 @@ class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"]):
     """Adapter for analytics.function_metrics table.
 
     Handles loading source GOIDs and persisting function metrics rows.
+
+    This adapter follows the ComputeAdapter pattern where:
+    - `load_inputs()` loads source data (FunctionGoid) for computation
+    - `load_outputs()` would load existing metrics (returns empty)
+    - `persist()` writes computed FunctionMetricsRow
     """
 
     def __init__(
@@ -257,8 +263,11 @@ class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"]):
         """Return the GOID loader."""
         return self._goid_loader
 
-    def load(self) -> Iterator[FunctionGoid]:
-        """Load function GOIDs from the database.
+    def load_inputs(self) -> Iterator[FunctionGoid]:
+        """Load function GOIDs as input for computation.
+
+        This is the preferred method for loading source data.
+        Use this instead of `load()` in new code.
 
         Returns
         -------
@@ -266,6 +275,32 @@ class FunctionMetricsAdapter(BatchAdapter["FunctionMetricsRow"]):
             Iterator over function GOIDs.
         """
         return self._goid_loader.iter_goids()
+
+    @staticmethod
+    def load_outputs() -> Iterator[FunctionMetricsRow]:
+        """Load existing metrics rows (not implemented - returns empty).
+
+        Returns
+        -------
+        Iterator[FunctionMetricsRow]
+            Empty iterator (metrics are computed, not loaded).
+        """
+        return iter([])
+
+    def load(self) -> Iterator[FunctionMetricsRow]:
+        """Load metrics rows from the database.
+
+        Returns
+        -------
+        Iterator[FunctionMetricsRow]
+            Empty iterator (metrics are computed via load_inputs(), not loaded).
+
+        Notes
+        -----
+        This adapter computes metrics from GOIDs loaded via `load_inputs()`.
+        The `load()` method returns empty since metrics aren't pre-existing.
+        """
+        return self.load_outputs()
 
     def persist(self, rows: Sequence[FunctionMetricsRow]) -> int:
         """Persist function metrics rows.

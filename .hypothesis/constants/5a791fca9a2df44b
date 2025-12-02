@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/semantic_roles/compute.py
+# hypothesis_version: 6.148.3
+
+[90000, '2.0.0', 'SemanticRolesPlugin', 'callgraph', 'classification', 'config', 'core.goids', 'dataset', 'fatal', 'roles', 'semantic', 'semantic.roles', 'semantic_roles', 'semantic_roles_cfg']

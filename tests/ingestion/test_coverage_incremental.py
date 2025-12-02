@@ -5,20 +5,23 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
 
 from codeintel.config import ConfigBuilder
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.ingestion.common import ChangeRequest, ChangeSet
-from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
+from codeintel.ingestion.infrastructure_utilities.source_scanner import (
+    default_code_profile,
+    default_config_profile,
+)
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.plugins import (
     IngestPluginContext,
     IngestRuntimeScratch,
     get_ingest_registry,
 )
-from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile, default_config_profile
-from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
 from tests._helpers.gateway import open_ingestion_gateway
 

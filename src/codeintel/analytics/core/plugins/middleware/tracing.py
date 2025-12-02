@@ -6,6 +6,7 @@ plugin execution, enabling distributed tracing integration.
 
 from __future__ import annotations
 
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -128,9 +129,13 @@ class InMemoryExporter(SpanExporter):
 
 
 def _generate_id() -> str:
-    """Generate a unique ID for traces/spans."""
-    import secrets
+    """Generate a unique ID for traces/spans.
 
+    Returns
+    -------
+    str
+        A 16-character hex string.
+    """
     return secrets.token_hex(8)
 
 
@@ -162,7 +167,13 @@ class TracingMiddleware:
         return "tracing"
 
     def _get_trace_id(self, ctx: PluginExecutionContext) -> str:
-        """Get or create trace ID for a run."""
+        """Get or create trace ID for a run.
+
+        Returns
+        -------
+        str
+            The trace ID for correlation.
+        """
         if self.trace_id is not None:
             return self.trace_id
         # Use run_id as trace_id for correlation
@@ -208,7 +219,7 @@ class TracingMiddleware:
 
     def after_execute(
         self,
-        ctx: PluginExecutionContext,
+        ctx: PluginExecutionContext,  # noqa: ARG002
         plugin: AnalyticsPluginProtocol,
         result: PluginResult,
     ) -> PluginResult:
@@ -217,7 +228,7 @@ class TracingMiddleware:
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context (required by interface).
         plugin
             Plugin that executed.
         result
@@ -248,7 +259,7 @@ class TracingMiddleware:
 
     def on_error(
         self,
-        ctx: PluginExecutionContext,
+        ctx: PluginExecutionContext,  # noqa: ARG002
         plugin: AnalyticsPluginProtocol,
         error: Exception,
     ) -> Exception | None:
@@ -257,7 +268,7 @@ class TracingMiddleware:
         Parameters
         ----------
         ctx
-            Execution context.
+            Execution context (required by interface).
         plugin
             Plugin that raised.
         error

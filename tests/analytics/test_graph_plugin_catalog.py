@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 
+from codeintel.analytics.core.plugins.registration import ensure_plugins_registered
 from codeintel.analytics.graphs.catalog import (
     build_plugin_catalog,
     render_plugin_catalog_markdown,
@@ -14,6 +15,7 @@ from codeintel.analytics.graphs.catalog import (
 
 def test_build_plugin_catalog_includes_expected_fields() -> None:
     """Catalog JSON should expose core metadata fields for each plugin."""
+    ensure_plugins_registered()
     catalog = build_plugin_catalog()
     plugins = cast("dict[str, dict[str, Any]]", catalog.get("plugins", {}))
     if not plugins:
@@ -51,6 +53,7 @@ def test_build_plugin_catalog_includes_expected_fields() -> None:
 
 def test_render_plugin_catalog_markdown_contains_examples() -> None:
     """Markdown render should include plugin names and plan/manifest examples."""
+    ensure_plugins_registered()
     catalog = build_plugin_catalog()
     plugins = cast("dict[str, dict[str, Any]]", catalog.get("plugins", {}))
     if not plugins:

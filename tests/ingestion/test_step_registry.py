@@ -8,6 +8,10 @@ import pytest
 
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.ingestion.infrastructure_utilities.source_scanner import (
+    default_code_profile,
+    default_config_profile,
+)
 from codeintel.ingestion.plugins import (
     DEFAULT_INGEST_PLUGINS,
     IngestPluginContext,
@@ -17,8 +21,7 @@ from codeintel.ingestion.plugins import (
     plan_ingest_plugins,
 )
 from codeintel.ingestion.plugins.decorators import ingest_plugin
-from codeintel.ingestion.plugins.registry import IngestPluginRegistry
-from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile, default_config_profile
+from codeintel.ingestion.plugins.registry import IngestPluginRegistry, PlanOptions
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
@@ -74,14 +77,16 @@ def test_metadata_exposes_tables_and_deps() -> None:
 def test_plan_respects_dependencies() -> None:
     """Confirm plan ordering respects declared prerequisites."""
     plan = plan_ingest_plugins(
-        plugin_names=(
-            "repo_scan",
-            "scip_ingest",
-            "ast_extract",
-            "cst_extract",
-            "docstrings_ingest",
-        ),
-        defaults=DEFAULT_INGEST_PLUGINS,
+        PlanOptions(
+            plugin_names=(
+                "repo_scan",
+                "scip_ingest",
+                "ast_extract",
+                "cst_extract",
+                "docstrings_ingest",
+            ),
+            defaults=DEFAULT_INGEST_PLUGINS,
+        )
     )
     order = plan.ordered_names
     positions = {name: order.index(name) for name in order}
@@ -153,7 +158,10 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
 
     # Plan and execute all plugins (registry doesn't auto-expand dependencies)
     plan = registry.plan(
-        plugin_names=("alpha", "bravo", "charlie"), defaults=("alpha", "bravo", "charlie")
+        PlanOptions(
+            plugin_names=("alpha", "bravo", "charlie"),
+            defaults=("alpha", "bravo", "charlie"),
+        )
     )
 
     gateway = open_ingestion_gateway()
@@ -181,9 +189,11 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
 def test_disabled_plugins_are_skipped() -> None:
     """Verify disabled plugins are excluded from the plan."""
     plan = plan_ingest_plugins(
-        plugin_names=DEFAULT_INGEST_PLUGINS,
-        disabled=("scip_ingest", "typing_ingest"),
-        defaults=DEFAULT_INGEST_PLUGINS,
+        PlanOptions(
+            plugin_names=DEFAULT_INGEST_PLUGINS,
+            disabled=("scip_ingest", "typing_ingest"),
+            defaults=DEFAULT_INGEST_PLUGINS,
+        )
     )
 
     # Disabled plugins should not be in the plan

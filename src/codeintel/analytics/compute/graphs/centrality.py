@@ -7,10 +7,8 @@ on networkx graphs.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import networkx as nx
+import networkx as nx
 
 
 @dataclass(frozen=True)
@@ -72,8 +70,6 @@ def compute_pagerank(
     >>> len(pr)
     3
     """
-    import networkx as nx
-
     if graph.number_of_nodes() == 0:
         return {}
 
@@ -116,8 +112,6 @@ def compute_betweenness(
     >>> len(bc)
     3
     """
-    import networkx as nx
-
     if graph.number_of_nodes() == 0:
         return {}
 
@@ -130,4 +124,3 @@ __all__ = [
     "compute_betweenness",
     "compute_pagerank",
 ]
-

@@ -6,12 +6,14 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.analytics.context import AnalyticsContextConfig, build_analytics_context
 from codeintel.config import BuildPaths, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
+from codeintel.graphs.recipes import METRICS_ONLY_RECIPE, RecipeExecutor, RecipeExecutorContext
 from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+from codeintel.pipeline.orchestration.core import ensure_graph_runtime
 from codeintel.pipeline.orchestration.steps import PipelineContext
-from codeintel.pipeline.orchestration.steps_analytics import GraphMetricsStep
 from tests._helpers.architecture import open_seeded_architecture_gateway
 
 
@@ -25,7 +27,11 @@ def _scan_profile(repo_root: Path) -> ScanProfile:
 
 @pytest.mark.integration
 def test_graph_metrics_step_runs_plugins(tmp_path: Path) -> None:
-    """GraphMetricsStep should execute the plugin pipeline."""
+    """GraphMetricsStep should execute the plugin pipeline.
+
+    Note: Uses RecipeExecutor directly with force_sequential=True to avoid
+    thread-safety issues with shared in-memory DuckDB connections.
+    """
     repo = "demo/repo"
     commit = "deadbeef"
     gateway = open_seeded_architecture_gateway(repo=repo, commit=commit)
@@ -46,8 +52,30 @@ def test_graph_metrics_step_runs_plugins(tmp_path: Path) -> None:
         graph_backend_cfg=GraphBackendConfig(),
     )
 
-    step = GraphMetricsStep()
-    step.run(ctx)
+    # Get runtime context
+    acx = build_analytics_context(
+        gateway,
+        AnalyticsContextConfig(
+            repo=repo,
+            commit=commit,
+            repo_root=tmp_path,
+        ),
+    )
+    runtime = ensure_graph_runtime(ctx, acx=acx)
+
+    # Execute with force_sequential to avoid thread-safety issues
+    executor_ctx = RecipeExecutorContext(
+        gateway=gateway,
+        snapshot=ctx.snapshot,
+        engine=runtime.engine,
+        catalog_provider=acx.catalog,
+        force_sequential=True,
+    )
+    executor = RecipeExecutor(executor_ctx)
+    result = executor.execute(METRICS_ONLY_RECIPE)
+
+    if not result.success:
+        pytest.fail(f"Recipe execution failed: {result.failure_count} failures")
 
     con = gateway.con
     count_row = con.execute(

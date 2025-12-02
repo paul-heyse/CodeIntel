@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from codeintel.graphs.core.context import GraphExecutionContext
 
 
-def adapt_legacy_computation(
+def adapt_legacy_computation(  # noqa: PLR0913
     fn: Callable[..., Any],
     *,
     gateway: bool = True,
@@ -24,7 +24,6 @@ def adapt_legacy_computation(
     runtime: bool = False,
     context_arg: str | None = None,
     extra_kwargs: dict[str, Callable[[GraphExecutionContext], object]] | None = None,
-    produces_tables: tuple[str, ...] = (),
 ) -> ComputationFn:
     """Wrap a legacy computation function to match ComputationFn signature.
 
@@ -47,8 +46,6 @@ def adapt_legacy_computation(
         If set, pass None as this argument name (for optional context params).
     extra_kwargs
         Additional keyword arguments as callables that extract values from ctx.
-    produces_tables
-        Tables to include in row counts (for auto-counting).
 
     Returns
     -------
@@ -130,7 +127,7 @@ def adapt_legacy_computation(
     return adapted
 
 
-def adapt_with_row_counts(
+def adapt_with_row_counts(  # noqa: PLR0913
     fn: Callable[..., dict[str, int] | None],
     *,
     gateway: bool = True,

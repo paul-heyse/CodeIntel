@@ -22,14 +22,14 @@ class BatchResult:
     ----------
     table_key
         Registry table key (e.g., "core.ast_nodes").
-    rows
+    rows_written
         Number of rows successfully written.
     duration_s
         Operation duration in seconds.
     """
 
     table_key: str
-    rows: int
+    rows_written: int
     duration_s: float = 0.0
 
 
@@ -124,6 +124,31 @@ class IngestStoragePort(Protocol):
             Registry table key.
         params
             Parameters for the delete statement.
+
+        Returns
+        -------
+        int
+            Number of rows deleted.
+        """
+        ...
+
+    def delete_by_paths(
+        self,
+        table_key: str,
+        paths: Sequence[str],
+        *,
+        path_column: str = "rel_path",
+    ) -> int:
+        """Delete rows where path_column matches any of the provided paths.
+
+        Parameters
+        ----------
+        table_key
+            Registry table key (e.g., "core.docstrings").
+        paths
+            List of path values to delete.
+        path_column
+            Name of the column containing paths (default: "rel_path").
 
         Returns
         -------

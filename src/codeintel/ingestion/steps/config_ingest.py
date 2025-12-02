@@ -155,7 +155,11 @@ def _parse_ini(content: str) -> list[tuple[str, Any]] | None:
         log.debug("Failed to parse INI: %s", exc)
         return None
     else:
-        return [(f"{section}.{key}", value) for section in parser.sections() for key, value in parser.items(section)]
+        return [
+            (f"{section}.{key}", value)
+            for section in parser.sections()
+            for key, value in parser.items(section)
+        ]
 
 
 def _parse_json(content: str) -> list[tuple[str, Any]] | None:
@@ -285,7 +289,9 @@ class ConfigIngestStep:
             for key, value in kvs:
                 value_str = str(value) if value is not None else None
                 value_type = type(value).__name__ if value is not None else "null"
-                all_rows.append([repo, commit, record.rel_path, key, value_str, value_type, created_at])
+                all_rows.append(
+                    [repo, commit, record.rel_path, key, value_str, value_type, created_at]
+                )
 
         table_counts: dict[str, int] = {}
         total_rows = 0

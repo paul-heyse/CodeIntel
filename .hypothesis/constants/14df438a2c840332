@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/tests_profiles/behavioral_tags.py
+# hypothesis_version: 6.148.3
+
+['.', 'api', 'assert_count', 'async', 'boundary', 'cls', 'concurrency', 'concurrent', 'corner', 'database', 'db', 'db_interaction', 'e2e', 'edge', 'edge_cases', 'error', 'error_paths', 'exception', 'execute', 'fail', 'fetchall', 'functions_covered', 'happy', 'happy_path', 'heuristic', 'http', 'integration', 'integration_scenario', 'invalid', 'io_heavy', 'known_bug', 'lineno', 'llm', 'markers', 'mixed', 'network', 'network_interaction', 'ok', 'parallel', 'process_interaction', 'pytest', 'race', 'raise_count', 'raises', 'self', 'slow', 'status', 'subsystems_covered', 'success', 'thread', 'utf-8', 'xfail']

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
+
 @dataclass(frozen=True)
 class TableSchema:
     """Schema definition for a database table.

@@ -6,11 +6,11 @@ Plugins request what they need through typed accessors.
 
 Architecture
 ------------
-The context supports two resource access patterns:
-1. **Legacy**: Direct lazy properties (graph_runtime, catalog, analytics_context)
-2. **New**: ResourceRegistry for typed resource access (resources.require(T))
+The context uses ResourceRegistry for typed resource access:
+- Access resources via `ctx.require(ProviderType)` or `ctx.require_or_none(ProviderType)`
+- Common providers: GraphProvider, CatalogProvider, AnalyticsContextProvider
 
-Both patterns are supported for backward compatibility.
+All plugins have been migrated to use the resource provider pattern.
 """
 
 from __future__ import annotations
@@ -26,10 +26,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
-    from codeintel.analytics.context import AnalyticsContext
-    from codeintel.analytics.graph_runtime import GraphRuntime
     from codeintel.analytics.resources.protocol import ResourceProvider
-    from codeintel.graphs.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
 
@@ -223,13 +220,15 @@ class PluginExecutionContext:
     - Core required fields (gateway, snapshot, run_id, scope)
     - Typed config accessor (get_config)
     - ResourceRegistry for typed resource access (require)
-    - Lazy resolution of expensive resources (graph_runtime, catalog)
     - Scratch store for inter-plugin communication
 
-    Resource Access Patterns
-    ------------------------
-    1. **Typed registry** (preferred): `ctx.require(GraphProvider)`
-    2. **Legacy properties**: `ctx.graph_runtime`, `ctx.catalog`
+    Resource Access
+    ---------------
+    Use `ctx.require(ProviderType)` to access resources:
+
+    - `ctx.require(GraphProvider)` - Graph runtime access
+    - `ctx.require(CatalogProvider)` - Function catalog
+    - `ctx.require(AnalyticsContextProvider)` - Legacy analytics context
     """
 
     gateway: StorageGateway
@@ -255,16 +254,6 @@ class PluginExecutionContext:
     # Additional metadata
     extra: MutableMapping[str, Any] = field(default_factory=dict)
 
-    # Lazy-initialized resources (legacy support)
-    _graph_runtime: GraphRuntime | None = field(default=None, repr=False)
-    _graph_runtime_factory: Callable[[], GraphRuntime] | None = field(default=None, repr=False)
-    _catalog_provider: FunctionCatalogProvider | None = field(default=None, repr=False)
-    _catalog_factory: Callable[[], FunctionCatalogProvider] | None = field(default=None, repr=False)
-    _analytics_context: AnalyticsContext | None = field(default=None, repr=False)
-    _analytics_context_factory: Callable[[], AnalyticsContext] | None = field(
-        default=None, repr=False
-    )
-
     @property
     def repo(self) -> str:
         """Repository identifier."""
@@ -274,72 +263,6 @@ class PluginExecutionContext:
     def commit(self) -> str:
         """Commit identifier."""
         return self.snapshot.commit
-
-    @property
-    def graph_runtime(self) -> GraphRuntime:
-        """Lazily resolved graph runtime.
-
-        Returns
-        -------
-        GraphRuntime
-            Graph runtime for this execution.
-
-        Raises
-        ------
-        ValueError
-            If no graph runtime is available.
-        """
-        if self._graph_runtime is not None:
-            return self._graph_runtime
-        if self._graph_runtime_factory is not None:
-            self._graph_runtime = self._graph_runtime_factory()
-            return self._graph_runtime
-        message = "Graph runtime not available in this context"
-        raise ValueError(message)
-
-    @property
-    def catalog(self) -> FunctionCatalogProvider:
-        """Lazily resolved function catalog provider.
-
-        Returns
-        -------
-        FunctionCatalogProvider
-            Catalog provider for this execution.
-
-        Raises
-        ------
-        ValueError
-            If no catalog is available.
-        """
-        if self._catalog_provider is not None:
-            return self._catalog_provider
-        if self._catalog_factory is not None:
-            self._catalog_provider = self._catalog_factory()
-            return self._catalog_provider
-        message = "Function catalog not available in this context"
-        raise ValueError(message)
-
-    @property
-    def analytics_context(self) -> AnalyticsContext:
-        """Lazily resolved analytics context.
-
-        Returns
-        -------
-        AnalyticsContext
-            Analytics context for this execution.
-
-        Raises
-        ------
-        ValueError
-            If no analytics context is available.
-        """
-        if self._analytics_context is not None:
-            return self._analytics_context
-        if self._analytics_context_factory is not None:
-            self._analytics_context = self._analytics_context_factory()
-            return self._analytics_context
-        message = "Analytics context not available"
-        raise ValueError(message)
 
     def get_config(self, config_type: type[T]) -> T:
         """Return configuration of the requested type.
@@ -385,36 +308,6 @@ class PluginExecutionContext:
             True if the config is available.
         """
         return self.configs.has(config_type)
-
-    def has_graph_runtime(self) -> bool:
-        """Check if graph runtime is available.
-
-        Returns
-        -------
-        bool
-            True if graph runtime is available.
-        """
-        return self._graph_runtime is not None or self._graph_runtime_factory is not None
-
-    def has_catalog(self) -> bool:
-        """Check if function catalog is available.
-
-        Returns
-        -------
-        bool
-            True if catalog is available.
-        """
-        return self._catalog_provider is not None or self._catalog_factory is not None
-
-    def has_analytics_context(self) -> bool:
-        """Check if analytics context is available.
-
-        Returns
-        -------
-        bool
-            True if analytics context is available.
-        """
-        return self._analytics_context is not None or self._analytics_context_factory is not None
 
     def require(self, resource_type: type[T]) -> T:
         """Get a resource from the registry.
@@ -464,17 +357,49 @@ class PluginExecutionContext:
         """
         return self.resources.has(resource_type)
 
+    def require_by_name(self, name: str) -> object:
+        """Get a resource by string name.
+
+        Use this for TYPE_CHECKING imports to avoid circular dependencies.
+
+        Parameters
+        ----------
+        name
+            String name of the provider (typically the class name).
+
+        Returns
+        -------
+        object
+            The loaded resource. Caller should cast to the expected type.
+        """
+        return self.resources.require_by_name(name)
+
+    def has_resource_by_name(self, name: str) -> bool:
+        """Check if a resource is registered by string name.
+
+        Parameters
+        ----------
+        name
+            String name to check.
+
+        Returns
+        -------
+        bool
+            True if a resource with that name is available.
+        """
+        return self.resources.has_by_name(name)
+
     def register_resource(
         self,
         resource_type: type[T],
-        provider: ResourceProvider[T],
+        provider: ResourceProvider[Any],
     ) -> None:
         """Register a resource provider.
 
         Parameters
         ----------
         resource_type
-            Type key for the provider.
+            Type key for the provider (typically the provider class).
         provider
             Resource provider instance.
         """
@@ -485,8 +410,14 @@ class PluginExecutionContext:
 class PluginExecutionContextBuilder:
     """Builder for constructing PluginExecutionContext instances.
 
-    Provides a fluent API for configuring execution contexts with
-    support for both legacy lazy properties and the ResourceRegistry.
+    Provides a fluent API for configuring execution contexts using
+    the ResourceRegistry pattern.
+
+    Example
+    -------
+    >>> builder = PluginExecutionContextBuilder(gateway, snapshot, run_id)
+    >>> builder = builder.with_resource_provider(GraphProvider, graph_provider)
+    >>> ctx = builder.build()
     """
 
     gateway: StorageGateway
@@ -496,12 +427,6 @@ class PluginExecutionContextBuilder:
     _configs: dict[type[Any], object] = field(default_factory=dict)
     _resources: ResourceRegistry = field(default_factory=ResourceRegistry)
     _extra: dict[str, Any] = field(default_factory=dict)
-    _graph_runtime: GraphRuntime | None = None
-    _graph_runtime_factory: Callable[[], GraphRuntime] | None = None
-    _catalog_provider: FunctionCatalogProvider | None = None
-    _catalog_factory: Callable[[], FunctionCatalogProvider] | None = None
-    _analytics_context: AnalyticsContext | None = None
-    _analytics_context_factory: Callable[[], AnalyticsContext] | None = None
     _options: object | None = None
     _plugin_name: str | None = None
 
@@ -521,78 +446,6 @@ class PluginExecutionContextBuilder:
             Self for chaining.
         """
         self._configs[config_type] = config
-        return self
-
-    def with_graph_runtime(
-        self,
-        runtime: GraphRuntime | None = None,
-        *,
-        factory: Callable[[], GraphRuntime] | None = None,
-    ) -> PluginExecutionContextBuilder:
-        """Set the graph runtime or factory.
-
-        Parameters
-        ----------
-        runtime
-            Graph runtime instance.
-        factory
-            Factory function to create runtime lazily.
-
-        Returns
-        -------
-        PluginExecutionContextBuilder
-            Self for chaining.
-        """
-        self._graph_runtime = runtime
-        self._graph_runtime_factory = factory
-        return self
-
-    def with_catalog(
-        self,
-        catalog: FunctionCatalogProvider | None = None,
-        *,
-        factory: Callable[[], FunctionCatalogProvider] | None = None,
-    ) -> PluginExecutionContextBuilder:
-        """Set the function catalog or factory.
-
-        Parameters
-        ----------
-        catalog
-            Catalog provider instance.
-        factory
-            Factory function to create catalog lazily.
-
-        Returns
-        -------
-        PluginExecutionContextBuilder
-            Self for chaining.
-        """
-        self._catalog_provider = catalog
-        self._catalog_factory = factory
-        return self
-
-    def with_analytics_context(
-        self,
-        context: AnalyticsContext | None = None,
-        *,
-        factory: Callable[[], AnalyticsContext] | None = None,
-    ) -> PluginExecutionContextBuilder:
-        """Set the analytics context or factory.
-
-        Parameters
-        ----------
-        context
-            Analytics context instance.
-        factory
-            Factory function to create context lazily.
-
-        Returns
-        -------
-        PluginExecutionContextBuilder
-            Self for chaining.
-        """
-        self._analytics_context = context
-        self._analytics_context_factory = factory
         return self
 
     def with_options(self, options: object) -> PluginExecutionContextBuilder:
@@ -648,14 +501,17 @@ class PluginExecutionContextBuilder:
     def with_resource(
         self,
         resource_type: type[T],
-        provider: ResourceProvider[T],
+        provider: ResourceProvider[Any],
     ) -> PluginExecutionContextBuilder:
         """Register a resource provider.
+
+        The resource_type is used as a lookup key and does not need to match
+        the provider's generic type parameter.
 
         Parameters
         ----------
         resource_type
-            Type key for the provider.
+            Type key for the provider (typically the provider class).
         provider
             Resource provider instance.
 
@@ -666,6 +522,27 @@ class PluginExecutionContextBuilder:
         """
         self._resources.register(resource_type, provider)
         return self
+
+    def with_resource_provider(
+        self,
+        resource_type: type[T],
+        provider: ResourceProvider[Any],
+    ) -> PluginExecutionContextBuilder:
+        """Register a resource provider (alias for with_resource).
+
+        Parameters
+        ----------
+        resource_type
+            Type key for the provider (typically the provider class).
+        provider
+            Resource provider instance.
+
+        Returns
+        -------
+        PluginExecutionContextBuilder
+            Self for chaining.
+        """
+        return self.with_resource(resource_type, provider)
 
     def with_resources(
         self,
@@ -712,12 +589,6 @@ class PluginExecutionContextBuilder:
             options=self._options,
             plugin_name=self._plugin_name,
             extra=dict(self._extra),
-            _graph_runtime=self._graph_runtime,
-            _graph_runtime_factory=self._graph_runtime_factory,
-            _catalog_provider=self._catalog_provider,
-            _catalog_factory=self._catalog_factory,
-            _analytics_context=self._analytics_context,
-            _analytics_context_factory=self._analytics_context_factory,
         )
 
 

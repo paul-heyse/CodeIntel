@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/functions/ast_features.py
+# hypothesis_version: 6.148.3
+
+[120000, '2.0.0', 'ast', 'config', 'core.goids', 'dataset', 'fatal', 'features', 'function', 'function_cfg', 'functions', 'functions_missing', 'functions_seen']

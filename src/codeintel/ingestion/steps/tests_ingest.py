@@ -100,16 +100,18 @@ class TestsIngestStep:
             # Extract file path from nodeid
             rel_path = nodeid.split("::")[0] if "::" in nodeid else nodeid
 
-            all_rows.append([
-                repo,
-                commit,
-                nodeid,
-                rel_path,
-                outcome,
-                duration,
-                longrepr[:1000] if longrepr else None,  # Truncate long repr
-                created_at,
-            ])
+            all_rows.append(
+                [
+                    repo,
+                    commit,
+                    nodeid,
+                    rel_path,
+                    outcome,
+                    duration,
+                    longrepr[:1000] if longrepr else None,  # Truncate long repr
+                    created_at,
+                ]
+            )
 
         # Persist rows
         table_counts: dict[str, int] = {}
@@ -123,16 +125,18 @@ class TestsIngestStep:
 
         # Also persist summary
         summary = data.get("summary", {})
-        summary_rows: list[list[object]] = [[
-            repo,
-            commit,
-            summary.get("passed", 0),
-            summary.get("failed", 0),
-            summary.get("skipped", 0),
-            summary.get("error", 0),
-            summary.get("duration", 0.0),
-            created_at,
-        ]]
+        summary_rows: list[list[object]] = [
+            [
+                repo,
+                commit,
+                summary.get("passed", 0),
+                summary.get("failed", 0),
+                summary.get("skipped", 0),
+                summary.get("error", 0),
+                summary.get("duration", 0.0),
+                created_at,
+            ]
+        ]
 
         if summary_rows:
             result = self._storage.write_batch("core.test_summary", summary_rows)

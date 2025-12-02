@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/common.py
+# hypothesis_version: 6.148.3
+
+[5.0, '*', 'BatchResult', 'CODEINTEL_CHANGE_LOG', 'ChangeLogFileHandler', 'ChangeRequest', 'ChangeSet', 'ModuleRecord', 'PROGRESS_LOG_EVERY', 'compute_changes', 'insert_relation', 'iter_modules', 'log_progress', 'modules', 'read_module_source', 'run_batch', 'should_skip_empty', 'utf-8', 'utf8']

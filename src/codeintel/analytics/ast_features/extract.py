@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 from collections.abc import Mapping
 from dataclasses import dataclass
-from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,8 +15,7 @@ from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.ingestion.infrastructure_utilities.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
-    from codeintel.analytics.context import AnalyticsContextConfig
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.analytics.context import AnalyticsContext
 
 
 def build_import_map(tree: ast.AST) -> dict[str, str]:
@@ -295,24 +293,21 @@ def compute_function_features(
 
 
 def load_function_features_for_repo(
-    gateway: StorageGateway,
-    cfg: AnalyticsContextConfig,
+    context: AnalyticsContext,
 ) -> dict[int, FunctionAstFeatures]:
     """
-    Build a feature map for a repository snapshot.
+    Return function features from an analytics context.
+
+    Parameters
+    ----------
+    context
+        Shared analytics context containing pre-computed features.
 
     Returns
     -------
     dict[int, FunctionAstFeatures]
         Mapping of GOID to feature vector for the repo/commit.
     """
-    ensure_context = import_module("codeintel.analytics.context")
-    context = ensure_context.ensure_analytics_context(
-        gateway,
-        cfg=cfg,
-        context=None,
-        runtime=None,
-    )
     return context.function_features_map
 
 

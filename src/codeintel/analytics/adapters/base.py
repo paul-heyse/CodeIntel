@@ -2,6 +2,27 @@
 
 This module provides the foundation for persistence adapters that handle
 database I/O for analytics modules.
+
+Architecture
+------------
+The adapter hierarchy separates concerns for different I/O patterns:
+
+- `InputAdapter[T]`: Load input data for computation
+- `OutputAdapter[T]`: Load/persist output rows
+- `ComputeAdapter[InputT, OutputT]`: Combined pattern for adapters that
+  load source data of one type and persist results of another type
+
+Example
+-------
+>>> class MyAdapter(ComputeAdapter[SourceRow, ResultRow]):
+...     def load_inputs(self) -> Iterator[SourceRow]:
+...         return self._load_source_data()
+...
+...     def load(self) -> Iterator[ResultRow]:
+...         return iter([])  # Optional: load existing results
+...
+...     def persist(self, rows: Sequence[ResultRow]) -> int:
+...         return self._write_results(rows)
 """
 
 from __future__ import annotations
@@ -25,14 +46,122 @@ class DeleteScope:
 
     Attributes
     ----------
+    repo
+        Repository identifier for the deletion scope.
+    commit
+        Commit hash for the deletion scope.
     params
-        Parameters for the delete query (typically repo, commit).
+        Additional parameters for the delete query (deprecated, use repo/commit).
     columns
         Optional explicit column names for the WHERE clause.
     """
 
-    params: Sequence[object]
+    repo: str
+    commit: str
+    params: Sequence[object] | None = None
     columns: tuple[str, ...] | None = None
+
+
+# =============================================================================
+# Split Adapter Protocols
+# =============================================================================
+
+
+class InputAdapter[InputT](ABC):
+    """Abstract base for adapters that load input data for computation.
+
+    Use this when an adapter needs to load source data (InputT) that differs
+    from the output row type.
+
+    Type Parameters
+    ---------------
+    InputT
+        The type of input data loaded for computation.
+    """
+
+    @abstractmethod
+    def load_inputs(self) -> Iterator[InputT]:
+        """Load input data for computation.
+
+        Returns
+        -------
+        Iterator[InputT]
+            Iterator over input data items.
+        """
+        ...
+
+
+class OutputAdapter[OutputT](ABC):
+    """Abstract base for adapters that load and persist output rows.
+
+    Type Parameters
+    ---------------
+    OutputT
+        The output row type this adapter works with.
+    """
+
+    @abstractmethod
+    def load_outputs(self) -> Iterator[OutputT]:
+        """Load existing output rows from the database.
+
+        Returns
+        -------
+        Iterator[OutputT]
+            Iterator over existing output rows.
+        """
+        ...
+
+    @abstractmethod
+    def persist(self, rows: Sequence[OutputT]) -> int:
+        """Persist computed output rows to the database.
+
+        Parameters
+        ----------
+        rows
+            Rows to persist.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        ...
+
+
+class ComputeAdapter[InputT, OutputT](InputAdapter[InputT], OutputAdapter[OutputT], ABC):
+    """Abstract adapter that loads input data and persists output rows.
+
+    This is the standard pattern for analytics adapters that:
+    1. Load source data (InputT) for computation
+    2. Persist results (OutputT) to the database
+
+    The separation of input/output types makes the adapter's role explicit
+    and avoids type override issues when InputT != OutputT.
+
+    Type Parameters
+    ---------------
+    InputT
+        The type of input data loaded for computation.
+    OutputT
+        The type of output rows to persist.
+
+    Example
+    -------
+    >>> class MetricsAdapter(ComputeAdapter[FunctionGoid, MetricsRow]):
+    ...     def load_inputs(self) -> Iterator[FunctionGoid]:
+    ...         return self._goid_loader.iter_goids()
+    ...
+    ...     def load_outputs(self) -> Iterator[MetricsRow]:
+    ...         return iter([])  # No existing rows to load
+    ...
+    ...     def persist(self, rows: Sequence[MetricsRow]) -> int:
+    ...         return self._insert_rows(rows)
+    """
+
+
+# =============================================================================
+# Legacy Adapter Base Classes
+# =============================================================================
 
 
 class AnalyticsAdapter[RowT](ABC):
@@ -112,17 +241,89 @@ class AnalyticsAdapter[RowT](ABC):
         ...
 
 
-class BatchAdapter[RowT](AnalyticsAdapter[RowT]):
-    """Adapter that supports batched persistence operations.
+class SimpleBatchAdapter[RowT](ABC):
+    """Adapter for simple batched write operations without load requirements.
 
-    Extends the base adapter with methods for batched writes and
-    configurable delete scoping.
+    Use this base class for adapters that only need to write rows without
+    implementing the full AnalyticsAdapter interface.
+
+    Type Parameters
+    ---------------
+    RowT
+        The row type this adapter works with.
     """
 
     @property
     @abstractmethod
     def table_name(self) -> str:
-        """Return the target table name."""
+        """Return the target table name.
+
+        Returns
+        -------
+        str
+            Fully qualified table name (e.g., 'analytics.my_table').
+        """
+        ...
+
+    @abstractmethod
+    def insert_rows(self, gateway: StorageGateway, rows: Sequence[RowT]) -> int:
+        """Insert rows into the table.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        rows
+            Rows to insert.
+
+        Returns
+        -------
+        int
+            Number of rows inserted.
+        """
+        ...
+
+    def execute_delete(self, gateway: StorageGateway, scope: DeleteScope) -> int:
+        """Delete rows matching the scope.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access.
+        scope
+            Deletion scope specifying repo/commit.
+
+        Returns
+        -------
+        int
+            Number of rows deleted.
+        """
+        table = self.table_name
+        # Table name comes from subclass definition (trusted)
+        query = f"DELETE FROM {table} WHERE repo = ? AND commit = ?"  # noqa: S608
+        result = gateway.con.execute(query, [scope.repo, scope.commit])
+        row = result.fetchone()
+        return int(row[0]) if row else 0
+
+
+class BatchAdapter[RowT](AnalyticsAdapter[RowT], ABC):
+    """Abstract adapter that supports batched persistence operations.
+
+    Extends the base adapter with methods for batched writes and
+    configurable delete scoping. Subclasses must implement `load`, `persist`,
+    and `table_name`.
+    """
+
+    @property
+    @abstractmethod
+    def table_name(self) -> str:
+        """Return the target table name.
+
+        Returns
+        -------
+        str
+            Fully qualified table name.
+        """
         ...
 
     def delete_scope(self) -> DeleteScope:
@@ -133,7 +334,7 @@ class BatchAdapter[RowT](AnalyticsAdapter[RowT]):
         DeleteScope
             Scope specifying repo/commit-based deletion.
         """
-        return DeleteScope(params=[self.repo, self.commit])
+        return DeleteScope(repo=self.repo, commit=self.commit)
 
     def persist_batch(
         self,
@@ -169,11 +370,15 @@ class BatchAdapter[RowT](AnalyticsAdapter[RowT]):
         table = self.table_name
         # Table name comes from subclass definition (trusted)
         query = f"DELETE FROM {table} WHERE repo = ? AND commit = ?"  # noqa: S608
-        self._gateway.con.execute(query, list(scope.params))
+        self._gateway.con.execute(query, [scope.repo, scope.commit])
 
 
 __all__ = [
     "AnalyticsAdapter",
     "BatchAdapter",
+    "ComputeAdapter",
     "DeleteScope",
+    "InputAdapter",
+    "OutputAdapter",
+    "SimpleBatchAdapter",
 ]

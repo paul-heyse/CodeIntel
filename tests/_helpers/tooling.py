@@ -12,7 +12,11 @@ from types import ModuleType
 from coverage import Coverage
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolName, ToolRunner, ToolRunResult
+from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+    ToolName,
+    ToolRunner,
+    ToolRunResult,
+)
 from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
 
 

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/resources/__init__.py
+# hypothesis_version: 6.148.3
+
+['AstProvider', 'CatalogProvider', 'GraphProvider', 'ResourceError', 'ResourceProvider', 'ResourceRegistry']

@@ -7,6 +7,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from codeintel.ingestion.repo_scan import ingest_repo
 
 from codeintel.config import RepoScanStepConfig, SnapshotRef
 from codeintel.config.primitives import BuildPaths
@@ -19,7 +20,6 @@ from codeintel.ingestion import (
     typing_ingest,
 )
 from codeintel.ingestion.common import iter_modules
-from codeintel.ingestion.repo_scan import ingest_repo
 from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
 from codeintel.storage.module_index import load_module_map
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway

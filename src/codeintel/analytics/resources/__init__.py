@@ -39,6 +39,7 @@ from __future__ import annotations
 from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
+from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.protocol import (
     ResourceError,
@@ -54,6 +55,7 @@ __all__ = [
     "AnalyticsContextProvider",
     "AstProvider",
     "CatalogProvider",
+    "FeaturesProvider",
     "GraphProvider",
     "ResourceError",
     "ResourceNotFoundError",

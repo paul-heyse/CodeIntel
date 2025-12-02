@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from codeintel.analytics.context import build_analytics_context
 from codeintel.analytics.resources.protocol import LazyResource
 
 if TYPE_CHECKING:
@@ -72,8 +73,6 @@ class AnalyticsContextProvider(LazyResource["AnalyticsContext"]):
         AnalyticsContext
             The built analytics context.
         """
-        from codeintel.analytics.context import build_analytics_context
-
         log.debug(
             "Building AnalyticsContext for %s@%s",
             self._config.repo,
@@ -100,4 +99,3 @@ class AnalyticsContextProvider(LazyResource["AnalyticsContext"]):
 
 
 __all__ = ["AnalyticsContextProvider"]
-

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/steps/docstrings_extract.py
+# hypothesis_version: 6.148.3
+
+['.', '.py', '<unknown>', 'DocstringContext', 'DocstringVisitor', 'ParsedDocstring', 'class', 'core.docstrings', 'description', 'end_lineno', 'examples', 'function', 'lineno', 'long_desc', 'method', 'module', 'name', 'numpy', 'numpydoc', 'params', 'raises', 'rel_path', 'returns', 'short_desc', 'style', 'type_name']

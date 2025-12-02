@@ -234,9 +234,7 @@ def compute_typedness_flags(
     Examples
     --------
     >>> flags = compute_typedness_flags(
-    ...     total_params=2,
-    ...     annotated_params=2,
-    ...     has_return_annotation=True
+    ...     total_params=2, annotated_params=2, has_return_annotation=True
     ... )
     >>> flags.fully_typed
     True

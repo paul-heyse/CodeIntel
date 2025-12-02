@@ -53,6 +53,20 @@ The following plugins are registered by default:
 - `config_ingest` - Flattens configuration files
 """
 
+# Facade module imports for backward compatibility
+# These enable `from codeintel.ingestion import repo_scan` etc.
+from codeintel.ingestion import (
+    config_ingest,
+    coverage_ingest,
+    cst_extract,
+    docstrings_ingest,
+    ingest_service,
+    py_ast_extract,
+    repo_scan,
+    scip_ingest,
+    tests_ingest,
+    typing_ingest,
+)
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -246,7 +260,11 @@ __all__ = [
     "ToolRunnerAdapter",
     "TypingIngestStep",
     "WorkerConfig",
+    "config_ingest",
+    "coverage_ingest",
     "create_executor",
+    "cst_extract",
+    "docstrings_ingest",
     "ensure_repo_root",
     "execute_recipe",
     "executor_factory",
@@ -256,17 +274,23 @@ __all__ = [
     "get_ingest_registry",
     "infer_config_mapping",
     "ingest_plugin",
+    "ingest_service",
     "list_ingest_plugins",
     "normalize_rel_path",
     "not_null_contract",
     "plan_ingest_plugins",
+    "py_ast_extract",
     "register_class_plugin",
     "register_ingest_plugin",
     "relpath_to_module",
     "repo_relpath",
+    "repo_scan",
     "resolve_worker_count",
     "row_count_contract",
     "run_incremental_ingest",
+    "scip_ingest",
+    "tests_ingest",
+    "typing_ingest",
     "with_harness",
     "worker_pool",
 ]

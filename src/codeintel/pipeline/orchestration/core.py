@@ -36,13 +36,13 @@ from codeintel.graphs.catalog import (
 )
 from codeintel.graphs.engine import GraphEngine
 from codeintel.ingestion.change_tracker import ChangeTracker
+from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginContext,
     IngestRuntimeScratch,
 )
 from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
-from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
-from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
 

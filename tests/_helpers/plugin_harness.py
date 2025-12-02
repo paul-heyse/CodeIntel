@@ -4,17 +4,23 @@ This module provides a fluent test harness that makes it easy to test
 plugins with minimal boilerplate. The harness handles context setup,
 execution, and assertion patterns.
 
+All plugins use the ResourceRegistry pattern for resource access.
+Use `with_resource()`, `with_graph_provider()`, or `with_catalog_provider()`
+to configure resources.
+
 Example
 -------
 >>> from tests._helpers.plugin_harness import PluginTestHarness
+>>> from codeintel.analytics.resources.graphs import GraphProvider
 >>> from my_plugin import MyPlugin
 >>>
->>> def test_my_plugin(analytics_gateway):
+>>> def test_my_plugin(analytics_gateway, graph_provider):
 ...     result = (
 ...         PluginTestHarness.for_plugin(MyPlugin())
 ...         .with_gateway(analytics_gateway)
 ...         .with_snapshot("test-repo", "abc123")
 ...         .with_config(MyConfig(enabled=True))
+...         .with_graph_provider(graph_provider)
 ...         .execute()
 ...     )
 ...     assert result.success
@@ -23,26 +29,23 @@ Example
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, TypeVar
 from uuid import uuid4
 
+from codeintel.analytics.resources.catalog import CatalogProvider
+from codeintel.analytics.resources.graphs import GraphProvider
+from codeintel.analytics.resources.registry import ResourceRegistry
+
 if TYPE_CHECKING:
-    from codeintel.analytics.context import AnalyticsContext
     from codeintel.analytics.core.execution_context import PluginExecutionContext
     from codeintel.analytics.core.plugin_protocol import (
         AnalyticsPluginProtocol,
         PluginResult,
         ValidationResult,
     )
-    from codeintel.analytics.graph_runtime import GraphRuntime
-    from codeintel.analytics.resources.catalog import CatalogProvider
-    from codeintel.analytics.resources.graphs import GraphProvider
     from codeintel.analytics.resources.protocol import ResourceProvider
-    from codeintel.analytics.resources.registry import ResourceRegistry
-    from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 T = TypeVar("T")
@@ -53,7 +56,7 @@ class PluginTestHarness:
     """Fluent test harness for analytics plugins.
 
     Provides a clean API for setting up plugin tests with minimal
-    boilerplate. Supports both new protocol plugins and legacy plugins.
+    boilerplate. All resource access uses the ResourceRegistry pattern.
 
     Attributes
     ----------
@@ -69,12 +72,8 @@ class PluginTestHarness:
         Repository root path.
     _configs : dict[type, object]
         Configuration objects keyed by type.
-    _graph_runtime : GraphRuntime | None
-        Optional graph runtime.
-    _catalog : FunctionCatalogProvider | None
-        Optional function catalog.
-    _analytics_context : AnalyticsContext | None
-        Optional pre-built analytics context.
+    _resources : ResourceRegistry | None
+        Resource registry for provider access.
     _options : object | None
         Plugin-specific options.
     _extra : dict[str, Any]
@@ -90,12 +89,6 @@ class PluginTestHarness:
     _repo_root: Path | None = None
     _configs: dict[type[object], object] = field(default_factory=dict)
     _resources: ResourceRegistry | None = None
-    _graph_runtime: GraphRuntime | None = None
-    _graph_runtime_factory: Callable[[], GraphRuntime] | None = None
-    _catalog: FunctionCatalogProvider | None = None
-    _catalog_factory: Callable[[], FunctionCatalogProvider] | None = None
-    _analytics_context: AnalyticsContext | None = None
-    _analytics_context_factory: Callable[[], AnalyticsContext] | None = None
     _options: object | None = None
     _extra: dict[str, Any] = field(default_factory=dict)
     _scratch_data: dict[str, object] = field(default_factory=dict)
@@ -231,8 +224,6 @@ class PluginTestHarness:
         Self
             Self for chaining.
         """
-        from codeintel.analytics.resources.registry import ResourceRegistry
-
         if self._resources is None:
             self._resources = ResourceRegistry()
         self._resources.register(resource_type, provider)
@@ -251,8 +242,6 @@ class PluginTestHarness:
         Self
             Self for chaining.
         """
-        from codeintel.analytics.resources.graphs import GraphProvider
-
         return self.with_resource(GraphProvider, provider)
 
     def with_catalog_provider(self, provider: CatalogProvider) -> Self:
@@ -268,81 +257,7 @@ class PluginTestHarness:
         Self
             Self for chaining.
         """
-        from codeintel.analytics.resources.catalog import CatalogProvider
-
         return self.with_resource(CatalogProvider, provider)
-
-    def with_graph_runtime(
-        self,
-        runtime: GraphRuntime | None = None,
-        *,
-        factory: Callable[[], GraphRuntime] | None = None,
-    ) -> Self:
-        """Set the graph runtime.
-
-        Parameters
-        ----------
-        runtime
-            Pre-built graph runtime.
-        factory
-            Factory function for lazy creation.
-
-        Returns
-        -------
-        Self
-            Self for chaining.
-        """
-        self._graph_runtime = runtime
-        self._graph_runtime_factory = factory
-        return self
-
-    def with_catalog(
-        self,
-        catalog: FunctionCatalogProvider | None = None,
-        *,
-        factory: Callable[[], FunctionCatalogProvider] | None = None,
-    ) -> Self:
-        """Set the function catalog.
-
-        Parameters
-        ----------
-        catalog
-            Pre-built catalog provider.
-        factory
-            Factory function for lazy creation.
-
-        Returns
-        -------
-        Self
-            Self for chaining.
-        """
-        self._catalog = catalog
-        self._catalog_factory = factory
-        return self
-
-    def with_analytics_context(
-        self,
-        context: AnalyticsContext | None = None,
-        *,
-        factory: Callable[[], AnalyticsContext] | None = None,
-    ) -> Self:
-        """Set the analytics context.
-
-        Parameters
-        ----------
-        context
-            Pre-built analytics context.
-        factory
-            Factory function for lazy creation.
-
-        Returns
-        -------
-        Self
-            Self for chaining.
-        """
-        self._analytics_context = context
-        self._analytics_context_factory = factory
-        return self
 
     def with_options(self, options: object) -> Self:
         """Set plugin-specific options.
@@ -473,12 +388,6 @@ class PluginTestHarness:
             options=self._options,
             plugin_name=self._plugin.metadata.name,
             extra=dict(self._extra),
-            _graph_runtime=self._graph_runtime,
-            _graph_runtime_factory=self._graph_runtime_factory,
-            _catalog_provider=self._catalog,
-            _catalog_factory=self._catalog_factory,
-            _analytics_context=self._analytics_context,
-            _analytics_context_factory=self._analytics_context_factory,
         )
 
     def validate(self) -> ValidationResult:

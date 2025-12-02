@@ -6,6 +6,7 @@ replacing the legacy analytics.graphs.plugins test helpers.
 
 from __future__ import annotations
 
+import contextlib
 import time
 from dataclasses import dataclass, field
 from typing import Literal
@@ -83,7 +84,6 @@ class TestGraphPlugin:
         GraphPluginResult
             Result of execution.
         """
-        plugin_name = self.metadata.name
         result = self._execute_fn(ctx)  # type: ignore[operator]
         if result is None:
             return GraphPluginResult.ok()
@@ -127,10 +127,8 @@ class GraphPluginPack:
     def unregister_all(self) -> None:
         """Unregister any plugins registered by this pack."""
         for name in list(self._registered):
-            try:
+            with contextlib.suppress(KeyError):
                 unregister_graph_plugin(name)
-            except KeyError:
-                pass
             self._registered.discard(name)
 
     @staticmethod

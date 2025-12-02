@@ -19,8 +19,12 @@ from codeintel.storage.schemas import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.views import create_all_views
 
 __all__ = [
+    "DuckDBBinderException",
+    "DuckDBCatalogException",
     "DuckDBConnection",
+    "DuckDBConnectionException",
     "DuckDBError",
+    "DuckDBInvalidInputException",
     "DuckDBRelation",
     "StorageConfig",
     "StorageGateway",
@@ -32,6 +36,10 @@ __all__ = [
 DuckDBConnection = duckdb.DuckDBPyConnection
 DuckDBRelation = duckdb.DuckDBPyRelation
 DuckDBError = duckdb.Error
+DuckDBCatalogException = duckdb.CatalogException
+DuckDBConnectionException = duckdb.ConnectionException
+DuckDBInvalidInputException = duckdb.InvalidInputException
+DuckDBBinderException = duckdb.BinderException
 
 
 class StorageGateway(Protocol):

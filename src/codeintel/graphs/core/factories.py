@@ -8,8 +8,8 @@ be defined in ~5 lines instead of ~50 lines.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.graphs.core.computation import ComputationFn
@@ -128,9 +128,15 @@ class FactoryPlugin:
                 total_rows,
             )
 
-            artifacts = result.artifacts
-            typed_artifacts = artifacts if isinstance(artifacts, Mapping) else None
-            return GraphPluginResult.ok(row_counts=row_counts, artifacts=typed_artifacts)
+            # Filter artifacts to only include Path values
+            path_artifacts = {
+                key: value for key, value in result.artifacts.items() if isinstance(value, Path)
+            }
+
+            return GraphPluginResult.ok(
+                row_counts=row_counts,
+                artifacts=path_artifacts if path_artifacts else None,
+            )
 
         except Exception as exc:
             log.exception("%s.failed repo=%s commit=%s", name, ctx.repo, ctx.commit)
@@ -280,18 +286,18 @@ def make_graph_plugin(  # noqa: PLR0913
     return plugin
 
 
-def make_metric_plugin(
+def make_metric_plugin(  # noqa: PLR0913
     name: str,
     computation: ComputationFn,
     stage: GraphPluginStage,
     *,
     description: str | None = None,
     depends_on: tuple[str, ...] = (),
+    provides: tuple[str, ...] = (),
     produces_tables: tuple[str, ...] = (),
     requires_graphs: tuple[GraphKind, ...] = (),
     row_count_tables: tuple[str, ...] | None = None,
     register: bool = True,
-    **kwargs: object,
 ) -> GraphPluginProtocol:
     """Create a metric plugin with sensible defaults.
 
@@ -309,6 +315,8 @@ def make_metric_plugin(
         Human-readable description.
     depends_on
         Plugins that must run first.
+    provides
+        Capabilities or artifacts this plugin produces.
     produces_tables
         Tables this plugin writes to.
     requires_graphs
@@ -317,8 +325,6 @@ def make_metric_plugin(
         Tables to report row counts from.
     register
         Whether to auto-register.
-    **kwargs
-        Additional metadata fields.
 
     Returns
     -------
@@ -332,15 +338,15 @@ def make_metric_plugin(
         stage=stage,
         description=description,
         depends_on=depends_on,
+        provides=provides,
         produces_tables=produces_tables,
         requires_graphs=requires_graphs,
         row_count_tables=row_count_tables,
         register=register,
-        **kwargs,  # type: ignore[arg-type]
     )
 
 
-def make_builder_plugin(
+def make_builder_plugin(  # noqa: PLR0913
     name: str,
     computation: ComputationFn,
     stage: GraphPluginStage,
@@ -348,10 +354,10 @@ def make_builder_plugin(
     produces_graphs: tuple[GraphKind, ...],
     description: str | None = None,
     depends_on: tuple[str, ...] = (),
+    provides: tuple[str, ...] = (),
     produces_tables: tuple[str, ...] = (),
     row_count_tables: tuple[str, ...] | None = None,
     register: bool = True,
-    **kwargs: object,
 ) -> GraphPluginProtocol:
     """Create a builder plugin with sensible defaults.
 
@@ -371,14 +377,14 @@ def make_builder_plugin(
         Human-readable description.
     depends_on
         Plugins that must run first.
+    provides
+        Capabilities or artifacts this plugin produces.
     produces_tables
         Tables this plugin writes to.
     row_count_tables
         Tables to report row counts from.
     register
         Whether to auto-register.
-    **kwargs
-        Additional metadata fields.
 
     Returns
     -------
@@ -393,14 +399,14 @@ def make_builder_plugin(
         produces_graphs=produces_graphs,
         description=description,
         depends_on=depends_on,
+        provides=provides,
         produces_tables=produces_tables,
         row_count_tables=row_count_tables,
         register=register,
-        **kwargs,  # type: ignore[arg-type]
     )
 
 
-def make_validation_plugin(
+def make_validation_plugin(  # noqa: PLR0913
     name: str,
     computation: ComputationFn,
     *,
@@ -408,7 +414,6 @@ def make_validation_plugin(
     depends_on: tuple[str, ...] = (),
     requires_graphs: tuple[GraphKind, ...] = (),
     register: bool = True,
-    **kwargs: object,
 ) -> GraphPluginProtocol:
     """Create a validation plugin with sensible defaults.
 
@@ -428,8 +433,6 @@ def make_validation_plugin(
         Graph types this validation checks.
     register
         Whether to auto-register.
-    **kwargs
-        Additional metadata fields.
 
     Returns
     -------
@@ -445,7 +448,6 @@ def make_validation_plugin(
         depends_on=depends_on,
         requires_graphs=requires_graphs,
         register=register,
-        **kwargs,  # type: ignore[arg-type]
     )
 
 

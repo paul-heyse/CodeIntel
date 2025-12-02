@@ -7,7 +7,7 @@ harness, config factory, and contracts for building extensible ingestion pipelin
 from __future__ import annotations
 
 # Import builtin plugins to trigger registration
-from codeintel.ingestion.plugins import builtin as _builtin  # noqa: F401
+from codeintel.ingestion.plugins import builtin as _builtin
 from codeintel.ingestion.plugins.config_factory import (
     DEFAULT_CONTEXT_MAPPINGS,
     ConfigFactory,
@@ -54,6 +54,7 @@ from codeintel.ingestion.plugins.protocol import (
 )
 from codeintel.ingestion.plugins.registry import (
     IngestPluginRegistry,
+    PlanOptions,
     get_ingest_registry,
     list_ingest_plugins,
     plan_ingest_plugins,
@@ -62,20 +63,15 @@ from codeintel.ingestion.plugins.registry import (
 
 __all__ = [
     "DEFAULT_CONTEXT_MAPPINGS",
-    # Protocol types
     "DEFAULT_INGEST_PLUGINS",
-    # Decorators
     "ClassBasedIngestPlugin",
-    # Contracts
     "ColumnConstraint",
-    # Config factory
     "ConfigFactory",
     "ConfigMapping",
     "ContractValidationResult",
     "ContractViolation",
     "ForeignKeyConstraint",
     "FunctionalIngestPlugin",
-    # Harness
     "HarnessConfig",
     "HarnessContext",
     "IngestContractSpec",
@@ -93,6 +89,8 @@ __all__ = [
     "IngestRuntimeScratch",
     "IngestSeverity",
     "IngestStage",
+    "PlanOptions",
+    "_builtin",
     "foreign_key_contract",
     "get_config_fields",
     "get_ingest_registry",

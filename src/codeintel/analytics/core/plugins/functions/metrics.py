@@ -17,7 +17,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
 
 from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -86,9 +89,12 @@ class FunctionMetricsPlugin(
         Mapping[str, int] | None
             Row counts per output table.
         """
-        opts = FunctionAnalyticsOptions(
-            context=ctx.analytics_context if ctx.has_analytics_context() else None
-        )
+        analytics_context = None
+        if ctx.has_resource_by_name("AnalyticsContextProvider"):
+            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
+            analytics_context = provider.get()
+
+        opts = FunctionAnalyticsOptions(context=analytics_context)
 
         result = compute_function_metrics_and_types(ctx.gateway, self.config, options=opts)
 

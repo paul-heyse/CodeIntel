@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/function_ast_cache.py
+# hypothesis_version: 6.148.3
+
+['end_line', 'qualname', 'start_line']

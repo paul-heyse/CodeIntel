@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -420,15 +420,12 @@ class IngestPluginContext:
         Mapping[str, int]
             Mapping of table names to row counts.
         """
+        from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
+
         counts: dict[str, int] = {}
         for table in tables:
-            try:
-                result = self.gateway.con.execute(
-                    f"SELECT COUNT(*) FROM {table}",  # noqa: S608
-                ).fetchone()
-                counts[table] = int(result[0]) if result else 0
-            except Exception:  # noqa: BLE001
-                counts[table] = 0
+            count = safe_count(self.gateway, table)
+            counts[table] = count if count is not None else 0
         return counts
 
 
@@ -572,6 +569,51 @@ class IngestPluginProtocol(Protocol):
         ...
 
 
+def is_ingest_plugin(obj: object) -> TypeGuard[IngestPluginProtocol]:
+    """Validate an object conforms to IngestPluginProtocol.
+
+    This function performs runtime validation and provides type narrowing
+    for the static type checker via TypeGuard. It checks that the object
+    has both a metadata property returning IngestPluginMetadata and a
+    callable execute method.
+
+    Parameters
+    ----------
+    obj
+        Object to validate.
+
+    Returns
+    -------
+    TypeGuard[IngestPluginProtocol]
+        True if obj conforms to the protocol, enabling type narrowing.
+
+    Examples
+    --------
+    >>> from codeintel.ingestion.plugins.protocol import is_ingest_plugin
+    >>> class MyPlugin:
+    ...     @property
+    ...     def metadata(self):
+    ...         return IngestPluginMetadata(name="test", description="test", stage="parse")
+    ...
+    ...     def execute(self, ctx):
+    ...         return IngestPluginResult.ok()
+    >>> is_ingest_plugin(MyPlugin())
+    True
+    """
+    # Check for required attributes
+    if not hasattr(obj, "metadata") or not hasattr(obj, "execute"):
+        return False
+
+    # Verify execute is callable
+    execute_attr = getattr(obj, "execute", None)
+    if not callable(execute_attr):
+        return False
+
+    # Verify metadata returns an IngestPluginMetadata instance
+    meta = getattr(obj, "metadata", None)
+    return isinstance(meta, IngestPluginMetadata)
+
+
 @dataclass(frozen=True)
 class IngestPluginSkip:
     """Skip metadata for planned plugins that will not execute.
@@ -653,4 +695,5 @@ __all__ = [
     "IngestRuntimeScratch",
     "IngestSeverity",
     "IngestStage",
+    "is_ingest_plugin",
 ]

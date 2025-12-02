@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -17,6 +17,9 @@ if TYPE_CHECKING:
         AnalyticsPluginProtocol,
         PluginResult,
     )
+
+# Type alias for logging extra fields
+LogExtra = dict[str, Any]
 
 plugin_log = logging.getLogger("codeintel.analytics.plugins")
 
@@ -71,7 +74,7 @@ class LoggingMiddleware:
         plugin_name = plugin.metadata.name
         self._start_times[plugin_name] = time.perf_counter()
 
-        extra = {
+        extra: LogExtra = {
             "plugin_name": plugin_name,
             "plugin_version": plugin.metadata.version,
             "run_id": ctx.run_id,
@@ -116,7 +119,7 @@ class LoggingMiddleware:
         start_time = self._start_times.pop(plugin_name, None)
         duration_ms = (time.perf_counter() - start_time) * 1000 if start_time else 0
 
-        extra = {
+        extra: LogExtra = {
             "plugin_name": plugin_name,
             "run_id": ctx.run_id,
             "success": result.success,

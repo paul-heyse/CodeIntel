@@ -10,10 +10,14 @@ functions
     Function-level analysis (complexity, typedness, signatures).
 graphs
     Graph-theoretic algorithms (centrality, components).
-risk
-    Risk scoring algorithms.
 profiles
     Profile aggregation logic.
+dependencies
+    Dependency detection and classification.
+subsystems
+    Subsystem clustering and classification.
+semantic_roles
+    Semantic role classification for functions and modules.
 """
 
 from __future__ import annotations

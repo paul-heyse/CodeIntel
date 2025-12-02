@@ -7,6 +7,10 @@ new unified plugin protocol.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -110,8 +114,11 @@ class FunctionHistoryPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get optional dependencies
-        analytics_context = ctx.analytics_context if ctx.has_analytics_context() else None
+        # Get optional dependencies via resource providers
+        analytics_context = None
+        if ctx.has_resource_by_name("AnalyticsContextProvider"):
+            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
+            analytics_context = provider.get()
         tool_runner = ctx.extra.get("tool_runner")
 
         try:

@@ -133,6 +133,9 @@ def coverage_line_to_tuple(row: CoverageLineRow) -> tuple[object, ...]:
 class TypednessRow(TypedDict):
     """Row shape for analytics.typedness inserts.
 
+    Matches the analytics.typedness TableSchema with columns:
+    repo, commit, path, type_error_count, annotation_ratio, untyped_defs, overlay_needed
+
     Parameters
     ----------
     repo
@@ -140,28 +143,31 @@ class TypednessRow(TypedDict):
     commit
         Commit SHA.
     path
-        File path.
+        Relative file path.
     type_error_count
-        Number of type errors.
+        Total number of static analysis errors (pyright + pyrefly + ruff).
     annotation_ratio
-        Ratio of annotated items.
+        JSON object with params/returns annotation ratios.
     untyped_defs
-        Number of untyped definitions.
+        Number of untyped function definitions.
     overlay_needed
-        Whether type overlay is needed.
+        Whether overlay typing is needed.
     """
 
     repo: str
     commit: str
     path: str
     type_error_count: int
-    annotation_ratio: dict[str, float]
+    annotation_ratio: str  # JSON string
     untyped_defs: int
     overlay_needed: bool
 
 
 def typedness_row_to_tuple(row: TypednessRow) -> tuple[object, ...]:
     """Serialize a TypednessRow into the INSERT column order.
+
+    Order matches analytics.typedness schema:
+    repo, commit, path, type_error_count, annotation_ratio, untyped_defs, overlay_needed
 
     Parameters
     ----------
@@ -195,26 +201,20 @@ class StaticDiagnosticRow(TypedDict):
         Commit SHA.
     rel_path
         Relative file path.
-    pyrefly_errors
-        Number of Pyrefly errors.
-    pyright_errors
-        Number of Pyright errors.
-    ruff_errors
-        Number of Ruff errors.
-    total_errors
-        Total error count.
-    has_errors
-        Whether any errors exist.
+    tool
+        Name of the diagnostic tool (pyright, pyrefly, ruff).
+    error_count
+        Number of errors from this tool.
+    created_at
+        Row creation timestamp.
     """
 
     repo: str
     commit: str
     rel_path: str
-    pyrefly_errors: int
-    pyright_errors: int
-    ruff_errors: int
-    total_errors: int
-    has_errors: bool
+    tool: str
+    error_count: int
+    created_at: datetime
 
 
 def static_diagnostic_to_tuple(row: StaticDiagnosticRow) -> tuple[object, ...]:
@@ -234,11 +234,9 @@ def static_diagnostic_to_tuple(row: StaticDiagnosticRow) -> tuple[object, ...]:
         row["repo"],
         row["commit"],
         row["rel_path"],
-        row["pyrefly_errors"],
-        row["pyright_errors"],
-        row["ruff_errors"],
-        row["total_errors"],
-        row["has_errors"],
+        row["tool"],
+        row["error_count"],
+        row["created_at"],
     )
 
 

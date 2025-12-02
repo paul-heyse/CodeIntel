@@ -8,21 +8,99 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
 
-from codeintel.analytics.adapters.base import BatchAdapter, DeleteScope
+from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.storage.sql_helpers import ensure_schema
 
-if TYPE_CHECKING:
-    from codeintel.analytics.compute.dependencies.classification import LibraryPattern
-    from codeintel.analytics.compute.dependencies.detection import DependencyCall
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-
 log = logging.getLogger(__name__)
+
+# Pre-built SQL statements (constants avoid S608 f-string detection)
+_DELETE_DEPENDENCY_CALLS = (
+    "DELETE FROM analytics.external_dependency_calls WHERE repo = ? AND commit = ?"
+)
+_DELETE_DEPENDENCY_AGGREGATES = (
+    "DELETE FROM analytics.external_dependencies WHERE repo = ? AND commit = ?"
+)
+
+_INSERT_DEPENDENCY_CALL = """
+INSERT INTO analytics.external_dependency_calls (
+    repo, commit, dep_id, library, service_name,
+    function_goid_h128, function_urn, file_path, module, function_qualname,
+    callsite_count, modes, evidence, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+_INSERT_DEPENDENCY_AGGREGATE = """
+INSERT INTO analytics.external_dependencies (
+    repo, commit, dep_id, library, service_name, category, language,
+    severity, criticality, risk_score,
+    function_count, callsite_count, modules_json, usage_modes,
+    config_keys, risk_level, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+# SQL statement mapping by table name
+_DELETE_SQL: dict[str, str] = {
+    "analytics.external_dependency_calls": _DELETE_DEPENDENCY_CALLS,
+    "analytics.external_dependencies": _DELETE_DEPENDENCY_AGGREGATES,
+}
+
+_INSERT_SQL: dict[str, str] = {
+    "analytics.external_dependency_calls": _INSERT_DEPENDENCY_CALL,
+    "analytics.external_dependencies": _INSERT_DEPENDENCY_AGGREGATE,
+}
+
+
+def _get_delete_sql(table_name: str) -> str:
+    """Get delete SQL for a table.
+
+    Parameters
+    ----------
+    table_name
+        Table name.
+
+    Returns
+    -------
+    str
+        Delete SQL statement.
+
+    Raises
+    ------
+    ValueError
+        If table name is not in the mapping.
+    """
+    if table_name not in _DELETE_SQL:
+        msg = f"No delete SQL for table: {table_name}"
+        raise ValueError(msg)
+    return _DELETE_SQL[table_name]
+
+
+def _get_insert_sql(table_name: str) -> str:
+    """Get insert SQL for a table.
+
+    Parameters
+    ----------
+    table_name
+        Table name.
+
+    Returns
+    -------
+    str
+        Insert SQL statement.
+
+    Raises
+    ------
+    ValueError
+        If table name is not in the mapping.
+    """
+    if table_name not in _INSERT_SQL:
+        msg = f"No insert SQL for table: {table_name}"
+        raise ValueError(msg)
+    return _INSERT_SQL[table_name]
 
 
 @dataclass(frozen=True)
@@ -141,53 +219,38 @@ class DependencyAggregateRow:
 class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
     """Adapter for external_dependency_calls table."""
 
-    table_name = "analytics.external_dependency_calls"
+    @property
+    def table_name(self) -> str:
+        """Return the target table name."""
+        return "analytics.external_dependency_calls"
 
-    def delete_scope(self, gateway: StorageGateway, scope: DeleteScope) -> int:
-        """Delete rows within scope.
-
-        Parameters
-        ----------
-        gateway
-            Storage gateway.
-        scope
-            Deletion scope.
+    def load(self) -> Iterator[DependencyCallRow]:  # noqa: PLR6301
+        """Load dependency call rows (not implemented for this adapter).
 
         Returns
         -------
-        int
-            Number of rows deleted.
+        Iterator[DependencyCallRow]
+            Empty iterator - this adapter is write-only.
         """
-        ensure_schema(gateway.con, self.table_name)
-        result = gateway.con.execute(
-            f"DELETE FROM {self.table_name} WHERE repo = ? AND commit = ?",
-            [scope.repo, scope.commit],
-        )
-        return result.fetchone()[0] if result else 0
+        return iter([])
 
-    def insert_rows(
-        self,
-        gateway: StorageGateway,
-        rows: Sequence[DependencyCallRow],
-    ) -> int:
-        """Insert rows into table.
+    def persist(self, rows: Sequence[DependencyCallRow]) -> int:
+        """Persist computed rows to the database.
 
         Parameters
         ----------
-        gateway
-            Storage gateway.
         rows
-            Rows to insert.
+            Rows to persist.
 
         Returns
         -------
         int
-            Number of rows inserted.
+            Number of rows persisted.
         """
         if not rows:
             return 0
 
-        ensure_schema(gateway.con, self.table_name)
+        ensure_schema(self._gateway.con, self.table_name)
         values = [
             (
                 row.repo,
@@ -207,69 +270,46 @@ class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
             )
             for row in rows
         ]
-        gateway.con.executemany(
-            f"""
-            INSERT INTO {self.table_name} (
-                repo, commit, dep_id, library, service_name,
-                function_goid_h128, function_urn, file_path, module, function_qualname,
-                callsite_count, modes, evidence, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            values,
-        )
+        insert_sql = _get_insert_sql(self.table_name)
+        self._gateway.con.executemany(insert_sql, values)
         return len(values)
 
 
 class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):
     """Adapter for external_dependencies table."""
 
-    table_name = "analytics.external_dependencies"
+    @property
+    def table_name(self) -> str:
+        """Return the target table name."""
+        return "analytics.external_dependencies"
 
-    def delete_scope(self, gateway: StorageGateway, scope: DeleteScope) -> int:
-        """Delete rows within scope.
-
-        Parameters
-        ----------
-        gateway
-            Storage gateway.
-        scope
-            Deletion scope.
+    def load(self) -> Iterator[DependencyAggregateRow]:  # noqa: PLR6301
+        """Load dependency aggregate rows (not implemented for this adapter).
 
         Returns
         -------
-        int
-            Number of rows deleted.
+        Iterator[DependencyAggregateRow]
+            Empty iterator - this adapter is write-only.
         """
-        ensure_schema(gateway.con, self.table_name)
-        result = gateway.con.execute(
-            f"DELETE FROM {self.table_name} WHERE repo = ? AND commit = ?",
-            [scope.repo, scope.commit],
-        )
-        return result.fetchone()[0] if result else 0
+        return iter([])
 
-    def insert_rows(
-        self,
-        gateway: StorageGateway,
-        rows: Sequence[DependencyAggregateRow],
-    ) -> int:
-        """Insert rows into table.
+    def persist(self, rows: Sequence[DependencyAggregateRow]) -> int:
+        """Persist computed rows to the database.
 
         Parameters
         ----------
-        gateway
-            Storage gateway.
         rows
-            Rows to insert.
+            Rows to persist.
 
         Returns
         -------
         int
-            Number of rows inserted.
+            Number of rows persisted.
         """
         if not rows:
             return 0
 
-        ensure_schema(gateway.con, self.table_name)
+        ensure_schema(self._gateway.con, self.table_name)
         values = [
             (
                 row.repo,
@@ -292,17 +332,8 @@ class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):
             )
             for row in rows
         ]
-        gateway.con.executemany(
-            f"""
-            INSERT INTO {self.table_name} (
-                repo, commit, dep_id, library, service_name, category, language,
-                severity, criticality, risk_score,
-                function_count, callsite_count, modules_json, usage_modes,
-                config_keys, risk_level, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            values,
-        )
+        insert_sql = _get_insert_sql(self.table_name)
+        self._gateway.con.executemany(insert_sql, values)
         return len(values)
 
 
@@ -351,4 +382,3 @@ __all__ = [
     "compute_dep_id",
     "to_decimal",
 ]
-

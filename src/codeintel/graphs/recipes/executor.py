@@ -143,12 +143,16 @@ class RecipeExecutorContext:
         Graph engine.
     catalog_provider
         Function catalog provider.
+    force_sequential
+        Force sequential execution even for parallel stages. Useful when the
+        gateway connection is not thread-safe (e.g., shared in-memory DuckDB).
     """
 
     gateway: StorageGateway
     snapshot: SnapshotRef
     engine: GraphEngine | None = None
     catalog_provider: FunctionCatalogProvider | None = None
+    force_sequential: bool = False
 
 
 class RecipeExecutor:
@@ -339,7 +343,7 @@ class RecipeExecutor:
         list[GraphPluginRunRecord]
             Execution records.
         """
-        if stage.parallel and len(plugins) > 1:
+        if stage.parallel and len(plugins) > 1 and not self._context.force_sequential:
             return self._execute_plugins_parallel(
                 plugins=plugins,
                 run_id=run_id,

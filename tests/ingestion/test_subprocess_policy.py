@@ -14,6 +14,7 @@ def test_no_direct_subprocess_usage_outside_tooling() -> None:
     allowed = {
         Path("src/codeintel/ingestion/tool_runner.py"),
         Path("src/codeintel/ingestion/tool_service.py"),
+        Path("src/codeintel/ingestion/infrastructure_utilities/tool_runner.py"),
     }
     patterns = ("create_subprocess_exec(", "subprocess.run(", "Popen(")
 

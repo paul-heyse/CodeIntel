@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from codeintel.ingestion.tests_ingest import load_tests_from_report
 
 

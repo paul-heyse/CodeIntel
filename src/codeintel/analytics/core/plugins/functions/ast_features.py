@@ -7,9 +7,12 @@ new unified plugin protocol.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
 
 from codeintel.analytics.ast_features.persist import features_to_row
-from codeintel.analytics.context import AnalyticsContextConfig, ensure_analytics_context
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
     PluginCapability,
@@ -116,22 +119,15 @@ class FunctionAstFeaturesPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get optional dependencies
-        existing_context = ctx.analytics_context if ctx.has_analytics_context() else None
-        graph_runtime = ctx.graph_runtime if ctx.has_graph_runtime() else None
+        # Get required analytics context
+        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
+            return PluginResult.fail("AnalyticsContextProvider is required")
+        analytics_provider = cast(
+            "AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider")
+        )
+        analytics_ctx = analytics_provider.get()
 
         try:
-            analytics_ctx = ensure_analytics_context(
-                ctx.gateway,
-                cfg=AnalyticsContextConfig(
-                    repo=cfg.repo,
-                    commit=cfg.commit,
-                    repo_root=cfg.repo_root,
-                ),
-                context=existing_context,
-                runtime=graph_runtime,
-            )
-
             rows = [
                 features_to_row(
                     repo=cfg.repo,

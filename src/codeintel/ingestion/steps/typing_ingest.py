@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -24,6 +25,9 @@ from codeintel.config.datasets import (
 )
 from codeintel.ingestion.ports.tools import ToolStatus
 from codeintel.ingestion.steps.base import StepResult
+
+# Threshold below which a file is considered under-annotated and may need overlay typing
+_ANNOTATION_OVERLAY_THRESHOLD = 0.5
 
 if TYPE_CHECKING:
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
@@ -156,9 +160,10 @@ def _is_fully_typed(params: list[ast.arg], *, has_return: bool) -> bool:
     bool
         True if fully typed.
     """
-    return all(
-        arg.annotation is not None for arg in params if arg.arg not in {"self", "cls"}
-    ) and has_return
+    return (
+        all(arg.annotation is not None for arg in params if arg.arg not in {"self", "cls"})
+        and has_return
+    )
 
 
 async def _collect_diagnostic_counts(
@@ -314,18 +319,28 @@ class TypingIngestStep:
             if info is None:
                 continue
 
-            # Build typedness row
+            # Build typedness row - matches analytics.typedness schema
+            pyright_errors = diag_counts.pyright.get(module.rel_path, 0)
+            pyrefly_errors = diag_counts.pyrefly.get(module.rel_path, 0)
+            ruff_errors = diag_counts.ruff.get(module.rel_path, 0)
+            type_error_count = pyright_errors + pyrefly_errors + ruff_errors
+
+            # Compute overlay_needed: true if there are errors and low annotation coverage
+            overlay_needed = type_error_count > 0 and (
+                info.params_ratio < _ANNOTATION_OVERLAY_THRESHOLD
+                or info.returns_ratio < _ANNOTATION_OVERLAY_THRESHOLD
+            )
+
             row = TypednessRow(
                 repo=repo,
                 commit=commit,
-                rel_path=module.rel_path,
-                params_ratio=info.params_ratio,
-                returns_ratio=info.returns_ratio,
+                path=module.rel_path,
+                type_error_count=type_error_count,
+                annotation_ratio=json.dumps(
+                    {"params": info.params_ratio, "returns": info.returns_ratio}
+                ),
                 untyped_defs=info.untyped_defs,
-                pyright_errors=diag_counts.pyright.get(module.rel_path, 0),
-                pyrefly_errors=diag_counts.pyrefly.get(module.rel_path, 0),
-                ruff_errors=diag_counts.ruff.get(module.rel_path, 0),
-                created_at=created_at,
+                overlay_needed=overlay_needed,
             )
             typedness_rows.append(list(typedness_row_to_tuple(row)))
 
@@ -392,6 +407,10 @@ class TypingIngestStep:
     ) -> StepResult:
         """Persist rows to storage.
 
+        Deletes existing rows for the same paths before inserting to ensure
+        idempotent re-ingestion (tables have primary keys that would cause
+        duplicate key errors otherwise).
+
         Parameters
         ----------
         typedness_rows
@@ -412,14 +431,28 @@ class TypingIngestStep:
         total_rows = 0
 
         if typedness_rows:
+            # Extract paths from rows (path is at index 2 in the row tuple)
+            # Schema: repo, commit, path, type_error_count, annotation_ratio, ...
+            typedness_paths = [str(row[2]) for row in typedness_rows]
+            # Delete existing rows to avoid duplicate key errors (idempotent re-ingest)
+            self._storage.delete_by_paths("analytics.typedness", typedness_paths, path_column="path")
+
             scope = f"{repo}@{commit}"
-            result = self._storage.write_batch("core.typedness", typedness_rows, scope=scope)
-            table_counts["core.typedness"] = result.rows_written
+            result = self._storage.write_batch("analytics.typedness", typedness_rows, scope=scope)
+            table_counts["analytics.typedness"] = result.rows_written
             total_rows += result.rows_written
 
         if diagnostic_rows:
-            result = self._storage.write_batch("core.static_diagnostics", diagnostic_rows)
-            table_counts["core.static_diagnostics"] = result.rows_written
+            # Extract paths from rows (rel_path is at index 2 in the row tuple)
+            # Schema: repo, commit, rel_path, pyrefly_errors, pyright_errors, ...
+            diagnostic_paths = [str(row[2]) for row in diagnostic_rows]
+            # Delete existing rows to avoid duplicate key errors (idempotent re-ingest)
+            self._storage.delete_by_paths(
+                "analytics.static_diagnostics", diagnostic_paths, path_column="rel_path"
+            )
+
+            result = self._storage.write_batch("analytics.static_diagnostics", diagnostic_rows)
+            table_counts["analytics.static_diagnostics"] = result.rows_written
             total_rows += result.rows_written
 
         log.info(
@@ -458,8 +491,10 @@ class TypingIngestStep:
         StepResult
             Execution result with row counts.
         """
-        return asyncio.get_event_loop().run_until_complete(
-            self.execute_async(modules, repo=repo, commit=commit, repo_root=repo_root, run_diagnostics=False)
+        return asyncio.run(
+            self.execute_async(
+                modules, repo=repo, commit=commit, repo_root=repo_root, run_diagnostics=False
+            )
         )
 
 

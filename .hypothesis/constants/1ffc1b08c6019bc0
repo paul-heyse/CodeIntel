@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/tests_profiles/coverage_inputs.py
+# hypothesis_version: 6.148.3
+
+[0.4, 'bool | None', 'count', 'degree', 'duration_ms', 'end_line', 'flaky', 'float | None', 'functions', 'int | None', 'kind', 'language', 'list[str] | None', 'markers', 'max_risk_score', 'module', 'primary', 'primary_subsystem_id', 'proj_betweenness', 'proj_clustering', 'proj_degree', 'proj_weight', 'qualname', 'rel_path', 'start_line', 'status', 'str | None', 'subsystems', 'test_goid_h128', 'test_id', 'urn', 'weighted_degree']

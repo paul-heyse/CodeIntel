@@ -9,24 +9,15 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
-from codeintel.analytics.context import (
-    AnalyticsContext,
-    AnalyticsContextConfig,
-    ensure_analytics_context,
-)
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config import DataModelUsageStepConfig
-from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 from codeintel.storage.data_models import DataModelRow, fetch_models
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-
-if TYPE_CHECKING:
-    from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
@@ -448,9 +439,7 @@ def compute_data_model_usage(
     gateway: StorageGateway,
     cfg: DataModelUsageStepConfig,
     *,
-    catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    context: AnalyticsContext,
 ) -> None:
     """
     Populate analytics.data_model_usage with per-function model usage classifications.
@@ -461,12 +450,8 @@ def compute_data_model_usage(
         Storage gateway for the active DuckDB database.
     cfg
         Data model usage configuration.
-    catalog_provider
-        Optional function catalog to reuse across analytics steps.
     context
-        Optional shared analytics context to reuse catalog, module map, and ASTs.
-    runtime
-        Optional shared graph runtime used to reuse the pipeline engine.
+        Shared analytics context providing catalog, module map, and ASTs.
     """
     con = gateway.con
     ensure_schema(con, "analytics.data_model_usage")
@@ -481,22 +466,10 @@ def compute_data_model_usage(
         return
     model_index = _build_model_index(models)
 
-    shared_context = ensure_analytics_context(
-        gateway,
-        cfg=AnalyticsContextConfig(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-            catalog_provider=catalog_provider,
-        ),
-        context=context,
-        runtime=runtime,
-    )
-
-    module_map = shared_context.module_map
+    module_map = context.module_map
     subsystem_map = _subsystem_by_module(con, cfg.repo, cfg.commit)
-    ast_by_goid = shared_context.function_ast_map
-    missing = shared_context.missing_function_goids
+    ast_by_goid = context.function_ast_map
+    missing = context.missing_function_goids
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during model usage analysis",

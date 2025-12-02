@@ -45,7 +45,6 @@ from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.graphs.core.protocol import DEFAULT_METRIC_PLUGINS
-from codeintel.graphs.core.registry import plan_graph_plugins
 from codeintel.graphs.recipes import METRICS_ONLY_RECIPE, RecipeExecutor, RecipeExecutorContext
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
@@ -794,6 +793,9 @@ def _resolve_graph_plugins(
 ) -> tuple[str, ...]:
     """Resolve effective graph metric plugins from config and defaults.
 
+    This function is used for logging purposes only. Actual execution
+    uses the recipe executor which handles plugin orchestration.
+
     Rules
     -----
     - If cfg.enabled_plugins is non-empty, use that list exactly (in order).
@@ -804,12 +806,13 @@ def _resolve_graph_plugins(
     tuple[str, ...]
         Ordered plugin names to execute.
     """
-    plan = plan_graph_plugins(
-        enabled=cfg.enabled_plugins or None,
-        disabled=cfg.disabled_plugins,
-        defaults=default_plugins,
-    )
-    return plan.ordered_names
+    # Simple enable/disable logic without full dependency resolution
+    # since actual execution happens via RecipeExecutor
+    if cfg.enabled_plugins:
+        return tuple(cfg.enabled_plugins)
+
+    disabled = frozenset(cfg.disabled_plugins) if cfg.disabled_plugins else frozenset()
+    return tuple(p for p in default_plugins if p not in disabled)
 
 
 @dataclass

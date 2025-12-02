@@ -17,11 +17,7 @@ import yaml
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
 from codeintel.analytics.ast_utils import resolve_call_target, safe_unparse, snippet_from_lines
-from codeintel.analytics.context import (
-    AnalyticsContext,
-    AnalyticsContextConfig,
-    ensure_analytics_context,
-)
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config import ExternalDependenciesStepConfig
@@ -32,8 +28,6 @@ from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 
 log = logging.getLogger(__name__)
 
@@ -173,9 +167,7 @@ def build_external_dependency_calls(
     gateway: StorageGateway,
     cfg: ExternalDependenciesStepConfig,
     *,
-    catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    context: AnalyticsContext,
 ) -> None:
     """
     Populate analytics.external_dependency_calls from AST traversal.
@@ -186,12 +178,8 @@ def build_external_dependency_calls(
         Storage gateway with live DuckDB connection.
     cfg
         External dependency configuration (repo context, patterns).
-    catalog_provider
-        Optional function catalog to reuse across steps.
     context
-        Optional shared analytics context to reuse catalog, module map, and ASTs.
-    runtime
-        Optional shared graph runtime used to reuse the pipeline engine.
+        Shared analytics context providing catalog, module map, and ASTs.
     """
     patterns = _load_dependency_patterns(cfg)
     if not patterns:
@@ -205,21 +193,10 @@ def build_external_dependency_calls(
         [cfg.repo, cfg.commit],
     )
 
-    shared_context = ensure_analytics_context(
-        gateway,
-        cfg=AnalyticsContextConfig(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-            catalog_provider=catalog_provider,
-        ),
-        context=context,
-        runtime=runtime,
-    )
-    catalog = shared_context.catalog
-    module_map = shared_context.module_map
-    ast_by_goid = shared_context.function_ast_map
-    missing = shared_context.missing_function_goids
+    catalog = context.catalog
+    module_map = context.module_map
+    ast_by_goid = context.function_ast_map
+    missing = context.missing_function_goids
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during dependency analysis", len(missing)
@@ -234,7 +211,7 @@ def build_external_dependency_calls(
         module_map=module_map,
         catalog=catalog,
         now=now,
-        features=shared_context.function_features_map,
+        features=context.function_features_map,
     )
 
     rows: list[tuple[object, ...]] = []

@@ -19,6 +19,7 @@ from codeintel.analytics.core.plugin_protocol import (
     PluginStage,
 )
 from codeintel.analytics.core.traits import GraphAwareMixin, WithContractValidation
+from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphKind
@@ -97,6 +98,9 @@ class CoreGraphMetricsPlugin(
         GraphKind.IMPORT_GRAPH,
     )
 
+    # Resolved config (set during validation if available)
+    _resolved_config: GraphMetricsStepConfig | None = None
+
     @property
     def output_contracts(self) -> tuple[OutputContractSpec, ...]:
         """Return explicit output contracts for validation.
@@ -158,7 +162,7 @@ class CoreGraphMetricsPlugin(
 
         # Build dependencies
         deps = graph_metrics.GraphMetricsDeps(
-            catalog_provider=self.get_catalog(ctx) if ctx.has_catalog() else None,
+            catalog_provider=self.get_catalog(ctx) if ctx.has_resource(CatalogProvider) else None,
             runtime=runtime,
             analytics_context=self.get_analytics_context_or_none(ctx),
             filters=None,
@@ -193,9 +197,12 @@ class CoreGraphMetricsPlugin(
         object | None
             Analytics context or None.
         """
-        if ctx.has_analytics_context():
-            return ctx.analytics_context
-        return None
+        from codeintel.analytics.resources.analytics_context import (  # noqa: PLC0415
+            AnalyticsContextProvider,
+        )
+
+        analytics_provider = ctx.require_or_none(AnalyticsContextProvider)
+        return analytics_provider.get() if analytics_provider else None
 
 
 __all__ = [

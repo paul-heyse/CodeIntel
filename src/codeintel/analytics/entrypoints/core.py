@@ -14,11 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
-from codeintel.analytics.context import (
-    AnalyticsContext,
-    AnalyticsContextConfig,
-    ensure_analytics_context,
-)
+from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.entrypoint_detectors import (
     DetectorSettings,
     EntryPointCandidate,
@@ -33,7 +29,6 @@ from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
     from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 
 log = logging.getLogger(__name__)
@@ -99,9 +94,7 @@ def build_entrypoints(
     gateway: StorageGateway,
     cfg: EntryPointsStepConfig,
     *,
-    catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    context: AnalyticsContext,
 ) -> None:
     """
     Populate analytics.entrypoints and analytics.entrypoint_tests.
@@ -112,12 +105,8 @@ def build_entrypoints(
         Storage gateway with active DuckDB connection.
     cfg
         EntryPointsStepConfig specifying repo context and detection toggles.
-    catalog_provider
-        Optional function catalog to reuse across steps.
     context
-        Optional shared analytics context to reuse catalog and module maps.
-    runtime
-        Optional shared graph runtime used to reuse the pipeline engine.
+        Shared analytics context providing catalog, module map, and features.
     """
     con = gateway.con
     ensure_schema(con, "analytics.entrypoints")
@@ -132,24 +121,13 @@ def build_entrypoints(
         [cfg.repo, cfg.commit],
     )
 
-    shared_context = ensure_analytics_context(
-        gateway,
-        cfg=AnalyticsContextConfig(
-            repo=cfg.repo,
-            commit=cfg.commit,
-            repo_root=cfg.repo_root,
-            catalog_provider=catalog_provider,
-        ),
-        context=context,
-        runtime=runtime,
-    )
-    catalog = shared_context.catalog
+    catalog = context.catalog
     entrypoint_context = _build_entrypoint_context(
         con,
         cfg,
         catalog,
-        module_map_override=shared_context.module_map,
-        features=shared_context.function_features_map,
+        module_map_override=context.module_map,
+        features=context.function_features_map,
     )
     if entrypoint_context is None:
         log.warning("No modules available to scan for entrypoints in %s@%s", cfg.repo, cfg.commit)

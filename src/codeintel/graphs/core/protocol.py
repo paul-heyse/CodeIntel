@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, runtime_checkable
+from typing import Literal, Protocol, cast, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -420,7 +420,7 @@ def graph_plugin(  # noqa: PLR0913
             contract_checkers=contract_checkers,
         )
 
-        plugin_instance: GraphPluginProtocol = FunctionalGraphPlugin(
+        plugin_instance = FunctionalGraphPlugin(
             _metadata=meta,
             _execute_fn=fn,
         )
@@ -430,7 +430,7 @@ def graph_plugin(  # noqa: PLR0913
                 register_graph_plugin,
             )
 
-            register_graph_plugin(plugin_instance)
+            register_graph_plugin(cast("GraphPluginProtocol", plugin_instance))
 
         return plugin_instance
 

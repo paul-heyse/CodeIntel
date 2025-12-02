@@ -7,10 +7,13 @@ for networkx graphs.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import networkx as nx
+import networkx as nx
+
+from codeintel.analytics.compute.graphs.nx_types import (
+    get_in_degree_values,
+    get_out_degree_values,
+)
 
 
 @dataclass(frozen=True)
@@ -73,8 +76,6 @@ def compute_graph_statistics(graph: nx.DiGraph) -> GraphStatistics:
     >>> stats.is_dag
     True
     """
-    import networkx as nx
-
     node_count = graph.number_of_nodes()
     edge_count = graph.number_of_edges()
 
@@ -93,9 +94,9 @@ def compute_graph_statistics(graph: nx.DiGraph) -> GraphStatistics:
     # Density
     density = nx.density(graph)
 
-    # Average degrees
-    in_degrees = [d for _, d in graph.in_degree()]
-    out_degrees = [d for _, d in graph.out_degree()]
+    # Average degrees (using type-safe wrappers from nx_types)
+    in_degrees = get_in_degree_values(graph)
+    out_degrees = get_out_degree_values(graph)
     avg_in_degree = sum(in_degrees) / node_count if node_count else 0.0
     avg_out_degree = sum(out_degrees) / node_count if node_count else 0.0
 
@@ -122,4 +123,3 @@ __all__ = [
     "GraphStatistics",
     "compute_graph_statistics",
 ]
-

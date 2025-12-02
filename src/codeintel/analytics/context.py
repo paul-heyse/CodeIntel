@@ -14,6 +14,10 @@ from typing import TYPE_CHECKING, cast
 import networkx as nx
 
 if TYPE_CHECKING:
+    from codeintel.analytics.resources.asts import AstProvider
+    from codeintel.analytics.resources.catalog import CatalogProvider
+    from codeintel.analytics.resources.features import FeaturesProvider
+    from codeintel.analytics.resources.graphs import GraphProvider
     from codeintel.analytics.resources.registry import ResourceRegistry
 
 from codeintel.analytics.ast_features.extract import compute_function_features
@@ -152,22 +156,24 @@ class AnalyticsContext:
         >>> registry.register(CatalogProvider, CatalogProvider(gateway, snapshot))
         >>> ctx = AnalyticsContext.from_resources(registry, config, gateway)
         """
-        from codeintel.analytics.resources.asts import AstProvider
-        from codeintel.analytics.resources.catalog import CatalogProvider
-        from codeintel.analytics.resources.graphs import GraphProvider
+        # Use string-based lookup to avoid circular imports
+        graph_provider = cast("GraphProvider", registry.require_by_name("GraphProvider"))
+        catalog_provider = cast("CatalogProvider", registry.require_by_name("CatalogProvider"))
 
-        # Get resources from registry
-        graph_provider = registry.require(GraphProvider)
-        catalog_provider = registry.require(CatalogProvider)
+        # Get optional providers using has_by_name to avoid KeyError
+        ast_provider: AstProvider | None = None
+        if registry.has_by_name("AstProvider"):
+            ast_provider = cast("AstProvider", registry.require_by_name("AstProvider"))
 
-        # Get optional AST provider
-        ast_provider = registry.require_or_none(AstProvider)
+        features_provider: FeaturesProvider | None = None
+        if registry.has_by_name("FeaturesProvider"):
+            features_provider = cast("FeaturesProvider", registry.require_by_name("FeaturesProvider"))
 
         # Load catalog
         catalog = catalog_provider.get()
 
-        # Load graphs
-        call_graph = graph_provider.call_graph
+        # Load graphs (call_graph is required, default to empty DiGraph if None)
+        call_graph = graph_provider.call_graph or nx.DiGraph()
         import_graph = graph_provider.import_graph
         symbol_module_graph = graph_provider.symbol_module_graph
         symbol_function_graph = graph_provider.symbol_function_graph
@@ -179,10 +185,14 @@ class AnalyticsContext:
         if ast_provider is not None:
             function_ast_map = ast_provider.function_asts
             missing_function_goids = ast_provider.missing_goids
-            function_features_map = ast_provider.function_features
         else:
             function_ast_map = {}
             missing_function_goids = set()
+
+        # Load features separately (from FeaturesProvider, not AstProvider)
+        if features_provider is not None:
+            function_features_map = features_provider.function_features
+        else:
             function_features_map = {}
 
         # Build stats (simplified - no truncation tracking from providers)
@@ -663,6 +673,10 @@ def ensure_analytics_context(
     """
     Return an existing `AnalyticsContext` or build one from the provided config.
 
+    .. deprecated::
+        Use AnalyticsContextProvider with ResourceRegistry instead.
+        Access context via `ctx.require(AnalyticsContextProvider).get()`.
+
     Parameters
     ----------
     gateway:
@@ -684,6 +698,13 @@ def ensure_analytics_context(
     ValueError
         If the provided context targets a different repo or commit than `cfg`.
     """
+    warnings.warn(
+        "ensure_analytics_context is deprecated. "
+        "Use AnalyticsContextProvider with ResourceRegistry instead, "
+        "access context via ctx.require(AnalyticsContextProvider).get().",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if context is not None:
         if context.repo != cfg.repo or context.commit != cfg.commit:
             message = (

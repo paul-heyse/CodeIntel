@@ -178,11 +178,12 @@ class LazyResource[T](ABC):
 
         try:
             self._resource = self._load()
-            self._loaded = True
-            return self._resource
         except Exception as e:
             self._load_error = e
             raise ResourceNotLoadedError(self._name, str(e)) from e
+        else:
+            self._loaded = True
+            return self._resource
 
     def get_or_none(self) -> T | None:
         """Get the resource or None if unavailable.
@@ -201,6 +202,21 @@ class LazyResource[T](ABC):
         """Invalidate the cached resource."""
         self._resource = None
         self._loaded = False
+        self._load_error = None
+
+    def set_preloaded(self, resource: T) -> None:
+        """Set a pre-loaded resource value.
+
+        Use this to inject an already-loaded resource into the provider
+        without triggering the `_load()` method.
+
+        Parameters
+        ----------
+        resource
+            The pre-loaded resource value.
+        """
+        self._resource = resource
+        self._loaded = True
         self._load_error = None
 
 

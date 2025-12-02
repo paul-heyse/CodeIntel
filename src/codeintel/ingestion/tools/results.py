@@ -264,6 +264,48 @@ class CoverageReport:
         return {f.rel_path: f for f in self.files}
 
 
+def _parse_test_duration(entry: Mapping[str, object]) -> float:
+    """Extract duration from test entry call data.
+
+    Parameters
+    ----------
+    entry
+        Test entry mapping.
+
+    Returns
+    -------
+    float
+        Duration in seconds.
+    """
+    call = entry.get("call")
+    if isinstance(call, dict):
+        dur_val = call.get("duration")
+        if isinstance(dur_val, (int, float)):
+            return float(dur_val)
+    return 0.0
+
+
+def _parse_test_markers(entry: Mapping[str, object]) -> list[str]:
+    """Extract markers from test entry keywords.
+
+    Parameters
+    ----------
+    entry
+        Test entry mapping.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of marker names.
+    """
+    keywords = entry.get("keywords", {})
+    if isinstance(keywords, dict):
+        return sorted(k for k, v in keywords.items() if v)
+    if isinstance(keywords, list):
+        return sorted(str(k) for k in keywords)
+    return []
+
+
 @dataclass(frozen=True)
 class TestCaseResult:
     """Result for a single test case.
@@ -351,19 +393,8 @@ class TestReport:
                 continue
 
             outcome = str(entry.get("outcome", entry.get("status", "unknown")))
-            call = entry.get("call")
-            duration = 0.0
-            if isinstance(call, dict):
-                dur_val = call.get("duration")
-                if isinstance(dur_val, (int, float)):
-                    duration = float(dur_val)
-
-            keywords = entry.get("keywords", {})
-            markers: list[str] = []
-            if isinstance(keywords, dict):
-                markers = sorted(k for k, v in keywords.items() if v)
-            elif isinstance(keywords, list):
-                markers = sorted(str(k) for k in keywords)
+            duration = _parse_test_duration(entry)
+            markers = _parse_test_markers(entry)
 
             tests.append(
                 TestCaseResult(
@@ -442,6 +473,70 @@ class ScipDocument:
     occurrences: Sequence[ScipOccurrence] = ()
 
 
+def _parse_scip_range(rng: Sequence[object]) -> tuple[int, int, int, int] | None:
+    """Parse SCIP range from list to tuple.
+
+    SCIP ranges have 3 or 4 elements. Three-element ranges represent
+    occurrences on a single line with start_col and end_col.
+
+    Parameters
+    ----------
+    rng
+        Range sequence from SCIP output.
+
+    Returns
+    -------
+    tuple[int, int, int, int] | None
+        Normalized (start_line, start_col, end_line, end_col) or None.
+    """
+    # Convert elements to int safely
+    try:
+        int_values = [int(x) for x in rng if isinstance(x, (int, float, str))]
+    except (ValueError, TypeError):
+        return None
+    if len(int_values) != len(rng):
+        return None
+    if len(int_values) == MIN_SCIP_RANGE_FIELDS:
+        return (int_values[0], int_values[1], int_values[0], int_values[2])
+    if len(int_values) == FULL_SCIP_RANGE_FIELDS:
+        return (int_values[0], int_values[1], int_values[2], int_values[3])
+    return None
+
+
+def _parse_scip_occurrence(occ: Mapping[str, object]) -> tuple[ScipOccurrence, bool] | None:
+    """Parse a single SCIP occurrence from a dict.
+
+    Parameters
+    ----------
+    occ
+        Occurrence dict from SCIP JSON.
+
+    Returns
+    -------
+    tuple[ScipOccurrence, bool] | None
+        Tuple of (occurrence, is_definition) or None if invalid.
+    """
+    symbol = occ.get("symbol")
+    if not isinstance(symbol, str):
+        return None
+
+    rng = occ.get("range", [])
+    if not isinstance(rng, list) or len(rng) < MIN_SCIP_RANGE_FIELDS:
+        return None
+
+    range_tuple = _parse_scip_range(rng)
+    if range_tuple is None:
+        return None
+
+    roles = occ.get("symbol_roles", 0)
+    is_def = bool(roles & 1) if isinstance(roles, int) else False
+
+    return (
+        ScipOccurrence(symbol=symbol, range_=range_tuple, is_definition=is_def),
+        is_def,
+    )
+
+
 @dataclass(frozen=True)
 class ScipIndexResult:
     """Result from SCIP indexing.
@@ -474,8 +569,7 @@ class ScipIndexResult:
         index_scip_path: Path | None = None,
         index_json_path: Path | None = None,
     ) -> ScipIndexResult:
-        """
-        Build a ScipIndexResult from parsed JSON documents.
+        """Build a ScipIndexResult from parsed JSON documents.
 
         Parameters
         ----------
@@ -507,46 +601,17 @@ class ScipIndexResult:
                 for occ in occurrences_raw:
                     if not isinstance(occ, dict):
                         continue
-
-                    symbol = occ.get("symbol")
-                    if not isinstance(symbol, str):
+                    parsed = _parse_scip_occurrence(occ)
+                    if parsed is None:
                         continue
-
-                    rng = occ.get("range", [])
-                    if not isinstance(rng, list) or len(rng) < MIN_SCIP_RANGE_FIELDS:
-                        continue
-
-                    roles = occ.get("symbol_roles", 0)
-                    is_def = bool(roles & 1) if isinstance(roles, int) else False
-
-                    # SCIP range is [start_line, start_col, end_col] or
-                    # [start_line, start_col, end_line, end_col]
-                    if len(rng) == MIN_SCIP_RANGE_FIELDS:
-                        range_tuple = (int(rng[0]), int(rng[1]), int(rng[0]), int(rng[2]))
-                    elif len(rng) == FULL_SCIP_RANGE_FIELDS:
-                        range_tuple = (int(rng[0]), int(rng[1]), int(rng[2]), int(rng[3]))
-                    else:
-                        continue
-
-                    occurrences.append(
-                        ScipOccurrence(
-                            symbol=symbol,
-                            range_=range_tuple,
-                            is_definition=is_def,
-                        )
-                    )
-
+                    occurrence, is_def = parsed
+                    occurrences.append(occurrence)
                     if is_def:
                         total_defs += 1
                     else:
                         total_refs += 1
 
-            documents.append(
-                ScipDocument(
-                    relative_path=rel_path,
-                    occurrences=tuple(occurrences),
-                )
-            )
+            documents.append(ScipDocument(relative_path=rel_path, occurrences=tuple(occurrences)))
 
         return cls(
             documents=tuple(documents),

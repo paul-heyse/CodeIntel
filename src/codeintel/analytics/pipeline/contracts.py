@@ -7,8 +7,11 @@ dataset output requirements.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -173,8 +176,6 @@ class DatasetContractValidator:
         ContractValidationResult
             Validation result with any violations.
         """
-        import time
-
         start = time.perf_counter()
         violations: list[ContractViolation] = []
 
@@ -203,33 +204,31 @@ class DatasetContractValidator:
 
         # Check required columns
         actual_columns = self._get_columns(contract.table)
-        for col in contract.required_columns:
-            if col not in actual_columns:
-                violations.append(
-                    ContractViolation(
-                        table=contract.table,
-                        rule="required_column",
-                        message=f"Missing required column: {col}",
-                    )
-                )
+        violations.extend(
+            ContractViolation(
+                table=contract.table,
+                rule="required_column",
+                message=f"Missing required column: {col}",
+            )
+            for col in contract.required_columns
+            if col not in actual_columns
+        )
 
         # Check column rules
         for rule in contract.column_rules:
-            rule_violations = self._check_column_rule(
-                contract.table, rule, repo, commit
-            )
+            rule_violations = self._check_column_rule(contract.table, rule, repo, commit)
             violations.extend(rule_violations)
 
         # Check custom checks
-        for check in contract.custom_checks:
-            if not self._run_custom_check(contract.table, check, repo, commit):
-                violations.append(
-                    ContractViolation(
-                        table=contract.table,
-                        rule="custom_check",
-                        message=f"Custom check failed: {check[:50]}...",
-                    )
-                )
+        violations.extend(
+            ContractViolation(
+                table=contract.table,
+                rule="custom_check",
+                message=f"Custom check failed: {check[:50]}...",
+            )
+            for check in contract.custom_checks
+            if not self._run_custom_check(contract.table, check, repo, commit)
+        )
 
         duration = (time.perf_counter() - start) * 1000
 
@@ -247,7 +246,13 @@ class DatasetContractValidator:
         repo: str | None,
         commit: str | None,
     ) -> int:
-        """Get row count for a table with optional filtering."""
+        """Get row count for a table with optional filtering.
+
+        Returns
+        -------
+        int
+            Number of rows matching the filter criteria.
+        """
         query = f"SELECT COUNT(*) FROM {table}"  # noqa: S608
         params: list[object] = []
 
@@ -262,17 +267,23 @@ class DatasetContractValidator:
             result = self._gateway.con.execute(query, params)
             row = result.fetchone()
             return int(row[0]) if row else 0
-        except Exception:
+        except DuckDBError:
             log.warning("Failed to count rows in %s", table, exc_info=True)
             return 0
 
     def _get_columns(self, table: str) -> set[str]:
-        """Get column names for a table."""
+        """Get column names for a table.
+
+        Returns
+        -------
+        set[str]
+            Set of column names in the table.
+        """
         try:
             # DuckDB-specific: use DESCRIBE
             result = self._gateway.con.execute(f"DESCRIBE {table}")
             return {str(row[0]) for row in result.fetchall()}
-        except Exception:
+        except DuckDBError:
             log.warning("Failed to get columns for %s", table, exc_info=True)
             return set()
 
@@ -283,7 +294,13 @@ class DatasetContractValidator:
         repo: str | None,
         commit: str | None,
     ) -> list[ContractViolation]:
-        """Check a single column rule."""
+        """Check a single column rule.
+
+        Returns
+        -------
+        list[ContractViolation]
+            List of violations found for this rule.
+        """
         violations: list[ContractViolation] = []
         column = rule.column
 
@@ -316,7 +333,7 @@ class DatasetContractValidator:
                             row_count=null_count,
                         )
                     )
-            except Exception:
+            except DuckDBError:
                 log.warning("Failed to check not_null for %s.%s", table, column)
 
         return violations
@@ -325,16 +342,22 @@ class DatasetContractValidator:
         self,
         table: str,
         check: str,
-        repo: str | None,
-        commit: str | None,
+        _repo: str | None,
+        _commit: str | None,
     ) -> bool:
-        """Run a custom SQL check expression."""
+        """Run a custom SQL check expression.
+
+        Returns
+        -------
+        bool
+            True if the check passed, False otherwise.
+        """
         # Custom checks are trusted SQL from contract definitions
         try:
             result = self._gateway.con.execute(check)
             row = result.fetchone()
             return bool(row and row[0])
-        except Exception:
+        except DuckDBError:
             log.warning("Custom check failed for %s", table, exc_info=True)
             return False
 

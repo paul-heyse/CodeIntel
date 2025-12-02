@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.analytics.context import AnalyticsContextConfig, build_analytics_context
 from codeintel.analytics.dependencies import (
     build_external_dependencies,
     build_external_dependency_calls,
 )
 from codeintel.analytics.entrypoints import build_entrypoints
 from codeintel.config import ConfigBuilder
-from codeintel.graphs.catalog import FunctionCatalogService
 from codeintel.graphs.goid_builder import build_goids
 from codeintel.ingestion.py_ast_extract import ingest_python_ast
 from codeintel.ingestion.repo_scan import ingest_repo
@@ -292,7 +292,7 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
             repo_root=ctx.repo_root,
             build_dir=ctx.build_dir,
         )
-        tracker = ingest_repo(
+        ingest_repo(
             ctx.gateway,
             cfg=builder.repo_scan(),
         )
@@ -307,7 +307,7 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
                 )
             ],
         )
-        ingest_python_ast(tracker)
+        ingest_python_ast(ctx.gateway)
         build_goids(ctx.gateway, builder.goid_builder())
 
         con = ctx.gateway.con
@@ -316,12 +316,19 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
         now = datetime.now(tz=UTC)
         _seed_coverage_and_tests(ctx, hello_row, now)
 
-        catalog = FunctionCatalogService.from_db(ctx.gateway, repo=ctx.repo, commit=ctx.commit)
+        # Build analytics context for domain functions
+        context_cfg = AnalyticsContextConfig(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+        )
+        analytics_context = build_analytics_context(ctx.gateway, context_cfg)
+
         entry_cfg = builder.entrypoints()
-        build_entrypoints(ctx.gateway, entry_cfg, catalog_provider=catalog)
+        build_entrypoints(ctx.gateway, entry_cfg, context=analytics_context)
 
         dep_cfg = builder.external_dependencies()
-        build_external_dependency_calls(ctx.gateway, dep_cfg, catalog_provider=catalog)
+        build_external_dependency_calls(ctx.gateway, dep_cfg, context=analytics_context)
         build_external_dependencies(ctx.gateway, dep_cfg)
 
         _validate_entrypoint_rows(con, ctx.repo, ctx.commit)

@@ -13,7 +13,11 @@ from anyio import to_thread
 from coverage import Coverage
 
 from codeintel.config import TestCoverageStepConfig
-from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolName, ToolResult, ToolRunner
+from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+    ToolName,
+    ToolResult,
+    ToolRunner,
+)
 
 
 def _mkdir_parents(path: Path) -> None:

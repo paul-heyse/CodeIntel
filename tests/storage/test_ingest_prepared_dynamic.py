@@ -39,6 +39,7 @@ def test_ingest_macros_registered(fresh_gateway: StorageGateway) -> None:
     """Macro-backed ingest tables must have their macros present after bootstrap."""
     con = fresh_gateway.con
     for table_key in sorted(INGEST_MACRO_TABLES):
-        macro_name = f"metadata.ingest_{table_key.split('.', maxsplit=1)[1]}"
-        if not macro_exists(con, macro_name):
-            pytest.fail(f"Missing ingest macro {macro_name}")
+        if not macro_exists(con, table_key):
+            _, table_name = table_key.split(".", maxsplit=1)
+            macro_name = f"metadata.ingest_{table_name}"
+            pytest.fail(f"Missing ingest macro {macro_name} for {table_key}")

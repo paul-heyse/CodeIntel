@@ -56,6 +56,31 @@ class DependencyModePattern:
     criticality: float | None = None
     name: str | None = None
 
+    def matches(self, method: str | None, target: str) -> bool:
+        """Check if this pattern matches the given method and target.
+
+        Parameters
+        ----------
+        method
+            Method name being called.
+        target
+            Full call target string.
+
+        Returns
+        -------
+        bool
+            True if pattern matches.
+        """
+        method_matches = self.method is not None and method == self.method
+        prefix_matches = (
+            self.method_prefix is not None
+            and method is not None
+            and method.startswith(self.method_prefix)
+        )
+        target_matches = self.match is not None and self.match in target
+
+        return method_matches or prefix_matches or target_matches
+
 
 @dataclass(frozen=True)
 class LibraryPattern:
@@ -131,13 +156,7 @@ def classify_modes(
     matched_pattern: DependencyModePattern | None = None
 
     for matcher in pattern.matchers:
-        if matcher.method and method == matcher.method:
-            modes.extend(matcher.modes)
-            matched_pattern = matched_pattern or matcher
-        elif matcher.method_prefix and method and method.startswith(matcher.method_prefix):
-            modes.extend(matcher.modes)
-            matched_pattern = matched_pattern or matcher
-        elif matcher.match and matcher.match in target:
+        if matcher.matches(method, target):
             modes.extend(matcher.modes)
             matched_pattern = matched_pattern or matcher
 
@@ -232,12 +251,11 @@ def risk_level(modes: set[str], callsite_count: int) -> str:
 
 __all__ = [
     "CALLSITE_MEDIUM_THRESHOLD",
+    "SEVERITY_SCORES",
     "DependencyModePattern",
     "LibraryPattern",
-    "SEVERITY_SCORES",
     "classify_modes",
     "risk_level",
     "risk_score",
     "severity_score",
 ]
-
