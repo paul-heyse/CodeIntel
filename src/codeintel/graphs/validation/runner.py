@@ -2,6 +2,12 @@
 
 This module provides the high-level functions for executing the
 full validation suite and coordinating individual checks.
+
+Architecture Notes
+------------------
+This module imports from analytics.graph_runtime for GraphRuntime access.
+This is an intentional delegation - the graphs package orchestrates validation
+but delegates runtime resolution to analytics (Option B architecture).
 """
 
 from __future__ import annotations

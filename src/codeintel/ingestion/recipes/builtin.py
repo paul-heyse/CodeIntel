@@ -78,7 +78,9 @@ INCREMENTAL_RECIPE = recipe(
         stage(
             name="enrich",
             plugins=["typing_ingest", "docstrings_ingest"],
-            spec=StageSpec(parallel=True, description="Update typing and docstrings for changed modules."),
+            spec=StageSpec(
+                parallel=True, description="Update typing and docstrings for changed modules."
+            ),
         ),
     ],
     spec=RecipeSpec(

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.catalog import CatalogProvider
     from codeintel.analytics.resources.graphs import GraphProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -40,7 +40,7 @@ class SubsystemsPlugin:
             name="subsystems.build",
             description="Infer subsystems from module coupling and risk signals.",
             stage="subsystem",
-            version="2.0.0",
+            version="3.0.0",
             enabled_by_default=True,
             severity="fatal",
             inputs=(
@@ -109,11 +109,13 @@ class SubsystemsPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        analytics_context = None
-        if ctx.has_resource_by_name("AnalyticsContextProvider"):
-            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
-            analytics_context = provider.get()
+        # Get catalog from CatalogProvider
+        catalog_provider = None
+        if ctx.has_resource_by_name("CatalogProvider"):
+            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+            catalog_provider = cat_prov.get()
 
+        # Get graph runtime from GraphProvider
         graph_runtime = None
         if ctx.has_resource_by_name("GraphProvider"):
             graph_prov = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
@@ -123,7 +125,7 @@ class SubsystemsPlugin:
             build_subsystems(
                 ctx.gateway,
                 cfg,
-                context=analytics_context,
+                catalog_provider=catalog_provider,
                 runtime=graph_runtime,
             )
         except (RuntimeError, ValueError, OSError) as e:

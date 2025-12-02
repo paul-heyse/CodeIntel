@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/cfg_builder.py
+# hypothesis_version: 6.148.3
+
+['block', 'cfg_blocks', 'cfg_edges', 'dfg_edges', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'utf8']

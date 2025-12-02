@@ -26,6 +26,12 @@ Plugins (graphs/plugins/):
 - metrics: Graph metric computation plugins
 - validation: Graph validation plugin
 
+Hexagonal Architecture (Ports, Adapters, Compute, Resources):
+- ports/: Protocol interfaces abstracting I/O (StoragePort, ParsingPort, etc.)
+- adapters/: Concrete implementations of ports (DuckDB, LibCST, etc.)
+- compute/: Pure stateless computation functions (no I/O)
+- resources/: DI container and resource providers
+
 Consolidated Domain Packages:
 - callgraph/: Call graph edge collection, resolution, and persistence
 - catalog/: Function catalog (spans, metadata, service) - unified module
@@ -47,27 +53,36 @@ result = execute_graph_recipe(
 
 # Or plan and run specific plugins
 plan = plan_graph_plugins(["goid_builder", "callgraph_builder"])
+
+# Using hexagonal architecture
+from codeintel.graphs.resources import ResourceContainer, StorageResource
+from codeintel.graphs.compute.metrics import centrality
+
+container = ResourceContainer()
+container.register(StorageResource(gateway, repo_root))
+
+# Pure computation with no I/O
+pagerank = centrality.compute_pagerank(call_graph)
 ```
 
-Migration Notes
----------------
-Several modules have been consolidated into domain-specific packages:
+Architecture Notes
+------------------
+The graphs package uses hexagonal architecture:
 
-- Call graph modules (call_ast, call_cst, call_resolution, call_context,
-  call_persist, import_resolver) -> ``codeintel.graphs.callgraph``
+- Plugins are the orchestration layer, composing resources and compute functions
+- Resources provide injectable access to I/O (storage, engine, catalog)
+- Compute functions are pure and stateless, taking data and returning data
+- Ports define protocol interfaces, adapters provide concrete implementations
 
-- Catalog modules (function_index, function_catalog, function_catalog_service)
-  -> ``codeintel.graphs.catalog``
-
-- Validation module (validation.py) -> ``codeintel.graphs.validation``
-
-- Engine modules (engine.py, nx_views.py) -> ``codeintel.graphs.engine``
-
-The original import paths remain functional via deprecation shims but will
-emit warnings. Please update to the new canonical import paths.
+Builder modules (goid_builder, callgraph_builder) have been consolidated into
+their corresponding plugins under plugins/builders/. The callgraph/ subpackage
+has been merged into compute/callgraph.py and adapters/callgraph_persistence.py.
 """
 
 from __future__ import annotations
+
+# Subpackage re-exports for convenient access
+from codeintel.graphs import adapters, compute, ports, resources
 
 # Re-export key types from submodules for convenience
 from codeintel.graphs.core import (
@@ -89,6 +104,9 @@ from codeintel.graphs.recipes import (
     execute_graph_recipe,
 )
 
+# Hexagonal architecture exports
+from codeintel.graphs.resources import ResourceContainer, ResourceProvider
+
 __all__ = [
     "BUILDERS_ONLY_RECIPE",
     "FULL_GRAPH_RECIPE",
@@ -102,8 +120,14 @@ __all__ = [
     "GraphRecipe",
     "NxGraphEngine",
     "RecipeExecutionResult",
+    "ResourceContainer",
+    "ResourceProvider",
+    "adapters",
+    "compute",
     "execute_graph_recipe",
     "get_graph_registry",
     "plan_graph_plugins",
+    "ports",
     "register_graph_plugin",
+    "resources",
 ]

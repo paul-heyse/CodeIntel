@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/subsystems/materialize.py
+# hypothesis_version: 6.148.3
+
+[0.0, 100, 1000, ', ', '.', '_', 'ai', 'analytics.subsystems', 'api', 'cli', 'core', 'coverage_cache_ms', 'coverage_speedup', 'coverage_view_ms', 'data', 'domain', 'endpoint', 'etl', 'infra', 'kind', 'low', 'ml', 'module', 'ops', 'platform', 'profile_cache_ms', 'profile_speedup', 'profile_view_ms', 'routes', 'service', 'services', 'tag', 'test', 'tests', 'tool', 'utf-8']

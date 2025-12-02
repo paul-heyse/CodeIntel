@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.asts import AstProvider
+    from codeintel.analytics.resources.features import FeaturesProvider
 
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -48,7 +49,7 @@ class FunctionAstFeaturesPlugin:
             name="functions.ast_features",
             description="Compute AST-derived semantic features for each function.",
             stage="function",
-            version="2.0.0",
+            version="3.0.0",
             enabled_by_default=True,
             severity="fatal",
             inputs=(
@@ -119,13 +120,20 @@ class FunctionAstFeaturesPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get required analytics context
-        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
-            return PluginResult.fail("AnalyticsContextProvider is required")
-        analytics_provider = cast(
-            "AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider")
-        )
-        analytics_ctx = analytics_provider.get()
+        # Get features from FeaturesProvider
+        if not ctx.has_resource_by_name("FeaturesProvider"):
+            return PluginResult.fail("FeaturesProvider is required")
+        features_provider = cast("FeaturesProvider", ctx.require_by_name("FeaturesProvider"))
+        features_map = features_provider.get()
+
+        # Get AST stats from AstProvider for metadata
+        functions_seen = 0
+        functions_missing = 0
+        if ctx.has_resource_by_name("AstProvider"):
+            ast_provider = cast("AstProvider", ctx.require_by_name("AstProvider"))
+            ast_data = ast_provider.get()
+            functions_seen = len(ast_data.function_ast_map)
+            functions_missing = len(ast_data.missing_function_goids)
 
         try:
             rows = [
@@ -134,7 +142,7 @@ class FunctionAstFeaturesPlugin:
                     commit=cfg.commit,
                     features=features,
                 )
-                for features in analytics_ctx.function_features_map.values()
+                for features in features_map.values()
             ]
 
             contract = get_function_ast_features_contract(ctx.gateway)
@@ -152,8 +160,8 @@ class FunctionAstFeaturesPlugin:
         return PluginResult.ok(
             row_counts={"analytics.function_ast_features": len(rows)},
             meta={
-                "functions_seen": len(analytics_ctx.function_ast_map),
-                "functions_missing": len(analytics_ctx.missing_function_goids),
+                "functions_seen": functions_seen,
+                "functions_missing": functions_missing,
             },
         )
 

@@ -50,7 +50,6 @@ from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,
     StepPhase,
-    _analytics_context,
     _function_catalog,
     _log_step,
     _resolve_code_profile,
@@ -148,7 +147,6 @@ class HotspotsStep:
     def run(self, ctx: PipelineContext) -> None:
         """Compute file-level hotspot scores."""
         _log_step(self.name)
-        acx = _analytics_context(ctx)
         cfg = ctx.config_builder().hotspots()
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
@@ -171,7 +169,7 @@ class HotspotsStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"hotspots": cfg},
                 extra={"tool_runner": ctx.tool_runner},
@@ -197,7 +195,6 @@ class FunctionHistoryStep:
         """Compute git churn and history for each function GOID."""
         _log_step(self.name)
         cfg = ctx.config_builder().function_history()
-        acx = _analytics_context(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "function_history.json"
@@ -219,7 +216,7 @@ class FunctionHistoryStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"function_history": cfg},
                 extra={"tool_runner": ctx.tool_runner},
@@ -283,7 +280,7 @@ class HistoryTimeseriesStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=_analytics_context(ctx),
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"history": cfg},
                 extra={
@@ -316,8 +313,6 @@ class FunctionAnalyticsStep:
             fail_on_missing_spans=ctx.function_fail_on_missing_spans,
             parser=ctx.function_parser,
         )
-        acx = _analytics_context(ctx)
-
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "function_metrics.json"
@@ -344,7 +339,7 @@ class FunctionAnalyticsStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"function": cfg},
                 extra={},
@@ -406,8 +401,7 @@ class FunctionEffectsStep:
         """Compute function_effects flags and evidence."""
         _log_step(self.name)
         cfg = ctx.config_builder().function_effects()
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "function_effects.json"
@@ -429,11 +423,11 @@ class FunctionEffectsStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=runtime,
                 cfgs={"function_effects": cfg},
                 extra={},
-                catalog_provider=acx.catalog,
+                catalog_provider=_function_catalog(ctx),
             ),
         )
         if manifest_path is not None:
@@ -455,8 +449,7 @@ class FunctionContractsStep:
         """Compute inferred contracts for functions."""
         _log_step(self.name)
         cfg = ctx.config_builder().function_contracts()
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "function_contracts.json"
@@ -478,11 +471,11 @@ class FunctionContractsStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=runtime,
                 cfgs={"function_contracts": cfg},
                 extra={},
-                catalog_provider=acx.catalog,
+                catalog_provider=_function_catalog(ctx),
             ),
         )
         if manifest_path is not None:
@@ -525,7 +518,7 @@ class DataModelsStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=_analytics_context(ctx),
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"data_models": cfg},
                 extra={},
@@ -551,8 +544,7 @@ class DataModelUsageStep:
         """Populate analytics.data_model_usage."""
         _log_step(self.name)
         cfg = ctx.config_builder().data_model_usage()
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "data_model_usage.json"
@@ -574,11 +566,11 @@ class DataModelUsageStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=runtime,
                 cfgs={"data_model_usage": cfg},
                 extra={},
-                catalog_provider=acx.catalog,
+                catalog_provider=_function_catalog(ctx),
             ),
         )
         if manifest_path is not None:
@@ -600,8 +592,7 @@ class ConfigDataFlowStep:
         """Populate analytics.config_data_flow."""
         _log_step(self.name)
         cfg = ctx.config_builder().config_data_flow()
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "config_data_flow.json"
@@ -624,11 +615,11 @@ class ConfigDataFlowStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=runtime,
                 cfgs={"config_data_flow": cfg},
                 extra={},
-                catalog_provider=acx.catalog,
+                catalog_provider=_function_catalog(ctx),
             ),
         )
         if manifest_path is not None:
@@ -650,7 +641,6 @@ class CoverageAnalyticsStep:
         """Aggregate line coverage to function spans."""
         _log_step(self.name)
         cfg = ctx.config_builder().coverage_analytics()
-        acx = _analytics_context(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "coverage_functions.json"
@@ -672,7 +662,7 @@ class CoverageAnalyticsStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"coverage_functions": cfg},
                 extra={},
@@ -720,7 +710,7 @@ class TestCoverageEdgesStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=_analytics_context(ctx),
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"test_coverage_edges": cfg},
                 extra={},
@@ -774,7 +764,7 @@ class RiskFactorsStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=_analytics_context(ctx),
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={},
                 extra={},
@@ -830,8 +820,7 @@ class GraphMetricsStep:
         gateway = ctx.gateway
         cfg_scope = ctx.graph_scope
         cfg = ctx.config_builder().graph_metrics(scope=cfg_scope)
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx)
 
         plugin_names = _resolve_graph_plugins(cfg, DEFAULT_METRIC_PLUGINS)
         log.info(
@@ -846,7 +835,7 @@ class GraphMetricsStep:
             gateway=gateway,
             snapshot=ctx.snapshot,
             engine=runtime.engine,
-            catalog_provider=acx.catalog,
+            catalog_provider=_function_catalog(ctx),
         )
         executor = RecipeExecutor(executor_ctx)
         result = executor.execute(METRICS_ONLY_RECIPE)
@@ -884,8 +873,7 @@ class SemanticRolesStep:
         """Compute semantic role tables."""
         _log_step(self.name)
         cfg = ctx.config_builder().semantic_roles()
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "semantic_roles.json"
@@ -907,7 +895,7 @@ class SemanticRolesStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=runtime,
                 cfgs={"semantic_roles": cfg},
                 extra={},
@@ -933,8 +921,7 @@ class SubsystemsStep:
         """Populate subsystem membership and summaries."""
         _log_step(self.name)
         cfg = ctx.config_builder().subsystems()
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "subsystems.json"
@@ -956,7 +943,7 @@ class SubsystemsStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=runtime,
                 cfgs={"subsystems": cfg},
                 extra={},
@@ -988,7 +975,6 @@ class TestProfileStep:
         """Populate analytics.test_profile."""
         _log_step(self.name)
         cfg = ctx.config_builder().test_profile()
-        acx = _analytics_context(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "test_profile.json"
@@ -1012,7 +998,7 @@ class TestProfileStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"test_profile": cfg},
                 extra={},
@@ -1095,7 +1081,7 @@ class BehavioralCoverageStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=_analytics_context(ctx),
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"behavioral_coverage": cfg},
                 extra={"behavioral_llm_runner": llm_runner},
@@ -1140,8 +1126,7 @@ class EntryPointsStep:
         """Populate analytics.entrypoints and analytics.entrypoint_tests."""
         _log_step(self.name)
         cfg = ctx.config_builder().entrypoints(scan_profile=_resolve_code_profile(ctx))
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "entrypoints.json"
@@ -1163,7 +1148,7 @@ class EntryPointsStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=runtime,
                 cfgs={"entrypoints": cfg},
                 extra={},
@@ -1191,8 +1176,7 @@ class ExternalDependenciesStep:
         cfg = ctx.config_builder().external_dependencies(
             scan_profile=_resolve_code_profile(ctx),
         )
-        acx = _analytics_context(ctx)
-        runtime = ensure_graph_runtime(ctx, acx=acx)
+        runtime = ensure_graph_runtime(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "external_dependencies.json"
@@ -1214,7 +1198,7 @@ class ExternalDependenciesStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=runtime,
                 cfgs={"external_dependencies": cfg},
                 extra={},
@@ -1248,7 +1232,6 @@ class ProfilesStep:
         """Aggregate profile tables for functions, files, and modules."""
         _log_step(self.name)
         cfg = ctx.config_builder().profiles_analytics()
-        acx = _analytics_context(ctx)
         policy = GraphPluginPolicy()
         scope = GraphRunScope()
         manifest_path = ctx.build_dir / "manifests" / "profiles.json"
@@ -1270,7 +1253,7 @@ class ProfilesStep:
             plan=plan,
             run_context=AnalyticsRunContext(
                 gateway=ctx.gateway,
-                analytics_context=acx,
+                snapshot=ctx.snapshot,
                 graph_runtime=None,
                 cfgs={"profiles": cfg},
                 extra={},

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.asts import AstProvider
 
 from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -53,7 +53,7 @@ class FunctionMetricsPlugin(
     # Identification
     plugin_name: ClassVar[str] = "functions.metrics"
     plugin_stage: ClassVar[PluginStage] = "function"
-    plugin_version: ClassVar[str] = "2.1.0"
+    plugin_version: ClassVar[str] = "3.0.0"
     plugin_description: ClassVar[str] = "Compute function complexity and type coverage metrics"
 
     # Configuration
@@ -89,12 +89,20 @@ class FunctionMetricsPlugin(
         Mapping[str, int] | None
             Row counts per output table.
         """
-        analytics_context = None
-        if ctx.has_resource_by_name("AnalyticsContextProvider"):
-            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
-            analytics_context = provider.get()
+        # Get AST data from AstProvider if available
+        function_ast_map = None
+        missing_function_goids: set[int] = set()
 
-        opts = FunctionAnalyticsOptions(context=analytics_context)
+        if ctx.has_resource_by_name("AstProvider"):
+            ast_provider = cast("AstProvider", ctx.require_by_name("AstProvider"))
+            ast_data = ast_provider.get()
+            function_ast_map = ast_data.function_ast_map
+            missing_function_goids = ast_data.missing_function_goids
+
+        opts = FunctionAnalyticsOptions(
+            function_ast_map=function_ast_map,
+            missing_function_goids=missing_function_goids,
+        )
 
         result = compute_function_metrics_and_types(ctx.gateway, self.config, options=opts)
 

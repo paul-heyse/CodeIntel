@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
+    from codeintel.analytics.resources.asts import AstProvider
+    from codeintel.analytics.resources.catalog import CatalogProvider
     from codeintel.analytics.resources.graphs import GraphProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -24,6 +25,7 @@ from codeintel.analytics.core.plugin_protocol import (
     ValidationResult,
 )
 from codeintel.analytics.functions import compute_function_effects
+from codeintel.analytics.functions.function_effects import FunctionEffectsInputs
 from codeintel.config.steps_analytics import FunctionEffectsStepConfig
 
 
@@ -44,7 +46,7 @@ class FunctionEffectsPlugin:
             name="functions.effects",
             description="Classify side effects and purity for functions.",
             stage="function",
-            version="2.0.0",
+            version="3.0.0",
             enabled_by_default=True,
             severity="fatal",
             inputs=(
@@ -120,27 +122,35 @@ class FunctionEffectsPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get optional dependencies via resource providers
-        analytics_context = None
+        # Get catalog from CatalogProvider
         catalog_provider = None
-        if ctx.has_resource_by_name("AnalyticsContextProvider"):
-            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
-            analytics_context = provider.get()
-            catalog_provider = analytics_context.catalog if analytics_context else None
+        if ctx.has_resource_by_name("CatalogProvider"):
+            cat_prov = cast("CatalogProvider", ctx.require_by_name("CatalogProvider"))
+            catalog_provider = cat_prov.get()
 
+        # Get graph runtime from GraphProvider
         graph_runtime = None
         if ctx.has_resource_by_name("GraphProvider"):
             graph_prov = cast("GraphProvider", ctx.require_by_name("GraphProvider"))
             graph_runtime = graph_prov.runtime
 
+        # Get AST data from AstProvider
+        ast_map = None
+        missing_goids = None
+        if ctx.has_resource_by_name("AstProvider"):
+            ast_prov = cast("AstProvider", ctx.require_by_name("AstProvider"))
+            ast_data = ast_prov.get()
+            ast_map = ast_data.ast_by_goid
+            missing_goids = ast_data.missing_goids
+
         try:
-            compute_function_effects(
-                ctx.gateway,
-                cfg,
+            inputs = FunctionEffectsInputs(
                 catalog_provider=catalog_provider,
-                context=analytics_context,
                 runtime=graph_runtime,
+                ast_map=ast_map,
+                missing_goids=missing_goids,
             )
+            compute_function_effects(ctx.gateway, cfg, inputs=inputs)
         except (RuntimeError, ValueError, OSError) as e:
             return PluginResult.fail(f"Function effects computation failed: {e}")
 

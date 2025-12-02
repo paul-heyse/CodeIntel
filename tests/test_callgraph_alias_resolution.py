@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.config import ConfigBuilder
-from codeintel.graphs.callgraph_builder import build_call_graph
+from codeintel.graphs.plugins.builders.callgraph import build_call_graph
 from codeintel.storage.gateway import StorageGateway
 
 REPO = "demo/repo"

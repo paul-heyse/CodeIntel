@@ -9,20 +9,16 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 import networkx as nx
 
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.evidence import EvidenceCollector
+from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.config import ConfigDataFlowStepConfig
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
-
-if TYPE_CHECKING:
-    from codeintel.analytics.function_ast_cache import FunctionAst
 
 log = logging.getLogger(__name__)
 
@@ -294,7 +290,9 @@ def compute_config_data_flow(
     gateway: StorageGateway,
     cfg: ConfigDataFlowStepConfig,
     *,
-    context: AnalyticsContext,
+    call_graph: nx.DiGraph,
+    ast_by_goid: dict[int, FunctionAst],
+    missing_goids: set[int] | None = None,
 ) -> None:
     """
     Populate analytics.config_data_flow with config usage per function.
@@ -305,8 +303,12 @@ def compute_config_data_flow(
         Storage gateway providing DuckDB access.
     cfg
         Config data flow analytics configuration.
-    context
-        Shared analytics context providing catalog, call graph, and ASTs.
+    call_graph
+        Call graph for the repository snapshot.
+    ast_by_goid
+        Mapping of function GOID to parsed AST data.
+    missing_goids
+        Optional set of function GOIDs that could not be parsed.
     """
     con = gateway.con
     ensure_schema(con, "analytics.config_data_flow")
@@ -325,14 +327,7 @@ def compute_config_data_flow(
         return
 
     entrypoints = _entrypoints(con, cfg.repo, cfg.commit)
-    call_graph = context.call_graph
-    ast_by_goid = context.function_ast_map
-    missing = context.missing_function_goids
-    if call_graph is None:
-        log.warning(
-            "Call graph unavailable for %s@%s; skipping config data flow", cfg.repo, cfg.commit
-        )
-        return
+    missing = missing_goids or set()
     if missing:
         log.debug(
             "Skipping %d functions without AST spans during config data flow analysis",

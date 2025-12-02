@@ -468,11 +468,28 @@ def run_graph_plugins(  # noqa: PLR0914
             settings = plan.settings_by_plugin[plugin.metadata.name]
             options = plan.options_by_plugin.get(plugin.metadata.name)
 
+            # Build resources from runtime context
+            from codeintel.graphs.resources.container import (  # noqa: PLC0415
+                ResourceContainer,
+            )
+            from codeintel.graphs.resources.graphs import GraphResource  # noqa: PLC0415
+            from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
+
+            container = ResourceContainer()
+            container.register(StorageResource(context.gateway, context.snapshot.repo_root))
+            if context.engine is not None:
+                from typing import cast  # noqa: PLC0415
+
+                from codeintel.graphs.engine import NxGraphEngine  # noqa: PLC0415
+
+                container.register(GraphResource(cast("NxGraphEngine", context.engine)))
+
             plugin_ctx = GraphExecutionContext(
-                gateway=context.gateway,
                 snapshot=context.snapshot,
-                engine=context.engine,
-                catalog_provider=context.catalog_provider,
+                resources=container,
+                _gateway=context.gateway,
+                _engine=context.engine,
+                _catalog_provider=context.catalog_provider,
                 scratch=scratch,
                 options=options,
                 plugin_name=plugin.metadata.name,

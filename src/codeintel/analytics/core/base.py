@@ -49,10 +49,8 @@ from codeintel.analytics.core.plugin_protocol import (
 from codeintel.storage.db_helpers import safe_row_counts
 
 if TYPE_CHECKING:
-    from codeintel.analytics.context import AnalyticsContext
     from codeintel.analytics.core.execution_context import PluginExecutionContext
     from codeintel.analytics.graph_runtime import GraphRuntime
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
     from codeintel.analytics.resources.catalog import CatalogProvider
     from codeintel.analytics.resources.graphs import GraphProvider
     from codeintel.graphs.catalog import FunctionCatalogProvider
@@ -701,110 +699,6 @@ class CatalogRequiringPlugin(BasePlugin, ABC):
 
 
 # =============================================================================
-# Analytics Context Requiring Plugin
-# =============================================================================
-
-
-@dataclass
-class AnalyticsContextRequiringPlugin(BasePlugin, ABC):
-    """Abstract base for plugins that require full analytics context.
-
-    .. deprecated::
-        Prefer using specific resource providers (GraphProvider, CatalogProvider,
-        AstProvider) instead of the monolithic AnalyticsContext.
-
-    Provides access to graphs, ASTs, and function features via
-    AnalyticsContextProvider from ResourceRegistry. Subclasses must implement `compute()`.
-
-    Class Attributes
-    ----------------
-    analytics_context_required : bool
-        Whether analytics context is strictly required.
-
-    Properties
-    ----------
-    requires_analytics_context : bool
-        Returns True, indicating analytics context requirement.
-    """
-
-    analytics_context_required: ClassVar[bool] = True
-
-    @property
-    def requires_analytics_context(self) -> bool:
-        """Return whether analytics context is required.
-
-        Returns
-        -------
-        bool
-            True since this requires analytics context.
-        """
-        return self.analytics_context_required
-
-    def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
-        """Validate analytics context availability via ResourceRegistry.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        list[str]
-            Validation errors.
-        """
-        errors = super()._validate_resource_requirements(ctx)
-        if not self.analytics_context_required:
-            return errors
-
-        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
-            errors.append(f"AnalyticsContextProvider is required for {self.metadata.name}")
-        return errors
-
-    def get_analytics_context(  # noqa: PLR6301
-        self, ctx: PluginExecutionContext
-    ) -> AnalyticsContext:
-        """Get the analytics context via AnalyticsContextProvider.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        AnalyticsContext
-            The analytics context.
-
-        Notes
-        -----
-        Raises `ResourceNotFoundError` if AnalyticsContextProvider is not available.
-        """
-        provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
-        return provider.get()
-
-    def get_analytics_context_or_none(  # noqa: PLR6301
-        self, ctx: PluginExecutionContext
-    ) -> AnalyticsContext | None:
-        """Get the analytics context or None if not available.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        AnalyticsContext | None
-            The analytics context or None.
-        """
-        if not ctx.has_resource_by_name("AnalyticsContextProvider"):
-            return None
-        provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
-        return provider.get()
-
-
-# =============================================================================
 # Graph Runtime Requiring Plugin
 # =============================================================================
 
@@ -1039,7 +933,6 @@ def capabilities_from_tables(tables: Sequence[str]) -> tuple[str, ...]:
 
 
 __all__ = [
-    "AnalyticsContextRequiringPlugin",
     "BasePlugin",
     "CatalogRequiringPlugin",
     "ConfigBoundPlugin",

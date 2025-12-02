@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/pipeline_bridge.py
+# hypothesis_version: 6.148.3
+
+['AnalyticsPlanRequest', 'AnalyticsRunContext', 'analytics', 'analytics_plugin', 'error', 'repo_root', 'result', 'row_counts', 'runtime', 'succeeded']

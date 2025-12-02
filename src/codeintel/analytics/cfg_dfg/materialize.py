@@ -22,7 +22,6 @@ from codeintel.analytics.cfg_dfg.dfg_core import (
     dfg_function_metadata,
     load_dfg_edges,
 )
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
@@ -37,11 +36,8 @@ def compute_cfg_metrics(
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
 ) -> None:
     """Populate cfg_function_metrics and cfg_block_metrics tables."""
-    if context is not None and (context.repo != repo or context.commit != commit):
-        return
     con = gateway.con
     ensure_schema(con, "analytics.cfg_function_metrics")
     ensure_schema(con, "analytics.cfg_block_metrics")
@@ -148,11 +144,8 @@ def compute_dfg_metrics(
     *,
     repo: str,
     commit: str,
-    context: AnalyticsContext | None = None,
 ) -> None:
     """Populate dfg_function_metrics and dfg_block_metrics tables."""
-    if context is not None and (context.repo != repo or context.commit != commit):
-        return
     con = gateway.con
     ensure_schema(con, "analytics.dfg_function_metrics")
     ensure_schema(con, "analytics.dfg_block_metrics")

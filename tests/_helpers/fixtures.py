@@ -14,12 +14,19 @@ from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config import ConfigBuilder, GraphMetricsStepConfig
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.graphs.callgraph_builder import build_call_graph
-from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
+from codeintel.graphs.plugins.builders.callgraph import build_call_graph
+from codeintel.ingestion import (
+    CoverageIngestStep,
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+    HashChangeDetectionAdapter,
+    RepoScanStep,
+    ToolRunnerAdapter,
+    TypingIngestStep,
+)
+from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolName, ToolRunner
-from codeintel.ingestion.repo_scan import ingest_repo
 from codeintel.ingestion.tool_service import ToolService
-from codeintel.ingestion.typing_ingest import ingest_typing_signals
 from codeintel.storage.gateway import DuckDBConnection, StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS
@@ -573,12 +580,28 @@ def provision_ingested_repo(
     gateway = _open_gateway_from_context(ctx, gateway_opts)
     ensure_ingest_macros(gateway.con)
     _assert_ingest_macros_present(gateway.con)
-    tracker = ingest_repo(
-        gateway,
-        cfg=builder.repo_scan(tool_runner=runner),
+
+    # Use Step-based API for repo scan
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+    tool_adapter = ToolRunnerAdapter(tool_service)
+    code_profile = default_code_profile(repo_root)
+
+    scan_step = RepoScanStep(
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
     )
+    _, modules, _ = scan_step.execute(
+        repo=repo,
+        commit=commit,
+        repo_root=repo_root,
+        profile=code_profile,
+    )
+
     # Insert repo_map entry needed for serving layer verification
-    modules_map = {mod.rel_path: mod.module_name for mod in tracker.modules}
+    modules_map = {mod.rel_path: mod.module_name for mod in modules}
     insert_repo_map(
         gateway,
         [
@@ -591,17 +614,33 @@ def provision_ingested_repo(
         ],
     )
     if opts.include_typing:
-        ingest_typing_signals(
-            gateway,
-            cfg=builder.typing_ingest(tool_runner=runner),
-            tool_service=tool_service,
+        import asyncio
+
+        typing_step = TypingIngestStep(
+            storage=storage,
+            discovery=discovery,
+            tools=tool_adapter,
+        )
+        asyncio.run(
+            typing_step.execute_async(
+                list(modules),
+                repo=repo,
+                commit=commit,
+                repo_root=str(repo_root),
+            )
         )
     if opts.include_coverage:
-        ingest_coverage_lines(
-            gateway,
-            cfg=builder.coverage_ingest(coverage_file=coverage_file, tool_runner=runner),
-            tool_service=tool_service,
-            tools=tools_cfg,
+        import asyncio
+
+        coverage_step = CoverageIngestStep(storage=storage, tools=tool_adapter)
+        asyncio.run(
+            coverage_step.execute_async(
+                [],
+                repo=repo,
+                commit=commit,
+                repo_root=repo_root,
+                coverage_file=coverage_file,
+            )
         )
     if opts.build_graph_metrics:
         _seed_cfg_dfg_for_metrics(gateway, rel_path="pkg/mod.py")
@@ -669,22 +708,54 @@ def provision_existing_repo(
 
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
-    ingest_repo(
-        gateway,
-        cfg=builder.repo_scan(tool_runner=runner),
+
+    # Use Step-based API for repo scan
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+    tool_adapter = ToolRunnerAdapter(tool_service)
+    code_profile = default_code_profile(repo_root)
+
+    scan_step = RepoScanStep(
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
     )
+    _, modules, _ = scan_step.execute(
+        repo=repo,
+        commit=commit,
+        repo_root=repo_root,
+        profile=code_profile,
+    )
+
     if opts.include_typing:
-        ingest_typing_signals(
-            gateway,
-            cfg=builder.typing_ingest(tool_runner=runner),
-            tool_service=tool_service,
+        import asyncio
+
+        typing_step = TypingIngestStep(
+            storage=storage,
+            discovery=discovery,
+            tools=tool_adapter,
+        )
+        asyncio.run(
+            typing_step.execute_async(
+                list(modules),
+                repo=repo,
+                commit=commit,
+                repo_root=str(repo_root),
+            )
         )
     if opts.include_coverage:
-        ingest_coverage_lines(
-            gateway,
-            cfg=builder.coverage_ingest(coverage_file=coverage_file, tool_runner=runner),
-            tool_service=tool_service,
-            tools=tools_cfg,
+        import asyncio
+
+        coverage_step = CoverageIngestStep(storage=storage, tools=tool_adapter)
+        asyncio.run(
+            coverage_step.execute_async(
+                [],
+                repo=repo,
+                commit=commit,
+                repo_root=repo_root,
+                coverage_file=coverage_file,
+            )
         )
     if opts.build_graph_metrics:
         _seed_cfg_dfg_for_metrics(gateway, rel_path="pkg/mod.py")

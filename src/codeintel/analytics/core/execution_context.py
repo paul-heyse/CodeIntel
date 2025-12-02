@@ -8,7 +8,7 @@ Architecture
 ------------
 The context uses ResourceRegistry for typed resource access:
 - Access resources via `ctx.require(ProviderType)` or `ctx.require_or_none(ProviderType)`
-- Common providers: GraphProvider, CatalogProvider, AnalyticsContextProvider
+- Common providers: GraphProvider, CatalogProvider, AstProvider, FeaturesProvider
 
 All plugins have been migrated to use the resource provider pattern.
 """
@@ -228,7 +228,8 @@ class PluginExecutionContext:
 
     - `ctx.require(GraphProvider)` - Graph runtime access
     - `ctx.require(CatalogProvider)` - Function catalog
-    - `ctx.require(AnalyticsContextProvider)` - Legacy analytics context
+    - `ctx.require(AstProvider)` - Function AST data
+    - `ctx.require(FeaturesProvider)` - Function AST features
     """
 
     gateway: StorageGateway

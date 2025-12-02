@@ -1,27 +1,33 @@
 """Core graph metrics plugins using factory pattern.
 
-This module provides the core graph metrics plugins, wrapping the existing
-analytics graph_metrics functionality using the factory pattern for minimal
-boilerplate.
+This module provides the core graph metrics plugins using the hexagonal
+architecture's compute layer for pure metric calculations.
+
+Uses resource injection pattern via ctx.require() with fallback
+to direct context properties for backward compatibility.
 """
 
 from __future__ import annotations
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions, resolve_graph_runtime
-from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_graph_metrics
-from codeintel.analytics.graphs.graph_metrics_ext import compute_graph_metrics_functions_ext
-from codeintel.analytics.graphs.module_graph_metrics_ext import compute_graph_metrics_modules_ext
-from codeintel.config.primitives import GraphBackendConfig
-from codeintel.config.steps_graphs import GraphMetricsStepConfig
+import logging
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import cast
+
+from codeintel.graphs.compute.metrics import centrality, components, coupling
 from codeintel.graphs.core import (
     ComputationResult,
     GraphExecutionContext,
+    GraphPluginProtocol,
     make_metric_plugin,
 )
 from codeintel.graphs.engine import GraphKind
+from codeintel.graphs.resources import GraphResource, StorageResource
+
+log = logging.getLogger(__name__)
 
 # =============================================================================
-# Computation Functions (standardized signature)
+# Computation Functions (using hexagonal compute layer)
 # =============================================================================
 
 
@@ -29,27 +35,138 @@ def _compute_core_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
     """
     Compute core function/module graph metrics (centrality, neighbors, components).
 
+    Uses the pure compute layer for metric calculations and persists results
+    via the storage gateway.
+
     Returns
     -------
     ComputationResult
         Success result after computing core metrics.
     """
-    cfg = GraphMetricsStepConfig(snapshot=ctx.snapshot)
+    # Get the engine - try resources first, fall back to context
+    # Cast is needed because require() returns EnginePort but we need GraphResource
+    if ctx.resources is not None and ctx.resources.has(GraphResource.RESOURCE_NAME):
+        graph_resource = cast("GraphResource", ctx.require(GraphResource))
+        call_graph = graph_resource.call_graph()
+        import_graph = graph_resource.import_graph()
+    elif ctx.engine is not None:
+        call_graph = ctx.engine.call_graph()
+        import_graph = ctx.engine.import_graph()
+    else:
+        log.warning("No graph engine available for metrics computation")
+        return ComputationResult(success=False, message="No graph engine available")
 
-    runtime = resolve_graph_runtime(
-        ctx.gateway,
-        ctx.snapshot,
-        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
+    # Compute centrality metrics using pure compute functions
+    func_centralities = centrality.compute_all_centralities(call_graph)
+    module_centralities = centrality.compute_all_centralities(import_graph)
+
+    # Compute SCC for both graphs
+    func_sccs = components.find_strongly_connected(call_graph)
+    module_sccs = components.find_strongly_connected(import_graph)
+
+    # Persist function metrics
+    now = datetime.now(tz=UTC)
+    func_rows = [
+        (
+            goid,
+            ctx.repo,
+            ctx.commit,
+            metrics.pagerank,
+            metrics.betweenness,
+            metrics.closeness,
+            metrics.in_degree,
+            metrics.out_degree,
+            metrics.degree,
+            func_sccs.node_to_component.get(goid, -1),
+            now,
+        )
+        for goid, metrics in func_centralities.items()
+    ]
+
+    if func_rows:
+        _persist_function_metrics(ctx, func_rows)
+
+    # Persist module metrics
+    module_rows = [
+        (
+            node,
+            ctx.repo,
+            ctx.commit,
+            metrics.pagerank,
+            metrics.betweenness,
+            metrics.closeness,
+            metrics.in_degree,
+            metrics.out_degree,
+            metrics.degree,
+            module_sccs.node_to_component.get(node, -1),
+            now,
+        )
+        for node, metrics in module_centralities.items()
+    ]
+
+    if module_rows:
+        _persist_module_metrics(ctx, module_rows)
+
+    return ComputationResult.ok(
+        row_counts={
+            "analytics.graph_metrics_functions": len(func_rows),
+            "analytics.graph_metrics_modules": len(module_rows),
+        }
     )
 
-    deps = GraphMetricsDeps(
-        catalog_provider=ctx.catalog_provider,
-        runtime=runtime,
-        analytics_context=None,
-        filters=None,
+
+def _persist_function_metrics(
+    ctx: GraphExecutionContext,
+    rows: Sequence[tuple[object, ...]],
+) -> None:
+    """Persist function metrics to database.
+
+    Uses resource injection with fallback to ctx.gateway.
+    """
+    from codeintel.ingestion.common import run_batch  # noqa: PLC0415
+
+    # Get gateway via resource injection or fallback
+    # Cast is needed because require() returns StoragePort but we need StorageResource
+    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
+        storage = cast("StorageResource", ctx.require(StorageResource))
+        gateway = storage.gateway
+    else:
+        gateway = ctx.gateway
+
+    run_batch(
+        gateway,
+        "analytics.graph_metrics_functions",
+        list(rows),
+        delete_params=[ctx.repo, ctx.commit],
+        scope="graph_metrics_functions",
     )
-    compute_graph_metrics(ctx.gateway, cfg, deps=deps)
-    return ComputationResult.ok()
+
+
+def _persist_module_metrics(
+    ctx: GraphExecutionContext,
+    rows: Sequence[tuple[object, ...]],
+) -> None:
+    """Persist module metrics to database.
+
+    Uses resource injection with fallback to ctx.gateway.
+    """
+    from codeintel.ingestion.common import run_batch  # noqa: PLC0415
+
+    # Get gateway via resource injection or fallback
+    # Cast is needed because require() returns StoragePort but we need StorageResource
+    if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
+        storage = cast("StorageResource", ctx.require(StorageResource))
+        gateway = storage.gateway
+    else:
+        gateway = ctx.gateway
+
+    run_batch(
+        gateway,
+        "analytics.graph_metrics_modules",
+        list(rows),
+        delete_params=[ctx.repo, ctx.commit],
+        scope="graph_metrics_modules",
+    )
 
 
 def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult:
@@ -61,20 +178,60 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
     ComputationResult
         Success result after computing extended function metrics.
     """
-    runtime = resolve_graph_runtime(
-        ctx.gateway,
-        ctx.snapshot,
-        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
-    )
+    # Get call graph
+    # Cast is needed because require() returns EnginePort but we need GraphResource
+    if ctx.resources is not None and ctx.resources.has(GraphResource.RESOURCE_NAME):
+        graph_resource = cast("GraphResource", ctx.require(GraphResource))
+        call_graph = graph_resource.call_graph()
+    elif ctx.engine is not None:
+        call_graph = ctx.engine.call_graph()
+    else:
+        return ComputationResult(success=False, message="No graph engine available")
 
-    compute_graph_metrics_functions_ext(
-        ctx.gateway,
-        repo=ctx.repo,
-        commit=ctx.commit,
-        runtime=runtime,
-        filters=None,
-    )
-    return ComputationResult.ok()
+    # Compute coupling metrics
+    coupling_metrics = coupling.compute_coupling(call_graph)
+
+    # Compute SCC with condensation for layers
+    scc_result = components.find_strongly_connected(call_graph, compute_condensation=True)
+    layers = components.condensation_layers(call_graph, scc_result)
+
+    # Build and persist rows
+    now = datetime.now(tz=UTC)
+    rows = [
+        (
+            goid,
+            ctx.repo,
+            ctx.commit,
+            metrics.afferent,
+            metrics.efferent,
+            metrics.instability,
+            layers.get(goid, 0),
+            scc_result.node_to_component.get(goid, -1),
+            now,
+        )
+        for goid, metrics in coupling_metrics.items()
+    ]
+
+    if rows:
+        from codeintel.ingestion.common import run_batch  # noqa: PLC0415
+
+        # Get gateway via resource injection or fallback
+        # Cast is needed because require() returns StoragePort but we need StorageResource
+        if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
+            storage = cast("StorageResource", ctx.require(StorageResource))
+            gateway = storage.gateway
+        else:
+            gateway = ctx.gateway
+
+        run_batch(
+            gateway,
+            "analytics.graph_metrics_functions_ext",
+            list(rows),
+            delete_params=[ctx.repo, ctx.commit],
+            scope="graph_metrics_functions_ext",
+        )
+
+    return ComputationResult.ok(row_counts={"analytics.graph_metrics_functions_ext": len(rows)})
 
 
 def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult:
@@ -86,20 +243,60 @@ def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult
     ComputationResult
         Success result after computing extended module metrics.
     """
-    runtime = resolve_graph_runtime(
-        ctx.gateway,
-        ctx.snapshot,
-        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
-    )
+    # Get import graph
+    # Cast is needed because require() returns EnginePort but we need GraphResource
+    if ctx.resources is not None and ctx.resources.has(GraphResource.RESOURCE_NAME):
+        graph_resource = cast("GraphResource", ctx.require(GraphResource))
+        import_graph = graph_resource.import_graph()
+    elif ctx.engine is not None:
+        import_graph = ctx.engine.import_graph()
+    else:
+        return ComputationResult(success=False, message="No graph engine available")
 
-    compute_graph_metrics_modules_ext(
-        ctx.gateway,
-        repo=ctx.repo,
-        commit=ctx.commit,
-        runtime=runtime,
-        filters=None,
-    )
-    return ComputationResult.ok()
+    # Compute coupling metrics
+    coupling_metrics = coupling.compute_coupling(import_graph)
+
+    # Compute SCC with condensation for layers
+    scc_result = components.find_strongly_connected(import_graph, compute_condensation=True)
+    layers = components.condensation_layers(import_graph, scc_result)
+
+    # Build and persist rows
+    now = datetime.now(tz=UTC)
+    rows = [
+        (
+            module,
+            ctx.repo,
+            ctx.commit,
+            metrics.afferent,
+            metrics.efferent,
+            metrics.instability,
+            layers.get(module, 0),
+            scc_result.node_to_component.get(module, -1),
+            now,
+        )
+        for module, metrics in coupling_metrics.items()
+    ]
+
+    if rows:
+        from codeintel.ingestion.common import run_batch  # noqa: PLC0415
+
+        # Get gateway via resource injection or fallback
+        # Cast is needed because require() returns StoragePort but we need StorageResource
+        if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
+            storage = cast("StorageResource", ctx.require(StorageResource))
+            gateway = storage.gateway
+        else:
+            gateway = ctx.gateway
+
+        run_batch(
+            gateway,
+            "analytics.graph_metrics_modules_ext",
+            list(rows),
+            delete_params=[ctx.repo, ctx.commit],
+            scope="graph_metrics_modules_ext",
+        )
+
+    return ComputationResult.ok(row_counts={"analytics.graph_metrics_modules_ext": len(rows)})
 
 
 # =============================================================================
@@ -145,52 +342,40 @@ module_ext_metrics_plugin = make_metric_plugin(
 # =============================================================================
 
 
-def get_core_graph_metrics_plugin() -> object:
-    """
-    Return the core graph metrics plugin instance.
+def get_core_graph_metrics_plugin() -> GraphPluginProtocol:
+    """Return the core graph metrics plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured core graph metrics plugin.
     """
     return core_graph_metrics_plugin
 
 
-def get_function_ext_metrics_plugin() -> object:
-    """
-    Return the function ext metrics plugin instance.
+def get_function_ext_metrics_plugin() -> GraphPluginProtocol:
+    """Return the function ext metrics plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured extended function metrics plugin.
     """
     return function_ext_metrics_plugin
 
 
-def get_module_ext_metrics_plugin() -> object:
-    """
-    Return the module ext metrics plugin instance.
+def get_module_ext_metrics_plugin() -> GraphPluginProtocol:
+    """Return the module ext metrics plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured extended module metrics plugin.
     """
     return module_ext_metrics_plugin
 
 
-# Legacy class aliases for backward compatibility
-CoreGraphMetricsPlugin = type(core_graph_metrics_plugin)
-FunctionExtMetricsPlugin = type(function_ext_metrics_plugin)
-ModuleExtMetricsPlugin = type(module_ext_metrics_plugin)
-
-
 __all__ = [
-    "CoreGraphMetricsPlugin",
-    "FunctionExtMetricsPlugin",
-    "ModuleExtMetricsPlugin",
     "core_graph_metrics_plugin",
     "function_ext_metrics_plugin",
     "get_core_graph_metrics_plugin",

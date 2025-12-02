@@ -3,7 +3,11 @@
 This module provides the registry for ingestion plugins, supporting
 decorator-based registration, dependency resolution, topological ordering,
 and discovery via Python entry points.
+
+NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
+
+# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -654,11 +658,74 @@ def plan_ingest_plugins(options: PlanOptions | None = None) -> IngestPluginPlan:
     return get_ingest_registry().plan(options)
 
 
+def register_class_based_plugins() -> tuple[IngestPluginProtocol, ...]:
+    """Register all class-based plugins with the global registry.
+
+    Register instances of the new class-based plugins. This function
+    can be called to switch from functional plugins to class-based plugins.
+
+    Returns
+    -------
+    tuple[IngestPluginProtocol, ...]
+        The registered plugin instances.
+
+    Notes
+    -----
+    This function creates new instances of each plugin class. If you need
+    to customize plugin instances, create them manually and use
+    `register_ingest_plugin()` instead.
+
+    The class-based plugins provide the same functionality as the
+    functional plugins in builtin.py but with a cleaner architecture
+    that supports traits, middleware, and resource providers.
+    """
+    from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
+    from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
+    from codeintel.ingestion.plugins.coverage_plugin import CoverageIngestPlugin
+    from codeintel.ingestion.plugins.cst_extract import CstExtractPlugin
+    from codeintel.ingestion.plugins.docstrings_plugin import DocstringsIngestPlugin
+    from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
+    from codeintel.ingestion.plugins.scip_plugin import ScipIngestPlugin
+    from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
+    from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
+
+    registry = get_ingest_registry()
+
+    # Create plugin instances
+    plugins: list[IngestPluginProtocol] = [
+        RepoScanPlugin(),
+        AstExtractPlugin(),
+        CstExtractPlugin(),
+        ScipIngestPlugin(),
+        TypingIngestPlugin(),
+        CoverageIngestPlugin(),
+        TestsIngestPlugin(),
+        DocstringsIngestPlugin(),
+        ConfigIngestPlugin(),
+    ]
+
+    registered: list[IngestPluginProtocol] = []
+    for plugin in plugins:
+        try:
+            registry.register(plugin)
+            registered.append(plugin)
+            log.info("Registered class-based plugin: %s", plugin.metadata.name)
+        except ValueError:
+            # Plugin already registered (likely functional version)
+            log.debug(
+                "Skipping class-based plugin %s (already registered)",
+                plugin.metadata.name,
+            )
+
+    return tuple(registered)
+
+
 __all__ = [
     "IngestPluginRegistry",
     "PlanOptions",
     "get_ingest_registry",
     "list_ingest_plugins",
     "plan_ingest_plugins",
+    "register_class_based_plugins",
     "register_ingest_plugin",
 ]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import libcst as cst
 import pytest
 
-from codeintel.graphs.callgraph import collect_aliases, collect_import_edges
+from codeintel.graphs.compute.callgraph import collect_aliases, collect_import_edges
 
 
 def test_collect_aliases_import_and_from_import() -> None:

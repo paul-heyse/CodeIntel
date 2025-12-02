@@ -8,16 +8,25 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.context import AnalyticsContextConfig, build_analytics_context
-from codeintel.analytics.dependencies import (
-    build_external_dependencies,
+from codeintel.analytics.dependencies import build_external_dependencies
+from codeintel.analytics.dependencies.core import (
+    ExternalDependencyInputs,
     build_external_dependency_calls,
 )
 from codeintel.analytics.entrypoints import build_entrypoints
+from codeintel.analytics.resources.asts import AstProvider
+from codeintel.analytics.resources.features import FeaturesProvider
+from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.config import ConfigBuilder
-from codeintel.graphs.goid_builder import build_goids
-from codeintel.ingestion.py_ast_extract import ingest_python_ast
-from codeintel.ingestion.repo_scan import ingest_repo
+from codeintel.graphs.catalog import FunctionCatalogService
+from codeintel.graphs.plugins.builders.goid import build_goids
+from codeintel.ingestion import (
+    AstExtractStep,
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+    HashChangeDetectionAdapter,
+    RepoScanStep,
+)
 from codeintel.storage.gateway import DuckDBConnection
 from tests._helpers.builders import (
     CoverageFunctionRow,
@@ -292,10 +301,29 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
             repo_root=ctx.repo_root,
             build_dir=ctx.build_dir,
         )
-        ingest_repo(
-            ctx.gateway,
-            cfg=builder.repo_scan(),
+
+        # Use Step-based API for repo scan
+        from codeintel.ingestion.infrastructure_utilities.source_scanner import (
+            default_code_profile,
         )
+
+        storage = DuckDBStorageAdapter(ctx.gateway)
+        discovery = FilesystemDiscoveryAdapter(ctx.repo_root)
+        change_detection = HashChangeDetectionAdapter(storage)
+
+        scan_step = RepoScanStep(
+            storage=storage,
+            discovery=discovery,
+            change_detection=change_detection,
+        )
+        profile = default_code_profile(ctx.repo_root)
+        _, modules, _ = scan_step.execute(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            repo_root=ctx.repo_root,
+            profile=profile,
+        )
+
         insert_modules(
             ctx.gateway,
             [
@@ -307,28 +335,54 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
                 )
             ],
         )
-        ingest_python_ast(ctx.gateway)
+
+        # Use Step-based API for AST extraction
+        ast_step = AstExtractStep(storage=storage, discovery=discovery)
+        ast_step.execute(
+            list(modules),
+            repo=ctx.repo,
+            commit=ctx.commit,
+        )
+
         build_goids(ctx.gateway, builder.goid_builder())
 
         con = ctx.gateway.con
         hello_row = _get_goid_row(con, "pkg.app.hello")
 
-        now = datetime.now(tz=UTC)
-        _seed_coverage_and_tests(ctx, hello_row, now)
+        _seed_coverage_and_tests(ctx, hello_row, datetime.now(tz=UTC))
 
-        # Build analytics context for domain functions
-        context_cfg = AnalyticsContextConfig(
-            repo=ctx.repo,
-            commit=ctx.commit,
-            repo_root=ctx.repo_root,
+        # Build providers for domain functions
+        snapshot = builder.snapshot
+        catalog_provider = FunctionCatalogService.from_db(
+            ctx.gateway, repo=ctx.repo, commit=ctx.commit
         )
-        analytics_context = build_analytics_context(ctx.gateway, context_cfg)
+        module_map_provider = ModuleMapProvider(ctx.gateway, snapshot)
+        module_map = module_map_provider.get()
+        ast_provider = AstProvider(ctx.gateway, snapshot)
+        ast_data = ast_provider.get()
+        features_provider = FeaturesProvider(ctx.gateway, snapshot)
+        features_map = features_provider.get()
 
-        entry_cfg = builder.entrypoints()
-        build_entrypoints(ctx.gateway, entry_cfg, context=analytics_context)
+        build_entrypoints(
+            ctx.gateway,
+            builder.entrypoints(),
+            catalog_provider=catalog_provider,
+            module_map=module_map,
+            features_map=features_map,
+        )
 
         dep_cfg = builder.external_dependencies()
-        build_external_dependency_calls(ctx.gateway, dep_cfg, context=analytics_context)
+        build_external_dependency_calls(
+            ctx.gateway,
+            dep_cfg,
+            inputs=ExternalDependencyInputs(
+                catalog_provider=catalog_provider,
+                module_map=module_map,
+                ast_by_goid=ast_data.function_ast_map,
+                features_map=features_map,
+                missing_goids=ast_data.missing_function_goids,
+            ),
+        )
         build_external_dependencies(ctx.gateway, dep_cfg)
 
         _validate_entrypoint_rows(con, ctx.repo, ctx.commit)

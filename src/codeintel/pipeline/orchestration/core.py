@@ -9,11 +9,6 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from codeintel.analytics.context import (
-    AnalyticsContext,
-    AnalyticsContextConfig,
-    build_analytics_context,
-)
 from codeintel.analytics.graph_runtime import (
     GraphKind,
     GraphRuntime,
@@ -130,7 +125,6 @@ class PipelineContext:
     graph_scope: GraphRunScope | None = None
     function_fail_on_missing_spans: bool = False
     function_parser: FunctionParserKind | None = None
-    analytics_context: AnalyticsContext | None = None
     change_tracker: ChangeTracker | None = None
     tools: ToolsConfig | None = None
     graph_runtime: GraphRuntime | None = None
@@ -303,9 +297,6 @@ def _function_catalog(ctx: PipelineContext) -> FunctionCatalogProvider:
     FunctionCatalogProvider
         Catalog service for the current repo and commit.
     """
-    if ctx.analytics_context is not None:
-        ctx.function_catalog = ctx.analytics_context.catalog
-        return ctx.analytics_context.catalog
     if ctx.function_catalog is None:
         ctx.function_catalog = FunctionCatalogService.from_db(
             ctx.gateway, repo=ctx.repo, commit=ctx.commit
@@ -313,32 +304,7 @@ def _function_catalog(ctx: PipelineContext) -> FunctionCatalogProvider:
     return ctx.function_catalog
 
 
-def _analytics_context(ctx: PipelineContext) -> AnalyticsContext:
-    """
-    Return a cached AnalyticsContext built for the current snapshot.
-
-    Returns
-    -------
-    AnalyticsContext
-        Shared analytics artifacts (catalog, module map, graphs, ASTs).
-    """
-    if ctx.analytics_context is None:
-        runtime = ctx.graph_runtime or _graph_runtime(ctx, acx=None)
-        ctx.analytics_context = build_analytics_context(
-            ctx.gateway,
-            AnalyticsContextConfig(
-                repo=ctx.repo,
-                commit=ctx.commit,
-                repo_root=ctx.repo_root,
-                use_gpu=ctx.graph_backend.use_gpu,
-            ),
-            engine=runtime.engine,
-        )
-        ctx.function_catalog = ctx.analytics_context.catalog
-    return ctx.analytics_context
-
-
-def _graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> GraphEngine:
+def _graph_engine(ctx: PipelineContext) -> GraphEngine:
     """
     Construct or reuse a shared graph engine for the pipeline run.
 
@@ -347,13 +313,10 @@ def _graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> 
     GraphEngine
         Engine bound to the pipeline snapshot.
     """
-    return _graph_runtime(ctx, acx=acx).engine
+    return _graph_runtime(ctx).engine
 
 
-def _graph_runtime(
-    ctx: PipelineContext,
-    acx: AnalyticsContext | None = None,
-) -> GraphRuntime:
+def _graph_runtime(ctx: PipelineContext) -> GraphRuntime:
     """
     Build a runtime bundle for graph consumers using the shared engine.
 
@@ -362,7 +325,6 @@ def _graph_runtime(
     GraphRuntime
         Runtime configured to reuse the shared engine and backend.
     """
-    context = acx or ctx.analytics_context
     if ctx.graph_runtime is not None:
         return ctx.graph_runtime
     options = GraphRuntimeOptions(
@@ -371,18 +333,16 @@ def _graph_runtime(
         graphs=GraphKind.ALL,
         eager=False,
         validate=False,
-        context=context,
     )
     runtime = build_graph_runtime(
         ctx.gateway,
         options,
-        context=context,
     )
     ctx.graph_runtime = runtime
     return runtime
 
 
-def ensure_graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = None) -> GraphEngine:
+def ensure_graph_engine(ctx: PipelineContext) -> GraphEngine:
     """
     Public helper to retrieve the shared graph engine for the pipeline snapshot.
 
@@ -391,13 +351,10 @@ def ensure_graph_engine(ctx: PipelineContext, acx: AnalyticsContext | None = Non
     GraphEngine
         Shared engine keyed to the pipeline's repo and commit.
     """
-    return _graph_engine(ctx, acx)
+    return _graph_engine(ctx)
 
 
-def ensure_graph_runtime(
-    ctx: PipelineContext,
-    acx: AnalyticsContext | None = None,
-) -> GraphRuntime:
+def ensure_graph_runtime(ctx: PipelineContext) -> GraphRuntime:
     """
     Public helper to construct a shared graph runtime for the pipeline snapshot.
 
@@ -406,7 +363,7 @@ def ensure_graph_runtime(
     GraphRuntime
         Runtime bound to the shared engine and backend preferences.
     """
-    return _graph_runtime(ctx, acx=acx)
+    return _graph_runtime(ctx)
 
 
 __all__ = [
@@ -414,7 +371,6 @@ __all__ = [
     "PipelineStep",
     "StepMetadata",
     "StepPhase",
-    "_analytics_context",
     "_function_catalog",
     "_graph_engine",
     "_graph_runtime",

@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from pathlib import Path
 
 import pytest
 
-from codeintel.config import BuildPaths, ScipIngestStepConfig, SnapshotRef, ToolBinaries
-from codeintel.ingestion import scip_ingest
+from codeintel.config import BuildPaths
+from codeintel.config.models import ToolsConfig
+from codeintel.ingestion import (
+    DuckDBStorageAdapter,
+    ScipIngestStep,
+    ToolRunnerAdapter,
+)
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
+from codeintel.ingestion.steps.scip_ingest import ScipIngestConfig, ScipIngestResult
+from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
 
@@ -35,80 +44,86 @@ def test_ingest_scip_produces_artifacts(tmp_path: Path) -> None:
     db_path = build_dir / "db" / "codeintel_prefect.duckdb"
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    build_paths = BuildPaths.from_layout(
+    _ = BuildPaths.from_layout(
         repo_root=repo_root,
         build_dir=build_dir,
         db_path=db_path,
         document_output_dir=document_output_dir,
     )
-    cfg = ScipIngestStepConfig(
-        snapshot=SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=repo_root),
-        paths=build_paths,
-        binaries=ToolBinaries(),
-    )
 
     gateway = open_gateway(
         StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
     )
-    con = gateway.con
-    result = scip_ingest.ingest_scip(gateway, cfg=cfg)
-    if result.status != "success":
-        pytest.skip(f"SCIP ingestion not successful in test environment: {result.reason}")
+    try:
+        # Create adapters
+        storage = DuckDBStorageAdapter(gateway)
+        tools_config = ToolsConfig.default()
+        cache_dir = repo_root / "build" / ".tool_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        runner = ToolRunner(tools_config=tools_config, cache_dir=cache_dir)
+        tool_service = ToolService(runner, tools_config)
+        tools = ToolRunnerAdapter(tool_service)
 
-    build_scip = build_dir / "scip"
-    doc_scip = document_output_dir
-    if not (build_scip / "index.scip").is_file():
-        pytest.fail("index.scip was not created under build/scip")
-    if not (build_scip / "index.scip.json").is_file():
-        pytest.fail("index.scip.json was not created under build/scip")
-    if not (doc_scip / "index.scip").is_file():
-        pytest.fail("index.scip was not copied to document_output")
-    if not (doc_scip / "index.scip.json").is_file():
-        pytest.fail("index.scip.json was not copied to document_output")
+        # Create config
+        scip_dir = build_dir / "scip"
+        scip_dir.mkdir(parents=True, exist_ok=True)
+        config = ScipIngestConfig(
+            repo="demo/repo",
+            commit="deadbeef",
+            repo_root=repo_root,
+            output_scip=scip_dir / "index.scip",
+            output_json=scip_dir / "index.scip.json",
+        )
 
-    con = gateway.con
-    row = con.execute("SELECT COUNT(*) FROM scip_index_view").fetchone()
-    if row is None:
-        pytest.fail("scip_index_view did not return a row")
-    row_count = row[0]
-    if row_count == 0:
-        pytest.fail("scip_index_view is empty; expected rows after ingest")
+        # Execute step
+        step = ScipIngestStep(storage=storage, tools=tools)
+        result = asyncio.get_event_loop().run_until_complete(
+            step.execute_async([], config)
+        )
 
-    gateway.close()
+        if not result.success:
+            errors = "; ".join(result.errors) if result.errors else "unknown"
+            pytest.skip(f"SCIP ingestion not successful in test environment: {errors}")
+
+        build_scip = scip_dir
+        if not (build_scip / "index.scip").is_file():
+            pytest.fail("index.scip was not created under build/scip")
+        if not (build_scip / "index.scip.json").is_file():
+            pytest.fail("index.scip.json was not created under build/scip")
+
+        con = gateway.con
+        row = con.execute("SELECT COUNT(*) FROM scip_index_view").fetchone()
+        if row is None:
+            pytest.fail("scip_index_view did not return a row")
+        row_count = row[0]
+        if row_count == 0:
+            pytest.fail("scip_index_view is empty; expected rows after ingest")
+
+    finally:
+        gateway.close()
 
 
-def test_ingest_scip_uses_injected_runner(tmp_path: Path) -> None:
-    """Injected scip_runner should bypass binary probes."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir(parents=True, exist_ok=True)
-    (repo_root / ".git").mkdir()
-
-    build_dir = repo_root / "build"
-    document_output_dir = repo_root / "document_output"
-    db_path = build_dir / "db" / "codeintel_prefect.duckdb"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    build_paths = BuildPaths.from_layout(
-        repo_root=repo_root,
-        build_dir=build_dir,
-        db_path=db_path,
-        document_output_dir=document_output_dir,
+def test_scip_ingest_result_factory() -> None:
+    """Verify ScipIngestResult factory methods work correctly."""
+    # Test success result
+    success = ScipIngestResult(
+        status="success",
+        index_scip=Path("build/scip/index.scip"),
+        index_json=Path("build/scip/index.scip.json"),
     )
-    cfg = ScipIngestStepConfig(
-        snapshot=SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=repo_root),
-        paths=build_paths,
-        binaries=ToolBinaries(),
-        scip_runner=lambda _gateway, _cfg: scip_ingest.ScipIngestResult(
-            status="success",
-            index_scip=build_dir / "scip" / "index.scip",
-            index_json=build_dir / "scip" / "index.scip.json",
-        ),
-        artifact_writer=lambda _idx, _json, _doc: None,
-    )
+    if success.status != "success":
+        pytest.fail(f"Expected status='success', got {success.status}")
+    if success.index_scip is None:
+        pytest.fail("Expected index_scip to be set")
 
-    gateway = open_gateway(
-        StorageConfig(db_path=db_path, apply_schema=True, ensure_views=True, validate_schema=True)
+    # Test unavailable result
+    unavail = ScipIngestResult(
+        status="unavailable",
+        index_scip=None,
+        index_json=None,
+        reason="SCIP binary not found",
     )
-    result = scip_ingest.ingest_scip(gateway, cfg=cfg)
-    if result.status != "success":
-        pytest.fail(f"Injected runner should succeed, got {result.status}")
+    if unavail.status != "unavailable":
+        pytest.fail(f"Expected status='unavailable', got {unavail.status}")
+    if unavail.reason != "SCIP binary not found":
+        pytest.fail(f"Unexpected reason: {unavail.reason}")

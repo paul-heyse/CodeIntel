@@ -2,6 +2,12 @@
 
 This module provides utilities to adapt existing computation functions
 (with various signatures) to the standardized ComputationFn signature.
+
+Architecture Notes
+------------------
+This module imports from analytics.graph_runtime when runtime=True is requested.
+This is an intentional delegation - graphs orchestrates plugin execution but
+delegates runtime construction to analytics (Option B architecture).
 """
 
 from __future__ import annotations

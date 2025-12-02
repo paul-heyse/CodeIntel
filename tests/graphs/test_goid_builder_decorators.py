@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from codeintel.config import ConfigBuilder
-from codeintel.graphs import goid_builder
+from codeintel.graphs.plugins.builders import goid as goid_builder
 
 
 def test_goid_start_line_includes_decorator_span() -> None:

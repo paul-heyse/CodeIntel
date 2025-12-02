@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from codeintel.ingestion.change_tracker import ChangeTracker
-    from codeintel.ingestion.plugins.protocol import IngestPluginContext
+    from codeintel.ingestion.core.execution_context import IngestExecutionContext
     from codeintel.ingestion.tool_service import ToolService
 
 log = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ class ConfigFactory:
     def build(
         self,
         config_class: type,
-        ctx: IngestPluginContext,
+        ctx: IngestExecutionContext,
         options: BuildOptions | None = None,
     ) -> object:
         """Build a config instance from context.
@@ -158,7 +158,7 @@ class ConfigFactory:
     def _apply_custom_mapping(
         fields: set[str],
         mapping: Mapping[str, str] | None,
-        ctx: IngestPluginContext,
+        ctx: IngestExecutionContext,
         tracker: ChangeTracker | None,
         tool_service: ToolService | None,
     ) -> dict[str, Any]:
@@ -195,7 +195,7 @@ class ConfigFactory:
         self,
         fields: set[str],
         kwargs: dict[str, Any],
-        ctx: IngestPluginContext,
+        ctx: IngestExecutionContext,
         tracker: ChangeTracker | None,
         tool_service: ToolService | None,
     ) -> None:
@@ -271,7 +271,7 @@ def get_config_fields(config_class: type) -> set[str]:
 
 
 def _get_context_value(
-    ctx: IngestPluginContext,
+    ctx: IngestExecutionContext,
     attr_name: str,
     tracker: ChangeTracker | None,
     tool_service: ToolService | None,

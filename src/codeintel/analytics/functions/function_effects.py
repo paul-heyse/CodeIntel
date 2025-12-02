@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 import networkx as nx
 
 from codeintel.analytics.ast_utils import call_name, snippet_from_lines
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.evidence import EvidenceCollector
 from codeintel.analytics.function_ast_cache import (
     FunctionAst,
@@ -67,12 +66,23 @@ class EffectAnalysis:
 
 
 @dataclass(frozen=True)
+class FunctionEffectsInputs:
+    """Optional inputs for function effects computation."""
+
+    catalog_provider: FunctionCatalogProvider | None = None
+    runtime: GraphRuntime | GraphRuntimeOptions | None = None
+    ast_map: dict[int, FunctionAst] | None = None
+    missing_goids: set[int] | None = None
+
+
+@dataclass(frozen=True)
 class _EffectInputs:
     gateway: StorageGateway
     cfg: FunctionEffectsStepConfig
     catalog: FunctionCatalogProvider
-    context: AnalyticsContext | None
     runtime: GraphRuntime
+    ast_map: dict[int, FunctionAst] | None = None
+    missing_goids: set[int] | None = None
 
 
 def _effects_payload(
@@ -113,9 +123,7 @@ def compute_function_effects(
     gateway: StorageGateway,
     cfg: FunctionEffectsStepConfig,
     *,
-    catalog_provider: FunctionCatalogProvider | None = None,
-    context: AnalyticsContext | None = None,
-    runtime: GraphRuntime | GraphRuntimeOptions | None = None,
+    inputs: FunctionEffectsInputs | None = None,
 ) -> None:
     """
     Populate `analytics.function_effects` for the target repo/commit.
@@ -126,36 +134,30 @@ def compute_function_effects(
         Storage gateway for DuckDB.
     cfg:
         Function effects configuration.
-    catalog_provider:
-        Optional function catalog to reuse across steps.
-    context:
-        Optional shared analytics context to reuse catalog, ASTs, and call graph.
-    runtime:
-        Optional shared graph runtime to reuse an existing engine/backend wiring.
+    inputs:
+        Optional inputs containing catalog, runtime, AST map, and missing GOIDs.
     """
     ensure_schema(gateway.con, "analytics.function_effects")
 
-    catalog = (
-        context.catalog
-        if context is not None
-        else catalog_provider
-        or FunctionCatalogService.from_db(gateway, repo=cfg.repo, commit=cfg.commit)
+    opts = inputs or FunctionEffectsInputs()
+    catalog = opts.catalog_provider or FunctionCatalogService.from_db(
+        gateway, repo=cfg.repo, commit=cfg.commit
     )
     active_runtime = resolve_graph_runtime(
         gateway,
         cfg.snapshot,
-        runtime,
-        context=context,
+        opts.runtime,
     )
 
-    inputs = _EffectInputs(
+    effect_inputs = _EffectInputs(
         gateway=gateway,
         cfg=cfg,
         catalog=catalog,
-        context=context,
         runtime=active_runtime,
+        ast_map=opts.ast_map,
+        missing_goids=opts.missing_goids,
     )
-    rows = _build_effect_rows(inputs=inputs, now=datetime.now(tz=UTC))
+    rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
 
     run_batch(
         gateway,
@@ -171,9 +173,9 @@ def _build_effect_rows(
     inputs: _EffectInputs,
     now: datetime,
 ) -> list[tuple[object, ...]]:
-    if inputs.context is not None:
-        ast_by_goid = inputs.context.function_ast_map
-        missing = inputs.context.missing_function_goids
+    if inputs.ast_map is not None:
+        ast_by_goid = inputs.ast_map
+        missing = inputs.missing_goids or set()
     else:
         ast_by_goid, missing = load_function_asts(
             inputs.gateway,

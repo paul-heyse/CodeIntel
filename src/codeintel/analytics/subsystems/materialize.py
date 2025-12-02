@@ -11,7 +11,6 @@ from typing import Any
 
 import networkx as nx
 
-from codeintel.analytics.context import AnalyticsContext
 from codeintel.analytics.graph_runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
@@ -77,7 +76,6 @@ def build_subsystems(
     gateway: StorageGateway,
     cfg: SubsystemsStepConfig,
     *,
-    context: AnalyticsContext | None = None,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     engine: GraphEngine | None = None,
 ) -> None:
@@ -90,8 +88,6 @@ def build_subsystems(
         Storage gateway backing the analytics tables.
     cfg :
         Subsystem inference configuration.
-    context :
-        Optional analytics context for typeahead and module lookups.
     runtime :
         Shared graph runtime or options describing how to build one.
     engine :
@@ -138,22 +134,10 @@ def build_subsystems(
                 engine=engine,
             )
 
-    active_context = context or runtime_opts.context
-    if active_context is not None and (
-        active_context.repo != cfg.repo or active_context.commit != cfg.commit
-    ):
-        log.warning(
-            "subsystems context mismatch: context=%s@%s cfg=%s@%s",
-            active_context.repo,
-            active_context.commit,
-            cfg.repo,
-            cfg.commit,
-        )
     resolved_runtime = resolve_graph_runtime(
         gateway,
         cfg.snapshot,
         runtime_opts,
-        context=active_context,
     )
     ctx = SubsystemBuildContext(
         cfg=cfg,

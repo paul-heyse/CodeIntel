@@ -1,93 +1,85 @@
-"""Repository scanning facade with convenient function-based API.
+"""Backward compatibility shim for repository scanning.
 
-This module provides a function-based API for repository scanning that
-wraps the class-based RepoScanStep with sensible adapter defaults.
+This module provides the legacy `ingest_repo` function signature
+for backward compatibility with existing code. New code should use
+`RepoScanStep` from `codeintel.ingestion.steps.repo_scan`.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.adapters import (
-    DuckDBStorageAdapter,
-    FilesystemDiscoveryAdapter,
-    HashChangeDetectionAdapter,
-)
-from codeintel.ingestion.change_tracker import ChangeTracker
-from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
-from codeintel.ingestion.ports.change_detection import ChangeRequest
-from codeintel.ingestion.steps.repo_scan import RepoScanStep
-
 if TYPE_CHECKING:
-    from codeintel.config import RepoScanStepConfig
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+    from codeintel.config.steps_repo import RepoScanConfig
+    from codeintel.ingestion.change_tracker import ChangeTracker
     from codeintel.storage.gateway import StorageGateway
+
+log = logging.getLogger(__name__)
 
 
 def ingest_repo(
     gateway: StorageGateway,
-    cfg: RepoScanStepConfig,
-    *,
-    code_profile: ScanProfile | None = None,
-    apply_schema: bool = True,
+    cfg: RepoScanConfig,
 ) -> ChangeTracker:
-    """Scan repository and return a change tracker.
+    """
+    Scan repository modules and return a ChangeTracker.
 
-    This function provides a convenient entry point for repository scanning
-    that creates the necessary adapters and executes the step.
+    This is a compatibility shim that wraps the new RepoScanStep.
+    New code should use RepoScanStep directly.
 
     Parameters
     ----------
     gateway
-        Storage gateway for database operations.
+        StorageGateway providing access to the target DuckDB database.
     cfg
-        Repository scan step configuration.
-    code_profile
-        Optional scan profile for filtering modules.
-    apply_schema
-        Whether to apply schema (ignored, schema applied by gateway).
+        Repository scan configuration.
 
     Returns
     -------
     ChangeTracker
-        Change tracker populated with discovered modules.
+        Change tracker with module data.
     """
-    # apply_schema kept for backward compatibility; schema applied by gateway
-    del apply_schema
+    from codeintel.ingestion.adapters import (
+        DuckDBStorageAdapter,
+        FilesystemDiscoveryAdapter,
+        HashChangeDetectionAdapter,
+    )
+    from codeintel.ingestion.change_tracker import ChangeTracker
+    from codeintel.ingestion.ports.change_detection import ChangeRequest
+    from codeintel.ingestion.steps.repo_scan import RepoScanStep
 
     # Create adapters
     storage = DuckDBStorageAdapter(gateway)
-    discovery = FilesystemDiscoveryAdapter(cfg.snapshot.repo_root)
+    discovery = FilesystemDiscoveryAdapter(cfg.repo_root)
     change_detection = HashChangeDetectionAdapter(storage)
 
-    # Use provided profile or default
-    actual_profile = code_profile or default_code_profile(cfg.snapshot.repo_root)
-
-    # Create and execute step
+    # Execute step
     step = RepoScanStep(
         storage=storage,
         discovery=discovery,
         change_detection=change_detection,
     )
+
     _result, modules, _change_set = step.execute(
-        repo=cfg.snapshot.repo,
-        commit=cfg.snapshot.commit,
-        repo_root=cfg.snapshot.repo_root,
-        profile=actual_profile,
-        full_rebuild=False,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        repo_root=cfg.repo_root,
+        profile=cfg.code_profile,
+        full_rebuild=cfg.full_rebuild if hasattr(cfg, "full_rebuild") else False,
     )
 
-    # Build change request for the tracker
+    # Build change request for tracker
     change_request = ChangeRequest(
-        repo=cfg.snapshot.repo,
-        commit=cfg.snapshot.commit,
-        repo_root=cfg.snapshot.repo_root,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        repo_root=cfg.repo_root,
         language="python",
-        full_rebuild=False,
-        scan_profile=actual_profile,
+        full_rebuild=cfg.full_rebuild if hasattr(cfg, "full_rebuild") else False,
+        scan_profile=cfg.code_profile,
     )
 
-    # Build and return change tracker using factory method
+    # Create change tracker
     return ChangeTracker.create(
         gateway=gateway,
         change_request=change_request,
@@ -97,5 +89,4 @@ def ingest_repo(
     )
 
 
-# Re-export step class for direct usage
-__all__ = ["RepoScanStep", "ingest_repo"]
+__all__ = ["ingest_repo"]

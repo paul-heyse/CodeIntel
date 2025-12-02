@@ -2,6 +2,8 @@
 
 This module provides the import graph builder as a graph plugin, wrapping
 the existing functionality for constructing module-level import graphs.
+
+Uses resource injection pattern via ctx.require() to access storage.
 """
 
 from __future__ import annotations
@@ -10,14 +12,17 @@ from codeintel.config.steps_graphs import ImportGraphStepConfig
 from codeintel.graphs.core import (
     ComputationResult,
     GraphExecutionContext,
+    GraphPluginProtocol,
     make_builder_plugin,
 )
 from codeintel.graphs.engine import GraphKind
+from codeintel.graphs.resources import StorageResource
 
 
 def _build_import_graph(ctx: GraphExecutionContext) -> ComputationResult:
-    """
-    Build module-level import graphs from LibCST parsing.
+    """Build module-level import graphs from LibCST parsing.
+
+    Uses resource injection to access storage.
 
     Returns
     -------
@@ -26,8 +31,12 @@ def _build_import_graph(ctx: GraphExecutionContext) -> ComputationResult:
     """
     from codeintel.graphs.import_graph import build_import_graph  # noqa: PLC0415
 
+    # Get storage via resource injection
+    storage = ctx.require(StorageResource)
+    gateway = storage.gateway
+
     cfg = ImportGraphStepConfig(snapshot=ctx.snapshot)
-    build_import_graph(ctx.gateway, cfg)
+    build_import_graph(gateway, cfg)
     return ComputationResult.ok()
 
 
@@ -42,24 +51,18 @@ import_graph_builder_plugin = make_builder_plugin(
 )
 
 
-def get_import_graph_builder_plugin() -> object:
-    """
-    Return the import graph builder plugin instance.
+def get_import_graph_builder_plugin() -> GraphPluginProtocol:
+    """Return the import graph builder plugin instance.
 
     Returns
     -------
-    object
+    GraphPluginProtocol
         The configured import graph builder plugin.
     """
     return import_graph_builder_plugin
 
 
-# Legacy class alias for backward compatibility
-ImportGraphBuilderPlugin = type(import_graph_builder_plugin)
-
-
 __all__ = [
-    "ImportGraphBuilderPlugin",
     "get_import_graph_builder_plugin",
     "import_graph_builder_plugin",
 ]

@@ -6,6 +6,7 @@ while preserving ingestion-specific functionality.
 
 NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
+
 # ruff: noqa: PLC0415
 
 from __future__ import annotations
@@ -18,14 +19,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard, runtime_checkabl
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from codeintel.config.models import ToolsConfig
-    from codeintel.config.primitives import BuildPaths, SnapshotRef
-    from codeintel.ingestion.change_tracker import ChangeTracker
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
-    from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-    from codeintel.ingestion.ingest_runs import IngestRun, IngestRunSink
-    from codeintel.ingestion.tool_service import ToolService
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.ingestion.core.execution_context import IngestExecutionContext
 
 IngestStage = Literal[
     "scan",
@@ -114,11 +108,9 @@ class IngestPluginMetadata:
     config_schema_ref
         Reference to configuration schema.
     config_class
-        Step config class to auto-build from context via harness.
+        Step config class to auto-build from context.
     config_mapping
         Custom field mapping for config building (config_field -> context_attr).
-    harness_config
-        Harness configuration for automated error handling and row counting.
     """
 
     name: str
@@ -138,10 +130,8 @@ class IngestPluginMetadata:
     options_default: object | None = None
     version_hash: str | None = None
     config_schema_ref: str | None = None
-    # Harness integration fields
     config_class: type | None = None
     config_mapping: Mapping[str, str] | None = None
-    harness_config: object | None = None  # HarnessConfig, forward ref to avoid circular
 
 
 @dataclass
@@ -241,192 +231,6 @@ class IngestRuntimeScratch:
             Cache key names.
         """
         return tuple(self._store.keys())
-
-
-@dataclass(frozen=True)
-class IngestPluginContext:
-    """Execution context for ingestion plugins.
-
-    Provides access to storage, configuration, change tracking, and shared
-    scratch space for inter-plugin communication.
-
-    Attributes
-    ----------
-    gateway
-        StorageGateway providing DuckDB access.
-    snapshot
-        Repository snapshot reference.
-    paths
-        Build paths configuration.
-    tools
-        Tools configuration.
-    code_profile
-        Code scanning profile.
-    config_profile
-        Config scanning profile.
-    tool_runner
-        Optional shared tool runner.
-    tool_service
-        Optional shared tool service.
-    change_tracker
-        Optional change tracker for incremental ingestion.
-    ingest_run_sink
-        Optional sink for recording run metrics.
-    current_ingest_run
-        Current run record for metrics.
-    scratch
-        Shared scratch space for inter-plugin data.
-    options
-        Plugin-specific options.
-    plugin_name
-        Name of the executing plugin.
-    run_id
-        Unique identifier for this execution run.
-    """
-
-    gateway: StorageGateway
-    snapshot: SnapshotRef
-    paths: BuildPaths
-    tools: ToolsConfig
-    code_profile: ScanProfile
-    config_profile: ScanProfile
-    tool_runner: ToolRunner | None = None
-    tool_service: ToolService | None = None
-    change_tracker: ChangeTracker | None = None
-    ingest_run_sink: IngestRunSink | None = None
-    current_ingest_run: IngestRun | None = None
-    scratch: IngestRuntimeScratch = field(default_factory=IngestRuntimeScratch)
-    options: object | None = None
-    plugin_name: str | None = None
-    run_id: str | None = None
-
-    @property
-    def repo_root(self) -> Path:
-        """Repository root for the current snapshot.
-
-        Returns
-        -------
-        Path
-            Absolute path to the repository root.
-        """
-        return self.snapshot.repo_root
-
-    @property
-    def repo(self) -> str:
-        """Repository slug for the current snapshot.
-
-        Returns
-        -------
-        str
-            Repository identifier.
-        """
-        return self.snapshot.repo
-
-    @property
-    def commit(self) -> str:
-        """Commit identifier for the current snapshot.
-
-        Returns
-        -------
-        str
-            Commit hash or identifier.
-        """
-        return self.snapshot.commit
-
-    @property
-    def build_dir(self) -> Path:
-        """Build directory derived from execution config.
-
-        Returns
-        -------
-        Path
-            Path to the build directory.
-        """
-        return self.paths.build_dir
-
-    @property
-    def document_output_dir(self) -> Path:
-        """Document output directory resolved for the snapshot.
-
-        Returns
-        -------
-        Path
-            Path to the document output directory.
-        """
-        return self.paths.document_output_dir
-
-    def require_tracker(self) -> ChangeTracker:
-        """Return change tracker or raise if missing.
-
-        Use this when a tracker is required for plugin execution.
-
-        Returns
-        -------
-        ChangeTracker
-            The change tracker.
-
-        Raises
-        ------
-        RuntimeError
-            If change tracker is not available.
-        """
-        if self.change_tracker is not None:
-            return self.change_tracker
-
-        # Try to get from scratch (populated by repo_scan)
-        tracker = self.scratch.consume("change_tracker")
-        if tracker is not None:
-            from codeintel.ingestion.change_tracker import ChangeTracker
-
-            if isinstance(tracker, ChangeTracker):
-                return tracker
-
-        message = "Change tracker required but not available; run repo_scan first"
-        raise RuntimeError(message)
-
-    def tool_service_or_default(self) -> ToolService:
-        """Return tool service or construct a default.
-
-        Returns
-        -------
-        ToolService
-            Existing or newly constructed tool service.
-        """
-        if self.tool_service is not None:
-            return self.tool_service
-
-        from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-        from codeintel.ingestion.tool_service import ToolService
-
-        runner = self.tool_runner or ToolRunner(
-            cache_dir=self.paths.tool_cache,
-            tools_config=self.tools,
-        )
-        return ToolService(runner, self.tools)
-
-    def count_produced_tables(
-        self,
-        tables: tuple[str, ...],
-    ) -> Mapping[str, int]:
-        """Count rows in the specified tables.
-
-        Parameters
-        ----------
-        tables
-            Table names to count.
-
-        Returns
-        -------
-        Mapping[str, int]
-            Mapping of table names to row counts.
-        """
-        from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
-
-        counts: dict[str, int] = {}
-        for table in tables:
-            count = safe_count(self.gateway, table)
-            counts[table] = count if count is not None else 0
-        return counts
 
 
 @dataclass(frozen=True)
@@ -553,7 +357,7 @@ class IngestPluginProtocol(Protocol):
         """
         ...
 
-    def execute(self, ctx: IngestPluginContext) -> IngestPluginResult:
+    def execute(self, ctx: IngestExecutionContext) -> IngestPluginResult:
         """Execute the plugin.
 
         Parameters
@@ -685,7 +489,6 @@ DEFAULT_INGEST_PLUGINS: tuple[str, ...] = (
 __all__ = [
     "DEFAULT_INGEST_PLUGINS",
     "IngestIsolationKind",
-    "IngestPluginContext",
     "IngestPluginMetadata",
     "IngestPluginPlan",
     "IngestPluginProtocol",

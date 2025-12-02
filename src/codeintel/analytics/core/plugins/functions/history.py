@@ -7,10 +7,6 @@ new unified plugin protocol.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
-
-if TYPE_CHECKING:
-    from codeintel.analytics.resources.analytics_context import AnalyticsContextProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
@@ -43,7 +39,7 @@ class FunctionHistoryPlugin:
             name="functions.history",
             description="Aggregate git churn and commit history per function GOID.",
             stage="function_history",
-            version="2.0.0",
+            version="3.0.0",
             enabled_by_default=True,
             severity="fatal",
             inputs=(
@@ -114,19 +110,16 @@ class FunctionHistoryPlugin:
         except ValueError as e:
             return PluginResult.fail(str(e))
 
-        # Get optional dependencies via resource providers
-        analytics_context = None
-        if ctx.has_resource_by_name("AnalyticsContextProvider"):
-            provider = cast("AnalyticsContextProvider", ctx.require_by_name("AnalyticsContextProvider"))
-            analytics_context = provider.get()
+        # Get optional tool runner from context extras
         tool_runner = ctx.extra.get("tool_runner")
 
         try:
+            # Function history no longer requires AnalyticsContext
+            # The domain function works directly with database queries
             compute_function_history(
                 ctx.gateway,
                 cfg,
                 runner=tool_runner,
-                context=analytics_context,
             )
         except (RuntimeError, ValueError, OSError) as e:
             return PluginResult.fail(f"Function history computation failed: {e}")

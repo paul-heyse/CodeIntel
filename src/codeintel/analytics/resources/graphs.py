@@ -1,7 +1,7 @@
 """Graph resource provider for lazy graph loading.
 
 This module provides `GraphProvider` which wraps `GraphRuntime` to provide
-lazy loading of call, import, and symbol graphs.
+lazy loading of call, import, symbol, and bipartite graphs.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from codeintel.analytics.resources.protocol import LazyResource
 
 if TYPE_CHECKING:
     from codeintel.analytics.graph_runtime import GraphRuntime
-    from codeintel.config.primitives import SnapshotRef
+    from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -40,12 +40,21 @@ class GraphResources:
         Symbol to module bipartite graph.
     symbol_function_graph
         Symbol to function bipartite graph.
+    config_module_bipartite
+        Config key to module bipartite graph.
+    test_function_bipartite
+        Test to function bipartite graph.
+    cfg_graph
+        Control flow graph (directed), if available.
     """
 
     call_graph: nx.DiGraph | None = None
     import_graph: nx.DiGraph | None = None
     symbol_module_graph: nx.Graph | None = None
     symbol_function_graph: nx.Graph | None = None
+    config_module_bipartite: nx.Graph | None = None
+    test_function_bipartite: nx.Graph | None = None
+    cfg_graph: nx.DiGraph | None = None
 
 
 class GraphProvider(LazyResource[GraphResources]):
@@ -171,20 +180,29 @@ class GraphProvider(LazyResource[GraphResources]):
         import_graph = self._ensure_graph(runtime, "import_graph")
         symbol_module_graph = self._ensure_graph(runtime, "symbol_module_graph")
         symbol_function_graph = self._ensure_graph(runtime, "symbol_function_graph")
+        config_module_bipartite = self._ensure_graph(runtime, "config_module_bipartite")
+        test_function_bipartite = self._ensure_graph(runtime, "test_function_bipartite")
+        cfg_graph = self._ensure_graph(runtime, "cfg_graph")
 
-        # Type narrow: call_graph and import_graph must be DiGraph or None
+        # Type narrow: directed graphs must be DiGraph or None
         if call_graph is not None and not isinstance(call_graph, nx.DiGraph):
             log.warning("call_graph is not a DiGraph, setting to None")
             call_graph = None
         if import_graph is not None and not isinstance(import_graph, nx.DiGraph):
             log.warning("import_graph is not a DiGraph, setting to None")
             import_graph = None
+        if cfg_graph is not None and not isinstance(cfg_graph, nx.DiGraph):
+            log.warning("cfg_graph is not a DiGraph, setting to None")
+            cfg_graph = None
 
         return GraphResources(
             call_graph=call_graph,
             import_graph=import_graph,
             symbol_module_graph=symbol_module_graph,
             symbol_function_graph=symbol_function_graph,
+            config_module_bipartite=config_module_bipartite,
+            test_function_bipartite=test_function_bipartite,
+            cfg_graph=cfg_graph,
         )
 
     def _get_or_build_runtime(self) -> GraphRuntime:
@@ -301,6 +319,71 @@ class GraphProvider(LazyResource[GraphResources]):
             The symbol-function bipartite graph, or None if unavailable.
         """
         return self.get().symbol_function_graph
+
+    @property
+    def config_module_bipartite(self) -> nx.Graph | None:
+        """Access config-module bipartite graph directly.
+
+        Convenience property for direct access without calling `get()`.
+
+        Returns
+        -------
+        nx.Graph | None
+            The config-module bipartite graph, or None if unavailable.
+        """
+        return self.get().config_module_bipartite
+
+    @property
+    def test_function_bipartite(self) -> nx.Graph | None:
+        """Access test-function bipartite graph directly.
+
+        Convenience property for direct access without calling `get()`.
+
+        Returns
+        -------
+        nx.Graph | None
+            The test-function bipartite graph, or None if unavailable.
+        """
+        return self.get().test_function_bipartite
+
+    @property
+    def cfg_graph(self) -> nx.DiGraph | None:
+        """Access control flow graph directly.
+
+        Convenience property for direct access without calling `get()`.
+
+        Returns
+        -------
+        nx.DiGraph | None
+            The control flow graph, or None if unavailable.
+        """
+        return self.get().cfg_graph
+
+    @property
+    def backend(self) -> GraphBackendConfig | None:
+        """Return the backend configuration for graph operations.
+
+        Returns
+        -------
+        GraphBackendConfig | None
+            The backend configuration, or None if runtime not built.
+        """
+        if self._runtime is not None:
+            return self._runtime.backend
+        return None
+
+    @property
+    def use_gpu(self) -> bool:
+        """Return whether GPU execution is enabled.
+
+        Returns
+        -------
+        bool
+            True if GPU execution is enabled, False otherwise.
+        """
+        if self._runtime is not None:
+            return self._runtime.use_gpu
+        return False
 
 
 @dataclass

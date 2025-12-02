@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/profiles/__init__.py
+# hypothesis_version: 6.148.3
+
+['build_file_profile', 'build_module_profile']

@@ -10,14 +10,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.config.steps_graphs import GraphRunScope
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.graphs.engine import GraphEngine
+    from codeintel.graphs.resources.container import ResourceContainer
+    from codeintel.graphs.resources.protocol import ResourceProvider
     from codeintel.storage.gateway import StorageGateway
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -123,21 +127,21 @@ class GraphRuntimeScratch:
 class GraphExecutionContext:
     """Execution context for graph plugins.
 
-    Provides access to storage, graph engine, and shared scratch space
-    without any dependency on the analytics subsystem.
+    Provides access to storage, graph engine, resource providers, and
+    shared scratch space without any dependency on the analytics subsystem.
+
+    All I/O access should go through the resource container via `require()`.
+    The private attributes `_gateway`, `_engine`, and `_catalog_provider` are
+    only for internal initialization and should not be accessed directly.
 
     Attributes
     ----------
-    gateway
-        StorageGateway providing DuckDB access.
     snapshot
         Repository snapshot reference.
-    engine
-        GraphEngine for accessing cached graphs.
+    resources
+        Resource container for dependency injection (required).
     paths
         Build paths configuration.
-    catalog_provider
-        Optional function catalog provider.
     scratch
         Shared scratch space for inter-plugin data.
     options
@@ -150,11 +154,12 @@ class GraphExecutionContext:
         Optional scoping for incremental execution.
     """
 
-    gateway: StorageGateway
     snapshot: SnapshotRef
-    engine: GraphEngine | None = None
+    resources: ResourceContainer
+    _gateway: StorageGateway | None = field(default=None, repr=False)
+    _engine: GraphEngine | None = field(default=None, repr=False)
+    _catalog_provider: FunctionCatalogProvider | None = field(default=None, repr=False)
     paths: BuildPaths | None = None
-    catalog_provider: FunctionCatalogProvider | None = None
     scratch: GraphRuntimeScratch = field(default_factory=GraphRuntimeScratch)
     options: object | None = None
     plugin_name: str | None = None
@@ -193,6 +198,118 @@ class GraphExecutionContext:
             Absolute path to the repository root.
         """
         return self.snapshot.repo_root
+
+    @property
+    def gateway(self) -> StorageGateway:
+        """Get the storage gateway.
+
+        Tries resource injection first, falls back to private attribute.
+
+        Returns
+        -------
+        StorageGateway
+            Storage gateway for database access.
+
+        Raises
+        ------
+        RuntimeError
+            If no gateway is available.
+        """
+        # Try resource injection first
+        from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
+
+        if self.resources.has(StorageResource.RESOURCE_NAME):
+            storage = self.resources.require(StorageResource)
+            return storage.gateway
+        # Fall back to private attribute
+        if self._gateway is not None:
+            return self._gateway
+        msg = "No gateway available in context"
+        raise RuntimeError(msg)
+
+    @property
+    def engine(self) -> GraphEngine | None:
+        """Get the graph engine.
+
+        Tries resource injection first, falls back to private attribute.
+
+        Returns
+        -------
+        GraphEngine | None
+            Graph engine if available.
+        """
+        # Try resource injection first
+        from codeintel.graphs.resources.graphs import GraphResource  # noqa: PLC0415
+
+        if self.resources.has(GraphResource.RESOURCE_NAME):
+            graph_resource = self.resources.require(GraphResource)
+            return graph_resource.engine
+        # Fall back to private attribute
+        return self._engine
+
+    @property
+    def catalog_provider(self) -> FunctionCatalogProvider | None:
+        """Get the function catalog provider.
+
+        Returns
+        -------
+        FunctionCatalogProvider | None
+            Catalog provider if available.
+        """
+        return self._catalog_provider
+
+    def require(self, provider_type: type[ResourceProvider[T]]) -> T:
+        """Get a resource from the container.
+
+        Parameters
+        ----------
+        provider_type
+            The resource provider type to look up.
+
+        Returns
+        -------
+        T
+            The resource value.
+
+        Notes
+        -----
+        May raise ``ResourceNotFoundError`` if the resource is not registered.
+        """
+        return self.resources.require(provider_type)
+
+    def require_by_name(self, name: str) -> object:
+        """Get a resource by name from the container.
+
+        Parameters
+        ----------
+        name
+            Resource name to look up.
+
+        Returns
+        -------
+        object
+            The resource value.
+
+        Notes
+        -----
+        May raise ``ResourceNotFoundError`` if the resource is not registered.
+        """
+        return self.resources.require_by_name(name)
+
+    def has_resource(self, name: str) -> bool:
+        """Check if a resource is available.
+
+        Parameters
+        ----------
+        name
+            Resource name to check.
+
+        Returns
+        -------
+        bool
+            True if the resource is registered.
+        """
+        return self.resources.has(name)
 
 
 __all__ = [

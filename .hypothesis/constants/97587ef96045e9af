@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/function_effects.py
+# hypothesis_version: 6.148.3
+
+[0.0, 0.1, 0.7, 1.0, '.', 'call', 'category', 'db_calls', 'details', 'end_lineno', 'error', 'errors', 'globals', 'goid', 'io_calls', 'kind', 'lineno', 'missing_ast', 'nonlocals', 'path', 'random_calls', 'snippet', 'tags', 'thread_calls', 'time_calls', 'transitive_effect']

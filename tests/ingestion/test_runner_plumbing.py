@@ -6,12 +6,20 @@ from pathlib import Path
 
 import pytest
 
+import asyncio
+
 from codeintel.config import ConfigBuilder
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.coverage_ingest import ingest_coverage_lines
+from codeintel.ingestion import (
+    CoverageIngestStep,
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+    HashChangeDetectionAdapter,
+    RepoScanStep,
+    ToolRunnerAdapter,
+    TypingIngestStep,
+)
 from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
-from codeintel.ingestion.repo_scan import ingest_repo
-from codeintel.ingestion.typing_ingest import ingest_typing_signals
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 from tests._helpers.tooling import build_tooling_context, run_static_tooling
@@ -32,20 +40,24 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
     (ignore_dir / "b.py").write_text("print('skip')\n", encoding="utf8")
 
     gateway = _setup_gateway()
-    builder = ConfigBuilder.from_snapshot(
-        repo="r",
-        commit="c",
-        repo_root=repo_root,
-        build_dir=repo_root / "build",
-    )
-    cfg = builder.repo_scan()
     profile = ScanProfile(
         repo_root=repo_root,
         source_roots=(repo_root,),
         include_globs=("*.py",),
         ignore_dirs=("ignore",),
     )
-    ingest_repo(gateway, cfg=cfg, code_profile=profile)
+
+    # Use Step-based API
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+
+    step = RepoScanStep(
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
+    )
+    step.execute(repo="r", commit="c", repo_root=repo_root, profile=profile)
 
     rows = gateway.con.execute("SELECT path FROM core.modules").fetchall()
     if rows != [("keep/a.py",)]:
@@ -63,19 +75,25 @@ def test_coverage_ingest_uses_runner(tmp_path: Path) -> None:
         len(report.executed_lines | report.missing_lines)
         for report in tooling_outputs.coverage_reports
     )
-    builder = ConfigBuilder.from_snapshot(
-        repo="r",
-        commit="c",
-        repo_root=repo_root,
-        build_dir=repo_root / "build",
+
+    # Use Step-based API
+    storage = DuckDBStorageAdapter(gateway)
+    tools = ToolRunnerAdapter(tool_service)
+    step = CoverageIngestStep(storage=storage, tools=tools)
+
+    result = asyncio.get_event_loop().run_until_complete(
+        step.execute_async(
+            [],
+            repo="r",
+            commit="c",
+            repo_root=repo_root,
+            coverage_file=context.coverage_file,
+        )
     )
-    cfg = builder.coverage_ingest(coverage_file=context.coverage_file)
-    ingest_coverage_lines(
-        gateway,
-        cfg=cfg,
-        tools=ToolsConfig.model_validate({}),
-        tool_service=tool_service,
-    )
+
+    if not result.success:
+        errors = "; ".join(result.errors) if result.errors else "unknown"
+        pytest.fail(f"Coverage ingest failed: {errors}")
 
     row = gateway.con.execute("SELECT COUNT(*) FROM analytics.coverage_lines").fetchone()
     count = row[0] if row is not None else 0
@@ -90,30 +108,46 @@ def test_typing_ingest_uses_shared_runner(tmp_path: Path) -> None:
     tool_service = context.service
 
     gateway = _setup_gateway()
-    builder = ConfigBuilder.from_snapshot(
-        repo="r",
-        commit="c",
-        repo_root=repo_root,
-        build_dir=repo_root / "build",
-    )
-
-    # First populate modules in core.modules via repo_scan
-    scan_cfg = builder.repo_scan()
     scan_profile = ScanProfile(
         repo_root=repo_root,
         source_roots=(repo_root,),
         include_globs=("*.py",),
         ignore_dirs=(),
     )
-    ingest_repo(gateway, cfg=scan_cfg, code_profile=scan_profile)
+
+    # Create adapters
+    storage = DuckDBStorageAdapter(gateway)
+    discovery = FilesystemDiscoveryAdapter(repo_root)
+    change_detection = HashChangeDetectionAdapter(storage)
+    tools = ToolRunnerAdapter(tool_service)
+
+    # First populate modules in core.modules via repo_scan
+    scan_step = RepoScanStep(
+        storage=storage,
+        discovery=discovery,
+        change_detection=change_detection,
+    )
+    _, modules, _ = scan_step.execute(
+        repo="r",
+        commit="c",
+        repo_root=repo_root,
+        profile=scan_profile,
+    )
 
     # Now run typing ingest
-    cfg = builder.typing_ingest(tool_runner=context.runner)
-    ingest_typing_signals(
-        gateway,
-        cfg=cfg,
-        tool_service=tool_service,
+    typing_step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
+    result = asyncio.get_event_loop().run_until_complete(
+        typing_step.execute_async(
+            list(modules),
+            repo="r",
+            commit="c",
+            repo_root=str(repo_root),
+        )
     )
+
+    if not result.success:
+        errors = "; ".join(result.errors) if result.errors else "unknown"
+        pytest.fail(f"Typing ingest failed: {errors}")
 
     row = gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
     typedness_rows = row[0] if row is not None else 0
