@@ -34,6 +34,7 @@ from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
+from tests._helpers.graph_env import GraphEngineSeed, build_seeded_graph_engine
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -125,29 +126,11 @@ def _make_realistic_import_graph() -> nx.DiGraph:
     return g
 
 
-def _make_engine(
-    gateway: StorageGateway,
-    *,
-    call_graph: nx.DiGraph | None = None,
-    import_graph: nx.DiGraph | None = None,
-    repo: str = "test/metrics",
-    commit: str = "metrics123",
-    repo_root: Path | None = None,
-) -> NxGraphEngine:
-    """Create a seeded NxGraphEngine backed by the provided gateway."""
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
-    engine = NxGraphEngine(gateway=gateway, snapshot=snapshot)
-    if call_graph is not None:
-        engine.seed(GraphKind.CALL_GRAPH, call_graph)
-    if import_graph is not None:
-        engine.seed(GraphKind.IMPORT_GRAPH, import_graph)
-    return engine
-
-
 def _make_execution_context(
     gateway: StorageGateway,
     tmp_path: Path,
     *,
+    seed: GraphEngineSeed | None = None,
     engine: NxGraphEngine | None = None,
     use_resources: bool = True,
 ) -> GraphExecutionContext:
@@ -159,6 +142,8 @@ def _make_execution_context(
         Storage gateway.
     tmp_path
         Temporary path.
+    seed
+        Optional seed configuration for graph engine construction.
     engine
         Graph engine to use.
     use_resources
@@ -169,9 +154,13 @@ def _make_execution_context(
     GraphExecutionContext
         Configured execution context.
     """
+    effective_engine = engine
+    if effective_engine is None and seed is not None:
+        effective_engine = build_seeded_graph_engine(gateway, seed)
+
     snapshot = (
-        engine.snapshot
-        if engine is not None
+        effective_engine.snapshot
+        if effective_engine is not None
         else SnapshotRef(repo="test/metrics", commit="metrics123", repo_root=tmp_path)
     )
     scratch = GraphRuntimeScratch()
@@ -179,8 +168,8 @@ def _make_execution_context(
 
     # Always register storage; optionally graph resource
     resources.register(StorageResource(gateway, tmp_path))
-    if use_resources and engine is not None:
-        resources.register(GraphResource(engine))
+    if use_resources and effective_engine is not None:
+        resources.register(GraphResource(effective_engine))
 
     return GraphExecutionContext(
         snapshot=snapshot,
@@ -198,12 +187,12 @@ def test_compute_core_graph_metrics_with_engine(tmp_path: Path) -> None:
     try:
         call_graph = _make_realistic_call_graph()
         import_graph = _make_realistic_import_graph()
-        engine = _make_engine(
-            gateway,
+        seed = GraphEngineSeed(
             call_graph=call_graph,
             import_graph=import_graph,
             repo_root=tmp_path,
         )
+        engine = build_seeded_graph_engine(gateway, seed)
 
         ctx = _make_execution_context(gateway, tmp_path, engine=engine)
 
@@ -239,12 +228,12 @@ def test_compute_core_graph_metrics_empty_graphs(tmp_path: Path) -> None:
     try:
         empty_call = nx.DiGraph()
         empty_import = nx.DiGraph()
-        engine = _make_engine(
-            gateway,
+        seed = GraphEngineSeed(
             call_graph=empty_call,
             import_graph=empty_import,
             repo_root=tmp_path,
         )
+        engine = build_seeded_graph_engine(gateway, seed)
 
         ctx = _make_execution_context(gateway, tmp_path, engine=engine)
 
@@ -263,7 +252,8 @@ def test_compute_function_ext_metrics_with_engine(tmp_path: Path) -> None:
     gateway = _make_gateway()
     try:
         call_graph = _make_realistic_call_graph()
-        engine = _make_engine(gateway, call_graph=call_graph, repo_root=tmp_path)
+        seed = GraphEngineSeed(call_graph=call_graph, repo_root=tmp_path)
+        engine = build_seeded_graph_engine(gateway, seed)
 
         ctx = _make_execution_context(gateway, tmp_path, engine=engine)
 
@@ -296,7 +286,8 @@ def test_compute_module_ext_metrics_with_engine(tmp_path: Path) -> None:
     gateway = _make_gateway()
     try:
         import_graph = _make_realistic_import_graph()
-        engine = _make_engine(gateway, import_graph=import_graph, repo_root=tmp_path)
+        seed = GraphEngineSeed(import_graph=import_graph, repo_root=tmp_path)
+        engine = build_seeded_graph_engine(gateway, seed)
 
         ctx = _make_execution_context(gateway, tmp_path, engine=engine)
 

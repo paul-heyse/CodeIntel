@@ -9,8 +9,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
+import networkx as nx
 
 from codeintel.config import ConfigBuilder
+from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.plugins.builders.callgraph import get_callgraph_builder_plugin
 from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
@@ -40,6 +43,45 @@ class SpanTestEnv:
     builder: ConfigBuilder
     gateway: StorageGateway
     expected_goid: int
+
+
+@dataclass(frozen=True)
+class GraphEngineSeed:
+    """Configuration for seeding an NxGraphEngine in tests."""
+
+    repo: str = "test/metrics"
+    commit: str = "metrics123"
+    repo_root: Path | None = None
+    call_graph: nx.DiGraph | None = None
+    import_graph: nx.DiGraph | None = None
+
+
+def build_seeded_graph_engine(gateway: StorageGateway, seed: GraphEngineSeed) -> NxGraphEngine:
+    """Construct an NxGraphEngine seeded with provided graphs.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway backing the engine.
+    seed
+        Seed configuration containing graphs and snapshot metadata.
+
+    Returns
+    -------
+    NxGraphEngine
+        Engine seeded with the provided graphs and ready for use.
+    """
+    snapshot = SnapshotRef(
+        repo=seed.repo,
+        commit=seed.commit,
+        repo_root=seed.repo_root or Path.cwd(),
+    )
+    engine = NxGraphEngine(gateway=gateway, snapshot=snapshot)
+    if seed.call_graph is not None:
+        engine.seed(GraphKind.CALL_GRAPH, seed.call_graph)
+    if seed.import_graph is not None:
+        engine.seed(GraphKind.IMPORT_GRAPH, seed.import_graph)
+    return engine
 
 
 def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv:

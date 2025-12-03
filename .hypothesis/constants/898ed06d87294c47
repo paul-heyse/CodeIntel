@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/http/routes/subsystems.py
+# hypothesis_version: 6.148.5
+
+['Subsystem not found', 'subsystems.coverage', 'subsystems.detail', 'subsystems.list', 'subsystems.profiles']
