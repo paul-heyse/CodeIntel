@@ -7,7 +7,7 @@ including metrics recording through the public API.
 from __future__ import annotations
 
 import logging
-from unittest.mock import MagicMock
+from typing import cast
 
 from codeintel.serving.context import RequestContext
 from codeintel.serving.services.observability import (
@@ -15,6 +15,7 @@ from codeintel.serving.services.observability import (
     ServiceCallMetrics,
     ServiceObservability,
 )
+from tests._helpers.logging import CAPTURE_HANDLER_LEVEL, CapturingHandler
 
 # Constants for test values
 DURATION_MS = 15.5
@@ -24,6 +25,34 @@ ROW_COUNT = 10
 MESSAGE_COUNT_TWO = 2
 ROW_COUNT_THREE = 3
 ROW_COUNT_FIVE = 5
+
+
+def _build_logger(name: str, *, level: int = logging.INFO) -> tuple[logging.Logger, CapturingHandler]:
+    """Construct a real logger with a capturing handler for assertions.
+
+    Returns
+    -------
+    tuple[logging.Logger, CapturingHandler]
+        Logger and attached handler collecting emitted records.
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.propagate = False
+    handler = CapturingHandler(level=CAPTURE_HANDLER_LEVEL)
+    logger.handlers = [handler]
+    return logger, handler
+
+
+def _get_payload(handler: CapturingHandler, index: int = 0) -> dict[str, object]:
+    """Extract the payload dict from a captured record."""
+    record = handler.records[index]
+    args_obj = record.args
+    if isinstance(args_obj, dict):
+        payload: object = args_obj
+    else:
+        args = cast("tuple[object, ...]", args_obj)
+        payload = args[0]
+    return cast("dict[str, object]", payload)
 
 
 # =============================================================================
@@ -167,21 +196,19 @@ def test_service_observability_custom_logger() -> None:
 
 def test_service_observability_record_when_disabled() -> None:
     """Verify record does nothing when observability is disabled."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    obs = ServiceObservability(enabled=False, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.disabled")
+    obs = ServiceObservability(enabled=False, logger=logger)
 
     metrics = ServiceCallMetrics(name="test", transport="local", duration_ms=1.0)
     obs.record(metrics)
 
-    # Logger should not be called when disabled
-    mock_logger.info.assert_not_called()
+    assert not handler.records
 
 
 def test_service_observability_record_when_enabled() -> None:
     """Verify record logs when observability is enabled."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = True
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.enabled")
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     metrics = ServiceCallMetrics(
         name="test_call",
@@ -191,17 +218,18 @@ def test_service_observability_record_when_enabled() -> None:
     )
     obs.record(metrics)
 
-    # Logger.info should be called with service_call prefix
-    mock_logger.info.assert_called_once()
-    call_args = mock_logger.info.call_args
-    assert call_args[0][0] == "service_call %s"
+    assert len(handler.records) == 1
+    record = handler.records[0]
+    assert record.getMessage().startswith("service_call")
+    payload = _get_payload(handler)
+    assert payload["name"] == "test_call"
+    assert payload["rows"] == ROW_COUNT_FIVE
 
 
 def test_service_observability_record_with_context() -> None:
     """Verify record includes RequestContext fields."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = True
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.with_context")
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     ctx = RequestContext(
         correlation_id="ctx-123",
@@ -217,14 +245,18 @@ def test_service_observability_record_with_context() -> None:
     )
     obs.record(metrics, context=ctx)
 
-    mock_logger.info.assert_called_once()
+    assert len(handler.records) == 1
+    payload = _get_payload(handler)
+    assert payload["correlation_id"] == "ctx-123"
+    assert payload["external_transport"] == "http"
+    assert payload["operation"] == "datasets.rows"
+    assert payload["repo"] == "test/repo"
 
 
 def test_service_observability_record_merges_context_values() -> None:
     """Verify record prefers metric values over context values."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = True
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.merge_context")
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     ctx = RequestContext(
         correlation_id="ctx-fallback",
@@ -238,15 +270,16 @@ def test_service_observability_record_merges_context_values() -> None:
     )
     obs.record(metrics, context=ctx)
 
-    # Verify the call happened
-    mock_logger.info.assert_called_once()
+    assert len(handler.records) == 1
+    payload = _get_payload(handler)
+    assert payload["correlation_id"] == "metric-override"
+    assert payload["external_transport"] == "http"
 
 
 def test_service_observability_record_all_optional_fields() -> None:
     """Verify record handles all optional metric fields."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = True
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.optional_fields")
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     metrics = ServiceCallMetrics(
         name="full_metrics",
@@ -262,9 +295,8 @@ def test_service_observability_record_all_optional_fields() -> None:
     )
     obs.record(metrics)
 
-    mock_logger.info.assert_called_once()
-    call_args = mock_logger.info.call_args
-    payload = call_args[0][1]
+    assert len(handler.records) == 1
+    payload = _get_payload(handler)
 
     assert payload["rows"] == ROW_COUNT
     assert payload["dataset"] == "test.dataset"
@@ -273,9 +305,8 @@ def test_service_observability_record_all_optional_fields() -> None:
 
 def test_service_observability_record_with_error() -> None:
     """Verify record includes error information."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = True
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.error")
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     metrics = ServiceCallMetrics(
         name="error_call",
@@ -285,30 +316,26 @@ def test_service_observability_record_with_error() -> None:
     )
     obs.record(metrics)
 
-    mock_logger.info.assert_called_once()
-    call_args = mock_logger.info.call_args
-    payload = call_args[0][1]
+    assert len(handler.records) == 1
+    payload = _get_payload(handler)
     assert payload["error"] == "ValueError"
 
 
 def test_service_observability_record_logger_not_enabled() -> None:
     """Verify record does nothing when logger level not enabled."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = False
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.not_enabled", level=logging.ERROR)
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     metrics = ServiceCallMetrics(name="test", transport="local", duration_ms=1.0)
     obs.record(metrics)
 
-    # Logger.info should not be called when INFO not enabled
-    mock_logger.info.assert_not_called()
+    assert not handler.records
 
 
 def test_service_observability_record_context_enrichment() -> None:
     """Verify record enriches payload from RequestContext."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = True
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.context_enrichment")
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     ctx = RequestContext(
         correlation_id="enrichment-test",
@@ -326,9 +353,8 @@ def test_service_observability_record_context_enrichment() -> None:
     )
     obs.record(metrics, context=ctx)
 
-    mock_logger.info.assert_called_once()
-    call_args = mock_logger.info.call_args
-    payload = call_args[0][1]
+    assert len(handler.records) == 1
+    payload = _get_payload(handler)
 
     # Context values should be in payload
     assert payload["correlation_id"] == "enrichment-test"
@@ -339,9 +365,8 @@ def test_service_observability_record_context_enrichment() -> None:
 
 def test_service_observability_record_rounds_duration() -> None:
     """Verify record rounds duration_ms to 2 decimal places."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = True
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.rounding")
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     metrics = ServiceCallMetrics(
         name="duration_test",
@@ -350,9 +375,8 @@ def test_service_observability_record_rounds_duration() -> None:
     )
     obs.record(metrics)
 
-    mock_logger.info.assert_called_once()
-    call_args = mock_logger.info.call_args
-    payload = call_args[0][1]
+    assert len(handler.records) == 1
+    payload = _get_payload(handler)
 
     # Duration should be rounded to 2 decimal places
     assert payload["duration_ms"] == DURATION_ROUNDED
@@ -360,9 +384,8 @@ def test_service_observability_record_rounds_duration() -> None:
 
 def test_service_observability_record_excludes_none_values() -> None:
     """Verify record excludes optional fields that are None."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = True
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.exclude_none")
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     metrics = ServiceCallMetrics(
         name="minimal",
@@ -371,9 +394,8 @@ def test_service_observability_record_excludes_none_values() -> None:
     )
     obs.record(metrics)
 
-    mock_logger.info.assert_called_once()
-    call_args = mock_logger.info.call_args
-    payload = call_args[0][1]
+    assert len(handler.records) == 1
+    payload = _get_payload(handler)
 
     # None values should not be in payload
     assert "rows" not in payload
@@ -384,9 +406,8 @@ def test_service_observability_record_excludes_none_values() -> None:
 
 def test_service_observability_record_metric_overrides_context() -> None:
     """Verify metric values take precedence over context values."""
-    mock_logger = MagicMock(spec=logging.Logger)
-    mock_logger.isEnabledFor.return_value = True
-    obs = ServiceObservability(enabled=True, logger=mock_logger)
+    logger, handler = _build_logger("tests.observability.metric_overrides")
+    obs = ServiceObservability(enabled=True, logger=logger)
 
     ctx = RequestContext(
         correlation_id="context-corr",
@@ -402,9 +423,8 @@ def test_service_observability_record_metric_overrides_context() -> None:
     )
     obs.record(metrics, context=ctx)
 
-    mock_logger.info.assert_called_once()
-    call_args = mock_logger.info.call_args
-    payload = call_args[0][1]
+    assert len(handler.records) == 1
+    payload = _get_payload(handler)
 
     # Metric values should take precedence
     assert payload["correlation_id"] == "metric-corr"
