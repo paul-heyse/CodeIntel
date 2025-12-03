@@ -81,7 +81,11 @@ def create_mcp_server(
     close = resource.close
     server = FastMCP("CodeIntel", json_response=True)
     service = getattr(backend, "service", None)
-    (register_tools_fn or register_tools)(server, service or backend)
+    # Pass config to enable auto-pipeline support
+    if register_tools_fn is not None:
+        register_tools_fn(server, service or backend)
+    else:
+        register_tools(server, service or backend, config)
     return server, close
 
 

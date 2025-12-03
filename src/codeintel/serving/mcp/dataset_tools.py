@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from mcp.server.fastmcp import FastMCP
 
+from codeintel.serving.auto_pipeline import ensure_prereqs_for_mcp, is_auto_pipeline_enabled
 from codeintel.serving.context import (
     RequestContext,
     reset_current_request_context,
@@ -23,6 +24,10 @@ from codeintel.serving.mcp.serialization import (
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.operations import Operation, iter_operations
 from codeintel.serving.services.errors import generate_correlation_id
+
+if TYPE_CHECKING:
+    from codeintel.config.serving_models import ServingConfig
+    from codeintel.serving.mcp.backend import QueryBackend
 
 
 def _serialize_payload(
@@ -51,6 +56,7 @@ def _serialize_list_payload(
 def _build_dataset_tool(
     spec: Operation,
     backend: QueryBackendOrService,
+    config: ServingConfig | None = None,
 ) -> Callable[..., list[dict[str, object]] | dict[str, object] | dict[str, ProblemDetail]]:
     backend_attr = getattr(backend, spec.backend_method, None)
     if not callable(backend_attr):
@@ -66,6 +72,14 @@ def _build_dataset_tool(
     def _tool(
         **kwargs: object,
     ) -> list[dict[str, object]] | dict[str, object] | dict[str, ProblemDetail]:
+        # Check for auto-pipeline prerequisites
+        if is_auto_pipeline_enabled() and config is not None and hasattr(backend, "gateway"):
+            ensure_prereqs_for_mcp(
+                op_id=spec.id,
+                config=config,
+                backend=cast("QueryBackend", backend),
+            )
+
         correlation_id = generate_correlation_id()
         dataset = kwargs.get("dataset_name") or kwargs.get("dataset")
         ctx = RequestContext(
@@ -95,12 +109,26 @@ def _build_dataset_tool(
     )
 
 
-def register_dataset_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
-    """Register dataset browsing MCP tools based on Operation."""
+def register_dataset_tools(
+    mcp: FastMCP,
+    backend: QueryBackendOrService,
+    config: ServingConfig | None = None,
+) -> None:
+    """Register dataset browsing MCP tools based on Operation.
+
+    Parameters
+    ----------
+    mcp
+        FastMCP instance to register tools against.
+    backend
+        Concrete MCP backend or QueryService implementation.
+    config
+        Optional serving config for auto-pipeline support.
+    """
     for spec in iter_operations():
         if spec.category != "datasets" or spec.tool_name is None:
             continue
-        tool = _build_dataset_tool(spec, backend)
+        tool = _build_dataset_tool(spec, backend, config)
         tool.__name__ = spec.tool_name
         tool.__doc__ = spec.description or spec.summary
         mcp.tool(

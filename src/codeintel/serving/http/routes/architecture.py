@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from codeintel.serving.http.dependencies import ServiceDep
+from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http.routes.functions import RouterOptions
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import FunctionArchitectureResponse, ModuleArchitectureResponse
 from codeintel.serving.operations import Operation, get_operation
@@ -18,9 +19,14 @@ def _require_spec(op_id: str) -> Operation:
     return spec
 
 
-def build_architecture_router() -> APIRouter:
-    """
-    Construct the router for architecture and subsystem endpoints.
+def build_architecture_router(options: RouterOptions | None = None) -> APIRouter:
+    """Construct the router for architecture and subsystem endpoints.
+
+    Parameters
+    ----------
+    options
+        Router configuration options. When auto_pipeline is enabled,
+        dependencies are attached that automatically run prerequisites.
 
     Raises
     ------
@@ -44,11 +50,17 @@ def build_architecture_router() -> APIRouter:
         raise ValueError(message)
     module_path = spec_module.http_path
 
+    # Build dependencies based on options
+    auto_pipeline = options is not None and options.auto_pipeline
+    func_deps = [Depends(make_op_prereq_dependency("architecture.function"))] if auto_pipeline else []
+    mod_deps = [Depends(make_op_prereq_dependency("architecture.module"))] if auto_pipeline else []
+
     @router.get(
         function_path,
         response_model=FunctionArchitectureResponse,
         summary=spec_function.summary,
         tags=[spec_function.category],
+        dependencies=func_deps,
     )
     def function_architecture(
         *,
@@ -79,6 +91,7 @@ def build_architecture_router() -> APIRouter:
         response_model=ModuleArchitectureResponse,
         summary=spec_module.summary,
         tags=[spec_module.category],
+        dependencies=mod_deps,
     )
     def module_architecture(
         *,

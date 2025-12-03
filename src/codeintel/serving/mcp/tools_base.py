@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from mcp.server.fastmcp import FastMCP
 
@@ -16,10 +16,16 @@ from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.registry import iter_registry_operations
 
+if TYPE_CHECKING:
+    from codeintel.config.serving_models import ServingConfig
 
-def register_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
-    """
-    Register all MCP tools on the given FastMCP instance.
+
+def register_tools(
+    mcp: FastMCP,
+    backend: QueryBackendOrService,
+    config: ServingConfig | None = None,
+) -> None:
+    """Register all MCP tools on the given FastMCP instance.
 
     Parameters
     ----------
@@ -27,11 +33,13 @@ def register_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
         FastMCP instance to register tools against.
     backend
         Concrete MCP backend or any QueryService implementation.
+    config
+        Optional serving config for auto-pipeline support.
     """
-    register_function_tools(mcp, backend)
-    register_profile_tools(mcp, backend)
-    register_architecture_tools(mcp, backend)
-    register_dataset_tools(mcp, backend)
+    register_function_tools(mcp, backend, config)
+    register_profile_tools(mcp, backend, config)
+    register_architecture_tools(mcp, backend, config)
+    register_dataset_tools(mcp, backend, config)
     register_meta_tools(mcp, backend)
     # Expose registered tools for callers that inspect `mcp.tools` in tests/utilities.
     tools = None

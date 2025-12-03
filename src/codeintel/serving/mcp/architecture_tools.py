@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from mcp.server.fastmcp import FastMCP
 
@@ -28,6 +29,9 @@ from codeintel.serving.mcp.models import (
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.operations import Operation, get_operation
 from codeintel.serving.services.errors import generate_correlation_id
+
+if TYPE_CHECKING:
+    from codeintel.config.serving_models import ServingConfig
 
 
 def _require_spec(op_id: str) -> Operation:
@@ -342,9 +346,25 @@ def _register_summarize_subsystem_tool(mcp: FastMCP, backend: QueryBackendOrServ
         return response.model_dump()
 
 
-def register_architecture_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
-    """Register architecture and subsystem MCP tools."""
+def register_architecture_tools(
+    mcp: FastMCP,
+    backend: QueryBackendOrService,
+    config: ServingConfig | None = None,
+) -> None:
+    """Register architecture and subsystem MCP tools.
+
+    Parameters
+    ----------
+    mcp
+        FastMCP instance to register tools against.
+    backend
+        Concrete MCP backend or QueryService implementation.
+    config
+        Optional serving config for auto-pipeline support (reserved for future).
+    """
     _load_architecture_specs()
+    # Note: config is reserved for future auto-pipeline integration
+    _ = config  # Unused for now
     _register_graph_plugin_plan_tool(mcp, backend)
     _register_function_architecture_tool(mcp, backend)
     _register_module_architecture_tool(mcp, backend)

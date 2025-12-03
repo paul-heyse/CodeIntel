@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Literal
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from codeintel.serving.http.dependencies import ServiceDep
+from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -21,6 +23,21 @@ from codeintel.serving.mcp.models import (
     TestsForFunctionResponse,
 )
 from codeintel.serving.operations import Operation, get_operation
+
+RouteDeps = Sequence[Any]  # FastAPI dependencies list
+
+
+@dataclass(frozen=True)
+class RouterOptions:
+    """Options for building HTTP routers.
+
+    Parameters
+    ----------
+    auto_pipeline
+        When True, attach auto-pipeline dependencies to routes.
+    """
+
+    auto_pipeline: bool = False
 
 LOG = logging.getLogger("codeintel.serving.http.routes.functions")
 
@@ -92,7 +109,10 @@ def _load_function_specs() -> tuple[dict[str, Operation], dict[str, str]]:
 
 
 def _register_summary_and_risk_routes(
-    router: APIRouter, specs: dict[str, Operation], paths: dict[str, str]
+    router: APIRouter,
+    specs: dict[str, Operation],
+    paths: dict[str, str],
+    deps: dict[str, RouteDeps],
 ) -> None:
     summary_spec = specs["function.summary"]
     risk_spec = specs["functions.high_risk"]
@@ -102,6 +122,7 @@ def _register_summary_and_risk_routes(
         response_model=FunctionSummaryResponse,
         summary=summary_spec.summary,
         tags=[summary_spec.category],
+        dependencies=list(deps.get("function.summary", [])),
     )
     def function_summary(
         *,
@@ -139,6 +160,7 @@ def _register_summary_and_risk_routes(
         response_model=HighRiskFunctionsResponse,
         summary=risk_spec.summary,
         tags=[risk_spec.category],
+        dependencies=list(deps.get("functions.high_risk", [])),
     )
     def list_high_risk_functions(
         *,
@@ -166,7 +188,10 @@ def _register_summary_and_risk_routes(
 
 
 def _register_graph_and_tests_routes(
-    router: APIRouter, specs: dict[str, Operation], paths: dict[str, str]
+    router: APIRouter,
+    specs: dict[str, Operation],
+    paths: dict[str, str],
+    deps: dict[str, RouteDeps],
 ) -> None:
     neighbors_spec = specs["graph.call_neighbors"]
     neighborhood_spec = specs["graph.call_neighborhood"]
@@ -178,6 +203,7 @@ def _register_graph_and_tests_routes(
         response_model=CallGraphNeighborsResponse,
         summary=neighbors_spec.summary,
         tags=[neighbors_spec.category],
+        dependencies=list(deps.get("graph.call_neighbors", [])),
     )
     def function_callgraph(
         *,
@@ -208,6 +234,7 @@ def _register_graph_and_tests_routes(
         response_model=TestsForFunctionResponse,
         summary=tests_spec.summary,
         tags=[tests_spec.category],
+        dependencies=list(deps.get("functions.tests", [])),
     )
     def tests_for_function(
         *,
@@ -246,6 +273,7 @@ def _register_graph_and_tests_routes(
         response_model=GraphNeighborhoodResponse,
         summary=neighborhood_spec.summary,
         tags=[neighborhood_spec.category],
+        dependencies=list(deps.get("graph.call_neighborhood", [])),
     )
     def callgraph_neighborhood(
         *,
@@ -302,6 +330,7 @@ def _register_graph_and_tests_routes(
         response_model=ImportBoundaryResponse,
         summary=import_boundary_spec.summary,
         tags=[import_boundary_spec.category],
+        dependencies=list(deps.get("graph.import_boundary", [])),
     )
     def import_boundary(
         *,
@@ -350,7 +379,10 @@ def _register_graph_and_tests_routes(
 
 
 def _register_file_summary_route(
-    router: APIRouter, specs: dict[str, Operation], paths: dict[str, str]
+    router: APIRouter,
+    specs: dict[str, Operation],
+    paths: dict[str, str],
+    deps: dict[str, RouteDeps],
 ) -> None:
     file_spec = specs["file.summary"]
 
@@ -359,6 +391,7 @@ def _register_file_summary_route(
         response_model=FileSummaryResponse,
         summary=file_spec.summary,
         tags=[file_spec.category],
+        dependencies=list(deps.get("file.summary", [])),
     )
     def file_summary(
         *,
@@ -387,9 +420,38 @@ def _register_file_summary_route(
         return summary
 
 
-def build_functions_router() -> APIRouter:
+def _build_prereq_deps(
+    specs: dict[str, Operation],
+    options: RouterOptions | None,
+) -> dict[str, RouteDeps]:
+    """Build auto-pipeline dependencies for each operation.
+
+    Parameters
+    ----------
+    specs
+        Operation specifications keyed by operation ID.
+    options
+        Router options; when auto_pipeline is enabled, creates dependencies.
+
+    Returns
+    -------
+    dict[str, RouteDeps]
+        Mapping of operation ID to list of FastAPI dependencies.
     """
-    Construct the router for function-centric endpoints.
+    if options is None or not options.auto_pipeline:
+        return {}
+    return {op_id: [Depends(make_op_prereq_dependency(op_id))] for op_id in specs}
+
+
+def build_functions_router(options: RouterOptions | None = None) -> APIRouter:
+    """Construct the router for function-centric endpoints.
+
+    Parameters
+    ----------
+    options
+        Router configuration options. When auto_pipeline is enabled,
+        dependencies are attached that automatically run prerequisites
+        before the operation executes.
 
     Raises
     ------
@@ -407,11 +469,13 @@ def build_functions_router() -> APIRouter:
     except ValueError as exc:
         message = "Failed to load function Operation entries"
         raise ValueError(message) from exc
-    _register_summary_and_risk_routes(router, specs, paths)
-    _register_graph_and_tests_routes(router, specs, paths)
-    _register_file_summary_route(router, specs, paths)
+
+    deps = _build_prereq_deps(specs, options)
+    _register_summary_and_risk_routes(router, specs, paths, deps)
+    _register_graph_and_tests_routes(router, specs, paths, deps)
+    _register_file_summary_route(router, specs, paths, deps)
 
     return router
 
 
-__all__ = ["build_functions_router"]
+__all__ = ["RouterOptions", "build_functions_router"]

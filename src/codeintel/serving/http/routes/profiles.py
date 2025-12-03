@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from codeintel.serving.http.dependencies import ServiceDep
+from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http.routes.functions import RouterOptions
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     FileProfileResponse,
@@ -22,9 +23,15 @@ def _require_spec(op_id: str) -> Operation:
     return spec
 
 
-def build_profiles_router() -> APIRouter:
-    """
-    Construct the router for profile endpoints.
+def build_profiles_router(options: RouterOptions | None = None) -> APIRouter:
+    """Construct the router for profile endpoints.
+
+    Parameters
+    ----------
+    options
+        Router configuration options. When auto_pipeline is enabled,
+        dependencies are attached that automatically run prerequisites
+        before the operation executes.
 
     Raises
     ------
@@ -51,11 +58,18 @@ def build_profiles_router() -> APIRouter:
     file_path = spec_file.http_path
     module_path = spec_module.http_path
 
+    # Build dependencies based on options
+    auto_pipeline = options is not None and options.auto_pipeline
+    func_deps = [Depends(make_op_prereq_dependency("profiles.function"))] if auto_pipeline else []
+    file_deps = [Depends(make_op_prereq_dependency("profiles.file"))] if auto_pipeline else []
+    module_deps = [Depends(make_op_prereq_dependency("profiles.module"))] if auto_pipeline else []
+
     @router.get(
         function_path,
         response_model=FunctionProfileResponse,
         summary=spec_function.summary,
         tags=[spec_function.category],
+        dependencies=func_deps,
     )
     def function_profile(
         *,
@@ -87,6 +101,7 @@ def build_profiles_router() -> APIRouter:
         response_model=FileProfileResponse,
         summary=spec_file.summary,
         tags=[spec_file.category],
+        dependencies=file_deps,
     )
     def file_profile(
         *,
@@ -118,6 +133,7 @@ def build_profiles_router() -> APIRouter:
         response_model=ModuleProfileResponse,
         summary=spec_module.summary,
         tags=[spec_module.category],
+        dependencies=module_deps,
     )
     def module_profile(
         *,

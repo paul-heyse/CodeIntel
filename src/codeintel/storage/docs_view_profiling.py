@@ -15,40 +15,67 @@ DOCS_VIEWS: Final[tuple[str, ...]] = (
     "docs.v_subsystem_coverage",
 )
 
-_EXPLAIN_QUERIES: Final[dict[str, str]] = {
+EXPLAIN_QUERIES: Final[dict[str, str]] = {
     "docs.v_subsystem_profile": "EXPLAIN SELECT * FROM docs.v_subsystem_profile LIMIT 50",
     "docs.v_subsystem_coverage": "EXPLAIN SELECT * FROM docs.v_subsystem_coverage LIMIT 50",
 }
 
-_ANALYZE_QUERIES: Final[dict[str, str]] = {
+ANALYZE_QUERIES: Final[dict[str, str]] = {
     "docs.v_subsystem_profile": "EXPLAIN ANALYZE SELECT * FROM docs.v_subsystem_profile LIMIT 50",
     "docs.v_subsystem_coverage": "EXPLAIN ANALYZE SELECT * FROM docs.v_subsystem_coverage LIMIT 50",
 }
 
 
-def _write_text(path: Path, content: str) -> None:
-    """Write content to disk, ensuring the parent directory exists."""
+def write_text(path: Path, content: str) -> None:
+    """
+    Write content to disk, ensuring the parent directory exists.
+
+    Parameters
+    ----------
+    path
+        Target file path.
+    content
+        Text content to write.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
 
 
-def _explain(*, con: DuckDBConnection, view: str, analyze: bool) -> str:
+def explain(*, con: DuckDBConnection, view: str, analyze: bool) -> str:
     """
     Return EXPLAIN or EXPLAIN ANALYZE output for a docs view.
+
+    Parameters
+    ----------
+    con
+        Active DuckDB connection.
+    view
+        Fully qualified view name.
+    analyze
+        Whether to use EXPLAIN ANALYZE instead of EXPLAIN.
 
     Returns
     -------
     str
         Plan text emitted by DuckDB.
     """
-    query = _EXPLAIN_QUERIES[view] if not analyze else _ANALYZE_QUERIES[view]
+    query = EXPLAIN_QUERIES[view] if not analyze else ANALYZE_QUERIES[view]
     rows = con.execute(query).fetchall()
     return "\n".join(str(row[0]) for row in rows)
 
 
-def _run_profile(*, db_path: Path, output_dir: Path, analyze: bool) -> None:
+def run_profile(*, db_path: Path, output_dir: Path, analyze: bool) -> None:
     """
     Generate profiling artifacts for the configured database.
+
+    Parameters
+    ----------
+    db_path
+        Path to the DuckDB database file.
+    output_dir
+        Directory to write profiling artifacts.
+    analyze
+        Whether to use EXPLAIN ANALYZE.
 
     Raises
     ------
@@ -62,11 +89,11 @@ def _run_profile(*, db_path: Path, output_dir: Path, analyze: bool) -> None:
     try:
         con = gateway.con
         meta = {"db_path": str(db_path), "analyze": analyze, "views": DOCS_VIEWS}
-        _write_text(output_dir / "profile_meta.json", json.dumps(meta, indent=2))
+        write_text(output_dir / "profile_meta.json", json.dumps(meta, indent=2))
         for view in DOCS_VIEWS:
-            plan = _explain(con=con, view=view, analyze=analyze)
+            plan = explain(con=con, view=view, analyze=analyze)
             suffix = "analyze" if analyze else "explain"
-            _write_text(output_dir / f"{view.replace('.', '_')}.{suffix}.txt", plan)
+            write_text(output_dir / f"{view.replace('.', '_')}.{suffix}.txt", plan)
     finally:
         gateway.close()
 
@@ -102,7 +129,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
-        _run_profile(db_path=args.db_path, output_dir=args.output_dir, analyze=bool(args.analyze))
+        run_profile(db_path=args.db_path, output_dir=args.output_dir, analyze=bool(args.analyze))
     except (FileNotFoundError, DuckDBError, RuntimeError, OSError) as exc:
         parser.error(str(exc))
         return 2

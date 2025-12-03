@@ -59,4 +59,3 @@ __all__ = [
     "pipeline_app",
     "serve_app",
 ]
-
