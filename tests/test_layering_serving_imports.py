@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-ALLOWED_SERVING_IMPORTERS = {"cli", "pipeline", "serving", "tests"}
-ALLOWED_PIPELINE_IMPORTERS = {"pipeline", "serving", "cli", "tests", "storage"}
+ALLOWED_SERVING_IMPORTERS = {"pipeline", "serving", "tests"}
+ALLOWED_PIPELINE_IMPORTERS = {"pipeline", "serving", "tests", "storage"}
 
 
 def _iter_python_files(root: Path) -> list[Path]:

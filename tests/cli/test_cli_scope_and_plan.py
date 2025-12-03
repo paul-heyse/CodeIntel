@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-import codeintel.cli.main as cli_main
+import codeintel.pipeline.cli.main as cli_main
 
 
 def test_cli_plan_outputs_isolation_and_scope_metadata(capsys: pytest.CaptureFixture[str]) -> None:

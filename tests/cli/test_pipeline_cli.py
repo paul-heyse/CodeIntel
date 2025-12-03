@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.cli.main import main, make_parser
+from codeintel.pipeline.cli.main import main, make_parser
 from tests._helpers.expect import (
     expect_equal,
     expect_in,
