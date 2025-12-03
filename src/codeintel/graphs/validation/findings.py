@@ -10,11 +10,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.parsing.validation import GraphValidationReporter
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
     from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================
@@ -62,8 +62,6 @@ def resolve_validation_options(
     GraphValidationOptions
         Options merged with any feature flag overrides.
     """
-    from codeintel.analytics.graph_runtime import GraphRuntime  # noqa: PLC0415
-
     if options is not None:
         return options
     features = runtime.options.features if isinstance(runtime, GraphRuntime) else runtime.features

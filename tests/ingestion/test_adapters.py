@@ -15,10 +15,10 @@ from codeintel.ingestion.adapters.duckdb_storage import (
     INGEST_MACROS,
     SMALL_BATCH_THRESHOLD,
     DuckDBStorageAdapter,
-    _build_delete_in_query,  # noqa: PLC2701
-    _quote_identifier,  # noqa: PLC2701
-    _quote_macro_name,  # noqa: PLC2701
-    _quote_table_key,  # noqa: PLC2701
+    build_delete_in_query,
+    quote_identifier,
+    quote_macro_name,
+    quote_table_key,
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
@@ -32,27 +32,27 @@ ROWS_WRITTEN_100 = 100
 DURATION_1_5 = 1.5
 
 # =============================================================================
-# _quote_identifier Tests
+# quote_identifier Tests
 # =============================================================================
 
 
 def test_quote_identifier_valid_simple() -> None:
     """Should quote simple identifiers."""
-    result = _quote_identifier("my_table")
+    result = quote_identifier("my_table")
 
     assert result == '"my_table"'
 
 
 def test_quote_identifier_valid_with_numbers() -> None:
     """Should quote identifiers with numbers."""
-    result = _quote_identifier("table_123")
+    result = quote_identifier("table_123")
 
     assert result == '"table_123"'
 
 
 def test_quote_identifier_valid_uppercase() -> None:
     """Should quote uppercase identifiers."""
-    result = _quote_identifier("MyTable")
+    result = quote_identifier("MyTable")
 
     assert result == '"MyTable"'
 
@@ -60,41 +60,41 @@ def test_quote_identifier_valid_uppercase() -> None:
 def test_quote_identifier_rejects_spaces() -> None:
     """Should reject identifiers with spaces."""
     with pytest.raises(ValueError, match="Unsafe identifier"):
-        _quote_identifier("my table")
+        quote_identifier("my table")
 
 
 def test_quote_identifier_rejects_dashes() -> None:
     """Should reject identifiers with dashes."""
     with pytest.raises(ValueError, match="Unsafe identifier"):
-        _quote_identifier("my-table")
+        quote_identifier("my-table")
 
 
 def test_quote_identifier_rejects_sql_injection() -> None:
     """Should reject SQL injection attempts."""
     with pytest.raises(ValueError, match="Unsafe identifier"):
-        _quote_identifier("table; DROP TABLE users;--")
+        quote_identifier("table; DROP TABLE users;--")
 
 
 def test_quote_identifier_rejects_quotes() -> None:
     """Should reject identifiers with quotes."""
     with pytest.raises(ValueError, match="Unsafe identifier"):
-        _quote_identifier('table"name')
+        quote_identifier('table"name')
 
 
 def test_quote_identifier_rejects_semicolons() -> None:
     """Should reject identifiers with semicolons."""
     with pytest.raises(ValueError, match="Unsafe identifier"):
-        _quote_identifier("table;name")
+        quote_identifier("table;name")
 
 
 # =============================================================================
-# _quote_table_key Tests
+# quote_table_key Tests
 # =============================================================================
 
 
 def test_quote_table_key_valid() -> None:
     """Should quote valid table keys."""
-    schema, table, quoted = _quote_table_key("core.modules")
+    schema, table, quoted = quote_table_key("core.modules")
 
     assert schema == "core"
     assert table == "modules"
@@ -104,7 +104,7 @@ def test_quote_table_key_valid() -> None:
 def test_quote_table_key_unknown_table() -> None:
     """Should reject unknown table keys."""
     with pytest.raises(ValueError, match="Unknown table key"):
-        _quote_table_key("nonexistent.table")
+        quote_table_key("nonexistent.table")
 
 
 # =============================================================================
@@ -129,7 +129,8 @@ def test_ingest_macros_keys_are_table_format() -> None:
     for key in INGEST_MACROS:
         assert "." in key
         parts = key.split(".")
-        assert len(parts) >= 2  # noqa: PLR2004
+        min_parts = 2
+        assert len(parts) >= min_parts
 
 
 def test_ingest_macros_values_start_with_metadata() -> None:
@@ -319,9 +320,9 @@ def test_adapter_write_and_query_cycle(fresh_gateway: StorageGateway) -> None:
 # =============================================================================
 
 
-def test_build_delete_in_query() -> None:
-    """_build_delete_in_query should construct valid DELETE SQL."""
-    result = _build_delete_in_query('"core"."modules"', '"path"', 3)
+def testbuild_delete_in_query() -> None:
+    """build_delete_in_query should construct valid DELETE SQL."""
+    result = build_delete_in_query('"core"."modules"', '"path"', 3)
 
     expected_count = 3
     assert "DELETE FROM" in result
@@ -331,16 +332,16 @@ def test_build_delete_in_query() -> None:
 
 
 def test_quote_macro_name_simple() -> None:
-    """_quote_macro_name should handle simple macro names."""
-    result = _quote_macro_name("metadata.ingest_modules")
+    """quote_macro_name should handle simple macro names."""
+    result = quote_macro_name("metadata.ingest_modules")
 
     assert result == "metadata.ingest_modules"
 
 
 def test_quote_macro_name_invalid() -> None:
-    """_quote_macro_name should reject invalid macro names."""
+    """quote_macro_name should reject invalid macro names."""
     with pytest.raises(ValueError, match="Unsafe"):
-        _quote_macro_name("metadata..double_dot")
+        quote_macro_name("metadata..double_dot")
 
 
 # =============================================================================

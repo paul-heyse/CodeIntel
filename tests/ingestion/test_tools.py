@@ -48,6 +48,7 @@ from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
 from codeintel.ingestion.tools import ToolPluginResult, build_default_registry
 from codeintel.ingestion.tools.plugins import ToolStatus as PluginToolStatus
 from codeintel.ingestion.tools.pyright import PyrightPlugin
+from codeintel.ingestion.tools.pytest import PytestPlugin
 from codeintel.ingestion.tools.results import (
     CoverageFileSummary,
     CoverageReport,
@@ -58,11 +59,12 @@ from codeintel.ingestion.tools.results import (
     ScipOccurrence,
     TestCaseResult,
     TestReport,
-    _parse_scip_occurrence,  # noqa: PLC2701
-    _parse_scip_range,  # noqa: PLC2701
-    _parse_test_duration,  # noqa: PLC2701
-    _parse_test_markers,  # noqa: PLC2701
+    parse_scip_occurrence,
+    parse_scip_range,
+    parse_test_duration,
+    parse_test_markers,
 )
+from codeintel.ingestion.tools.scip import ScipPlugin
 from tests._helpers.tooling import ToolingOutputs, build_tooling_context, run_static_tooling
 
 # =============================================================================
@@ -1033,36 +1035,36 @@ def test_coverage_report_by_path() -> None:
 
 
 def test_parse_test_duration_valid() -> None:
-    """_parse_test_duration should extract duration from call dict."""
+    """parse_test_duration should extract duration from call dict."""
     entry = {"call": {"duration": 1.5}}
-    assert _parse_test_duration(entry) == DURATION_1_5
+    assert parse_test_duration(entry) == DURATION_1_5
 
 
 def test_parse_test_duration_missing() -> None:
-    """_parse_test_duration should return 0.0 for missing data."""
-    assert _parse_test_duration({}) == 0.0
-    assert _parse_test_duration({"call": {}}) == 0.0
+    """parse_test_duration should return 0.0 for missing data."""
+    assert parse_test_duration({}) == 0.0
+    assert parse_test_duration({"call": {}}) == 0.0
 
 
 def test_parse_test_markers_dict() -> None:
-    """_parse_test_markers should extract from keywords dict."""
+    """parse_test_markers should extract from keywords dict."""
     entry = {"keywords": {"slow": True, "fast": False, "integration": True}}
-    markers = _parse_test_markers(entry)
+    markers = parse_test_markers(entry)
     assert "slow" in markers
     assert "integration" in markers
     assert "fast" not in markers
 
 
 def test_parse_test_markers_list() -> None:
-    """_parse_test_markers should handle keywords as list."""
+    """parse_test_markers should handle keywords as list."""
     entry = {"keywords": ["slow", "integration"]}
-    markers = _parse_test_markers(entry)
+    markers = parse_test_markers(entry)
     assert markers == ["integration", "slow"]
 
 
 def test_parse_test_markers_empty() -> None:
-    """_parse_test_markers should return empty for missing keywords."""
-    assert _parse_test_markers({}) == []
+    """parse_test_markers should return empty for missing keywords."""
+    assert parse_test_markers({}) == []
 
 
 def test_test_report_from_test_entries() -> None:
@@ -1117,29 +1119,29 @@ def test_results_scip_document_attributes() -> None:
 
 
 def test_parse_scip_range_three_elements() -> None:
-    """_parse_scip_range should handle 3-element ranges (single line)."""
-    result = _parse_scip_range([10, 5, 15])
+    """parse_scip_range should handle 3-element ranges (single line)."""
+    result = parse_scip_range([10, 5, 15])
     assert result == (LINE_10, COLUMN_5, LINE_10, COLUMN_15)
 
 
 def test_parse_scip_range_four_elements() -> None:
-    """_parse_scip_range should handle 4-element ranges."""
-    result = _parse_scip_range([10, 5, 12, 8])
+    """parse_scip_range should handle 4-element ranges."""
+    result = parse_scip_range([10, 5, 12, 8])
     expected = (10, 5, 12, 8)
     assert result == expected
 
 
 def test_parse_scip_range_invalid() -> None:
-    """_parse_scip_range should return None for invalid ranges."""
-    assert _parse_scip_range([1]) is None
-    assert _parse_scip_range([1, 2]) is None
-    assert _parse_scip_range([]) is None
+    """parse_scip_range should return None for invalid ranges."""
+    assert parse_scip_range([1]) is None
+    assert parse_scip_range([1, 2]) is None
+    assert parse_scip_range([]) is None
 
 
 def test_parse_scip_occurrence_valid() -> None:
-    """_parse_scip_occurrence should parse valid occurrence."""
+    """parse_scip_occurrence should parse valid occurrence."""
     occ = {"symbol": "pkg#func", "range": [10, 5, 15], "symbol_roles": 1}
-    result = _parse_scip_occurrence(occ)
+    result = parse_scip_occurrence(occ)
     assert result is not None
     parsed, is_def = result
     assert parsed.symbol == "pkg#func"
@@ -1147,15 +1149,15 @@ def test_parse_scip_occurrence_valid() -> None:
 
 
 def test_parse_scip_occurrence_invalid_symbol() -> None:
-    """_parse_scip_occurrence should return None for missing symbol."""
-    assert _parse_scip_occurrence({"range": [1, 0, 5]}) is None
-    assert _parse_scip_occurrence({"symbol": 123, "range": [1, 0, 5]}) is None
+    """parse_scip_occurrence should return None for missing symbol."""
+    assert parse_scip_occurrence({"range": [1, 0, 5]}) is None
+    assert parse_scip_occurrence({"symbol": 123, "range": [1, 0, 5]}) is None
 
 
 def test_parse_scip_occurrence_invalid_range() -> None:
-    """_parse_scip_occurrence should return None for invalid range."""
-    assert _parse_scip_occurrence({"symbol": "s", "range": [1]}) is None
-    assert _parse_scip_occurrence({"symbol": "s", "range": "bad"}) is None
+    """parse_scip_occurrence should return None for invalid range."""
+    assert parse_scip_occurrence({"symbol": "s", "range": [1]}) is None
+    assert parse_scip_occurrence({"symbol": "s", "range": "bad"}) is None
 
 
 def test_scip_index_result_from_json_documents() -> None:
@@ -1200,8 +1202,6 @@ def test_scip_index_result_empty() -> None:
 
 def test_scip_plugin_not_found_during_scip_python() -> None:
     """ScipPlugin should return NOT_FOUND when scip-python is missing."""
-    from codeintel.ingestion.tools.scip import ScipPlugin
-
     tools_cfg = ToolsConfig.default()
     exc = ToolNotFoundError(ToolName.SCIP_PYTHON, tools_cfg.scip_python_bin)
     runner = PresetRunner(exc)
@@ -1222,8 +1222,6 @@ def test_scip_plugin_not_found_during_scip_python() -> None:
 
 def test_scip_plugin_type_error_on_missing_output_scip() -> None:
     """ScipPlugin.run() should raise TypeError when output_scip is missing."""
-    from codeintel.ingestion.tools.scip import ScipPlugin
-
     tools_cfg = ToolsConfig.default()
     run = ToolRunResult(
         tool=ToolName.SCIP_PYTHON,
@@ -1242,8 +1240,6 @@ def test_scip_plugin_type_error_on_missing_output_scip() -> None:
 
 def test_scip_plugin_type_error_on_missing_output_json() -> None:
     """ScipPlugin.run() should raise TypeError when output_json is missing."""
-    from codeintel.ingestion.tools.scip import ScipPlugin
-
     tools_cfg = ToolsConfig.default()
     run = ToolRunResult(
         tool=ToolName.SCIP_PYTHON,
@@ -1262,8 +1258,6 @@ def test_scip_plugin_type_error_on_missing_output_json() -> None:
 
 def test_scip_plugin_type_error_on_invalid_target_dir() -> None:
     """ScipPlugin.run() should raise TypeError when target_dir is invalid type."""
-    from codeintel.ingestion.tools.scip import ScipPlugin
-
     tools_cfg = ToolsConfig.default()
     run = ToolRunResult(
         tool=ToolName.SCIP_PYTHON,
@@ -1289,8 +1283,6 @@ def test_scip_plugin_type_error_on_invalid_target_dir() -> None:
 
 def test_scip_plugin_type_error_on_invalid_rel_paths() -> None:
     """ScipPlugin.run() should raise TypeError when rel_paths is invalid type."""
-    from codeintel.ingestion.tools.scip import ScipPlugin
-
     tools_cfg = ToolsConfig.default()
     run = ToolRunResult(
         tool=ToolName.SCIP_PYTHON,
@@ -1315,8 +1307,6 @@ def test_scip_plugin_type_error_on_invalid_rel_paths() -> None:
         )
 
 
-
-
 # =============================================================================
 # Pytest Tool Plugin Tests
 # =============================================================================
@@ -1324,16 +1314,12 @@ def test_scip_plugin_type_error_on_invalid_rel_paths() -> None:
 
 def test_pytest_plugin_not_found() -> None:
     """PytestPlugin should return NOT_FOUND when pytest is missing."""
-    from codeintel.ingestion.tools.pytest import PytestPlugin
-
     tools_cfg = ToolsConfig.default()
     exc = ToolNotFoundError(ToolName.PYTEST, tools_cfg.pytest_bin)
     runner = PresetRunner(exc)
     plugin = PytestPlugin(runner=runner, tools_config=tools_cfg)
 
-    result = asyncio.run(
-        plugin.run(repo_root=Path(), json_report_path=Path("report.json"))
-    )
+    result = asyncio.run(plugin.run(repo_root=Path(), json_report_path=Path("report.json")))
 
     assert result.status == PluginToolStatus.NOT_FOUND
     assert result.run is None
@@ -1342,8 +1328,6 @@ def test_pytest_plugin_not_found() -> None:
 
 def test_pytest_plugin_type_error_on_missing_json_report_path() -> None:
     """PytestPlugin.run() should raise TypeError when json_report_path is missing."""
-    from codeintel.ingestion.tools.pytest import PytestPlugin
-
     tools_cfg = ToolsConfig.default()
     run = ToolRunResult(
         tool=ToolName.PYTEST,
@@ -1362,21 +1346,15 @@ def test_pytest_plugin_type_error_on_missing_json_report_path() -> None:
 
 def test_pytest_plugin_execution_error() -> None:
     """PytestPlugin should return ERROR when pytest fails."""
-    from codeintel.ingestion.tools.pytest import PytestPlugin
-
     tools_cfg = ToolsConfig.default()
     exc = RuntimeError("pytest failed")
     runner = PresetRunner(exc)
     plugin = PytestPlugin(runner=runner, tools_config=tools_cfg)
 
-    result = asyncio.run(
-        plugin.run(repo_root=Path(), json_report_path=Path("report.json"))
-    )
+    result = asyncio.run(plugin.run(repo_root=Path(), json_report_path=Path("report.json")))
 
     assert result.status == PluginToolStatus.ERROR
     assert isinstance(result.error, ToolExecutionError)
-
-
 
 
 # =============================================================================
@@ -1386,15 +1364,8 @@ def test_pytest_plugin_execution_error() -> None:
 
 def test_tool_service_run_ruff_execution_error(tmp_path: Path) -> None:
     """ToolService.run_ruff should raise ToolExecutionError on failure."""
-    # Create a runner that returns an error status
-    run = ToolRunResult(
-        tool=ToolName.RUFF,
-        args=(),
-        returncode=1,
-        stdout="",
-        stderr="ruff check failed",
-        duration_s=0.1,
-    )
+    # Create a runner that returns an error (the ToolRunResult was unused,
+    # as PresetRunner takes the exception directly)
     runner = PresetRunner(RuntimeError("ruff error"))
     service = ToolService(runner)
 

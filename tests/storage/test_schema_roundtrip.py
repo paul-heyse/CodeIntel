@@ -11,13 +11,13 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from codeintel.config.datasets import (
-    DATASET_CONTRACTS_BY_TABLE_KEY,
     BehavioralCoverageRowModel,
     CallGraphEdgeRow,
     SymbolUseRow,
     TestCoverageEdgeRow,
     behavioral_coverage_row_to_tuple,
     call_graph_edge_to_tuple,
+    get_dataset_contracts_by_table_key,
     serialize_test_coverage_edge,
     symbol_use_to_tuple,
 )
@@ -61,7 +61,7 @@ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
     schema = json_schema_from_typeddict(CallGraphEdgeRow)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     values = call_graph_edge_to_tuple(row)
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY["graph.call_graph_edges"]
+    contract = get_dataset_contracts_by_table_key()["graph.call_graph_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
@@ -74,7 +74,7 @@ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
     schema = json_schema_from_typeddict(SymbolUseRow)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     values = symbol_use_to_tuple(row)
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY["graph.symbol_use_edges"]
+    contract = get_dataset_contracts_by_table_key()["graph.symbol_use_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
@@ -87,7 +87,7 @@ def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
     schema = json_schema_from_typeddict(TestCoverageEdgeRow)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     values = serialize_test_coverage_edge(row)
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.test_coverage_edges"]
+    contract = get_dataset_contracts_by_table_key()["analytics.test_coverage_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
@@ -100,7 +100,7 @@ def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None
     schema = json_schema_from_typeddict(BehavioralCoverageRowModel)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     values = behavioral_coverage_row_to_tuple(row)
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.behavioral_coverage"]
+    contract = get_dataset_contracts_by_table_key()["analytics.behavioral_coverage"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")

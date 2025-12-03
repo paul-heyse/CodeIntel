@@ -12,7 +12,7 @@ from codeintel.config.datasets import DatasetContract
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend.core import BackendContext, DuckDBConnection, DuckDBRepositories
 from codeintel.serving.backend.domain_builders import DatasetSchemaInput, build_dataset_schema
-from codeintel.serving.backend.pagination import clamp_limit_value, clamp_offset_value
+from codeintel.serving.backend.pagination import clamp_limit, clamp_offset
 from codeintel.serving.backend.query_api import DatasetQueriesApi
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import DatasetSchemaColumn, DatasetSpecDescriptor
@@ -250,19 +250,19 @@ class DatasetBackend(DatasetQueriesApi):
         except KeyError as exc:
             message = f"Unknown dataset: {dataset_name}"
             raise errors.not_found(message) from exc
-        offset_clamp = clamp_offset_value(offset)
+        offset_clamp = clamp_offset(offset)
         if offset_clamp.has_error:
             detail = offset_clamp.messages[0].detail if offset_clamp.messages else None
             detail_text = detail or "offset must be non-negative"
             raise errors.invalid_argument(detail_text)
-        clamp = clamp_limit_value(
+        clamp = clamp_limit(
             limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
         return self.datasets.read_dataset_rows(
             table_key=ds.table_key,
-            limit=clamp.applied,
+            limit=clamp.limit_or_default(self.context.limits.default_limit),
             offset=offset_clamp.applied,
         )
 

@@ -8,9 +8,12 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.bootstrap import (
+    BackendResource,
+    BackendResourceOptions,
+    build_backend_resource,
+)
 from codeintel.serving.mcp.registry import register_tools
-from codeintel.serving.services.factory import BackendResource, build_backend_resource
-from codeintel.serving.services.wiring import BackendResourceOptions
 from codeintel.storage.gateway import StorageGateway
 
 BackendFactory = Callable[..., BackendResource]

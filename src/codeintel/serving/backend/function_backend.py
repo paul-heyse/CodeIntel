@@ -26,7 +26,7 @@ from codeintel.serving.backend.domain_builders import (
     build_import_boundary,
     build_tests_for_function,
 )
-from codeintel.serving.backend.pagination import clamp_limit_value
+from codeintel.serving.backend.pagination import clamp_limit
 from codeintel.serving.backend.query_api import FunctionQueriesApi
 from codeintel.serving.mcp import errors
 from codeintel.storage.repositories import FunctionRepository, GraphRepository
@@ -206,14 +206,14 @@ class FunctionBackend(FunctionQueriesApi):
             High-risk function rows plus metadata.
         """
         _ = scope
-        limit_clamp = clamp_limit_value(
+        limit_clamp = clamp_limit(
             limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
         rows = self.functions.list_high_risk_functions(
             min_risk=min_risk,
-            limit=limit_clamp.applied,
+            limit=limit_clamp.limit_or_default(self.context.limits.default_limit),
             tested_only=tested_only,
         )
         normalized_rows = [
@@ -243,21 +243,22 @@ class FunctionBackend(FunctionQueriesApi):
             Neighbor rows plus pagination metadata.
         """
         _ = scope
-        limit_clamp = clamp_limit_value(
+        limit_clamp = clamp_limit(
             limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
         outgoing_rows: list[Mapping[str, object]] = []
         incoming_rows: list[Mapping[str, object]] = []
+        default_limit = self.context.limits.default_limit
         if direction in {"outgoing", "both"}:
             outgoing = self.graphs.get_outgoing_callgraph_neighbors(
-                goid_h128, limit=limit_clamp.applied
+                goid_h128, limit=limit_clamp.limit_or_default(default_limit)
             )
             outgoing_rows = list(outgoing)
         if direction in {"incoming", "both"}:
             incoming = self.graphs.get_incoming_callgraph_neighbors(
-                goid_h128, limit=limit_clamp.applied
+                goid_h128, limit=limit_clamp.limit_or_default(default_limit)
             )
             incoming_rows = list(incoming)
         meta = ResponseMeta(
@@ -298,12 +299,14 @@ class FunctionBackend(FunctionQueriesApi):
                 ]
             )
             return build_tests_for_function([], meta=meta)
-        limit_clamp = clamp_limit_value(
+        limit_clamp = clamp_limit(
             limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
-        tests = self.repositories.tests.get_tests_for_function(resolved, limit=limit_clamp.applied)
+        tests = self.repositories.tests.get_tests_for_function(
+            resolved, limit=limit_clamp.limit_or_default(self.context.limits.default_limit)
+        )
         messages = list(limit_clamp.messages)
         if not tests:
             messages.append(
@@ -416,7 +419,7 @@ class FunctionBackend(FunctionQueriesApi):
         ImportBoundaryResponse
             Boundary nodes and edges with truncation metadata.
         """
-        limit_clamp = clamp_limit_value(
+        limit_clamp = clamp_limit(
             max_edges,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,

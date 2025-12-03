@@ -15,7 +15,8 @@ from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config import ConfigBuilder, GraphMetricsStepConfig
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths
-from codeintel.graphs.plugins.builders.callgraph import build_call_graph
+from codeintel.graphs.plugins.builders.callgraph import get_callgraph_builder_plugin
+from codeintel.graphs.plugins.runner import GraphPluginRunner
 from codeintel.ingestion import (
     CoverageIngestStep,
     DuckDBStorageAdapter,
@@ -2259,7 +2260,10 @@ def graph_metrics_ready_gateway(
         cfg = ConfigBuilder.from_snapshot(
             repo=opts.repo, commit=opts.commit, repo_root=repo_root
         ).call_graph()
-        build_call_graph(gateway, cfg)
+        runner = GraphPluginRunner(gateway=gateway)
+        plugin = get_callgraph_builder_plugin()
+        exec_ctx = runner.build_context(cfg.snapshot)
+        runner.run_plugin(plugin, exec_ctx)
     if opts.include_symbol_edges:
         insert_symbol_use_edges(
             gateway,
@@ -2352,7 +2356,10 @@ def build_callgraph_fixture_repo(
     cfg = ConfigBuilder.from_snapshot(
         repo=opts.repo, commit=opts.commit, repo_root=repo_root
     ).call_graph()
-    build_call_graph(gateway, cfg)
+    runner = GraphPluginRunner(gateway=gateway)
+    plugin = get_callgraph_builder_plugin()
+    exec_ctx = runner.build_context(cfg.snapshot)
+    runner.run_plugin(plugin, exec_ctx)
     return ctx
 
 

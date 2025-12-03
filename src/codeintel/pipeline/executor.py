@@ -3,8 +3,6 @@
 This module provides the main entrypoint for executing unified pipelines
 across ingestion, graphs, and analytics stages. The executor manages run
 tracking, stage dispatch, and failure handling.
-
-NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
 
 from __future__ import annotations
@@ -14,6 +12,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.analytics.core.pipeline_bridge import run_analytics_plugins
+from codeintel.graphs.runtime.executor import run_graph_plugins
+from codeintel.ingestion.recipes.executor import execute_recipe
 from codeintel.pipeline.planner import (
     AnalyticsStagePlan,
     GraphsStagePlan,
@@ -23,6 +24,7 @@ from codeintel.pipeline.planner import (
     build_pipeline_plan,
 )
 from codeintel.pipeline.spec import PipelineSpec, PipelineStage
+from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord
 
 if TYPE_CHECKING:
     from codeintel.storage.run_tracking import (
@@ -30,8 +32,6 @@ if TYPE_CHECKING:
         PipelineRunTracking,
         StepStatus,
     )
-
-from codeintel.storage.run_tracking import PipelineStatus
 
 log = logging.getLogger(__name__)
 
@@ -83,8 +83,6 @@ def _start_stage_step(
     datetime
         Start timestamp for use in completion.
     """
-    from codeintel.storage.run_tracking import PipelineStepRecord
-
     started_at = _now()
     runs.record_step(
         PipelineStepRecord(
@@ -112,21 +110,13 @@ def _complete_stage_step(
 
     Parameters
     ----------
-    runs
-        Pipeline run tracking accessor.
-    run_id
-        Run identifier.
-    stage
-        Pipeline stage that completed.
+    ctx
+        Stage context including run metadata.
     status
         Final status of the step.
-    started_at
-        When the step started.
     error
         Optional error message if failed.
     """
-    from codeintel.storage.run_tracking import PipelineStepRecord
-
     extra: dict[str, object] | None = None
     if error:
         extra = {"error": error}
@@ -166,8 +156,6 @@ def _execute_ingestion_stage(
     RuntimeError
         If recipe execution fails.
     """
-    from codeintel.ingestion.recipes.executor import execute_recipe
-
     result = execute_recipe(
         recipe=plan.recipe,
         context=plan.context,
@@ -194,8 +182,6 @@ def _execute_graphs_stage(
     RuntimeError
         If any graph plugin fails.
     """
-    from codeintel.graphs.runtime.executor import run_graph_plugins
-
     report = run_graph_plugins(
         plan=plan.plan,
         context=plan.context,
@@ -222,8 +208,6 @@ def _execute_analytics_stage(
     RuntimeError
         If any analytics plugin fails.
     """
-    from codeintel.analytics.core.pipeline_bridge import run_analytics_plugins
-
     report = run_analytics_plugins(
         plan=plan.plan,
         run_context=plan.context,

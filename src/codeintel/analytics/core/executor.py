@@ -430,6 +430,19 @@ class PluginExecutor:
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
         return result, attempts, duration_ms, error
 
+    def get_plugin_contracts(
+        self,
+        plugin: AnalyticsPluginProtocol,
+    ) -> tuple[PluginOutputContract, ...]:
+        """Return cached output contracts for inspection and testing.
+
+        Returns
+        -------
+        tuple[PluginOutputContract, ...]
+            Cached output contracts for the provided plugin.
+        """
+        return self._get_plugin_contracts(plugin)
+
     def _get_plugin_contracts(
         self,
         plugin: AnalyticsPluginProtocol,

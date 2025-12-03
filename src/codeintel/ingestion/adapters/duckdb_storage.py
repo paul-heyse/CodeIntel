@@ -143,6 +143,50 @@ def _quote_macro_name(macro_name: str) -> str:
     return ".".join(part for part in parts if part)
 
 
+def quote_identifier(identifier: str) -> str:
+    """Public wrapper for quoting SQL identifiers.
+
+    Returns
+    -------
+    str
+        Quoted identifier suitable for SQL statements.
+    """
+    return _quote_identifier(identifier)
+
+
+def quote_table_key(table_key: str) -> tuple[str, str, str]:
+    """Public wrapper for quoting validated table keys.
+
+    Returns
+    -------
+    tuple[str, str, str]
+        Schema name, table name, and fully quoted identifier.
+    """
+    return _quote_table_key(table_key)
+
+
+def build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
+    """Public wrapper for building delete queries with IN clauses.
+
+    Returns
+    -------
+    str
+        Parameterized DELETE statement.
+    """
+    return _build_delete_in_query(table_sql, column_sql, count)
+
+
+def quote_macro_name(macro_name: str) -> str:
+    """Public wrapper for quoting macro names safely.
+
+    Returns
+    -------
+    str
+        Validated macro name.
+    """
+    return _quote_macro_name(macro_name)
+
+
 def _load_macro_names(con: DuckDBConnection) -> set[str]:
     """Return macro names (qualified + unqualified) for the active connection.
 
@@ -507,4 +551,10 @@ class DuckDBStorageAdapter:
         return len(rows)
 
 
-__all__ = ["DuckDBStorageAdapter"]
+__all__ = [
+    "DuckDBStorageAdapter",
+    "build_delete_in_query",
+    "quote_identifier",
+    "quote_macro_name",
+    "quote_table_key",
+]

@@ -7,13 +7,13 @@ from fastapi import APIRouter
 from codeintel.serving.http.dependencies import ServiceDep
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import FunctionArchitectureResponse, ModuleArchitectureResponse
-from codeintel.serving.registry import OperationSpec, get_operation_spec
+from codeintel.serving.operations import Operation, get_operation
 
 
-def _require_spec(op_id: str) -> OperationSpec:
-    spec = get_operation_spec(op_id)
+def _require_spec(op_id: str) -> Operation:
+    spec = get_operation(op_id)
     if spec is None:
-        message = f"OperationSpec {op_id} is not registered"
+        message = f"Operation {op_id} is not registered"
         raise ValueError(message)
     return spec
 
@@ -25,7 +25,7 @@ def build_architecture_router() -> APIRouter:
     Raises
     ------
     ValueError
-        If OperationSpec entries are missing or lack http_path values.
+        If Operation entries are missing or lack http_path values.
 
     Returns
     -------
@@ -36,11 +36,11 @@ def build_architecture_router() -> APIRouter:
     spec_function = _require_spec("architecture.function")
     spec_module = _require_spec("architecture.module")
     if spec_function.http_path is None:
-        message = "OperationSpec architecture.function is missing http_path"
+        message = "Operation architecture.function is missing http_path"
         raise ValueError(message)
     function_path = spec_function.http_path
     if spec_module.http_path is None:
-        message = "OperationSpec architecture.module is missing http_path"
+        message = "Operation architecture.module is missing http_path"
         raise ValueError(message)
     module_path = spec_module.http_path
 

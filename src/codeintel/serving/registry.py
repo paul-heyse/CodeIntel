@@ -1,7 +1,7 @@
 """Unified registry for serving datasets and operations.
 
-This module provides backward-compatible access to operation metadata.
-The canonical source of truth is now `codeintel.serving.operations.catalog`.
+This module provides dataflow graph building and dataset metadata.
+The canonical Operation type is in `codeintel.serving.operations.catalog`.
 """
 
 from __future__ import annotations
@@ -49,13 +49,8 @@ class DatasetMeta:
     validation_profile: str | None = None
 
 
-# OperationSpec is now an alias for the canonical Operation type.
-# This preserves backward compatibility for code that imports OperationSpec.
-OperationSpec = Operation
-
-
 def _resolve_dataset_identifier(identifier: str) -> str | None:
-    """Resolve a dataset identifier used in OperationSpec into a canonical table_key.
+    """Resolve a dataset identifier used in Operation into a canonical table_key.
 
     Returns
     -------
@@ -73,32 +68,32 @@ def _resolve_dataset_identifier(identifier: str) -> str | None:
     return None
 
 
-def _build_operation_specs() -> dict[str, OperationSpec]:
-    """Build operation specs from the canonical catalog.
+def _build_operations() -> dict[str, Operation]:
+    """Build operations from the canonical catalog.
 
     Patches datasets.rows with exposed_datasets from DATASET_CONTRACTS_BY_TABLE_KEY.
 
     Returns
     -------
-    dict[str, OperationSpec]
-        Mapping from operation ID to OperationSpec.
+    dict[str, Operation]
+        Mapping from operation ID to Operation.
     """
-    specs: dict[str, OperationSpec] = {}
+    operations: dict[str, Operation] = {}
     exposed_datasets_keys = tuple(DATASET_CONTRACTS_BY_TABLE_KEY.keys())
 
     for operation in iter_operations():
         if operation.id == "datasets.rows":
             # Patch in exposed_datasets dynamically
             patched_op = dataclasses.replace(operation, exposed_datasets=exposed_datasets_keys)
-            specs[patched_op.id] = patched_op
+            operations[patched_op.id] = patched_op
         else:
-            specs[operation.id] = operation
+            operations[operation.id] = operation
 
-    return specs
+    return operations
 
 
-# Build the operation specs dict from the canonical catalog
-_OPERATION_SPECS: dict[str, OperationSpec] = _build_operation_specs()
+# Build the operations dict from the canonical catalog
+_OPERATIONS: dict[str, Operation] = _build_operations()
 
 
 def build_dataset_meta(service: QueryService, limits: BackendLimits) -> list[DatasetMeta]:
@@ -148,21 +143,21 @@ def build_dataset_meta(service: QueryService, limits: BackendLimits) -> list[Dat
     return metas
 
 
-def iter_operation_specs() -> list[OperationSpec]:
+def iter_registry_operations() -> list[Operation]:
     """
-    Return all registered OperationSpec instances.
+    Return all registered Operation instances with dynamic patching.
 
     Returns
     -------
-    list[OperationSpec]
-        Operation specifications defined in the registry.
+    list[Operation]
+        Operations in the registry with exposed_datasets patched.
     """
-    return list(_OPERATION_SPECS.values())
+    return list(_OPERATIONS.values())
 
 
-def get_operation_spec(op_id: str) -> OperationSpec | None:
+def get_registry_operation(op_id: str) -> Operation | None:
     """
-    Return a single OperationSpec by id, or None when unknown.
+    Return a single Operation by id with dynamic patching, or None when unknown.
 
     Parameters
     ----------
@@ -171,10 +166,10 @@ def get_operation_spec(op_id: str) -> OperationSpec | None:
 
     Returns
     -------
-    OperationSpec | None
-        Matching specification when present.
+    Operation | None
+        Matching operation when present.
     """
-    return _OPERATION_SPECS.get(op_id)
+    return _OPERATIONS.get(op_id)
 
 
 def iter_operation_nodes() -> list[DataflowNode]:
@@ -183,17 +178,17 @@ def iter_operation_nodes() -> list[DataflowNode]:
     Returns
     -------
     list[DataflowNode]
-        Operation nodes keyed by OperationSpec.id.
+        Operation nodes keyed by Operation.id.
     """
     return [
         DataflowNode(
-            id=spec.id,
+            id=op.id,
             kind="operation",
             family="serving",
             owner_package=None,
-            description=spec.summary,
+            description=op.summary,
         )
-        for spec in _OPERATION_SPECS.values()
+        for op in _OPERATIONS.values()
     ]
 
 
@@ -203,11 +198,11 @@ def iter_graph_nodes() -> list[DataflowNode]:
     Returns
     -------
     list[DataflowNode]
-        Graph nodes keyed as graph.<name> for required OperationSpec graphs.
+        Graph nodes keyed as graph.<name> for required Operation graphs.
     """
     names: set[str] = set()
-    for spec in _OPERATION_SPECS.values():
-        for graph_name in spec.required_graphs:
+    for op in _OPERATIONS.values():
+        for graph_name in op.required_graphs:
             names.add(graph_name)
 
     return [
@@ -232,20 +227,18 @@ def iter_operation_dataset_edges() -> list[DataflowEdge]:
     """
     edges: list[DataflowEdge] = []
 
-    for spec in _OPERATION_SPECS.values():
+    for op in _OPERATIONS.values():
         edges.extend(
-            DataflowEdge(src=table_key, dst=spec.id, edge_type="reads")
+            DataflowEdge(src=table_key, dst=op.id, edge_type="reads")
             for table_key in (
-                _resolve_dataset_identifier(ds_identifier)
-                for ds_identifier in spec.required_datasets
+                _resolve_dataset_identifier(ds_identifier) for ds_identifier in op.required_datasets
             )
             if table_key is not None
         )
         edges.extend(
-            DataflowEdge(src=table_key, dst=spec.id, edge_type="exposes")
+            DataflowEdge(src=table_key, dst=op.id, edge_type="exposes")
             for table_key in (
-                _resolve_dataset_identifier(ds_identifier)
-                for ds_identifier in spec.exposed_datasets
+                _resolve_dataset_identifier(ds_identifier) for ds_identifier in op.exposed_datasets
             )
             if table_key is not None
         )
@@ -264,11 +257,11 @@ def iter_operation_graph_edges() -> list[DataflowEdge]:
     return [
         DataflowEdge(
             src=f"graph.{graph_name}",
-            dst=spec.id,
+            dst=op.id,
             edge_type="depends_on",
         )
-        for spec in _OPERATION_SPECS.values()
-        for graph_name in spec.required_graphs
+        for op in _OPERATIONS.values()
+        for graph_name in op.required_graphs
     ]
 
 
@@ -307,13 +300,12 @@ def build_serving_dataflow_graph() -> tuple[list[DataflowNode], list[DataflowEdg
 
 __all__ = [
     "DatasetMeta",
-    "OperationSpec",
     "build_dataset_meta",
     "build_serving_dataflow_graph",
-    "get_operation_spec",
+    "get_registry_operation",
     "iter_graph_nodes",
     "iter_operation_dataset_edges",
     "iter_operation_graph_edges",
     "iter_operation_nodes",
-    "iter_operation_specs",
+    "iter_registry_operations",
 ]

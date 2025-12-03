@@ -12,9 +12,12 @@ but delegates runtime construction to analytics (Option B architecture).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass
 
+from codeintel.analytics.graph_runtime import GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.core import (
     GraphExecutionContext,
     GraphPluginMetadata,
@@ -23,6 +26,12 @@ from codeintel.graphs.core import (
 )
 from codeintel.graphs.core.registry import register_graph_plugin
 from codeintel.graphs.engine import GraphKind
+from codeintel.graphs.validation import GraphValidationOptions, run_graph_validations
+from codeintel.storage.gateway import (
+    DuckDBCatalogException,
+    DuckDBDatabaseError,
+    DuckDBProgrammingError,
+)
 
 log = logging.getLogger(__name__)
 
@@ -108,17 +117,6 @@ class GraphValidationPlugin:
         )
 
         try:
-            # Import validation module
-            from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
-                GraphRuntimeOptions,
-                resolve_graph_runtime,
-            )
-            from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
-            from codeintel.graphs.validation import (  # noqa: PLC0415
-                GraphValidationOptions,
-                run_graph_validations,
-            )
-
             # Build minimal runtime
             runtime_options = GraphRuntimeOptions(
                 snapshot=ctx.snapshot,
@@ -154,7 +152,16 @@ class GraphValidationPlugin:
 
             return GraphPluginResult.ok(row_counts={"analytics.graph_validation": finding_count})
 
-        except Exception as exc:
+        except (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            LookupError,
+            OSError,
+            DuckDBDatabaseError,
+            DuckDBCatalogException,
+            DuckDBProgrammingError,
+        ) as exc:
             log.exception(
                 "graph_validation.failed repo=%s commit=%s",
                 ctx.repo,
@@ -176,12 +183,6 @@ class GraphValidationPlugin:
         int
             Count of validation findings.
         """
-        from codeintel.storage.gateway import (  # noqa: PLC0415
-            DuckDBCatalogException,
-            DuckDBDatabaseError,
-            DuckDBProgrammingError,
-        )
-
         try:
             result = ctx.gateway.con.execute(
                 """
@@ -210,8 +211,6 @@ def get_graph_validation_plugin() -> GraphPluginProtocol:
 
 def _register_plugin() -> None:
     """Register the graph validation plugin with the global registry."""
-    import contextlib  # noqa: PLC0415
-
     with contextlib.suppress(ValueError):
         register_graph_plugin(get_graph_validation_plugin())
 

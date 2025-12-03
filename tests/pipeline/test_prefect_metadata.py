@@ -21,8 +21,11 @@ class _StubStep(PipelineStep):
     phase = StepPhase.INGESTION
     deps: Sequence[str] = ()
 
-    def run(self, ctx: PipelineContext) -> None:  # noqa: PLR6301  # pragma: no cover
-        _ = ctx
+    def __init__(self) -> None:
+        self.last_ctx: PipelineContext | None = None
+
+    def run(self, ctx: PipelineContext) -> None:  # pragma: no cover
+        self.last_ctx = ctx
 
 
 def test_attach_task_metadata_records_step() -> None:

@@ -7,17 +7,20 @@ without any dependency on the analytics subsystem.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
+from codeintel.graphs.resources.container import ResourceContainer
+from codeintel.graphs.resources.graphs import GraphResource
+from codeintel.graphs.resources.storage import StorageResource
+
 if TYPE_CHECKING:
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.config.steps_graphs import GraphRunScope
     from codeintel.graphs.catalog import FunctionCatalogProvider
-    from codeintel.graphs.engine import GraphEngine
-    from codeintel.graphs.resources.container import ResourceContainer
     from codeintel.graphs.resources.protocol import ResourceProvider
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
@@ -92,8 +95,6 @@ class GraphRuntimeScratch:
 
     def cleanup(self) -> None:
         """Execute cleanup callbacks and clear stored values."""
-        import logging  # noqa: PLC0415
-
         log = logging.getLogger(__name__)
         for callback in reversed(self._cleanup):
             try:
@@ -128,12 +129,13 @@ class GraphRuntimeScratch:
 class GraphExecutionContext:
     """Execution context for graph plugins.
 
-    Provides access to storage, graph engine, resource providers, and
-    shared scratch space without any dependency on the analytics subsystem.
+    Provides access to storage, resource providers, and shared scratch space
+    without any dependency on the analytics subsystem.
 
     All I/O access should go through the resource container via `require()`.
-    The private attributes `_gateway`, `_engine`, and `_catalog_provider` are
-    only for internal initialization and should not be accessed directly.
+    Use `require_graphs()` to access graph data via `GraphResource`.
+    The private attributes `_gateway` and `_catalog_provider` are only for
+    internal initialization and should not be accessed directly.
 
     Attributes
     ----------
@@ -158,9 +160,8 @@ class GraphExecutionContext:
     """
 
     snapshot: SnapshotRef
-    resources: ResourceContainer
+    resources: ResourceContainer = field(default_factory=ResourceContainer)
     _gateway: StorageGateway | None = field(default=None, repr=False)
-    _engine: GraphEngine | None = field(default=None, repr=False)
     _catalog_provider: FunctionCatalogProvider | None = field(default=None, repr=False)
     paths: BuildPaths | None = None
     scratch: GraphRuntimeScratch = field(default_factory=GraphRuntimeScratch)
@@ -169,6 +170,10 @@ class GraphExecutionContext:
     run_id: str | None = None
     scope: GraphRunScope | None = None
     run_context: RunContext | None = None
+
+    def __post_init__(self) -> None:
+        """Ensure resources are initialized (default_factory already provides)."""
+        # No-op: resources is provided by default_factory.
 
     @property
     def repo(self) -> str:
@@ -232,9 +237,6 @@ class GraphExecutionContext:
         RuntimeError
             If no gateway is available.
         """
-        # Try resource injection first
-        from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
         if self.resources.has(StorageResource.RESOURCE_NAME):
             storage = self.resources.require(StorageResource)
             return storage.gateway
@@ -243,26 +245,6 @@ class GraphExecutionContext:
             return self._gateway
         msg = "No gateway available in context"
         raise RuntimeError(msg)
-
-    @property
-    def engine(self) -> GraphEngine | None:
-        """Get the graph engine.
-
-        Tries resource injection first, falls back to private attribute.
-
-        Returns
-        -------
-        GraphEngine | None
-            Graph engine if available.
-        """
-        # Try resource injection first
-        from codeintel.graphs.resources.graphs import GraphResource  # noqa: PLC0415
-
-        if self.resources.has(GraphResource.RESOURCE_NAME):
-            graph_resource = self.resources.require(GraphResource)
-            return graph_resource.engine
-        # Fall back to private attribute
-        return self._engine
 
     @property
     def catalog_provider(self) -> FunctionCatalogProvider | None:
@@ -327,6 +309,27 @@ class GraphExecutionContext:
             True if the resource is registered.
         """
         return self.resources.has(name)
+
+    def require_graphs(self) -> GraphResource:
+        """Get the graph resource, raising if unavailable.
+
+        This method provides access to graph data through resource injection.
+        Use this instead of accessing ctx.engine directly.
+
+        Returns
+        -------
+        GraphResource
+            Graph resource for accessing call/import graphs.
+
+        Raises
+        ------
+        RuntimeError
+            If no GraphResource is registered in the context.
+        """
+        if not self.resources.has(GraphResource.RESOURCE_NAME):
+            message = "No GraphResource registered in context"
+            raise RuntimeError(message)
+        return self.require(GraphResource)
 
 
 __all__ = [

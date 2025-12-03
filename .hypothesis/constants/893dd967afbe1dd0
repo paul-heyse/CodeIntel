@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/registration.py
+# hypothesis_version: 6.148.5
+
+['ALL_PLUGINS', 'DATA_MODELS_PLUGIN', 'ENTRYPOINTS_PLUGIN', 'EXTERNAL_DEPS_PLUGIN', 'HOTSPOTS_PLUGIN', 'PROFILES_PLUGIN', 'RISK_FACTORS_PLUGIN', 'SUBSYSTEMS_PLUGIN', 'TEST_PROFILE_PLUGIN', 'register_all_plugins']

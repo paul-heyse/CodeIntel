@@ -18,7 +18,7 @@ import jsonschema
 import pyarrow.parquet as pq
 from referencing import Registry, Resource
 
-from codeintel.serving.services.errors import ProblemDetailParams, log_problem, problem
+from codeintel.serving.services.errors import ProblemDetails, log_problem, problem
 
 DEFAULT_SCHEMA_ROOT = (
     Path(__file__).resolve().parent.parent.parent / "config" / "schemas" / "export"
@@ -29,7 +29,9 @@ def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], Registry
     path = root / f"{schema_name}.json"
     if not path.is_file():
         message = f"Schema not found: {path}"
-        pd = problem(code="export.schema_missing", title="Schema missing", detail=message)
+        pd = problem(
+            ProblemDetails(code="export.schema_missing", title="Schema missing", detail=message)
+        )
         log_problem(logger=_stderr_logger(), detail=pd)
         raise FileNotFoundError(message)
 
@@ -118,7 +120,11 @@ def validate_files(
     for path in paths:
         if not path.exists():
             message = f"File not found: {path}"
-            pd = problem(code="export.file_missing", title="Export file missing", detail=message)
+            pd = problem(
+                ProblemDetails(
+                    code="export.file_missing", title="Export file missing", detail=message
+                )
+            )
             log_problem(logger, pd)
             all_errors.append(message)
             continue
@@ -130,10 +136,12 @@ def validate_files(
 
     if all_errors:
         pd = problem(
-            code="export.validation_failed",
-            title="Export validation failed",
-            detail="; ".join(all_errors),
-            params=ProblemDetailParams(extras={"errors": all_errors}),
+            ProblemDetails(
+                code="export.validation_failed",
+                title="Export validation failed",
+                detail="; ".join(all_errors),
+                extras={"errors": all_errors},
+            )
         )
         log_problem(logger, pd)
         return 1

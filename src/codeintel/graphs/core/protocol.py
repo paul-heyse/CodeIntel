@@ -7,6 +7,7 @@ plugins without any dependency on the analytics subsystem.
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, TypedDict, Unpack, cast, runtime_checkable
@@ -264,7 +265,19 @@ class GraphPluginMetaOptions:
 
     @staticmethod
     def from_kwargs(**kwargs: Unpack[GraphPluginMetaOptionsInput]) -> GraphPluginMetaOptions:
-        """Build options from legacy kwargs."""
+        """
+        Build options from legacy kwargs.
+
+        Raises
+        ------
+        ValueError
+            If unsupported option keys are provided.
+
+        Returns
+        -------
+        GraphPluginMetaOptions
+            Parsed options object.
+        """
         allowed_keys = set(GraphPluginMetaOptionsInput.__annotations__)
         unknown = set(kwargs) - allowed_keys
         if unknown:
@@ -424,7 +437,7 @@ def graph_plugin(
     *,
     meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
-    **kwargs: object,
+    **kwargs: Unpack[GraphPluginMetaOptionsInput],
 ) -> Callable[[Callable[[GraphExecutionContext], GraphPluginResult]], FunctionalGraphPlugin]:
     """Decorate a function as a graph plugin.
 
@@ -443,6 +456,12 @@ def graph_plugin(
         Decorator that creates a FunctionalGraphPlugin.
     """
 
+    def _register_plugin(plugin_instance: GraphPluginProtocol) -> None:
+        """Register plugin via registry without importing at decorator scope."""
+        registry = importlib.import_module("codeintel.graphs.core.registry")
+        register_fn = registry.register_graph_plugin
+        register_fn(plugin_instance)
+
     def decorator(
         fn: Callable[[GraphExecutionContext], GraphPluginResult],
     ) -> FunctionalGraphPlugin:
@@ -459,11 +478,7 @@ def graph_plugin(
         )
 
         if register:
-            from codeintel.graphs.core.registry import (  # noqa: PLC0415
-                register_graph_plugin,
-            )
-
-            register_graph_plugin(cast("GraphPluginProtocol", plugin_instance))
+            _register_plugin(cast("GraphPluginProtocol", plugin_instance))
 
         return plugin_instance
 

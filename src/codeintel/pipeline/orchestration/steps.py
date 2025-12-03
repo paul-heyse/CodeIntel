@@ -68,12 +68,6 @@ REGISTRY: StepRegistry = build_registry(
     EXPORT_STEPS,
 )
 
-# Backward-compatible exports
-PIPELINE_STEPS: dict[str, PipelineStep] = REGISTRY.as_dict()
-PIPELINE_STEPS_BY_NAME: dict[str, PipelineStep] = PIPELINE_STEPS
-PIPELINE_DEPS: dict[str, tuple[str, ...]] = REGISTRY.dependency_graph()
-PIPELINE_SEQUENCE: tuple[str, ...] = REGISTRY.list_all_names()
-
 
 def run_pipeline(ctx: PipelineContext, *, selected_steps: Sequence[str] | None = None) -> None:
     """
@@ -93,10 +87,6 @@ def run_pipeline(ctx: PipelineContext, *, selected_steps: Sequence[str] | None =
 
 
 __all__ = [
-    "PIPELINE_DEPS",
-    "PIPELINE_SEQUENCE",
-    "PIPELINE_STEPS",
-    "PIPELINE_STEPS_BY_NAME",
     "REGISTRY",
     "AstStep",
     "BehavioralCoverageStep",

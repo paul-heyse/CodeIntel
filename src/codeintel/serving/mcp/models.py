@@ -18,74 +18,23 @@ _TIME_WINDOW_LEN = 2
 
 
 class MappingModel(BaseModel):
-    """Base model that exposes mapping-style access for compatibility."""
+    """Base model for typed row payloads.
+
+    Use attribute access for field retrieval. Call `.model_dump()` when
+    a dict representation is needed.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
-    def __getitem__(self, key: str) -> object:
-        """
-        Return value for key using model_dump mapping semantics.
-
-        Returns
-        -------
-        object
-            Value associated with the provided key.
-        """
-        return self.model_dump()[key]
-
-    def get(self, key: str, default: object | None = None) -> object | None:
-        """
-        Dict-like get helper with a default fallback.
-
-        Returns
-        -------
-        object | None
-            Retrieved value when present, otherwise the provided default.
-        """
-        return self.model_dump().get(key, default)
-
 
 class ViewRow(BaseModel):
-    """Generic row wrapper for DuckDB view/table results."""
+    """Generic row wrapper for DuckDB view/table results.
+
+    Use attribute access for field retrieval. Call `.model_dump()` when
+    a dict representation is needed.
+    """
 
     model_config = ConfigDict(extra="allow")
-
-    def __getitem__(self, key: str) -> object:
-        """
-        Allow dict-style access for compatibility with callers expecting mapping semantics.
-
-        Parameters
-        ----------
-        key : str
-            Field name to retrieve.
-
-        Returns
-        -------
-        object
-            Value for the requested field.
-        """
-        return self.model_dump()[key]
-
-    def get(self, key: str, default: object | None = None) -> object | None:
-        """
-        Provide a dict-like getter for backward compatibility.
-
-        Parameters
-        ----------
-        key:
-            Field name to retrieve.
-        default:
-            Value to return when the field is missing.
-
-        Returns
-        -------
-        object | None
-            Value for the requested field or the provided default.
-        """
-        try:
-            return self[key]
-        except KeyError:
-            return default
 
 
 class ProblemDetail(BaseModel):

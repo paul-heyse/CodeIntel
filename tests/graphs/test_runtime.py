@@ -951,7 +951,7 @@ def test_dry_run_record() -> None:
         options=None,
     )
 
-    record = dry_run_record(plugin=plugin, params=params, run_id="test-run")
+    record = dry_run_record(plugin=plugin, params=params)
 
     assert record.status == "skipped"
     assert record.meta.get("skipped_reason") == "dry_run"
@@ -970,7 +970,7 @@ def test_skip_record() -> None:
         options=None,
     )
 
-    record = skip_record(plugin=plugin, params=params, reason="unchanged", run_id="test-run")
+    record = skip_record(plugin=plugin, params=params, reason="unchanged")
 
     assert record.status == "skipped"
     assert record.meta.get("skipped_reason") == "unchanged"

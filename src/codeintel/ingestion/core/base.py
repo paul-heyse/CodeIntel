@@ -24,8 +24,6 @@ Example
 ...     def compute(self, ctx: IngestExecutionContext) -> dict[str, int]:
 ...         # Pure business logic only
 ...         return {"core.my_table": rows_written}
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
 
 from __future__ import annotations
@@ -36,6 +34,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, cast
 
+from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
 from codeintel.ingestion.plugins.protocol import (
     IngestIsolationKind,
     IngestPluginMetadata,
@@ -44,6 +43,7 @@ from codeintel.ingestion.plugins.protocol import (
     IngestSeverity,
     IngestStage,
 )
+from codeintel.ingestion.resources.tracker import TrackerProvider
 
 if TYPE_CHECKING:
     from codeintel.ingestion.change_tracker import ChangeTracker
@@ -452,10 +452,6 @@ class TableWriterIngestPlugin(BaseIngestPlugin, ABC):
         if not self.output_tables:
             return {}
 
-        from codeintel.ingestion.infrastructure_utilities.db_queries import (
-            safe_count,
-        )
-
         counts: dict[str, int] = {}
         for table in self.output_tables:
             count = safe_count(ctx.gateway, table)
@@ -595,8 +591,6 @@ class TrackerRequiringPlugin(BaseIngestPlugin, ABC):
             The change tracker.
         """
         _ = self  # Required by interface, accessed via ctx
-        from codeintel.ingestion.resources.tracker import TrackerProvider
-
         provider = cast("TrackerProvider", ctx.require_by_name("TrackerProvider"))
         return provider.get()
 
@@ -616,8 +610,6 @@ class TrackerRequiringPlugin(BaseIngestPlugin, ABC):
         _ = self  # Required by interface, accessed via ctx
         if not ctx.has_resource_by_name("TrackerProvider"):
             return None
-
-        from codeintel.ingestion.resources.tracker import TrackerProvider
 
         provider = cast("TrackerProvider", ctx.require_by_name("TrackerProvider"))
         return provider.get()

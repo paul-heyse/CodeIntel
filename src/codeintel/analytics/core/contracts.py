@@ -479,9 +479,7 @@ class ContractValidator:
                 f"COUNT({safe_col}) as non_null",
             )
         )
-        where_clause = " AND ".join(
-            (f"{SafeColumn('repo')} = ?", f"{SafeColumn('commit')} = ?")
-        )
+        where_clause = " AND ".join((f"{SafeColumn('repo')} = ?", f"{SafeColumn('commit')} = ?"))
         query = render_sql(
             [
                 "SELECT",

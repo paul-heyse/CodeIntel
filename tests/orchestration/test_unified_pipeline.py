@@ -6,6 +6,7 @@ using real infrastructure and lightweight fixtures.
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -422,53 +423,33 @@ def test_stage_descriptions_preserved() -> None:
 
 def test_spec_exports() -> None:
     """Pipeline spec types are exported from codeintel.pipeline."""
-    # ruff: noqa: PLC0415
-    from codeintel.pipeline import (
-        ANALYTICS_ONLY,
-        FULL_PIPELINE,
-        GRAPHS_ONLY,
-        INGEST_ONLY,
-        PIPELINE_SPECS,
-        PipelineSpec,
-        PipelineStage,
-        get_pipeline_spec,
-        list_pipeline_specs,
-    )
+    pipeline_module = importlib.import_module("codeintel.pipeline")
 
-    # Just verify imports work
-    assert PipelineSpec is not None
-    assert PipelineStage is not None
-    assert FULL_PIPELINE is not None
-    assert INGEST_ONLY is not None
-    assert GRAPHS_ONLY is not None
-    assert ANALYTICS_ONLY is not None
-    assert PIPELINE_SPECS is not None
-    assert get_pipeline_spec is not None
-    assert list_pipeline_specs is not None
+    assert pipeline_module.PipelineSpec is not None
+    assert pipeline_module.PipelineStage is not None
+    assert pipeline_module.FULL_PIPELINE is not None
+    assert pipeline_module.INGEST_ONLY is not None
+    assert pipeline_module.GRAPHS_ONLY is not None
+    assert pipeline_module.ANALYTICS_ONLY is not None
+    assert pipeline_module.PIPELINE_SPECS is not None
+    assert pipeline_module.get_pipeline_spec is not None
+    assert pipeline_module.list_pipeline_specs is not None
 
 
 def test_planner_exports() -> None:
     """Pipeline planner types are exported from codeintel.pipeline."""
-    # ruff: noqa: PLC0415
-    from codeintel.pipeline import (
-        AnalyticsStagePlan,
-        GraphsStagePlan,
-        IngestionStagePlan,
-        PipelinePlan,
-        build_pipeline_plan,
-    )
+    pipeline_module = importlib.import_module("codeintel.pipeline")
 
-    assert AnalyticsStagePlan is not None
-    assert GraphsStagePlan is not None
-    assert IngestionStagePlan is not None
-    assert PipelinePlan is not None
-    assert build_pipeline_plan is not None
+    assert pipeline_module.AnalyticsStagePlan is not None
+    assert pipeline_module.GraphsStagePlan is not None
+    assert pipeline_module.IngestionStagePlan is not None
+    assert pipeline_module.PipelinePlan is not None
+    assert pipeline_module.build_pipeline_plan is not None
 
 
 def test_executor_exports() -> None:
     """Pipeline executor function is exported from codeintel.pipeline."""
-    # ruff: noqa: PLC0415
-    from codeintel.pipeline import run_pipeline
+    pipeline_module = importlib.import_module("codeintel.pipeline")
 
-    assert run_pipeline is not None
-    assert callable(run_pipeline)
+    assert pipeline_module.run_pipeline is not None
+    assert callable(pipeline_module.run_pipeline)

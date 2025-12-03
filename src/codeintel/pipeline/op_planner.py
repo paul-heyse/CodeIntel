@@ -24,6 +24,7 @@ from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     DatasetContract,
 )
+from codeintel.pipeline.executor import run_pipeline
 from codeintel.pipeline.planner import PipelinePlanOptions
 from codeintel.pipeline.spec import (
     ANALYTICS_ONLY,
@@ -33,7 +34,6 @@ from codeintel.pipeline.spec import (
     NOOP_PIPELINE,
     PipelineSpec,
 )
-from codeintel.pipeline.executor import run_pipeline
 from codeintel.serving.operations.catalog import Operation, get_operation
 
 if TYPE_CHECKING:
@@ -466,19 +466,10 @@ def ensure_prerequisites_for_operation(
     ----------
     op_id
         Operation identifier (e.g., "function.summary", "datasets.list").
-    snapshot
-        Repository snapshot reference.
-    paths
-        Build paths for this run.
-    gateway
-        Storage gateway for DuckDB and metadata tables.
-    tools
-        Tools configuration (used by ingestion and analytics where relevant).
-    include_analytics
-        Whether to include analytics stage even if not strictly required
-        by contracts. Defaults to True.
-    trigger
-        How this run was triggered. Defaults to "api".
+    options
+        Bundled prerequisite options containing snapshot, paths, gateway, tools,
+        include_analytics flag, and trigger. See OperationPrereqOptions for
+        field documentation.
 
     Returns
     -------

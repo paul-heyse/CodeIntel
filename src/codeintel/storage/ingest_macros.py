@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-
 from contextlib import closing
 
 from duckdb import DuckDBPyConnection

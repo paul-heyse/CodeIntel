@@ -14,16 +14,14 @@ from codeintel.analytics.tests.coverage_edges import (
     FunctionRow,
     backfill_test_goids_for_catalog,
     build_edges_for_file_for_tests,
-    compute_test_coverage_edges,
 )
 from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.storage.gateway import DuckDBConnection
+from tests._helpers.coverage_env import CoverageEdgeEnv, assert_single_edge, compute_coverage_edges
 from tests._helpers.fixtures import (
     ProvisionOptions,
-    provision_existing_repo,
     provision_graph_ready_repo,
 )
-from tests._helpers.tooling import generate_coverage_for_function
 
 
 def _insert_goids(con: DuckDBConnection, cfg: TestCoverageStepConfig) -> None:
@@ -149,125 +147,26 @@ def test_edges_for_file_uses_test_meta() -> None:
         pytest.fail(f"Expected coverage_ratio {expected_cov_ratio}, got {edge['coverage_ratio']}")
 
 
-def test_compute_test_coverage_edges_with_real_coverage(tmp_path: Path) -> None:
+def test_compute_test_coverage_edges_with_real_coverage(
+    coverage_env: CoverageEdgeEnv, coverage_artifact: Path
+) -> None:
     """compute_test_coverage_edges should join coverage contexts with test GOIDs."""
-    repo_root = tmp_path / "repo"
-    pkg_dir = repo_root / "pkg"
-    pkg_dir.mkdir(parents=True, exist_ok=True)
-    target_file = pkg_dir / "mod.py"
-    target_file.write_text("def func():\n    return 1\n", encoding="utf-8")
-
-    gateway = provision_existing_repo(
-        repo_root,
-        repo="demo/repo",
-        commit="deadbeef",
-        options=ProvisionOptions(include_seed_goid=False, build_graph_metrics=True),
-    ).gateway
-    con = gateway.con
-
-    coverage_artifact = generate_coverage_for_function(
-        repo_root=repo_root,
-        module_import="pkg.mod",
-        function_name="func",
-        test_id="pkg/mod.py::test_func",
-        coverage_file=tmp_path / ".coverage",
-    )
-    cfg = ConfigBuilder.from_snapshot(
-        repo="demo/repo",
-        commit="deadbeef",
-        repo_root=repo_root,
-    ).test_coverage(coverage_file=coverage_artifact.coverage_file)
-
-    now = datetime.now(UTC)
-    con.execute(
-        """
-        INSERT INTO core.goids (goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at)
-        VALUES
-            (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, 'pkg/mod.py', 'python', 'function', 'pkg.mod.func', 1, 2, ?),
-            (99, 'goid:demo/repo#python:function:pkg.mod.test_func', ?, ?, 'pkg/mod.py', 'python', 'test', 'pkg.mod.test_func', 1, 2, ?)
-        """,
-        [cfg.repo, cfg.commit, now, cfg.repo, cfg.commit, now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
-        VALUES ('pkg/mod.py::test_func', 'pkg/mod.py', 'pkg.mod.test_func', ?, ?, 'passed', ?)
-        """,
-        [cfg.repo, cfg.commit, now],
-    )
-
-    compute_test_coverage_edges(gateway, cfg)
-    _assert_single_edge(con)
+    compute_coverage_edges(coverage_env, coverage_file=coverage_artifact)
+    assert_single_edge(coverage_env.gateway.con)
 
 
-def _assert_single_edge(con: DuckDBConnection) -> None:
-    rows = con.execute(
-        "SELECT test_goid_h128, coverage_ratio, last_status FROM analytics.test_coverage_edges"
-    ).fetchall()
-    if len(rows) != 1:
-        pytest.fail(f"Expected 1 edge row, got {len(rows)}")
-    test_goid, cov_ratio, status = rows[0]
-    if test_goid is None:
-        pytest.fail("Expected test_goid_h128 to be populated")
-    tolerance = 1e-6
-    if abs(float(cov_ratio) - 1.0) > tolerance:
-        pytest.fail(f"Unexpected coverage_ratio {cov_ratio}")
-    if status != "passed":
-        pytest.fail(f"Unexpected last_status {status}")
-
-
-def test_compute_test_coverage_edges_respects_injected_loader(tmp_path: Path) -> None:
+def test_compute_test_coverage_edges_respects_injected_loader(
+    coverage_env: CoverageEdgeEnv, coverage_artifact: Path
+) -> None:
     """compute_test_coverage_edges should call injected loader when provided."""
-    repo_root = tmp_path / "repo"
-    pkg_dir = repo_root / "pkg"
-    pkg_dir.mkdir(parents=True, exist_ok=True)
-    target_file = pkg_dir / "mod.py"
-    target_file.write_text("def func():\n    return 1\n", encoding="utf-8")
-
-    gateway = provision_existing_repo(
-        repo_root,
-        repo="demo/repo",
-        commit="deadbeef",
-        options=ProvisionOptions(include_seed_goid=False, build_graph_metrics=True),
-    ).gateway
-    con = gateway.con
-
-    builder = ConfigBuilder.from_snapshot(
-        repo="demo/repo",
-        commit="deadbeef",
-        repo_root=repo_root,
-    )
-    cfg = builder.test_coverage()
-
-    now = datetime.now(UTC)
-    con.execute(
-        """
-        INSERT INTO core.goids (goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at)
-        VALUES
-            (1, 'goid:demo/repo#python:function:pkg.mod.func', ?, ?, 'pkg/mod.py', 'python', 'function', 'pkg.mod.func', 1, 2, ?),
-            (99, 'goid:demo/repo#python:function:pkg.mod.test_func', ?, ?, 'pkg/mod.py', 'python', 'test', 'pkg.mod.test_func', 1, 2, ?)
-        """,
-        [cfg.repo, cfg.commit, now, cfg.repo, cfg.commit, now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
-        VALUES ('pkg/mod.py::test_func', 'pkg/mod.py', 'pkg.mod.test_func', ?, ?, 'passed', ?)
-        """,
-        [cfg.repo, cfg.commit, now],
-    )
-
-    artifact = generate_coverage_for_function(
-        repo_root=repo_root,
-        module_import="pkg.mod",
-        function_name="func",
-        test_id="pkg/mod.py::test_func",
-    )
-
     def _coverage_loader(_cfg: TestCoverageStepConfig) -> Coverage:
-        cov = Coverage(data_file=str(artifact.coverage_file))
+        cov = Coverage(data_file=str(coverage_artifact))
         cov.load()
         return cov
 
-    compute_test_coverage_edges(gateway, cfg, coverage_loader=_coverage_loader)
-    _assert_single_edge(con)
+    compute_coverage_edges(
+        coverage_env,
+        coverage_file=coverage_artifact,
+        coverage_loader=_coverage_loader,
+    )
+    assert_single_edge(coverage_env.gateway.con)

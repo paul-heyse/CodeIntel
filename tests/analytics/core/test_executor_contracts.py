@@ -63,8 +63,8 @@ def test_contracts_cached_per_plugin_name() -> None:
     plugin = _ValidatedStubPlugin(outputs=(output_spec,))
     executor = PluginExecutor()
 
-    first = executor._get_plugin_contracts(plugin)  # noqa: SLF001
-    second = executor._get_plugin_contracts(plugin)  # noqa: SLF001
+    first = executor.get_plugin_contracts(plugin)
+    second = executor.get_plugin_contracts(plugin)
 
     assert first is second
     assert len(first) == 1
@@ -75,7 +75,7 @@ def test_contracts_empty_when_no_outputs_or_explicit() -> None:
     plugin = _ValidatedStubPlugin(outputs=())
     executor = PluginExecutor()
 
-    contracts = executor._get_plugin_contracts(plugin)  # noqa: SLF001
+    contracts = executor.get_plugin_contracts(plugin)
 
     assert contracts == ()
 
@@ -122,8 +122,8 @@ def test_contracts_not_rebuilt_after_cache_fill() -> None:
     plugin = _CountingPlugin()
     executor = PluginExecutor()
 
-    first = executor._get_plugin_contracts(plugin)  # noqa: SLF001
-    second = executor._get_plugin_contracts(plugin)  # noqa: SLF001
+    first = executor.get_plugin_contracts(plugin)
+    second = executor.get_plugin_contracts(plugin)
 
     assert first is second
     assert plugin.access_count == 1

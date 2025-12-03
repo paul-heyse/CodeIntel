@@ -7,7 +7,7 @@ from typing import Any, Literal, cast
 
 from codeintel.config.datasets import DatasetContract
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import BackendLimits, clamp_limit_value, clamp_offset_value
+from codeintel.serving.backend import BackendLimits, clamp_limit, clamp_offset
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp import errors as mcp_errors
 from codeintel.serving.mcp.models import (
@@ -192,8 +192,8 @@ class _LocalDatasetMixin:
         else:
             problem_detail = DatasetNotFoundError.for_name(dataset_name).detail
             raise mcp_errors.McpError(problem_detail)
-        clamped_offset = clamp_offset_value(offset)
-        clamped_limit = clamp_limit_value(
+        clamped_offset = clamp_offset(offset)
+        clamped_limit = clamp_limit(
             applied_limit,
             default=self.query.limits.default_limit,
             max_limit=self.query.limits.max_rows_per_call,
@@ -311,12 +311,12 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
         offset: int = 0,
     ) -> dm.DatasetRows:
         def _run() -> DatasetRowsResponse:
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 limit,
                 default=self.limits.default_limit,
                 max_limit=self.limits.max_rows_per_call,
             )
-            offset_clamp = clamp_offset_value(offset)
+            offset_clamp = clamp_offset(offset)
             messages = [*clamp.messages, *offset_clamp.messages]
             if clamp.has_error or offset_clamp.has_error:
                 meta = ResponseMeta.from_domain(
@@ -331,7 +331,7 @@ class _HttpDatasetQueryMixin(_HttpTransportMixin):
                 )
                 return DatasetRowsResponse(
                     dataset_name=dataset_name,
-                    limit=clamp.applied,
+                    limit=clamp.limit_or_default(self.limits.default_limit),
                     offset=offset_clamp.applied,
                     rows=[],
                     meta=meta,

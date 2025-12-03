@@ -10,11 +10,12 @@ import logging
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
+from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
 from codeintel.graphs.core.registry import get_graph_registry
 from codeintel.graphs.core.result import GraphPluginRunRecord
@@ -148,6 +149,8 @@ class RecipeExecutorContext:
         Graph engine.
     catalog_provider
         Function catalog provider.
+    policy
+        Optional plugin execution policy for stages.
     force_sequential
         Force sequential execution even for parallel stages. Useful when the
         gateway connection is not thread-safe (e.g., shared in-memory DuckDB).
@@ -157,6 +160,7 @@ class RecipeExecutorContext:
     snapshot: SnapshotRef
     engine: GraphEngine | None = None
     catalog_provider: FunctionCatalogProvider | None = None
+    policy: GraphPluginPolicy = field(default_factory=GraphPluginPolicy)
     force_sequential: bool = False
 
 
@@ -256,7 +260,7 @@ class RecipeExecutor:
         self,
         *,
         stage: GraphStage,
-        recipe: GraphRecipe,  # noqa: ARG002 - Reserved for recipe-level options
+        recipe: GraphRecipe,
         run_id: str,
     ) -> StageExecutionResult:
         """Execute a single stage.
@@ -278,7 +282,8 @@ class RecipeExecutor:
         start = time.perf_counter()
 
         log.info(
-            "recipe_executor.stage.start stage=%s plugins=%s parallel=%s",
+            "recipe_executor.stage.start recipe=%s stage=%s plugins=%s parallel=%s",
+            recipe.name,
             stage.name,
             stage.plugins,
             stage.parallel,
@@ -303,6 +308,7 @@ class RecipeExecutor:
         records = self._execute_plugins(
             plugins=plugins,
             stage=stage,
+            recipe=recipe,
             run_id=run_id,
         )
 
@@ -328,6 +334,7 @@ class RecipeExecutor:
         *,
         plugins: Sequence[GraphPluginProtocol],
         stage: GraphStage,
+        recipe: GraphRecipe,
         run_id: str,
     ) -> list[GraphPluginRunRecord]:
         """Execute plugins within a stage.
@@ -338,6 +345,8 @@ class RecipeExecutor:
             Plugins to execute.
         stage
             Parent stage.
+        recipe
+            Parent recipe.
         run_id
             Run identifier.
 
@@ -349,12 +358,15 @@ class RecipeExecutor:
         if stage.parallel and len(plugins) > 1 and not self._context.force_sequential:
             return self._execute_plugins_parallel(
                 plugins=plugins,
+                stage=stage,
+                recipe=recipe,
                 run_id=run_id,
                 max_workers=4,  # Default max parallelism
             )
         return self._execute_plugins_sequential(
             plugins=plugins,
             stage=stage,
+            recipe=recipe,
             run_id=run_id,
         )
 
@@ -363,6 +375,7 @@ class RecipeExecutor:
         *,
         plugins: Sequence[GraphPluginProtocol],
         stage: GraphStage,
+        recipe: GraphRecipe,
         run_id: str,
     ) -> list[GraphPluginRunRecord]:
         """Execute plugins sequentially.
@@ -373,6 +386,8 @@ class RecipeExecutor:
             Plugins to execute.
         stage
             Parent stage.
+        recipe
+            Parent recipe.
         run_id
             Run identifier.
 
@@ -386,6 +401,8 @@ class RecipeExecutor:
         for plugin in plugins:
             record = self._execute_single_plugin(
                 plugin=plugin,
+                stage_name=stage.name,
+                recipe_name=recipe.name,
                 run_id=run_id,
             )
             records.append(record)
@@ -399,6 +416,8 @@ class RecipeExecutor:
         self,
         *,
         plugins: Sequence[GraphPluginProtocol],
+        stage: GraphStage,
+        recipe: GraphRecipe,
         run_id: str,
         max_workers: int,
     ) -> list[GraphPluginRunRecord]:
@@ -408,6 +427,10 @@ class RecipeExecutor:
         ----------
         plugins
             Plugins to execute.
+        stage
+            Parent stage.
+        recipe
+            Parent recipe.
         run_id
             Run identifier.
         max_workers
@@ -432,6 +455,8 @@ class RecipeExecutor:
                 executor.submit(
                     self._execute_single_plugin,
                     plugin=plugin,
+                    stage_name=stage.name,
+                    recipe_name=recipe.name,
                     run_id=run_id,
                 ): plugin
                 for plugin in plugins
@@ -443,7 +468,13 @@ class RecipeExecutor:
                 try:
                     record = future.result()
                     records.append(record)
-                except Exception as exc:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    LookupError,
+                    OSError,
+                ) as exc:
                     log.exception(
                         "recipe_executor.parallel.exception plugin=%s",
                         plugin.metadata.name,
@@ -459,7 +490,10 @@ class RecipeExecutor:
                             attempts=1,
                             partial=True,
                             error=str(exc),
-                            meta={},
+                            meta={
+                                "recipe": recipe.name,
+                                "stage": stage.name,
+                            },
                         )
                     )
 
@@ -476,6 +510,8 @@ class RecipeExecutor:
         self,
         *,
         plugin: GraphPluginProtocol,
+        stage_name: str,
+        recipe_name: str,
         run_id: str,
     ) -> GraphPluginRunRecord:
         """Execute a single plugin.
@@ -484,6 +520,10 @@ class RecipeExecutor:
         ----------
         plugin
             Plugin to execute.
+        stage_name
+            Name of the stage the plugin belongs to.
+        recipe_name
+            Name of the recipe being executed.
         run_id
             Run identifier.
 
@@ -496,7 +536,9 @@ class RecipeExecutor:
         started_at = datetime.now(tz=UTC)
 
         log.info(
-            "recipe_executor.plugin.start plugin=%s repo=%s commit=%s",
+            "recipe_executor.plugin.start recipe=%s stage=%s plugin=%s repo=%s commit=%s",
+            recipe_name,
+            stage_name,
             plugin.metadata.name,
             self._context.snapshot.repo,
             self._context.snapshot.commit,
@@ -512,7 +554,6 @@ class RecipeExecutor:
             snapshot=self._context.snapshot,
             resources=container,
             _gateway=self._context.gateway,
-            _engine=self._context.engine,
             _catalog_provider=self._context.catalog_provider,
             scratch=self._scratch,
             plugin_name=plugin.metadata.name,
@@ -523,7 +564,13 @@ class RecipeExecutor:
             result = plugin.execute(ctx)
             status = "succeeded" if result.success else "failed"
             error = result.error
-        except Exception as exc:
+        except (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            LookupError,
+            OSError,
+        ) as exc:
             log.exception(
                 "recipe_executor.plugin.exception plugin=%s",
                 plugin.metadata.name,
@@ -536,7 +583,12 @@ class RecipeExecutor:
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
         log.info(
-            "recipe_executor.plugin.complete plugin=%s status=%s duration_ms=%.2f",
+            (
+                "recipe_executor.plugin.complete recipe=%s stage=%s plugin=%s "
+                "status=%s duration_ms=%.2f"
+            ),
+            recipe_name,
+            stage_name,
             plugin.metadata.name,
             status,
             duration_ms,
@@ -552,6 +604,8 @@ class RecipeExecutor:
             partial=status == "failed",
             error=error,
             meta={
+                "recipe": recipe_name,
+                "stage": stage_name,
                 "row_counts": dict(result.row_counts) if result and result.row_counts else None,
             },
         )

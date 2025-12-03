@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.metadata_bootstrap import (
@@ -46,7 +46,7 @@ def test_normalized_macros_match_expected_sets() -> None:
     """Catch drift when adding datasets without macros or allowlisting explicitly."""
     datasets = {
         key
-        for key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+        for key, contract in get_dataset_contracts_by_table_key().items()
         if contract.schema is not None
     }
     macro_backed = set(NORMALIZED_MACROS)

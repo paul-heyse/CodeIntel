@@ -13,7 +13,7 @@ from collections.abc import Iterable
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY, TableSchema
+from codeintel.config.datasets import TableSchema, get_dataset_contracts_by_table_key
 
 SCHEMAS = ("core", "graph", "analytics", "docs")
 log = logging.getLogger(__name__)
@@ -84,12 +84,12 @@ _TABLE_CREATION_DENYLIST = {"docs.v_validation_summary"}
 
 TABLE_DDL: dict[str, str] = {
     key: _build_table_ddl(contract.schema)
-    for key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+    for key, contract in get_dataset_contracts_by_table_key().items()
     if contract.schema is not None and key not in _TABLE_CREATION_DENYLIST
 }
 TABLE_DDL_IF_NOT_EXISTS: dict[str, str] = {
     key: _build_table_ddl_if_not_exists(contract.schema)
-    for key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items()
+    for key, contract in get_dataset_contracts_by_table_key().items()
     if contract.schema is not None and key not in _TABLE_CREATION_DENYLIST
 }
 
@@ -108,7 +108,7 @@ def _build_index_ddl(table: TableSchema) -> list[str]:
 
 INDEX_DDL: tuple[str, ...] = tuple(
     ddl
-    for contract in DATASET_CONTRACTS_BY_TABLE_KEY.values()
+    for contract in get_dataset_contracts_by_table_key().values()
     if contract.schema is not None
     for ddl in _build_index_ddl(contract.schema)
 )
@@ -183,7 +183,7 @@ def assert_schema_alignment(
         If strict is True and schema drift is detected.
     """
     issues: list[str] = []
-    for contract in DATASET_CONTRACTS_BY_TABLE_KEY.values():
+    for contract in get_dataset_contracts_by_table_key().values():
         if contract.schema is None:
             continue
         table = contract.schema

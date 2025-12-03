@@ -7,7 +7,7 @@ from collections.abc import Iterable, Sequence
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.sql_helpers import build_insert_sql, quote_identifier
 
 __all__ = ["macro_insert_rows"]
@@ -35,7 +35,7 @@ def macro_insert_rows(
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", table_key):
         message = f"Invalid table key: {table_key}"
         raise ValueError(message)
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    contract = get_dataset_contracts_by_table_key().get(table_key)
     if contract is None or contract.schema is None:
         message = f"Cannot insert into {table_key}: missing DatasetContract schema"
         raise ValueError(message)

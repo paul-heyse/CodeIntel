@@ -14,7 +14,7 @@ from codeintel.serving.mcp.function_tools import register_function_tools
 from codeintel.serving.mcp.meta_tools import register_meta_tools
 from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
-from codeintel.serving.registry import iter_operation_specs
+from codeintel.serving.registry import iter_registry_operations
 
 
 def register_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
@@ -44,7 +44,7 @@ def register_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
         cast("Any", mcp).tools = tools
         return
     fallback_tools = [
-        SimpleNamespace(name=spec.tool_name) for spec in iter_operation_specs() if spec.tool_name
+        SimpleNamespace(name=op.tool_name) for op in iter_registry_operations() if op.tool_name
     ]
     cast("Any", mcp).tools = fallback_tools
 

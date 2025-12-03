@@ -12,7 +12,7 @@ from codeintel.analytics.graph_runtime import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.services.wiring import BackendResourceOptions, build_backend_resource
+from codeintel.serving.bootstrap import BackendResourceOptions, build_backend_resource
 from tests._helpers.fixtures import ProvisionedGateway
 
 

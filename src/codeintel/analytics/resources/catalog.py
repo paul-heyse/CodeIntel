@@ -159,6 +159,9 @@ class CatalogQueryProvider(LazyResource[dict[int, object]]):
         dict[int, object]
             Mapping of GOID to catalog data.
         """
+        _ = (
+            self._gateway.con
+        )  # ensure gateway is accessible for subclasses relying on the connection
         return {}
 
 

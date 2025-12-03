@@ -6,24 +6,29 @@ integration with the pipeline executor and run tracking.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.pipeline.op_planner import (
+    OperationPrereqOptions,
     build_pipeline_for_operation,
     ensure_prerequisites_for_operation,
-    OperationPrereqOptions,
 )
 from codeintel.pipeline.spec import FULL_PIPELINE, NOOP_PIPELINE
+from codeintel.runtime import TriggerKind
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
 from tests._helpers.tooling import make_tools_config
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
+
+# Type alias for the prereq options builder callable
+PrereqOptionsBuilder = Callable[[], OperationPrereqOptions]
 
 
 @pytest.fixture
@@ -101,10 +106,21 @@ def prereq_options_builder(
     sample_snapshot: SnapshotRef,
     build_paths: BuildPaths,
     tools_config: ToolsConfig,
-) -> Callable[[bool, str], OperationPrereqOptions]:
-    """Build an OperationPrereqOptions instance with common defaults."""
+) -> Callable[..., OperationPrereqOptions]:
+    """Build an OperationPrereqOptions instance with common defaults.
 
-    def _build(include_analytics: bool = False, trigger: str = "api") -> OperationPrereqOptions:
+    Returns
+    -------
+    Callable[..., OperationPrereqOptions]
+        Factory function that creates OperationPrereqOptions with injected
+        fixtures. Accepts optional include_analytics and trigger kwargs.
+    """
+
+    def _build(
+        *,
+        include_analytics: bool = False,
+        trigger: TriggerKind = "api",
+    ) -> OperationPrereqOptions:
         return OperationPrereqOptions(
             snapshot=sample_snapshot,
             paths=build_paths,
@@ -159,11 +175,7 @@ class TestEnsurePrerequisitesForOperationNoop:
 
     @staticmethod
     def test_datasets_list_prereqs_is_noop_succeeds(
-        gateway: StorageGateway,
-        sample_snapshot: SnapshotRef,
-        build_paths: BuildPaths,
-        tools_config: ToolsConfig,
-        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
+        prereq_options_builder: Callable[..., OperationPrereqOptions],
     ) -> None:
         """NOOP operation should succeed with kind=op_prereqs."""
         run = ensure_prerequisites_for_operation(
@@ -178,10 +190,7 @@ class TestEnsurePrerequisitesForOperationNoop:
     @staticmethod
     def test_noop_records_no_steps(
         gateway: StorageGateway,
-        sample_snapshot: SnapshotRef,
-        build_paths: BuildPaths,
-        tools_config: ToolsConfig,
-        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
+        prereq_options_builder: Callable[..., OperationPrereqOptions],
     ) -> None:
         """NOOP operation should record no pipeline steps."""
         run = ensure_prerequisites_for_operation(
@@ -194,11 +203,7 @@ class TestEnsurePrerequisitesForOperationNoop:
 
     @staticmethod
     def test_health_status_prereqs_succeeds(
-        gateway: StorageGateway,
-        sample_snapshot: SnapshotRef,
-        build_paths: BuildPaths,
-        tools_config: ToolsConfig,
-        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
+        prereq_options_builder: Callable[..., OperationPrereqOptions],
     ) -> None:
         """health.status NOOP operation should succeed."""
         run = ensure_prerequisites_for_operation(
@@ -216,9 +221,7 @@ class TestRunTracking:
     def test_run_record_created_for_noop(
         gateway: StorageGateway,
         sample_snapshot: SnapshotRef,
-        build_paths: BuildPaths,
-        tools_config: ToolsConfig,
-        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
+        prereq_options_builder: Callable[..., OperationPrereqOptions],
     ) -> None:
         """Run record should be created with kind=op_prereqs."""
         run = ensure_prerequisites_for_operation(
@@ -238,11 +241,7 @@ class TestRunTracking:
 
     @staticmethod
     def test_run_has_completed_at_timestamp(
-        gateway: StorageGateway,
-        sample_snapshot: SnapshotRef,
-        build_paths: BuildPaths,
-        tools_config: ToolsConfig,
-        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
+        prereq_options_builder: Callable[..., OperationPrereqOptions],
     ) -> None:
         """Completed run should have completed_at timestamp."""
         run = ensure_prerequisites_for_operation(
@@ -260,11 +259,7 @@ class TestOpPrereqsRunKind:
 
     @staticmethod
     def test_noop_operation_has_op_prereqs_kind(
-        gateway: StorageGateway,
-        sample_snapshot: SnapshotRef,
-        build_paths: BuildPaths,
-        tools_config: ToolsConfig,
-        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
+        prereq_options_builder: Callable[..., OperationPrereqOptions],
     ) -> None:
         """NOOP operations should have kind=op_prereqs, not kind=full."""
         run = ensure_prerequisites_for_operation(
@@ -279,11 +274,7 @@ class TestOpPrereqsRunKind:
 
     @staticmethod
     def test_run_id_prefix_matches_op_prereqs(
-        gateway: StorageGateway,
-        sample_snapshot: SnapshotRef,
-        build_paths: BuildPaths,
-        tools_config: ToolsConfig,
-        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
+        prereq_options_builder: Callable[..., OperationPrereqOptions],
     ) -> None:
         """Run ID should be prefixed with op_prereqs kind."""
         run = ensure_prerequisites_for_operation(
@@ -300,11 +291,7 @@ class TestErrorHandling:
 
     @staticmethod
     def test_unknown_operation_raises_value_error(
-        gateway: StorageGateway,
-        sample_snapshot: SnapshotRef,
-        build_paths: BuildPaths,
-        tools_config: ToolsConfig,
-        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
+        prereq_options_builder: Callable[..., OperationPrereqOptions],
     ) -> None:
         """Unknown operation should raise ValueError."""
         with pytest.raises(ValueError, match="Unknown operation id"):
@@ -319,25 +306,17 @@ class TestTriggerKinds:
 
     @staticmethod
     @pytest.mark.parametrize(
-        "trigger",
+        "trigger_kind",
         ["cli", "http", "mcp", "api"],
     )
     def test_trigger_kind_recorded(
-        gateway: StorageGateway,
-        sample_snapshot: SnapshotRef,
-        build_paths: BuildPaths,
-        tools_config: ToolsConfig,
-        trigger: str,
-        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
+        trigger_kind: TriggerKind,
+        prereq_options_builder: Callable[..., OperationPrereqOptions],
     ) -> None:
         """Different trigger kinds should be recorded in run records."""
-        from codeintel.runtime import TriggerKind  # noqa: PLC0415
-
-        trigger_kind: TriggerKind = trigger  # type: ignore[assignment]
-
         run = ensure_prerequisites_for_operation(
             op_id="datasets.list",
             options=prereq_options_builder(include_analytics=False, trigger=trigger_kind),
         )
 
-        assert run.trigger == trigger
+        assert run.trigger == trigger_kind

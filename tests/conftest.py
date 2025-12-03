@@ -8,8 +8,14 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.graphs.plugins.builders import callgraph as callgraph_builders
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
+from tests._helpers.coverage_env import (
+    CoverageEdgeEnv,
+    create_coverage_edge_env,
+    generate_coverage_artifact,
+)
 from tests._helpers.fixtures import (
     GatewayOptions,
     ProvisionedGateway,
@@ -19,6 +25,12 @@ from tests._helpers.fixtures import (
     provision_ingested_repo,
     provisioned_gateway,
 )
+from tests._helpers.graph_env import SpanTestEnv, create_span_test_env
+from tests._helpers.pipeline_env import PipelineEnv, create_pipeline_env
+
+# Compatibility shim for legacy graph step imports that still expect get_callgraph_plugin.
+if not hasattr(callgraph_builders, "get_callgraph_plugin"):
+    callgraph_builders.get_callgraph_plugin = callgraph_builders.get_callgraph_builder_plugin
 
 
 @pytest.fixture
@@ -120,7 +132,7 @@ def architecture_gateway(tmp_path: Path) -> Iterator[StorageGateway]:
     Yields
     ------
     StorageGateway
-        Gateway configured with architecture dataset seeds.
+    Gateway configured with architecture dataset seeds.
     """
     gateway = open_seeded_architecture_gateway(
         repo="demo/repo",
@@ -146,3 +158,68 @@ def codeintel_env() -> Iterator[None]:
                 os.environ.pop(key, None)
         for key, value in prior.items():
             os.environ[key] = value
+
+
+@pytest.fixture
+def span_env(tmp_path: Path, fresh_gateway: StorageGateway) -> Iterator[SpanTestEnv]:
+    """
+    Provide a reusable graph span test environment.
+
+    Yields
+    ------
+    SpanTestEnv
+        Span test environment with seeded modules and GOIDs.
+    """
+    env = create_span_test_env(tmp_path, fresh_gateway)
+    try:
+        yield env
+    finally:
+        env.gateway.close()
+
+
+@pytest.fixture
+def pipeline_env(tmp_path: Path) -> Iterator[PipelineEnv]:
+    """
+    Provide a reusable pipeline environment with seeded catalog data.
+
+    Yields
+    ------
+    PipelineEnv
+        Pipeline environment prepared for graph and coverage integration tests.
+    """
+    env = create_pipeline_env(tmp_path)
+    try:
+        yield env
+    finally:
+        env.gateway.close()
+
+
+@pytest.fixture
+def coverage_env(tmp_path: Path) -> Iterator[CoverageEdgeEnv]:
+    """
+    Provide a coverage edge environment with seeded GOIDs and catalog rows.
+
+    Yields
+    ------
+    CoverageEdgeEnv
+        Coverage environment ready for analytics coverage edge tests.
+    """
+    env = create_coverage_edge_env(tmp_path)
+    try:
+        yield env
+    finally:
+        env.gateway.close()
+
+
+@pytest.fixture
+def coverage_artifact(coverage_env: CoverageEdgeEnv, tmp_path: Path) -> Iterator[Path]:
+    """
+    Generate a coverage artifact for the seeded coverage environment.
+
+    Yields
+    ------
+    Path
+        Path to the generated coverage data file.
+    """
+    artifact = generate_coverage_artifact(coverage_env, coverage_file=tmp_path / ".coverage")
+    yield artifact.coverage_file

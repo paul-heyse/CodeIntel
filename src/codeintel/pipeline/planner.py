@@ -4,8 +4,6 @@ This module translates declarative PipelineSpec definitions into concrete
 execution plans with engine-specific contexts and configurations. The planner
 handles recipe resolution, plugin selection, and context construction for each
 stage module.
-
-NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
 
 from __future__ import annotations
@@ -14,21 +12,56 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.analytics.core.pipeline_bridge import (
+    AnalyticsPlanRequest,
+    AnalyticsRunContext,
+    plan_analytics_plugin_run,
+)
+from codeintel.analytics.core.plugins import (
+    BEHAVIORAL_COVERAGE_PLUGIN,
+    CONFIG_DATA_FLOW_PLUGIN,
+    COVERAGE_FUNCTIONS_PLUGIN,
+    COVERAGE_TEST_EDGES_PLUGIN,
+    DATA_MODEL_USAGE_PLUGIN,
+    DATA_MODELS_PLUGIN,
+    ENTRYPOINTS_PLUGIN,
+    EXTERNAL_DEPS_PLUGIN,
+    FUNCTION_AST_FEATURES_PLUGIN,
+    FUNCTION_CONTRACTS_PLUGIN,
+    FUNCTION_EFFECTS_PLUGIN,
+    FUNCTION_HISTORY_PLUGIN,
+    FUNCTION_METRICS_PLUGIN,
+    HISTORY_TIMESERIES_PLUGIN,
+    HOTSPOTS_PLUGIN,
+    PROFILES_PLUGIN,
+    RISK_FACTORS_PLUGIN,
+    SEMANTIC_ROLES_PLUGIN,
+    SUBSYSTEMS_PLUGIN,
+    TEST_PROFILE_PLUGIN,
+)
+from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
+from codeintel.graphs.runtime.executor import GraphExecutorContext
+from codeintel.graphs.runtime.planning import GraphPlanContext, plan_graph_plugin_run
+from codeintel.ingestion.infrastructure_utilities.source_scanner import (
+    default_code_profile,
+    default_config_profile,
+)
+from codeintel.ingestion.recipes.builtin import (
+    FULL_PYTHON_RECIPE,
+    INCREMENTAL_RECIPE,
+    get_builtin_recipe,
+)
+from codeintel.ingestion.recipes.dsl import RecipeOptions
+from codeintel.ingestion.recipes.executor import RecipeExecutorContext
 from codeintel.pipeline.spec import PipelineSpec, PipelineStage
 from codeintel.runtime import RunKind, TriggerKind, new_run_context
 
 if TYPE_CHECKING:
-    from codeintel.analytics.core.pipeline_bridge import (
-        AnalyticsPlanRequest,
-        AnalyticsPluginExecutionPlan,
-        AnalyticsRunContext,
-    )
+    from codeintel.analytics.core.pipeline_bridge import AnalyticsPluginExecutionPlan
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
-    from codeintel.graphs.runtime.executor import GraphExecutorContext
     from codeintel.graphs.runtime.planning import GraphPluginExecutionPlan
-    from codeintel.ingestion.recipes.dsl import IngestRecipe, RecipeOptions
-    from codeintel.ingestion.recipes.executor import RecipeExecutorContext
+    from codeintel.ingestion.recipes.dsl import IngestRecipe
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
 
@@ -209,12 +242,6 @@ def _resolve_ingest_recipe(stage: PipelineStage) -> IngestRecipe:
     ValueError
         If the recipe cannot be resolved.
     """
-    from codeintel.ingestion.recipes.builtin import (
-        FULL_PYTHON_RECIPE,
-        INCREMENTAL_RECIPE,
-        get_builtin_recipe,
-    )
-
     name = stage.name
     if name == "builtin.default":
         return FULL_PYTHON_RECIPE
@@ -247,29 +274,14 @@ def _plan_ingestion_stage(
     ----------
     stage
         Ingestion stage to plan.
-    run_ctx
-        Unified run context.
-    snapshot
-        Repository snapshot reference.
-    paths
-        Build paths configuration.
-    gateway
-        Storage gateway for database access.
-    tools
-        Tools configuration.
+    resources
+        Shared resources for planning (gateway, snapshot, paths, tools, run context).
 
     Returns
     -------
     IngestionStagePlan
         Fully resolved ingestion plan.
     """
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-        default_code_profile,
-        default_config_profile,
-    )
-    from codeintel.ingestion.recipes.dsl import RecipeOptions
-    from codeintel.ingestion.recipes.executor import RecipeExecutorContext
-
     recipe = _resolve_ingest_recipe(stage)
 
     code_profile = default_code_profile(resources.snapshot.repo_root)
@@ -315,22 +327,14 @@ def _plan_graphs_stage(
     ----------
     stage
         Graphs stage to plan.
-    run_ctx
-        Unified run context.
-    snapshot
-        Repository snapshot reference.
-    gateway
-        Storage gateway for database access.
+    resources
+        Shared resources for planning (gateway, snapshot, paths, tools, run context).
 
     Returns
     -------
     GraphsStagePlan
         Fully resolved graphs plan.
     """
-    from codeintel.config.steps_graphs import GraphPluginPolicy
-    from codeintel.graphs.runtime.executor import GraphExecutorContext
-    from codeintel.graphs.runtime.planning import GraphPlanContext, plan_graph_plugin_run
-
     policy = GraphPluginPolicy(fail_fast=True, skip_on_unchanged=False)
 
     plan_ctx = GraphPlanContext(
@@ -376,29 +380,6 @@ def _get_analytics_plugin_names() -> tuple[str, ...]:
     tuple[str, ...]
         Plugin names for the full analytics bundle.
     """
-    from codeintel.analytics.core.plugins import (
-        BEHAVIORAL_COVERAGE_PLUGIN,
-        CONFIG_DATA_FLOW_PLUGIN,
-        COVERAGE_FUNCTIONS_PLUGIN,
-        COVERAGE_TEST_EDGES_PLUGIN,
-        DATA_MODEL_USAGE_PLUGIN,
-        DATA_MODELS_PLUGIN,
-        ENTRYPOINTS_PLUGIN,
-        EXTERNAL_DEPS_PLUGIN,
-        FUNCTION_AST_FEATURES_PLUGIN,
-        FUNCTION_CONTRACTS_PLUGIN,
-        FUNCTION_EFFECTS_PLUGIN,
-        FUNCTION_HISTORY_PLUGIN,
-        FUNCTION_METRICS_PLUGIN,
-        HISTORY_TIMESERIES_PLUGIN,
-        HOTSPOTS_PLUGIN,
-        PROFILES_PLUGIN,
-        RISK_FACTORS_PLUGIN,
-        SEMANTIC_ROLES_PLUGIN,
-        SUBSYSTEMS_PLUGIN,
-        TEST_PROFILE_PLUGIN,
-    )
-
     return (
         FUNCTION_METRICS_PLUGIN.metadata.name,
         FUNCTION_EFFECTS_PLUGIN.metadata.name,
@@ -434,25 +415,14 @@ def _plan_analytics_stage(
     ----------
     stage
         Analytics stage to plan.
-    run_ctx
-        Unified run context.
-    snapshot
-        Repository snapshot reference.
-    gateway
-        Storage gateway for database access.
+    resources
+        Shared resources for planning (gateway, snapshot, paths, tools, run context).
 
     Returns
     -------
     AnalyticsStagePlan
         Fully resolved analytics plan.
     """
-    from codeintel.analytics.core.pipeline_bridge import (
-        AnalyticsPlanRequest,
-        AnalyticsRunContext,
-        plan_analytics_plugin_run,
-    )
-    from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
-
     plugin_names = _get_analytics_plugin_names()
     policy = GraphPluginPolicy(fail_fast=True, skip_on_unchanged=False)
     scope = GraphRunScope()
@@ -507,20 +477,8 @@ def build_pipeline_plan(
     ----------
     spec
         Declarative pipeline specification.
-    snapshot
-        Repository snapshot to operate on.
-    paths
-        Build paths configuration.
-    gateway
-        Storage gateway for database access.
-    tools
-        Tools configuration.
-    trigger
-        How the run was triggered.
-    run_kind_override
-        If provided, use this RunKind instead of inferring from spec stages.
-        Useful for operation prerequisite runs where the kind should be
-        ``"op_prereqs"`` regardless of the spec.
+    options
+        Bundled execution options (snapshot, paths, gateway, tools, trigger, overrides).
 
     Returns
     -------
@@ -532,7 +490,11 @@ def build_pipeline_plan(
     ValueError
         If a stage module is not recognized or recipe cannot be resolved.
     """
-    run_kind = options.run_kind_override if options.run_kind_override is not None else _infer_run_kind(spec)
+    run_kind = (
+        options.run_kind_override
+        if options.run_kind_override is not None
+        else _infer_run_kind(spec)
+    )
     run_ctx = new_run_context(
         snapshot=options.snapshot,
         kind=run_kind,

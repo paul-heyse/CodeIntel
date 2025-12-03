@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import safe_macro_call
@@ -32,7 +32,7 @@ def test_macro_schemas_match_table_definitions(fresh_gateway: StorageGateway) ->
     con = fresh_gateway.con
     failures: list[str] = []
     for table_key, macro in sorted(NORMALIZED_MACROS.items()):
-        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+        contract = get_dataset_contracts_by_table_key().get(table_key)
         if contract is None or contract.schema is None:
             failures.append(f"{table_key}: no contract schema found")
             continue

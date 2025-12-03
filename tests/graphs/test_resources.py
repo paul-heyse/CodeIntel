@@ -13,6 +13,7 @@ import pytest
 
 from codeintel.graphs.resources.container import ResourceContainer, ResourceNotFoundError
 from codeintel.graphs.resources.protocol import BaseResourceProvider, ResourceProvider
+from codeintel.graphs.resources.storage import StorageResource
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -450,8 +451,6 @@ def test_base_resource_provider_protocol_conformance() -> None:
 
 def test_storage_resource_creation(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """StorageResource can be created."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
 
     assert resource.resource_name == STORAGE_RESOURCE_NAME
@@ -460,8 +459,6 @@ def test_storage_resource_creation(fresh_gateway: StorageGateway, tmp_path: Path
 
 def test_storage_resource_get_returns_self(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """StorageResource.get returns self."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     result = resource.get()
 
@@ -470,8 +467,6 @@ def test_storage_resource_get_returns_self(fresh_gateway: StorageGateway, tmp_pa
 
 def test_storage_resource_invalidate_noop(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """StorageResource.invalidate is a no-op."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
 
     # Should not raise
@@ -480,8 +475,6 @@ def test_storage_resource_invalidate_noop(fresh_gateway: StorageGateway, tmp_pat
 
 def test_storage_resource_read_source(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """StorageResource reads source files."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     # Create a test file
     test_file = tmp_path / "test.py"
     test_content = "print('hello')"
@@ -497,8 +490,6 @@ def test_storage_resource_read_source_not_found(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
     """StorageResource returns None for missing files."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     result = resource.read_source("nonexistent.py")
 
@@ -507,8 +498,6 @@ def test_storage_resource_read_source_not_found(
 
 def test_storage_resource_execute_query(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """StorageResource executes queries."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     result = resource.execute_query("SELECT 1 as value")
 
@@ -519,8 +508,6 @@ def test_storage_resource_execute_query_with_params(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
     """StorageResource executes queries with parameters."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     result = resource.execute_query("SELECT ? + ? as value", [1, 2])
 
@@ -532,8 +519,6 @@ def test_storage_resource_execute_query_empty_result(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
     """StorageResource handles queries with empty results."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
     # Query that returns no rows
     fresh_gateway.con.execute("CREATE TEMP TABLE test_empty (id INT)")
@@ -544,8 +529,6 @@ def test_storage_resource_execute_query_empty_result(
 
 def test_storage_resource_execute_mutation(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """StorageResource executes mutations."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
 
     # Create a temp table and insert
@@ -560,8 +543,6 @@ def test_storage_resource_execute_mutation_with_params(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
     """StorageResource executes mutations with parameters."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
 
     # Create a temp table
@@ -578,8 +559,6 @@ def test_storage_resource_execute_mutation_multiple_rows(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
     """StorageResource handles multi-row mutations."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
 
     # Create a temp table and insert multiple rows
@@ -599,8 +578,6 @@ def test_storage_resource_protocol_conformance(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
     """StorageResource conforms to ResourceProvider protocol."""
-    from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
     resource = StorageResource(gateway=fresh_gateway, _repo_root=tmp_path)
 
     assert isinstance(resource, ResourceProvider)

@@ -1,8 +1,7 @@
 """Unified service bootstrap module for serving layer.
 
 This module provides a single entry point for constructing query services,
-backends, and their dependencies. It consolidates the patterns from
-``factory.py`` and ``wiring.py`` into a cleaner interface.
+backends, and their dependencies.
 
 Usage
 -----
@@ -13,6 +12,10 @@ For most use cases, use the high-level builder:
     stack = build_service_stack(config, gateway=gateway)
     # stack.backend, stack.service, stack.close()
 
+For backend resource construction (includes both local and remote modes):
+
+    from codeintel.serving.bootstrap import build_backend_resource
+
 For more control, use the component builders:
 
     from codeintel.serving.bootstrap import (
@@ -20,23 +23,23 @@ For more control, use the component builders:
         build_repositories,
         build_query_service,
     )
-
-Note
-----
-This module is the canonical source for service construction. The ``factory.py``
-and ``wiring.py`` modules are retained as re-export shims for backward
-compatibility.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from importlib import import_module
 from typing import TYPE_CHECKING
+
+import anyio
+import httpx
 
 from codeintel.analytics.graph_runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
+    GraphRuntimePool,
     build_graph_runtime,
 )
 from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
@@ -54,16 +57,17 @@ from codeintel.serving.backend.datasets import (
     validate_dataset_registry,
 )
 from codeintel.serving.services.observability import ServiceObservability
+from codeintel.serving.services.query_service import (
+    HttpQueryService,
+    LocalQueryService,
+    QueryService,
+)
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
 
 if TYPE_CHECKING:
     from codeintel.graphs.engine import GraphEngine
-    from codeintel.serving.services.query_service import (
-        HttpQueryService,
-        LocalQueryService,
-        QueryService,
-    )
+    from codeintel.serving.mcp.backend import DuckDBBackend, HttpBackend, QueryBackend
 
 
 # =============================================================================
@@ -381,10 +385,6 @@ def build_service_stack(
     query = build_query_service(context, repositories, engine_provider)
 
     # Build local query service wrapper
-    from codeintel.serving.services.query_service import (  # noqa: PLC0415
-        LocalQueryService,
-    )
-
     service: LocalQueryService = LocalQueryService(
         query=query,
         observability=opts.observability,
@@ -454,10 +454,6 @@ def build_local_query_service(
     LocalQueryService
         Service bound to the provided DuckDB connection.
     """
-    from codeintel.serving.services.query_service import (  # noqa: PLC0415
-        LocalQueryService,
-    )
-
     verify_db_identity(gateway, cfg)
     opts = registry or DatasetRegistryOptions()
     if opts.validate:
@@ -492,10 +488,6 @@ def build_http_query_service(
     HttpQueryService
         Service wrapper for remote transport.
     """
-    from codeintel.serving.services.query_service import (  # noqa: PLC0415
-        HttpQueryService,
-    )
-
     return HttpQueryService(
         request_json=request_json,
         limits=limits,
@@ -601,12 +593,268 @@ def build_service_from_config(
     raise ValueError(message)
 
 
+# =============================================================================
+# Backend Resource
+# =============================================================================
+
+LOG = logging.getLogger(__name__)
+
+
+def _load_mcp_backends() -> tuple[type[DuckDBBackend], type[HttpBackend]]:
+    """
+    Deferred import helper to avoid import cycles and heavy imports at module load.
+
+    Returns
+    -------
+    tuple[type[DuckDBBackend], type[HttpBackend]]
+        Backend classes for DuckDB and HTTP transports.
+    """
+    module = import_module("codeintel.serving.mcp.backend")
+    return module.DuckDBBackend, module.HttpBackend
+
+
+@dataclass
+class BackendResource:
+    """Bundle of backend, service, and cleanup hook."""
+
+    backend: QueryBackend
+    service: QueryService
+    close: Callable[[], None]
+
+
+@dataclass
+class BackendResourceOptions:
+    """Options controlling backend construction for serving."""
+
+    registry: DatasetRegistryOptions | None = None
+    observability: ServiceObservability | None = None
+    graph_runtime: GraphRuntime | None = None
+    runtime_pool: GraphRuntimePool | None = None
+
+
+def build_backend_resource(
+    cfg: ServingConfig,
+    *,
+    gateway: StorageGateway | None = None,
+    http_client: httpx.Client | httpx.AsyncClient | None = None,
+    options: BackendResourceOptions | None = None,
+) -> BackendResource:
+    """
+    Construct a backend and shared service with unified wiring.
+
+    Requires a ``StorageGateway`` for local_db mode; direct connection paths are removed.
+
+    Parameters
+    ----------
+    cfg
+        Validated serving configuration.
+    gateway
+        StorageGateway supplying connection and dataset registry for local_db mode.
+    http_client
+        Optional pre-built HTTPX client for remote_api mode.
+    options
+        Optional bundle controlling registry, observability, and runtime reuse.
+
+    Returns
+    -------
+    BackendResource
+        Backend, service, and close hook suitable for server/MCP startup.
+
+    Raises
+    ------
+    ValueError
+        When required inputs are missing for the configured mode or unsupported modes are requested.
+    """
+    resolved_options = options or BackendResourceOptions()
+    resolved_observability = resolved_options.observability or get_observability_from_config(cfg)
+    registry_opts = resolved_options.registry or DatasetRegistryOptions()
+    _, limits = build_registry_and_limits(cfg)
+
+    if cfg.mode == "local_db":
+        return _build_local_resource(
+            cfg,
+            gateway=gateway,
+            options=BackendResourceOptions(
+                registry=registry_opts,
+                observability=resolved_observability,
+                graph_runtime=resolved_options.graph_runtime,
+                runtime_pool=resolved_options.runtime_pool,
+            ),
+            limits=limits,
+        )
+
+    if cfg.mode == "remote_api":
+        return _build_remote_resource(
+            cfg,
+            http_client=http_client,
+            observability=resolved_observability,
+            limits=limits,
+        )
+
+    message = f"Unsupported serving mode: {cfg.mode}"
+    raise ValueError(message)
+
+
+def _build_local_resource(
+    cfg: ServingConfig,
+    *,
+    gateway: StorageGateway | None,
+    limits: BackendLimits,
+    options: BackendResourceOptions,
+) -> BackendResource:
+    """
+    Construct a local DuckDB backend and service bundle.
+
+    Returns
+    -------
+    BackendResource
+        Backend, service, and close hook.
+
+    Raises
+    ------
+    ValueError
+        When the gateway is missing for local_db mode.
+    """
+    if gateway is None:
+        message = "StorageGateway is required for local_db mode"
+        raise ValueError(message)
+    if cfg.db_path is None:
+        message = "db_path is required for local_db mode"
+        raise ValueError(message)
+    connection = gateway.con
+    effective_read_only = gateway.config.read_only
+
+    verify_db_identity(gateway, cfg)
+    if not effective_read_only:
+        create_all_views(connection)
+
+    duckdb_backend_cls, _ = _load_mcp_backends()
+
+    snapshot = SnapshotRef(repo=cfg.repo, commit=cfg.commit, repo_root=cfg.repo_root)
+    runtime_opts = GraphRuntimeOptions(
+        snapshot=snapshot, backend=GraphBackendConfig(), features=cfg.graph_features
+    )
+    runtime_source = "new"
+    if options.graph_runtime is not None:
+        active_runtime = options.graph_runtime
+        runtime_source = "provided"
+    elif options.runtime_pool is not None:
+        active_runtime = options.runtime_pool.get(gateway, runtime_opts)
+        runtime_source = "pool"
+    else:
+        active_runtime = build_graph_runtime(
+            gateway,
+            runtime_opts,
+        )
+    service = build_service_from_config(
+        cfg,
+        gateway=gateway,
+        options=ServiceBuildOptions(
+            registry=options.registry,
+            observability=options.observability,
+            graph_runtime=active_runtime,
+        ),
+    )
+    backend = duckdb_backend_cls(
+        gateway=gateway,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        limits=limits,
+        observability=options.observability,
+        query_engine=active_runtime.engine,
+        service_override=service if isinstance(service, LocalQueryService) else None,
+    )
+    LOG.info(
+        "serving.backend wired repo=%s commit=%s runtime_source=%s backend=%s use_gpu=%s "
+        "features=%s",
+        cfg.repo,
+        cfg.commit,
+        runtime_source,
+        active_runtime.backend.backend,
+        active_runtime.backend.use_gpu,
+        active_runtime.options.features,
+    )
+    if options.graph_runtime is not None:
+        LOG.info(
+            "serving.backend using provided runtime with engine=%s cache_key=%s",
+            type(active_runtime.engine).__name__,
+            active_runtime.options.cache_key,
+        )
+
+    def _close() -> None:
+        if gateway is not None:
+            gateway.close()
+
+    return BackendResource(backend=backend, service=backend.service, close=_close)
+
+
+def _build_remote_resource(
+    cfg: ServingConfig,
+    *,
+    http_client: httpx.Client | httpx.AsyncClient | None,
+    observability: ServiceObservability | None,
+    limits: BackendLimits,
+) -> BackendResource:
+    """
+    Construct a remote HTTP backend and service bundle.
+
+    Returns
+    -------
+    BackendResource
+        Backend, service, and close hook.
+
+    Raises
+    ------
+    ValueError
+        When api_base_url is missing for remote_api mode.
+    """
+    if not cfg.api_base_url:
+        message = "api_base_url is required for remote_api mode"
+        raise ValueError(message)
+
+    owns_client = False
+    client = http_client
+    if client is None:
+        client = httpx.Client(base_url=cfg.api_base_url, timeout=cfg.timeout_seconds)
+        owns_client = True
+
+    _, http_backend_cls = _load_mcp_backends()
+
+    backend = http_backend_cls(
+        base_url=cfg.api_base_url,
+        repo=cfg.repo,
+        commit=cfg.commit,
+        timeout=cfg.timeout_seconds,
+        limits=limits,
+        client=client,
+        observability=observability,
+    )
+
+    def _close_http() -> None:
+        if not owns_client or client is None:
+            return
+        if isinstance(client, httpx.Client):
+            client.close()
+            return
+        if isinstance(client, httpx.AsyncClient):
+
+            async def _aclose_client(async_client: httpx.AsyncClient) -> None:
+                await async_client.aclose()
+
+            anyio.run(_aclose_client, client)
+
+    return BackendResource(backend=backend, service=backend.service, close=_close_http)
+
+
 __all__ = [
+    "BackendResource",
+    "BackendResourceOptions",
     "BootstrapOptions",
     "DatasetRegistryOptions",
     "ServiceBuildOptions",
     "ServiceStack",
     "build_backend_context",
+    "build_backend_resource",
     "build_graph_runtime_for_config",
     "build_http_query_service",
     "build_local_query_service",

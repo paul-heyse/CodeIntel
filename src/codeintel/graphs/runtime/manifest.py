@@ -218,7 +218,6 @@ def dry_run_record(
     *,
     plugin: GraphPluginProtocol,
     params: RecordParams,
-    run_id: str,  # noqa: ARG001 - Reserved for future use
 ) -> GraphPluginRunRecord:
     """Create a record for a dry-run execution.
 
@@ -228,8 +227,6 @@ def dry_run_record(
         Plugin being recorded.
     params
         Record parameters.
-    run_id
-        Run identifier.
 
     Returns
     -------
@@ -262,7 +259,6 @@ def skip_record(
     plugin: GraphPluginProtocol,
     params: RecordParams,
     reason: str,
-    run_id: str,  # noqa: ARG001 - Reserved for future use
 ) -> GraphPluginRunRecord:
     """Create a record for a skipped execution.
 
@@ -274,8 +270,6 @@ def skip_record(
         Record parameters.
     reason
         Reason for skipping.
-    run_id
-        Run identifier.
 
     Returns
     -------

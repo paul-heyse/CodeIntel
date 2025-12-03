@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/sql_helpers.py
+# hypothesis_version: 6.148.5
+
+[' (', '(', ')', ') VALUES (', '*/ ', ', ', '.', '?', 'INSERT INTO ', 'LiteralString', 'PreparedStatements', 'SELECT * FROM', 'SELECT * FROM /*', 'build_insert_sql', 'ensure_schema', 'macro_select_sql', 'quote_identifier', 'quote_table_key', 'safe_macro_call']

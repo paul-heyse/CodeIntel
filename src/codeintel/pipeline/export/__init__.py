@@ -19,5 +19,4 @@ def default_validation_schemas() -> list[str]:
     return sorted(JSON_SCHEMA_BY_DATASET_NAME.keys())
 
 
-# Backwards-compatible constant; prefer calling default_validation_schemas().
-DEFAULT_VALIDATION_SCHEMAS: list[str] = default_validation_schemas()
+__all__ = ["default_validation_schemas"]

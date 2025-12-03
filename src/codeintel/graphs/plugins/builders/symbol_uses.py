@@ -21,6 +21,7 @@ from pathlib import Path
 from codeintel.config import SymbolUsesStepConfig
 from codeintel.config.datasets import SymbolUseRow as DatasetSymbolUseRow
 from codeintel.config.datasets import symbol_use_to_tuple
+from codeintel.config.primitives import BuildPaths
 from codeintel.core.types import (
     ScipDocument,
     ScipOccurrence,
@@ -449,8 +450,6 @@ def _build_symbol_uses(ctx: GraphExecutionContext) -> ComputationResult:
     ComputationResult
         Success result after building symbol use edges.
     """
-    from codeintel.config.primitives import BuildPaths  # noqa: PLC0415
-
     storage = ctx.require(StorageResource)
     gateway = storage.gateway
 

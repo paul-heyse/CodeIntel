@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -56,20 +57,25 @@ def make_functional_plugin() -> Callable[..., FunctionalPlugin]:
         requires: tuple[str, ...] = (),
         enabled: bool = True,
     ) -> FunctionalPlugin:
-        @plugin(
-            name=name,
-            description=f"Functional plugin {name}",
-            stage=stage,
-            provides=list(provides),
-            requires=list(requires),
-            enabled_by_default=enabled,
-            register=False,
-        )
         def _impl(ctx: PluginExecutionContext) -> PluginResult:
             _ = ctx
             return PluginResult.ok(meta={"name": name})
 
-        return _impl
+        # Call plugin() directly with the function to get a FunctionalPlugin
+        # Cast required because plugin() has union return type for decorator pattern
+        return cast(
+            "FunctionalPlugin",
+            plugin(
+                _impl,
+                name=name,
+                description=f"Functional plugin {name}",
+                stage=stage,
+                provides=list(provides),
+                requires=list(requires),
+                enabled_by_default=enabled,
+                register=False,
+            ),
+        )
 
     return _factory
 
@@ -252,15 +258,20 @@ def test_plan_default_enabled_only(
 def test_plugin_decorator_simple() -> None:
     """Decorator should wrap functions into FunctionalPlugin without registration."""
 
-    @plugin(
-        name="decorated.plugin",
-        description="A decorated plugin",
-        stage="function",
-        register=False,
-    )
-    def my_plugin(ctx: PluginExecutionContext) -> PluginResult:
+    def _impl(ctx: PluginExecutionContext) -> PluginResult:
         _ = ctx
         return PluginResult.ok()
+
+    my_plugin = cast(
+        "FunctionalPlugin",
+        plugin(
+            _impl,
+            name="decorated.plugin",
+            description="A decorated plugin",
+            stage="function",
+            register=False,
+        ),
+    )
 
     assert isinstance(my_plugin, FunctionalPlugin)
     assert my_plugin.metadata.name == "decorated.plugin"
@@ -271,17 +282,22 @@ def test_plugin_decorator_simple() -> None:
 def test_plugin_decorator_with_capabilities() -> None:
     """Decorator should apply capabilities to metadata."""
 
-    @plugin(
-        name="cap.plugin",
-        description="Plugin with capabilities",
-        stage="graph",
-        provides=["cap.output"],
-        requires=["cap.input"],
-        register=False,
-    )
-    def cap_plugin(ctx: PluginExecutionContext) -> PluginResult:
+    def _impl(ctx: PluginExecutionContext) -> PluginResult:
         _ = ctx
         return PluginResult.ok()
+
+    cap_plugin = cast(
+        "FunctionalPlugin",
+        plugin(
+            _impl,
+            name="cap.plugin",
+            description="Plugin with capabilities",
+            stage="graph",
+            provides=["cap.output"],
+            requires=["cap.input"],
+            register=False,
+        ),
+    )
 
     meta = cap_plugin.metadata
     assert len(meta.capabilities_provided) == 1
@@ -294,17 +310,22 @@ def test_decorated_plugin_executes() -> None:
     """A decorated plugin should execute and return PluginResult."""
     executed = False
 
-    @plugin(
-        name="exec.plugin",
-        description="Executable",
-        stage="function",
-        register=False,
-    )
-    def exec_plugin(ctx: PluginExecutionContext) -> PluginResult:
+    def _impl(ctx: PluginExecutionContext) -> PluginResult:
         nonlocal executed
         _ = ctx
         executed = True
         return PluginResult.ok(row_counts={"test": 42})
+
+    exec_plugin = cast(
+        "FunctionalPlugin",
+        plugin(
+            _impl,
+            name="exec.plugin",
+            description="Executable",
+            stage="function",
+            register=False,
+        ),
+    )
 
     gateway = open_ingestion_gateway()
     ctx = PluginExecutionContext(

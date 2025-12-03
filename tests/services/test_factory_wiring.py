@@ -10,15 +10,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.http.fastapi import create_app
-from codeintel.serving.mcp.backend import HttpBackend
-from codeintel.serving.services.factory import (
+from codeintel.serving.bootstrap import (
     BackendResource,
+    BackendResourceOptions,
     DatasetRegistryOptions,
     build_backend_resource,
 )
+from codeintel.serving.http.fastapi import create_app
+from codeintel.serving.mcp.backend import HttpBackend
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
-from codeintel.serving.services.wiring import BackendResourceOptions
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.views import create_all_views
 from tests._helpers.builders import RepoMapRow, insert_repo_map

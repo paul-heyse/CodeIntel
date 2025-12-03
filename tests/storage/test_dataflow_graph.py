@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from codeintel.config.datasets import (
-    COMPOSITE_SCHEMAS,
-    DATASET_CONTRACTS,
-    DATASET_CONTRACTS_BY_TABLE_KEY,
     build_contract_dataflow_graph,
+    get_composite_schemas,
+    get_dataset_contracts,
+    get_dataset_contracts_by_table_key,
 )
 from codeintel.storage.gateway import open_memory_gateway
 from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
@@ -25,7 +25,7 @@ def test_contract_dataflow_includes_all_datasets() -> None:
     nodes, _ = build_contract_dataflow_graph()
     node_ids = {node.id for node in nodes}
 
-    for contract in DATASET_CONTRACTS.values():
+    for contract in get_dataset_contracts().values():
         _require(
             condition=contract.table_key in node_ids,
             message=f"DatasetContract {contract.name} missing node for {contract.table_key}",
@@ -37,8 +37,8 @@ def test_composite_edges_align_with_composite_schemas() -> None:
     _, edges = build_contract_dataflow_graph()
     builds_edges = {(edge.src, edge.dst) for edge in edges if edge.edge_type == "builds"}
 
-    for table_key, composite in COMPOSITE_SCHEMAS.items():
-        target = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    for table_key, composite in get_composite_schemas().items():
+        target = get_dataset_contracts_by_table_key().get(table_key)
         if target is None:
             pytest.fail(f"CompositeSchema target {table_key} missing DatasetContract")
         dst_id = table_key

@@ -11,8 +11,15 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
+from codeintel.config.primitives import GraphBackendConfig
+from codeintel.graphs.resources import StorageResource
+
 if TYPE_CHECKING:
-    from codeintel.analytics.graph_runtime import GraphRuntime
     from codeintel.graphs.core import GraphExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
@@ -63,15 +70,6 @@ def resolve_analytics_runtime(
     >>> with resolve_analytics_runtime(ctx) as rt:
     ...     compute_metrics(rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime)
     """
-    # Late imports to avoid circular dependencies - this module is specifically
-    # designed to encapsulate these imports for cleaner plugin code
-    from codeintel.analytics.graph_runtime import (  # noqa: PLC0415
-        GraphRuntimeOptions,
-        resolve_graph_runtime,
-    )
-    from codeintel.config.primitives import GraphBackendConfig  # noqa: PLC0415
-    from codeintel.graphs.resources import StorageResource  # noqa: PLC0415
-
     # Get gateway via resource injection or fallback
     if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
         storage = ctx.require(StorageResource)

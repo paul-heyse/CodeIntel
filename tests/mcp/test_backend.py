@@ -42,7 +42,7 @@ def test_get_function_summary(backend: DuckDBBackend) -> None:
     resp = backend.get_function_summary(urn="urn:foo")
     if not resp.found or resp.summary is None:
         pytest.fail("Expected function summary to be present")
-    if resp.summary["qualname"] != "foo":
+    if resp.summary.model_dump().get("qualname") != "foo":
         pytest.fail("Qualname mismatch for function summary")
 
 
@@ -63,7 +63,7 @@ def test_get_tests_for_function(backend: DuckDBBackend) -> None:
     resp = backend.get_tests_for_function(goid_h128=1)
     if len(resp.tests) != 1:
         pytest.fail("Expected exactly one test row")
-    if resp.tests[0]["test_id"] != "t1":
+    if resp.tests[0].model_dump().get("test_id") != "t1":
         pytest.fail("Unexpected test_id in results")
 
 
@@ -111,7 +111,7 @@ def test_read_function_validation_dataset(backend: DuckDBBackend) -> None:
     if not resp.rows:
         pytest.fail("Expected rows for function_validation dataset")
     row = resp.rows[0]
-    if row.get("issue") != "span_not_found":
+    if row.model_dump().get("issue") != "span_not_found":
         pytest.fail("Unexpected issue value in function_validation dataset")
 
 

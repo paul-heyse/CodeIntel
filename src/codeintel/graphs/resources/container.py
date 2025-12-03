@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from codeintel.graphs.resources.protocol import ResourceProvider
 
@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-class ResourceNotFoundError(Exception):
+class ResourceNotFoundError(KeyError):
     """Raised when a required resource is not registered."""
 
     def __init__(self, resource_name: str) -> None:
@@ -110,8 +110,6 @@ class ResourceContainer:
         ResourceNotFoundError
             If no provider is registered for the type.
         """
-        from typing import cast  # noqa: PLC0415
-
         # Get the resource name from the provider type
         name = self._get_resource_name(provider_type)
 
@@ -155,6 +153,26 @@ class ResourceContainer:
         if provider is None:
             raise ResourceNotFoundError(name)
         return provider.get()
+
+    def get(self, name: str, default: object | None = None) -> object | None:
+        """Return a resource if registered, otherwise a default.
+
+        Parameters
+        ----------
+        name
+            Resource name to look up.
+        default
+            Value to return when the resource is not registered.
+
+        Returns
+        -------
+        object | None
+            The resource value or the provided default when missing.
+        """
+        try:
+            return self.require_by_name(name)
+        except ResourceNotFoundError:
+            return default
 
     def has(self, name: str) -> bool:
         """Check if a resource is registered.

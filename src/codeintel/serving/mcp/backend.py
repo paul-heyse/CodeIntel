@@ -21,6 +21,11 @@ from codeintel.serving.backend import (
     GraphEngineProvider,
 )
 from codeintel.serving.backend.query_api import DuckDBQueryApi
+from codeintel.serving.bootstrap import (
+    ServiceBuildOptions,
+    build_service_from_config,
+    get_observability_from_config,
+)
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -50,11 +55,6 @@ from codeintel.serving.mcp.models import (
     ProblemDetail as ProblemDetailModel,
 )
 from codeintel.serving.services.errors import DatasetNotFoundError, ProblemError
-from codeintel.serving.services.factory import (
-    ServiceBuildOptions,
-    build_service_from_config,
-    get_observability_from_config,
-)
 from codeintel.serving.services.query_service import (
     HttpQueryService,
     LocalQueryService,

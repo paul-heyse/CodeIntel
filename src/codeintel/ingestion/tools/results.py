@@ -306,6 +306,28 @@ def _parse_test_markers(entry: Mapping[str, object]) -> list[str]:
     return []
 
 
+def parse_test_duration(entry: Mapping[str, object]) -> float:
+    """Public wrapper for parsing a test duration in seconds.
+
+    Returns
+    -------
+    float
+        Duration in seconds from the test entry.
+    """
+    return _parse_test_duration(entry)
+
+
+def parse_test_markers(entry: Mapping[str, object]) -> tuple[str, ...]:
+    """Public wrapper for parsing pytest markers.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Sorted marker names extracted from the entry.
+    """
+    return tuple(_parse_test_markers(entry))
+
+
 @dataclass(frozen=True)
 class TestCaseResult:
     """Result for a single test case.
@@ -537,6 +559,28 @@ def _parse_scip_occurrence(occ: Mapping[str, object]) -> tuple[ScipOccurrence, b
     )
 
 
+def parse_scip_range(rng: Sequence[object]) -> tuple[int, int, int, int] | None:
+    """Public wrapper for parsing SCIP ranges.
+
+    Returns
+    -------
+    tuple[int, int, int, int] | None
+        Parsed range tuple or None when invalid.
+    """
+    return _parse_scip_range(rng)
+
+
+def parse_scip_occurrence(occ: Mapping[str, object]) -> tuple[ScipOccurrence, bool] | None:
+    """Public wrapper for parsing SCIP occurrences.
+
+    Returns
+    -------
+    tuple[ScipOccurrence, bool] | None
+        Parsed occurrence and definition flag, or None when invalid.
+    """
+    return _parse_scip_occurrence(occ)
+
+
 @dataclass(frozen=True)
 class ScipIndexResult:
     """Result from SCIP indexing.
@@ -667,4 +711,8 @@ __all__ = [
     "ScipOccurrence",
     "TestCaseResult",
     "TestReport",
+    "parse_scip_occurrence",
+    "parse_scip_range",
+    "parse_test_duration",
+    "parse_test_markers",
 ]

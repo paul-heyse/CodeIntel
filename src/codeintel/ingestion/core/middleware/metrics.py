@@ -132,8 +132,8 @@ class MetricsMiddleware:
     in_memory: InMemoryMetrics | None = None
     metric_prefix: str = "codeintel.ingest"
 
+    @staticmethod
     def before_execute(
-        self,
         plugin: BaseIngestPlugin,
         ctx: IngestExecutionContext,
     ) -> None:

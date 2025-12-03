@@ -10,26 +10,24 @@ from codeintel.serving.backend.core import (
 from codeintel.serving.backend.duckdb_service import DuckDBQueryService
 from codeintel.serving.backend.pagination import (
     BackendLimits,
-    ClampResult,
     LimitClamp,
+    OffsetClamp,
     PaginatedFetch,
     clamp_limit,
-    clamp_limit_value,
-    clamp_offset_value,
+    clamp_offset,
     paginate_items,
 )
 
 __all__ = [
     "BackendContext",
     "BackendLimits",
-    "ClampResult",
     "DuckDBQueryService",
     "DuckDBRepositories",
     "GraphEngineProvider",
     "LimitClamp",
+    "OffsetClamp",
     "PaginatedFetch",
     "clamp_limit",
-    "clamp_limit_value",
-    "clamp_offset_value",
+    "clamp_offset",
     "paginate_items",
 ]

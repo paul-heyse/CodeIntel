@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import clamp_limit_value
+from codeintel.serving.backend import clamp_limit
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -192,7 +192,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
     ) -> dm.HighRiskFunctionsResult:
         def _run() -> HighRiskFunctionsResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 applied_limit,
                 default=applied_limit,
                 max_limit=self.limits.max_rows_per_call,
@@ -260,7 +260,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
     ) -> dm.CallGraphNeighbors:
         def _run() -> CallGraphNeighborsResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 applied_limit,
                 default=applied_limit,
                 max_limit=self.limits.max_rows_per_call,
@@ -294,7 +294,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
     ) -> dm.GraphNeighborhood:
         def _run() -> GraphNeighborhoodResponse:
             applied_limit = self.limits.default_limit if max_nodes is None else max_nodes
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 applied_limit,
                 default=applied_limit,
                 max_limit=self.limits.max_rows_per_call,
@@ -330,7 +330,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
     ) -> dm.ImportBoundary:
         def _run() -> ImportBoundaryResponse:
             applied_limit = self.limits.default_limit if max_edges is None else max_edges
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 applied_limit,
                 default=applied_limit,
                 max_limit=self.limits.max_rows_per_call,
@@ -362,7 +362,7 @@ class _HttpFunctionQueryMixin(_HttpTransportMixin):
     ) -> dm.TestsForFunctionResult:
         def _run() -> TestsForFunctionResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 applied_limit,
                 default=applied_limit,
                 max_limit=self.limits.max_rows_per_call,

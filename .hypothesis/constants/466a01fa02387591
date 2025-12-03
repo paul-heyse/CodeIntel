@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/adapters/duckdb_storage.py
+# hypothesis_version: 6.148.5
+
+[0.0, ', ', '.', '?', 'DELETE FROM', 'DuckDBStorageAdapter', 'SELECT * FROM ', 'WHERE', 'macro_name', 'metadata.', 'missing', 'quote_identifier', 'quote_macro_name', 'quote_table_key', 'rel_path', 'table_key', 'temp_ingest_values']

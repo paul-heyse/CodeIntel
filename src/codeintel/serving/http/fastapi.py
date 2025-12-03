@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.context import (
     RequestContext,
     reset_current_request_context,
@@ -34,7 +35,6 @@ from codeintel.serving.mcp import errors as mcp_errors
 from codeintel.serving.mcp.models import ProblemDetail as ProblemDetailModel
 from codeintel.serving.services.errors import ProblemDetail as DomainProblemDetail
 from codeintel.serving.services.errors import ProblemError, generate_correlation_id
-from codeintel.serving.services.factory import BackendResource, build_backend_resource
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 LOG = logging.getLogger("codeintel.serving.http.fastapi")

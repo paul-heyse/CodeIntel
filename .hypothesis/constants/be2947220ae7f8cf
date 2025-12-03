@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/backend/pagination.py
+# hypothesis_version: 6.148.5
+
+[500, 'BackendLimits', 'LimitClamp', 'OffsetClamp', 'PaginatedFetch', 'clamp_limit', 'clamp_offset', 'default_limit', 'error', 'fn must be callable', 'limit_clamped', 'limit_invalid', 'max_rows_per_call', 'offset_invalid', 'paginate_items', 'requested', 'warning']

@@ -1,7 +1,4 @@
-"""Shared orchestration primitives for pipeline steps.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
-"""
+"""Shared orchestration primitives for pipeline steps."""
 
 from __future__ import annotations
 
@@ -38,6 +35,9 @@ from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
+from codeintel.ingestion.resources.modules import ModuleProvider
+from codeintel.ingestion.resources.registry import ResourceRegistry
+from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.storage.gateway import StorageGateway
@@ -288,11 +288,6 @@ def _plugin_ctx(
     IngestExecutionContext
         Context suitable for new plugin architecture.
     """
-    # Import resource providers (inside function to avoid circular imports)
-    from codeintel.ingestion.resources.modules import ModuleProvider
-    from codeintel.ingestion.resources.registry import ResourceRegistry
-    from codeintel.ingestion.resources.tools import ToolsProvider
-
     # Build resource registry with required providers
     resources = ResourceRegistry()
 

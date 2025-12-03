@@ -3,8 +3,8 @@
 This module provides the core graph metrics plugins using the hexagonal
 architecture's compute layer for pure metric calculations.
 
-Uses resource injection pattern via ctx.require() with fallback
-to direct context properties for backward compatibility.
+Uses resource injection pattern via ctx.require_graphs() for
+graph access.
 """
 
 from __future__ import annotations
@@ -21,7 +21,8 @@ from codeintel.graphs.core import (
     make_metric_plugin,
 )
 from codeintel.graphs.engine import GraphKind
-from codeintel.graphs.resources import GraphResource, StorageResource
+from codeintel.graphs.resources import StorageResource
+from codeintel.ingestion.services.storage import IngestStorageService
 
 log = logging.getLogger(__name__)
 
@@ -42,17 +43,15 @@ def _compute_core_graph_metrics(ctx: GraphExecutionContext) -> ComputationResult
     ComputationResult
         Success result after computing core metrics.
     """
-    # Get the engine - try resources first, fall back to context
-    if ctx.resources is not None and ctx.resources.has(GraphResource.RESOURCE_NAME):
-        graph_resource = ctx.require(GraphResource)
-        call_graph = graph_resource.call_graph()
-        import_graph = graph_resource.import_graph()
-    elif ctx.engine is not None:
-        call_graph = ctx.engine.call_graph()
-        import_graph = ctx.engine.import_graph()
-    else:
-        log.warning("No graph engine available for metrics computation")
-        return ComputationResult(success=False, message="No graph engine available")
+    # Get graphs via resource injection
+    try:
+        graph_resource = ctx.require_graphs()
+    except RuntimeError as exc:
+        log.warning("No graph engine available for metrics computation: %s", exc)
+        return ComputationResult(success=False, message=str(exc))
+
+    call_graph = graph_resource.call_graph()
+    import_graph = graph_resource.import_graph()
 
     # Compute centrality metrics using pure compute functions
     func_centralities = centrality.compute_all_centralities(call_graph)
@@ -147,8 +146,6 @@ def _persist_function_metrics(
 
     Uses resource injection with fallback to ctx.gateway.
     """
-    from codeintel.ingestion.services.storage import IngestStorageService  # noqa: PLC0415
-
     # Get gateway via resource injection or fallback
     if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
         storage = ctx.require(StorageResource)
@@ -173,8 +170,6 @@ def _persist_module_metrics(
 
     Uses resource injection with fallback to ctx.gateway.
     """
-    from codeintel.ingestion.services.storage import IngestStorageService  # noqa: PLC0415
-
     # Get gateway via resource injection or fallback
     if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
         storage = ctx.require(StorageResource)
@@ -200,14 +195,13 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
     ComputationResult
         Success result after computing extended function metrics.
     """
-    # Get call graph
-    if ctx.resources is not None and ctx.resources.has(GraphResource.RESOURCE_NAME):
-        graph_resource = ctx.require(GraphResource)
-        call_graph = graph_resource.call_graph()
-    elif ctx.engine is not None:
-        call_graph = ctx.engine.call_graph()
-    else:
-        return ComputationResult(success=False, message="No graph engine available")
+    # Get call graph via resource injection
+    try:
+        graph_resource = ctx.require_graphs()
+    except RuntimeError as exc:
+        return ComputationResult(success=False, message=str(exc))
+
+    call_graph = graph_resource.call_graph()
 
     # Compute centrality metrics for extended metrics
     func_centralities = centrality.compute_all_centralities(call_graph)
@@ -263,8 +257,6 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
     ]
 
     if rows:
-        from codeintel.ingestion.services.storage import IngestStorageService  # noqa: PLC0415
-
         # Get gateway via resource injection or fallback
         if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
             storage = ctx.require(StorageResource)
@@ -291,14 +283,13 @@ def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult
     ComputationResult
         Success result after computing extended module metrics.
     """
-    # Get import graph
-    if ctx.resources is not None and ctx.resources.has(GraphResource.RESOURCE_NAME):
-        graph_resource = ctx.require(GraphResource)
-        import_graph = graph_resource.import_graph()
-    elif ctx.engine is not None:
-        import_graph = ctx.engine.import_graph()
-    else:
-        return ComputationResult(success=False, message="No graph engine available")
+    # Get import graph via resource injection
+    try:
+        graph_resource = ctx.require_graphs()
+    except RuntimeError as exc:
+        return ComputationResult(success=False, message=str(exc))
+
+    import_graph = graph_resource.import_graph()
 
     # Compute centrality metrics
     module_centralities = centrality.compute_all_centralities(import_graph)
@@ -345,8 +336,6 @@ def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult
     ]
 
     if rows:
-        from codeintel.ingestion.services.storage import IngestStorageService  # noqa: PLC0415
-
         # Get gateway via resource injection or fallback
         if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
             storage = ctx.require(StorageResource)

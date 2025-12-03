@@ -425,13 +425,13 @@ def _convert_scip_documents(documents: Sequence[object]) -> list[ScipDocument]:
     return [
         ScipDocument(
             relative_path=getattr(doc, "relative_path", ""),
-            symbols=tuple(
+            symbols=[
                 ScipSymbol(symbol=sym.symbol, documentation=sym.documentation)
                 for sym in (getattr(doc, "symbols", None) or [])
-            ),
-            occurrences=tuple(
+            ],
+            occurrences=[
                 _convert_scip_occurrence(occ) for occ in (getattr(doc, "occurrences", None) or [])
-            ),
+            ],
         )
         for doc in documents
     ]

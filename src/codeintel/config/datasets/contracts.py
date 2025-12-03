@@ -91,7 +91,7 @@ from codeintel.config.datasets.rows import (
     symbol_use_to_tuple,
     typedness_row_to_tuple,
 )
-from codeintel.config.datasets.schemas import COMPOSITE_SCHEMAS, TABLE_SCHEMAS
+from codeintel.config.datasets.schema_provider import composite_schemas, table_schemas
 from codeintel.storage.views import DERIVED_DOCS_VIEWS
 
 # ---------------------------------------------------------------------------
@@ -872,6 +872,91 @@ def _build_row_bindings() -> dict[str, RowBinding]:
 # ---------------------------------------------------------------------------
 
 
+def _table_contract(
+    table_key: str,
+    schema: TableSchema,
+    row_bindings: dict[str, RowBinding],
+    composites: dict[str, CompositeSchema],
+) -> tuple[str, DatasetContract]:
+    schema_prefix, name = table_key.split(".", maxsplit=1)
+    meta = _metadata_for_name(name)
+    row_binding = row_bindings.get(table_key)
+    json_schema_id = _JSON_SCHEMA_BY_DATASET_NAME.get(name)
+    jsonl_filename = _DEFAULT_JSONL_FILENAMES.get(table_key)
+    parquet_filename = _DEFAULT_PARQUET_FILENAMES.get(table_key)
+    owner_package = _owner_package_for_prefix(schema_prefix)
+    family = schema_prefix
+
+    tags = {"base_table"}
+    if table_key in _DATASET_ROWS_ONLY:
+        tags.add("dataset_rows_only")
+
+    composition = composites.get(table_key)
+
+    contract = DatasetContract(
+        name=name,
+        table_key=table_key,
+        schema=schema,
+        row_binding=row_binding,
+        json_schema_id=json_schema_id,
+        jsonl_filename=jsonl_filename,
+        parquet_filename=parquet_filename,
+        is_view=False,
+        owner_package=owner_package,
+        tags=frozenset(tags),
+        description=cast("str | None", meta["description"]),
+        family=family,
+        owner=cast("str | None", meta["owner"]),
+        freshness_sla=cast("str | None", meta["freshness_sla"]),
+        retention_policy=cast("str | None", meta["retention_policy"]),
+        stable_id=cast("str | None", meta["stable_id"]),
+        schema_version=cast("str | None", meta["schema_version"]),
+        upstream_dependencies=cast("tuple[str, ...]", meta["upstream_dependencies"]),
+        validation_profile=cast("Literal['strict', 'lenient']", meta["validation_profile"]),
+        composition=composition,
+    )
+    return name, contract
+
+
+def _view_contract(
+    view_key: str,
+    schemas: dict[str, TableSchema],
+    row_bindings: dict[str, RowBinding],
+) -> tuple[str, DatasetContract]:
+    schema_prefix, view_name = view_key.split(".", maxsplit=1)
+    meta = _metadata_for_name(view_name)
+    row_binding = row_bindings.get(view_key)
+    json_schema_id = _JSON_SCHEMA_BY_DATASET_NAME.get(view_name)
+    jsonl_filename = _DEFAULT_JSONL_FILENAMES.get(view_key)
+    parquet_filename = _DEFAULT_PARQUET_FILENAMES.get(view_key)
+    owner_package = _owner_package_for_prefix(schema_prefix)
+    family = schema_prefix
+
+    view_schema = schemas.get(view_key)
+    contract = DatasetContract(
+        name=view_name,
+        table_key=view_key,
+        schema=view_schema,
+        row_binding=row_binding,
+        json_schema_id=json_schema_id,
+        jsonl_filename=jsonl_filename,
+        parquet_filename=parquet_filename,
+        is_view=True,
+        owner_package=owner_package,
+        tags=frozenset({"docs_view", "read_only"}),
+        description=cast("str | None", meta["description"]),
+        family=family,
+        owner=cast("str | None", meta["owner"]),
+        freshness_sla=cast("str | None", meta["freshness_sla"]),
+        retention_policy=cast("str | None", meta["retention_policy"]),
+        stable_id=cast("str | None", meta["stable_id"]),
+        schema_version=cast("str | None", meta["schema_version"]),
+        upstream_dependencies=cast("tuple[str, ...]", meta["upstream_dependencies"]),
+        validation_profile=cast("Literal['strict', 'lenient']", meta["validation_profile"]),
+    )
+    return view_name, contract
+
+
 def _build_contracts() -> dict[str, DatasetContract]:
     """Build the DATASET_CONTRACTS dictionary from schemas and metadata.
 
@@ -883,80 +968,23 @@ def _build_contracts() -> dict[str, DatasetContract]:
     row_bindings = _build_row_bindings()
     contracts: dict[str, DatasetContract] = {}
 
-    for table_key, schema in TABLE_SCHEMAS.items():
+    schemas = table_schemas()
+    composites = composite_schemas()
+
+    for table_key, schema in schemas.items():
         if table_key.startswith("tmp_"):
             continue
-        schema_prefix, name = table_key.split(".", maxsplit=1)
-        meta = _metadata_for_name(name)
-        row_binding = row_bindings.get(table_key)
-        json_schema_id = _JSON_SCHEMA_BY_DATASET_NAME.get(name)
-        jsonl_filename = _DEFAULT_JSONL_FILENAMES.get(table_key)
-        parquet_filename = _DEFAULT_PARQUET_FILENAMES.get(table_key)
-        owner_package = _owner_package_for_prefix(schema_prefix)
-        family = schema_prefix
-
-        tags = {"base_table"}
-        if table_key in _DATASET_ROWS_ONLY:
-            tags.add("dataset_rows_only")
-
-        # Look up composition metadata for profile datasets
-        composition = COMPOSITE_SCHEMAS.get(table_key)
-
-        contracts[name] = DatasetContract(
-            name=name,
+        name, contract = _table_contract(
             table_key=table_key,
             schema=schema,
-            row_binding=row_binding,
-            json_schema_id=json_schema_id,
-            jsonl_filename=jsonl_filename,
-            parquet_filename=parquet_filename,
-            is_view=False,
-            owner_package=owner_package,
-            tags=frozenset(tags),
-            description=cast("str | None", meta["description"]),
-            family=family,
-            owner=cast("str | None", meta["owner"]),
-            freshness_sla=cast("str | None", meta["freshness_sla"]),
-            retention_policy=cast("str | None", meta["retention_policy"]),
-            stable_id=cast("str | None", meta["stable_id"]),
-            schema_version=cast("str | None", meta["schema_version"]),
-            upstream_dependencies=cast("tuple[str, ...]", meta["upstream_dependencies"]),
-            validation_profile=cast("Literal['strict', 'lenient']", meta["validation_profile"]),
-            composition=composition,
+            row_bindings=row_bindings,
+            composites=composites,
         )
+        contracts[name] = contract
 
     for view_key in DERIVED_DOCS_VIEWS:
-        schema_prefix, view_name = view_key.split(".", maxsplit=1)
-        meta = _metadata_for_name(view_name)
-        row_binding = row_bindings.get(view_key)
-        json_schema_id = _JSON_SCHEMA_BY_DATASET_NAME.get(view_name)
-        jsonl_filename = _DEFAULT_JSONL_FILENAMES.get(view_key)
-        parquet_filename = _DEFAULT_PARQUET_FILENAMES.get(view_key)
-        owner_package = _owner_package_for_prefix(schema_prefix)
-        family = schema_prefix
-
-        view_schema = TABLE_SCHEMAS.get(view_key)
-        contracts[view_name] = DatasetContract(
-            name=view_name,
-            table_key=view_key,
-            schema=view_schema,
-            row_binding=row_binding,
-            json_schema_id=json_schema_id,
-            jsonl_filename=jsonl_filename,
-            parquet_filename=parquet_filename,
-            is_view=True,
-            owner_package=owner_package,
-            tags=frozenset({"docs_view", "read_only"}),
-            description=cast("str | None", meta["description"]),
-            family=family,
-            owner=cast("str | None", meta["owner"]),
-            freshness_sla=cast("str | None", meta["freshness_sla"]),
-            retention_policy=cast("str | None", meta["retention_policy"]),
-            stable_id=cast("str | None", meta["stable_id"]),
-            schema_version=cast("str | None", meta["schema_version"]),
-            upstream_dependencies=cast("tuple[str, ...]", meta["upstream_dependencies"]),
-            validation_profile=cast("Literal['strict', 'lenient']", meta["validation_profile"]),
-        )
+        view_name, contract = _view_contract(view_key, schemas, row_bindings)
+        contracts[view_name] = contract
 
     return contracts
 
@@ -969,9 +997,7 @@ def get_table_schemas() -> dict[str, TableSchema]:
     dict[str, TableSchema]
         All registered table schemas.
     """
-    from codeintel.config.datasets.schemas import TABLE_SCHEMAS  # noqa: PLC0415
-
-    return TABLE_SCHEMAS
+    return table_schemas()
 
 
 def get_composite_schemas() -> dict[str, CompositeSchema]:
@@ -982,9 +1008,7 @@ def get_composite_schemas() -> dict[str, CompositeSchema]:
     dict[str, CompositeSchema]
         All registered composite schemas.
     """
-    from codeintel.config.datasets.schemas import COMPOSITE_SCHEMAS  # noqa: PLC0415
-
-    return COMPOSITE_SCHEMAS
+    return composite_schemas()
 
 
 def get_row_bindings() -> dict[str, RowBinding]:
@@ -1034,39 +1058,6 @@ def _dataset_contracts_cache() -> dict[str, DatasetContract]:
 def _dataset_contracts_by_table_key_cache() -> dict[str, DatasetContract]:
     contracts = _dataset_contracts_cache()
     return {c.table_key: c for c in contracts.values()}
-
-
-# For backwards compatibility, expose as module-level attributes
-def __getattr__(name: str) -> object:
-    """Lazy attribute access for TABLE_SCHEMAS and related constants.
-
-    Parameters
-    ----------
-    name
-        The attribute name to access.
-
-    Returns
-    -------
-    object
-        The requested attribute value.
-
-    Raises
-    ------
-    AttributeError
-        If the attribute is not found.
-    """
-    if name == "TABLE_SCHEMAS":
-        return get_table_schemas()
-    if name == "COMPOSITE_SCHEMAS":
-        return get_composite_schemas()
-    if name == "DATASET_CONTRACTS":
-        return get_dataset_contracts()
-    if name == "DATASET_CONTRACTS_BY_TABLE_KEY":
-        return get_dataset_contracts_by_table_key()
-    if name == "ROW_BINDINGS_BY_TABLE_KEY":
-        return get_row_bindings()
-    msg = f"module {__name__!r} has no attribute {name!r}"
-    raise AttributeError(msg)
 
 
 __all__ = [

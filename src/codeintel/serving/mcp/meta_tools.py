@@ -24,7 +24,7 @@ from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.registry import (
     build_dataset_meta,
     build_serving_dataflow_graph,
-    iter_operation_specs,
+    iter_registry_operations,
 )
 from codeintel.serving.services.query_service import QueryService
 
@@ -182,7 +182,7 @@ def _build_list_operations_tool(context: _MetaToolsContext) -> Callable[[], obje
             Serialized OperationMetaResponse payloads or a ProblemDetail on error.
         """
         payloads: list[OperationMetaResponse] = []
-        for spec in iter_operation_specs():
+        for spec in iter_registry_operations():
             default_limit = spec.default_limit or context.limits.default_limit
             max_limit = spec.max_limit or context.limits.max_rows_per_call
             payloads.append(
@@ -272,12 +272,12 @@ def _build_explain_dataset_tool(context: _MetaToolsContext) -> Callable[[str], o
 def _build_explain_operation_tool(context: _MetaToolsContext) -> Callable[[str], object]:
     @_wrap
     def _tool(operation_id: str) -> list[dict[str, object]]:
-        """Explain an OperationSpec node in the dataflow graph.
+        """Explain an Operation node in the dataflow graph.
 
         Parameters
         ----------
         operation_id
-            OperationSpec identifier.
+            Operation identifier.
 
         Returns
         -------

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 from typing import Literal
 
 from codeintel.config import ScipIngestStepConfig
-from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.module_index import load_module_map
@@ -31,12 +31,66 @@ class ResolvedScipConfig:
 
 
 @dataclass(frozen=True)
+class ScipPathConfig:
+    """Path configuration for SCIP ingestion.
+
+    Groups path-related parameters to reduce argument count in factory methods.
+
+    Parameters
+    ----------
+    repo_root
+        Path to repository root.
+    build_dir
+        Build output directory.
+    document_output_dir
+        Document output directory.
+    """
+
+    repo_root: Path | None = None
+    build_dir: Path | None = None
+    document_output_dir: Path | None = None
+
+    @classmethod
+    def from_strings(
+        cls,
+        *,
+        repo_root: Path | str | None = None,
+        build_dir: Path | str | None = None,
+        document_output_dir: Path | str | None = None,
+    ) -> ScipPathConfig:
+        """Create from string paths with automatic coercion.
+
+        Parameters
+        ----------
+        repo_root
+            Path to repository root (coerced to Path).
+        build_dir
+            Build output directory (coerced to Path).
+        document_output_dir
+            Document output directory (coerced to Path).
+
+        Returns
+        -------
+        ScipPathConfig
+            Path configuration with coerced paths.
+        """
+        return cls(
+            repo_root=Path(repo_root) if repo_root else None,
+            build_dir=Path(build_dir) if build_dir else None,
+            document_output_dir=Path(document_output_dir) if document_output_dir else None,
+        )
+
+
+@dataclass(frozen=True)
 class ScipResolverInput:
     """Input parameters for SCIP configuration resolution.
 
     Bundles optional parameters to reduce function argument count.
     Either provide a ScipIngestStepConfig via cfg, or provide explicit
     parameters (repo, commit, repo_root, build_dir, document_output_dir).
+
+    Use the `build()` factory method for convenient construction with
+    automatic path coercion.
 
     Parameters
     ----------
@@ -70,48 +124,84 @@ class ScipResolverInput:
     scip_bin: str | None = None
     modules: Sequence[ModuleRecord] | None = None
 
+    @classmethod
+    def build(
+        cls,
+        *,
+        repo: str | None = None,
+        commit: str | None = None,
+        paths: ScipPathConfig | None = None,
+        scip_python_bin: str | None = None,
+        scip_bin: str | None = None,
+        modules: Sequence[ModuleRecord] | None = None,
+        cfg: ScipIngestStepConfig | None = None,
+    ) -> ScipResolverInput:
+        """Construct input with optional path configuration.
 
-def resolve_scip_inputs(  # noqa: PLR0913 - convenience API; prefer ScipResolverInput param
+        Convenience factory that accepts grouped path configuration.
+
+        Parameters
+        ----------
+        repo
+            Repository identifier.
+        commit
+            Commit hash.
+        paths
+            Path configuration (repo_root, build_dir, document_output_dir).
+        scip_python_bin
+            Path to scip-python binary.
+        scip_bin
+            Path to scip binary.
+        modules
+            Pre-computed module records.
+        cfg
+            Optional config object with snapshot info.
+
+        Returns
+        -------
+        ScipResolverInput
+            Constructed input container.
+        """
+        return cls(
+            cfg=cfg,
+            repo=repo,
+            commit=commit,
+            repo_root=paths.repo_root if paths else None,
+            build_dir=paths.build_dir if paths else None,
+            document_output_dir=paths.document_output_dir if paths else None,
+            scip_python_bin=scip_python_bin,
+            scip_bin=scip_bin,
+            modules=modules,
+        )
+
+
+def resolve_scip_inputs_from(
     gateway: StorageGateway,
     modules_or_cfg: Sequence[ModuleRecord] | object,
-    inputs: ScipResolverInput | None = None,
-    *,
-    cfg: ScipIngestStepConfig | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
-    repo_root: Path | None = None,
-    build_dir: Path | None = None,
-    document_output_dir: Path | None = None,
-    scip_python_bin: str | None = None,
-    scip_bin: str | None = None,
-    modules: Sequence[ModuleRecord] | None = None,
+    inputs: ScipResolverInput,
 ) -> ResolvedScipConfig:
-    """Normalize all SCIP inputs into a required, typed config.
-
-    For new code, prefer using the inputs parameter with a ScipResolverInput
-    to bundle parameters.
+    """
+    Normalize all SCIP inputs into a required, typed config using a dataclass.
 
     Returns
     -------
     ResolvedScipConfig
-        Normalized configuration with all required fields populated.
+        Normalized configuration with required fields populated.
 
     Raises
     ------
     ValueError
-        If required parameters are missing.
+        If required parameters are missing or invalid.
     """
-    # Use inputs dataclass if provided
-    if inputs is not None:
-        cfg = inputs.cfg
-        repo = inputs.repo
-        commit = inputs.commit
-        repo_root = inputs.repo_root
-        build_dir = inputs.build_dir
-        document_output_dir = inputs.document_output_dir
-        scip_python_bin = inputs.scip_python_bin
-        scip_bin = inputs.scip_bin
-        modules = inputs.modules
+    cfg = inputs.cfg
+    repo = inputs.repo
+    commit = inputs.commit
+    repo_root = inputs.repo_root
+    build_dir = inputs.build_dir
+    document_output_dir = inputs.document_output_dir
+    scip_python_bin = inputs.scip_python_bin
+    scip_bin = inputs.scip_bin
+    modules = inputs.modules
 
     # Legacy config object path
     if cfg is not None or isinstance(modules_or_cfg, ScipIngestStepConfig):
@@ -127,8 +217,11 @@ def resolve_scip_inputs(  # noqa: PLR0913 - convenience API; prefer ScipResolver
             language="python",
             logger=None,
         )
+        filesystem_adapter = import_module(
+            "codeintel.ingestion.adapters.filesystem_discovery"
+        ).FilesystemDiscoveryAdapter
         module_list = list(
-            FilesystemDiscoveryAdapter.iter_modules(
+            filesystem_adapter.iter_modules(
                 module_map,
                 actual_cfg.repo_root,
                 logger=None,
@@ -176,4 +269,38 @@ def resolve_scip_inputs(  # noqa: PLR0913 - convenience API; prefer ScipResolver
     )
 
 
-__all__ = ["ResolvedScipConfig", "ScipResolverInput", "resolve_scip_inputs"]
+def resolve_scip_inputs(
+    gateway: StorageGateway,
+    modules_or_cfg: Sequence[ModuleRecord] | object,
+    inputs: ScipResolverInput,
+) -> ResolvedScipConfig:
+    """Normalize SCIP inputs into a required, typed config.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for loading module maps.
+    modules_or_cfg
+        Either a sequence of module records or a ScipIngestStepConfig.
+    inputs
+        Input container with explicit parameters.
+
+    Returns
+    -------
+    ResolvedScipConfig
+        Normalized configuration with required fields populated.
+
+    Raises
+    ------
+    ValueError
+        If required parameters are missing or invalid.
+    """
+    return resolve_scip_inputs_from(gateway, modules_or_cfg, inputs)
+
+
+__all__ = [
+    "ResolvedScipConfig",
+    "ScipResolverInput",
+    "resolve_scip_inputs",
+    "resolve_scip_inputs_from",
+]

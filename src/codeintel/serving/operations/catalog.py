@@ -1,9 +1,8 @@
 """Canonical operation catalog unifying HTTP, MCP, and backend contracts.
 
 This module provides a single source of truth for all serving operations,
-combining metadata previously split between:
-- serving/registry.py (OperationSpec) for HTTP/MCP surface
-- serving/backend/operations.py (OperationContract) for data source contracts
+providing a unified view of all serving operations with HTTP/MCP surface
+metadata and data source contracts in a single definition.
 """
 
 from __future__ import annotations
@@ -34,8 +33,8 @@ class DataSourceType(StrEnum):
 class Operation:
     """Canonical description of a serving operation across HTTP, MCP, and backend.
 
-    This unified model combines metadata from OperationSpec (HTTP/MCP surface)
-    and OperationContract (data source contracts) into a single source of truth.
+    This unified model provides HTTP/MCP surface metadata
+    and data source contracts in a single source of truth.
 
     Parameters
     ----------
@@ -97,7 +96,7 @@ class Operation:
     # Backend binding
     backend_method: str
 
-    # Data contract (from OperationContract)
+    # Data contract
     data_source: DataSourceType
     source_name: str | None
     repository_method: str | None
@@ -116,7 +115,7 @@ class Operation:
 # =============================================================================
 # Canonical Operation Catalog
 # =============================================================================
-# All 26 operations defined here. The IDs match those in registry.py (OperationSpec)
+# All 26 operations defined here. The IDs are the canonical source
 # since they are actively used by HTTP routes and MCP tools.
 
 # Functions

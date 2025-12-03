@@ -26,20 +26,20 @@ from codeintel.serving.mcp.models import (
     SubsystemSummaryResponse,
 )
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
-from codeintel.serving.registry import OperationSpec, get_operation_spec
+from codeintel.serving.operations import Operation, get_operation
 from codeintel.serving.services.errors import generate_correlation_id
 
 
-def _require_spec(op_id: str) -> OperationSpec:
-    spec = get_operation_spec(op_id)
+def _require_spec(op_id: str) -> Operation:
+    spec = get_operation(op_id)
     if spec is None:
-        message = f"OperationSpec {op_id} is not registered"
+        message = f"Operation {op_id} is not registered"
         raise ValueError(message)
     return spec
 
 
-def _load_architecture_specs() -> dict[str, OperationSpec]:
-    specs: dict[str, OperationSpec] = {
+def _load_architecture_specs() -> dict[str, Operation]:
+    specs: dict[str, Operation] = {
         "subsystems.list": _require_spec("subsystems.list"),
         "subsystems.module_memberships": _require_spec("subsystems.module_memberships"),
         "subsystems.detail": _require_spec("subsystems.detail"),
@@ -64,7 +64,7 @@ def _load_architecture_specs() -> dict[str, OperationSpec]:
     for op_id, tool_name in expected_names.items():
         spec = specs[op_id]
         if spec.tool_name != tool_name:
-            message = f"OperationSpec {op_id} has mismatched tool name"
+            message = f"Operation {op_id} has mismatched tool name"
             raise ValueError(message)
     return specs
 

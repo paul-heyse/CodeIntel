@@ -15,12 +15,7 @@ from codeintel.pipeline.orchestration.core import (
     StepPhase,
 )
 from codeintel.pipeline.orchestration.registry import build_registry
-from codeintel.pipeline.orchestration.steps import (
-    PIPELINE_DEPS,
-    PIPELINE_SEQUENCE,
-    PIPELINE_STEPS,
-    REGISTRY,
-)
+from codeintel.pipeline.orchestration.steps import REGISTRY
 from tests._helpers.expect import (
     expect_equal,
     expect_in,
@@ -300,13 +295,6 @@ def test_registry_contains_all_steps() -> None:
     expect_in("repo_scan", REGISTRY, label="repo_scan present")
     expect_in("ast_extract", REGISTRY, label="ast_extract present")
     expect_in("export_docs", REGISTRY, label="export_docs present")
-
-
-def test_backward_compat_exports() -> None:
-    """Test backward-compatible exports."""
-    expect_equal(REGISTRY.as_dict(), PIPELINE_STEPS, label="PIPELINE_STEPS")
-    expect_equal(REGISTRY.dependency_graph(), PIPELINE_DEPS, label="PIPELINE_DEPS")
-    expect_equal(REGISTRY.list_all_names(), PIPELINE_SEQUENCE, label="PIPELINE_SEQUENCE")
 
 
 def test_all_steps_have_required_attributes() -> None:

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.mcp.server import create_mcp_server
-from codeintel.serving.services.factory import BackendResource, build_backend_resource
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import RepoMapRow, insert_repo_map
 

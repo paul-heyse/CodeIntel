@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.schemas import apply_all_schemas
 
@@ -30,9 +30,9 @@ class SnapshotSpec:
     loc: int = 10
 
 
-_FP_CONTRACT = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.function_profile"]
-_MP_CONTRACT = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.module_profile"]
-_FH_CONTRACT = DATASET_CONTRACTS_BY_TABLE_KEY["analytics.function_history"]
+_FP_CONTRACT = get_dataset_contracts_by_table_key()["analytics.function_profile"]
+_MP_CONTRACT = get_dataset_contracts_by_table_key()["analytics.module_profile"]
+_FH_CONTRACT = get_dataset_contracts_by_table_key()["analytics.function_history"]
 
 _FP_COLUMNS = _FP_CONTRACT.schema.column_names() if _FP_CONTRACT.schema else []
 _MP_COLUMNS = _MP_CONTRACT.schema.column_names() if _MP_CONTRACT.schema else []

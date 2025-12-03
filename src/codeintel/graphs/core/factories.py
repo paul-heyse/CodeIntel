@@ -7,10 +7,11 @@ be defined in ~5 lines instead of ~50 lines.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict, Unpack, cast
 
 from codeintel.graphs.core.computation import ComputationFn
 from codeintel.graphs.core.context import GraphExecutionContext
@@ -19,6 +20,7 @@ from codeintel.graphs.core.protocol import (
     GraphPluginKind,
     GraphPluginMetadata,
     GraphPluginMetaOptions,
+    GraphPluginMetaOptionsInput,
     GraphPluginProtocol,
     GraphPluginResourceHints,
     GraphPluginSeverity,
@@ -30,6 +32,38 @@ from codeintel.storage.db_helpers import safe_row_counts
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
+
+
+class _MetricMetaInput(TypedDict, total=False):
+    """Typed kwargs for metric plugins excluding kind/stage."""
+
+    name: str
+    description: str
+    severity: GraphPluginSeverity
+    enabled_by_default: bool
+    depends_on: tuple[str, ...]
+    provides: tuple[str, ...]
+    requires: tuple[str, ...]
+    produces_tables: tuple[str, ...]
+    requires_graphs: tuple[GraphKind, ...]
+    resource_hints: GraphPluginResourceHints | None
+    supports_incremental: bool
+    isolation_kind: GraphPluginIsolation
+    options_model: type[BaseModel] | None
+    options_default: object | None
+    version_hash: str | None
+    config_schema_ref: str | None
+    row_count_tables: tuple[str, ...]
+    cache_populates: tuple[str, ...]
+    cache_consumes: tuple[str, ...]
+    requires_isolation: bool
+    scope_aware: bool
+
+
+def _register_plugin(plugin: GraphPluginProtocol) -> None:
+    """Register a plugin via the registry without inline imports."""
+    registry = importlib.import_module("codeintel.graphs.core.registry")
+    registry.register_graph_plugin(plugin)
 
 
 @dataclass(frozen=True)
@@ -127,7 +161,14 @@ class GraphPluginSpec:
         computation: ComputationFn,
         register: bool = True,
     ) -> GraphPluginSpec:
-        """Construct a specification from metadata options and a computation."""
+        """
+        Construct a specification from metadata options and a computation.
+
+        Returns
+        -------
+        GraphPluginSpec
+            Immutable specification ready to materialize a plugin.
+        """
         return GraphPluginSpec(
             name=meta.name or computation.__name__,
             computation=computation,
@@ -228,6 +269,13 @@ class FactoryPlugin:
             Result of plugin execution.
         """
         name = self._metadata.name
+        catchable_errors: tuple[type[Exception], ...] = (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            LookupError,
+            OSError,
+        )
         log.info("%s.start repo=%s commit=%s", name, ctx.repo, ctx.commit)
 
         try:
@@ -268,7 +316,7 @@ class FactoryPlugin:
                 artifacts=path_artifacts if path_artifacts else None,
             )
 
-        except Exception as exc:
+        except catchable_errors as exc:
             log.exception("%s.failed repo=%s commit=%s", name, ctx.repo, ctx.commit)
             return GraphPluginResult.fail(str(exc), error_kind="compute_error")
 
@@ -339,9 +387,7 @@ def make_plugin_from_spec(spec: GraphPluginSpec) -> GraphPluginProtocol:
     )
 
     if spec.register:
-        from codeintel.graphs.core.registry import register_graph_plugin  # noqa: PLC0415
-
-        register_graph_plugin(plugin)
+        _register_plugin(plugin)
 
     return plugin
 
@@ -351,9 +397,21 @@ def make_graph_plugin(
     computation: ComputationFn,
     meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
-    **kwargs: object,
+    **kwargs: Unpack[GraphPluginMetaOptionsInput],
 ) -> GraphPluginProtocol:
-    """Create a graph plugin from a computation function using metadata options."""
+    """
+    Create a graph plugin from a computation function using metadata options.
+
+    Raises
+    ------
+    ValueError
+        When both meta and keyword metadata overrides are provided.
+
+    Returns
+    -------
+    GraphPluginProtocol
+        Configured plugin ready for registration or execution.
+    """
     if meta is not None and kwargs:
         message = "Provide either meta or keyword metadata, not both."
         raise ValueError(message)
@@ -369,10 +427,20 @@ def make_metric_plugin(
     stage: GraphPluginStage,
     meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
-    **kwargs: object,
+    **kwargs: Unpack[_MetricMetaInput],
 ) -> GraphPluginProtocol:
-    """Create a metric plugin with sensible defaults."""
-    options = meta or GraphPluginMetaOptions.from_kwargs(kind="metric", stage=stage, **kwargs)
+    """
+    Create a metric plugin with sensible defaults.
+
+    Returns
+    -------
+    GraphPluginProtocol
+        Configured metric plugin.
+    """
+    payload: GraphPluginMetaOptionsInput = cast(
+        "GraphPluginMetaOptionsInput", {"kind": "metric", "stage": stage, **kwargs}
+    )
+    options = meta or GraphPluginMetaOptions.from_kwargs(**payload)
     return make_graph_plugin(computation=computation, meta=options, register=register)
 
 
@@ -383,15 +451,26 @@ def make_builder_plugin(
     produces_graphs: tuple[GraphKind, ...],
     meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
-    **kwargs: object,
+    **kwargs: Unpack[_MetricMetaInput],
 ) -> GraphPluginProtocol:
-    """Create a builder plugin with sensible defaults."""
-    options = meta or GraphPluginMetaOptions.from_kwargs(
-        kind="builder",
-        stage=stage,
-        produces_graphs=produces_graphs,
-        **kwargs,
+    """
+    Create a builder plugin with sensible defaults.
+
+    Returns
+    -------
+    GraphPluginProtocol
+        Configured builder plugin.
+    """
+    payload: GraphPluginMetaOptionsInput = cast(
+        "GraphPluginMetaOptionsInput",
+        {
+            "kind": "builder",
+            "stage": stage,
+            "produces_graphs": produces_graphs,
+            **kwargs,
+        },
     )
+    options = meta or GraphPluginMetaOptions.from_kwargs(**payload)
     return make_graph_plugin(computation=computation, meta=options, register=register)
 
 
@@ -400,14 +479,25 @@ def make_validation_plugin(
     computation: ComputationFn,
     meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
-    **kwargs: object,
+    **kwargs: Unpack[GraphPluginMetaOptionsInput],
 ) -> GraphPluginProtocol:
-    """Create a validation plugin with sensible defaults."""
-    options = meta or GraphPluginMetaOptions.from_kwargs(
-        kind="validation",
-        stage="validation",
-        **kwargs,
+    """
+    Create a validation plugin with sensible defaults.
+
+    Returns
+    -------
+    GraphPluginProtocol
+        Configured validation plugin.
+    """
+    payload: GraphPluginMetaOptionsInput = cast(
+        "GraphPluginMetaOptionsInput",
+        {
+            "kind": "validation",
+            "stage": "validation",
+            **kwargs,
+        },
     )
+    options = meta or GraphPluginMetaOptions.from_kwargs(**payload)
     return make_graph_plugin(computation=computation, meta=options, register=register)
 
 

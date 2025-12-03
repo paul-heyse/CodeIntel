@@ -19,7 +19,7 @@ from codeintel.serving.mcp.models import (
     DatasetSchemaResponse,
     DatasetSpecDescriptor,
 )
-from codeintel.serving.registry import OperationSpec, get_operation_spec
+from codeintel.serving.operations import Operation, get_operation
 
 LOG = logging.getLogger("codeintel.serving.http.routes.datasets")
 
@@ -56,10 +56,10 @@ def _filter_datasets(
     return filtered
 
 
-def _require_spec(op_id: str) -> OperationSpec:
-    spec = get_operation_spec(op_id)
+def _require_spec(op_id: str) -> Operation:
+    spec = get_operation(op_id)
     if spec is None:
-        message = f"OperationSpec {op_id} is not registered"
+        message = f"Operation {op_id} is not registered"
         raise ValueError(message)
     return spec
 
@@ -71,7 +71,7 @@ def build_datasets_router() -> APIRouter:
     Raises
     ------
     ValueError
-        If OperationSpec entries are missing or lack http_path values.
+        If Operation entries are missing or lack http_path values.
 
     Returns
     -------
@@ -84,10 +84,10 @@ def build_datasets_router() -> APIRouter:
     spec_rows = _require_spec("datasets.rows")
     spec_schema = _require_spec("datasets.schema")
     if spec_list.http_path is None or spec_specs.http_path is None:
-        message = "Dataset OperationSpec entries must define http_path"
+        message = "Dataset Operation entries must define http_path"
         raise ValueError(message)
     if spec_rows.http_path is None or spec_schema.http_path is None:
-        message = "Dataset OperationSpec entries must define http_path"
+        message = "Dataset Operation entries must define http_path"
         raise ValueError(message)
     list_path = spec_list.http_path
     specs_path = spec_specs.http_path

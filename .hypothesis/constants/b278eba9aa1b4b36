@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/sql_builder.py
+# hypothesis_version: 6.148.5
+
+[128, ' AND ', ', ', '.', '?', 'DELETE FROM', 'INSERT INTO', 'QueryBuilder', 'SELECT * FROM', 'SELECT COUNT(*) FROM', 'SafeColumn', 'SafeTable', 'SqlBuilderError', 'SqlParams', 'WHERE', 'build_delete_query', 'render_sql', 'validate_identifier']

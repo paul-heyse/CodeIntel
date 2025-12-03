@@ -34,12 +34,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, TypeVar
 from uuid import uuid4
 
+from codeintel.analytics.core.execution_context import (
+    ConfigProvider,
+    PluginExecutionContext,
+    PluginScratch,
+)
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
+from codeintel.analytics.runtime_manifest import AnalyticsScope
+from codeintel.config.primitives import SnapshotRef
 
 if TYPE_CHECKING:
-    from codeintel.analytics.core.execution_context import PluginExecutionContext
     from codeintel.analytics.core.plugin_protocol import (
         AnalyticsPluginProtocol,
         PluginResult,
@@ -348,16 +354,6 @@ class PluginTestHarness:
         ValueError
             If gateway is not set.
         """
-        from pathlib import Path  # noqa: PLC0415
-
-        from codeintel.analytics.core.execution_context import (  # noqa: PLC0415
-            ConfigProvider,
-            PluginExecutionContext,
-            PluginScratch,
-        )
-        from codeintel.analytics.runtime_manifest import AnalyticsScope  # noqa: PLC0415
-        from codeintel.config.primitives import SnapshotRef  # noqa: PLC0415
-
         if self._gateway is None:
             message = "Gateway must be set before building context"
             raise ValueError(message)
@@ -375,10 +371,6 @@ class PluginTestHarness:
         scratch = PluginScratch()
         for key, value in self._scratch_data.items():
             scratch.declare(key, value)
-
-        from codeintel.analytics.resources.registry import (  # noqa: PLC0415
-            ResourceRegistry,
-        )
 
         # Use provided resources or create empty registry
         resources = self._resources if self._resources is not None else ResourceRegistry()

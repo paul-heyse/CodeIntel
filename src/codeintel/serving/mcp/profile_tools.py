@@ -19,13 +19,13 @@ from codeintel.serving.mcp.serialization import (
     SupportsModelValidate,
 )
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
-from codeintel.serving.registry import OperationSpec, get_operation_spec
+from codeintel.serving.operations import Operation, get_operation
 
 
-def _require_spec(op_id: str, expected_tool: str) -> OperationSpec:
-    spec = get_operation_spec(op_id)
+def _require_spec(op_id: str, expected_tool: str) -> Operation:
+    spec = get_operation(op_id)
     if spec is None or spec.tool_name != expected_tool:
-        message = f"OperationSpec {op_id} has mismatched tool name"
+        message = f"Operation {op_id} has mismatched tool name"
         raise ValueError(message)
     return spec
 

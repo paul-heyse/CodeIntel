@@ -10,7 +10,7 @@ import pytest
 from codeintel.serving.services.errors import (
     ExportError,
     PipelineError,
-    ProblemDetailParams,
+    ProblemDetails,
     SchemaDriftError,
     ValidationError,
     generate_correlation_id,
@@ -27,7 +27,7 @@ def _expect(*, condition: bool, detail: str) -> None:
 
 def test_problem_defaults_and_to_dict() -> None:
     """problem() should populate defaults and serialize to dict."""
-    pd = problem(code="demo.code", title="Title", detail="Something went wrong")
+    pd = problem(ProblemDetails(code="demo.code", title="Title", detail="Something went wrong"))
     data = pd.to_dict()
     _expect(condition=data["code"] == "demo.code", detail="code mismatch")
     _expect(condition=data["title"] == "Title", detail="title mismatch")
@@ -41,15 +41,15 @@ def test_problem_allows_override_instance_and_type() -> None:
     custom_instance = generate_correlation_id()
     status_code = 400
     pd = problem(
-        code="custom",
-        title="Custom",
-        detail="With overrides",
-        params=ProblemDetailParams(
+        ProblemDetails(
+            code="custom",
+            title="Custom",
+            detail="With overrides",
             status=status_code,
             instance=custom_instance,
             type_uri="https://example.com/problem/custom",
             extras={"foo": "bar"},
-        ),
+        )
     )
     data = pd.to_dict()
     _expect(condition=data["instance"] == custom_instance, detail="instance mismatch")
@@ -67,10 +67,10 @@ def test_problem_error_taxonomy_subclasses() -> None:
     PipelineError
         When the pipeline error is raised intentionally for testing.
     """
-    pd = problem(code="pipeline.failed", title="Pipeline failed", detail="trace")
+    pd = problem(ProblemDetails(code="pipeline.failed", title="Pipeline failed", detail="trace"))
     with pytest.raises(PipelineError) as excinfo:
         raise PipelineError(pd)
-    _expect(condition=excinfo.value.problem_detail == pd, detail="problem_detail not stored")
+    _expect(condition=excinfo.value.detail == pd, detail="detail not stored")
 
     for exc_cls in (ExportError, SchemaDriftError, ValidationError):
         with pytest.raises(exc_cls):
@@ -82,7 +82,7 @@ def test_log_problem_emits_json(caplog: pytest.LogCaptureFixture) -> None:
     logger_name = "test-log-problem"
     caplog.set_level("ERROR", logger=logger_name)
     logger = logging.getLogger(logger_name)
-    pd = problem(code="demo.log", title="Log", detail="Logged")
+    pd = problem(ProblemDetails(code="demo.log", title="Log", detail="Logged"))
     log_problem(logger, pd)
     _expect(condition=bool(caplog.records), detail="no log records captured")
     payload = json.loads(caplog.records[0].message)
