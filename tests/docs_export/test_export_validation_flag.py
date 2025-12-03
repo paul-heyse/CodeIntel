@@ -6,10 +6,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
-from codeintel.pipeline.cli import main as cli_main
+from codeintel.cli import app
 from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_function_types, insert_goids
 from tests._helpers.fixtures import GatewayOptions, provision_gateway_with_repo
+
+runner = CliRunner()
 
 
 def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
@@ -121,9 +124,9 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
         str(output_dir),
         "--validate",
     ]
-    exit_code = cli_main.main(args_validate)
-    if exit_code != 1:
-        pytest.fail(f"Expected validation failure exit code 1, got {exit_code}")
+    result = runner.invoke(app, args_validate)
+    if result.exit_code != 1:
+        pytest.fail(f"Expected validation failure exit code 1, got {result.exit_code}")
 
     output_dir_no_validate = tmp_path / "out_no_validate"
     args_no_validate = [
@@ -142,6 +145,8 @@ def test_docs_export_validation_flag_triggers_schema_check(tmp_path: Path) -> No
         "--document-output-dir",
         str(output_dir_no_validate),
     ]
-    exit_code_no_validate = cli_main.main(args_no_validate)
-    if exit_code_no_validate != 0:
-        pytest.fail(f"Expected success exit code 0 without validation, got {exit_code_no_validate}")
+    result_no_validate = runner.invoke(app, args_no_validate)
+    if result_no_validate.exit_code != 0:
+        pytest.fail(
+            f"Expected success exit code 0 without validation, got {result_no_validate.exit_code}"
+        )

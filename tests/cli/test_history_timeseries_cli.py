@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.pipeline.cli.main import main
+from typer.testing import CliRunner
+
+from codeintel.cli import app
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.history import SnapshotSpec, create_snapshot_db
 
 EXPECTED_HISTORY_ROW_COUNT = 2
+
+runner = CliRunner()
 
 
 def test_history_timeseries_cli_happy_path(tmp_path: Path) -> None:
@@ -41,23 +45,26 @@ def test_history_timeseries_cli_happy_path(tmp_path: Path) -> None:
         ),
     )
     output_db = tmp_path / "out.duckdb"
-    rc = main(
+    result = runner.invoke(
+        app,
         [
-            "history-timeseries",
+            "history",
+            "timeseries",
             "--repo-root",
             str(tmp_path),
             "--repo",
             repo,
             "--commits",
             commit_new,
+            "--commits",
             commit_old,
             "--db-dir",
             str(snapshot_dir),
             "--output-db",
             str(output_db),
-        ]
+        ],
     )
-    expect_equal(rc, 0)
+    expect_equal(result.exit_code, 0)
 
     gateway = open_gateway(StorageConfig.for_readonly(output_db))
     rows = gateway.con.execute("SELECT COUNT(*) FROM analytics.history_timeseries").fetchone()
@@ -71,9 +78,11 @@ def test_history_timeseries_cli_missing_snapshot(tmp_path: Path) -> None:
     snapshot_dir = tmp_path / "snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     output_db = tmp_path / "out.duckdb"
-    rc = main(
+    result = runner.invoke(
+        app,
         [
-            "history-timeseries",
+            "history",
+            "timeseries",
             "--repo-root",
             str(tmp_path),
             "--repo",
@@ -84,6 +93,6 @@ def test_history_timeseries_cli_missing_snapshot(tmp_path: Path) -> None:
             str(snapshot_dir),
             "--output-db",
             str(output_db),
-        ]
+        ],
     )
-    expect_equal(rc, 1)
+    expect_equal(result.exit_code, 1)

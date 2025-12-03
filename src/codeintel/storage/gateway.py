@@ -11,6 +11,7 @@ import duckdb
 
 from codeintel.storage.config import StorageConfig
 from codeintel.storage.contract_validation import validate_contract_or_raise
+from codeintel.storage.data_checks import table_has_rows_for_snapshot
 from codeintel.storage.ingest_helpers import macro_insert_rows
 from codeintel.storage.ingest_macros import assert_ingest_macros_present, ensure_ingest_macros
 from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
@@ -34,6 +35,7 @@ __all__ = [
     "build_snapshot_gateway_resolver",
     "open_gateway",
     "open_memory_gateway",
+    "table_has_rows_for_snapshot",
 ]
 
 DuckDBConnection = duckdb.DuckDBPyConnection

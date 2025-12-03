@@ -886,6 +886,36 @@ This pattern keeps `python -c "import CodeIntel"` working on minimal hosts while
   uv run pytest -q --cov=src --cov-report=xml:coverage.xml --cov-report=html:htmlcov
   ```
 
+### Hexagonal Test Architecture
+
+The test suite uses a hexagonal architecture for test setup. See `tests/_helpers/MIGRATION.md` for detailed migration recipes.
+
+**Core Components:**
+- `TestContext` (`tests/_helpers/context.py`) — Unified test environment with lazy resource access
+- **Seed Packs** (`tests/_helpers/seeds/`) — Composable data seeding modules:
+  - `CORE_PACK` — modules, goids, repo_map
+  - `GRAPH_PACK` — call graph, import graph, CFG/DFG
+  - `COVERAGE_PACK` — test catalog, coverage edges
+  - `METRICS_PACK` — function metrics, risk factors
+  - `DOCSTRING_PACK`, `SUBSYSTEM_PACK`, `SYMBOL_PACK`, `CONFIG_PACK`
+- `TestScenario` (`tests/_helpers/scenarios.py`) — Fluent builder for complex test setups
+- **Env Adapters** (`tests/_helpers/env_adapters.py`) — Backward-compatible adapters for legacy env classes
+
+**Preferred Fixtures:**
+```python
+# Pre-seeded contexts (recommended for new tests)
+def test_graph_feature(graph_ctx: TestContext) -> None:
+    # GRAPH_PACK seeds already applied
+    result = analyze(graph_ctx.gateway)
+
+# Manual seeding when needed
+def test_custom_scenario(test_ctx: TestContext) -> None:
+    test_ctx.require(CORE_PACK, COVERAGE_PACK)
+    # Custom setup on top of seeds
+```
+
+**Migration Priority:** New tests should use the hexagonal architecture. Existing tests can be migrated incrementally as they are touched.
+
 ---
 
 ## Data Contracts (JSON Schema 2020‑12 / OpenAPI 3.2)

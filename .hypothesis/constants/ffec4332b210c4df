@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/docs_view_profiling.py
+# hypothesis_version: 6.148.5
+
+['DOCS_VIEWS', 'analyze', 'db_path', 'explain', 'profile_meta.json', 'run_profile', 'utf-8', 'views', 'write_text']

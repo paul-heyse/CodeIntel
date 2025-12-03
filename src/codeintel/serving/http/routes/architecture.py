@@ -52,7 +52,9 @@ def build_architecture_router(options: RouterOptions | None = None) -> APIRouter
 
     # Build dependencies based on options
     auto_pipeline = options is not None and options.auto_pipeline
-    func_deps = [Depends(make_op_prereq_dependency("architecture.function"))] if auto_pipeline else []
+    func_deps = (
+        [Depends(make_op_prereq_dependency("architecture.function"))] if auto_pipeline else []
+    )
     mod_deps = [Depends(make_op_prereq_dependency("architecture.module"))] if auto_pipeline else []
 
     @router.get(

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/cli/commands/ide.py
+# hypothesis_version: 6.148.5
+
+['IDE helper commands.', 'hints', 'ide', 'ide_app', 'meta', 'rel_path']

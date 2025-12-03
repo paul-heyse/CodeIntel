@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/dependencies/__init__.py
+# hypothesis_version: 6.148.5
+
+['DependencyCall', 'LibraryPattern', 'SEVERITY_SCORES', 'build_alias_map', 'build_alias_maps', 'classify_modes', 'risk_level', 'risk_score', 'severity_score']

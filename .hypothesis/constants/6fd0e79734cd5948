@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/pipeline/protocol.py
+# hypothesis_version: 6.148.5
+
+[0.0, '1.0.0', 'DatasetComputation', 'DatasetResult', 'DatasetSpec', 'PipelineContext', 'TableSchema']

@@ -1,14 +1,17 @@
-"""Profile docs view plans for subsystem profile/coverage."""
+"""Profile docs view plans for subsystem profile/coverage.
+
+This module provides utilities for profiling docs view query plans.
+The standalone CLI has been replaced by ``codeintel storage profile-views``.
+"""
 
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 from typing import Final
 
 from codeintel.storage.config import StorageConfig
-from codeintel.storage.gateway import DuckDBConnection, DuckDBError, open_gateway
+from codeintel.storage.gateway import DuckDBConnection, open_gateway
 
 DOCS_VIEWS: Final[tuple[str, ...]] = (
     "docs.v_subsystem_profile",
@@ -27,8 +30,7 @@ ANALYZE_QUERIES: Final[dict[str, str]] = {
 
 
 def write_text(path: Path, content: str) -> None:
-    """
-    Write content to disk, ensuring the parent directory exists.
+    """Write content to disk, ensuring the parent directory exists.
 
     Parameters
     ----------
@@ -42,8 +44,7 @@ def write_text(path: Path, content: str) -> None:
 
 
 def explain(*, con: DuckDBConnection, view: str, analyze: bool) -> str:
-    """
-    Return EXPLAIN or EXPLAIN ANALYZE output for a docs view.
+    """Return EXPLAIN or EXPLAIN ANALYZE output for a docs view.
 
     Parameters
     ----------
@@ -65,8 +66,7 @@ def explain(*, con: DuckDBConnection, view: str, analyze: bool) -> str:
 
 
 def run_profile(*, db_path: Path, output_dir: Path, analyze: bool) -> None:
-    """
-    Generate profiling artifacts for the configured database.
+    """Generate profiling artifacts for the configured database.
 
     Parameters
     ----------
@@ -98,43 +98,4 @@ def run_profile(*, db_path: Path, output_dir: Path, analyze: bool) -> None:
         gateway.close()
 
 
-def main() -> int:
-    """
-    Entry point for generating docs view profiling artifacts.
-
-    Returns
-    -------
-    int
-        Process exit code (0 on success, 2 on argument parsing errors).
-    """
-    parser = argparse.ArgumentParser(
-        description="Generate EXPLAIN/EXPLAIN ANALYZE artifacts for docs views."
-    )
-    parser.add_argument(
-        "--db-path",
-        type=Path,
-        default=Path("build/db/codeintel.duckdb"),
-        help="Path to the DuckDB database (default: build/db/codeintel.duckdb).",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("build/profiling"),
-        help="Directory to write profiling artifacts (default: build/profiling).",
-    )
-    parser.add_argument(
-        "--analyze",
-        action="store_true",
-        help="Emit EXPLAIN ANALYZE instead of EXPLAIN (may scan the DB).",
-    )
-    args = parser.parse_args()
-    try:
-        run_profile(db_path=args.db_path, output_dir=args.output_dir, analyze=bool(args.analyze))
-    except (FileNotFoundError, DuckDBError, RuntimeError, OSError) as exc:
-        parser.error(str(exc))
-        return 2
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+__all__ = ["DOCS_VIEWS", "explain", "run_profile", "write_text"]

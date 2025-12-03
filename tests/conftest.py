@@ -12,6 +12,7 @@ from coverage import Coverage
 
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
+from tests._helpers.context import TestContext, create_test_context
 from tests._helpers.coverage_env import (
     CoverageEdgeEnv,
     CoverageSeedConfig,
@@ -39,6 +40,13 @@ from tests._helpers.pipeline_env import (
     PipelineEnv,
     create_pipeline_env,
     generate_pipeline_coverage,
+)
+from tests._helpers.scenarios import TestScenario
+from tests._helpers.seeds import (
+    CORE_PACK,
+    COVERAGE_PACK,
+    GRAPH_PACK,
+    METRICS_PACK,
 )
 
 
@@ -423,3 +431,112 @@ def pipeline_coverage_artifact(pipeline_env: PipelineEnv) -> Path:
         Path to the generated coverage data file.
     """
     return generate_pipeline_coverage(pipeline_env)
+
+
+# =============================================================================
+# Hexagonal Architecture Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def test_ctx(tmp_path: Path) -> Iterator[TestContext]:
+    """Provide a minimal TestContext ready for seed packs.
+
+    This is the foundational fixture for the new hexagonal test architecture.
+    Use `ctx.require(PACK)` to apply seed packs.
+
+    Yields
+    ------
+    TestContext
+        Minimal context with gateway, ready for seeds.
+    """
+    ctx = create_test_context(tmp_path)
+    try:
+        yield ctx
+    finally:
+        ctx.close()
+
+
+@pytest.fixture
+def core_ctx(test_ctx: TestContext) -> TestContext:
+    """Provide TestContext with CORE_PACK applied.
+
+    Seeds repo_map, modules, and goids tables with standard test data.
+
+    Returns
+    -------
+    TestContext
+        Context with core catalog data.
+    """
+    return test_ctx.require(CORE_PACK)
+
+
+@pytest.fixture
+def graph_ctx(test_ctx: TestContext) -> TestContext:
+    """Provide TestContext with CORE_PACK and GRAPH_PACK applied.
+
+    Seeds call graph, import graph, CFG, and DFG tables.
+
+    Returns
+    -------
+    TestContext
+        Context with graph data.
+    """
+    return test_ctx.require(CORE_PACK, GRAPH_PACK)
+
+
+@pytest.fixture
+def coverage_ctx(test_ctx: TestContext) -> TestContext:
+    """Provide TestContext with CORE_PACK and COVERAGE_PACK applied.
+
+    Seeds test catalog, coverage edges, and coverage functions.
+
+    Returns
+    -------
+    TestContext
+        Context with coverage data.
+    """
+    return test_ctx.require(CORE_PACK, COVERAGE_PACK)
+
+
+@pytest.fixture
+def metrics_ctx(test_ctx: TestContext) -> TestContext:
+    """Provide TestContext with CORE_PACK and METRICS_PACK applied.
+
+    Seeds function metrics, risk factors, typedness, and static diagnostics.
+
+    Returns
+    -------
+    TestContext
+        Context with metrics data.
+    """
+    return test_ctx.require(CORE_PACK, METRICS_PACK)
+
+
+@pytest.fixture
+def full_ctx(test_ctx: TestContext) -> TestContext:
+    """Provide TestContext with all seed packs applied.
+
+    Seeds core, graph, coverage, and metrics data for comprehensive tests.
+
+    Returns
+    -------
+    TestContext
+        Context with all data types.
+    """
+    return test_ctx.require(CORE_PACK, GRAPH_PACK, COVERAGE_PACK, METRICS_PACK)
+
+
+@pytest.fixture
+def scenario_builder() -> type[TestScenario]:
+    """Provide the TestScenario builder class for custom scenarios.
+
+    Use this when the standard fixtures don't fit and you need
+    custom scenario configuration.
+
+    Returns
+    -------
+    type[TestScenario]
+        The TestScenario class for building custom scenarios.
+    """
+    return TestScenario

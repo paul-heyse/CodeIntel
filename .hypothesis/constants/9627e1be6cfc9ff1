@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/data_checks.py
+# hypothesis_version: 6.148.5
+
+["'", "''", 'commit', 'repo']

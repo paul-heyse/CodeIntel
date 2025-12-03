@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/adapters/dependencies.py
+# hypothesis_version: 6.148.5
+
+['DependencyCallRow', 'compute_dep_id', 'to_decimal', 'utf-8']

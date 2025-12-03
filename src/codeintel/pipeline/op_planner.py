@@ -502,10 +502,38 @@ def ensure_prerequisites_for_operation(
     )
 
 
+def get_required_table_keys_for_operation(op_id: str) -> frozenset[str]:
+    """Get all required table keys for an operation with transitive expansion.
+
+    This function returns the expanded set of dataset table_keys needed
+    to satisfy an operation's requirements, including transitive
+    upstream dependencies.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier (e.g., "function.summary").
+
+    Returns
+    -------
+    frozenset[str]
+        Set of all required table keys including transitive dependencies.
+        Returns empty frozenset if operation is unknown.
+    """
+    op = get_operation(op_id)
+    if op is None:
+        return frozenset()
+
+    required_tables = set(op.required_datasets)
+    expanded = _expand_dataset_dependencies(required_tables)
+    return frozenset(expanded)
+
+
 __all__ = [
     "OpPrereqSummary",
     "OperationPrereqOptions",
     "build_pipeline_for_operation",
     "build_prereq_summary",
     "ensure_prerequisites_for_operation",
+    "get_required_table_keys_for_operation",
 ]

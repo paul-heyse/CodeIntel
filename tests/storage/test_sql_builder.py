@@ -158,9 +158,7 @@ def test_delete_builds_parameterized_query() -> None:
 
 def test_delete_in_builds_in_clause() -> None:
     """Verify delete_in builds DELETE with IN clause."""
-    query, params = QueryBuilder.delete_in(
-        "core.modules", "module", ["mod1", "mod2", "mod3"]
-    )
+    query, params = QueryBuilder.delete_in("core.modules", "module", ["mod1", "mod2", "mod3"])
     assert "DELETE FROM core.modules" in query
     assert "module IN" in query
     assert "?, ?, ?" in query

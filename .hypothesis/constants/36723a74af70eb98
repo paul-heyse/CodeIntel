@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/pipeline/lineage.py
+# hypothesis_version: 6.148.5
+
+[0.0, 1000, ' AND ', '1.0.0', 'DatasetLineage', 'LIMIT', 'LineageStore', 'SELECT * FROM', 'WHERE', '[]', 'commit = ?', 'compute_table_hash', 'computed_at', 'dataset', 'duration_ms', 'error', 'input_datasets', 'input_hashes', 'metadata', 'output_hash', 'repo = ?', 'row_count', 'run_id', 'version', '{}', '|']

@@ -1,13 +1,11 @@
-"""
-Validate exported JSONL/Parquet datasets against JSON Schemas.
+"""Validate exported JSONL/Parquet datasets against JSON Schemas.
 
-Usage:
-    python -m codeintel.pipeline.export.validate_exports --schema call_graph_edges path1.jsonl path2.parquet
+This module provides validation utilities for exported dataset files.
+The standalone CLI has been replaced by ``codeintel datasets validate-files``.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import sys
@@ -50,8 +48,7 @@ def _load_schema(schema_name: str, root: Path) -> tuple[dict[str, Any], Registry
 
 
 def _stderr_logger() -> logging.Logger:
-    """
-    Return a stderr logger configured for error output.
+    """Return a stderr logger configured for error output.
 
     Returns
     -------
@@ -101,8 +98,16 @@ def _validate_parquet(path: Path, validator: jsonschema.Draft202012Validator) ->
 def validate_files(
     schema_name: str, paths: list[Path], *, schema_root: Path = DEFAULT_SCHEMA_ROOT
 ) -> int:
-    """
-    Validate files against the named schema.
+    """Validate files against the named schema.
+
+    Parameters
+    ----------
+    schema_name
+        Name of the schema (without .json extension).
+    paths
+        List of JSONL or Parquet files to validate.
+    schema_root
+        Root directory containing export schemas.
 
     Returns
     -------
@@ -148,31 +153,4 @@ def validate_files(
     return 0
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validate exported datasets against JSON Schemas.")
-    parser.add_argument("--schema", required=True, help="Schema name (without .json)")
-    parser.add_argument(
-        "--schema-root",
-        type=Path,
-        default=DEFAULT_SCHEMA_ROOT,
-        help="Root directory containing export schemas",
-    )
-    parser.add_argument("paths", nargs="+", type=Path, help="JSONL or Parquet files to validate")
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None) -> int:
-    """
-    CLI entrypoint for export validation.
-
-    Returns
-    -------
-    int
-        Exit code from validation (0 on success).
-    """
-    args = _parse_args(list(argv) if argv is not None else None)
-    return validate_files(args.schema, args.paths, schema_root=args.schema_root)
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+__all__ = ["DEFAULT_SCHEMA_ROOT", "validate_files"]

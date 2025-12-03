@@ -45,9 +45,7 @@ def test_row_counts_for_tables_filters_by_repo_commit(
     other_commit = "def456"
 
     fresh_gateway.core.insert_modules([("test_mod", "test.py", repo, commit)])
-    fresh_gateway.core.insert_modules(
-        [("other_mod", "other.py", other_repo, other_commit)]
-    )
+    fresh_gateway.core.insert_modules([("other_mod", "other.py", other_repo, other_commit)])
 
     tables = ["core.modules"]
     result = row_counts_for_tables(con, repo=repo, commit=commit, tables=tables)
@@ -104,9 +102,7 @@ def test_row_counts_for_tables_handles_empty_tables(
 
 def test_safe_row_counts_tolerates_none_connection() -> None:
     """Verify safe_row_counts returns None when connection is None."""
-    result = safe_row_counts(
-        None, repo="test/repo", commit="abc123", tables=["core.modules"]
-    )
+    result = safe_row_counts(None, repo="test/repo", commit="abc123", tables=["core.modules"])
 
     assert result is None
 
@@ -121,9 +117,7 @@ def test_safe_row_counts_returns_counts_with_valid_connection(
 
     fresh_gateway.core.insert_modules([("test_mod", "test.py", repo, commit)])
 
-    result = safe_row_counts(
-        con, repo=repo, commit=commit, tables=["core.modules"]
-    )
+    result = safe_row_counts(con, repo=repo, commit=commit, tables=["core.modules"])
 
     assert result is not None
     assert "core.modules" in result
@@ -155,8 +149,6 @@ def test_safe_row_counts_returns_none_on_table_error(
     repo = "test/repo"
     commit = "abc123"
 
-    result = safe_row_counts(
-        con, repo=repo, commit=commit, tables=["nonexistent.table"]
-    )
+    result = safe_row_counts(con, repo=repo, commit=commit, tables=["nonexistent.table"])
 
     assert result is None

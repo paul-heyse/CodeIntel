@@ -27,7 +27,9 @@ ROW_COUNT_THREE = 3
 ROW_COUNT_FIVE = 5
 
 
-def _build_logger(name: str, *, level: int = logging.INFO) -> tuple[logging.Logger, CapturingHandler]:
+def _build_logger(
+    name: str, *, level: int = logging.INFO
+) -> tuple[logging.Logger, CapturingHandler]:
     """Construct a real logger with a capturing handler for assertions.
 
     Returns
@@ -44,7 +46,13 @@ def _build_logger(name: str, *, level: int = logging.INFO) -> tuple[logging.Logg
 
 
 def _get_payload(handler: CapturingHandler, index: int = 0) -> dict[str, object]:
-    """Extract the payload dict from a captured record."""
+    """Extract the payload dict from a captured record.
+
+    Returns
+    -------
+    dict[str, object]
+        Structured payload emitted by ServiceObservability.
+    """
     record = handler.records[index]
     args_obj = record.args
     if isinstance(args_obj, dict):

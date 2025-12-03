@@ -103,7 +103,7 @@ dependencies = [
 ]
 
 [project.scripts]
-codeintel = "codeintel.pipeline.cli.main:main"
+codeintel = "codeintel.cli:main"
 codeintel-app = "codeintel.cli:main"
 
 # Entry points for plugin discovery
@@ -231,6 +231,13 @@ ban-relative-imports = "all"
 "tests/docs_export/test_mkdocs_generation.py" = ["S101", "E402"]
 # MkDocs generation scripts have hyphenated directory name, use subprocess safely, and are CLI tools
 "mkdocs-gen/*.py" = ["N999", "S404", "S603", "S607", "T201"]
+# CLI commands module: Typer commands require many positional arguments for options
+# FBT001/FBT002: Boolean positional arguments (required by Typer for flags)
+# PLR0913/PLR0917: Too many arguments (CLI commands naturally have many options)
+# DOC501: Raises Exit (Typer commands raise typer.Exit for error handling)
+# PLC0415: Deferred imports for project discovery logic (avoid circular imports)
+"src/codeintel/cli/commands/*.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
+"src/codeintel/cli/main.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
 
 [tool.vulture]
 # Strict, but still manageable threshold.

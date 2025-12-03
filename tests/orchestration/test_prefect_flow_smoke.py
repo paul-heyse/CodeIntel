@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
-from codeintel.pipeline.cli.main import main as cli_main
+from codeintel.cli import app
 from codeintel.pipeline.orchestration.prefect_flow import ExportArgs, export_docs_flow
 from tests._helpers.fixtures import seed_docs_export_minimal
 from tests._helpers.gateway import open_fresh_duckdb
+
+runner = CliRunner()
 
 
 def test_prefect_flow_imports() -> None:
@@ -21,8 +23,7 @@ def test_prefect_flow_imports() -> None:
 
 
 def test_prefect_flow_preflight_only(tmp_path: Path, prefect_quiet_env: None) -> None:
-    """
-    Run the Prefect flow with no targets to ensure preflight completes via the public entry.
+    """Run Prefect flow with no targets to ensure preflight completes via public entry.
 
     This exercises the flow wiring without invoking internal helpers directly.
     """
@@ -56,21 +57,8 @@ def test_prefect_flow_preflight_only(tmp_path: Path, prefect_quiet_env: None) ->
             os.environ[key] = value
 
 
-def _run_cli(argv: Iterable[str]) -> int:
-    """
-    Run the real CLI entry point in tests.
-
-    Returns
-    -------
-    int
-        CLI exit code.
-    """
-    return cli_main(list(argv))
-
-
 def test_cli_docs_export_with_validation(tmp_path: Path, prefect_quiet_env: None) -> None:
-    """
-    Export via the real CLI with validation enabled against a minimal seeded DB.
+    """Export via the real CLI with validation enabled against a minimal seeded DB.
 
     This mirrors the production entry point instead of calling internal helpers.
     """
@@ -105,9 +93,9 @@ def test_cli_docs_export_with_validation(tmp_path: Path, prefect_quiet_env: None
         "function_profile",
     ]
 
-    exit_code = _run_cli(argv)
-    if exit_code != 0:
-        pytest.fail(f"CLI docs export failed with exit code {exit_code}")
+    result = runner.invoke(app, argv)
+    if result.exit_code != 0:
+        pytest.fail(f"CLI docs export failed with exit code {result.exit_code}")
 
     manifest = document_output_dir / "index.json"
     if not manifest.exists():

@@ -138,12 +138,8 @@ def test_list_high_risk_functions_with_tested_only_filter(
         commit="abc123",
     )
 
-    tested_only_result = repo.list_high_risk_functions(
-        min_risk=0.0, limit=10, tested_only=True
-    )
-    all_result = repo.list_high_risk_functions(
-        min_risk=0.0, limit=10, tested_only=False
-    )
+    tested_only_result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=True)
+    all_result = repo.list_high_risk_functions(min_risk=0.0, limit=10, tested_only=False)
 
     assert len(tested_only_result) == 1
     assert tested_only_result[0]["tested"] is True
