@@ -41,9 +41,6 @@ from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 
-# Alias for backward compatibility
-ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
-
 CENTRALITY_SAMPLE_LIMIT = 500
 RICH_CLUB_PERCENTILE = 0.1
 
@@ -126,7 +123,7 @@ def _module_metric_rows(
     ctx: GraphContext,
     views: ImportGraphViews,
     slices: ModuleGraphSlices,
-) -> list[ModuleGraphMetricsExtRow]:
+) -> list[GraphMetricsModulesExtRow]:
     centralities = {
         "betweenness": slices.centralities.betweenness,
         "closeness": slices.centralities.closeness,

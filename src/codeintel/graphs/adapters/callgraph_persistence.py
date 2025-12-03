@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from codeintel.config.datasets import CallGraphEdgeRow, call_graph_edge_to_tuple
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
 
 
@@ -86,8 +86,8 @@ def persist_call_graph_edges(
     commit
         Commit identifier.
     """
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "graph.call_graph_edges",
         [call_graph_edge_to_tuple(edge) for edge in edges],
         delete_params=[repo, commit],

@@ -13,10 +13,6 @@ from codeintel.config.datasets import (
     GraphMetricsModulesExtRow,
 )
 
-# Aliases for backward compatibility
-FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
-ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
-
 
 def _int_or_none(value: float | str | Decimal | None) -> int | None:
     """
@@ -67,23 +63,23 @@ class ModuleMetricExtInputs:
 
 def build_function_metric_ext_rows(
     inputs: FunctionMetricExtInputs,
-) -> list[FunctionGraphMetricsExtRow]:
+) -> list[GraphMetricsFunctionsExtRow]:
     """
     Construct rows for analytics.graph_metrics_functions_ext.
 
     Returns
     -------
-    list[FunctionGraphMetricsExtRow]
+    list[GraphMetricsFunctionsExtRow]
         Rows ready for insertion into analytics.graph_metrics_functions_ext.
     """
     created_at = inputs.ctx.resolved_now()
-    rows: list[FunctionGraphMetricsExtRow] = []
+    rows: list[GraphMetricsFunctionsExtRow] = []
     for node in inputs.centralities["betweenness"]:
         goid_decimal = to_decimal_id(node)
         if goid_decimal is None:
             continue
         rows.append(
-            FunctionGraphMetricsExtRow(
+            GraphMetricsFunctionsExtRow(
                 repo=inputs.repo,
                 commit=inputs.commit,
                 function_goid_h128=int(goid_decimal),
@@ -112,18 +108,18 @@ def build_function_metric_ext_rows(
 
 def build_module_metric_ext_rows(
     inputs: ModuleMetricExtInputs,
-) -> list[ModuleGraphMetricsExtRow]:
+) -> list[GraphMetricsModulesExtRow]:
     """
     Construct rows for analytics.graph_metrics_modules_ext.
 
     Returns
     -------
-    list[ModuleGraphMetricsExtRow]
+    list[GraphMetricsModulesExtRow]
         Rows ready for insertion into analytics.graph_metrics_modules_ext.
     """
     created_at = inputs.ctx.resolved_now()
     return [
-        ModuleGraphMetricsExtRow(
+        GraphMetricsModulesExtRow(
             repo=inputs.repo,
             commit=inputs.commit,
             module=module,

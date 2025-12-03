@@ -224,7 +224,7 @@ class BasePlugin(ABC):
             version=self.plugin_version,
             enabled_by_default=self.enabled_by_default,
             severity=self.severity,
-            inputs=self._build_input_specs(),
+            inputs=self.build_input_specs(),
             outputs=self._build_output_specs(),
             capabilities_provided=tuple(PluginCapability(name=cap) for cap in self.provides),
             capabilities_required=tuple(PluginCapability(name=cap) for cap in self.requires),
@@ -235,7 +235,7 @@ class BasePlugin(ABC):
             tags=self.tags,
         )
 
-    def _build_input_specs(self) -> tuple[PluginInputSpec, ...]:  # noqa: PLR6301
+    def build_input_specs(self) -> tuple[PluginInputSpec, ...]:  # noqa: PLR6301
         """Build input specifications from class attributes.
 
         Override in subclasses for custom input handling.
@@ -276,14 +276,14 @@ class BasePlugin(ABC):
             Validation outcome.
         """
         errors: list[str] = []
-        errors.extend(self._validate_config_requirements(ctx))
-        errors.extend(self._validate_resource_requirements(ctx))
+        errors.extend(self.validate_config_requirements(ctx))
+        errors.extend(self.validate_resource_requirements(ctx))
 
         if errors:
             return ValidationResult.failure(tuple(errors))
         return ValidationResult.success()
 
-    def _validate_config_requirements(  # noqa: PLR6301
+    def validate_config_requirements(  # noqa: PLR6301
         self,
         ctx: PluginExecutionContext,  # noqa: ARG002
     ) -> list[str]:
@@ -303,7 +303,7 @@ class BasePlugin(ABC):
         """
         return []
 
-    def _validate_resource_requirements(  # noqa: PLR6301
+    def validate_resource_requirements(  # noqa: PLR6301
         self,
         ctx: PluginExecutionContext,  # noqa: ARG002
     ) -> list[str]:
@@ -559,7 +559,7 @@ class ConfigBoundPlugin[TConfig](BasePlugin, ABC):
             raise ValueError(message)
         return self._config
 
-    def _build_input_specs(self) -> tuple[PluginInputSpec, ...]:
+    def build_input_specs(self) -> tuple[PluginInputSpec, ...]:
         """Build input specs including config requirement.
 
         Returns
@@ -567,7 +567,7 @@ class ConfigBoundPlugin[TConfig](BasePlugin, ABC):
         tuple[PluginInputSpec, ...]
             Input specifications with config.
         """
-        base_inputs = super()._build_input_specs()
+        base_inputs = super().build_input_specs()
         config_input = PluginInputSpec(
             name="config",
             type_ref=self.config_type.__name__,
@@ -576,7 +576,7 @@ class ConfigBoundPlugin[TConfig](BasePlugin, ABC):
         )
         return (*base_inputs, config_input)
 
-    def _validate_config_requirements(self, ctx: PluginExecutionContext) -> list[str]:
+    def validate_config_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate config is available and resolve it.
 
         Parameters
@@ -589,7 +589,7 @@ class ConfigBoundPlugin[TConfig](BasePlugin, ABC):
         list[str]
             Validation errors.
         """
-        errors = super()._validate_config_requirements(ctx)
+        errors = super().validate_config_requirements(ctx)
 
         if self.config_required:
             if not ctx.has_config(self.config_type):
@@ -654,7 +654,7 @@ class CatalogRequiringPlugin(BasePlugin, ABC):
         """
         return self.catalog_required
 
-    def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
+    def validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate catalog availability via ResourceRegistry.
 
         Parameters
@@ -667,7 +667,7 @@ class CatalogRequiringPlugin(BasePlugin, ABC):
         list[str]
             Validation errors.
         """
-        errors = super()._validate_resource_requirements(ctx)
+        errors = super().validate_resource_requirements(ctx)
         if not self.catalog_required:
             return errors
 
@@ -718,7 +718,7 @@ class GraphRuntimeRequiringPlugin(BasePlugin, ABC):
 
     graph_runtime_required: ClassVar[bool] = True
 
-    def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
+    def validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate graph runtime availability via ResourceRegistry.
 
         Parameters
@@ -731,7 +731,7 @@ class GraphRuntimeRequiringPlugin(BasePlugin, ABC):
         list[str]
             Validation errors.
         """
-        errors = super()._validate_resource_requirements(ctx)
+        errors = super().validate_resource_requirements(ctx)
         if not self.graph_runtime_required:
             return errors
 
@@ -794,7 +794,7 @@ class GraphMetricsPlugin(
 
     plugin_stage: ClassVar[PluginStage] = "graph"
 
-    def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
+    def validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate all resource requirements.
 
         Parameters
@@ -810,13 +810,13 @@ class GraphMetricsPlugin(
         errors: list[str] = []
         # Call each parent's validation - accessing protected methods is intentional
         errors.extend(
-            TableWriterPlugin._validate_resource_requirements(self, ctx)  # noqa: SLF001
+            TableWriterPlugin.validate_resource_requirements(self, ctx)
         )
         errors.extend(
-            GraphRuntimeRequiringPlugin._validate_resource_requirements(self, ctx)  # noqa: SLF001
+            GraphRuntimeRequiringPlugin.validate_resource_requirements(self, ctx)
         )
         errors.extend(
-            CatalogRequiringPlugin._validate_resource_requirements(self, ctx)  # noqa: SLF001
+            CatalogRequiringPlugin.validate_resource_requirements(self, ctx)
         )
         return errors
 
@@ -835,7 +835,7 @@ class ConfiguredTableWriterPlugin[TConfig](ConfigBoundPlugin[TConfig], TableWrit
     Subclasses must implement `compute()`.
     """
 
-    def _validate_config_requirements(self, ctx: PluginExecutionContext) -> list[str]:
+    def validate_config_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate config requirements from ConfigBoundPlugin.
 
         Parameters
@@ -848,9 +848,9 @@ class ConfiguredTableWriterPlugin[TConfig](ConfigBoundPlugin[TConfig], TableWrit
         list[str]
             Validation errors.
         """
-        return ConfigBoundPlugin._validate_config_requirements(self, ctx)  # noqa: SLF001
+        return ConfigBoundPlugin.validate_config_requirements(self, ctx)
 
-    def _build_input_specs(self) -> tuple[PluginInputSpec, ...]:
+    def build_input_specs(self) -> tuple[PluginInputSpec, ...]:
         """Build input specs combining both bases.
 
         Returns
@@ -858,7 +858,7 @@ class ConfiguredTableWriterPlugin[TConfig](ConfigBoundPlugin[TConfig], TableWrit
         tuple[PluginInputSpec, ...]
             Combined input specifications.
         """
-        return ConfigBoundPlugin._build_input_specs(self)  # noqa: SLF001
+        return ConfigBoundPlugin.build_input_specs(self)
 
 
 @dataclass
@@ -870,7 +870,7 @@ class ConfiguredGraphMetricsPlugin[TConfig](ConfigBoundPlugin[TConfig], GraphMet
     Subclasses must implement `compute()`.
     """
 
-    def _validate_config_requirements(self, ctx: PluginExecutionContext) -> list[str]:
+    def validate_config_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate config from ConfigBoundPlugin.
 
         Parameters
@@ -883,9 +883,9 @@ class ConfiguredGraphMetricsPlugin[TConfig](ConfigBoundPlugin[TConfig], GraphMet
         list[str]
             Validation errors.
         """
-        return ConfigBoundPlugin._validate_config_requirements(self, ctx)  # noqa: SLF001
+        return ConfigBoundPlugin.validate_config_requirements(self, ctx)
 
-    def _validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
+    def validate_resource_requirements(self, ctx: PluginExecutionContext) -> list[str]:
         """Validate all resources from GraphMetricsPlugin.
 
         Parameters
@@ -898,9 +898,9 @@ class ConfiguredGraphMetricsPlugin[TConfig](ConfigBoundPlugin[TConfig], GraphMet
         list[str]
             Validation errors.
         """
-        return GraphMetricsPlugin._validate_resource_requirements(self, ctx)  # noqa: SLF001
+        return GraphMetricsPlugin.validate_resource_requirements(self, ctx)
 
-    def _build_input_specs(self) -> tuple[PluginInputSpec, ...]:
+    def build_input_specs(self) -> tuple[PluginInputSpec, ...]:
         """Build input specs from ConfigBoundPlugin.
 
         Returns
@@ -908,7 +908,7 @@ class ConfiguredGraphMetricsPlugin[TConfig](ConfigBoundPlugin[TConfig], GraphMet
         tuple[PluginInputSpec, ...]
             Input specifications.
         """
-        return ConfigBoundPlugin._build_input_specs(self)  # noqa: SLF001
+        return ConfigBoundPlugin.build_input_specs(self)
 
 
 # =============================================================================

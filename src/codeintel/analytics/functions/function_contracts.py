@@ -14,7 +14,7 @@ from codeintel.analytics.ast_utils import literal_int, literal_value, safe_unpar
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -119,8 +119,8 @@ def compute_function_contracts(
             )
         )
 
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "analytics.function_contracts",
         rows,
         delete_params=[cfg.repo, cfg.commit],

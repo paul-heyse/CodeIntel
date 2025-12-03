@@ -92,26 +92,6 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
         self._snapshot = snapshot
         self._config = config or TrackerConfig()
 
-    @property
-    def _scratch(self) -> IngestRuntimeScratch | None:
-        """Access scratch from config for backward compatibility."""
-        return self._config.scratch
-
-    @property
-    def _profile(self) -> ScanProfile | None:
-        """Access profile from config for backward compatibility."""
-        return self._config.profile
-
-    @property
-    def _policy(self) -> IncrementalIngestPolicy | None:
-        """Access policy from config for backward compatibility."""
-        return self._config.policy
-
-    @property
-    def _full_rebuild(self) -> bool:
-        """Access full_rebuild from config for backward compatibility."""
-        return self._config.full_rebuild
-
     def _load(self) -> ChangeTracker:
         """Load or build change tracker.
 
@@ -123,8 +103,8 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
         from codeintel.ingestion.change_tracker import ChangeTracker
 
         # First check scratch store (populated by repo_scan)
-        if self._scratch is not None:
-            tracker = self._scratch.consume("change_tracker")
+        if self._config.scratch is not None:
+            tracker = self._config.scratch.consume("change_tracker")
             if tracker is not None and isinstance(tracker, ChangeTracker):
                 log.debug(
                     "Loaded tracker from scratch: repo=%s commit=%s",
@@ -157,7 +137,7 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
         change_detection = HashChangeDetectionAdapter(storage)
 
         # Use provided profile or default
-        actual_profile = self._profile or default_code_profile(self._snapshot.repo_root)
+        actual_profile = self._config.profile or default_code_profile(self._snapshot.repo_root)
 
         # Run repo scan to build tracker
         step = RepoScanStep(
@@ -170,7 +150,7 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
             commit=self._snapshot.commit,
             repo_root=self._snapshot.repo_root,
             profile=actual_profile,
-            full_rebuild=self._full_rebuild,
+            full_rebuild=self._config.full_rebuild,
         )
 
         # Build change request
@@ -179,7 +159,7 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
             commit=self._snapshot.commit,
             repo_root=self._snapshot.repo_root,
             language="python",
-            full_rebuild=self._full_rebuild,
+            full_rebuild=self._config.full_rebuild,
             scan_profile=actual_profile,
         )
 
@@ -188,7 +168,7 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
             gateway=self._gateway,
             change_request=change_request,
             modules=modules,
-            policy=self._policy,
+            policy=self._config.policy,
             change_detection=change_detection,
         )
 

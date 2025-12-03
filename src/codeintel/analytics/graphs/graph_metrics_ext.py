@@ -40,9 +40,6 @@ from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
 
-# Alias for backward compatibility
-FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
-
 CENTRALITY_SAMPLE_LIMIT = 500
 EIGEN_MAX_ITER = 200
 
@@ -130,7 +127,7 @@ def _function_metric_rows(
     ctx: GraphContext,
     views: GraphViews,
     slices: FunctionGraphSlices,
-) -> list[FunctionGraphMetricsExtRow]:
+) -> list[GraphMetricsFunctionsExtRow]:
     node_count = views.graph.number_of_nodes()
     ancestor_count = {
         node: len(nx.ancestors(views.graph, node)) if node_count else 0

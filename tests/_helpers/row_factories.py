@@ -17,9 +17,6 @@ from codeintel.config.datasets import (
     ProfileRowModel,
 )
 
-# Alias for backward compatibility
-TestProfileRowModel = ProfileRowModel
-
 
 def blank_file_profile_row() -> FileProfileRowModel:
     """
@@ -45,16 +42,16 @@ def blank_module_profile_row() -> ModuleProfileRowModel:
     return cast("ModuleProfileRowModel", dict.fromkeys(MODULE_PROFILE_COLUMNS))
 
 
-def blank_test_profile_row() -> TestProfileRowModel:
+def blank_test_profile_row() -> ProfileRowModel:
     """
-    Return an empty TestProfileRowModel with all keys initialized.
+    Return an empty ProfileRowModel with all keys initialized.
 
     Returns
     -------
-    TestProfileRowModel
+    ProfileRowModel
         Empty test profile row with every column set to None.
     """
-    return cast("TestProfileRowModel", dict.fromkeys(TEST_PROFILE_COLUMNS))
+    return cast("ProfileRowModel", dict.fromkeys(TEST_PROFILE_COLUMNS))
 
 
 def blank_behavioral_coverage_row() -> BehavioralCoverageRowModel:

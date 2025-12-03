@@ -116,7 +116,6 @@ from codeintel.config.datasets.rows.test import (
     SubsystemProfileCacheRow,
     TestCatalogRowModel,
     TestCoverageEdgeRow,
-    TestProfileRowModel,
     behavioral_coverage_row_to_tuple,
     serialize_test_catalog_row,
     serialize_test_coverage_edge,
@@ -177,7 +176,6 @@ __all__ = [
     "SymbolUseRow",
     "TestCatalogRowModel",
     "TestCoverageEdgeRow",
-    "TestProfileRowModel",
     "TypednessRow",
     # Serializer functions
     "behavioral_coverage_row_to_tuple",

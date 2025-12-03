@@ -95,6 +95,31 @@ def _quote_table_key(table_key: str) -> tuple[str, str, str]:
     return schema_name, table_name, quoted
 
 
+def _build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
+    """Build a DELETE IN query with validated identifiers.
+
+    This function assumes table_sql and column_sql have already been validated
+    and quoted by _quote_table_key and _quote_identifier respectively.
+
+    Parameters
+    ----------
+    table_sql
+        Quoted table name (e.g., '"schema"."table"').
+    column_sql
+        Quoted column name (e.g., '"path"').
+    count
+        Number of placeholder values.
+
+    Returns
+    -------
+    str
+        DELETE query string with ? placeholders.
+    """
+    placeholders = ", ".join(["?"] * count)
+    # S608 safe: identifiers are pre-validated and quoted
+    return f"DELETE FROM {table_sql} WHERE {column_sql} IN ({placeholders})"  # noqa: S608
+
+
 def _quote_macro_name(macro_name: str) -> str:
     """Return a validated macro identifier (optionally schema-qualified).
 
@@ -312,10 +337,7 @@ class DuckDBStorageAdapter:
         # Use validated identifiers to construct safe SQL
         _, _, table_sql = _quote_table_key(table_key)
         safe_column = _quote_identifier(path_column)
-        placeholders = ", ".join(["?"] * len(paths))
-        # SQL is safe: table_sql and safe_column are validated identifiers,
-        # paths are parameterized via placeholders
-        delete_sql = f"DELETE FROM {table_sql} WHERE {safe_column} IN ({placeholders})"  # noqa: S608
+        delete_sql = _build_delete_in_query(table_sql, safe_column, len(paths))
         self.con.execute(delete_sql, list(paths))
         return 0  # DuckDB doesn't return affected row count easily
 

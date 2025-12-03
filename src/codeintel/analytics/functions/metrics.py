@@ -10,7 +10,7 @@ This module follows the layered architecture:
 - **Adapters**: Database I/O in `analytics.adapters.functions`
 - **Orchestration**: This module coordinates between layers
 
-The public API remains unchanged for backward compatibility.
+The public API is stable.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from codeintel.analytics.compute.functions import (
+    ComplexityMetrics,
     compute_complexity,
 )
 from codeintel.analytics.compute.functions.loc import compute_loc
@@ -52,11 +53,6 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
-
-# Re-export from compute layer for backward compatibility
-COMPLEXITY_LOW = 5
-COMPLEXITY_MEDIUM = 10
-
 
 @dataclass(frozen=True)
 class FunctionAnalyticsResult:
@@ -119,64 +115,6 @@ class FunctionDerived:
     typedness: TypednessFlags
 
 
-# Note: _FunctionStats has been replaced by compute_complexity from the compute layer.
-# The class is kept as a thin wrapper for backward compatibility with any code
-# that may have imported it directly.
-
-
-@dataclass
-class _FunctionStats:
-    """Legacy wrapper - delegates to compute layer.
-
-    .. deprecated::
-        Use `compute_complexity` from `analytics.compute.functions` instead.
-    """
-
-    return_count: int = 0
-    yield_count: int = 0
-    raise_count: int = 0
-    complexity: int = 1
-    max_nesting_depth: int = 0
-
-    @classmethod
-    def from_node(cls, node: ast.AST) -> _FunctionStats:
-        """Create stats from an AST node using the compute layer.
-
-        Parameters
-        ----------
-        node
-            Function AST node.
-
-        Returns
-        -------
-        _FunctionStats
-            Stats populated from compute_complexity.
-        """
-        metrics = compute_complexity(node)
-        return cls(
-            return_count=metrics.return_count,
-            yield_count=metrics.yield_count,
-            raise_count=metrics.raise_count,
-            complexity=metrics.cyclomatic,
-            max_nesting_depth=metrics.max_nesting_depth,
-        )
-
-    def visit(self, node: ast.AST) -> None:
-        """Visit a node and populate stats (for backward compatibility).
-
-        Parameters
-        ----------
-        node
-            AST node to analyze.
-        """
-        metrics = compute_complexity(node)
-        self.return_count = metrics.return_count
-        self.yield_count = metrics.yield_count
-        self.raise_count = metrics.raise_count
-        self.complexity = metrics.cyclomatic
-        self.max_nesting_depth = metrics.max_nesting_depth
-
-
 class GoidRow(TypedDict):
     """Row structure for function GOIDs pulled from DuckDB."""
 
@@ -213,44 +151,22 @@ def _compute_loc(lines: list[str], start_line: int, end_line: int) -> tuple[int,
     return loc_metrics.physical, loc_metrics.logical
 
 
-def _complexity_bucket(cc: int) -> str:
-    """Classify complexity into buckets.
-
-    Parameters
-    ----------
-    cc
-        Cyclomatic complexity value.
-
-    Returns
-    -------
-    str
-        One of "low", "medium", or "high".
-    """
-    if cc <= COMPLEXITY_LOW:
-        return "low"
-    if cc <= COMPLEXITY_MEDIUM:
-        return "medium"
-    return "high"
-
-
 def _derive_function_flags(
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-    stats: _FunctionStats,
+    metrics: ComplexityMetrics,
     param_stats: ParamStats,
 ) -> FunctionDerived:
-    is_async = isinstance(node, ast.AsyncFunctionDef)
     typedness = compute_typedness_flags(
         total_params=param_stats.total_params,
         annotated_params=param_stats.annotated_params,
         has_return_annotation=param_stats.has_return_annotation,
     )
     return FunctionDerived(
-        is_async=is_async,
-        is_generator=stats.yield_count > 0,
-        complexity_bucket=_complexity_bucket(stats.complexity),
-        stmt_count=len(getattr(node, "body", [])),
-        decorator_count=len(getattr(node, "decorator_list", [])),
-        has_docstring=ast.get_docstring(node) is not None,
+        is_async=metrics.is_async,
+        is_generator=metrics.is_generator,
+        complexity_bucket=metrics.complexity_bucket,
+        stmt_count=metrics.stmt_count,
+        decorator_count=metrics.decorator_count,
+        has_docstring=metrics.has_docstring,
         typedness=typedness,
     )
 
@@ -267,9 +183,8 @@ def _function_rows_from_node(
     loc, logical_loc = _compute_loc(lines, meta.start_line, meta.end_line)
 
     param_stats = compute_param_stats(node)
-    stats = _FunctionStats()
-    stats.visit(node)
-    derived = _derive_function_flags(node, stats, param_stats)
+    complexity = compute_complexity(node)
+    derived = _derive_function_flags(complexity, param_stats)
     typedness = derived.typedness
     return_type_source = "annotation" if param_stats.has_return_annotation else "unknown"
 
@@ -293,11 +208,11 @@ def _function_rows_from_node(
         "has_varkw": param_stats.has_varkw,
         "is_async": derived.is_async,
         "is_generator": derived.is_generator,
-        "return_count": stats.return_count,
-        "yield_count": stats.yield_count,
-        "raise_count": stats.raise_count,
-        "cyclomatic_complexity": stats.complexity,
-        "max_nesting_depth": stats.max_nesting_depth,
+        "return_count": complexity.return_count,
+        "yield_count": complexity.yield_count,
+        "raise_count": complexity.raise_count,
+        "cyclomatic_complexity": complexity.cyclomatic,
+        "max_nesting_depth": complexity.max_nesting_depth,
         "stmt_count": derived.stmt_count,
         "decorator_count": derived.decorator_count,
         "has_docstring": derived.has_docstring,

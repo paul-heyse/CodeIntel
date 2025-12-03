@@ -18,7 +18,8 @@ from codeintel.ingestion.change_tracker import (
     ChangeTracker,
     IncrementalIngestPolicy,
 )
-from codeintel.ingestion.common import ChangeRequest, ChangeSet, ModuleRecord
+from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
+from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway

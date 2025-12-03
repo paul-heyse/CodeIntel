@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from codeintel.config import ScipIngestStepConfig
-from codeintel.ingestion.common import ModuleRecord, iter_modules
+from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.module_index import load_module_map
 
@@ -29,22 +29,66 @@ class ResolvedScipConfig:
     cfg: ScipIngestStepConfig | None
 
 
-def resolve_scip_inputs(  # noqa: PLR0913
+@dataclass(frozen=True)
+class ScipResolverInput:
+    """Input parameters for SCIP configuration resolution.
+
+    Bundles optional parameters to reduce function argument count.
+    Either provide a ScipIngestStepConfig via cfg, or provide explicit
+    parameters (repo, commit, repo_root, build_dir, document_output_dir).
+
+    Parameters
+    ----------
+    cfg
+        Full step configuration (takes precedence if provided).
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    repo_root
+        Path to repository root.
+    build_dir
+        Build output directory.
+    document_output_dir
+        Document output directory.
+    scip_python_bin
+        Path to scip-python binary.
+    scip_bin
+        Path to scip binary.
+    modules
+        Pre-computed module records.
+    """
+
+    cfg: ScipIngestStepConfig | None = None
+    repo: str | None = None
+    commit: str | None = None
+    repo_root: Path | None = None
+    build_dir: Path | None = None
+    document_output_dir: Path | None = None
+    scip_python_bin: str | None = None
+    scip_bin: str | None = None
+    modules: Sequence[ModuleRecord] | None = None
+
+
+def resolve_scip_inputs(  # noqa: PLR0913 - convenience API; prefer ScipResolverInput param
     gateway: StorageGateway,
     modules_or_cfg: Sequence[ModuleRecord] | object,
+    inputs: ScipResolverInput | None = None,
     *,
-    cfg: ScipIngestStepConfig | None,
-    repo: str | None,
-    commit: str | None,
-    repo_root: Path | None,
-    build_dir: Path | None,
-    document_output_dir: Path | None,
-    scip_python_bin: str | None,
-    scip_bin: str | None,
-    modules: Sequence[ModuleRecord] | None,
+    cfg: ScipIngestStepConfig | None = None,
+    repo: str | None = None,
+    commit: str | None = None,
+    repo_root: Path | None = None,
+    build_dir: Path | None = None,
+    document_output_dir: Path | None = None,
+    scip_python_bin: str | None = None,
+    scip_bin: str | None = None,
+    modules: Sequence[ModuleRecord] | None = None,
 ) -> ResolvedScipConfig:
-    """
-    Normalize all SCIP inputs into a required, typed config.
+    """Normalize all SCIP inputs into a required, typed config.
+
+    For new code, prefer using the inputs parameter with a ScipResolverInput
+    to bundle parameters.
 
     Returns
     -------
@@ -56,12 +100,28 @@ def resolve_scip_inputs(  # noqa: PLR0913
     ValueError
         If required parameters are missing.
     """
+    # Use inputs dataclass if provided
+    if inputs is not None:
+        cfg = inputs.cfg
+        repo = inputs.repo
+        commit = inputs.commit
+        repo_root = inputs.repo_root
+        build_dir = inputs.build_dir
+        document_output_dir = inputs.document_output_dir
+        scip_python_bin = inputs.scip_python_bin
+        scip_bin = inputs.scip_bin
+        modules = inputs.modules
+
     # Legacy config object path
     if cfg is not None or isinstance(modules_or_cfg, ScipIngestStepConfig):
         actual_cfg = cfg or modules_or_cfg
         if not isinstance(actual_cfg, ScipIngestStepConfig):
             message = "Invalid ScipIngestStepConfig"
             raise ValueError(message)
+
+        from codeintel.ingestion.adapters.filesystem_discovery import (  # noqa: PLC0415
+            FilesystemDiscoveryAdapter,
+        )
 
         module_map = load_module_map(
             gateway,
@@ -71,7 +131,7 @@ def resolve_scip_inputs(  # noqa: PLR0913
             logger=None,
         )
         module_list = list(
-            iter_modules(
+            FilesystemDiscoveryAdapter.iter_modules(
                 module_map,
                 actual_cfg.repo_root,
                 logger=None,
@@ -119,4 +179,4 @@ def resolve_scip_inputs(  # noqa: PLR0913
     )
 
 
-__all__ = ["ResolvedScipConfig", "resolve_scip_inputs"]
+__all__ = ["ResolvedScipConfig", "ScipResolverInput", "resolve_scip_inputs"]

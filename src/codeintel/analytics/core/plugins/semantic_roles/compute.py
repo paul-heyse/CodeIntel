@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.function_ast_cache import FunctionAst
-    from codeintel.analytics.resources.asts import LegacyAstData
+    from codeintel.analytics.resources.asts import AstResourceData
     from codeintel.graphs.catalog import FunctionCatalogProvider
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -115,10 +115,10 @@ class SemanticRolesPlugin:
             module_by_path = catalog_provider.catalog().module_by_path
 
         # Get ast_map from AstProvider
-        # Note: require_by_name returns the loaded resource (LegacyAstData), not provider
+        # Note: require_by_name returns the loaded resource (AstResourceData), not provider
         ast_map: dict[int, FunctionAst] = {}
         if ctx.has_resource_by_name("AstProvider"):
-            ast_data = cast("LegacyAstData", ctx.require_by_name("AstProvider"))
+            ast_data = cast("AstResourceData", ctx.require_by_name("AstProvider"))
             ast_map = ast_data.function_ast_map
 
         # Get features from FeaturesProvider

@@ -18,6 +18,7 @@ from codeintel.analytics.recipes.builtins import (
     TEST_ANALYSIS,
 )
 from codeintel.analytics.recipes.model import AnalyticsRecipe
+from codeintel.core.singleton import SingletonHolder
 
 log = logging.getLogger(__name__)
 
@@ -210,8 +211,22 @@ class RecipeRegistry:
         )
 
 
-# Global registry instance
-_RECIPE_REGISTRY: RecipeRegistry | None = None
+# Singleton holder for recipe registry
+class _RecipeRegistryHolder(SingletonHolder["RecipeRegistry"]):
+    """Thread-safe singleton holder for RecipeRegistry."""
+
+
+def _create_recipe_registry() -> RecipeRegistry:
+    """Create and initialize a new recipe registry with builtin recipes.
+
+    Returns
+    -------
+    RecipeRegistry
+        A new registry with all builtin recipes registered.
+    """
+    registry = RecipeRegistry()
+    _register_builtin_recipes(registry)
+    return registry
 
 
 def get_recipe_registry() -> RecipeRegistry:
@@ -222,11 +237,15 @@ def get_recipe_registry() -> RecipeRegistry:
     RecipeRegistry
         The singleton registry instance.
     """
-    global _RECIPE_REGISTRY  # noqa: PLW0603
-    if _RECIPE_REGISTRY is None:
-        _RECIPE_REGISTRY = RecipeRegistry()
-        _register_builtin_recipes(_RECIPE_REGISTRY)
-    return _RECIPE_REGISTRY
+    return _RecipeRegistryHolder.get(_create_recipe_registry)
+
+
+def reset_recipe_registry() -> None:
+    """Reset the global recipe registry.
+
+    Primarily useful for testing to ensure clean state between tests.
+    """
+    _RecipeRegistryHolder.reset()
 
 
 def register_recipe(recipe: AnalyticsRecipe) -> None:

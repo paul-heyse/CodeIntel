@@ -15,7 +15,7 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
     RepoScanStep,
 )
-from codeintel.ingestion.common import iter_modules
+from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
 from codeintel.ingestion.steps import (
     ast_extract,
@@ -96,7 +96,11 @@ def test_module_inventory_round_trip(tmp_path: Path) -> None:
         language="python",
         logger=None,
     )
-    records = list(iter_modules(module_map, snapshot.repo_root, logger=None, scan_profile=profile))
+    records = list(
+        FilesystemDiscoveryAdapter.iter_modules(
+            module_map, snapshot.repo_root, logger=None, scan_profile=profile
+        )
+    )
 
     rel_paths = sorted(record.rel_path for record in records)
     expected = ["src/pkg/a.py", "src/pkg/b.py"]

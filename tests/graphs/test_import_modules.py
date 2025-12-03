@@ -15,7 +15,7 @@ from codeintel.graphs.plugins.builders.import_graph import (
     build_import_module_rows,
     components_and_layers,
 )
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
 
 REPO = "demo/repo"
@@ -26,8 +26,8 @@ def _persist_import_tables(
     gateway: StorageGateway, modules: set[str], raw_edges: set[tuple[str, str]]
 ) -> None:
     scc_map, layer_by_module = components_and_layers(raw_edges, modules)
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "graph.import_modules",
         [
             import_module_to_tuple(row)
@@ -46,8 +46,7 @@ def _persist_import_tables(
     for src, dst in raw_edges:
         fan_counts[src]["out"] += 1
         fan_counts[dst]["in"] += 1
-    run_batch(
-        gateway,
+    storage_service.run_batch(
         "graph.import_graph_edges",
         [
             import_edge_to_tuple(

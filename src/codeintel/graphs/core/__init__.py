@@ -52,11 +52,6 @@ def my_builder_plugin(ctx: GraphExecutionContext) -> GraphPluginResult:
 ```
 """
 
-from codeintel.graphs.core.adapters import (
-    adapt_legacy_computation,
-    adapt_simple,
-    adapt_with_row_counts,
-)
 from codeintel.graphs.core.computation import (
     ComputationFn,
     ComputationResult,
@@ -127,9 +122,6 @@ __all__ = [
     "GraphPluginStage",
     "GraphPluginStatus",
     "GraphRuntimeScratch",
-    "adapt_legacy_computation",
-    "adapt_simple",
-    "adapt_with_row_counts",
     "get_graph_registry",
     "graph_plugin",
     "list_graph_plugins",

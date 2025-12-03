@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 
@@ -19,10 +18,8 @@ from codeintel.storage.run_tracking import (
     PipelineRunRecord,
     PipelineRunTracking,
     PipelineStepRecord,
+    StepCompletionParams,
 )
-
-if TYPE_CHECKING:
-    from duckdb import DuckDBPyConnection
 
 
 @pytest.fixture
@@ -303,13 +300,15 @@ class TestStartAndCompleteStep:
         )
 
         test_con.complete_step(
-            run_id="ci-123",
-            module="analytics",
-            stage="function",
-            name="function_metrics",
-            status="succeeded",
-            started_at=started_at,
-            row_counts={"analytics.function_metrics": 100},
+            StepCompletionParams(
+                run_id="ci-123",
+                module="analytics",
+                stage="function",
+                name="function_metrics",
+                status="succeeded",
+                started_at=started_at,
+                row_counts={"analytics.function_metrics": 100},
+            )
         )
 
         steps = test_con.fetch_steps("ci-123")

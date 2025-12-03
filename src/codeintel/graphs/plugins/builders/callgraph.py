@@ -55,8 +55,8 @@ from codeintel.graphs.core import (
 from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.plugins.builders import symbol_uses
 from codeintel.graphs.resources import StorageResource
-from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path, relpath_to_module
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
@@ -174,8 +174,8 @@ def _persist_call_graph_nodes(gateway: StorageGateway, rows: list[tuple]) -> Non
         )
         for row in rows
     ]
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "graph.call_graph_nodes",
         [call_graph_node_to_tuple(row) for row in node_models],
         delete_params=[],
@@ -390,7 +390,9 @@ def build_call_graph(
 ) -> None:
     """Build call graph using the plugin orchestration.
 
-    This is a convenience function for backward compatibility.
+    Convenience function for pipeline steps to invoke the callgraph_builder
+    plugin with a specific configuration. Creates the execution context and
+    resources internally.
 
     Parameters
     ----------

@@ -38,9 +38,6 @@ from codeintel.graphs.compute.cfg import (
     BasicBlock as Block,
 )
 from codeintel.graphs.compute.cfg import (
-    CFGBuilder as ComputeCFGBuilder,
-)
-from codeintel.graphs.compute.cfg import (
     CFGEdge as Edge,
 )
 from codeintel.graphs.compute.cfg import (
@@ -62,15 +59,10 @@ from codeintel.graphs.core import (
 )
 from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.resources import StorageResource
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
-
-# Re-export compute layer types for backward compatibility
-# These are now the canonical implementations
-CFGBuilder = ComputeCFGBuilder
-
 
 class DFGBuilder:
     """Build DFG from CFG blocks - delegates to compute layer.
@@ -359,24 +351,22 @@ def _flush(
     dfg_edges
         DFG edge rows to persist.
     """
+    storage_service = IngestStorageService.from_gateway(gateway)
     if blocks:
-        run_batch(
-            gateway,
+        storage_service.run_batch(
             "graph.cfg_blocks",
             [cfg_block_to_tuple(r) for r in blocks],
             delete_params=[],  # Append only
             scope="cfg_blocks",
         )
     if cfg_edges:
-        run_batch(
-            gateway,
+        storage_service.run_batch(
             "graph.cfg_edges",
             [cfg_edge_to_tuple(r) for r in cfg_edges],
             scope="cfg_edges",
         )
     if dfg_edges:
-        run_batch(
-            gateway,
+        storage_service.run_batch(
             "graph.dfg_edges",
             [dfg_edge_to_tuple(r) for r in dfg_edges],
             scope="dfg_edges",
@@ -524,7 +514,6 @@ def get_cfg_dfg_builder_plugin() -> GraphPluginProtocol:
 
 __all__ = [
     "Block",
-    "CFGBuilder",
     "DFGBuilder",
     "Edge",
     "FunctionBuildSpec",

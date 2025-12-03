@@ -101,11 +101,11 @@ class AstMap:
 
 
 @dataclass
-class LegacyAstData:
-    """Container for legacy-compatible AST data.
+class AstResourceData:
+    """Container for AST resource data.
 
-    Uses `FunctionAst` from function_ast_cache for compatibility with
-    domain modules that expect the legacy AnalyticsContext format.
+    Contains function AST map and missing GOIDs for analytics plugins.
+    Uses `FunctionAst` from function_ast_cache for domain modules.
 
     Attributes
     ----------
@@ -119,12 +119,11 @@ class LegacyAstData:
     missing_function_goids: set[int]
 
 
-class AstProvider(LazyResource[LegacyAstData]):
+class AstProvider(LazyResource[AstResourceData]):
     """Provider for function ASTs with lazy loading.
 
     Parses source files and builds a map from function GOIDs to their
-    AST nodes. Uses the legacy FunctionAst format for compatibility
-    with domain modules.
+    AST nodes. Uses the FunctionAst format for domain modules.
 
     Parameters can be None when using factory methods like `from_asts()`
     that set a pre-loaded resource.
@@ -198,19 +197,19 @@ class AstProvider(LazyResource[LegacyAstData]):
         # Create provider with None - valid since we set preloaded
         provider = cls(gateway=None, snapshot=None)
         provider.set_preloaded(
-            LegacyAstData(
+            AstResourceData(
                 function_ast_map=function_ast_map,
                 missing_function_goids=missing_goids,
             )
         )
         return provider
 
-    def _load(self) -> LegacyAstData:
+    def _load(self) -> AstResourceData:
         """Load and parse function ASTs.
 
         Returns
         -------
-        LegacyAstData
+        AstResourceData
             Container with function AST map and missing GOIDs.
 
         Raises
@@ -243,7 +242,7 @@ class AstProvider(LazyResource[LegacyAstData]):
             self._snapshot.commit,
         )
 
-        return LegacyAstData(
+        return AstResourceData(
             function_ast_map=function_ast_map,
             missing_function_goids=missing,
         )
@@ -278,6 +277,6 @@ class AstProvider(LazyResource[LegacyAstData]):
 __all__ = [
     "AstMap",
     "AstProvider",
+    "AstResourceData",
     "FunctionAstInfo",
-    "LegacyAstData",
 ]

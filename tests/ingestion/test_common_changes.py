@@ -6,8 +6,33 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.ingestion.common import ChangeRequest, ModuleRecord, compute_changes
+from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
+from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
+from codeintel.ingestion.ports.change_detection import ChangeRequest
+from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
+
+
+def compute_changes(gateway: StorageGateway, request: ChangeRequest) -> object:
+    """Compute changes using the adapter directly.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database operations.
+    request
+        Change detection request parameters.
+
+    Returns
+    -------
+    ChangeSet
+        Computed changes (added, modified, deleted modules).
+    """
+    storage = DuckDBStorageAdapter(gateway)
+    adapter = HashChangeDetectionAdapter(storage)
+    modules = getattr(request, "modules", []) or []
+    return adapter.compute_changes(request, modules)
 
 
 def test_compute_changes_tracks_add_modify_delete(tmp_path: Path) -> None:

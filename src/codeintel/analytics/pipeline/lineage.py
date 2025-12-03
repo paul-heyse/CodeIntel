@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 import msgspec
 
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.sql_builder import SafeTable
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -177,8 +178,10 @@ def compute_table_hash(
     str
         Hex digest of the content hash.
     """
-    # Build query with optional filtering
-    query = f"SELECT * FROM {table}"  # noqa: S608
+    # Build query with optional filtering (SafeTable validates the table name)
+    safe_table = SafeTable(table)
+    # S608: table validated by SafeTable; values parameterized
+    query = f"SELECT * FROM {safe_table}"  # noqa: S608
     params: list[object] = []
 
     where_parts: list[str] = []

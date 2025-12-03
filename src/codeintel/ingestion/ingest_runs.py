@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Protocol
 
 from codeintel.config.datasets import ingest_run_to_tuple
-from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolExecutionError,
     ToolNotFoundError,
 )
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)
@@ -183,8 +183,8 @@ class DuckDBIngestRunSink:
 
     def record(self, run: IngestRun) -> None:
         """Insert the run record into core.ingest_runs."""
-        run_batch(
-            self.gateway,
+        storage_service = IngestStorageService.from_gateway(self.gateway)
+        storage_service.run_batch(
             "core.ingest_runs",
             [run.to_row_tuple()],
             delete_params=None,

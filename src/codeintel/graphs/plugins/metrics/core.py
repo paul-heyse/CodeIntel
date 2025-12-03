@@ -147,7 +147,7 @@ def _persist_function_metrics(
 
     Uses resource injection with fallback to ctx.gateway.
     """
-    from codeintel.ingestion.common import run_batch  # noqa: PLC0415
+    from codeintel.ingestion.services.storage import IngestStorageService  # noqa: PLC0415
 
     # Get gateway via resource injection or fallback
     if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
@@ -156,8 +156,8 @@ def _persist_function_metrics(
     else:
         gateway = ctx.gateway
 
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "analytics.graph_metrics_functions",
         list(rows),
         delete_params=[ctx.repo, ctx.commit],
@@ -173,7 +173,7 @@ def _persist_module_metrics(
 
     Uses resource injection with fallback to ctx.gateway.
     """
-    from codeintel.ingestion.common import run_batch  # noqa: PLC0415
+    from codeintel.ingestion.services.storage import IngestStorageService  # noqa: PLC0415
 
     # Get gateway via resource injection or fallback
     if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
@@ -182,8 +182,8 @@ def _persist_module_metrics(
     else:
         gateway = ctx.gateway
 
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "analytics.graph_metrics_modules",
         list(rows),
         delete_params=[ctx.repo, ctx.commit],
@@ -263,7 +263,7 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
     ]
 
     if rows:
-        from codeintel.ingestion.common import run_batch  # noqa: PLC0415
+        from codeintel.ingestion.services.storage import IngestStorageService  # noqa: PLC0415
 
         # Get gateway via resource injection or fallback
         if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
@@ -272,8 +272,8 @@ def _compute_function_ext_metrics(ctx: GraphExecutionContext) -> ComputationResu
         else:
             gateway = ctx.gateway
 
-        run_batch(
-            gateway,
+        storage_service = IngestStorageService.from_gateway(gateway)
+        storage_service.run_batch(
             "analytics.graph_metrics_functions_ext",
             list(rows),
             delete_params=[ctx.repo, ctx.commit],
@@ -345,7 +345,7 @@ def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult
     ]
 
     if rows:
-        from codeintel.ingestion.common import run_batch  # noqa: PLC0415
+        from codeintel.ingestion.services.storage import IngestStorageService  # noqa: PLC0415
 
         # Get gateway via resource injection or fallback
         if ctx.resources is not None and ctx.has_resource(StorageResource.RESOURCE_NAME):
@@ -354,8 +354,8 @@ def _compute_module_ext_metrics(ctx: GraphExecutionContext) -> ComputationResult
         else:
             gateway = ctx.gateway
 
-        run_batch(
-            gateway,
+        storage_service = IngestStorageService.from_gateway(gateway)
+        storage_service.run_batch(
             "analytics.graph_metrics_modules_ext",
             list(rows),
             delete_params=[ctx.repo, ctx.commit],
