@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from mcp.server.fastmcp import FastMCP
 
+from codeintel.serving.auto_pipeline import ensure_prereqs_for_mcp, is_auto_pipeline_enabled
 from codeintel.serving.context import (
     RequestContext,
     reset_current_request_context,
@@ -22,6 +23,10 @@ from codeintel.serving.mcp.serialization import (
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
 from codeintel.serving.operations import Operation, iter_operations
 from codeintel.serving.services.errors import generate_correlation_id
+
+if TYPE_CHECKING:
+    from codeintel.config.serving_models import ServingConfig
+    from codeintel.serving.mcp.backend import QueryBackend
 
 FUNCTION_TOOL_CATEGORIES: set[str] = {"functions", "graph", "files", "function"}
 
@@ -50,6 +55,7 @@ def _serialize_payload(
 def _build_function_tool(
     spec: Operation,
     backend: QueryBackendOrService,
+    config: ServingConfig | None = None,
 ) -> Callable[..., dict[str, object] | dict[str, ProblemDetail]]:
     backend_attr = getattr(backend, spec.backend_method, None)
     if not callable(backend_attr):
@@ -63,6 +69,15 @@ def _build_function_tool(
 
     @_wrap
     def _tool(**kwargs: object) -> dict[str, object] | dict[str, ProblemDetail]:
+        # Check for auto-pipeline prerequisites
+        # We check gateway attribute presence as a proxy for QueryBackend
+        if is_auto_pipeline_enabled() and config is not None and hasattr(backend, "gateway"):
+            ensure_prereqs_for_mcp(
+                op_id=spec.id,
+                config=config,
+                backend=cast("QueryBackend", backend),
+            )
+
         correlation_id = generate_correlation_id()
         dataset = kwargs.get("dataset_name") or kwargs.get("dataset")
         ctx = RequestContext(
@@ -87,12 +102,26 @@ def _build_function_tool(
     return cast("Callable[..., dict[str, object] | dict[str, ProblemDetail]]", _tool)
 
 
-def register_function_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
-    """Register function- and graph-related MCP tools based on Operation."""
+def register_function_tools(
+    mcp: FastMCP,
+    backend: QueryBackendOrService,
+    config: ServingConfig | None = None,
+) -> None:
+    """Register function- and graph-related MCP tools based on Operation.
+
+    Parameters
+    ----------
+    mcp
+        FastMCP instance to register tools against.
+    backend
+        Concrete MCP backend or QueryService implementation.
+    config
+        Optional serving config for auto-pipeline support.
+    """
     for spec in iter_operations():
         if spec.category not in FUNCTION_TOOL_CATEGORIES or spec.tool_name is None:
             continue
-        tool = _build_function_tool(spec, backend)
+        tool = _build_function_tool(spec, backend, config)
         tool.__name__ = spec.tool_name
         tool.__doc__ = spec.description or spec.summary
         mcp.tool(

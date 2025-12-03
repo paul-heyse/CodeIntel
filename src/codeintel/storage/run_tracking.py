@@ -561,6 +561,74 @@ class PipelineRunTracking:
         """
         self.record_step(params.to_record())
 
+    def fetch_recent_runs(self, *, limit: int = 10) -> list[PipelineRunRecord]:
+        """Fetch the most recent pipeline runs.
+
+        Parameters
+        ----------
+        limit
+            Maximum number of runs to return.
+
+        Returns
+        -------
+        list[PipelineRunRecord]
+            List of run records ordered by started_at descending.
+        """
+        cur = self.con.execute(
+            """
+            SELECT
+                run_id,
+                repo,
+                commit,
+                kind,
+                trigger,
+                requested_operation,
+                requested_datasets,
+                started_at,
+                completed_at,
+                status,
+                error_summary,
+                pipeline_name
+            FROM metadata.pipeline_runs
+            ORDER BY started_at DESC
+            LIMIT ?
+            """,
+            [limit],
+        )
+        rows = cur.fetchall()
+        results: list[PipelineRunRecord] = []
+        for (
+            run_id_val,
+            repo,
+            commit,
+            kind,
+            trigger,
+            requested_operation,
+            requested_datasets_raw,
+            started_at,
+            completed_at,
+            status,
+            error_summary,
+            pipeline_name,
+        ) in rows:
+            results.append(
+                PipelineRunRecord(
+                    run_id=str(run_id_val),
+                    repo=str(repo),
+                    commit=str(commit),
+                    kind=str(kind),
+                    trigger=str(trigger),
+                    status=status,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    requested_operation=str(requested_operation) if requested_operation else None,
+                    requested_datasets=_deserialize_datasets(requested_datasets_raw),
+                    error_summary=str(error_summary) if error_summary else None,
+                    pipeline_name=str(pipeline_name) if pipeline_name else None,
+                )
+            )
+        return results
+
 
 __all__ = [
     "ModuleKind",

@@ -6,13 +6,14 @@ import hashlib
 import json
 import logging
 from dataclasses import asdict, is_dataclass
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from starlette.responses import Response
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.http.dependencies import ServiceDep
+from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http.routes.functions import RouterOptions
 from codeintel.serving.mcp.models import (
     DatasetDescriptor,
     DatasetRowsResponse,
@@ -64,14 +65,59 @@ def _require_spec(op_id: str) -> Operation:
     return spec
 
 
-def build_datasets_router() -> APIRouter:
-    """
-    Construct the router for dataset browsing endpoints.
+def _load_dataset_specs() -> tuple[dict[str, Operation], dict[str, str]]:
+    """Load dataset operation specifications.
+
+    Returns
+    -------
+    tuple[dict[str, Operation], dict[str, str]]
+        Tuple of (specs, paths) dicts keyed by operation ID.
 
     Raises
     ------
     ValueError
-        If Operation entries are missing or lack http_path values.
+        If required specs are missing or lack http_path.
+    """
+    ids = ["datasets.list", "datasets.specs", "datasets.rows", "datasets.schema"]
+    specs: dict[str, Operation] = {}
+    paths: dict[str, str] = {}
+    for op_id in ids:
+        spec = _require_spec(op_id)
+        if spec.http_path is None:
+            msg = f"Operation {op_id} is missing http_path"
+            raise ValueError(msg)
+        specs[op_id] = spec
+        paths[op_id] = spec.http_path
+    return specs, paths
+
+
+def _build_dataset_deps(options: RouterOptions | None) -> dict[str, list[Any]]:
+    """Build dependencies for each dataset operation.
+
+    Parameters
+    ----------
+    options
+        Router options with auto_pipeline flag.
+
+    Returns
+    -------
+    dict[str, list[Any]]
+        Mapping of operation ID to dependency list.
+    """
+    if options is None or not options.auto_pipeline:
+        return {}
+    ids = ["datasets.list", "datasets.specs", "datasets.rows", "datasets.schema"]
+    return {op_id: [Depends(make_op_prereq_dependency(op_id))] for op_id in ids}
+
+
+def build_datasets_router(options: RouterOptions | None = None) -> APIRouter:
+    """Construct the router for dataset browsing endpoints.
+
+    Parameters
+    ----------
+    options
+        Router configuration options. When auto_pipeline is enabled,
+        dependencies are attached that automatically run prerequisites.
 
     Returns
     -------
@@ -79,26 +125,20 @@ def build_datasets_router() -> APIRouter:
         Router exposing dataset discovery and access endpoints.
     """
     router = APIRouter()
-    spec_list = _require_spec("datasets.list")
-    spec_specs = _require_spec("datasets.specs")
-    spec_rows = _require_spec("datasets.rows")
-    spec_schema = _require_spec("datasets.schema")
-    if spec_list.http_path is None or spec_specs.http_path is None:
-        message = "Dataset Operation entries must define http_path"
-        raise ValueError(message)
-    if spec_rows.http_path is None or spec_schema.http_path is None:
-        message = "Dataset Operation entries must define http_path"
-        raise ValueError(message)
-    list_path = spec_list.http_path
-    specs_path = spec_specs.http_path
-    rows_path = spec_rows.http_path
-    schema_path = spec_schema.http_path
+    specs, paths = _load_dataset_specs()
+    deps = _build_dataset_deps(options)
+
+    spec_list = specs["datasets.list"]
+    spec_specs = specs["datasets.specs"]
+    spec_rows = specs["datasets.rows"]
+    spec_schema = specs["datasets.schema"]
 
     @router.get(
-        list_path,
+        paths["datasets.list"],
         response_model=list[DatasetDescriptor],
         summary=spec_list.summary,
         tags=[spec_list.category],
+        dependencies=list(deps.get("datasets.list", [])),
     )
     def list_datasets(
         *,
@@ -140,10 +180,11 @@ def build_datasets_router() -> APIRouter:
         return response_models
 
     @router.get(
-        specs_path,
+        paths["datasets.specs"],
         response_model=list[DatasetSpecDescriptor],
         summary=spec_specs.summary,
         tags=[spec_specs.category],
+        dependencies=list(deps.get("datasets.specs", [])),
     )
     def list_dataset_specs(
         *,
@@ -170,10 +211,11 @@ def build_datasets_router() -> APIRouter:
         return specs
 
     @router.get(
-        rows_path,
+        paths["datasets.rows"],
         response_model=DatasetRowsResponse,
         summary=spec_rows.summary,
         tags=[spec_rows.category],
+        dependencies=list(deps.get("datasets.rows", [])),
     )
     def read_dataset_rows(
         *,
@@ -204,10 +246,11 @@ def build_datasets_router() -> APIRouter:
         return resp
 
     @router.get(
-        schema_path,
+        paths["datasets.schema"],
         response_model=DatasetSchemaResponse,
         summary=spec_schema.summary,
         tags=[spec_schema.category],
+        dependencies=list(deps.get("datasets.schema", [])),
     )
     def dataset_schema(
         *,

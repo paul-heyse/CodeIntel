@@ -25,7 +25,7 @@ from codeintel.serving.context import (
 )
 from codeintel.serving.http.routes.architecture import build_architecture_router
 from codeintel.serving.http.routes.datasets import build_datasets_router
-from codeintel.serving.http.routes.functions import build_functions_router
+from codeintel.serving.http.routes.functions import RouterOptions, build_functions_router
 from codeintel.serving.http.routes.health import build_health_router
 from codeintel.serving.http.routes.ide import build_ide_router
 from codeintel.serving.http.routes.meta import build_meta_router
@@ -228,14 +228,23 @@ def install_logging_middleware(app: FastAPI) -> None:
         return response
 
 
-def register_routes(app: FastAPI) -> None:
-    """Wire all API routes onto the provided FastAPI application."""
-    app.include_router(build_functions_router())
-    app.include_router(build_profiles_router())
-    app.include_router(build_architecture_router())
-    app.include_router(build_subsystem_router())
-    app.include_router(build_ide_router())
-    app.include_router(build_datasets_router())
+def register_routes(app: FastAPI, options: RouterOptions | None = None) -> None:
+    """Wire all API routes onto the provided FastAPI application.
+
+    Parameters
+    ----------
+    app
+        FastAPI application instance.
+    options
+        Router configuration options. When auto_pipeline is enabled,
+        dependencies are attached that automatically run prerequisites.
+    """
+    app.include_router(build_functions_router(options))
+    app.include_router(build_profiles_router(options))
+    app.include_router(build_architecture_router(options))
+    app.include_router(build_subsystem_router(options))
+    app.include_router(build_ide_router(options))
+    app.include_router(build_datasets_router(options))
     app.include_router(build_meta_router())
     app.include_router(build_health_router())
 
@@ -245,9 +254,9 @@ def create_app(
     config_loader: Callable[[], ServingConfig] = load_api_config,
     backend_factory: Callable[..., BackendResource] = create_backend_resource,
     gateway: StorageGateway | None = None,
+    auto_pipeline: bool | None = None,
 ) -> FastAPI:
-    """
-    Build the FastAPI application with configured lifecycle and routes.
+    """Build the FastAPI application with configured lifecycle and routes.
 
     Parameters
     ----------
@@ -257,12 +266,16 @@ def create_app(
         Factory that yields a backend resource for the given configuration.
     gateway
         Optional StorageGateway to supply the connection/registry to the backend factory.
+    auto_pipeline
+        When True, attach auto-pipeline dependencies to routes so that
+        prerequisites are automatically run before operations execute.
 
     Returns
     -------
     FastAPI
         Configured FastAPI instance.
     """
+    options = RouterOptions(auto_pipeline=bool(auto_pipeline)) if auto_pipeline else None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -354,7 +367,7 @@ def create_app(
 
     install_exception_handlers(app)
     install_logging_middleware(app)
-    register_routes(app)
+    register_routes(app, options)
     return app
 
 

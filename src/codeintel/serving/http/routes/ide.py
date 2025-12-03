@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from codeintel.serving.http.dependencies import ServiceDep
+from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http.routes.functions import RouterOptions
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import FileHintsResponse
 from codeintel.serving.operations import Operation, get_operation
@@ -18,9 +19,14 @@ def _require_spec(op_id: str) -> Operation:
     return spec
 
 
-def build_ide_router() -> APIRouter:
-    """
-    Construct the router for IDE-facing hint endpoints.
+def build_ide_router(options: RouterOptions | None = None) -> APIRouter:
+    """Construct the router for IDE-facing hint endpoints.
+
+    Parameters
+    ----------
+    options
+        Router configuration options. When auto_pipeline is enabled,
+        dependencies are attached that automatically run prerequisites.
 
     Raises
     ------
@@ -39,11 +45,16 @@ def build_ide_router() -> APIRouter:
         raise ValueError(message)
     path = spec.http_path
 
+    # Build dependencies based on options
+    auto_pipeline = options is not None and options.auto_pipeline
+    ide_deps = [Depends(make_op_prereq_dependency("ide.hints"))] if auto_pipeline else []
+
     @router.get(
         path,
         response_model=FileHintsResponse,
         summary=spec.summary,
         tags=[spec.category],
+        dependencies=ide_deps,
     )
     def ide_hints(
         *,

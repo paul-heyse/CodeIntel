@@ -28,8 +28,6 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -227,15 +225,102 @@ def load_project_config(root: Path | None = None) -> ProjectConfig:
 # -----------------------------------------------------------------------------
 
 
+_GIT_SHA_LENGTH = 40
+"""Length of a full Git SHA-1 commit hash."""
+
+_GIT_PACKED_REF_PARTS = 2
+"""Minimum number of parts in a packed-refs line."""
+
+
+def _read_file_safe(path: Path) -> str | None:
+    """Read file content safely, returning None on error.
+
+    Parameters
+    ----------
+    path
+        Path to the file to read.
+
+    Returns
+    -------
+    str | None
+        File content stripped, or None if file doesn't exist or can't be read.
+    """
+    if not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def _resolve_packed_ref(git_dir: Path, ref_path: str) -> str | None:
+    """Resolve a reference from packed-refs file.
+
+    Parameters
+    ----------
+    git_dir
+        Path to the .git directory.
+    ref_path
+        The reference path to look up.
+
+    Returns
+    -------
+    str | None
+        Commit SHA if found, None otherwise.
+    """
+    packed_refs = _read_file_safe(git_dir / "packed-refs")
+    if packed_refs is None:
+        return None
+
+    for line in packed_refs.splitlines():
+        if line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) >= _GIT_PACKED_REF_PARTS and parts[1] == ref_path:
+            return parts[0]
+    return None
+
+
+def _read_git_head(git_dir: Path) -> str | None:
+    """Read the HEAD commit from a git directory.
+
+    Parameters
+    ----------
+    git_dir
+        Path to the .git directory.
+
+    Returns
+    -------
+    str | None
+        The commit SHA if found, None otherwise.
+    """
+    head_content = _read_file_safe(git_dir / "HEAD")
+    if head_content is None:
+        return None
+
+    # Direct commit reference (detached HEAD)
+    if not head_content.startswith("ref:"):
+        return head_content if len(head_content) == _GIT_SHA_LENGTH else None
+
+    # Symbolic reference (e.g., "ref: refs/heads/main")
+    ref_path = head_content[4:].strip()
+    ref_content = _read_file_safe(git_dir / ref_path)
+    if ref_content is not None:
+        return ref_content
+
+    # Fall back to packed-refs
+    return _resolve_packed_ref(git_dir, ref_path)
+
+
 def detect_commit(root: Path) -> str:
     """Detect current commit (best-effort).
 
-    Tries CODEINTEL_COMMIT env, then `git rev-parse HEAD`, then 'HEAD'.
+    Tries CODEINTEL_COMMIT env, then reads .git/HEAD, then 'HEAD'.
 
     Parameters
     ----------
     root
-        Repository root directory for git commands.
+        Repository root directory for git detection.
 
     Returns
     -------
@@ -247,21 +332,10 @@ def detect_commit(root: Path) -> str:
         return env_commit
 
     git_dir = root / ".git"
-    if git_dir.exists():
-        try:
-            git_bin = shutil.which("git")
-            if git_bin:
-                result = subprocess.run(
-                    [git_bin, "rev-parse", "HEAD"],
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    return result.stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            pass
+    if git_dir.is_dir():
+        commit = _read_git_head(git_dir)
+        if commit:
+            return commit
 
     return "HEAD"
 
@@ -324,12 +398,10 @@ def build_project_runtime(root: Path | None = None) -> ProjectRuntime:
     ProjectRuntime
         Complete runtime context for CLI operations.
 
-    Raises
-    ------
-    ProjectNotFoundError
-        If the project root cannot be found.
-    ProjectConfigError
-        If the project configuration is invalid.
+    Notes
+    -----
+    This function may propagate ProjectNotFoundError or ProjectConfigError
+    from the underlying find_project_root and load_project_config calls.
     """
     resolved_root = find_project_root(root)
     project = load_project_config(resolved_root)

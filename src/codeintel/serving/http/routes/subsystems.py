@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from collections.abc import Sequence
+from typing import Any
 
-from codeintel.serving.http.dependencies import ServiceDep
+from fastapi import APIRouter, Depends
+
+from codeintel.serving.http.dependencies import ServiceDep, make_op_prereq_dependency
+from codeintel.serving.http.routes.functions import RouterOptions
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     ModuleSubsystemResponse,
@@ -52,9 +56,40 @@ def _load_subsystem_specs() -> tuple[dict[str, Operation], dict[str, str]]:
     return specs, paths
 
 
-def build_subsystem_router() -> APIRouter:
+RouteDeps = Sequence[Any]  # FastAPI dependencies list
+
+
+def _build_prereq_deps(
+    specs: dict[str, Operation],
+    options: RouterOptions | None,
+) -> dict[str, RouteDeps]:
+    """Build auto-pipeline dependencies for each operation.
+
+    Parameters
+    ----------
+    specs
+        Operation specifications keyed by operation ID.
+    options
+        Router options with auto_pipeline flag.
+
+    Returns
+    -------
+    dict[str, RouteDeps]
+        Mapping of operation ID to dependency list.
     """
-    Construct the router for subsystem endpoints.
+    if options is None or not options.auto_pipeline:
+        return {}
+    return {op_id: [Depends(make_op_prereq_dependency(op_id))] for op_id in specs}
+
+
+def build_subsystem_router(options: RouterOptions | None = None) -> APIRouter:
+    """Construct the router for subsystem endpoints.
+
+    Parameters
+    ----------
+    options
+        Router configuration options. When auto_pipeline is enabled,
+        dependencies are attached that automatically run prerequisites.
 
     Raises
     ------
@@ -72,6 +107,8 @@ def build_subsystem_router() -> APIRouter:
     except ValueError as exc:
         message = "Failed to load subsystem Operation entries"
         raise ValueError(message) from exc
+
+    deps = _build_prereq_deps(specs, options)
     spec_list = specs["subsystems.list"]
     spec_profiles = specs["subsystems.profiles"]
     spec_coverage = specs["subsystems.coverage"]
@@ -88,6 +125,7 @@ def build_subsystem_router() -> APIRouter:
         response_model=SubsystemSummaryResponse,
         summary=spec_list.summary,
         tags=[spec_list.category],
+        dependencies=list(deps.get("subsystems.list", [])),
     )
     def list_subsystems(
         *,
@@ -112,6 +150,7 @@ def build_subsystem_router() -> APIRouter:
         response_model=SubsystemProfileResponse,
         summary=spec_profiles.summary,
         tags=[spec_profiles.category],
+        dependencies=list(deps.get("subsystems.profiles", [])),
     )
     def list_subsystem_profiles(
         *,
@@ -134,6 +173,7 @@ def build_subsystem_router() -> APIRouter:
         response_model=SubsystemCoverageResponse,
         summary=spec_coverage.summary,
         tags=[spec_coverage.category],
+        dependencies=list(deps.get("subsystems.coverage", [])),
     )
     def list_subsystem_coverage(
         *,
@@ -156,6 +196,7 @@ def build_subsystem_router() -> APIRouter:
         response_model=ModuleSubsystemResponse,
         summary=spec_memberships.summary,
         tags=[spec_memberships.category],
+        dependencies=list(deps.get("subsystems.module_memberships", [])),
     )
     def module_subsystems(
         *,
@@ -187,6 +228,7 @@ def build_subsystem_router() -> APIRouter:
         response_model=SubsystemModulesResponse,
         summary=spec_detail.summary,
         tags=[spec_detail.category],
+        dependencies=list(deps.get("subsystems.detail", [])),
     )
     def subsystem_modules(
         *,

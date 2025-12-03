@@ -125,77 +125,30 @@ def _make_realistic_import_graph() -> nx.DiGraph:
     return g
 
 
-class _MockGraphEngine:
-    """Minimal graph engine mock for testing metrics computation.
-
-    This provides the same interface as NxGraphEngine for the
-    methods needed by metrics plugins and GraphResource.
-    """
-
-    def __init__(
-        self,
-        call_graph: nx.DiGraph | None = None,
-        import_graph: nx.DiGraph | None = None,
-        repo: str = "test/metrics",
-        commit: str = "metrics123",
-    ) -> None:
-        """Initialize with graphs.
-
-        Parameters
-        ----------
-        call_graph
-            Call graph to return.
-        import_graph
-            Import graph to return.
-        repo
-            Repository identifier.
-        commit
-            Commit hash.
-        """
-        self._call_graph = call_graph or nx.DiGraph()
-        self._import_graph = import_graph or nx.DiGraph()
-        self._repo = repo
-        self._commit = commit
-
-    @property
-    def repo(self) -> str:
-        """Repository identifier."""
-        return self._repo
-
-    @property
-    def commit(self) -> str:
-        """Commit hash."""
-        return self._commit
-
-    def clear_cache(self) -> None:
-        """Clear cached graphs (no-op for mock)."""
-
-    def call_graph(self) -> nx.DiGraph:
-        """Return the call graph.
-
-        Returns
-        -------
-        nx.DiGraph
-            The call graph.
-        """
-        return self._call_graph
-
-    def import_graph(self) -> nx.DiGraph:
-        """Return the import graph.
-
-        Returns
-        -------
-        nx.DiGraph
-            The import graph.
-        """
-        return self._import_graph
+def _make_engine(
+    gateway: StorageGateway,
+    *,
+    call_graph: nx.DiGraph | None = None,
+    import_graph: nx.DiGraph | None = None,
+    repo: str = "test/metrics",
+    commit: str = "metrics123",
+    repo_root: Path | None = None,
+) -> NxGraphEngine:
+    """Create a seeded NxGraphEngine backed by the provided gateway."""
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
+    engine = NxGraphEngine(gateway=gateway, snapshot=snapshot)
+    if call_graph is not None:
+        engine.seed(GraphKind.CALL_GRAPH, call_graph)
+    if import_graph is not None:
+        engine.seed(GraphKind.IMPORT_GRAPH, import_graph)
+    return engine
 
 
 def _make_execution_context(
     gateway: StorageGateway,
     tmp_path: Path,
     *,
-    engine: _MockGraphEngine | NxGraphEngine | None = None,
+    engine: NxGraphEngine | None = None,
     use_resources: bool = True,
 ) -> GraphExecutionContext:
     """Create an execution context for metrics tests.
@@ -216,15 +169,18 @@ def _make_execution_context(
     GraphExecutionContext
         Configured execution context.
     """
-    snapshot = SnapshotRef(repo="test/metrics", commit="metrics123", repo_root=tmp_path)
+    snapshot = (
+        engine.snapshot
+        if engine is not None
+        else SnapshotRef(repo="test/metrics", commit="metrics123", repo_root=tmp_path)
+    )
     scratch = GraphRuntimeScratch()
     resources = ResourceContainer()
 
     # Always register storage; optionally graph resource
     resources.register(StorageResource(gateway, tmp_path))
     if use_resources and engine is not None:
-        # Accept any engine-like object (including _MockGraphEngine for tests)
-        resources.register(GraphResource(engine))  # type: ignore[arg-type]
+        resources.register(GraphResource(engine))
 
     return GraphExecutionContext(
         snapshot=snapshot,
@@ -242,7 +198,12 @@ def test_compute_core_graph_metrics_with_engine(tmp_path: Path) -> None:
     try:
         call_graph = _make_realistic_call_graph()
         import_graph = _make_realistic_import_graph()
-        engine = _MockGraphEngine(call_graph, import_graph)
+        engine = _make_engine(
+            gateway,
+            call_graph=call_graph,
+            import_graph=import_graph,
+            repo_root=tmp_path,
+        )
 
         ctx = _make_execution_context(gateway, tmp_path, engine=engine)
 
@@ -278,7 +239,12 @@ def test_compute_core_graph_metrics_empty_graphs(tmp_path: Path) -> None:
     try:
         empty_call = nx.DiGraph()
         empty_import = nx.DiGraph()
-        engine = _MockGraphEngine(empty_call, empty_import)
+        engine = _make_engine(
+            gateway,
+            call_graph=empty_call,
+            import_graph=empty_import,
+            repo_root=tmp_path,
+        )
 
         ctx = _make_execution_context(gateway, tmp_path, engine=engine)
 
@@ -297,7 +263,7 @@ def test_compute_function_ext_metrics_with_engine(tmp_path: Path) -> None:
     gateway = _make_gateway()
     try:
         call_graph = _make_realistic_call_graph()
-        engine = _MockGraphEngine(call_graph=call_graph)
+        engine = _make_engine(gateway, call_graph=call_graph, repo_root=tmp_path)
 
         ctx = _make_execution_context(gateway, tmp_path, engine=engine)
 
@@ -330,7 +296,7 @@ def test_compute_module_ext_metrics_with_engine(tmp_path: Path) -> None:
     gateway = _make_gateway()
     try:
         import_graph = _make_realistic_import_graph()
-        engine = _MockGraphEngine(import_graph=import_graph)
+        engine = _make_engine(gateway, import_graph=import_graph, repo_root=tmp_path)
 
         ctx = _make_execution_context(gateway, tmp_path, engine=engine)
 
