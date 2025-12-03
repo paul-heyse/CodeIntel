@@ -176,13 +176,13 @@ class GraphProvider(LazyResource[GraphResources]):
         runtime = self._get_or_build_runtime()
 
         # Load graphs with type narrowing for DiGraph fields
-        call_graph = self._ensure_graph(runtime, "call_graph")
-        import_graph = self._ensure_graph(runtime, "import_graph")
-        symbol_module_graph = self._ensure_graph(runtime, "symbol_module_graph")
-        symbol_function_graph = self._ensure_graph(runtime, "symbol_function_graph")
-        config_module_bipartite = self._ensure_graph(runtime, "config_module_bipartite")
-        test_function_bipartite = self._ensure_graph(runtime, "test_function_bipartite")
-        cfg_graph = self._ensure_graph(runtime, "cfg_graph")
+        call_graph = _ensure_graph(runtime, "call_graph")
+        import_graph = _ensure_graph(runtime, "import_graph")
+        symbol_module_graph = _ensure_graph(runtime, "symbol_module_graph")
+        symbol_function_graph = _ensure_graph(runtime, "symbol_function_graph")
+        config_module_bipartite = _ensure_graph(runtime, "config_module_bipartite")
+        test_function_bipartite = _ensure_graph(runtime, "test_function_bipartite")
+        cfg_graph = _ensure_graph(runtime, "cfg_graph")
 
         # Type narrow: directed graphs must be DiGraph or None
         if call_graph is not None and not isinstance(call_graph, nx.DiGraph):
@@ -229,34 +229,6 @@ class GraphProvider(LazyResource[GraphResources]):
         self._runtime = build_graph_runtime(self._gateway, options)
         return self._runtime
 
-    def _ensure_graph(  # noqa: PLR6301
-        self,
-        runtime: GraphRuntime,
-        graph_attr: str,
-    ) -> nx.DiGraph | nx.Graph | None:
-        """Ensure a specific graph is loaded.
-
-        Parameters
-        ----------
-        runtime
-            The graph runtime.
-        graph_attr
-            Attribute name of the graph to load.
-
-        Returns
-        -------
-        nx.DiGraph | nx.Graph | None
-            The loaded graph, or None if not available.
-        """
-        ensure_method = f"ensure_{graph_attr}"
-        if hasattr(runtime, ensure_method):
-            try:
-                return getattr(runtime, ensure_method)()
-            except (AttributeError, RuntimeError, ValueError, TypeError) as e:
-                log.warning("Failed to load %s: %s", graph_attr, e, exc_info=True)
-                return None
-        return getattr(runtime, graph_attr, None)
-
     @property
     def runtime(self) -> GraphRuntime | None:
         """Return the underlying runtime if available.
@@ -266,6 +238,11 @@ class GraphProvider(LazyResource[GraphResources]):
         GraphRuntime | None
             The runtime, or None if not yet built.
         """
+        return self._runtime
+
+    @property
+    def graph_runtime(self) -> GraphRuntime | None:
+        """Alias for runtime for compatibility with existing callers."""
         return self._runtime
 
     @property
@@ -384,6 +361,27 @@ class GraphProvider(LazyResource[GraphResources]):
         if self._runtime is not None:
             return self._runtime.use_gpu
         return False
+
+
+def _ensure_graph(
+    runtime: GraphRuntime,
+    graph_attr: str,
+) -> nx.DiGraph | nx.Graph | None:
+    """Ensure a specific graph is loaded.
+
+    Returns
+    -------
+    nx.DiGraph | nx.Graph | None
+        The loaded graph instance or None if unavailable.
+    """
+    ensure_method = f"ensure_{graph_attr}"
+    if hasattr(runtime, ensure_method):
+        try:
+            return getattr(runtime, ensure_method)()
+        except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+            log.warning("Failed to load %s: %s", graph_attr, e, exc_info=True)
+            return None
+    return getattr(runtime, graph_attr, None)
 
 
 @dataclass

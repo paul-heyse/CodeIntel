@@ -201,6 +201,140 @@ class GraphPluginProtocol(Protocol):
 
 
 @dataclass(frozen=True)
+class GraphPluginMetaOptions:
+    """Options container for graph plugin metadata."""
+
+    name: str | None = None
+    description: str | None = None
+    kind: GraphPluginKind | None = None
+    stage: GraphPluginStage | None = None
+    severity: GraphPluginSeverity = "fatal"
+    enabled_by_default: bool = True
+    depends_on: tuple[str, ...] = ()
+    provides: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ()
+    produces_tables: tuple[str, ...] = ()
+    produces_graphs: tuple[GraphKind, ...] = ()
+    requires_graphs: tuple[GraphKind, ...] = ()
+    resource_hints: GraphPluginResourceHints | None = None
+    supports_incremental: bool = False
+    isolation_kind: GraphPluginIsolation = "none"
+    options_model: type[BaseModel] | None = None
+    options_default: object | None = None
+    version_hash: str | None = None
+    config_schema_ref: str | None = None
+    row_count_tables: tuple[str, ...] = ()
+    cache_populates: tuple[str, ...] = ()
+    cache_consumes: tuple[str, ...] = ()
+    requires_isolation: bool = False
+    scope_aware: bool = False
+    supported_scopes: tuple[str, ...] = ()
+    contract_checkers: tuple[str, ...] = ()
+
+    @staticmethod
+    def from_kwargs(**kwargs: object) -> GraphPluginMetaOptions:
+        """Build options from legacy kwargs.
+
+        Returns
+        -------
+        GraphPluginMetaOptions
+            Options instance built from provided kwargs.
+
+        Raises
+        ------
+        ValueError
+            If unsupported option keys are provided.
+        """
+        allowed_keys = {
+            "name",
+            "description",
+            "kind",
+            "stage",
+            "severity",
+            "enabled_by_default",
+            "depends_on",
+            "provides",
+            "requires",
+            "produces_tables",
+            "produces_graphs",
+            "requires_graphs",
+            "resource_hints",
+            "supports_incremental",
+            "isolation_kind",
+            "options_model",
+            "options_default",
+            "version_hash",
+            "config_schema_ref",
+            "row_count_tables",
+            "cache_populates",
+            "cache_consumes",
+            "requires_isolation",
+            "scope_aware",
+            "supported_scopes",
+            "contract_checkers",
+        }
+        unknown = set(kwargs) - allowed_keys
+        if unknown:
+            message = f"Unsupported graph plugin option keys: {', '.join(sorted(unknown))}"
+            raise ValueError(message)
+        return GraphPluginMetaOptions(**kwargs)  # type: ignore[arg-type]
+
+    def to_metadata(
+        self,
+        fn: Callable[[GraphExecutionContext], GraphPluginResult],
+    ) -> GraphPluginMetadata:
+        """Convert options to GraphPluginMetadata using function defaults.
+
+        Parameters
+        ----------
+        fn
+            Plugin callable used for deriving defaults (name/docstring).
+
+        Returns
+        -------
+        GraphPluginMetadata
+            Populated metadata instance.
+
+        Raises
+        ------
+        ValueError
+            If required fields (kind/stage) are missing.
+        """
+        resolved_name = self.name or fn.__name__
+        if self.kind is None or self.stage is None:
+            message = "Graph plugin kind and stage must be specified."
+            raise ValueError(message)
+        return GraphPluginMetadata(
+            name=resolved_name,
+            description=(self.description or fn.__doc__ or "").strip(),
+            kind=self.kind,
+            stage=self.stage,
+            severity=self.severity,
+            enabled_by_default=self.enabled_by_default,
+            depends_on=self.depends_on,
+            provides=self.provides,
+            requires=self.requires,
+            produces_tables=self.produces_tables,
+            produces_graphs=self.produces_graphs,
+            requires_graphs=self.requires_graphs,
+            resource_hints=self.resource_hints,
+            supports_incremental=self.supports_incremental,
+            isolation_kind=self.isolation_kind,
+            options_model=self.options_model,
+            options_default=self.options_default,
+            version_hash=self.version_hash,
+            config_schema_ref=self.config_schema_ref,
+            row_count_tables=self.row_count_tables,
+            cache_populates=self.cache_populates,
+            cache_consumes=self.cache_consumes,
+            requires_isolation=self.requires_isolation,
+            scope_aware=self.scope_aware,
+            supported_scopes=self.supported_scopes,
+            contract_checkers=self.contract_checkers,
+        )
+
+
+@dataclass(frozen=True)
 class GraphPluginSkip:
     """Skip metadata for planned plugins that will not execute.
 
@@ -293,94 +427,22 @@ class FunctionalGraphPlugin:
         return self._execute_fn(ctx)
 
 
-def graph_plugin(  # noqa: PLR0913
+def graph_plugin(
     *,
-    name: str,
-    description: str,
-    kind: GraphPluginKind,
-    stage: GraphPluginStage,
-    enabled_by_default: bool = True,
-    severity: GraphPluginSeverity = "fatal",
-    depends_on: tuple[str, ...] = (),
-    provides: tuple[str, ...] = (),
-    requires: tuple[str, ...] = (),
-    produces_tables: tuple[str, ...] = (),
-    produces_graphs: tuple[GraphKind, ...] = (),
-    requires_graphs: tuple[GraphKind, ...] = (),
-    resource_hints: GraphPluginResourceHints | None = None,
-    supports_incremental: bool = False,
-    isolation_kind: GraphPluginIsolation = "none",
-    options_model: type[BaseModel] | None = None,
-    options_default: object | None = None,
-    version_hash: str | None = None,
-    config_schema_ref: str | None = None,
-    row_count_tables: tuple[str, ...] = (),
-    cache_populates: tuple[str, ...] = (),
-    cache_consumes: tuple[str, ...] = (),
-    requires_isolation: bool = False,
-    scope_aware: bool = False,
-    supported_scopes: tuple[str, ...] = (),
-    contract_checkers: tuple[str, ...] = (),
+    meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
+    **kwargs: object,
 ) -> Callable[[Callable[[GraphExecutionContext], GraphPluginResult]], FunctionalGraphPlugin]:
     """Decorate a function as a graph plugin.
 
     Parameters
     ----------
-    name
-        Plugin name.
-    description
-        Human-readable description.
-    kind
-        Plugin kind: builder, metric, or validation.
-    stage
-        Processing stage.
-    enabled_by_default
-        Whether enabled when no explicit list is provided.
-    severity
-        How failures should be handled.
-    depends_on
-        Explicit plugin dependencies.
-    provides
-        Capabilities provided.
-    requires
-        Capabilities required.
-    produces_tables
-        Tables this plugin writes to.
-    produces_graphs
-        GraphKind values this plugin builds.
-    requires_graphs
-        GraphKind values this plugin needs.
-    resource_hints
-        Runtime hints.
-    supports_incremental
-        Whether incremental execution is supported.
-    isolation_kind
-        Type of isolation needed.
-    options_model
-        Pydantic model for options validation.
-    options_default
-        Default options value.
-    version_hash
-        Version hash for caching.
-    config_schema_ref
-        Reference to config schema.
-    row_count_tables
-        Tables to report row counts from.
-    cache_populates
-        Cache keys this plugin populates.
-    cache_consumes
-        Cache keys this plugin consumes.
-    requires_isolation
-        Whether the plugin needs process/thread isolation.
-    scope_aware
-        Whether the plugin is scope-aware.
-    supported_scopes
-        Scopes supported when scope-aware.
-    contract_checkers
-        Contract checker identifiers used by the plugin.
+    meta
+        Graph plugin metadata/options container.
     register
         Whether to auto-register with global registry.
+    **kwargs
+        Legacy metadata fields (name, kind, stage, etc.); prefer `meta`.
 
     Returns
     -------
@@ -391,37 +453,15 @@ def graph_plugin(  # noqa: PLR0913
     def decorator(
         fn: Callable[[GraphExecutionContext], GraphPluginResult],
     ) -> FunctionalGraphPlugin:
-        meta = GraphPluginMetadata(
-            name=name,
-            description=description,
-            kind=kind,
-            stage=stage,
-            severity=severity,
-            enabled_by_default=enabled_by_default,
-            depends_on=depends_on,
-            provides=provides,
-            requires=requires,
-            produces_tables=produces_tables,
-            produces_graphs=produces_graphs,
-            requires_graphs=requires_graphs,
-            resource_hints=resource_hints,
-            supports_incremental=supports_incremental,
-            isolation_kind=isolation_kind,
-            options_model=options_model,
-            options_default=options_default,
-            version_hash=version_hash,
-            config_schema_ref=config_schema_ref,
-            row_count_tables=row_count_tables,
-            cache_populates=cache_populates,
-            cache_consumes=cache_consumes,
-            requires_isolation=requires_isolation,
-            scope_aware=scope_aware,
-            supported_scopes=supported_scopes,
-            contract_checkers=contract_checkers,
-        )
+        if meta is not None and kwargs:
+            message = "Provide either meta or keyword metadata, not both."
+            raise ValueError(message)
+
+        options = meta or GraphPluginMetaOptions.from_kwargs(**kwargs)
+        metadata = options.to_metadata(fn)
 
         plugin_instance = FunctionalGraphPlugin(
-            _metadata=meta,
+            _metadata=metadata,
             _execute_fn=fn,
         )
 
@@ -478,6 +518,7 @@ __all__ = [
     "FunctionalGraphPlugin",
     "GraphPluginIsolation",
     "GraphPluginKind",
+    "GraphPluginMetaOptions",
     "GraphPluginMetadata",
     "GraphPluginPlan",
     "GraphPluginProtocol",

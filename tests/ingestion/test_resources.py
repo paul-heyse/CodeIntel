@@ -8,14 +8,19 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
+from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.resources.protocol import ResourceError, ResourceProvider
 from codeintel.ingestion.resources.registry import (
     ResourceNotFoundError,
     ResourceRegistry,
 )
+from codeintel.ingestion.resources.tools import ToolsProvider
+from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.storage.gateway import StorageGateway
 
 # Test constants
 TEST_COUNT_42 = 42
@@ -62,7 +67,13 @@ class TestProvider(ResourceProvider[TestResource]):
         return self._loaded
 
     def get_or_none(self) -> TestResource | None:
-        """Return the resource without marking it loaded."""
+        """Return the resource without marking it loaded.
+
+        Returns
+        -------
+        TestResource | None
+            The test resource or None.
+        """
         return TestResource(value=self._value, count=self._count)
 
     @property
@@ -72,7 +83,7 @@ class TestProvider(ResourceProvider[TestResource]):
 
     def invalidate(self) -> None:
         """Reset the loaded flag."""
-        self._loaded = False
+        self._loaded = False  # Modifies instance state
 
 
 class ListProvider(ResourceProvider[Sequence[str]]):
@@ -100,7 +111,13 @@ class ListProvider(ResourceProvider[Sequence[str]]):
         return self._loaded
 
     def get_or_none(self) -> Sequence[str] | None:
-        """Return items without forcing load semantics."""
+        """Return items without forcing load semantics.
+
+        Returns
+        -------
+        Sequence[str] | None
+            The items or None.
+        """
         return self._items
 
     @property
@@ -110,7 +127,7 @@ class ListProvider(ResourceProvider[Sequence[str]]):
 
     def invalidate(self) -> None:
         """Reset the loaded flag."""
-        self._loaded = False
+        self._loaded = False  # Modifies instance state
 
 
 class FailingProvider(ResourceProvider[str]):
@@ -134,7 +151,14 @@ class FailingProvider(ResourceProvider[str]):
         return False
 
     def get_or_none(self) -> str | None:
-        """Return None because the resource always fails."""
+        """Return None because the resource always fails.
+
+        Returns
+        -------
+        str | None
+            Always returns None.
+        """
+        _ = self  # Use self for PLR6301
         return None
 
     @property
@@ -144,7 +168,7 @@ class FailingProvider(ResourceProvider[str]):
 
     def invalidate(self) -> None:
         """Failing provider has no cache to clear."""
-        return
+        _ = self  # Use self for PLR6301
 
 
 # =============================================================================
@@ -473,3 +497,412 @@ def test_registry_registered_types() -> None:
 
     assert TestProvider in types
     assert ListProvider in types
+
+
+# =============================================================================
+# ToolsProvider Tests
+# =============================================================================
+
+
+def test_tools_provider_with_pre_configured_service(tmp_path: Path) -> None:
+    """ToolsProvider should use pre-configured service if provided."""
+    # Imports inside function to avoid circular import
+    from codeintel.ingestion.infrastructure_utilities.tool_runner import (  # noqa: PLC0415
+        ToolRunner,
+    )
+    from codeintel.ingestion.tool_service import ToolService  # noqa: PLC0415
+
+    tools_cfg = ToolsConfig.default()
+    runner = ToolRunner(cache_dir=tmp_path, tools_config=tools_cfg)
+    service = ToolService(runner, tools_cfg)
+
+    provider = ToolsProvider(
+        tools_config=tools_cfg,
+        cache_dir=tmp_path,
+        service=service,
+    )
+
+    result = provider.get()
+    assert result is service
+
+
+def test_tools_provider_creates_service_lazily(tmp_path: Path) -> None:
+    """ToolsProvider should create service on first access."""
+    tools_cfg = ToolsConfig.default()
+    provider = ToolsProvider(tools_config=tools_cfg, cache_dir=tmp_path)
+
+    assert provider.is_loaded is False
+    service = provider.get()
+    assert service is not None
+    assert provider.is_loaded is True
+
+
+def test_tools_provider_runner_property_before_load(tmp_path: Path) -> None:
+    """ToolsProvider.runner should return None before loading."""
+    tools_cfg = ToolsConfig.default()
+    provider = ToolsProvider(tools_config=tools_cfg, cache_dir=tmp_path)
+
+    # No runner configured, not loaded yet
+    assert provider.runner is None
+
+
+def test_tools_provider_runner_property_with_preconfigured(tmp_path: Path) -> None:
+    """ToolsProvider.runner should return pre-configured runner."""
+    # Import inside function to avoid circular import
+    from codeintel.ingestion.infrastructure_utilities.tool_runner import (  # noqa: PLC0415
+        ToolRunner,
+    )
+
+    tools_cfg = ToolsConfig.default()
+    runner = ToolRunner(cache_dir=tmp_path, tools_config=tools_cfg)
+
+    provider = ToolsProvider(
+        tools_config=tools_cfg,
+        cache_dir=tmp_path,
+        runner=runner,
+    )
+
+    assert provider.runner is runner
+
+
+def test_tools_provider_runner_property_after_load(tmp_path: Path) -> None:
+    """ToolsProvider.runner should return runner after loading."""
+    tools_cfg = ToolsConfig.default()
+    provider = ToolsProvider(tools_config=tools_cfg, cache_dir=tmp_path)
+
+    # Load the service
+    _ = provider.get()
+
+    # Now runner should be available from the service
+    assert provider.runner is not None
+
+
+# =============================================================================
+# IngestStorageService Tests
+# =============================================================================
+
+
+def test_ingest_storage_service_from_gateway(fresh_gateway: StorageGateway) -> None:
+    """IngestStorageService.from_gateway should create service."""
+    service = IngestStorageService.from_gateway(fresh_gateway)
+    assert service.storage is not None
+
+
+def test_ingest_storage_service_run_batch(fresh_gateway: StorageGateway) -> None:
+    """IngestStorageService.run_batch should write rows."""
+    service = IngestStorageService.from_gateway(fresh_gateway)
+
+    rows = [
+        ("mod1", "path1.py", "test/repo", "abc123", "python", "[]", "[]"),
+    ]
+    result = service.run_batch("core.modules", rows, scope="test/repo@abc123")
+
+    assert result.rows_written == 1
+
+
+def test_ingest_storage_service_run_batch_with_delete(fresh_gateway: StorageGateway) -> None:
+    """IngestStorageService.run_batch should delete before write if params given."""
+    service = IngestStorageService.from_gateway(fresh_gateway)
+
+    # First insert some data
+    rows1 = [
+        ("mod1", "path1.py", "test/repo", "abc123", "python", "[]", "[]"),
+    ]
+    service.run_batch("core.modules", rows1)
+
+    # Now do a batch with delete_params
+    rows2 = [
+        ("mod2", "path2.py", "test/repo", "abc123", "python", "[]", "[]"),
+    ]
+    result = service.run_batch(
+        "core.modules",
+        rows2,
+        delete_params=["test/repo", "abc123"],
+    )
+
+    assert result.rows_written == 1
+
+
+# =============================================================================
+# TrackerConfig Tests
+# =============================================================================
+
+
+def test_tracker_config_defaults() -> None:
+    """TrackerConfig should have sensible defaults."""
+    from codeintel.ingestion.resources.tracker import TrackerConfig  # noqa: PLC0415
+
+    config = TrackerConfig()
+
+    assert config.scratch is None
+    assert config.profile is None
+    assert config.policy is None
+    assert config.full_rebuild is False
+
+
+def test_tracker_config_with_full_rebuild() -> None:
+    """TrackerConfig should accept full_rebuild flag."""
+    from codeintel.ingestion.resources.tracker import TrackerConfig  # noqa: PLC0415
+
+    config = TrackerConfig(full_rebuild=True)
+
+    assert config.full_rebuild is True
+
+
+def test_tracker_config_with_profile(tmp_path: Path) -> None:
+    """TrackerConfig should accept scan profile."""
+    from codeintel.ingestion.infrastructure_utilities.source_scanner import (  # noqa: PLC0415
+        ScanProfile,
+    )
+    from codeintel.ingestion.resources.tracker import TrackerConfig  # noqa: PLC0415
+
+    profile = ScanProfile(
+        repo_root=tmp_path,
+        source_roots=(tmp_path,),
+        include_globs=("**/*.py",),
+    )
+    config = TrackerConfig(profile=profile)
+
+    assert config.profile is profile
+
+
+# =============================================================================
+# TrackerProvider Tests
+# =============================================================================
+
+
+def test_tracker_provider_initialization(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
+    """TrackerProvider should initialize with gateway and snapshot."""
+    from codeintel.config import SnapshotRef  # noqa: PLC0415
+    from codeintel.ingestion.resources.tracker import (  # noqa: PLC0415
+        TrackerProvider,
+    )
+
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    provider = TrackerProvider(fresh_gateway, snapshot)
+
+    assert provider.resource_name == "TrackerProvider"
+    assert provider.is_loaded is False
+
+
+def test_tracker_provider_with_config(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
+    """TrackerProvider should accept TrackerConfig."""
+    from codeintel.config import SnapshotRef  # noqa: PLC0415
+    from codeintel.ingestion.resources.tracker import (  # noqa: PLC0415
+        TrackerConfig,
+        TrackerProvider,
+    )
+
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    config = TrackerConfig(full_rebuild=True)
+    provider = TrackerProvider(fresh_gateway, snapshot, config)
+
+    assert provider._config.full_rebuild is True
+
+
+def test_tracker_provider_get_or_create_alias(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
+    """TrackerProvider.get_or_create should be alias for get."""
+    from codeintel.config import SnapshotRef  # noqa: PLC0415
+    from codeintel.ingestion.resources.tracker import (  # noqa: PLC0415
+        TrackerProvider,
+    )
+
+    # Create a simple repo structure
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "main.py").write_text("# main module\n", encoding="utf-8")
+
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    provider = TrackerProvider(fresh_gateway, snapshot)
+
+    # get_or_create should work same as get
+    tracker = provider.get_or_create()
+    assert tracker is not None
+    assert provider.is_loaded is True
+
+
+def test_tracker_provider_load_creates_tracker(
+    fresh_gateway: StorageGateway, tmp_path: Path
+) -> None:
+    """TrackerProvider._load should create a fresh tracker."""
+    from codeintel.config import SnapshotRef  # noqa: PLC0415
+    from codeintel.ingestion.resources.tracker import TrackerProvider  # noqa: PLC0415
+
+    # Create a simple repo structure
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "main.py").write_text("# main module\n", encoding="utf-8")
+
+    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
+    provider = TrackerProvider(fresh_gateway, snapshot)
+
+    tracker = provider.get()
+    assert tracker is not None
+    assert provider.is_loaded is True
+
+
+# =============================================================================
+# LazyResource Lifecycle Tests
+# =============================================================================
+
+# Import LazyResource before the mock class definition
+from codeintel.ingestion.resources.protocol import (
+    LazyResource as LazyResourceBase,
+)
+
+
+class MockLazyResource(LazyResourceBase[str]):
+    """Mock lazy resource for testing lifecycle."""
+
+    def __init__(self, value: str, should_fail: bool = False) -> None:
+        """Initialize the mock resource."""
+        super().__init__("MockResource")
+        self._value = value
+        self._should_fail = should_fail
+
+    def _load(self) -> str:
+        """Load the mock resource."""
+        if self._should_fail:
+            msg = "Mock load failure"
+            raise ValueError(msg)
+        return self._value
+
+
+def test_lazy_resource_initial_state() -> None:
+    """LazyResource should start unloaded."""
+    resource = MockLazyResource("test")
+
+    assert resource.is_loaded is False
+    assert resource.resource_name == "MockResource"
+
+
+def test_lazy_resource_get_loads_value() -> None:
+    """LazyResource.get should load and return value."""
+    resource = MockLazyResource("hello")
+
+    result = resource.get()
+
+    assert result == "hello"
+    assert resource.is_loaded is True
+
+
+def test_lazy_resource_get_caches_value() -> None:
+    """LazyResource.get should cache the loaded value."""
+    resource = MockLazyResource("cached")
+
+    # First call loads
+    result1 = resource.get()
+    # Second call returns cached
+    result2 = resource.get()
+
+    assert result1 == result2
+    assert result1 == "cached"
+
+
+def test_lazy_resource_get_or_none_success() -> None:
+    """LazyResource.get_or_none should return value on success."""
+    resource = MockLazyResource("value")
+
+    result = resource.get_or_none()
+
+    assert result == "value"
+
+
+def test_lazy_resource_get_or_none_failure() -> None:
+    """LazyResource.get_or_none should return None on failure."""
+    resource = MockLazyResource("value", should_fail=True)
+
+    result = resource.get_or_none()
+
+    assert result is None
+
+
+def test_lazy_resource_invalidate() -> None:
+    """LazyResource.invalidate should reset state."""
+    resource = MockLazyResource("test")
+
+    # Load the resource
+    resource.get()
+    assert resource.is_loaded is True
+
+    # Invalidate
+    resource.invalidate()
+    assert resource.is_loaded is False
+
+
+def test_lazy_resource_set_preloaded() -> None:
+    """LazyResource.set_preloaded should set value without loading."""
+    resource = MockLazyResource("will_not_load")
+
+    resource.set_preloaded("preloaded_value")
+
+    assert resource.is_loaded is True
+    assert resource.get() == "preloaded_value"
+
+
+def test_lazy_resource_error_handling() -> None:
+    """LazyResource should handle load errors."""
+    from codeintel.ingestion.resources.protocol import (  # noqa: PLC0415
+        ResourceNotLoadedError,
+    )
+
+    resource = MockLazyResource("value", should_fail=True)
+
+    with pytest.raises(ResourceNotLoadedError) as exc_info:
+        resource.get()
+
+    assert "MockResource" in str(exc_info.value)
+
+
+def test_lazy_resource_error_cached() -> None:
+    """LazyResource should cache load errors."""
+    from codeintel.ingestion.resources.protocol import (  # noqa: PLC0415
+        ResourceNotLoadedError,
+    )
+
+    resource = MockLazyResource("value", should_fail=True)
+
+    # First call fails
+    with pytest.raises(ResourceNotLoadedError):
+        resource.get()
+
+    # Second call should also fail with cached error
+    with pytest.raises(ResourceNotLoadedError):
+        resource.get()
+
+
+# =============================================================================
+# ResourceNotLoadedError Tests
+# =============================================================================
+
+
+def test_resource_not_loaded_error_basic() -> None:
+    """ResourceNotLoadedError should format message correctly."""
+    from codeintel.ingestion.resources.protocol import (  # noqa: PLC0415
+        ResourceNotLoadedError,
+    )
+
+    error = ResourceNotLoadedError("TestResource")
+
+    assert "TestResource" in str(error)
+    assert error.resource_type == "TestResource"
+    assert error.reason is None
+
+
+def test_resource_not_loaded_error_with_reason() -> None:
+    """ResourceNotLoadedError should include reason in message."""
+    from codeintel.ingestion.resources.protocol import (  # noqa: PLC0415
+        ResourceNotLoadedError,
+    )
+
+    error = ResourceNotLoadedError("TestResource", "file not found")
+
+    assert "TestResource" in str(error)
+    assert "file not found" in str(error)
+    assert error.reason == "file not found"

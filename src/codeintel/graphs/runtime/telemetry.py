@@ -165,8 +165,8 @@ class GraphRuntimeTelemetry:
 
         return span
 
-    def finish_plugin(  # noqa: PLR6301
-        self,
+    @staticmethod
+    def finish_plugin(
         span: GraphPluginSpan,
         record: GraphPluginRunRecord,
     ) -> None:
@@ -286,8 +286,8 @@ class GraphRuntimeTelemetry:
 
         return span
 
-    def finish_run(  # noqa: PLR6301
-        self,
+    @staticmethod
+    def finish_run(
         span: GraphPluginSpan,
         success_count: int,
         failure_count: int,

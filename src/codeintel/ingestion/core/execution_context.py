@@ -7,6 +7,7 @@ shared scratch space.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -108,6 +109,8 @@ class IngestExecutionContext:
     plugin_name: str | None = None
     run_id: str | None = None
     run_context: RunContext | None = None
+    _plugin_start_times: dict[str, float] = field(default_factory=dict, init=False, repr=False)
+    _plugin_durations: dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
     @property
     def repo_root(self) -> Path:
@@ -313,6 +316,26 @@ class IngestExecutionContext:
             count = safe_count(self.gateway, table)
             counts[table] = count if count is not None else 0
         return counts
+
+    def start_plugin_timer(self, plugin_name: str) -> None:
+        """Record the start time for a plugin execution."""
+        if plugin_name not in self._plugin_start_times:
+            self._plugin_start_times[plugin_name] = time.perf_counter()
+            self._plugin_durations.pop(plugin_name, None)
+
+    def finish_plugin_timer(self, plugin_name: str) -> float:
+        """Return elapsed time for a plugin execution."""
+        if plugin_name in self._plugin_durations:
+            return self._plugin_durations[plugin_name]
+
+        start_time = self._plugin_start_times.get(plugin_name)
+        if start_time is None:
+            return 0.0
+
+        duration = time.perf_counter() - start_time
+        self._plugin_durations[plugin_name] = duration
+        self._plugin_start_times.pop(plugin_name, None)
+        return duration
 
 
 __all__ = [

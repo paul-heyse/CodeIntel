@@ -9,6 +9,7 @@ import pytest
 from codeintel.analytics.profiles.writer_guard import WriterContext, write_rows_with_registry_guard
 from codeintel.config.datasets import TABLE_SCHEMAS
 from codeintel.storage.gateway import DuckDBConnection
+from codeintel.storage.sql_builder import QueryBuilder, SafeColumn, SafeTable
 from codeintel.storage.sql_helpers import PreparedStatements
 
 
@@ -37,14 +38,8 @@ def _ctx(table: str = _TEST_TABLE, *, repo: str = "r", commit: str = "c") -> Wri
         msg = f"Table {table} not found in TABLE_SCHEMAS."
         raise ValueError(msg)
     columns = tuple(col.name for col in schema.columns)
-    delete_sql = f"DELETE FROM {table} WHERE repo = ? AND commit = ?"  # noqa: S608
-    insert_sql = (
-        f"INSERT INTO {table} ("  # noqa: S608
-        + ", ".join(f'"{c}"' for c in columns)
-        + ") VALUES ("
-        + ", ".join("?" for _ in columns)
-        + ")"
-    )
+    delete_sql = QueryBuilder.delete_repo_commit(SafeTable(table))
+    insert_sql = QueryBuilder.insert(SafeTable(table), [SafeColumn(c) for c in columns])
     return WriterContext(
         table_key=table,
         columns=columns,

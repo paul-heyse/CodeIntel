@@ -1191,3 +1191,278 @@ def test_scip_index_result_empty() -> None:
     result = ScipIndexResult.empty()
     assert result.documents == ()
     assert result.definition_count == 0
+
+
+# =============================================================================
+# SCIP Tool Plugin Tests
+# =============================================================================
+
+
+def test_scip_plugin_not_found_during_scip_python() -> None:
+    """ScipPlugin should return NOT_FOUND when scip-python is missing."""
+    from codeintel.ingestion.tools.scip import ScipPlugin
+
+    tools_cfg = ToolsConfig.default()
+    exc = ToolNotFoundError(ToolName.SCIP_PYTHON, tools_cfg.scip_python_bin)
+    runner = PresetRunner(exc)
+    plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
+
+    result = asyncio.run(
+        plugin.run(
+            repo_root=Path(),
+            output_scip=Path("index.scip"),
+            output_json=Path("index.json"),
+        )
+    )
+
+    assert result.status == PluginToolStatus.NOT_FOUND
+    assert result.run is None
+    assert isinstance(result.error, ToolNotFoundError)
+
+
+def test_scip_plugin_type_error_on_missing_output_scip() -> None:
+    """ScipPlugin.run() should raise TypeError when output_scip is missing."""
+    from codeintel.ingestion.tools.scip import ScipPlugin
+
+    tools_cfg = ToolsConfig.default()
+    run = ToolRunResult(
+        tool=ToolName.SCIP_PYTHON,
+        args=(),
+        returncode=0,
+        stdout="",
+        stderr="",
+        duration_s=0.1,
+    )
+    runner = PresetRunner(run)
+    plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
+
+    with pytest.raises(TypeError, match="output_scip"):
+        asyncio.run(plugin.run(repo_root=Path(), output_json=Path("index.json")))
+
+
+def test_scip_plugin_type_error_on_missing_output_json() -> None:
+    """ScipPlugin.run() should raise TypeError when output_json is missing."""
+    from codeintel.ingestion.tools.scip import ScipPlugin
+
+    tools_cfg = ToolsConfig.default()
+    run = ToolRunResult(
+        tool=ToolName.SCIP_PYTHON,
+        args=(),
+        returncode=0,
+        stdout="",
+        stderr="",
+        duration_s=0.1,
+    )
+    runner = PresetRunner(run)
+    plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
+
+    with pytest.raises(TypeError, match="output_json"):
+        asyncio.run(plugin.run(repo_root=Path(), output_scip=Path("index.scip")))
+
+
+def test_scip_plugin_type_error_on_invalid_target_dir() -> None:
+    """ScipPlugin.run() should raise TypeError when target_dir is invalid type."""
+    from codeintel.ingestion.tools.scip import ScipPlugin
+
+    tools_cfg = ToolsConfig.default()
+    run = ToolRunResult(
+        tool=ToolName.SCIP_PYTHON,
+        args=(),
+        returncode=0,
+        stdout="",
+        stderr="",
+        duration_s=0.1,
+    )
+    runner = PresetRunner(run)
+    plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
+
+    with pytest.raises(TypeError, match="target_dir"):
+        asyncio.run(
+            plugin.run(
+                repo_root=Path(),
+                output_scip=Path("index.scip"),
+                output_json=Path("index.json"),
+                target_dir="not-a-path",
+            )
+        )
+
+
+def test_scip_plugin_type_error_on_invalid_rel_paths() -> None:
+    """ScipPlugin.run() should raise TypeError when rel_paths is invalid type."""
+    from codeintel.ingestion.tools.scip import ScipPlugin
+
+    tools_cfg = ToolsConfig.default()
+    run = ToolRunResult(
+        tool=ToolName.SCIP_PYTHON,
+        args=(),
+        returncode=0,
+        stdout="",
+        stderr="",
+        duration_s=0.1,
+    )
+    runner = PresetRunner(run)
+    plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
+
+    # Use an integer, since str is technically a Sequence
+    with pytest.raises(TypeError, match="rel_paths"):
+        asyncio.run(
+            plugin.run(
+                repo_root=Path(),
+                output_scip=Path("index.scip"),
+                output_json=Path("index.json"),
+                rel_paths=123,  # noqa: FURB123
+            )
+        )
+
+
+def test_parse_scip_json_valid_dict_payload(tmp_path: Path) -> None:
+    """_parse_scip_json should parse valid dict payload."""
+    from codeintel.ingestion.tools.scip import _parse_scip_json
+
+    json_path = tmp_path / "index.json"
+    json_path.write_text(
+        '{"documents": [{"relative_path": "mod.py", "occurrences": []}]}',
+        encoding="utf-8",
+    )
+    result = _parse_scip_json(json_path)
+    assert len(result.documents) == 1
+
+
+def test_parse_scip_json_valid_list_payload(tmp_path: Path) -> None:
+    """_parse_scip_json should parse valid list payload."""
+    from codeintel.ingestion.tools.scip import _parse_scip_json
+
+    json_path = tmp_path / "index.json"
+    json_path.write_text(
+        '[{"relative_path": "mod.py", "occurrences": []}]',
+        encoding="utf-8",
+    )
+    result = _parse_scip_json(json_path)
+    assert len(result.documents) == 1
+
+
+def test_parse_scip_json_invalid_json(tmp_path: Path) -> None:
+    """_parse_scip_json should return empty result for invalid JSON."""
+    from codeintel.ingestion.tools.scip import _parse_scip_json
+
+    json_path = tmp_path / "index.json"
+    json_path.write_text("invalid json {", encoding="utf-8")
+    result = _parse_scip_json(json_path)
+    assert result.documents == ()
+
+
+def test_parse_scip_json_missing_file(tmp_path: Path) -> None:
+    """_parse_scip_json should return empty result for missing file."""
+    from codeintel.ingestion.tools.scip import _parse_scip_json
+
+    json_path = tmp_path / "does-not-exist.json"
+    result = _parse_scip_json(json_path)
+    assert result.documents == ()
+
+
+# =============================================================================
+# Pytest Tool Plugin Tests
+# =============================================================================
+
+
+def test_pytest_plugin_not_found() -> None:
+    """PytestPlugin should return NOT_FOUND when pytest is missing."""
+    from codeintel.ingestion.tools.pytest import PytestPlugin
+
+    tools_cfg = ToolsConfig.default()
+    exc = ToolNotFoundError(ToolName.PYTEST, tools_cfg.pytest_bin)
+    runner = PresetRunner(exc)
+    plugin = PytestPlugin(runner=runner, tools_config=tools_cfg)
+
+    result = asyncio.run(
+        plugin.run(repo_root=Path(), json_report_path=Path("report.json"))
+    )
+
+    assert result.status == PluginToolStatus.NOT_FOUND
+    assert result.run is None
+    assert isinstance(result.error, ToolNotFoundError)
+
+
+def test_pytest_plugin_type_error_on_missing_json_report_path() -> None:
+    """PytestPlugin.run() should raise TypeError when json_report_path is missing."""
+    from codeintel.ingestion.tools.pytest import PytestPlugin
+
+    tools_cfg = ToolsConfig.default()
+    run = ToolRunResult(
+        tool=ToolName.PYTEST,
+        args=(),
+        returncode=0,
+        stdout="",
+        stderr="",
+        duration_s=0.1,
+    )
+    runner = PresetRunner(run)
+    plugin = PytestPlugin(runner=runner, tools_config=tools_cfg)
+
+    with pytest.raises(TypeError, match="json_report_path"):
+        asyncio.run(plugin.run(repo_root=Path()))
+
+
+def test_pytest_plugin_execution_error() -> None:
+    """PytestPlugin should return ERROR when pytest fails."""
+    from codeintel.ingestion.tools.pytest import PytestPlugin
+
+    tools_cfg = ToolsConfig.default()
+    exc = RuntimeError("pytest failed")
+    runner = PresetRunner(exc)
+    plugin = PytestPlugin(runner=runner, tools_config=tools_cfg)
+
+    result = asyncio.run(
+        plugin.run(repo_root=Path(), json_report_path=Path("report.json"))
+    )
+
+    assert result.status == PluginToolStatus.ERROR
+    assert isinstance(result.error, ToolExecutionError)
+
+
+def test_parse_pytest_json_top_level_tests() -> None:
+    """_parse_pytest_json should parse tests from top-level key."""
+    from codeintel.ingestion.tools.pytest import _parse_pytest_json
+
+    payload = {
+        "tests": [
+            {"nodeid": "test::a", "outcome": "passed", "call": {"duration": 0.1}},
+        ]
+    }
+    report = _parse_pytest_json(payload)
+    assert len(report.tests) == 1
+    assert report.passed_count == 1
+
+
+def test_parse_pytest_json_nested_report() -> None:
+    """_parse_pytest_json should parse tests from nested report key."""
+    from codeintel.ingestion.tools.pytest import _parse_pytest_json
+
+    payload = {
+        "report": {
+            "tests": [
+                {"nodeid": "test::b", "outcome": "failed", "call": {"duration": 0.2}},
+            ]
+        }
+    }
+    report = _parse_pytest_json(payload)
+    assert len(report.tests) == 1
+    assert report.failed_count == 1
+
+
+def test_parse_pytest_json_missing_tests() -> None:
+    """_parse_pytest_json should return empty report when tests key is missing."""
+    from codeintel.ingestion.tools.pytest import _parse_pytest_json
+
+    payload = {"other": "data"}
+    report = _parse_pytest_json(payload)
+    assert report.tests == ()
+
+
+def test_parse_pytest_json_invalid_tests_type() -> None:
+    """_parse_pytest_json should return empty report when tests is not a list."""
+    from codeintel.ingestion.tools.pytest import _parse_pytest_json
+
+    payload = {"tests": "not-a-list"}
+    report = _parse_pytest_json(payload)
+    assert report.tests == ()

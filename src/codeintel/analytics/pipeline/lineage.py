@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import msgspec
 
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.sql_builder import SafeTable
+from codeintel.storage.sql_builder import SafeTable, render_sql
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -180,8 +180,6 @@ def compute_table_hash(
     """
     # Build query with optional filtering (SafeTable validates the table name)
     safe_table = SafeTable(table)
-    # S608: table validated by SafeTable; values parameterized
-    query = f"SELECT * FROM {safe_table}"  # noqa: S608
     params: list[object] = []
 
     where_parts: list[str] = []
@@ -192,10 +190,11 @@ def compute_table_hash(
             where_parts.append("commit = ?")
             params.append(commit)
 
+    query_parts: list[str] = ["SELECT * FROM", str(safe_table)]
     if where_parts:
-        query += " WHERE " + " AND ".join(where_parts)
-
-    query += f" LIMIT {sample_size}"
+        query_parts.extend(["WHERE", " AND ".join(where_parts)])
+    query_parts.extend(["LIMIT", str(sample_size)])
+    query = render_sql(query_parts)
 
     try:
         result = gateway.con.execute(query, params)

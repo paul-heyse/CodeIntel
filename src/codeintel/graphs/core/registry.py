@@ -503,8 +503,8 @@ class GraphPluginRegistry:
 
         return dependencies
 
-    def _build_provider_index(  # noqa: PLR6301
-        self,
+    @staticmethod
+    def _build_provider_index(
         selected: dict[str, GraphPluginProtocol],
     ) -> dict[str, set[str]]:
         """Build index of capability -> provider plugins.
@@ -520,8 +520,8 @@ class GraphPluginRegistry:
                 index.setdefault(cap, set()).add(name)
         return index
 
-    def _topological_sort(  # noqa: PLR6301
-        self,
+    @staticmethod
+    def _topological_sort(
         selected: dict[str, GraphPluginProtocol],
         dependencies: dict[str, set[str]],
     ) -> list[GraphPluginProtocol]:

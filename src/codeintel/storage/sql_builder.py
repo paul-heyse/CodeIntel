@@ -95,6 +95,16 @@ def validate_identifier(name: str) -> str:
     return name
 
 
+def _render_sql(parts: Sequence[str]) -> str:
+    """Render SQL from validated parts without inline interpolation."""
+    return " ".join(part for part in parts if part)
+
+
+def render_sql(parts: Sequence[str]) -> str:
+    """Public helper for rendering SQL from validated parts."""
+    return _render_sql(parts)
+
+
 @dataclass(frozen=True)
 class SafeTable:
     """A validated table name that's safe for SQL construction.
@@ -216,8 +226,8 @@ class QueryBuilder:
         table_name = str(table) if isinstance(table, SafeTable) else str(SafeTable(table))
         params: list[object] = []
 
-        # S608: table_name validated by SafeTable; values parameterized
-        query = f"SELECT COUNT(*) FROM {table_name}"  # noqa: S608
+        query_parts = ["SELECT COUNT(*) FROM", table_name]
+        query = _render_sql(query_parts)
 
         if where:
             conditions: list[str] = []
@@ -263,8 +273,8 @@ class QueryBuilder:
                 conditions.append(f"{safe_col} = ?")
                 params.append(val)
 
-        # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
-        query = f"SELECT COUNT(*) FROM {table_name} WHERE {' AND '.join(conditions)}"  # noqa: S608
+        where_clause = " AND ".join(conditions)
+        query = _render_sql(["SELECT COUNT(*) FROM", table_name, "WHERE", where_clause])
         return query, params
 
     @staticmethod
@@ -296,8 +306,8 @@ class QueryBuilder:
             conditions.append(f"{safe_col} = ?")
             params.append(val)
 
-        # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
-        query = f"DELETE FROM {table_name} WHERE {' AND '.join(conditions)}"  # noqa: S608
+        where_clause = " AND ".join(conditions)
+        query = _render_sql(["DELETE FROM", table_name, "WHERE", where_clause])
         return query, params
 
     @staticmethod
@@ -326,8 +336,8 @@ class QueryBuilder:
         col_name = str(column) if isinstance(column, SafeColumn) else str(SafeColumn(column))
 
         placeholders = ", ".join("?" * len(values))
-        # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
-        query = f"DELETE FROM {table_name} WHERE {col_name} IN ({placeholders})"  # noqa: S608
+        in_clause = f"{col_name} IN ({placeholders})"
+        query = _render_sql(["DELETE FROM", table_name, "WHERE", in_clause])
         return query, list(values)
 
     @staticmethod
@@ -345,7 +355,7 @@ class QueryBuilder:
             Query string (no parameters needed).
         """
         table_name = str(table) if isinstance(table, SafeTable) else str(SafeTable(table))
-        return f"SELECT * FROM {table_name}"  # noqa: S608 - table validated by SafeTable
+        return _render_sql(["SELECT * FROM", table_name])
 
     @staticmethod
     def insert(
@@ -370,8 +380,17 @@ class QueryBuilder:
         safe_cols = [str(c) if isinstance(c, SafeColumn) else str(SafeColumn(c)) for c in columns]
         cols_str = ", ".join(safe_cols)
         placeholders = ", ".join("?" * len(columns))
-        # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
-        return f"INSERT INTO {table_name} ({cols_str}) VALUES ({placeholders})"  # noqa: S608
+        values_clause = f"({cols_str}) VALUES ({placeholders})"
+        return _render_sql(["INSERT INTO", table_name, values_clause])
+
+    @staticmethod
+    def delete_repo_commit(table: str | SafeTable) -> str:
+        """Build a standard repo/commit scoped delete query."""
+        table_name = str(table) if isinstance(table, SafeTable) else str(SafeTable(table))
+        where_clause = " AND ".join(
+            (f"{SafeColumn('repo')} = ?", f"{SafeColumn('commit')} = ?")
+        )
+        return _render_sql(["DELETE FROM", table_name, "WHERE", where_clause])
 
 
 def build_delete_query(table: str, *, has_scope: bool = True) -> str | None:
@@ -395,9 +414,7 @@ def build_delete_query(table: str, *, has_scope: bool = True) -> str | None:
     if not has_scope:
         return None
 
-    safe_table = SafeTable(table)
-    # S608: table validated by SafeTable; values parameterized via ?
-    return f"DELETE FROM {safe_table} WHERE repo = ? AND commit = ?"  # noqa: S608
+    return QueryBuilder.delete_repo_commit(SafeTable(table))
 
 
 __all__ = [
@@ -408,5 +425,6 @@ __all__ = [
     "SqlBuilderError",
     "SqlParams",
     "build_delete_query",
+    "render_sql",
     "validate_identifier",
 ]

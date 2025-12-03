@@ -235,7 +235,8 @@ class BasePlugin(ABC):
             tags=self.tags,
         )
 
-    def build_input_specs(self) -> tuple[PluginInputSpec, ...]:  # noqa: PLR6301
+    @classmethod
+    def build_input_specs(cls) -> tuple[PluginInputSpec, ...]:
         """Build input specifications from class attributes.
 
         Override in subclasses for custom input handling.
@@ -247,7 +248,8 @@ class BasePlugin(ABC):
         """
         return ()
 
-    def _build_output_specs(self) -> tuple[PluginOutputSpec, ...]:  # noqa: PLR6301
+    @classmethod
+    def _build_output_specs(cls) -> tuple[PluginOutputSpec, ...]:
         """Build output specifications from class attributes.
 
         Override in subclasses for custom output handling.
@@ -283,17 +285,15 @@ class BasePlugin(ABC):
             return ValidationResult.failure(tuple(errors))
         return ValidationResult.success()
 
-    def validate_config_requirements(  # noqa: PLR6301
-        self,
-        ctx: PluginExecutionContext,  # noqa: ARG002
-    ) -> list[str]:
+    @staticmethod
+    def validate_config_requirements(_ctx: PluginExecutionContext) -> list[str]:
         """Validate configuration requirements.
 
         Override in subclasses to add config validation.
 
         Parameters
         ----------
-        ctx
+        _ctx
             Execution context.
 
         Returns
@@ -303,17 +303,15 @@ class BasePlugin(ABC):
         """
         return []
 
-    def validate_resource_requirements(  # noqa: PLR6301
-        self,
-        ctx: PluginExecutionContext,  # noqa: ARG002
-    ) -> list[str]:
+    @staticmethod
+    def validate_resource_requirements(_ctx: PluginExecutionContext) -> list[str]:
         """Validate resource requirements (catalog, runtime, etc.).
 
         Override in subclasses to add resource validation.
 
         Parameters
         ----------
-        ctx
+        _ctx
             Execution context.
 
         Returns
@@ -675,9 +673,8 @@ class CatalogRequiringPlugin(BasePlugin, ABC):
             errors.append(f"CatalogProvider is required for {self.metadata.name}")
         return errors
 
-    def get_catalog(  # noqa: PLR6301
-        self, ctx: PluginExecutionContext
-    ) -> FunctionCatalogProvider:
+    @staticmethod
+    def get_catalog(ctx: PluginExecutionContext) -> FunctionCatalogProvider:
         """Get the catalog from context via CatalogProvider.
 
         Parameters
@@ -739,9 +736,8 @@ class GraphRuntimeRequiringPlugin(BasePlugin, ABC):
             errors.append(f"GraphProvider is required for {self.metadata.name}")
         return errors
 
-    def get_graph_runtime(  # noqa: PLR6301
-        self, ctx: PluginExecutionContext
-    ) -> GraphRuntime:
+    @staticmethod
+    def get_graph_runtime(ctx: PluginExecutionContext) -> GraphRuntime:
         """Get the graph runtime via GraphProvider.
 
         Parameters
@@ -809,7 +805,7 @@ class GraphMetricsPlugin(
         """
         errors: list[str] = []
         # Call each parent's validation - accessing protected methods is intentional
-        errors.extend(TableWriterPlugin.validate_resource_requirements(self, ctx))
+        errors.extend(TableWriterPlugin.validate_resource_requirements(ctx))
         errors.extend(GraphRuntimeRequiringPlugin.validate_resource_requirements(self, ctx))
         errors.extend(CatalogRequiringPlugin.validate_resource_requirements(self, ctx))
         return errors

@@ -237,6 +237,7 @@ class TracingMiddleware:
             "commit": ctx.commit,
         }
 
+        ctx.start_plugin_timer(plugin_name)
         span = tracer.start_span(span_name, attributes)
         self._active_spans[plugin_name] = span
 
@@ -262,6 +263,8 @@ class TracingMiddleware:
         if span is None:
             return
 
+        duration_s = ctx.finish_plugin_timer(plugin_name)
+        span.set_attribute("result.duration_ms", round(duration_s * 1000, 2))
         # Add result attributes
         span.set_attribute("result.success", result.success)
         span.set_attribute("result.skipped", result.skipped)
@@ -303,6 +306,8 @@ class TracingMiddleware:
         if span is None:
             return
 
+        duration_s = ctx.finish_plugin_timer(plugin_name)
+        span.set_attribute("result.duration_ms", round(duration_s * 1000, 2))
         span.record_exception(error)
         span.set_status("error", str(error))
         span.end()

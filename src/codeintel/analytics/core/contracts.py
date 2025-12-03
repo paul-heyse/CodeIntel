@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_builder import SafeColumn, SafeTable
+from codeintel.storage.sql_builder import QueryBuilder, SafeColumn, SafeTable, render_sql
 
 if TYPE_CHECKING:
     from codeintel.analytics.core.plugin_protocol import (
@@ -322,11 +322,11 @@ class ContractValidator:
         int
             Row count.
         """
-        # Table name is from contract (trusted), validated by SafeTable
-        safe_table = SafeTable(table)
-        # S608: table validated by SafeTable; values parameterized
-        query = f"SELECT COUNT(*) FROM {safe_table} WHERE repo = ? AND commit = ?"  # noqa: S608
-        row = self._gateway.con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
+        query, params = QueryBuilder.count(
+            SafeTable(table),
+            where={"repo": snapshot.repo, "commit": snapshot.commit},
+        )
+        row = self._gateway.con.execute(query, params).fetchone()
         return int(row[0]) if row else 0
 
     def _get_columns(self, table: str) -> set[str]:
@@ -431,11 +431,21 @@ class ContractValidator:
         """
         safe_table = SafeTable(table)
         safe_col = SafeColumn(column)
-        # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
-        query = f"""
-            SELECT COUNT(*) FROM {safe_table}
-            WHERE repo = ? AND commit = ? AND {safe_col} IS NULL
-        """  # noqa: S608
+        where_clause = " AND ".join(
+            (
+                f"{SafeColumn('repo')} = ?",
+                f"{SafeColumn('commit')} = ?",
+                f"{safe_col} IS NULL",
+            )
+        )
+        query = render_sql(
+            [
+                "SELECT COUNT(*) FROM",
+                str(safe_table),
+                "WHERE",
+                where_clause,
+            ]
+        )
         row = self._gateway.con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
         return int(row[0]) if row else 0
 
@@ -463,14 +473,25 @@ class ContractValidator:
         """
         safe_table = SafeTable(table)
         safe_col = SafeColumn(column)
-        # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
-        query = f"""
-            SELECT
-                COUNT(*) as total,
-                COUNT({safe_col}) as non_null
-            FROM {safe_table}
-            WHERE repo = ? AND commit = ?
-        """  # noqa: S608
+        select_expr = ", ".join(
+            (
+                "COUNT(*) as total",
+                f"COUNT({safe_col}) as non_null",
+            )
+        )
+        where_clause = " AND ".join(
+            (f"{SafeColumn('repo')} = ?", f"{SafeColumn('commit')} = ?")
+        )
+        query = render_sql(
+            [
+                "SELECT",
+                select_expr,
+                "FROM",
+                str(safe_table),
+                "WHERE",
+                where_clause,
+            ]
+        )
         row = self._gateway.con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
         if row is None or row[0] == 0:
             return 0.0

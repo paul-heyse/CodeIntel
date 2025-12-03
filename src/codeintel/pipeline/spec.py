@@ -151,6 +151,13 @@ ANALYTICS_ONLY = PipelineSpec(
 )
 """Analytics pipeline; requires prior ingestion and graphs runs."""
 
+NOOP_PIPELINE = PipelineSpec(
+    id="noop",
+    description="No-op pipeline for operations with no prerequisites.",
+    stages=(),
+)
+"""No-op pipeline that executes no stages; used for operations with no prerequisites."""
+
 # Registry of built-in pipeline specifications
 PIPELINE_SPECS: dict[str, PipelineSpec] = {
     spec.id: spec
@@ -159,6 +166,7 @@ PIPELINE_SPECS: dict[str, PipelineSpec] = {
         INGEST_ONLY,
         GRAPHS_ONLY,
         ANALYTICS_ONLY,
+        NOOP_PIPELINE,
     )
 }
 
@@ -202,6 +210,7 @@ __all__ = [
     "FULL_PIPELINE",
     "GRAPHS_ONLY",
     "INGEST_ONLY",
+    "NOOP_PIPELINE",
     "PIPELINE_SPECS",
     "PipelineSpec",
     "PipelineStage",

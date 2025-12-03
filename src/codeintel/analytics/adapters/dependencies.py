@@ -224,7 +224,7 @@ class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
         """Return the target table name."""
         return "analytics.external_dependency_calls"
 
-    def load(self) -> Iterator[DependencyCallRow]:  # noqa: PLR6301
+    def load(self) -> Iterator[DependencyCallRow]:
         """Load dependency call rows (not implemented for this adapter).
 
         Returns
@@ -232,7 +232,8 @@ class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
         Iterator[DependencyCallRow]
             Empty iterator - this adapter is write-only.
         """
-        return iter([])
+        log.debug("DependencyCallAdapter.load skipped for table %s", self.table_name)
+        return iter(())
 
     def persist(self, rows: Sequence[DependencyCallRow]) -> int:
         """Persist computed rows to the database.
@@ -283,7 +284,7 @@ class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):
         """Return the target table name."""
         return "analytics.external_dependencies"
 
-    def load(self) -> Iterator[DependencyAggregateRow]:  # noqa: PLR6301
+    def load(self) -> Iterator[DependencyAggregateRow]:
         """Load dependency aggregate rows (not implemented for this adapter).
 
         Returns
@@ -291,7 +292,8 @@ class DependencyAggregateAdapter(BatchAdapter[DependencyAggregateRow]):
         Iterator[DependencyAggregateRow]
             Empty iterator - this adapter is write-only.
         """
-        return iter([])
+        log.debug("DependencyAggregateAdapter.load skipped for table %s", self.table_name)
+        return iter(())
 
     def persist(self, rows: Sequence[DependencyAggregateRow]) -> int:
         """Persist computed rows to the database.

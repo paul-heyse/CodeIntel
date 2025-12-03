@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/core/middleware/tracing.py
+# hypothesis_version: 6.148.5
+
+[1000, 'InMemorySpan', 'InMemoryTracer', 'SpanContext', 'Tracer', 'TracingMiddleware', 'commit', 'error', 'ingest.plugin', 'ok', 'plugin.name', 'plugin.stage', 'repo', 'result.duration_ms', 'result.error', 'result.error_kind', 'result.skip_reason', 'result.skipped', 'result.success', 'result.total_rows', 'skipped', 'unknown', 'unset']

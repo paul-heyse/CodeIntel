@@ -454,3 +454,454 @@ def test_ingest_macros_has_core_modules() -> None:
     """INGEST_MACROS should have entry for core.modules."""
     assert "core.modules" in INGEST_MACROS
     assert INGEST_MACROS["core.modules"].startswith("metadata.")
+
+
+# =============================================================================
+# ToolRunnerAdapter Tests
+# =============================================================================
+import asyncio
+from pathlib import Path
+from unittest.mock import AsyncMock
+
+from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.adapters.tool_runner import (
+    ToolRunnerAdapter,
+    _check_file_exists,  # noqa: PLC2701
+    _convert_scip_documents,  # noqa: PLC2701
+    _convert_scip_occurrence,  # noqa: PLC2701
+    _parse_pytest_report,  # noqa: PLC2701
+)
+from codeintel.ingestion.ports.tools import ToolStatus
+from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
+
+
+class _MockToolService(ToolService):
+    """Mock ToolService for testing ToolRunnerAdapter."""
+
+    def __init__(self) -> None:
+        """Initialize without runner."""
+        pass  # noqa: PIE790
+
+    async def run_pyright(self, _repo_root: Path) -> dict[str, int]:
+        """Return mock pyright results."""
+        return {"mod.py": 2, "other.py": 0}
+
+    async def run_pyrefly(self, _repo_root: Path) -> dict[str, int]:
+        """Return mock pyrefly results."""
+        return {"mod.py": 1}
+
+    async def run_ruff(self, _repo_root: Path) -> dict[str, int]:
+        """Return mock ruff results."""
+        return {"style.py": 3}
+
+    async def run_coverage_json(
+        self,
+        _repo_root: Path,
+        *,
+        coverage_file: Path | None = None,
+        output_path: Path | None = None,
+    ) -> list[CoverageFileReport]:
+        """Return mock coverage results."""
+        del coverage_file, output_path
+        return [
+            CoverageFileReport(
+                rel_path="mod.py",
+                executed_lines={1, 2, 3},
+                missing_lines={4, 5},
+            ),
+        ]
+
+    async def run_scip_full(
+        self,
+        _repo_root: Path,
+        *,
+        output_scip: Path,
+        output_json: Path,
+        target_dir: Path | None = None,
+    ) -> object:
+        """Return mock SCIP result."""
+        del target_dir, output_scip, output_json
+
+        class MockScipResult:
+            documents = []
+
+        return MockScipResult()
+
+    async def run_scip_shard(
+        self,
+        _repo_root: Path,
+        *,
+        rel_paths: list[str],
+        output_scip: Path,
+        output_json: Path,
+        target_dir: Path | None = None,
+    ) -> object:
+        """Return mock SCIP shard result."""
+        del rel_paths, target_dir, output_scip, output_json
+
+        class MockScipResult:
+            documents = []
+
+        return MockScipResult()
+
+    async def run_pytest_report(
+        self,
+        _repo_root: Path,
+        *,
+        json_report_path: Path,
+    ) -> bool:
+        """Return mock pytest report."""
+        del json_report_path
+        return True
+
+
+class _FailingToolService(ToolService):
+    """Mock ToolService that raises errors."""
+
+    def __init__(self) -> None:
+        """Initialize without runner."""
+        pass  # noqa: PIE790
+
+    async def run_pyright(self, _repo_root: Path) -> dict[str, int]:
+        """Raise an error."""
+        raise RuntimeError("pyright failed")
+
+    async def run_pyrefly(self, _repo_root: Path) -> dict[str, int]:
+        """Raise an error."""
+        raise RuntimeError("pyrefly failed")
+
+    async def run_ruff(self, _repo_root: Path) -> dict[str, int]:
+        """Raise an error."""
+        raise OSError("ruff failed")
+
+    async def run_coverage_json(
+        self,
+        _repo_root: Path,
+        *,
+        coverage_file: Path | None = None,
+        output_path: Path | None = None,
+    ) -> list[CoverageFileReport]:
+        """Raise an error."""
+        del coverage_file, output_path
+        raise ValueError("coverage failed")
+
+    async def run_scip_full(
+        self,
+        _repo_root: Path,
+        *,
+        output_scip: Path,
+        output_json: Path,
+        target_dir: Path | None = None,
+    ) -> object:
+        """Raise an error."""
+        del target_dir, output_scip, output_json
+        raise RuntimeError("SCIP failed")
+
+    async def run_pytest_report(
+        self,
+        _repo_root: Path,
+        *,
+        json_report_path: Path,
+    ) -> bool:
+        """Raise an error."""
+        del json_report_path
+        raise RuntimeError("pytest failed")
+
+
+def test_tool_runner_adapter_initialization() -> None:
+    """ToolRunnerAdapter should initialize with ToolService."""
+    service = _MockToolService()
+    adapter = ToolRunnerAdapter(service)
+    assert adapter is not None
+
+
+def test_tool_runner_adapter_run_pyright_success() -> None:
+    """ToolRunnerAdapter.run_pyright should return diagnostics."""
+    service = _MockToolService()
+    adapter = ToolRunnerAdapter(service)
+    result = asyncio.run(adapter.run_pyright(Path(".")))
+
+    assert result.status == ToolStatus.OK
+    assert len(result.diagnostics) == 1  # Only mod.py has errors > 0
+    assert result.duration_s > 0
+
+
+def test_tool_runner_adapter_run_pyright_failure() -> None:
+    """ToolRunnerAdapter.run_pyright should handle failures."""
+    service = _FailingToolService()
+    adapter = ToolRunnerAdapter(service)
+    result = asyncio.run(adapter.run_pyright(Path(".")))
+
+    assert result.status == ToolStatus.FAILED
+    assert result.error == "pyright failed"
+
+
+def test_tool_runner_adapter_run_pyrefly_success() -> None:
+    """ToolRunnerAdapter.run_pyrefly should return diagnostics."""
+    service = _MockToolService()
+    adapter = ToolRunnerAdapter(service)
+    result = asyncio.run(adapter.run_pyrefly(Path(".")))
+
+    assert result.status == ToolStatus.OK
+    assert len(result.diagnostics) == 1
+
+
+def test_tool_runner_adapter_run_pyrefly_failure() -> None:
+    """ToolRunnerAdapter.run_pyrefly should handle failures."""
+    service = _FailingToolService()
+    adapter = ToolRunnerAdapter(service)
+    result = asyncio.run(adapter.run_pyrefly(Path(".")))
+
+    assert result.status == ToolStatus.FAILED
+    assert "pyrefly failed" in result.error
+
+
+def test_tool_runner_adapter_run_ruff_success() -> None:
+    """ToolRunnerAdapter.run_ruff should return diagnostics."""
+    service = _MockToolService()
+    adapter = ToolRunnerAdapter(service)
+    result = asyncio.run(adapter.run_ruff(Path(".")))
+
+    assert result.status == ToolStatus.OK
+    assert len(result.diagnostics) == 1
+
+
+def test_tool_runner_adapter_run_ruff_failure() -> None:
+    """ToolRunnerAdapter.run_ruff should handle failures."""
+    service = _FailingToolService()
+    adapter = ToolRunnerAdapter(service)
+    result = asyncio.run(adapter.run_ruff(Path(".")))
+
+    assert result.status == ToolStatus.FAILED
+
+
+def test_tool_runner_adapter_run_coverage_success() -> None:
+    """ToolRunnerAdapter.run_coverage should return file data."""
+    service = _MockToolService()
+    adapter = ToolRunnerAdapter(service)
+    result = asyncio.run(adapter.run_coverage(Path(".")))
+
+    assert result.status == ToolStatus.OK
+    assert len(result.files) == 1
+    assert result.files[0].rel_path == "mod.py"
+
+
+def test_tool_runner_adapter_run_coverage_failure() -> None:
+    """ToolRunnerAdapter.run_coverage should handle failures."""
+    service = _FailingToolService()
+    adapter = ToolRunnerAdapter(service)
+    result = asyncio.run(adapter.run_coverage(Path(".")))
+
+    assert result.status == ToolStatus.FAILED
+    assert "coverage failed" in result.error
+
+
+def test_tool_runner_adapter_run_scip_full_success(tmp_path: Path) -> None:
+    """ToolRunnerAdapter.run_scip should handle full indexing."""
+    service = _MockToolService()
+    adapter = ToolRunnerAdapter(service)
+    output_scip = tmp_path / "index.scip"
+    output_json = tmp_path / "index.json"
+
+    result = asyncio.run(
+        adapter.run_scip(
+            Path("."),
+            output_scip=output_scip,
+            output_json=output_json,
+        )
+    )
+
+    assert result.status == ToolStatus.OK
+
+
+def test_tool_runner_adapter_run_scip_shard_success(tmp_path: Path) -> None:
+    """ToolRunnerAdapter.run_scip should handle shard indexing."""
+    service = _MockToolService()
+    adapter = ToolRunnerAdapter(service)
+    output_scip = tmp_path / "index.scip"
+    output_json = tmp_path / "index.json"
+
+    result = asyncio.run(
+        adapter.run_scip(
+            Path("."),
+            output_scip=output_scip,
+            output_json=output_json,
+            rel_paths=["src/mod.py"],
+        )
+    )
+
+    assert result.status == ToolStatus.OK
+
+
+def test_tool_runner_adapter_run_scip_failure(tmp_path: Path) -> None:
+    """ToolRunnerAdapter.run_scip should handle failures."""
+    service = _FailingToolService()
+    adapter = ToolRunnerAdapter(service)
+    output_scip = tmp_path / "index.scip"
+    output_json = tmp_path / "index.json"
+
+    result = asyncio.run(
+        adapter.run_scip(
+            Path("."),
+            output_scip=output_scip,
+            output_json=output_json,
+        )
+    )
+
+    assert result.status == ToolStatus.FAILED
+    assert "SCIP failed" in result.error
+
+
+def test_tool_runner_adapter_run_pytest_no_report(tmp_path: Path) -> None:
+    """ToolRunnerAdapter.run_pytest should return OK when report doesn't exist."""
+    service = _MockToolService()
+    adapter = ToolRunnerAdapter(service)
+    json_path = tmp_path / "report.json"
+
+    result = asyncio.run(adapter.run_pytest(Path("."), json_report_path=json_path))
+
+    assert result.status == ToolStatus.OK
+    assert result.tests == []
+
+
+def test_tool_runner_adapter_run_pytest_with_report(tmp_path: Path) -> None:
+    """ToolRunnerAdapter.run_pytest should parse existing report."""
+    service = _MockToolService()
+    adapter = ToolRunnerAdapter(service)
+    json_path = tmp_path / "report.json"
+
+    # Create a valid report
+    json_path.write_text(
+        '{"tests": [{"nodeid": "test::a", "outcome": "passed", "duration": 0.1}], "summary": {"passed": 1}}',
+        encoding="utf-8",
+    )
+
+    result = asyncio.run(adapter.run_pytest(Path("."), json_report_path=json_path))
+
+    assert result.status == ToolStatus.OK
+    assert len(result.tests) == 1
+
+
+def test_tool_runner_adapter_run_pytest_failure(tmp_path: Path) -> None:
+    """ToolRunnerAdapter.run_pytest should handle failures."""
+    service = _FailingToolService()
+    adapter = ToolRunnerAdapter(service)
+    json_path = tmp_path / "report.json"
+
+    result = asyncio.run(adapter.run_pytest(Path("."), json_report_path=json_path))
+
+    assert result.status == ToolStatus.FAILED
+    assert "pytest failed" in result.error
+
+
+# =============================================================================
+# Helper Function Tests
+# =============================================================================
+
+
+def test_check_file_exists_true(tmp_path: Path) -> None:
+    """_check_file_exists should return True for existing files."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("content")
+
+    assert _check_file_exists(file_path) is True
+
+
+def test_check_file_exists_false(tmp_path: Path) -> None:
+    """_check_file_exists should return False for missing files."""
+    file_path = tmp_path / "missing.txt"
+
+    assert _check_file_exists(file_path) is False
+
+
+def test_convert_scip_occurrence_full_range() -> None:
+    """_convert_scip_occurrence should handle full range."""
+
+    class MockOcc:
+        symbol = "pkg#func"
+        range = [10, 5, 12, 20]
+        symbol_roles = 1
+
+    occ = _convert_scip_occurrence(MockOcc())
+
+    assert occ.symbol == "pkg#func"
+    assert occ.range_start_line == 10
+    assert occ.range_start_col == 5
+    assert occ.range_end_line == 12
+    assert occ.range_end_col == 20
+
+
+def test_convert_scip_occurrence_partial_range() -> None:
+    """_convert_scip_occurrence should handle partial range."""
+
+    class MockOcc:
+        symbol = "pkg#var"
+        range = [5, 2]
+        symbol_roles = 0
+
+    occ = _convert_scip_occurrence(MockOcc())
+
+    assert occ.range_start_line == 5
+    assert occ.range_start_col == 2
+    assert occ.range_end_line == 5  # Same as start
+    assert occ.range_end_col == 2  # Same as start_col
+
+
+def test_convert_scip_occurrence_empty_range() -> None:
+    """_convert_scip_occurrence should handle empty range."""
+
+    class MockOcc:
+        symbol = "pkg#x"
+        range = []
+        symbol_roles = 0
+
+    occ = _convert_scip_occurrence(MockOcc())
+
+    assert occ.range_start_line == 0
+    assert occ.range_start_col == 0
+
+
+def test_convert_scip_documents_empty() -> None:
+    """_convert_scip_documents should handle empty list."""
+    result = _convert_scip_documents([])
+    assert result == []
+
+
+def test_convert_scip_documents_with_content() -> None:
+    """_convert_scip_documents should convert documents."""
+
+    class MockSymbol:
+        symbol = "pkg#sym"
+        documentation = "A symbol"
+
+    class MockOcc:
+        symbol = "pkg#sym"
+        range = [1, 0, 1, 5]
+        symbol_roles = 1
+
+    class MockDoc:
+        relative_path = "mod.py"
+        symbols = [MockSymbol()]
+        occurrences = [MockOcc()]
+
+    result = _convert_scip_documents([MockDoc()])
+
+    assert len(result) == 1
+    assert result[0].relative_path == "mod.py"
+    assert len(result[0].symbols) == 1
+    assert len(result[0].occurrences) == 1
+
+
+def test_parse_pytest_report_valid(tmp_path: Path) -> None:
+    """_parse_pytest_report should parse valid report."""
+    json_path = tmp_path / "report.json"
+    json_path.write_text(
+        '{"tests": [{"nodeid": "t::a", "outcome": "passed", "duration": 0.5}], "summary": {"passed": 1, "failed": 0, "skipped": 0}}',
+        encoding="utf-8",
+    )
+
+    result = _parse_pytest_report(json_path, 1.0)
+
+    assert result.status == ToolStatus.OK
+    assert len(result.tests) == 1
+    assert result.passed == 1

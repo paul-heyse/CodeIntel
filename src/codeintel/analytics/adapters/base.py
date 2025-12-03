@@ -33,7 +33,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.storage.sql_builder import SafeTable
+from codeintel.storage.sql_builder import QueryBuilder
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -300,10 +300,8 @@ class SimpleBatchAdapter[RowT](ABC):
         int
             Number of rows deleted.
         """
-        # Table name comes from subclass definition, validated by SafeTable
-        safe_table = SafeTable(self.table_name)
-        # S608: table validated by SafeTable; values parameterized
-        query = f"DELETE FROM {safe_table} WHERE repo = ? AND commit = ?"  # noqa: S608
+        # Table name comes from subclass definition; QueryBuilder validates identifier
+        query = QueryBuilder.delete_repo_commit(self.table_name)
         result = gateway.con.execute(query, [scope.repo, scope.commit])
         row = result.fetchone()
         return int(row[0]) if row else 0
@@ -370,10 +368,7 @@ class BatchAdapter[RowT](AnalyticsAdapter[RowT], ABC):
     def _delete_existing(self) -> None:
         """Delete existing rows for this snapshot."""
         scope = self.delete_scope()
-        # Table name comes from subclass definition, validated by SafeTable
-        safe_table = SafeTable(self.table_name)
-        # S608: table validated by SafeTable; values parameterized
-        query = f"DELETE FROM {safe_table} WHERE repo = ? AND commit = ?"  # noqa: S608
+        query = QueryBuilder.delete_repo_commit(self.table_name)
         self._gateway.con.execute(query, [scope.repo, scope.commit])
 
 

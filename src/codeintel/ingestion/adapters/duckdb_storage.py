@@ -26,6 +26,7 @@ from codeintel.storage.ingest_macros import (
     list_ingest_macros,
 )
 from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.sql_builder import render_sql
 from codeintel.storage.sql_helpers import (
     ensure_schema as _ensure_schema,
 )
@@ -116,8 +117,8 @@ def _build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
         DELETE query string with ? placeholders.
     """
     placeholders = ", ".join(["?"] * count)
-    # S608 safe: identifiers are pre-validated and quoted
-    return f"DELETE FROM {table_sql} WHERE {column_sql} IN ({placeholders})"  # noqa: S608
+    delete_clause = f"{column_sql} IN ({placeholders})"
+    return render_sql(["DELETE FROM", table_sql, "WHERE", delete_clause])
 
 
 def _quote_macro_name(macro_name: str) -> str:

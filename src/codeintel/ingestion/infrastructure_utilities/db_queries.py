@@ -13,11 +13,7 @@ Examples
 >>> count = safe_count(gateway, "core.ast_nodes")
 >>> count  # Returns int or None on error
 42
-
-NOTE: All f-string SQL construction uses validated identifiers (SafeTableRef/SafeColumnRef),
-making them safe from SQL injection.
 """
-# ruff: noqa: S608
 
 from __future__ import annotations
 
@@ -37,6 +33,7 @@ from codeintel.storage.gateway import (
     DuckDBError,
     DuckDBInvalidInputException,
 )
+from codeintel.storage.sql_builder import render_sql
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -130,9 +127,8 @@ def safe_count(gateway: StorageGateway, table_key: str) -> int | None:
     """
     try:
         ref = SafeTableRef.from_key(table_key)
-        result = gateway.con.execute(
-            f"SELECT COUNT(*) FROM {ref.full_name}"  # Safe: validated identifier
-        ).fetchone()
+        query = render_sql(["SELECT COUNT(*) FROM", ref.full_name])
+        result = gateway.con.execute(query).fetchone()
         return int(result[0]) if result else None
     except InvalidIdentifierError:
         log.debug("Invalid table key: %s", table_key)
@@ -165,10 +161,21 @@ def safe_count_with_scope(
     """
     try:
         ref = SafeTableRef.from_key(table_key)
-        result = gateway.con.execute(
-            f"SELECT COUNT(*) FROM {ref.full_name} WHERE repo = ? AND commit = ?",
-            [snapshot.repo, snapshot.commit],
-        ).fetchone()
+        where_clause = " AND ".join(
+            (
+                f"{SafeColumnRef('repo').name} = ?",
+                f"{SafeColumnRef('commit').name} = ?",
+            )
+        )
+        query = render_sql(
+            [
+                "SELECT COUNT(*) FROM",
+                ref.full_name,
+                "WHERE",
+                where_clause,
+            ]
+        )
+        result = gateway.con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
         return int(result[0]) if result else None
     except InvalidIdentifierError:
         log.debug("Invalid table key: %s", table_key)
@@ -268,9 +275,16 @@ def safe_count_nulls(
     try:
         ref = SafeTableRef.from_key(table_key)
         col = SafeColumnRef(column)
-        result = gateway.con.execute(
-            f"SELECT COUNT(*) FROM {ref.full_name} WHERE {col.name} IS NULL"
-        ).fetchone()
+        where_clause = f"{col.name} IS NULL"
+        query = render_sql(
+            [
+                "SELECT COUNT(*) FROM",
+                ref.full_name,
+                "WHERE",
+                where_clause,
+            ]
+        )
+        result = gateway.con.execute(query).fetchone()
         return int(result[0]) if result else 0
     except InvalidIdentifierError as exc:
         log.debug("Invalid identifier: %s", exc)
@@ -304,7 +318,9 @@ def safe_min_value(
     try:
         ref = SafeTableRef.from_key(table_key)
         col = SafeColumnRef(column)
-        result = gateway.con.execute(f"SELECT MIN({col.name}) FROM {ref.full_name}").fetchone()
+        select_expr = f"MIN({col.name})"
+        query = render_sql(["SELECT", select_expr, "FROM", ref.full_name])
+        result = gateway.con.execute(query).fetchone()
         return float(result[0]) if result and result[0] is not None else None
     except InvalidIdentifierError as exc:
         log.debug("Invalid identifier: %s", exc)
@@ -338,7 +354,9 @@ def safe_max_value(
     try:
         ref = SafeTableRef.from_key(table_key)
         col = SafeColumnRef(column)
-        result = gateway.con.execute(f"SELECT MAX({col.name}) FROM {ref.full_name}").fetchone()
+        select_expr = f"MAX({col.name})"
+        query = render_sql(["SELECT", select_expr, "FROM", ref.full_name])
+        result = gateway.con.execute(query).fetchone()
         return float(result[0]) if result and result[0] is not None else None
     except InvalidIdentifierError as exc:
         log.debug("Invalid identifier: %s", exc)
@@ -372,9 +390,15 @@ def safe_count_non_positive(
     try:
         ref = SafeTableRef.from_key(table_key)
         col = SafeColumnRef(column)
-        result = gateway.con.execute(
-            f"SELECT COUNT(*) FROM {ref.full_name} WHERE {col.name} <= 0"
-        ).fetchone()
+        query = render_sql(
+            [
+                "SELECT COUNT(*) FROM",
+                ref.full_name,
+                "WHERE",
+                f"{col.name} <= 0",
+            ]
+        )
+        result = gateway.con.execute(query).fetchone()
         return int(result[0]) if result else 0
     except InvalidIdentifierError as exc:
         log.debug("Invalid identifier: %s", exc)
@@ -408,12 +432,19 @@ def safe_count_duplicates(
     try:
         ref = SafeTableRef.from_key(table_key)
         col = SafeColumnRef(column)
-        result = gateway.con.execute(
-            f"""
-            SELECT COUNT(*) - COUNT(DISTINCT {col.name}) FROM {ref.full_name}
-            WHERE {col.name} IS NOT NULL
-            """
-        ).fetchone()
+        select_expr = f"COUNT(*) - COUNT(DISTINCT {col.name})"
+        where_clause = f"{col.name} IS NOT NULL"
+        query = render_sql(
+            [
+                "SELECT",
+                select_expr,
+                "FROM",
+                ref.full_name,
+                "WHERE",
+                where_clause,
+            ]
+        )
+        result = gateway.con.execute(query).fetchone()
         return int(result[0]) if result else 0
     except InvalidIdentifierError as exc:
         log.debug("Invalid identifier: %s", exc)
@@ -447,13 +478,9 @@ def safe_not_null_fraction(
     try:
         ref = SafeTableRef.from_key(table_key)
         col = SafeColumnRef(column)
-        result = gateway.con.execute(
-            f"""
-            SELECT
-                CAST(COUNT({col.name}) AS DOUBLE) / NULLIF(COUNT(*), 0)
-            FROM {ref.full_name}
-            """
-        ).fetchone()
+        select_expr = f"CAST(COUNT({col.name}) AS DOUBLE) / NULLIF(COUNT(*), 0)"
+        query = render_sql(["SELECT", select_expr, "FROM", ref.full_name])
+        result = gateway.con.execute(query).fetchone()
         return float(result[0]) if result and result[0] is not None else 0.0
     except InvalidIdentifierError as exc:
         log.debug("Invalid identifier: %s", exc)
@@ -509,13 +536,22 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
         tgt_ref = SafeTableRef.from_key(fk.ref_table)
         tgt_col = SafeColumnRef(fk.ref_column)
 
-        null_clause = f"AND t.{src_col.name} IS NOT NULL" if not fk.allow_null else ""
-        query = f"""
-            SELECT COUNT(*) FROM {src_ref.full_name} t
-            LEFT JOIN {tgt_ref.full_name} r
-                ON t.{src_col.name} = r.{tgt_col.name}
-            WHERE r.{tgt_col.name} IS NULL {null_clause}
-        """
+        where_parts = [f"r.{tgt_col.name} IS NULL"]
+        if not fk.allow_null:
+            where_parts.append(f"t.{src_col.name} IS NOT NULL")
+
+        query = render_sql(
+            [
+                "SELECT COUNT(*) FROM",
+                f"{src_ref.full_name} t",
+                "LEFT JOIN",
+                f"{tgt_ref.full_name} r",
+                "ON",
+                f"t.{src_col.name} = r.{tgt_col.name}",
+                "WHERE",
+                " AND ".join(where_parts),
+            ]
+        )
         result = gateway.con.execute(query).fetchone()
         return int(result[0]) if result else 0
     except InvalidIdentifierError as exc:

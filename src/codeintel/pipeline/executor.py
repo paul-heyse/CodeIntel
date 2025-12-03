@@ -23,7 +23,7 @@ from codeintel.pipeline.planner import (
     build_pipeline_plan,
 )
 from codeintel.pipeline.spec import PipelineSpec, PipelineStage
-from codeintel.runtime import TriggerKind
+from codeintel.runtime import RunKind, TriggerKind
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -247,6 +247,7 @@ def run_pipeline(  # noqa: PLR0913
     gateway: StorageGateway,
     tools: ToolsConfig,
     trigger: TriggerKind = "cli",
+    run_kind_override: RunKind | None = None,
 ) -> PipelineRunRecord:
     """Execute a unified pipeline over ingestion, graphs, and/or analytics.
 
@@ -268,6 +269,9 @@ def run_pipeline(  # noqa: PLR0913
         Tools configuration (used by ingestion).
     trigger
         How the run was triggered.
+    run_kind_override
+        If provided, use this RunKind instead of inferring from spec stages.
+        Useful for operation prerequisite runs (``"op_prereqs"``).
 
     Returns
     -------
@@ -302,6 +306,7 @@ def run_pipeline(  # noqa: PLR0913
         gateway=gateway,
         tools=tools,
         trigger=trigger,
+        run_kind_override=run_kind_override,
     )
     run_ctx = plan.run_context
     run_id = run_ctx.run_id
