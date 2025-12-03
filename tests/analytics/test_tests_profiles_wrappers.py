@@ -19,86 +19,6 @@ from codeintel.analytics.tests_profiles.importance import (
 from codeintel.analytics.tests_profiles.types import ImportanceInputs, IoFlags, TestAstInfo
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig, TestProfileStepConfig
-from tests._helpers.duckdb import memory_con_with_macros
-
-
-def _empty_conn() -> duckdb.DuckDBPyConnection:
-    con = memory_con_with_macros()
-    con.execute("CREATE SCHEMA analytics")
-    con.execute("CREATE SCHEMA core")
-    con.execute(
-        """
-        CREATE TABLE analytics.test_coverage_edges (
-            test_id VARCHAR,
-            function_goid_h128 DECIMAL(38,0),
-            covered_lines INTEGER,
-            executable_lines INTEGER,
-            repo VARCHAR,
-            commit VARCHAR,
-            rel_path VARCHAR,
-            qualname VARCHAR
-        )
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.test_graph_metrics_tests (
-            test_id VARCHAR,
-            degree INTEGER,
-            weighted_degree DOUBLE,
-            proj_degree INTEGER,
-            proj_weight DOUBLE,
-            proj_clustering DOUBLE,
-            proj_betweenness DOUBLE,
-            repo VARCHAR,
-            commit VARCHAR
-        )
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.subsystem_modules (
-            module VARCHAR,
-            subsystem_id VARCHAR,
-            repo VARCHAR,
-            commit VARCHAR
-        )
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.subsystems (
-            subsystem_id VARCHAR,
-            name VARCHAR,
-            max_risk_score DOUBLE,
-            repo VARCHAR,
-            commit VARCHAR
-        )
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE core.goids (
-            goid_h128 DECIMAL(38,0),
-            urn VARCHAR,
-            repo VARCHAR,
-            commit VARCHAR,
-            rel_path VARCHAR,
-            qualname VARCHAR
-        )
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE core.modules (
-            module VARCHAR,
-            path VARCHAR,
-            repo VARCHAR,
-            commit VARCHAR
-        )
-        """
-    )
-    return con
 
 
 def _configs(tmp_path: Path) -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]:
@@ -106,7 +26,9 @@ def _configs(tmp_path: Path) -> tuple[TestProfileStepConfig, BehavioralCoverageS
     return TestProfileStepConfig(snapshot=snapshot), BehavioralCoverageStepConfig(snapshot=snapshot)
 
 
-def test_coverage_wrappers_empty(tmp_path: Path) -> None:
+def test_coverage_wrappers_empty(
+    tmp_path: Path, coverage_profiles_conn: duckdb.DuckDBPyConnection
+) -> None:
     """
     Ensure coverage aggregation wrappers handle empty tables.
 
@@ -115,20 +37,22 @@ def test_coverage_wrappers_empty(tmp_path: Path) -> None:
     AssertionError
         If any aggregation returns a non-empty result.
     """
-    con = _empty_conn()
     test_cfg, beh_cfg = _configs(tmp_path)
-    try:
-        if aggregate_test_coverage_by_function(con, test_cfg, loader=lambda *_: {}) != {}:
-            message = "Expected empty function coverage aggregation."
-            raise AssertionError(message)
-        if aggregate_test_coverage_by_subsystem(con, beh_cfg, loader=lambda *_: {}) != {}:
-            message = "Expected empty subsystem coverage aggregation."
-            raise AssertionError(message)
-        if load_test_graph_metrics(con, test_cfg, loader=lambda *_: {}) != {}:
-            message = "Expected empty test graph metrics aggregation."
-            raise AssertionError(message)
-    finally:
-        con.close()
+    if (
+        aggregate_test_coverage_by_function(coverage_profiles_conn, test_cfg, loader=lambda *_: {})
+        != {}
+    ):
+        message = "Expected empty function coverage aggregation."
+        raise AssertionError(message)
+    if (
+        aggregate_test_coverage_by_subsystem(coverage_profiles_conn, beh_cfg, loader=lambda *_: {})
+        != {}
+    ):
+        message = "Expected empty subsystem coverage aggregation."
+        raise AssertionError(message)
+    if load_test_graph_metrics(coverage_profiles_conn, test_cfg, loader=lambda *_: {}) != {}:
+        message = "Expected empty test graph metrics aggregation."
+        raise AssertionError(message)
 
 
 def test_importance_and_flakiness_scoring() -> None:

@@ -159,6 +159,7 @@ def test_compute_test_coverage_edges_respects_injected_loader(
     coverage_env: CoverageEdgeEnv, coverage_artifact: Path
 ) -> None:
     """compute_test_coverage_edges should call injected loader when provided."""
+
     def _coverage_loader(_cfg: TestCoverageStepConfig) -> Coverage:
         cov = Coverage(data_file=str(coverage_artifact))
         cov.load()

@@ -17,6 +17,7 @@ from __future__ import annotations
 # SCIP resolver utilities (imported last to avoid circular imports)
 from codeintel.ingestion.infrastructure_utilities._scip_resolver import (
     ResolvedScipConfig,
+    ScipPathConfig,
     ScipResolverInput,
     resolve_scip_inputs,
 )
@@ -125,6 +126,7 @@ __all__ = [
     "SafeColumnRef",
     "SafeTableRef",
     "ScanProfile",
+    "ScipPathConfig",
     "ScipResolverInput",
     "SourceScanner",
     "TableNotFoundError",

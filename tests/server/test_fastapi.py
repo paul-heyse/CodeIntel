@@ -16,6 +16,7 @@ from codeintel.serving.http.fastapi import BackendResource, create_app
 from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.views import create_all_views
+from tests._helpers.coverage_env import CoverageSeedConfig, seed_coverage_rows
 
 
 def _seed_api_data(gateway: StorageGateway) -> None:
@@ -27,8 +28,56 @@ def _seed_api_data(gateway: StorageGateway) -> None:
     gateway
         Storage gateway providing the DuckDB connection.
     """
+    seed = CoverageSeedConfig(
+        module_import="pkg.mod",
+        function_name="foo",
+        function_urn="urn:foo",
+        function_qualname="foo",
+        test_id="t1",
+        test_urn="urn:test",
+        test_qualname="tests.test_sample.test_case",
+        repo="r",
+        commit="c",
+        function_goid=1,
+        test_goid=2,
+    )
+    rel_path = Path(seed.module_import.replace(".", "/")).with_suffix(".py").as_posix()
+    seed_coverage_rows(
+        gateway=gateway,
+        rel_path=rel_path,
+        seed=seed,
+    )
+    function_urn = seed.function_urn or ""
+    function_qualname = seed.function_qualname or ""
     now = datetime.now(tz=UTC)
     con = gateway.con
+    # Insert test coverage edge linking the test to the function
+    # This is required by docs.v_test_to_function view
+    con.execute(
+        """
+        INSERT INTO analytics.test_coverage_edges (
+            test_id, test_goid_h128, function_goid_h128, urn, repo, commit,
+            rel_path, qualname, covered_lines, executable_lines, coverage_ratio,
+            last_status, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            seed.test_id,
+            seed.test_goid,
+            seed.function_goid,
+            function_urn,
+            seed.repo,
+            seed.commit,
+            rel_path,
+            function_qualname,
+            10,  # covered_lines
+            10,  # executable_lines
+            1.0,  # coverage_ratio (100%)
+            "passed",
+            now,
+        ],
+    )
     con.execute(
         """
         INSERT INTO analytics.goid_risk_factors (
@@ -37,7 +86,17 @@ def _seed_api_data(gateway: StorageGateway) -> None:
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1.0, 0.1, 'low', '[]', '[]', ?)
         """,
-        [1, "urn:foo", "r", "c", "foo.py", "python", "function", "foo", now],
+        [
+            seed.function_goid,
+            function_urn,
+            seed.repo,
+            seed.commit,
+            rel_path,
+            "python",
+            "function",
+            function_qualname,
+            now,
+        ],
     )
     con.execute(
         """
@@ -47,38 +106,17 @@ def _seed_api_data(gateway: StorageGateway) -> None:
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        [1, "urn:foo", "r", "c", "foo.py", "python", "function", "foo", now],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (
-            test_id, test_goid_h128, urn, repo, commit, rel_path, qualname, kind, status,
-            duration_ms, markers, parametrized, flaky, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'passed', 10, '[]', FALSE, FALSE, ?)
-        """,
         [
-            "t1",
-            2,
-            "urn:test",
-            "r",
-            "c",
-            "tests/test_sample.py",
-            "tests.test_sample.test_case",
+            seed.function_goid,
+            function_urn,
+            seed.repo,
+            seed.commit,
+            rel_path,
+            "python",
             "function",
+            function_qualname,
             now,
         ],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.test_coverage_edges (
-            test_id, test_goid_h128, function_goid_h128, urn, repo, commit, rel_path,
-            qualname, covered_lines, executable_lines, coverage_ratio, last_status,
-            created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1.0, 'passed', ?)
-        """,
-        ["t1", 2, 1, "urn:foo", "r", "c", "foo.py", "foo", now],
     )
     create_all_views(con)
 

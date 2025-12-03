@@ -33,17 +33,9 @@ from codeintel.ingestion import (
 )
 from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from tests._helpers.builders import (
-    CoverageFunctionRow,
-    ModuleRow,
-    TestCatalogRow,
-    TestCoverageEdgeRow,
-    insert_coverage_functions,
-    insert_modules,
-    insert_test_catalog,
-    insert_test_coverage_edges,
-)
-from tests._helpers.fixtures import ProvisionedGateway, provision_gateway_with_repo
+from tests._helpers.builders import CoverageFunctionRow, insert_coverage_functions
+from tests._helpers.coverage_env import CoverageSeedConfig
+from tests._helpers.fixtures import provision_gateway_with_repo
 
 HTTP_CREATED = 201
 COVERAGE_TOLERANCE = 1e-6
@@ -167,79 +159,6 @@ def _get_goid_row(con: DuckDBConnection, qualname: str) -> GoidRow:
 def _ensure(condition: object, message: str) -> None:
     if not condition:
         pytest.fail(message)
-
-
-def _seed_coverage_and_tests(ctx: ProvisionedGateway, hello_row: GoidRow, now: datetime) -> None:
-    (
-        hello_goid,
-        hello_urn,
-        hello_rel_path,
-        language,
-        kind,
-        qualname,
-        start_line,
-        end_line,
-    ) = hello_row
-    normalized_language = language or "python"
-    normalized_start = start_line or 1
-    normalized_end = end_line or normalized_start
-    test_id = "tests.test_app::test_hello"
-    insert_coverage_functions(
-        ctx.gateway,
-        [
-            CoverageFunctionRow(
-                function_goid_h128=hello_goid,
-                urn=hello_urn,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=hello_rel_path,
-                language=normalized_language,
-                kind=kind,
-                qualname=qualname,
-                start_line=normalized_start,
-                end_line=normalized_end,
-                executable_lines=2,
-                covered_lines=2,
-                coverage_ratio=1.0,
-                tested=True,
-                untested_reason=None,
-                created_at=now,
-            )
-        ],
-    )
-    insert_test_catalog(
-        ctx.gateway,
-        [
-            TestCatalogRow(
-                test_id=test_id,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path="tests/test_app.py",
-                qualname="tests.test_app.test_hello",
-                status="passed",
-                created_at=now,
-            )
-        ],
-    )
-    insert_test_coverage_edges(
-        ctx.gateway,
-        [
-            TestCoverageEdgeRow(
-                test_id=test_id,
-                function_goid_h128=hello_goid,
-                urn=hello_urn,
-                repo=ctx.repo,
-                commit=ctx.commit,
-                rel_path=hello_rel_path,
-                qualname=qualname,
-                covered_lines=2,
-                executable_lines=2,
-                coverage_ratio=1.0,
-                last_status="passed",
-                created_at=now,
-            )
-        ],
-    )
 
 
 def _validate_entrypoint_rows(con: DuckDBConnection, repo: str, commit: str) -> None:
@@ -378,18 +297,79 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
             profile=profile,
         )
 
-        insert_modules(
-            ctx.gateway,
-            [ModuleRow(module="pkg.app", path="pkg/app.py", repo=ctx.repo, commit=ctx.commit)],
-        )
-
         # Extract ASTs and build GOIDs
         ast_step = AstExtractStep(storage=storage, discovery=discovery)
         ast_step.execute(list(modules), repo=ctx.repo, commit=ctx.commit)
         build_goids(ctx.gateway, builder.goid_builder())
 
         hello_row = _get_goid_row(ctx.gateway.con, "pkg.app.hello")
-        _seed_coverage_and_tests(ctx, hello_row, datetime.now(tz=UTC))
+        seed_cfg = CoverageSeedConfig(
+            module_import="pkg.app",
+            function_name="hello",
+            test_id="tests.test_app::test_hello",
+            repo=ctx.repo,
+            commit=ctx.commit,
+            function_goid=hello_row[0],
+            test_goid=hello_row[0] + 1000,
+        )
+        now = datetime.now(tz=UTC)
+        insert_coverage_functions(
+            ctx.gateway,
+            [
+                CoverageFunctionRow(
+                    function_goid_h128=seed_cfg.function_goid,
+                    urn=f"goid:{ctx.repo}#python:function:pkg.app.hello",
+                    repo=ctx.repo,
+                    commit=ctx.commit,
+                    rel_path="pkg/app.py",
+                    language="python",
+                    kind="function",
+                    qualname="pkg.app.hello",
+                    start_line=9,
+                    end_line=15,
+                    executable_lines=2,
+                    covered_lines=2,
+                    coverage_ratio=1.0,
+                    tested=True,
+                    untested_reason=None,
+                    created_at=now,
+                )
+            ],
+        )
+        ctx.gateway.con.execute("DELETE FROM analytics.test_coverage_edges")
+        ctx.gateway.con.execute("DELETE FROM analytics.test_catalog")
+        ctx.gateway.con.execute(
+            """
+            INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'passed', ?)
+            """,
+            [
+                seed_cfg.test_id,
+                "tests/test_app.py",
+                "tests.test_app.test_hello",
+                seed_cfg.repo,
+                seed_cfg.commit,
+                now,
+            ],
+        )
+        ctx.gateway.con.execute(
+            """
+            INSERT INTO analytics.test_coverage_edges (
+                test_id, function_goid_h128, urn, repo, commit, rel_path, qualname,
+                covered_lines, executable_lines, coverage_ratio, last_status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 2, 2, 1.0, 'passed', ?)
+            """,
+            [
+                seed_cfg.test_id,
+                seed_cfg.function_goid,
+                f"goid:{seed_cfg.repo}#python:function:{seed_cfg.module_import}.{seed_cfg.function_name}",
+                seed_cfg.repo,
+                seed_cfg.commit,
+                "pkg/app.py",
+                "pkg.app.hello",
+                now,
+            ],
+        )
 
         # Build providers and run analytics
         providers = _build_test_providers(ctx.gateway, builder.snapshot, ctx.repo, ctx.commit)

@@ -1059,12 +1059,12 @@ def test_parse_test_markers_list() -> None:
     """parse_test_markers should handle keywords as list."""
     entry = {"keywords": ["slow", "integration"]}
     markers = parse_test_markers(entry)
-    assert markers == ["integration", "slow"]
+    assert markers == ("integration", "slow")
 
 
 def test_parse_test_markers_empty() -> None:
     """parse_test_markers should return empty for missing keywords."""
-    assert parse_test_markers({}) == []
+    assert parse_test_markers({}) == ()
 
 
 def test_test_report_from_test_entries() -> None:

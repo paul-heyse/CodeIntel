@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import duckdb
 import pytest
 
 from codeintel.analytics.tests_profiles import coverage_inputs
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.config.primitives import SnapshotRef
-from tests._helpers.duckdb import memory_con_with_macros
+
+if TYPE_CHECKING:
+    from duckdb import DuckDBPyConnection
 
 
 def _snapshot_cfg() -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig]:
@@ -19,62 +20,7 @@ def _snapshot_cfg() -> tuple[TestProfileStepConfig, BehavioralCoverageStepConfig
     return TestProfileStepConfig(snapshot=snapshot), BehavioralCoverageStepConfig(snapshot=snapshot)
 
 
-def _setup_db() -> duckdb.DuckDBPyConnection:
-    con = memory_con_with_macros()
-    con.execute("CREATE SCHEMA analytics")
-    con.execute("CREATE SCHEMA core")
-    con.execute(
-        """
-        CREATE TABLE analytics.test_coverage_edges (
-            test_id VARCHAR,
-            function_goid_h128 BIGINT,
-            module VARCHAR,
-            covered_lines INTEGER,
-            executable_lines INTEGER,
-            repo VARCHAR,
-            commit VARCHAR,
-            rel_path VARCHAR,
-            qualname VARCHAR
-        )
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.test_catalog (
-            test_id VARCHAR,
-            repo VARCHAR,
-            commit VARCHAR,
-            status VARCHAR,
-            duration_ms DOUBLE,
-            flaky BOOLEAN
-        )
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.subsystem_modules (
-            module VARCHAR,
-            subsystem_id VARCHAR,
-            repo VARCHAR,
-            commit VARCHAR
-        )
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE analytics.subsystems (
-            subsystem_id VARCHAR,
-            name VARCHAR,
-            max_risk_score DOUBLE,
-            repo VARCHAR,
-            commit VARCHAR
-        )
-        """
-    )
-    return con
-
-
-def _seed_sample_data(con: duckdb.DuckDBPyConnection) -> None:
+def _seed_sample_data(con: DuckDBPyConnection) -> None:
     edges = [
         ("t1", 1, "mod.a", 5, 10, "r", "c", "a.py", "A::t1a"),
         ("t1", 2, "mod.b", 8, 10, "r", "c", "b.py", "B::t1b"),
@@ -110,9 +56,18 @@ def _seed_sample_data(con: duckdb.DuckDBPyConnection) -> None:
     )
 
 
-def _aggregate_functions(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> dict[str, Any]:
+def _aggregate_functions(con: DuckDBPyConnection, repo: str, commit: str) -> dict[str, Any]:
     """
     Compute function coverage summaries from the fixture tables.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
 
     Returns
     -------
@@ -148,9 +103,18 @@ def _aggregate_functions(con: duckdb.DuckDBPyConnection, repo: str, commit: str)
     return result
 
 
-def _aggregate_subsystems(con: duckdb.DuckDBPyConnection, repo: str, commit: str) -> dict[str, Any]:
+def _aggregate_subsystems(con: DuckDBPyConnection, repo: str, commit: str) -> dict[str, Any]:
     """
     Compute subsystem coverage summaries from the fixture tables.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
 
     Returns
     -------
@@ -187,51 +151,47 @@ def _aggregate_subsystems(con: duckdb.DuckDBPyConnection, repo: str, commit: str
     return result
 
 
-def test_aggregate_test_coverage_by_function_in_memory() -> None:
+def test_aggregate_test_coverage_by_function_in_memory(
+    coverage_profiles_conn: DuckDBPyConnection,
+) -> None:
     """Validate function coverage aggregation against small DuckDB fixture."""
-    con = _setup_db()
-    try:
-        _seed_sample_data(con)
-        test_cfg, _ = _snapshot_cfg()
-        result = coverage_inputs.aggregate_test_coverage_by_function(
-            con, test_cfg, loader=_aggregate_functions
-        )
-        if set(result.keys()) != {"t1", "t2"}:
-            pytest.fail("Expected both tests t1 and t2 in coverage results.")
-        t1 = result["t1"]
-        t2 = result["t2"]
-        expected_t1_count = 2
-        expected_t2_count = 1
-        if t1.count != expected_t1_count or t2.count != expected_t2_count:
-            pytest.fail("Function counts did not match expectations.")
-        primary_expected = {1, 2}
-        if set(t1.primary) != primary_expected or t2.primary != [2]:
-            pytest.fail("Primary function selection did not match expectations.")
-    finally:
-        con.close()
+    _seed_sample_data(coverage_profiles_conn)
+    test_cfg, _ = _snapshot_cfg()
+    result = coverage_inputs.aggregate_test_coverage_by_function(
+        coverage_profiles_conn, test_cfg, loader=_aggregate_functions
+    )
+    if set(result.keys()) != {"t1", "t2"}:
+        pytest.fail("Expected both tests t1 and t2 in coverage results.")
+    t1 = result["t1"]
+    t2 = result["t2"]
+    expected_t1_count = 2
+    expected_t2_count = 1
+    if t1.count != expected_t1_count or t2.count != expected_t2_count:
+        pytest.fail("Function counts did not match expectations.")
+    primary_expected = {1, 2}
+    if set(t1.primary) != primary_expected or t2.primary != [2]:
+        pytest.fail("Primary function selection did not match expectations.")
 
 
-def test_aggregate_test_coverage_by_subsystem_in_memory() -> None:
+def test_aggregate_test_coverage_by_subsystem_in_memory(
+    coverage_profiles_conn: DuckDBPyConnection,
+) -> None:
     """Validate subsystem coverage aggregation against small DuckDB fixture."""
-    con = _setup_db()
-    try:
-        _seed_sample_data(con)
-        _, beh_cfg = _snapshot_cfg()
-        result = coverage_inputs.aggregate_test_coverage_by_subsystem(
-            con, beh_cfg, loader=_aggregate_subsystems
-        )
-        if set(result.keys()) != {"t1", "t2"}:
-            pytest.fail("Expected both tests t1 and t2 in subsystem results.")
-        t1 = result["t1"]
-        t2 = result["t2"]
-        expected_t1_count = 2
-        expected_t2_count = 1
-        if t1.count != expected_t1_count or t2.count != expected_t2_count:
-            pytest.fail("Subsystem counts did not match expectations.")
-        primary_subs = {"subA", "subB"}
-        if t1.primary_subsystem_id not in primary_subs:
-            pytest.fail("Primary subsystem for t1 not in expected set.")
-        if t2.primary_subsystem_id != "subB":
-            pytest.fail("Primary subsystem for t2 did not match expectations.")
-    finally:
-        con.close()
+    _seed_sample_data(coverage_profiles_conn)
+    _, beh_cfg = _snapshot_cfg()
+    result = coverage_inputs.aggregate_test_coverage_by_subsystem(
+        coverage_profiles_conn, beh_cfg, loader=_aggregate_subsystems
+    )
+    if set(result.keys()) != {"t1", "t2"}:
+        pytest.fail("Expected both tests t1 and t2 in subsystem results.")
+    t1 = result["t1"]
+    t2 = result["t2"]
+    expected_t1_count = 2
+    expected_t2_count = 1
+    if t1.count != expected_t1_count or t2.count != expected_t2_count:
+        pytest.fail("Subsystem counts did not match expectations.")
+    primary_subs = {"subA", "subB"}
+    if t1.primary_subsystem_id not in primary_subs:
+        pytest.fail("Primary subsystem for t1 not in expected set.")
+    if t2.primary_subsystem_id != "subB":
+        pytest.fail("Primary subsystem for t2 did not match expectations.")

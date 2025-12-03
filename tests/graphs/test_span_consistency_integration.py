@@ -6,19 +6,19 @@ from pathlib import Path
 from typing import Final
 
 from codeintel.analytics.tests import compute_test_coverage_edges
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.graph_env import (
+    SpanTestEnv,
     build_span_graph_components,
     collect_span_snapshot,
-    create_span_test_env,
-    generate_span_coverage,
 )
 
 REPO: Final = "demo/repo"
 COMMIT: Final = "deadbeef"
 
 
-def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: StorageGateway) -> None:
+def test_span_alignment_across_components(
+    span_env: SpanTestEnv, span_coverage_artifact: Path
+) -> None:
     """
     Ensure call graph, CFG/DFG, and test coverage edges agree on function GOIDs.
 
@@ -27,17 +27,15 @@ def test_span_alignment_across_components(tmp_path: Path, fresh_gateway: Storage
     AssertionError
         If any component produces mismatched GOIDs for the same function spans.
     """
-    env = create_span_test_env(tmp_path, fresh_gateway)
-    build_span_graph_components(env)
-    coverage_artifact = generate_span_coverage(env.repo_root)
+    build_span_graph_components(span_env)
     compute_test_coverage_edges(
-        env.gateway,
-        env.builder.test_coverage(coverage_file=coverage_artifact.coverage_file),
+        span_env.gateway,
+        span_env.builder.test_coverage(coverage_file=span_coverage_artifact),
     )
 
-    snapshot = collect_span_snapshot(env.gateway.con)
+    snapshot = collect_span_snapshot(span_env.gateway.con)
 
-    expected = {env.expected_goid}
+    expected = {span_env.expected_goid}
     if snapshot.cfg_goids != expected:
         message = f"CFG goids mismatch: expected {expected}, got {snapshot.cfg_goids}"
         raise AssertionError(message)

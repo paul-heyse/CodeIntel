@@ -44,11 +44,17 @@ class ScipPathConfig:
         Build output directory.
     document_output_dir
         Document output directory.
+    scip_python_bin
+        Path to scip-python binary.
+    scip_bin
+        Path to scip binary.
     """
 
     repo_root: Path | None = None
     build_dir: Path | None = None
     document_output_dir: Path | None = None
+    scip_python_bin: str | None = None
+    scip_bin: str | None = None
 
     @classmethod
     def from_strings(
@@ -57,6 +63,8 @@ class ScipPathConfig:
         repo_root: Path | str | None = None,
         build_dir: Path | str | None = None,
         document_output_dir: Path | str | None = None,
+        scip_python_bin: str | None = None,
+        scip_bin: str | None = None,
     ) -> ScipPathConfig:
         """Create from string paths with automatic coercion.
 
@@ -68,6 +76,10 @@ class ScipPathConfig:
             Build output directory (coerced to Path).
         document_output_dir
             Document output directory (coerced to Path).
+        scip_python_bin
+            Path to scip-python binary.
+        scip_bin
+            Path to scip binary.
 
         Returns
         -------
@@ -78,6 +90,8 @@ class ScipPathConfig:
             repo_root=Path(repo_root) if repo_root else None,
             build_dir=Path(build_dir) if build_dir else None,
             document_output_dir=Path(document_output_dir) if document_output_dir else None,
+            scip_python_bin=scip_python_bin,
+            scip_bin=scip_bin,
         )
 
 
@@ -131,8 +145,6 @@ class ScipResolverInput:
         repo: str | None = None,
         commit: str | None = None,
         paths: ScipPathConfig | None = None,
-        scip_python_bin: str | None = None,
-        scip_bin: str | None = None,
         modules: Sequence[ModuleRecord] | None = None,
         cfg: ScipIngestStepConfig | None = None,
     ) -> ScipResolverInput:
@@ -147,11 +159,7 @@ class ScipResolverInput:
         commit
             Commit hash.
         paths
-            Path configuration (repo_root, build_dir, document_output_dir).
-        scip_python_bin
-            Path to scip-python binary.
-        scip_bin
-            Path to scip binary.
+            Path and binary configuration.
         modules
             Pre-computed module records.
         cfg
@@ -169,8 +177,8 @@ class ScipResolverInput:
             repo_root=paths.repo_root if paths else None,
             build_dir=paths.build_dir if paths else None,
             document_output_dir=paths.document_output_dir if paths else None,
-            scip_python_bin=scip_python_bin,
-            scip_bin=scip_bin,
+            scip_python_bin=paths.scip_python_bin if paths else None,
+            scip_bin=paths.scip_bin if paths else None,
             modules=modules,
         )
 
@@ -276,6 +284,9 @@ def resolve_scip_inputs(
 ) -> ResolvedScipConfig:
     """Normalize SCIP inputs into a required, typed config.
 
+    Thin wrapper around resolve_scip_inputs_from. See that function for
+    full documentation including exceptions raised.
+
     Parameters
     ----------
     gateway
@@ -289,17 +300,13 @@ def resolve_scip_inputs(
     -------
     ResolvedScipConfig
         Normalized configuration with required fields populated.
-
-    Raises
-    ------
-    ValueError
-        If required parameters are missing or invalid.
     """
     return resolve_scip_inputs_from(gateway, modules_or_cfg, inputs)
 
 
 __all__ = [
     "ResolvedScipConfig",
+    "ScipPathConfig",
     "ScipResolverInput",
     "resolve_scip_inputs",
     "resolve_scip_inputs_from",

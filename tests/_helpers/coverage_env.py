@@ -6,8 +6,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from coverage import Coverage
+
+if TYPE_CHECKING:
+    from duckdb import DuckDBPyConnection
 
 from codeintel.analytics.tests import compute_test_coverage_edges
 from codeintel.config import ConfigBuilder, TestCoverageStepConfig
@@ -41,7 +45,11 @@ class CoverageSeedConfig:
 
     module_import: str = MODULE_IMPORT
     function_name: str = FUNCTION_NAME
+    function_urn: str | None = None
+    function_qualname: str | None = None
     test_id: str = TEST_ID
+    test_urn: str | None = None
+    test_qualname: str | None = None
     repo: str = REPO
     commit: str = COMMIT
     function_goid: int = 1
@@ -84,11 +92,7 @@ def create_coverage_edge_env(
         commit=seed_cfg.commit,
         repo_root=repo_root,
     )
-    _seed_modules_goids_and_catalog(
-        gateway=gateway,
-        rel_path=rel_path.as_posix(),
-        seed=seed_cfg,
-    )
+    seed_coverage_rows(gateway=gateway, rel_path=rel_path.as_posix(), seed=seed_cfg)
     return CoverageEdgeEnv(
         repo_root=repo_root,
         gateway=gateway,
@@ -138,9 +142,14 @@ def compute_coverage_edges(
     )
 
 
-def assert_single_edge(con: object) -> None:
+def assert_single_edge(con: DuckDBPyConnection) -> None:
     """
     Assert a single populated test coverage edge exists.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
 
     Raises
     ------
@@ -166,13 +175,34 @@ def assert_single_edge(con: object) -> None:
         raise AssertionError(message)
 
 
-def _seed_modules_goids_and_catalog(
+def seed_coverage_rows(
     *,
     gateway: StorageGateway,
     rel_path: str,
     seed: CoverageSeedConfig,
+    include_test_catalog: bool = True,
 ) -> None:
+    """
+    Seed minimal modules, GOIDs, test catalog, and coverage edges.
+
+    Parameters
+    ----------
+    gateway
+        Gateway whose connection will be mutated.
+    rel_path
+        Repository-relative path for the target module.
+    seed
+        Seed configuration controlling GOID/test identifiers.
+    include_test_catalog
+        When True, insert a matching row into ``analytics.test_catalog``.
+    """
     now = datetime.now(UTC)
+    function_urn = seed.function_urn or (
+        f"goid:{seed.repo}#python:function:{seed.module_import}.{seed.function_name}"
+    )
+    function_qualname = seed.function_qualname or f"{seed.module_import}.{seed.function_name}"
+    test_urn = seed.test_urn or f"goid:{seed.repo}#python:function:{seed.module_import}.test_func"
+    test_qualname = seed.test_qualname or f"{seed.module_import}.test_func"
     gateway.con.execute(
         """
         INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
@@ -190,46 +220,48 @@ def _seed_modules_goids_and_catalog(
         [
             (
                 seed.function_goid,
-                f"goid:{seed.repo}#python:function:{seed.module_import}.{seed.function_name}",
+                function_urn,
                 seed.repo,
                 seed.commit,
                 rel_path,
                 "python",
                 "function",
-                f"{seed.module_import}.{seed.function_name}",
+                function_qualname,
                 1,
                 2,
                 now,
             ),
             (
                 seed.test_goid,
-                f"goid:{seed.repo}#python:function:{seed.module_import}.test_func",
+                test_urn,
                 seed.repo,
                 seed.commit,
                 rel_path,
                 "python",
                 "test",
-                f"{seed.module_import}.test_func",
+                test_qualname,
                 1,
                 2,
                 now,
             ),
         ],
     )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
-        VALUES (?, ?, ?, ?, ?, 'passed', ?)
-        """,
-        [
-            seed.test_id,
-            rel_path,
-            f"{seed.module_import}.test_func",
-            seed.repo,
-            seed.commit,
-            now,
-        ],
-    )
+    if include_test_catalog:
+        gateway.con.execute(
+            """
+            INSERT INTO analytics.test_catalog (
+                test_id, rel_path, qualname, repo, commit, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'passed', ?)
+            """,
+            [
+                seed.test_id,
+                rel_path,
+                test_qualname,
+                seed.repo,
+                seed.commit,
+                now,
+            ],
+        )
 
 
 __all__ = [
@@ -239,4 +271,5 @@ __all__ = [
     "compute_coverage_edges",
     "create_coverage_edge_env",
     "generate_coverage_artifact",
+    "seed_coverage_rows",
 ]

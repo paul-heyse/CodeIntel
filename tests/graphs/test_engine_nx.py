@@ -20,15 +20,14 @@ from tests._helpers.builders import (
     ImportGraphEdgeRow,
     ModuleRow,
     SymbolUseEdgeRow,
-    TestCoverageEdgeRow,
     insert_call_graph_edges,
     insert_call_graph_nodes,
     insert_config_values,
     insert_import_graph_edges,
     insert_modules,
     insert_symbol_use_edges,
-    insert_test_coverage_edges,
 )
+from tests._helpers.coverage_env import CoverageSeedConfig
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
@@ -128,23 +127,45 @@ def test_engine_matches_nx_views_for_core_graphs() -> None:
                 )
             ],
         )
-        insert_test_coverage_edges(
-            gateway,
+        seed_cfg = CoverageSeedConfig(
+            module_import="pkg.a",
+            function_name="func",
+            test_id="tests/test_example.py::test_func",
+            repo=repo,
+            commit=commit,
+            function_goid=1,
+            test_goid=101,
+        )
+        gateway.con.execute(
+            """
+            INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'passed', ?)
+            """,
             [
-                TestCoverageEdgeRow(
-                    test_id="test_example",
-                    function_goid_h128=1,
-                    urn="urn:test:example",
-                    repo=repo,
-                    commit=commit,
-                    rel_path="tests/test_example.py",
-                    qualname="test_example",
-                    covered_lines=1,
-                    executable_lines=1,
-                    coverage_ratio=1.0,
-                    last_status="passed",
-                    created_at=datetime.now(tz=UTC),
-                )
+                seed_cfg.test_id,
+                "tests/test_example.py",
+                "tests.test_example.test_func",
+                repo,
+                commit,
+                datetime.now(tz=UTC),
+            ],
+        )
+        gateway.con.execute(
+            """
+            INSERT INTO analytics.test_coverage_edges (
+                test_id, function_goid_h128, urn, repo, commit, rel_path, qualname,
+                covered_lines, executable_lines, coverage_ratio, last_status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 1.0, 'passed', ?)
+            """,
+            [
+                seed_cfg.test_id,
+                seed_cfg.function_goid,
+                f"goid:{seed_cfg.repo}#python:function:{seed_cfg.module_import}.{seed_cfg.function_name}",
+                repo,
+                commit,
+                "pkg/a.py",
+                "pkg.a.func",
+                datetime.now(tz=UTC),
             ],
         )
         engine = NxGraphEngine(

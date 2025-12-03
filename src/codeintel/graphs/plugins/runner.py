@@ -135,15 +135,25 @@ class GraphPluginRunner:
         ctx: GraphExecutionContext,
         scratch: GraphRuntimeScratch | None,
     ) -> GraphExecutionContext:
-        """Ensure the execution context has scratch space.
+        """Ensure the context has scratch space configured.
+
+        Since GraphExecutionContext.scratch has a default factory, it always
+        has scratch space. If the runner has shared scratch data, we copy
+        entries into the context's scratch.
 
         Returns
         -------
         GraphExecutionContext
-            Context with scratch set if it was missing.
+            Context ready for plugin execution.
         """
-        if ctx.scratch is None and scratch is not None:
-            ctx.scratch = scratch
+        if scratch is not None:
+            # Copy shared scratch entries into context's scratch space
+            # keys() returns a tuple of keys, iterate to copy each entry
+            scratch_keys = scratch.keys()
+            for key in scratch_keys:
+                value = scratch.consume(key)
+                if value is not None:
+                    ctx.scratch.declare(key, value)
         return ctx
 
     def build_context(

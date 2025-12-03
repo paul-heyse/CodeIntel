@@ -10,7 +10,7 @@ import configparser
 import json
 import logging
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
