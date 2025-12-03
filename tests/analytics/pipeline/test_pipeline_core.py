@@ -70,8 +70,6 @@ PLAN_MAX_LEVEL = 2
 TOTAL_PIPELINE_ROWS = 45
 
 
-
-
 @pytest.fixture
 def memory_gateway() -> Iterator[StorageGateway]:
     """Provide an in-memory DuckDB gateway for testing.
@@ -152,8 +150,6 @@ def pipeline_context(memory_gateway: StorageGateway, tmp_path: Path) -> Pipeline
     )
 
 
-
-
 def test_column_rule_creation_minimal() -> None:
     """Create a column rule with just the column name."""
     rule = ColumnRule(column="goid_h128")
@@ -187,8 +183,6 @@ def test_column_rule_is_frozen() -> None:
     rule = ColumnRule(column="test")
     with pytest.raises(AttributeError):
         rule.column = "other"  # type: ignore[misc]
-
-
 
 
 def test_contract_creation_minimal() -> None:
@@ -225,8 +219,6 @@ def test_contract_is_frozen() -> None:
         contract.table = "other"  # type: ignore[misc]
 
 
-
-
 def test_violation_creation() -> None:
     """Create a violation with all fields."""
     violation = ContractViolation(
@@ -250,8 +242,6 @@ def test_violation_default_severity() -> None:
         message="Test message",
     )
     assert violation.severity == "error"
-
-
 
 
 def test_result_creation_valid() -> None:
@@ -285,8 +275,6 @@ def test_result_creation_with_violations() -> None:
     )
     assert result.valid is False
     assert len(result.violations) == 1
-
-
 
 
 def test_validate_passes_with_sufficient_rows(
@@ -345,8 +333,7 @@ def test_validate_checks_required_columns(
 
     assert result.valid is False
     assert any(
-        v.rule == "required_column" and "nonexistent_column" in v.message
-        for v in result.violations
+        v.rule == "required_column" and "nonexistent_column" in v.message for v in result.violations
     )
 
 
@@ -403,8 +390,6 @@ def test_validate_custom_check_fails(memory_gateway: StorageGateway, sample_tabl
 
     assert result.valid is False
     assert any(v.rule == "custom_check" for v in result.violations)
-
-
 
 
 def test_lineage_creation() -> None:
@@ -491,8 +476,6 @@ def test_lineage_round_trip() -> None:
     assert restored.version == original.version
 
 
-
-
 def test_hash_returns_string(memory_gateway: StorageGateway, sample_table: str) -> None:
     """Verify hash computation returns a hex string."""
     result = compute_table_hash(
@@ -538,16 +521,12 @@ def test_hash_handles_nonexistent_table(memory_gateway: StorageGateway) -> None:
     assert result == "error"
 
 
-
-
 def test_store_initialization(memory_gateway: StorageGateway) -> None:
     """Verify store initializes and creates table."""
     store = LineageStore(memory_gateway)
     assert store is not None
 
-    result = memory_gateway.con.execute(
-        "SELECT COUNT(*) FROM analytics.dataset_lineage"
-    ).fetchone()
+    result = memory_gateway.con.execute("SELECT COUNT(*) FROM analytics.dataset_lineage").fetchone()
     assert result is not None
 
 
@@ -683,8 +662,6 @@ def test_store_needs_recompute_true_when_hash_changed(memory_gateway: StorageGat
     assert result is True
 
 
-
-
 def test_schema_creation() -> None:
     """Create a table schema."""
     schema = TableSchema(
@@ -719,8 +696,6 @@ def test_schema_is_frozen() -> None:
     schema = TableSchema(name="test")
     with pytest.raises(AttributeError):
         schema.name = "other"  # type: ignore[misc]
-
-
 
 
 def test_spec_creation_minimal() -> None:
@@ -764,8 +739,6 @@ def test_spec_primary_output_property() -> None:
 
     spec_without_outputs: DatasetSpec[dict[str, Any]] = DatasetSpec(name="test")
     assert spec_without_outputs.primary_output == "test"
-
-
 
 
 def test_context_creation(memory_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -814,8 +787,6 @@ def test_context_extra_field(memory_gateway: StorageGateway, tmp_path: Path) -> 
     assert ctx.extra["custom"] == "data"
 
 
-
-
 def test_result_success() -> None:
     """Create a successful result."""
     spec: DatasetSpec[dict[str, Any]] = DatasetSpec(name="test")
@@ -841,8 +812,6 @@ def test_result_failure() -> None:
     )
     assert result.success is False
     assert result.error == "Computation failed"
-
-
 
 
 @dataclass
@@ -951,8 +920,6 @@ class FailingComputation:
         raise RuntimeError(message)
 
 
-
-
 def test_step_creation() -> None:
     """Create an execution step."""
     spec: DatasetSpec[SimpleRow] = DatasetSpec(name="test")
@@ -967,8 +934,6 @@ def test_step_creation() -> None:
     )
     assert step.dataset == "test"
     assert step.level == 0
-
-
 
 
 def test_plan_creation() -> None:
@@ -1040,8 +1005,6 @@ def test_plan_iter_by_level() -> None:
     assert levels[2][0].dataset == "ds_2"
 
 
-
-
 def test_report_creation() -> None:
     """Create a pipeline report."""
     plan = ExecutionPlan(target_datasets=("test",))
@@ -1089,8 +1052,6 @@ def test_report_records_failure() -> None:
     assert report.success is False
     assert len(report.errors) == 1
     assert "failed" in report.errors[0]
-
-
 
 
 def test_scheduler_creation() -> None:
@@ -1260,8 +1221,6 @@ def test_scheduler_completed_at_set(pipeline_context: PipelineContext) -> None:
 
     assert report.completed_at is not None
     assert report.completed_at > report.started_at
-
-
 
 
 def test_full_pipeline_flow(pipeline_context: PipelineContext) -> None:

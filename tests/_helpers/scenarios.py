@@ -14,11 +14,7 @@ insert_goids(gateway, [...])
 ...
 
 # After: declarative scenario builder
-ctx = (
-    TestScenario.minimal()
-    .with_seeds(GRAPH_PACK, METRICS_PACK)
-    .build(tmp_path)
-)
+ctx = TestScenario.minimal().with_seeds(GRAPH_PACK, METRICS_PACK).build(tmp_path)
 ```
 """
 

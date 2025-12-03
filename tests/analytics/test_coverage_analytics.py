@@ -290,8 +290,8 @@ def test_empty_goids_produces_no_rows(
     con = analytics_gateway.con
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result = con.execute(
@@ -321,8 +321,8 @@ def test_single_function_fully_covered(
     _seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("module.py", 1, 6))
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result = _query_coverage_function(con, snapshot, HASH_1)
@@ -362,8 +362,8 @@ def test_single_function_partially_covered(
     )
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result = _query_coverage_function(con, snapshot, HASH_2)
@@ -390,8 +390,8 @@ def test_function_no_coverage_data(
     )
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result = _query_coverage_function(con, snapshot, HASH_3)
@@ -421,8 +421,8 @@ def test_function_with_executable_but_no_covered_lines(
     )
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result = _query_coverage_function(con, snapshot, HASH_4)
@@ -435,9 +435,7 @@ def test_function_with_executable_but_no_covered_lines(
     assert result[4] == "no_tests"
 
 
-def test_method_kind_included(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_method_kind_included(snapshot: SnapshotRef, analytics_gateway: StorageGateway) -> None:
     """Verify that 'method' kind GOIDs are included in aggregation."""
     con = analytics_gateway.con
 
@@ -452,8 +450,8 @@ def test_method_kind_included(
     _seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("class_mod.py", 10, 16))
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result = con.execute(
@@ -471,9 +469,7 @@ def test_method_kind_included(
     assert result[2] is True
 
 
-def test_class_kind_excluded(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_class_kind_excluded(snapshot: SnapshotRef, analytics_gateway: StorageGateway) -> None:
     """Verify that 'class' kind GOIDs are NOT included in aggregation."""
     con = analytics_gateway.con
 
@@ -486,8 +482,8 @@ def test_class_kind_excluded(
     _seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("class_def.py", 1, 51))
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result = con.execute(
@@ -529,8 +525,8 @@ def test_multiple_functions_same_file(
     )
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result_a = con.execute(
@@ -578,15 +574,19 @@ def test_idempotent_rerun_deletes_old_rows(
         con, snapshot, CoverageLineSeedData("idempotent.py", 1, is_executable=True, is_covered=True)
     )
     _seed_coverage_line(
-        con, snapshot, CoverageLineSeedData("idempotent.py", 2, is_executable=True, is_covered=False)
+        con,
+        snapshot,
+        CoverageLineSeedData("idempotent.py", 2, is_executable=True, is_covered=False),
     )
     _seed_coverage_line(
-        con, snapshot, CoverageLineSeedData("idempotent.py", 3, is_executable=True, is_covered=False)
+        con,
+        snapshot,
+        CoverageLineSeedData("idempotent.py", 3, is_executable=True, is_covered=False),
     )
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result1 = con.execute(
@@ -631,9 +631,7 @@ def test_idempotent_rerun_deletes_old_rows(
     assert count[0] == 1
 
 
-def test_different_repos_isolated(
-    snapshot: SnapshotRef, analytics_gateway: StorageGateway
-) -> None:
+def test_different_repos_isolated(snapshot: SnapshotRef, analytics_gateway: StorageGateway) -> None:
     """Verify that different repos are isolated from each other."""
     con = analytics_gateway.con
 
@@ -653,8 +651,8 @@ def test_different_repos_isolated(
     _seed_coverage_lines_range(con, snapshot, CoverageRangeSeedData("module.py", 1, 6))
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result = con.execute(
@@ -687,7 +685,13 @@ def test_function_with_null_end_line(
         con,
         snapshot,
         GoidSeedData(
-            "urn:test:single_line", "single.py", "function", "single_line_func", HASH_SINGLE, 5, None
+            "urn:test:single_line",
+            "single.py",
+            "function",
+            "single_line_func",
+            HASH_SINGLE,
+            5,
+            None,
         ),
     )
 
@@ -696,8 +700,8 @@ def test_function_with_null_end_line(
     )
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     result = con.execute(
@@ -806,8 +810,8 @@ def test_realistic_module_with_mixed_coverage(
     )
 
     cfg = ConfigBuilder.from_snapshot(
-            repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
-        ).coverage_analytics()
+        repo=snapshot.repo, commit=snapshot.commit, repo_root=snapshot.repo_root
+    ).coverage_analytics()
     compute_coverage_functions(analytics_gateway, cfg)
 
     results = con.execute(

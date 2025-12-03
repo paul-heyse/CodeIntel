@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/groups/__init__.py
+# hypothesis_version: 6.148.5
+
+['ALL_GROUPS', 'FUNCTION_PLUGINS', 'GRAPH_PLUGINS', 'Graph metric plugins', 'PluginGroup', 'RISK_PLUGINS', 'Risk scoring plugins', 'dependency', 'functions', 'functions.metrics', 'graph_metrics.core', 'graphs', 'risk', 'risk.function_risk', 'risk.hotspots']

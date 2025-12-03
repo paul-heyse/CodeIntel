@@ -146,12 +146,20 @@ def gateway_with_goids() -> Iterator[StorageGateway]:
     _seed_goids(
         gateway,
         [
-            _make_goid_row(GoidSeedParams(1001, "module.func_a", "src/module.py", "function", 10, 20)),
-            _make_goid_row(GoidSeedParams(1002, "module.func_b", "src/module.py", "function", 25, 35)),
-            _make_goid_row(GoidSeedParams(1003, "module.Class.method", "src/module.py", "method", 40, 50)),
+            _make_goid_row(
+                GoidSeedParams(1001, "module.func_a", "src/module.py", "function", 10, 20)
+            ),
+            _make_goid_row(
+                GoidSeedParams(1002, "module.func_b", "src/module.py", "function", 25, 35)
+            ),
+            _make_goid_row(
+                GoidSeedParams(1003, "module.Class.method", "src/module.py", "method", 40, 50)
+            ),
             _make_goid_row(GoidSeedParams(2001, "other.func", "src/other.py", "function", 5, 15)),
             # Class kind should be excluded
-            _make_goid_row(GoidSeedParams(9001, "module.MyClass", "src/module.py", "class", 1, 100)),
+            _make_goid_row(
+                GoidSeedParams(9001, "module.MyClass", "src/module.py", "class", 1, 100)
+            ),
         ],
     )
     try:
@@ -206,7 +214,9 @@ def snapshot() -> SnapshotRef:
 def test_function_goid_from_row() -> None:
     """Create FunctionGoid from database row."""
     row = _make_goid_row(
-        GoidSeedParams(TEST_GOID_123, "module.func", start_line=TEST_START_LINE_5, end_line=TEST_END_LINE_10)
+        GoidSeedParams(
+            TEST_GOID_123, "module.func", start_line=TEST_START_LINE_5, end_line=TEST_END_LINE_10
+        )
     )
     goid = FunctionGoid.from_row(row)
     assert goid.goid == TEST_GOID_123

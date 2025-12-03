@@ -1,0 +1,267 @@
+"""Tests for ProfilesPlugin.
+
+This module tests:
+- Plugin metadata correctness
+- Input validation behavior
+- Execute method with various resource availability scenarios
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
+
+from codeintel.analytics.core.plugin_protocol import (
+    PluginResult,
+    ValidationResult,
+)
+from codeintel.analytics.core.plugins.profiles.build import ProfilesPlugin
+from codeintel.config.primitives import SnapshotRef
+from codeintel.config.steps_analytics import ProfilesAnalyticsStepConfig
+
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
+
+# Test constants
+TEST_REPO = "test/repo"
+TEST_COMMIT = "abc123"
+TEST_VERSION = "3.0.0"
+EXPECTED_OUTPUT_COUNT = 3
+EXPECTED_CAPABILITY_COUNT = 3
+
+
+def _create_config() -> ProfilesAnalyticsStepConfig:
+    """Create a test configuration.
+
+    Returns
+    -------
+    ProfilesAnalyticsStepConfig
+        Test configuration.
+    """
+    snapshot = SnapshotRef(
+        repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo")
+    )
+    return ProfilesAnalyticsStepConfig(snapshot=snapshot)
+
+
+def _create_mock_provider(name: str) -> MagicMock:
+    """Create a mock provider for the given resource name.
+
+    Parameters
+    ----------
+    name
+        Resource provider name.
+
+    Returns
+    -------
+    MagicMock
+        Mock provider.
+    """
+    provider = MagicMock()
+    if name == "CatalogProvider":
+        catalog = MagicMock()
+        catalog.catalog.return_value = MagicMock(function_spans=[])
+        provider.get.return_value = catalog
+    elif name == "ModuleMapProvider":
+        provider.get.return_value = {}
+    return provider
+
+
+def _create_mock_context(
+    *,
+    has_config: bool = True,
+    has_catalog: bool = False,
+    has_module_map: bool = False,
+) -> MagicMock:
+    """Create a mock execution context.
+
+    Parameters
+    ----------
+    has_config
+        Whether config is available.
+    has_catalog
+        Whether catalog provider is available.
+    has_module_map
+        Whether module map provider is available.
+
+    Returns
+    -------
+    MagicMock
+        Mock execution context.
+    """
+    ctx = MagicMock()
+    resource_map = {
+        "CatalogProvider": has_catalog,
+        "ModuleMapProvider": has_module_map,
+    }
+
+    ctx.has_config.return_value = has_config
+    if has_config:
+        ctx.get_config.return_value = _create_config()
+    else:
+        ctx.get_config.side_effect = ValueError("Config not found")
+
+    ctx.has_resource_by_name.side_effect = lambda n: resource_map.get(n, False)
+    ctx.require_by_name.side_effect = _create_mock_provider
+    ctx.gateway = MagicMock()
+
+    return ctx
+
+
+# =============================================================================
+# Metadata Tests
+# =============================================================================
+
+
+def test_profiles_plugin_metadata_name() -> None:
+    """Plugin metadata has correct name."""
+    plugin = ProfilesPlugin()
+    assert plugin.metadata.name == "profiles.build"
+
+
+def test_profiles_plugin_metadata_stage() -> None:
+    """Plugin metadata has correct stage."""
+    plugin = ProfilesPlugin()
+    assert plugin.metadata.stage == "profiles"
+
+
+def test_profiles_plugin_metadata_version() -> None:
+    """Plugin metadata has correct version."""
+    plugin = ProfilesPlugin()
+    assert plugin.metadata.version == TEST_VERSION
+
+
+def test_profiles_plugin_metadata_outputs() -> None:
+    """Plugin metadata has correct outputs."""
+    plugin = ProfilesPlugin()
+    assert len(plugin.metadata.outputs) == EXPECTED_OUTPUT_COUNT
+
+    output_names = {o.name for o in plugin.metadata.outputs}
+    assert "function_profile" in output_names
+    assert "file_profile" in output_names
+    assert "module_profile" in output_names
+
+
+def test_profiles_plugin_metadata_capabilities_provided() -> None:
+    """Plugin metadata provides correct capabilities."""
+    plugin = ProfilesPlugin()
+    assert len(plugin.metadata.capabilities_provided) == EXPECTED_CAPABILITY_COUNT
+
+    cap_names = {c.name for c in plugin.metadata.capabilities_provided}
+    assert "analytics.function_profile" in cap_names
+    assert "analytics.file_profile" in cap_names
+    assert "analytics.module_profile" in cap_names
+
+
+def test_profiles_plugin_metadata_tags() -> None:
+    """Plugin metadata has correct tags."""
+    plugin = ProfilesPlugin()
+    assert "profiles" in plugin.metadata.tags
+    assert "aggregation" in plugin.metadata.tags
+
+
+def test_profiles_plugin_metadata_depends_on() -> None:
+    """Plugin metadata has correct dependencies."""
+    plugin = ProfilesPlugin()
+    assert "risk_factors.build" in plugin.metadata.depends_on
+    assert "callgraph" in plugin.metadata.depends_on
+
+
+# =============================================================================
+# Validation Tests
+# =============================================================================
+
+
+def test_validate_inputs_success_with_config() -> None:
+    """Validation succeeds when config is present."""
+    plugin = ProfilesPlugin()
+    ctx = _create_mock_context(has_config=True)
+
+    result = plugin.validate_inputs(ctx)
+
+    assert isinstance(result, ValidationResult)
+    assert result.valid is True
+
+
+def test_validate_inputs_failure_without_config() -> None:
+    """Validation fails when config is missing."""
+    plugin = ProfilesPlugin()
+    ctx = _create_mock_context(has_config=False)
+
+    result = plugin.validate_inputs(ctx)
+
+    assert isinstance(result, ValidationResult)
+    assert result.valid is False
+
+
+def test_validate_inputs_returns_error_details() -> None:
+    """Validation returns specific error messages."""
+    plugin = ProfilesPlugin()
+    ctx = _create_mock_context(has_config=False)
+
+    result = plugin.validate_inputs(ctx)
+
+    assert not result.valid
+    assert result.errors is not None
+    assert len(result.errors) > 0
+    assert "ProfilesAnalyticsStepConfig" in result.errors[0]
+
+
+# =============================================================================
+# Execute Tests
+# =============================================================================
+
+
+def test_execute_fails_without_config() -> None:
+    """Execute fails when config is not available."""
+    plugin = ProfilesPlugin()
+    ctx = _create_mock_context(has_config=False)
+
+    result = plugin.execute(ctx)
+
+    assert isinstance(result, PluginResult)
+    assert result.success is False
+
+
+def test_execute_succeeds_without_providers(fresh_gateway: StorageGateway) -> None:
+    """Execute succeeds without optional providers."""
+    plugin = ProfilesPlugin()
+
+    ctx = MagicMock()
+    ctx.gateway = fresh_gateway
+    ctx.has_config.return_value = True
+    ctx.get_config.return_value = _create_config()
+    ctx.has_resource_by_name.return_value = False
+
+    result = plugin.execute(ctx)
+
+    assert result.success is True
+
+
+# Note: Integration tests for execute_succeeds_with_catalog_provider and
+# execute_succeeds_with_all_providers require full profile infrastructure
+# which is tested in integration test suites
+
+
+# =============================================================================
+# Integration Tests
+# =============================================================================
+
+
+def test_plugin_is_dataclass() -> None:
+    """Plugin is a dataclass."""
+    plugin = ProfilesPlugin()
+    assert hasattr(plugin, "__dataclass_fields__")
+
+
+def test_plugin_metadata_is_consistent() -> None:
+    """Plugin metadata is consistent between calls."""
+    plugin = ProfilesPlugin()
+
+    meta1 = plugin.metadata
+    meta2 = plugin.metadata
+
+    assert meta1.name == meta2.name
+    assert meta1.version == meta2.version
+    assert meta1.stage == meta2.stage

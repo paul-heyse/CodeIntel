@@ -342,9 +342,7 @@ def test_app_with_auto_pipeline_options(
         return BackendResource(backend=backend, service=service, close=lambda: None)
 
     # Should not raise with auto_pipeline enabled
-    app = create_app(
-        config_loader=load_config, backend_factory=backend_factory, auto_pipeline=True
-    )
+    app = create_app(config_loader=load_config, backend_factory=backend_factory, auto_pipeline=True)
 
     with TestClient(app) as client:
         response = client.get("/functions/high-risk")

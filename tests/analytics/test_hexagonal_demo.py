@@ -58,7 +58,9 @@ def test_compute_graph_metrics_with_seeded_data(graph_ctx: TestContext) -> None:
     )
     # GRAPH_PACK seeds 4 GOIDs with call graph nodes
     expected_rows = EXPECTED_GRAPH_PACK_GOIDS
-    assert row_count == expected_rows, f"Expected {expected_rows} function metric rows, got {row_count}"
+    assert row_count == expected_rows, (
+        f"Expected {expected_rows} function metric rows, got {row_count}"
+    )
 
 
 def test_query_helper_returns_typed_rows(graph_ctx: TestContext) -> None:
@@ -112,12 +114,7 @@ def test_custom_scenario_with_multiple_packs(tmp_path: Path) -> None:
 
 def test_scenario_with_custom_repo_commit(tmp_path: Path) -> None:
     """Customize repository and commit identifiers."""
-    ctx = (
-        TestScenario.minimal()
-        .with_repo("custom/repo")
-        .with_commit("abc123")
-        .build(tmp_path)
-    )
+    ctx = TestScenario.minimal().with_repo("custom/repo").with_commit("abc123").build(tmp_path)
 
     try:
         assert ctx.repo == "custom/repo"
