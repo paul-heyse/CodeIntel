@@ -42,7 +42,7 @@ from codeintel.graphs.core import (
     make_builder_plugin,
 )
 from codeintel.graphs.resources import StorageResource
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -84,8 +84,8 @@ def build_symbol_use_edges(
     def_path_by_symbol = build_def_map(docs)
     rows = _build_symbol_edges(docs, def_path_by_symbol, module_by_path)
 
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "graph.symbol_use_edges",
         [symbol_use_to_tuple(row) for row in rows],
         delete_params=[],

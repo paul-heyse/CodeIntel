@@ -15,8 +15,8 @@ from codeintel.analytics.ast_utils import safe_unparse
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import SemanticRolesStepConfig
-from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -218,8 +218,8 @@ def compute_semantic_roles(
         now=now,
     )
 
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "analytics.semantic_roles_functions",
         fn_rows,
         delete_params=[cfg.repo, cfg.commit],
@@ -233,8 +233,7 @@ def compute_semantic_roles(
         commit=cfg.commit,
         now=now,
     )
-    run_batch(
-        gateway,
+    storage_service.run_batch(
         "analytics.semantic_roles_modules",
         module_rows,
         delete_params=[cfg.repo, cfg.commit],

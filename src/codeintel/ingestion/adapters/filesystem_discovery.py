@@ -6,7 +6,10 @@ existing SourceScanner infrastructure.
 
 from __future__ import annotations
 
+import fnmatch
 import logging
+import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +23,10 @@ if TYPE_CHECKING:
     from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 
 log = logging.getLogger(__name__)
+
+# Progress logging cadence defaults
+PROGRESS_LOG_INTERVAL = 5.0
+PROGRESS_LOG_EVERY = 50
 
 
 class FilesystemDiscoveryAdapter:
@@ -88,6 +95,76 @@ class FilesystemDiscoveryAdapter:
         return modules
 
     @staticmethod
+    def iter_modules(
+        module_map: dict[str, str],
+        repo_root: Path,
+        *,
+        logger: logging.Logger | None = None,
+        scan_profile: ScanProfile | None = None,
+    ) -> Iterator[ModuleRecord]:
+        """Iterate modules with normalized paths and periodic progress logging.
+
+        Parameters
+        ----------
+        module_map
+            Mapping of relative paths to module names.
+        repo_root
+            Repository root directory.
+        logger
+            Optional logger for progress messages.
+        scan_profile
+            Optional scan profile for filtering.
+
+        Returns
+        -------
+        Iterator[ModuleRecord]
+            Iterator yielding module metadata for ingestion.
+        """
+        if not module_map:
+            return iter(())
+
+        active_log = logger or log
+        patterns = tuple(scan_profile.include_globs) if scan_profile is not None else ("*",)
+        ignore_set = set(scan_profile.ignore_dirs) if scan_profile is not None else set()
+        log_every = scan_profile.log_every if scan_profile is not None else PROGRESS_LOG_EVERY
+        log_interval = (
+            scan_profile.log_interval if scan_profile is not None else PROGRESS_LOG_INTERVAL
+        )
+        filtered_items: list[tuple[str, str]] = []
+        for rel_path, module_name in module_map.items():
+            parts = Path(rel_path).parts
+            if any(part in ignore_set for part in parts):
+                continue
+            if not any(fnmatch.fnmatch(rel_path, pat) for pat in patterns):
+                continue
+            filtered_items.append((rel_path, module_name))
+
+        total = len(filtered_items)
+        if total == 0:
+            return iter(())
+        start_ts = time.perf_counter()
+        last_log = start_ts
+
+        def _gen() -> Iterator[ModuleRecord]:
+            nonlocal last_log
+            for idx, (rel_path, module_name) in enumerate(filtered_items, start=1):
+                file_path = repo_root / rel_path
+                now_ts = time.perf_counter()
+                if idx % log_every == 0 or (now_ts - last_log) >= log_interval:
+                    elapsed = now_ts - start_ts
+                    active_log.info("Module iteration %d/%d (%.2fs elapsed)", idx, total, elapsed)
+                    last_log = now_ts
+                yield ModuleRecord(
+                    rel_path=rel_path,
+                    module_name=module_name,
+                    file_path=file_path,
+                    index=idx,
+                    total=total,
+                )
+
+        return _gen()
+
+    @staticmethod
     def read_module_source(record: ModuleRecord) -> str | None:
         """Read the source code of a module.
 
@@ -151,4 +228,8 @@ class FilesystemDiscoveryAdapter:
             return None
 
 
-__all__ = ["FilesystemDiscoveryAdapter"]
+__all__ = [
+    "PROGRESS_LOG_EVERY",
+    "PROGRESS_LOG_INTERVAL",
+    "FilesystemDiscoveryAdapter",
+]

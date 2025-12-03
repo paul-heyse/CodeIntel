@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
+from codeintel.core.singleton import SingletonHolder
+
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 
@@ -214,8 +216,9 @@ class ConfigRegistry:
         return tuple(self._mappings.values())
 
 
-# Global registry instance
-_CONFIG_REGISTRY: ConfigRegistry | None = None
+# Singleton holder for config registry
+class _ConfigRegistryHolder(SingletonHolder["ConfigRegistry"]):
+    """Thread-safe singleton holder for ConfigRegistry."""
 
 
 def get_config_registry() -> ConfigRegistry:
@@ -226,10 +229,15 @@ def get_config_registry() -> ConfigRegistry:
     ConfigRegistry
         The singleton registry instance.
     """
-    global _CONFIG_REGISTRY  # noqa: PLW0603
-    if _CONFIG_REGISTRY is None:
-        _CONFIG_REGISTRY = ConfigRegistry()
-    return _CONFIG_REGISTRY
+    return _ConfigRegistryHolder.get(ConfigRegistry)
+
+
+def reset_config_registry() -> None:
+    """Reset the global config registry.
+
+    Primarily useful for testing to ensure clean state between tests.
+    """
+    _ConfigRegistryHolder.reset()
 
 
 def register_config(

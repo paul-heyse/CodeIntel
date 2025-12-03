@@ -31,21 +31,10 @@ from codeintel.config.datasets import (
     graph_metrics_modules_row_to_tuple,
     serialize_test_profile_row,
 )
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
 from codeintel.storage.gateway import StorageGateway
-
-# Aliases for backward compatibility
-FunctionGraphMetricsRow = GraphMetricsFunctionsRow
-ModuleGraphMetricsRow = GraphMetricsModulesRow
-FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
-ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
-function_graph_metrics_row_to_tuple = graph_metrics_functions_row_to_tuple
-module_graph_metrics_row_to_tuple = graph_metrics_modules_row_to_tuple
-function_graph_metrics_ext_row_to_tuple = graph_metrics_functions_ext_row_to_tuple
-module_graph_metrics_ext_row_to_tuple = graph_metrics_modules_ext_row_to_tuple
-TestProfileRow = ProfileRowModel
-BehavioralCoverageRow = BehavioralCoverageRowModel
+from codeintel.storage.sql_builder import SafeTable
 
 type RowType = Mapping[str, object]
 RowT = TypeVar("RowT", bound=RowType)
@@ -73,8 +62,10 @@ def _build_delete_sql_by_table() -> dict[str, str]:
             continue
         col_names = contract.schema.column_names()
         if "repo" in col_names and "commit" in col_names:
-            # S608: table_key is derived from trusted contract definitions, not user input
-            result[table_key] = f"DELETE FROM {table_key} WHERE repo = ? AND commit = ?"  # noqa: S608
+            # SafeTable validates the table name from contract definition
+            safe_table = SafeTable(table_key)
+            # S608: table validated by SafeTable; values parameterized
+            result[table_key] = f"DELETE FROM {safe_table} WHERE repo = ? AND commit = ?"  # noqa: S608
     return result
 
 
@@ -186,33 +177,33 @@ def build_analytics_dataset_contracts(
         ),
         "analytics.test_profile": _contract(
             "analytics.test_profile",
-            row_type=TestProfileRow,
+            row_type=ProfileRowModel,
             to_tuple=serialize_test_profile_row,
         ),
         "analytics.behavioral_coverage": _contract(
             "analytics.behavioral_coverage",
-            row_type=BehavioralCoverageRow,
+            row_type=BehavioralCoverageRowModel,
             to_tuple=behavioral_coverage_row_to_tuple,
         ),
         "analytics.graph_metrics_functions": _contract(
             "analytics.graph_metrics_functions",
-            row_type=FunctionGraphMetricsRow,
-            to_tuple=function_graph_metrics_row_to_tuple,
+            row_type=GraphMetricsFunctionsRow,
+            to_tuple=graph_metrics_functions_row_to_tuple,
         ),
         "analytics.graph_metrics_modules": _contract(
             "analytics.graph_metrics_modules",
-            row_type=ModuleGraphMetricsRow,
-            to_tuple=module_graph_metrics_row_to_tuple,
+            row_type=GraphMetricsModulesRow,
+            to_tuple=graph_metrics_modules_row_to_tuple,
         ),
         "analytics.graph_metrics_functions_ext": _contract(
             "analytics.graph_metrics_functions_ext",
-            row_type=FunctionGraphMetricsExtRow,
-            to_tuple=function_graph_metrics_ext_row_to_tuple,
+            row_type=GraphMetricsFunctionsExtRow,
+            to_tuple=graph_metrics_functions_ext_row_to_tuple,
         ),
         "analytics.graph_metrics_modules_ext": _contract(
             "analytics.graph_metrics_modules_ext",
-            row_type=ModuleGraphMetricsExtRow,
-            to_tuple=module_graph_metrics_ext_row_to_tuple,
+            row_type=GraphMetricsModulesExtRow,
+            to_tuple=graph_metrics_modules_ext_row_to_tuple,
         ),
     }
 
@@ -303,8 +294,8 @@ def insert_analytics_rows(
 
     if rows:
         tuple_rows = [contract.to_tuple(row) for row in rows]
-        run_batch(
-            gateway,
+        storage_service = IngestStorageService.from_gateway(gateway)
+        storage_service.run_batch(
             contract.table_key,
             tuple_rows,
             delete_params=None,

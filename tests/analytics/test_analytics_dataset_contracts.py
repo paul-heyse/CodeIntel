@@ -18,9 +18,6 @@ from codeintel.config.datasets import (
 )
 from codeintel.storage.gateway import open_memory_gateway
 
-# Alias for backward compatibility
-FunctionGraphMetricsRow = GraphMetricsFunctionsRow
-
 
 def _count_rows(con: DuckDBPyConnection, table: str, repo: str, commit: str) -> int:
     """
@@ -147,7 +144,7 @@ def test_graph_metrics_functions_idempotent_and_fk_clean() -> None:
         ]
     )
     contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
-    row: FunctionGraphMetricsRow = {
+    row: GraphMetricsFunctionsRow = {
         "repo": repo,
         "commit": commit,
         "function_goid_h128": 10,

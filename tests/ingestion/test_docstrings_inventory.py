@@ -23,7 +23,7 @@ from codeintel.ingestion.infrastructure_utilities.source_scanner import (
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.common import ModuleRecord
+    from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.storage.gateway import StorageGateway
 
 

@@ -22,7 +22,7 @@ from codeintel.analytics.entrypoint_detectors import (
 from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
 from codeintel.config import EntryPointsStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
-from codeintel.ingestion.common import iter_modules, read_module_source
+from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
@@ -200,13 +200,13 @@ def _collect_entrypoint_rows(
     entrypoint_rows: list[tuple[object, ...]] = []
     test_rows: list[tuple[object, ...]] = []
 
-    for record in iter_modules(
+    for record in FilesystemDiscoveryAdapter.iter_modules(
         context.module_map,
         repo_root,
         logger=log,
         scan_profile=scan_profile,
     ):
-        source = read_module_source(record, logger=log)
+        source = FilesystemDiscoveryAdapter.read_module_source(record)
         if source is None:
             continue
         candidates = detect_entrypoints(

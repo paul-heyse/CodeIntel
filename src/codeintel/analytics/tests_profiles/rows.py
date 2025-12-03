@@ -42,9 +42,6 @@ from codeintel.config.datasets import (
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
 
-# Alias for backward compatibility
-TestProfileRowModel = ProfileRowModel
-
 
 def build_test_profile_context(
     *,
@@ -86,19 +83,19 @@ def build_test_profile_context(
 def build_test_profile_rows(
     tests: Iterable[TestRecord],
     ctx: TestProfileContext,
-) -> list[TestProfileRowModel]:
+) -> list[ProfileRowModel]:
     """
     Build test_profile row models using the current helpers.
 
     Returns
     -------
-    list[TestProfileRowModel]
+    list[ProfileRowModel]
         Row models ready for insertion.
     """
     return [_build_test_profile_model(test, ctx) for test in tests]
 
 
-def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> TestProfileRowModel:
+def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> ProfileRowModel:
     markers = _normalize_markers(test.markers)
     ast_details = ctx.ast_info.get(test.test_id, TestAstInfo())
     cov_entry = ctx.functions_covered.get(
@@ -144,7 +141,7 @@ def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> Test
     )
     importance = compute_importance_score(importance_inputs)
     now = ctx.now
-    return TestProfileRowModel(
+    return ProfileRowModel(
         repo=ctx.cfg.repo,
         commit=ctx.cfg.commit,
         test_id=test.test_id,
@@ -191,7 +188,7 @@ def _build_test_profile_model(test: TestRecord, ctx: TestProfileContext) -> Test
 def write_test_profile_rows(
     gateway: StorageGateway,
     cfg: TestProfileStepConfig,
-    rows: Iterable[TestProfileRowModel],
+    rows: Iterable[ProfileRowModel],
 ) -> int:
     """
     Insert rows into analytics.test_profile with registry alignment checks.

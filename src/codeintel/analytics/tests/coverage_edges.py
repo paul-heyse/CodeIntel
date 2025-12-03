@@ -23,8 +23,8 @@ from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -372,8 +372,8 @@ def compute_test_coverage_edges(
             )
         )
 
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "analytics.test_coverage_edges",
         [serialize_test_coverage_edge(row) for row in insert_rows],
         delete_params=[cfg.repo, cfg.commit],

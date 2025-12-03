@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from typing import Final, TypeVar
 
 from codeintel.config.datasets.contracts import get_table_schemas
+from codeintel.storage.sql_builder import SafeColumn, SafeTable
 
 _Column = TypeVar("_Column", bound=str)
 
@@ -46,9 +47,13 @@ def build_insert_sql(table_key: str) -> str:
         message = f"No schema defined for table key: {table_key}"
         raise ValueError(message)
     col_names = [col.name for col in schema.columns]
-    cols_str = ", ".join(col_names)
+    # Validate table and column names
+    safe_table = SafeTable(table_key)
+    safe_cols = [SafeColumn(name) for name in col_names]
+    cols_str = ", ".join(str(c) for c in safe_cols)
     placeholders = ", ".join("?" * len(col_names))
-    return f"INSERT INTO {table_key} ({cols_str}) VALUES ({placeholders})"  # noqa: S608
+    # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
+    return f"INSERT INTO {safe_table} ({cols_str}) VALUES ({placeholders})"  # noqa: S608
 
 
 def build_delete_sql(table_key: str) -> str | None:
@@ -70,7 +75,9 @@ def build_delete_sql(table_key: str) -> str | None:
         return None
     col_names = [col.name for col in schema.columns]
     if "repo" in col_names and "commit" in col_names:
-        return f"DELETE FROM {table_key} WHERE repo = ? AND commit = ?"  # noqa: S608
+        safe_table = SafeTable(table_key)
+        # S608: table validated by SafeTable; values parameterized
+        return f"DELETE FROM {safe_table} WHERE repo = ? AND commit = ?"  # noqa: S608
     return None
 
 

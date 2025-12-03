@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 
 from codeintel.config import HotspotsStepConfig
 from codeintel.config.datasets import HotspotRow, hotspot_row_to_tuple
-from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -253,8 +253,8 @@ def build_hotspots(
             )
         )
 
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "analytics.hotspots",
         [hotspot_row_to_tuple(row) for row in rows],
         scope=f"{cfg.repo}@{cfg.commit}",

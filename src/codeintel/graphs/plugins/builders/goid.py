@@ -46,8 +46,8 @@ from codeintel.graphs.core import (
     make_builder_plugin,
 )
 from codeintel.graphs.resources import StorageResource
-from codeintel.ingestion.common import run_batch
 from codeintel.ingestion.infrastructure_utilities.paths import relpath_to_module
+from codeintel.ingestion.services.storage import IngestStorageService
 
 log = logging.getLogger(__name__)
 
@@ -257,15 +257,14 @@ def _build_goids(ctx: GraphExecutionContext) -> ComputationResult:
         xwalk_rows.append(xwalk_row)
 
     # Persist results
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "core.goids",
         [goid_to_tuple(row) for row in goid_rows],
         delete_params=[cfg.repo, cfg.commit],
         scope=f"{cfg.repo}@{cfg.commit}",
     )
-    run_batch(
-        gateway,
+    storage_service.run_batch(
         "core.goid_crosswalk",
         [goid_crosswalk_to_tuple(row) for row in xwalk_rows],
         delete_params=[cfg.repo, cfg.commit],
@@ -339,8 +338,9 @@ def build_goids(
 ) -> None:
     """Build GOIDs using the plugin orchestration.
 
-    This is a convenience function for backward compatibility with code
-    that previously called goid_builder.build_goids() directly.
+    Convenience function for pipeline steps to invoke the goid_builder plugin
+    with a specific configuration. Creates the execution context and resources
+    internally.
 
     Parameters
     ----------

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, cast
 
 if TYPE_CHECKING:
-    from codeintel.analytics.resources.asts import LegacyAstData
+    from codeintel.analytics.resources.asts import AstResourceData
 
 from codeintel.analytics.core.base import ConfiguredTableWriterPlugin
 from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -90,12 +90,12 @@ class FunctionMetricsPlugin(
             Row counts per output table.
         """
         # Get AST data from AstProvider if available
-        # Note: require_by_name returns the loaded resource (LegacyAstData), not the provider
+        # Note: require_by_name returns the loaded resource (AstResourceData), not the provider
         function_ast_map = None
         missing_function_goids: set[int] = set()
 
         if ctx.has_resource_by_name("AstProvider"):
-            ast_data = cast("LegacyAstData", ctx.require_by_name("AstProvider"))
+            ast_data = cast("AstResourceData", ctx.require_by_name("AstProvider"))
             function_ast_map = ast_data.function_ast_map
             missing_function_goids = ast_data.missing_function_goids
 

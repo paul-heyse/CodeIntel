@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.graphs.ports.storage import BatchResult, QueryResult
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -155,8 +155,8 @@ class StorageResource:
             Batch operation result.
         """
         try:
-            run_batch(
-                self.gateway,
+            storage_service = IngestStorageService.from_gateway(self.gateway)
+            storage_service.run_batch(
                 table,
                 list(rows),
                 delete_params=list(delete_params) if delete_params else [],

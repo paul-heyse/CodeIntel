@@ -90,7 +90,7 @@ class ModuleProvider(LazyResource[Sequence["ModuleRecord"]]):
             return self._tracker.modules
 
         # Otherwise load from module inventory
-        from codeintel.ingestion.common import iter_modules
+        from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
         from codeintel.storage.module_index import load_module_map
 
         module_map = load_module_map(
@@ -102,7 +102,7 @@ class ModuleProvider(LazyResource[Sequence["ModuleRecord"]]):
         )
 
         modules = list(
-            iter_modules(
+            FilesystemDiscoveryAdapter.iter_modules(
                 module_map,
                 self._snapshot.repo_root,
                 logger=log,

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/builders/symbol_uses.py
+# hypothesis_version: 6.148.3
+
+['/', '\\', 'build', 'build_def_map', 'documents', 'edges', 'goid_builder', 'index.scip.json', 'load_scip_documents', 'occurrences', 'r', 'relative_path', 'scip', 'symbol', 'symbol_roles', 'symbol_uses', 'symbol_uses_builder', 'utf-8']

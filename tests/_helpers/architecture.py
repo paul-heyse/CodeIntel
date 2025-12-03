@@ -22,12 +22,6 @@ from codeintel.storage.metadata_bootstrap import INGEST_MACROS
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.duckdb import gateway_with_macros
 
-# Aliases for backward compatibility
-FunctionGraphMetricsRow = GraphMetricsFunctionsRow
-ModuleGraphMetricsRow = GraphMetricsModulesRow
-FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
-ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
-
 
 def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str) -> None:
     """Remove previously seeded rows for a repo/commit to allow idempotent seeding."""
@@ -310,7 +304,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         gateway,
         function_contract,
         [
-            FunctionGraphMetricsRow(
+            GraphMetricsFunctionsRow(
                 repo=repo,
                 commit=commit,
                 function_goid_h128=1,
@@ -334,7 +328,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         gateway,
         module_contract,
         [
-            ModuleGraphMetricsRow(
+            GraphMetricsModulesRow(
                 repo=repo,
                 commit=commit,
                 module="pkg.mod",
@@ -360,7 +354,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         gateway,
         function_ext_contract,
         [
-            FunctionGraphMetricsExtRow(
+            GraphMetricsFunctionsExtRow(
                 repo=repo,
                 commit=commit,
                 function_goid_h128=1,
@@ -391,7 +385,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         gateway,
         module_ext_contract,
         [
-            ModuleGraphMetricsExtRow(
+            GraphMetricsModulesExtRow(
                 repo=repo,
                 commit=commit,
                 module="pkg.mod",

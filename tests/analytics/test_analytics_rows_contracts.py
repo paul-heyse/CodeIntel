@@ -19,14 +19,6 @@ from codeintel.config.datasets import (
     ProfileRowModel,
 )
 
-# Aliases for backward compatibility
-FunctionGraphMetricsRow = GraphMetricsFunctionsRow
-ModuleGraphMetricsRow = GraphMetricsModulesRow
-FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
-ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
-TestProfileRow = ProfileRowModel
-BehavioralCoverageRow = BehavioralCoverageRowModel
-
 
 def _assert_row_matches_table(row_type: type[Mapping[str, object]], table_key: str) -> None:
     """Verify TypedDict annotations align with the DatasetContract schema."""
@@ -53,18 +45,18 @@ def test_function_types_row_matches_schema() -> None:
 
 def test_test_profile_row_matches_schema() -> None:
     """test_profile row fields should match table schema."""
-    _assert_row_matches_table(TestProfileRow, "analytics.test_profile")
+    _assert_row_matches_table(ProfileRowModel, "analytics.test_profile")
 
 
 def test_behavioral_coverage_row_matches_schema() -> None:
     """behavioral_coverage row fields should match table schema."""
-    _assert_row_matches_table(BehavioralCoverageRow, "analytics.behavioral_coverage")
+    _assert_row_matches_table(BehavioralCoverageRowModel, "analytics.behavioral_coverage")
 
 
 def test_graph_metrics_functions_row_matches_schema() -> None:
     """graph_metrics_functions row fields should match table schema."""
     _assert_row_matches_table(
-        FunctionGraphMetricsRow,
+        GraphMetricsFunctionsRow,
         "analytics.graph_metrics_functions",
     )
 
@@ -72,7 +64,7 @@ def test_graph_metrics_functions_row_matches_schema() -> None:
 def test_graph_metrics_modules_row_matches_schema() -> None:
     """graph_metrics_modules row fields should match table schema."""
     _assert_row_matches_table(
-        ModuleGraphMetricsRow,
+        GraphMetricsModulesRow,
         "analytics.graph_metrics_modules",
     )
 
@@ -80,7 +72,7 @@ def test_graph_metrics_modules_row_matches_schema() -> None:
 def test_graph_metrics_functions_ext_row_matches_schema() -> None:
     """graph_metrics_functions_ext row fields should match table schema."""
     _assert_row_matches_table(
-        FunctionGraphMetricsExtRow,
+        GraphMetricsFunctionsExtRow,
         "analytics.graph_metrics_functions_ext",
     )
 
@@ -88,6 +80,6 @@ def test_graph_metrics_functions_ext_row_matches_schema() -> None:
 def test_graph_metrics_modules_ext_row_matches_schema() -> None:
     """graph_metrics_modules_ext row fields should match table schema."""
     _assert_row_matches_table(
-        ModuleGraphMetricsExtRow,
+        GraphMetricsModulesExtRow,
         "analytics.graph_metrics_modules_ext",
     )

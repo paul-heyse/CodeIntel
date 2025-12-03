@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.sql_builder import SafeColumn, SafeTable
 
 if TYPE_CHECKING:
     from codeintel.analytics.core.plugin_protocol import (
@@ -321,9 +322,10 @@ class ContractValidator:
         int
             Row count.
         """
-        # Use parameterized query for safety
-        # Table name is from contract (trusted), but we still validate it exists
-        query = f"SELECT COUNT(*) FROM {table} WHERE repo = ? AND commit = ?"  # noqa: S608
+        # Table name is from contract (trusted), validated by SafeTable
+        safe_table = SafeTable(table)
+        # S608: table validated by SafeTable; values parameterized
+        query = f"SELECT COUNT(*) FROM {safe_table} WHERE repo = ? AND commit = ?"  # noqa: S608
         row = self._gateway.con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
         return int(row[0]) if row else 0
 
@@ -427,9 +429,12 @@ class ContractValidator:
         int
             Number of NULL values.
         """
+        safe_table = SafeTable(table)
+        safe_col = SafeColumn(column)
+        # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
         query = f"""
-            SELECT COUNT(*) FROM {table}
-            WHERE repo = ? AND commit = ? AND {column} IS NULL
+            SELECT COUNT(*) FROM {safe_table}
+            WHERE repo = ? AND commit = ? AND {safe_col} IS NULL
         """  # noqa: S608
         row = self._gateway.con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()
         return int(row[0]) if row else 0
@@ -456,11 +461,14 @@ class ContractValidator:
         float
             Fraction of non-null values (0.0 to 1.0).
         """
+        safe_table = SafeTable(table)
+        safe_col = SafeColumn(column)
+        # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
         query = f"""
             SELECT
                 COUNT(*) as total,
-                COUNT({column}) as non_null
-            FROM {table}
+                COUNT({safe_col}) as non_null
+            FROM {safe_table}
             WHERE repo = ? AND commit = ?
         """  # noqa: S608
         row = self._gateway.con.execute(query, [snapshot.repo, snapshot.commit]).fetchone()

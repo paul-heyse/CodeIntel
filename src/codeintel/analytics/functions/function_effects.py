@@ -29,7 +29,7 @@ from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
@@ -159,8 +159,8 @@ def compute_function_effects(
     )
     rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
 
-    run_batch(
-        gateway,
+    storage_service = IngestStorageService.from_gateway(gateway)
+    storage_service.run_batch(
         "analytics.function_effects",
         rows,
         delete_params=[cfg.repo, cfg.commit],

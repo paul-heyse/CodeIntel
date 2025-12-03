@@ -30,6 +30,91 @@ from codeintel.storage.db_helpers import safe_row_counts
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
+
+@dataclass(frozen=True)
+class GraphPluginSpec:
+    """Specification for creating a graph plugin.
+
+    Bundles all configuration for graph plugin creation to reduce
+    function argument count.
+
+    Parameters
+    ----------
+    name
+        Unique plugin identifier.
+    computation
+        Function implementing the plugin logic.
+    kind
+        Plugin kind: builder, metric, or validation.
+    stage
+        Processing stage in the graph pipeline.
+    description
+        Human-readable description.
+    severity
+        How failures should be handled.
+    enabled_by_default
+        Whether enabled when no explicit list is provided.
+    depends_on
+        Explicit plugin dependencies that must run first.
+    provides
+        Capabilities or artifacts this plugin produces.
+    requires
+        Capabilities required from other plugins.
+    produces_tables
+        DuckDB table keys populated by this plugin.
+    produces_graphs
+        GraphKind values this plugin builds (for builders).
+    requires_graphs
+        GraphKind values this plugin needs (for metrics).
+    resource_hints
+        Runtime resource hints for planning.
+    supports_incremental
+        Whether incremental execution is supported.
+    isolation_kind
+        Type of isolation needed for execution.
+    options_model
+        Optional Pydantic model for plugin options validation.
+    options_default
+        Default options value.
+    version_hash
+        Version hash for cache invalidation.
+    config_schema_ref
+        Reference to configuration schema.
+    row_count_tables
+        Tables to report row counts from.
+    cache_populates
+        Cache slots this plugin populates.
+    cache_consumes
+        Cache slots this plugin reads from.
+    register
+        Whether to register with the global registry.
+    """
+
+    name: str
+    computation: ComputationFn
+    kind: GraphPluginKind
+    stage: GraphPluginStage
+    description: str | None = None
+    severity: GraphPluginSeverity = "fatal"
+    enabled_by_default: bool = True
+    depends_on: tuple[str, ...] = ()
+    provides: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ()
+    produces_tables: tuple[str, ...] = ()
+    produces_graphs: tuple[GraphKind, ...] = ()
+    requires_graphs: tuple[GraphKind, ...] = ()
+    resource_hints: GraphPluginResourceHints | None = None
+    supports_incremental: bool = False
+    isolation_kind: GraphPluginIsolation = "none"
+    options_model: type[BaseModel] | None = None
+    options_default: object | None = None
+    version_hash: str | None = None
+    config_schema_ref: str | None = None
+    row_count_tables: tuple[str, ...] | None = None
+    cache_populates: tuple[str, ...] = ()
+    cache_consumes: tuple[str, ...] = ()
+    register: bool = True
+
 log = logging.getLogger(__name__)
 
 
@@ -143,7 +228,78 @@ class FactoryPlugin:
             return GraphPluginResult.fail(str(exc), error_kind="compute_error")
 
 
-def make_graph_plugin(  # noqa: PLR0913
+def make_plugin_from_spec(spec: GraphPluginSpec) -> GraphPluginProtocol:
+    """Create a graph plugin from a specification object.
+
+    This factory handles all common concerns: logging, error handling,
+    row counting, and result wrapping.
+
+    Parameters
+    ----------
+    spec
+        Complete plugin specification.
+
+    Returns
+    -------
+    GraphPluginProtocol
+        A fully configured plugin ready for execution.
+    """
+    # Auto-extract description from docstring if not provided
+    resolved_description = spec.description
+    if resolved_description is None:
+        resolved_description = spec.computation.__doc__
+        if resolved_description:
+            resolved_description = resolved_description.strip().split("\n")[0]
+        else:
+            resolved_description = f"{spec.name} plugin"
+
+    # Default row_count_tables to produces_tables
+    resolved_row_count_tables = (
+        spec.row_count_tables
+        if spec.row_count_tables is not None
+        else spec.produces_tables
+    )
+
+    metadata = GraphPluginMetadata(
+        name=spec.name,
+        description=resolved_description,
+        kind=spec.kind,
+        stage=spec.stage,
+        severity=spec.severity,
+        enabled_by_default=spec.enabled_by_default,
+        depends_on=spec.depends_on,
+        provides=spec.provides,
+        requires=spec.requires,
+        produces_tables=spec.produces_tables,
+        produces_graphs=spec.produces_graphs,
+        requires_graphs=spec.requires_graphs,
+        resource_hints=spec.resource_hints,
+        supports_incremental=spec.supports_incremental,
+        isolation_kind=spec.isolation_kind,
+        options_model=spec.options_model,
+        options_default=spec.options_default,
+        version_hash=spec.version_hash,
+        config_schema_ref=spec.config_schema_ref,
+        row_count_tables=resolved_row_count_tables,
+        cache_populates=spec.cache_populates,
+        cache_consumes=spec.cache_consumes,
+    )
+
+    plugin = FactoryPlugin(
+        _metadata=metadata,
+        _computation=spec.computation,
+        _row_count_tables=resolved_row_count_tables,
+    )
+
+    if spec.register:
+        from codeintel.graphs.core.registry import register_graph_plugin  # noqa: PLC0415
+
+        register_graph_plugin(plugin)
+
+    return plugin
+
+
+def make_graph_plugin(  # noqa: PLR0913 - factory function; prefer make_plugin_from_spec for complex cases
     *,
     name: str,
     computation: ComputationFn,
@@ -175,6 +331,9 @@ def make_graph_plugin(  # noqa: PLR0913
     This factory handles all common concerns: logging, error handling,
     row counting, and result wrapping. The computation function only
     needs to focus on its core logic.
+
+    For new code, prefer using :func:`make_plugin_from_spec` with a
+    :class:`GraphPluginSpec` to bundle parameters.
 
     Parameters
     ----------
@@ -232,61 +391,37 @@ def make_graph_plugin(  # noqa: PLR0913
     GraphPluginProtocol
         A fully configured plugin ready for execution.
     """
-    # Auto-extract description from docstring if not provided
-    resolved_description = description
-    if resolved_description is None:
-        resolved_description = computation.__doc__
-        if resolved_description:
-            # Take first line of docstring
-            resolved_description = resolved_description.strip().split("\n")[0]
-        else:
-            resolved_description = f"{name} plugin"
-
-    # Default row_count_tables to produces_tables
-    resolved_row_count_tables = (
-        row_count_tables if row_count_tables is not None else produces_tables
+    return make_plugin_from_spec(
+        GraphPluginSpec(
+            name=name,
+            computation=computation,
+            kind=kind,
+            stage=stage,
+            description=description,
+            severity=severity,
+            enabled_by_default=enabled_by_default,
+            depends_on=depends_on,
+            provides=provides,
+            requires=requires,
+            produces_tables=produces_tables,
+            produces_graphs=produces_graphs,
+            requires_graphs=requires_graphs,
+            resource_hints=resource_hints,
+            supports_incremental=supports_incremental,
+            isolation_kind=isolation_kind,
+            options_model=options_model,
+            options_default=options_default,
+            version_hash=version_hash,
+            config_schema_ref=config_schema_ref,
+            row_count_tables=row_count_tables,
+            cache_populates=cache_populates,
+            cache_consumes=cache_consumes,
+            register=register,
+        )
     )
 
-    metadata = GraphPluginMetadata(
-        name=name,
-        description=resolved_description,
-        kind=kind,
-        stage=stage,
-        severity=severity,
-        enabled_by_default=enabled_by_default,
-        depends_on=depends_on,
-        provides=provides,
-        requires=requires,
-        produces_tables=produces_tables,
-        produces_graphs=produces_graphs,
-        requires_graphs=requires_graphs,
-        resource_hints=resource_hints,
-        supports_incremental=supports_incremental,
-        isolation_kind=isolation_kind,
-        options_model=options_model,
-        options_default=options_default,
-        version_hash=version_hash,
-        config_schema_ref=config_schema_ref,
-        row_count_tables=resolved_row_count_tables,
-        cache_populates=cache_populates,
-        cache_consumes=cache_consumes,
-    )
 
-    plugin = FactoryPlugin(
-        _metadata=metadata,
-        _computation=computation,
-        _row_count_tables=resolved_row_count_tables,
-    )
-
-    if register:
-        from codeintel.graphs.core.registry import register_graph_plugin  # noqa: PLC0415
-
-        register_graph_plugin(plugin)
-
-    return plugin
-
-
-def make_metric_plugin(  # noqa: PLR0913
+def make_metric_plugin(  # noqa: PLR0913 - convenience wrapper over make_graph_plugin
     name: str,
     computation: ComputationFn,
     stage: GraphPluginStage,
@@ -346,7 +481,7 @@ def make_metric_plugin(  # noqa: PLR0913
     )
 
 
-def make_builder_plugin(  # noqa: PLR0913
+def make_builder_plugin(  # noqa: PLR0913 - convenience wrapper over make_graph_plugin
     name: str,
     computation: ComputationFn,
     stage: GraphPluginStage,
@@ -406,7 +541,7 @@ def make_builder_plugin(  # noqa: PLR0913
     )
 
 
-def make_validation_plugin(  # noqa: PLR0913
+def make_validation_plugin(  # noqa: PLR0913 - convenience wrapper over make_graph_plugin
     name: str,
     computation: ComputationFn,
     *,

@@ -131,7 +131,7 @@ class ExternalDepsPlugin:
             mm_prov = cast("ModuleMapProvider", ctx.require_by_name("ModuleMapProvider"))
             module_map = mm_prov.get()
 
-        # Get AST data from AstProvider (LegacyAstData)
+        # Get AST data from AstProvider (AstResourceData)
         ast_by_goid: dict[int, FunctionAst] = {}
         missing_goids: set[int] = set()
         if ctx.has_resource_by_name("AstProvider"):

@@ -11,6 +11,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.core.singleton import SingletonHolder
+
 if TYPE_CHECKING:
     from codeintel.analytics.core.execution_context import PluginExecutionContext
     from codeintel.analytics.core.plugin_protocol import (
@@ -111,8 +113,9 @@ class MetricsStore:
         }
 
 
-# Global metrics store (can be replaced for testing)
-_metrics_store: MetricsStore | None = None
+# Singleton holder for metrics store
+class _MetricsStoreHolder(SingletonHolder["MetricsStore"]):
+    """Thread-safe singleton holder for MetricsStore."""
 
 
 def get_metrics_store() -> MetricsStore:
@@ -123,16 +126,12 @@ def get_metrics_store() -> MetricsStore:
     MetricsStore
         The global store.
     """
-    global _metrics_store  # noqa: PLW0603
-    if _metrics_store is None:
-        _metrics_store = MetricsStore()
-    return _metrics_store
+    return _MetricsStoreHolder.get(MetricsStore)
 
 
 def reset_metrics_store() -> None:
     """Reset the global metrics store."""
-    global _metrics_store  # noqa: PLW0603
-    _metrics_store = MetricsStore()
+    _MetricsStoreHolder.reset()
 
 
 @dataclass

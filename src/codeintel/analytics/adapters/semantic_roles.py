@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.adapters.base import BatchAdapter
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
@@ -84,8 +84,8 @@ class SemanticRolesFunctionsAdapter(BatchAdapter[tuple[object, ...]]):
         ensure_schema(self._gateway.con, self.table_name)
         self._delete_existing()
 
-        run_batch(
-            self._gateway,
+        storage_service = IngestStorageService.from_gateway(self._gateway)
+        storage_service.run_batch(
             self.table_name,
             list(rows),
             delete_params=[self.repo, self.commit],
@@ -163,8 +163,8 @@ class SemanticRolesModulesAdapter(BatchAdapter[tuple[object, ...]]):
         ensure_schema(self._gateway.con, self.table_name)
         self._delete_existing()
 
-        run_batch(
-            self._gateway,
+        storage_service = IngestStorageService.from_gateway(self._gateway)
+        storage_service.run_batch(
             self.table_name,
             list(rows),
             delete_params=[self.repo, self.commit],

@@ -86,8 +86,12 @@ ALL_PLUGINS = (
     CORE_GRAPH_METRICS_PLUGIN,
 )
 
+
 # Track registration state
-_REGISTERED = False
+class _RegistrationState:
+    """Thread-safe state holder for plugin registration."""
+
+    registered: bool = False
 
 
 def register_all_plugins() -> None:
@@ -96,15 +100,14 @@ def register_all_plugins() -> None:
     This function is idempotent - calling it multiple times has no effect
     after the first registration.
     """
-    global _REGISTERED  # noqa: PLW0603
-    if _REGISTERED:
+    if _RegistrationState.registered:
         return
 
     registry = get_registry()
     for plugin in ALL_PLUGINS:
         registry.register(plugin)
 
-    _REGISTERED = True
+    _RegistrationState.registered = True
 
 
 def ensure_plugins_registered() -> None:
@@ -113,6 +116,14 @@ def ensure_plugins_registered() -> None:
     This is an alias for register_all_plugins() for clarity in calling code.
     """
     register_all_plugins()
+
+
+def reset_registration_state() -> None:
+    """Reset the registration state.
+
+    Primarily useful for testing to ensure clean state between tests.
+    """
+    _RegistrationState.registered = False
 
 
 # Default plugin names for backward compatibility

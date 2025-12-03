@@ -120,7 +120,6 @@ from codeintel.config.datasets.rows import (
     SymbolUseRow,
     TestCatalogRowModel,
     TestCoverageEdgeRow,
-    TestProfileRowModel,
     TypednessRow,
     behavioral_coverage_row_to_tuple,
     call_graph_edge_to_tuple,
@@ -375,7 +374,6 @@ __all__ = [
     "TableSchema",
     "TestCatalogRowModel",
     "TestCoverageEdgeRow",
-    "TestProfileRowModel",
     "TypednessRow",
     # Serializer functions
     "behavioral_coverage_row_to_tuple",

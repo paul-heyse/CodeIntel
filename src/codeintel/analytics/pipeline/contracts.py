@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.sql_builder import SafeColumn, SafeTable
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -253,7 +254,9 @@ class DatasetContractValidator:
         int
             Number of rows matching the filter criteria.
         """
-        query = f"SELECT COUNT(*) FROM {table}"  # noqa: S608
+        safe_table = SafeTable(table)
+        # S608: table validated by SafeTable; values parameterized
+        query = f"SELECT COUNT(*) FROM {safe_table}"  # noqa: S608
         params: list[object] = []
 
         if repo is not None:
@@ -318,8 +321,10 @@ class DatasetContractValidator:
 
         # Check not_null
         if rule.not_null:
-            # SQL injection safe: column from trusted source (rule definition)
-            query = f"SELECT COUNT(*) FROM {table} WHERE ({where_clause}) AND {column} IS NULL"  # noqa: S608
+            safe_table = SafeTable(table)
+            safe_col = SafeColumn(column)
+            # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
+            query = f"SELECT COUNT(*) FROM {safe_table} WHERE ({where_clause}) AND {safe_col} IS NULL"  # noqa: S608
             try:
                 result = self._gateway.con.execute(query, params)
                 row = result.fetchone()

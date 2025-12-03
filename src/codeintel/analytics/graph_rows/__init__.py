@@ -32,16 +32,12 @@ from codeintel.config.datasets import (
     GraphMetricsModulesExtRow,
 )
 
-# Legacy aliases for backward compatibility
-FunctionGraphMetricsExtRow = GraphMetricsFunctionsExtRow
-ModuleGraphMetricsExtRow = GraphMetricsModulesExtRow
-
 __all__ = [
     "FunctionGraphMetricInputs",
-    "FunctionGraphMetricsExtRow",
     "FunctionMetricExtInputs",
+    "GraphMetricsFunctionsExtRow",
+    "GraphMetricsModulesExtRow",
     "ModuleGraphMetricInputs",
-    "ModuleGraphMetricsExtRow",
     "ModuleMetricExtInputs",
     "SubsystemMetricInputs",
     "SymbolFunctionMetricInputs",

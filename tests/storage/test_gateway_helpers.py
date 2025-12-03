@@ -16,10 +16,6 @@ from codeintel.config.datasets import (
 )
 from codeintel.storage.gateway import StorageGateway
 
-# Aliases for backward compatibility
-FunctionGraphMetricsRow = GraphMetricsFunctionsRow
-ModuleGraphMetricsRow = GraphMetricsModulesRow
-
 EXPECTED_FUNCTION_METRICS_LEN = 29
 
 
@@ -221,7 +217,7 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
         gateway,
         function_contract,
         [
-            FunctionGraphMetricsRow(
+            GraphMetricsFunctionsRow(
                 repo="r",
                 commit="c",
                 function_goid_h128=1,
@@ -243,7 +239,7 @@ def test_insert_helpers_write_expected_rows(fresh_gateway: StorageGateway) -> No
         gateway,
         module_contract,
         [
-            ModuleGraphMetricsRow(
+            GraphMetricsModulesRow(
                 repo="r",
                 commit="c",
                 module="m",

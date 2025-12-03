@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.config.datasets import load_columns_by_table, serialize_row
-from codeintel.ingestion.common import run_batch
+from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
@@ -88,8 +88,8 @@ class DataModelUsageAdapter(BatchAdapter[dict[str, Any]]):
         columns = load_columns_by_table().get(self.table_name, [])
         tuple_rows = [serialize_row(row, columns) for row in rows]
 
-        run_batch(
-            self._gateway,
+        storage_service = IngestStorageService.from_gateway(self._gateway)
+        storage_service.run_batch(
             self.table_name,
             tuple_rows,
             delete_params=[self.repo, self.commit],

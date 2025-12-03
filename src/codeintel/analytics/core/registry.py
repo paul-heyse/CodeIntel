@@ -26,6 +26,7 @@ from codeintel.analytics.core.plugin_protocol import (
     PluginStage,
     ValidationResult,
 )
+from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
     from codeintel.analytics.core.execution_context import PluginExecutionContext
@@ -432,8 +433,9 @@ class PluginRegistry:
         return ordered
 
 
-# Global registry instance
-_REGISTRY: PluginRegistry | None = None
+# Singleton holder for plugin registry
+class _PluginRegistryHolder(SingletonHolder["PluginRegistry"]):
+    """Thread-safe singleton holder for PluginRegistry."""
 
 
 def get_registry() -> PluginRegistry:
@@ -444,10 +446,15 @@ def get_registry() -> PluginRegistry:
     PluginRegistry
         The singleton registry instance.
     """
-    global _REGISTRY  # noqa: PLW0603
-    if _REGISTRY is None:
-        _REGISTRY = PluginRegistry()
-    return _REGISTRY
+    return _PluginRegistryHolder.get(PluginRegistry)
+
+
+def reset_registry() -> None:
+    """Reset the global plugin registry.
+
+    Primarily useful for testing to ensure clean state between tests.
+    """
+    _PluginRegistryHolder.reset()
 
 
 def register_plugin(plugin: AnalyticsPluginProtocol) -> None:

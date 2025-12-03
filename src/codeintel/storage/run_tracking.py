@@ -179,6 +179,62 @@ class PipelineStepRecord:
 
 
 @dataclass(frozen=True)
+class StepCompletionParams:
+    """Parameters for completing a pipeline step.
+
+    Bundles completion data to reduce function argument count.
+
+    Parameters
+    ----------
+    run_id
+        Parent run identifier.
+    module
+        Module that executed the step.
+    stage
+        Stage within the module.
+    name
+        Step name (typically plugin name).
+    status
+        Final status of the step.
+    started_at
+        When the step started (from start_step).
+    row_counts
+        Optional mapping of table names to row counts.
+    extra
+        Optional additional metadata.
+    """
+
+    run_id: str
+    module: ModuleKind
+    stage: str
+    name: str
+    status: StepStatus
+    started_at: datetime
+    row_counts: Mapping[str, int] | None = None
+    extra: Mapping[str, Any] | None = None
+
+    def to_record(self) -> PipelineStepRecord:
+        """Convert to a PipelineStepRecord with current timestamp.
+
+        Returns
+        -------
+        PipelineStepRecord
+            Step record with completed_at set to now.
+        """
+        return PipelineStepRecord(
+            run_id=self.run_id,
+            module=self.module,
+            stage=self.stage,
+            name=self.name,
+            status=self.status,
+            started_at=self.started_at,
+            completed_at=_now(),
+            row_counts=self.row_counts,
+            extra=self.extra,
+        )
+
+
+@dataclass(frozen=True)
 class PipelineRunTracking:
     """Pipeline run tracking accessors for the storage gateway.
 
@@ -358,9 +414,7 @@ class PipelineRunTracking:
             if record.row_counts
             else None
         )
-        extra_json = (
-            json.dumps(dict(record.extra), separators=(",", ":")) if record.extra else None
-        )
+        extra_json = json.dumps(dict(record.extra), separators=(",", ":")) if record.extra else None
 
         self.con.execute(
             """
@@ -495,53 +549,17 @@ class PipelineRunTracking:
         self.record_step(record)
         return started_at
 
-    def complete_step(  # noqa: PLR0913
-        self,
-        *,
-        run_id: str,
-        module: ModuleKind,
-        stage: str,
-        name: str,
-        status: StepStatus,
-        started_at: datetime,
-        row_counts: Mapping[str, int] | None = None,
-        extra: Mapping[str, Any] | None = None,
-    ) -> None:
+    def complete_step(self, params: StepCompletionParams) -> None:
         """Record the completion of a pipeline step.
 
         Convenience method that updates a step record with final status.
 
         Parameters
         ----------
-        run_id
-            Parent run identifier.
-        module
-            Module that executed the step.
-        stage
-            Stage within the module.
-        name
-            Step name (typically plugin name).
-        status
-            Final status of the step.
-        started_at
-            When the step started (from start_step).
-        row_counts
-            Optional mapping of table names to row counts.
-        extra
-            Optional additional metadata.
+        params
+            Bundled completion parameters.
         """
-        record = PipelineStepRecord(
-            run_id=run_id,
-            module=module,
-            stage=stage,
-            name=name,
-            status=status,
-            started_at=started_at,
-            completed_at=_now(),
-            row_counts=row_counts,
-            extra=extra,
-        )
-        self.record_step(record)
+        self.record_step(params.to_record())
 
 
 __all__ = [
@@ -552,4 +570,3 @@ __all__ = [
     "PipelineStepRecord",
     "StepStatus",
 ]
-

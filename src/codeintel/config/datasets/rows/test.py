@@ -388,10 +388,6 @@ class ProfileRowModel(TypedDict):
     created_at: datetime
 
 
-# Alias for backwards compatibility
-TestProfileRowModel = ProfileRowModel
-
-
 def serialize_test_profile_row(row: ProfileRowModel) -> tuple[object, ...]:
     """Serialize a ProfileRowModel into INSERT column order.
 
@@ -751,7 +747,6 @@ __all__ = [
     "SubsystemProfileCacheRow",
     "TestCatalogRowModel",
     "TestCoverageEdgeRow",
-    "TestProfileRowModel",
     "behavioral_coverage_row_to_tuple",
     "serialize_test_catalog_row",
     "serialize_test_coverage_edge",
