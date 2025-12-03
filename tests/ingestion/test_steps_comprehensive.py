@@ -280,7 +280,8 @@ def test_compute_annotation_info_fully_typed() -> None:
 def foo(x: int, y: str) -> bool:
     return True
 """
-    info = typing_ingest.compute_annotation_info(source)
+    tree = ast.parse(source)
+    info = typing_ingest.compute_annotation_info(tree)
 
     assert info is not None
     assert info.params_ratio == 1.0
@@ -294,7 +295,8 @@ def test_compute_annotation_info_partially_typed() -> None:
 def foo(x: int, y):
     return True
 """
-    info = typing_ingest.compute_annotation_info(source)
+    tree = ast.parse(source)
+    info = typing_ingest.compute_annotation_info(tree)
 
     assert info is not None
     assert info.params_ratio == EXPECTED_PARAMS_RATIO_HALF  # 1 of 2 params annotated
@@ -308,7 +310,8 @@ def test_compute_annotation_info_untyped() -> None:
 def foo(x, y):
     return x + y
 """
-    info = typing_ingest.compute_annotation_info(source)
+    tree = ast.parse(source)
+    info = typing_ingest.compute_annotation_info(tree)
 
     assert info is not None
     assert info.params_ratio == 0.0
@@ -327,7 +330,8 @@ class Foo:
     def clsmethod(cls, y: str) -> None:
         pass
 """
-    info = typing_ingest.compute_annotation_info(source)
+    tree = ast.parse(source)
+    info = typing_ingest.compute_annotation_info(tree)
 
     assert info is not None
     # self and cls should be excluded, so both params should be typed
@@ -342,18 +346,30 @@ def test_compute_annotation_info_async_function() -> None:
 async def async_foo(x: int) -> str:
     return str(x)
 """
-    info = typing_ingest.compute_annotation_info(source)
+    tree = ast.parse(source)
+    info = typing_ingest.compute_annotation_info(tree)
 
     assert info is not None
     assert info.params_ratio == 1.0
     assert info.returns_ratio == 1.0
 
 
-def test_compute_annotation_info_syntax_error() -> None:
-    """Compute annotation info for invalid syntax returns None."""
-    info = typing_ingest.compute_annotation_info("def broken(")
+def test_compute_annotation_info_handles_empty_module() -> None:
+    """Compute annotation info handles an empty module AST gracefully.
 
-    assert info is None
+    Note: Since the public API takes AST and syntax errors are caught
+    internally during ast.parse(), we test that the function handles
+    an empty/trivial AST without error.
+    """
+    # Create a minimal empty module AST
+    empty_module = ast.Module(body=[], type_ignores=[])
+    info = typing_ingest.compute_annotation_info(empty_module)
+
+    # Empty module should return info with default ratios
+    assert info is not None
+    assert info.params_ratio == 1.0  # No params means 100% annotated
+    assert info.returns_ratio == 1.0  # No functions means 100% return typed
+    assert info.untyped_defs == 0
 
 
 def test_compute_annotation_info_no_functions() -> None:
@@ -362,7 +378,8 @@ def test_compute_annotation_info_no_functions() -> None:
 x = 1
 y = 2
 """
-    info = typing_ingest.compute_annotation_info(source)
+    tree = ast.parse(source)
+    info = typing_ingest.compute_annotation_info(tree)
 
     assert info is not None
     # No params, no functions, ratios should be 1.0 (no violations)
@@ -380,7 +397,8 @@ def typed_func(x: int) -> str:
 def untyped_func(x):
     return x
 """
-    info = typing_ingest.compute_annotation_info(source)
+    tree = ast.parse(source)
+    info = typing_ingest.compute_annotation_info(tree)
 
     assert info is not None
     # 1 typed param, 1 untyped param
@@ -397,7 +415,8 @@ def test_compute_annotation_info_with_decorators() -> None:
 def decorated(x: int) -> str:
     return str(x)
 """
-    info = typing_ingest.compute_annotation_info(source)
+    tree = ast.parse(source)
+    info = typing_ingest.compute_annotation_info(tree)
 
     assert info is not None
     assert info.params_ratio == 1.0
@@ -443,47 +462,78 @@ def foo(a, *args, b, **kwargs):
 
 def test_is_fully_typed_true() -> None:
     """is_fully_typed should return True for fully typed function."""
-    # Create typed arguments
-    arg1 = ast.arg(arg="x", annotation=ast.Name(id="int"))
-    arg2 = ast.arg(arg="y", annotation=ast.Name(id="str"))
+    source = """
+def foo(x: int, y: str) -> bool:
+    return True
+"""
+    tree = ast.parse(source)
+    func = tree.body[0]
+    assert isinstance(func, ast.FunctionDef)
 
-    result = typing_ingest.is_fully_typed([arg1, arg2], has_return=True)
+    result = typing_ingest.is_fully_typed(func)
 
     assert result is True
 
 
 def test_is_fully_typed_false_missing_annotation() -> None:
     """is_fully_typed should return False when param annotation missing."""
-    arg1 = ast.arg(arg="x", annotation=ast.Name(id="int"))
-    arg2 = ast.arg(arg="y", annotation=None)  # No annotation
+    source = """
+def foo(x: int, y) -> bool:
+    return True
+"""
+    tree = ast.parse(source)
+    func = tree.body[0]
+    assert isinstance(func, ast.FunctionDef)
 
-    result = typing_ingest.is_fully_typed([arg1, arg2], has_return=True)
+    result = typing_ingest.is_fully_typed(func)
 
     assert result is False
 
 
 def test_is_fully_typed_false_no_return() -> None:
     """is_fully_typed should return False when return annotation missing."""
-    arg1 = ast.arg(arg="x", annotation=ast.Name(id="int"))
+    source = """
+def foo(x: int):
+    return x
+"""
+    tree = ast.parse(source)
+    func = tree.body[0]
+    assert isinstance(func, ast.FunctionDef)
 
-    result = typing_ingest.is_fully_typed([arg1], has_return=False)
+    result = typing_ingest.is_fully_typed(func)
 
     assert result is False
 
 
 def test_is_fully_typed_ignores_self_cls() -> None:
     """is_fully_typed should ignore self and cls params."""
-    self_arg = ast.arg(arg="self", annotation=None)  # No annotation for self
-    typed_arg = ast.arg(arg="x", annotation=ast.Name(id="int"))
+    source = """
+class Foo:
+    def method(self, x: int) -> bool:
+        return True
+"""
+    tree = ast.parse(source)
+    class_def = tree.body[0]
+    assert isinstance(class_def, ast.ClassDef)
+    func = class_def.body[0]
+    assert isinstance(func, ast.FunctionDef)
 
-    result = typing_ingest.is_fully_typed([self_arg, typed_arg], has_return=True)
+    result = typing_ingest.is_fully_typed(func)
 
     assert result is True
 
 
 def test_is_fully_typed_empty_params() -> None:
     """is_fully_typed should return True for function with no params."""
-    result = typing_ingest.is_fully_typed([], has_return=True)
+    source = """
+def foo() -> bool:
+    return True
+"""
+    tree = ast.parse(source)
+    func = tree.body[0]
+    assert isinstance(func, ast.FunctionDef)
+
+    result = typing_ingest.is_fully_typed(func)
 
     assert result is True
 

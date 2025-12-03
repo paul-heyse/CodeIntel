@@ -14,7 +14,7 @@ This module tests the core graph metrics plugins from
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final
 
 import networkx as nx
 
@@ -129,13 +129,15 @@ class _MockGraphEngine:
     """Minimal graph engine mock for testing metrics computation.
 
     This provides the same interface as NxGraphEngine for the
-    methods needed by metrics plugins.
+    methods needed by metrics plugins and GraphResource.
     """
 
     def __init__(
         self,
         call_graph: nx.DiGraph | None = None,
         import_graph: nx.DiGraph | None = None,
+        repo: str = "test/metrics",
+        commit: str = "metrics123",
     ) -> None:
         """Initialize with graphs.
 
@@ -145,9 +147,28 @@ class _MockGraphEngine:
             Call graph to return.
         import_graph
             Import graph to return.
+        repo
+            Repository identifier.
+        commit
+            Commit hash.
         """
         self._call_graph = call_graph or nx.DiGraph()
         self._import_graph = import_graph or nx.DiGraph()
+        self._repo = repo
+        self._commit = commit
+
+    @property
+    def repo(self) -> str:
+        """Repository identifier."""
+        return self._repo
+
+    @property
+    def commit(self) -> str:
+        """Commit hash."""
+        return self._commit
+
+    def clear_cache(self) -> None:
+        """Clear cached graphs (no-op for mock)."""
 
     def call_graph(self) -> nx.DiGraph:
         """Return the call graph.
@@ -175,7 +196,7 @@ def _make_execution_context(
     tmp_path: Path,
     *,
     engine: _MockGraphEngine | NxGraphEngine | None = None,
-    use_resources: bool = False,
+    use_resources: bool = True,
 ) -> GraphExecutionContext:
     """Create an execution context for metrics tests.
 
@@ -201,14 +222,14 @@ def _make_execution_context(
 
     # Always register storage; optionally graph resource
     resources.register(StorageResource(gateway, tmp_path))
-    if use_resources and engine is not None and isinstance(engine, NxGraphEngine):
-        resources.register(GraphResource(engine))
+    if use_resources and engine is not None:
+        # Accept any engine-like object (including _MockGraphEngine for tests)
+        resources.register(GraphResource(engine))  # type: ignore[arg-type]
 
     return GraphExecutionContext(
         snapshot=snapshot,
         resources=resources,
         _gateway=gateway,
-        _engine=cast("NxGraphEngine | None", engine),
         scratch=scratch,
         plugin_name="metrics_test",
         run_id="metrics-run-001",
@@ -246,7 +267,7 @@ def test_compute_core_graph_metrics_no_engine_fails(tmp_path: Path) -> None:
         result = get_core_graph_metrics_plugin().execute(ctx)
 
         assert not result.success
-        assert result.error == "No graph engine available"
+        assert result.error == "No GraphResource registered in context"
     finally:
         gateway.close()
 
@@ -299,7 +320,7 @@ def test_compute_function_ext_metrics_no_engine_fails(tmp_path: Path) -> None:
         result = get_function_ext_metrics_plugin().execute(ctx)
 
         assert not result.success
-        assert result.error == "No graph engine available"
+        assert result.error == "No GraphResource registered in context"
     finally:
         gateway.close()
 
@@ -332,7 +353,7 @@ def test_compute_module_ext_metrics_no_engine_fails(tmp_path: Path) -> None:
         result = get_module_ext_metrics_plugin().execute(ctx)
 
         assert not result.success
-        assert result.error == "No graph engine available"
+        assert result.error == "No GraphResource registered in context"
     finally:
         gateway.close()
 

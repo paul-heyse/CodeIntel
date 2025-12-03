@@ -12,6 +12,7 @@ import pytest
 
 from codeintel.ingestion.infrastructure_utilities import (
     ResolvedScipConfig,
+    ScipPathConfig,
     ScipResolverInput,
     resolve_scip_inputs,
 )
@@ -203,9 +204,11 @@ def test_resolve_scip_inputs_with_explicit_params(
         inputs=ScipResolverInput.build(
             repo="test-org/test-repo",
             commit="abc123",
-            repo_root=repo_root,
-            build_dir=build_dir,
-            document_output_dir=doc_dir,
+            paths=ScipPathConfig.from_strings(
+                repo_root=repo_root,
+                build_dir=build_dir,
+                document_output_dir=doc_dir,
+            ),
         ),
     )
 
@@ -272,9 +275,11 @@ def test_resolve_scip_inputs_with_modules_sequence(
         inputs=ScipResolverInput.build(
             repo="test-repo",
             commit="abc",
-            repo_root=repo_root,
-            build_dir=tmp_path / "build",
-            document_output_dir=tmp_path / "docs",
+            paths=ScipPathConfig.from_strings(
+                repo_root=repo_root,
+                build_dir=tmp_path / "build",
+                document_output_dir=tmp_path / "docs",
+            ),
         ),
     )
 
@@ -303,9 +308,11 @@ def test_resolve_scip_inputs_with_modules_in_input(
         inputs=ScipResolverInput.build(
             repo="test-repo",
             commit="abc",
-            repo_root=repo_root,
-            build_dir=tmp_path / "build",
-            document_output_dir=tmp_path / "docs",
+            paths=ScipPathConfig.from_strings(
+                repo_root=repo_root,
+                build_dir=tmp_path / "build",
+                document_output_dir=tmp_path / "docs",
+            ),
             modules=[module],
         ),
     )
@@ -324,9 +331,11 @@ def test_resolve_scip_inputs_missing_repo_raises_value_error(
             modules_or_cfg=[],
             inputs=ScipResolverInput.build(
                 commit="abc",
-                repo_root=tmp_path,
-                build_dir=tmp_path / "build",
-                document_output_dir=tmp_path / "docs",
+                paths=ScipPathConfig.from_strings(
+                    repo_root=tmp_path,
+                    build_dir=tmp_path / "build",
+                    document_output_dir=tmp_path / "docs",
+                ),
             ),
         )
 
@@ -341,9 +350,11 @@ def test_resolve_scip_inputs_missing_commit_raises_value_error(
             modules_or_cfg=[],
             inputs=ScipResolverInput.build(
                 repo="test-repo",
-                repo_root=tmp_path,
-                build_dir=tmp_path / "build",
-                document_output_dir=tmp_path / "docs",
+                paths=ScipPathConfig.from_strings(
+                    repo_root=tmp_path,
+                    build_dir=tmp_path / "build",
+                    document_output_dir=tmp_path / "docs",
+                ),
             ),
         )
 
@@ -359,8 +370,10 @@ def test_resolve_scip_inputs_missing_repo_root_raises_value_error(
             inputs=ScipResolverInput.build(
                 repo="test-repo",
                 commit="abc",
-                build_dir=tmp_path / "build",
-                document_output_dir=tmp_path / "docs",
+                paths=ScipPathConfig.from_strings(
+                    build_dir=tmp_path / "build",
+                    document_output_dir=tmp_path / "docs",
+                ),
             ),
         )
 
@@ -376,8 +389,10 @@ def test_resolve_scip_inputs_missing_build_dir_raises_value_error(
             inputs=ScipResolverInput.build(
                 repo="test-repo",
                 commit="abc",
-                repo_root=tmp_path,
-                document_output_dir=tmp_path / "docs",
+                paths=ScipPathConfig.from_strings(
+                    repo_root=tmp_path,
+                    document_output_dir=tmp_path / "docs",
+                ),
             ),
         )
 
@@ -393,8 +408,10 @@ def test_resolve_scip_inputs_missing_document_output_dir_raises_value_error(
             inputs=ScipResolverInput.build(
                 repo="test-repo",
                 commit="abc",
-                repo_root=tmp_path,
-                build_dir=tmp_path / "build",
+                paths=ScipPathConfig.from_strings(
+                    repo_root=tmp_path,
+                    build_dir=tmp_path / "build",
+                ),
             ),
         )
 

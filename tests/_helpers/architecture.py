@@ -20,6 +20,7 @@ from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gatewa
 from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS
 from codeintel.storage.schemas import apply_all_schemas
+from tests._helpers.coverage_env import CoverageSeedConfig, seed_coverage_rows
 from tests._helpers.duckdb import gateway_with_macros
 
 
@@ -177,30 +178,20 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
     _clear_architecture_seed(gateway=gateway, repo=repo, commit=commit)
     now = datetime.now(UTC)
     now_iso = now.isoformat()
+    seed = CoverageSeedConfig(test_goid=10)
+    rel_path = Path(seed.module_import.replace(".", "/")).with_suffix(".py").as_posix()
 
     gateway.core.insert_repo_map([(repo, commit, "{}", "{}", now_iso)])
+    seed_coverage_rows(
+        gateway=gateway,
+        rel_path=rel_path,
+        seed=seed,
+        include_test_catalog=False,
+    )
     gateway.core.insert_modules(
         [
-            ("pkg.mod", "pkg/mod.py", repo, commit),
             ("pkg.alpha", "pkg/alpha.py", repo, commit),
             ("pkg.beta", "pkg/beta.py", repo, commit),
-        ]
-    )
-    gateway.core.insert_goids(
-        [
-            (
-                1,
-                "goid:demo/repo#python:function:pkg.mod.func",
-                repo,
-                commit,
-                "pkg/mod.py",
-                "python",
-                "function",
-                "pkg.mod.func",
-                1,
-                2,
-                now_iso,
-            )
         ]
     )
     gateway.analytics.insert_function_metrics(

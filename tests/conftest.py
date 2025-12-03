@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
+import duckdb
 import pytest
+from coverage import Coverage
 
-from codeintel.graphs.plugins.builders import callgraph as callgraph_builders
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
 from tests._helpers.coverage_env import (
     CoverageEdgeEnv,
+    CoverageSeedConfig,
+    assert_single_edge,
+    compute_coverage_edges,
     create_coverage_edge_env,
     generate_coverage_artifact,
 )
+from tests._helpers.duckdb import memory_con_with_macros
 from tests._helpers.fixtures import (
     GatewayOptions,
     ProvisionedGateway,
@@ -25,12 +30,16 @@ from tests._helpers.fixtures import (
     provision_ingested_repo,
     provisioned_gateway,
 )
-from tests._helpers.graph_env import SpanTestEnv, create_span_test_env
-from tests._helpers.pipeline_env import PipelineEnv, create_pipeline_env
-
-# Compatibility shim for legacy graph step imports that still expect get_callgraph_plugin.
-if not hasattr(callgraph_builders, "get_callgraph_plugin"):
-    callgraph_builders.get_callgraph_plugin = callgraph_builders.get_callgraph_builder_plugin
+from tests._helpers.graph_env import (
+    SpanTestEnv,
+    create_span_test_env,
+    generate_span_coverage,
+)
+from tests._helpers.pipeline_env import (
+    PipelineEnv,
+    create_pipeline_env,
+    generate_pipeline_coverage,
+)
 
 
 @pytest.fixture
@@ -212,14 +221,205 @@ def coverage_env(tmp_path: Path) -> Iterator[CoverageEdgeEnv]:
 
 
 @pytest.fixture
-def coverage_artifact(coverage_env: CoverageEdgeEnv, tmp_path: Path) -> Iterator[Path]:
+def coverage_artifact(coverage_env: CoverageEdgeEnv, tmp_path: Path) -> Path:
     """
     Generate a coverage artifact for the seeded coverage environment.
 
-    Yields
-    ------
+    Returns
+    -------
     Path
         Path to the generated coverage data file.
     """
     artifact = generate_coverage_artifact(coverage_env, coverage_file=tmp_path / ".coverage")
-    yield artifact.coverage_file
+    return artifact.coverage_file
+
+
+@pytest.fixture
+def coverage_loader(coverage_artifact: Path) -> Callable[[object], Coverage]:
+    """
+    Provide a coverage loader callable for tests consuming coverage fixtures.
+
+    Returns
+    -------
+    Callable[[object], Coverage]
+        Loader that returns Coverage loaded from the artifact path.
+    """
+
+    def _loader(_cfg: object) -> Coverage:
+        cov = Coverage(data_file=str(coverage_artifact))
+        cov.load()
+        return cov
+
+    return _loader
+
+
+@pytest.fixture
+def coverage_edges_seed(coverage_env: CoverageEdgeEnv, coverage_artifact: Path) -> CoverageEdgeEnv:
+    """
+    Seed analytics.test_coverage_edges using the shared coverage environment.
+
+    Returns
+    -------
+    CoverageEdgeEnv
+        Coverage environment after edges have been computed.
+    """
+    compute_coverage_edges(coverage_env, coverage_file=coverage_artifact)
+    assert_single_edge(coverage_env.gateway.con)
+    return coverage_env
+
+
+@pytest.fixture
+def coverage_env_factory(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[Callable[[CoverageSeedConfig], CoverageEdgeEnv]]:
+    """
+    Create coverage environments with custom seeds.
+
+    Yields
+    ------
+    Callable[[CoverageSeedConfig], CoverageEdgeEnv]
+        Factory that returns a seeded CoverageEdgeEnv for the given seed.
+    """
+    envs: list[CoverageEdgeEnv] = []
+
+    def _factory(seed: CoverageSeedConfig) -> CoverageEdgeEnv:
+        env = create_coverage_edge_env(tmp_path_factory.mktemp("cov_env"), seed=seed)
+        envs.append(env)
+        return env
+
+    try:
+        yield _factory
+    finally:
+        for env in envs:
+            env.gateway.close()
+
+
+@pytest.fixture
+def coverage_profiles_conn() -> Iterator[duckdb.DuckDBPyConnection]:
+    """
+    Provide an in-memory DuckDB connection with coverage-related tables.
+
+    Yields
+    ------
+    duckdb.DuckDBPyConnection
+        Connection seeded with schemas for coverage profile tests.
+    """
+    con = memory_con_with_macros()
+    con.execute("CREATE SCHEMA analytics")
+    con.execute("CREATE SCHEMA core")
+    con.execute(
+        """
+        CREATE TABLE analytics.test_coverage_edges (
+            test_id VARCHAR,
+            function_goid_h128 DECIMAL(38,0),
+            module VARCHAR,
+            covered_lines INTEGER,
+            executable_lines INTEGER,
+            repo VARCHAR,
+            commit VARCHAR,
+            rel_path VARCHAR,
+            qualname VARCHAR
+        )
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE analytics.test_catalog (
+            test_id VARCHAR,
+            repo VARCHAR,
+            commit VARCHAR,
+            status VARCHAR,
+            duration_ms DOUBLE,
+            flaky BOOLEAN
+        )
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE analytics.subsystem_modules (
+            module VARCHAR,
+            subsystem_id VARCHAR,
+            repo VARCHAR,
+            commit VARCHAR
+        )
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE analytics.subsystems (
+            subsystem_id VARCHAR,
+            name VARCHAR,
+            max_risk_score DOUBLE,
+            repo VARCHAR,
+            commit VARCHAR
+        )
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE analytics.test_graph_metrics_tests (
+            test_id VARCHAR,
+            degree INTEGER,
+            weighted_degree DOUBLE,
+            proj_degree INTEGER,
+            proj_weight DOUBLE,
+            proj_clustering DOUBLE,
+            proj_betweenness DOUBLE,
+            repo VARCHAR,
+            commit VARCHAR
+        )
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE core.goids (
+            goid_h128 DECIMAL(38,0),
+            urn VARCHAR,
+            repo VARCHAR,
+            commit VARCHAR,
+            rel_path VARCHAR,
+            qualname VARCHAR
+        )
+        """
+    )
+    con.execute(
+        """
+        CREATE TABLE core.modules (
+            module VARCHAR,
+            path VARCHAR,
+            repo VARCHAR,
+            commit VARCHAR
+        )
+        """
+    )
+    try:
+        yield con
+    finally:
+        con.close()
+
+
+@pytest.fixture
+def span_coverage_artifact(span_env: SpanTestEnv) -> Path:
+    """
+    Generate a coverage artifact for the span alignment environment.
+
+    Returns
+    -------
+    Path
+        Path to the generated coverage data file.
+    """
+    artifact = generate_span_coverage(span_env.repo_root)
+    return artifact.coverage_file
+
+
+@pytest.fixture
+def pipeline_coverage_artifact(pipeline_env: PipelineEnv) -> Path:
+    """
+    Generate a coverage artifact for the pipeline environment.
+
+    Returns
+    -------
+    Path
+        Path to the generated coverage data file.
+    """
+    return generate_pipeline_coverage(pipeline_env)
