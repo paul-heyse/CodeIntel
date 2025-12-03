@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.main import GatewayFactory, cmd_docs_export
 from codeintel.config.models import CodeIntelConfig
+from codeintel.pipeline.cli.main import GatewayFactory, cmd_docs_export
 from codeintel.pipeline.export.runner import ExportOptions
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.fixtures import provision_docs_export_ready

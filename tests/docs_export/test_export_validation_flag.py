@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli import main as cli_main
+from codeintel.pipeline.cli import main as cli_main
 from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_function_types, insert_goids
 from tests._helpers.fixtures import GatewayOptions, provision_gateway_with_repo
 

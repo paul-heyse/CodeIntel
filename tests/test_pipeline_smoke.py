@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.main import main
+from codeintel.pipeline.cli.main import main
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
 

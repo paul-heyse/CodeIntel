@@ -104,7 +104,7 @@ from codeintel.storage.metadata_bootstrap import (
 from codeintel.storage.scaffold import ScaffoldOptions, scaffold_dataset
 from codeintel.storage.schema_generation import generate_export_schemas
 
-LOG = logging.getLogger("codeintel.cli")
+LOG = logging.getLogger("codeintel.pipeline.cli")
 
 
 class GatewayFactory(Protocol):

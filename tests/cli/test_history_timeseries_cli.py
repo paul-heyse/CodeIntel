@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.cli.main import main
+from codeintel.pipeline.cli.main import main
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import expect_equal, expect_true
 from tests._helpers.history import SnapshotSpec, create_snapshot_db

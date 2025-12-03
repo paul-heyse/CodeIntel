@@ -12,6 +12,7 @@ import pytest
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.engine import views as nx_views
+from codeintel.graphs.engine.cache import GraphCache
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -190,3 +191,96 @@ def test_engine_matches_nx_views_for_core_graphs() -> None:
                 pytest.fail(f"{name} was not cached on subsequent engine calls")
     finally:
         gateway.close()
+
+
+# ===========================================================================
+# GraphCache Tests
+# ===========================================================================
+
+
+def test_cache_seed_with_none_is_noop() -> None:
+    """GraphCache.seed with None value does not store anything."""
+    cache = GraphCache()
+
+    cache.seed("call", None)  # type: ignore[arg-type]
+
+    assert cache.has("call") is False
+
+
+def test_cache_seed_stores_graph() -> None:
+    """GraphCache.seed stores the graph for retrieval."""
+    cache = GraphCache()
+    graph = nx.DiGraph()
+
+    cache.seed("call", graph)
+
+    assert cache.has("call") is True
+
+
+def test_cache_get_returns_cached_graph() -> None:
+    """GraphCache.get returns cached graph without calling loader."""
+    cache = GraphCache()
+    original_graph = nx.DiGraph()
+    cache.seed("call", original_graph)
+    call_count = 0
+
+    def loader() -> nx.DiGraph:
+        nonlocal call_count
+        call_count += 1
+        return nx.DiGraph()
+
+    result = cache.get("call", loader)
+
+    assert result is original_graph
+    assert call_count == 0
+
+
+def test_cache_get_calls_loader_when_not_cached() -> None:
+    """GraphCache.get calls loader and caches result when not present."""
+    cache = GraphCache()
+    expected_graph = nx.DiGraph()
+    call_count = 0
+
+    def loader() -> nx.DiGraph:
+        nonlocal call_count
+        call_count += 1
+        return expected_graph
+
+    result = cache.get("call", loader)
+
+    expected_calls = 1
+    assert result is expected_graph
+    assert call_count == expected_calls
+    assert cache.has("call") is True
+
+
+def test_cache_clear_removes_all_entries() -> None:
+    """GraphCache.clear removes all cached graphs."""
+    cache = GraphCache()
+    cache.seed("call", nx.DiGraph())
+    cache.seed("import", nx.DiGraph())
+
+    cache.clear()
+
+    assert cache.has("call") is False
+    assert cache.has("import") is False
+
+
+def test_cache_invalidate_removes_specific_entry() -> None:
+    """GraphCache.invalidate removes only the specified graph kind."""
+    cache = GraphCache()
+    cache.seed("call", nx.DiGraph())
+    cache.seed("import", nx.DiGraph())
+
+    cache.invalidate("call")
+
+    assert cache.has("call") is False
+    assert cache.has("import") is True
+
+
+def test_cache_invalidate_with_missing_key_is_noop() -> None:
+    """GraphCache.invalidate with non-existent key does not raise."""
+    cache = GraphCache()
+
+    # Should not raise
+    cache.invalidate("call")

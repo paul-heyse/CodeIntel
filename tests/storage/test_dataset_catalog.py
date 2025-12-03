@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.cli.main import run_datasets_catalog
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY, DatasetContract
+from codeintel.pipeline.cli.main import run_datasets_catalog
 from codeintel.storage.catalog import (
     SamplingConfig,
     build_catalog,

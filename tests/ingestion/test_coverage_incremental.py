@@ -17,7 +17,6 @@ from codeintel.ingestion import (
     ToolRunnerAdapter,
 )
 from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
-from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.infrastructure_utilities.source_scanner import (
     default_code_profile,
     default_config_profile,
@@ -27,6 +26,7 @@ from codeintel.ingestion.plugins import (
     IngestRuntimeScratch,
     get_ingest_registry,
 )
+from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.resources import (
     ModuleProvider,
     ResourceRegistry,

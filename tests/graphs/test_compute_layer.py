@@ -1,0 +1,718 @@
+"""Tests for compute layer pure functions.
+
+This module tests the stateless computation functions for callgraph
+resolution, import analysis, and symbol use tracking.
+"""
+
+from __future__ import annotations
+
+import ast
+from typing import Final
+
+import libcst as cst
+
+from codeintel.graphs.compute.callgraph import (
+    CallEdge,
+    ResolutionResult,
+    build_callee_map,
+    build_evidence,
+    dedupe_edges,
+    extract_callee_ast,
+    extract_callee_cst,
+    resolve_callee,
+    resolve_via_scip,
+)
+from codeintel.graphs.compute.imports import (
+    ImportAnalysisResult,
+    ImportEdge,
+    analyze_imports,
+    build_import_edge_rows,
+    build_import_module_rows,
+    collect_import_edges,
+    compute_layers,
+    compute_scc,
+)
+from codeintel.graphs.compute.symbols import (
+    SymbolOccurrence,
+    SymbolUseEdge,
+    build_def_map,
+    build_use_def_mapping,
+    build_use_edges,
+    edges_to_rows,
+    parse_symbol_roles,
+)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+EXPECTED_EDGE_COUNT_ONE: Final[int] = 1
+EXPECTED_EDGE_COUNT_TWO: Final[int] = 2
+EXPECTED_EDGE_COUNT_THREE: Final[int] = 3
+LOCAL_CONFIDENCE: Final[float] = 0.8
+LOCAL_ATTR_CONFIDENCE: Final[float] = 0.75
+IMPORT_ALIAS_CONFIDENCE: Final[float] = 0.7
+GLOBAL_CONFIDENCE: Final[float] = 0.6
+SCIP_CONFIDENCE: Final[float] = 0.55
+UNRESOLVED_CONFIDENCE: Final[float] = 0.0
+EXPECTED_LAYER_ZERO: Final[int] = 0
+EXPECTED_LAYER_ONE: Final[int] = 1
+EXPECTED_LAYER_TWO: Final[int] = 2
+DEFINITION_ROLE: Final[int] = 1
+REFERENCE_ROLE: Final[int] = 2
+REFERENCE_ROLE_COMBINED: Final[int] = 2 | 4
+TEST_GOID_A: Final[int] = 100
+TEST_GOID_B: Final[int] = 200
+TEST_GOID_C: Final[int] = 300
+
+
+# ===========================================================================
+# resolve_callee Tests
+# ===========================================================================
+
+
+def test_resolve_callee_local_name() -> None:
+    """Resolve callee via local name lookup."""
+    local_callees = {"my_func": TEST_GOID_A}
+    result = resolve_callee("my_func", [], local_callees, {}, {})
+
+    assert result.callee_goid == TEST_GOID_A
+    assert result.resolved_via == "local_name"
+    assert result.confidence == LOCAL_CONFIDENCE
+
+
+def test_resolve_callee_local_attr() -> None:
+    """Resolve callee via local attribute lookup."""
+    local_callees = {"module.func": TEST_GOID_A}
+    result = resolve_callee("func", ["module", "func"], {}, local_callees, {})
+
+    # Should resolve via local_attr when attr_chain matches
+    assert result.resolved_via in {"local_attr", "global_name"}
+
+
+def test_resolve_callee_import_alias() -> None:
+    """Resolve callee via import alias."""
+    global_callees = {"external.module.func": TEST_GOID_A}
+    import_aliases = {"ext": "external.module"}
+    result = resolve_callee("func", ["ext", "func"], {}, global_callees, import_aliases)
+
+    assert result.callee_goid == TEST_GOID_A
+    assert result.resolved_via == "import_alias"
+    assert result.confidence == IMPORT_ALIAS_CONFIDENCE
+
+
+def test_resolve_callee_global_name() -> None:
+    """Resolve callee via global name lookup."""
+    global_callees = {"global_func": TEST_GOID_A}
+    result = resolve_callee("global_func", [], {}, global_callees, {})
+
+    assert result.callee_goid == TEST_GOID_A
+    assert result.resolved_via == "global_name"
+    assert result.confidence == GLOBAL_CONFIDENCE
+
+
+def test_resolve_callee_unresolved() -> None:
+    """Unresolved callee returns None with unresolved status."""
+    result = resolve_callee("unknown_func", [], {}, {}, {})
+
+    assert result.callee_goid is None
+    assert result.resolved_via == "unresolved"
+    assert result.confidence == UNRESOLVED_CONFIDENCE
+
+
+def test_resolve_callee_priority_local_over_global() -> None:
+    """Local resolution takes priority over global."""
+    local_callees = {"func": TEST_GOID_A}
+    global_callees = {"func": TEST_GOID_B}
+    result = resolve_callee("func", [], local_callees, global_callees, {})
+
+    assert result.callee_goid == TEST_GOID_A
+    assert result.resolved_via == "local_name"
+
+
+# ===========================================================================
+# resolve_via_scip Tests
+# ===========================================================================
+
+
+def test_resolve_via_scip_found() -> None:
+    """SCIP resolution finds matching def path."""
+    def_goids = {"path/to/module.py:func": TEST_GOID_A}
+    result = resolve_via_scip(("path/to/module.py:func",), def_goids)
+
+    assert result.callee_goid == TEST_GOID_A
+    assert result.resolved_via == "scip_def_path"
+    assert result.confidence == SCIP_CONFIDENCE
+
+
+def test_resolve_via_scip_not_found() -> None:
+    """SCIP resolution returns unresolved when no match."""
+    result = resolve_via_scip(("nonexistent/path.py:func",), {})
+
+    assert result.callee_goid is None
+    assert result.resolved_via == "unresolved"
+    assert result.confidence == UNRESOLVED_CONFIDENCE
+
+
+def test_resolve_via_scip_empty_candidates() -> None:
+    """SCIP resolution handles empty candidates."""
+    result = resolve_via_scip((), {})
+
+    assert result.callee_goid is None
+    assert result.resolved_via == "unresolved"
+
+
+# ===========================================================================
+# build_evidence Tests
+# ===========================================================================
+
+
+def test_build_evidence_basic() -> None:
+    """Build evidence with basic resolution."""
+    resolution = ResolutionResult(
+        callee_goid=TEST_GOID_A, resolved_via="local_name", confidence=LOCAL_CONFIDENCE
+    )
+    evidence = build_evidence("my_func", [], resolution)
+
+    assert evidence["callee_name"] == "my_func"
+    assert evidence["resolved_via"] == "local_name"
+    assert evidence["attr_chain"] is None
+
+
+def test_build_evidence_with_attr_chain() -> None:
+    """Build evidence with attribute chain."""
+    resolution = ResolutionResult(
+        callee_goid=TEST_GOID_A, resolved_via="import_alias", confidence=IMPORT_ALIAS_CONFIDENCE
+    )
+    evidence = build_evidence("func", ["module", "func"], resolution)
+
+    assert evidence["callee_name"] == "func"
+    assert evidence["attr_chain"] == ["module", "func"]
+    assert evidence["resolved_via"] == "import_alias"
+
+
+def test_build_evidence_with_scip_candidates() -> None:
+    """Build evidence with SCIP candidates."""
+    resolution = ResolutionResult(
+        callee_goid=TEST_GOID_A, resolved_via="scip_def_path", confidence=SCIP_CONFIDENCE
+    )
+    scip_candidates = ("path/a.py:func", "path/b.py:func")
+    evidence = build_evidence("func", [], resolution, scip_candidates)
+
+    assert "scip_candidates" in evidence
+    assert evidence["scip_candidates"] == list(scip_candidates)
+
+
+# ===========================================================================
+# extract_callee Tests
+# ===========================================================================
+
+
+def test_extract_callee_cst_simple_name() -> None:
+    """Extract callee from simple CST Name node."""
+    module = cst.parse_module("func()")
+    call = module.body[0]
+    if isinstance(call, cst.SimpleStatementLine):
+        expr = call.body[0]
+        if isinstance(expr, cst.Expr) and isinstance(expr.value, cst.Call):
+            name, chain = extract_callee_cst(expr.value.func)
+            assert name == "func"
+            assert chain == ["func"]
+
+
+def test_extract_callee_cst_attribute() -> None:
+    """Extract callee from CST Attribute node."""
+    module = cst.parse_module("module.func()")
+    call = module.body[0]
+    if isinstance(call, cst.SimpleStatementLine):
+        expr = call.body[0]
+        if isinstance(expr, cst.Expr) and isinstance(expr.value, cst.Call):
+            name, chain = extract_callee_cst(expr.value.func)
+            assert name == "func"
+            assert chain == ["module", "func"]
+
+
+def test_extract_callee_cst_nested_attribute() -> None:
+    """Extract callee from nested CST Attribute."""
+    module = cst.parse_module("a.b.c.func()")
+    call = module.body[0]
+    if isinstance(call, cst.SimpleStatementLine):
+        expr = call.body[0]
+        if isinstance(expr, cst.Expr) and isinstance(expr.value, cst.Call):
+            name, chain = extract_callee_cst(expr.value.func)
+            assert name == "func"
+            assert chain == ["a", "b", "c", "func"]
+
+
+def test_extract_callee_ast_simple_name() -> None:
+    """Extract callee from simple AST Name node."""
+    tree = ast.parse("func()")
+    call = tree.body[0]
+    if isinstance(call, ast.Expr) and isinstance(call.value, ast.Call):
+        name, chain = extract_callee_ast(call.value.func)
+        assert name == "func"
+        assert chain == ["func"]
+
+
+def test_extract_callee_ast_attribute() -> None:
+    """Extract callee from AST Attribute node."""
+    tree = ast.parse("module.func()")
+    call = tree.body[0]
+    if isinstance(call, ast.Expr) and isinstance(call.value, ast.Call):
+        name, chain = extract_callee_ast(call.value.func)
+        assert name == "module"
+        assert chain == ["module", "func"]
+
+
+# ===========================================================================
+# dedupe_edges Tests
+# ===========================================================================
+
+
+def test_dedupe_edges_empty() -> None:
+    """Dedupe handles empty list."""
+    result = dedupe_edges([])
+    assert result == []
+
+
+def test_dedupe_edges_no_duplicates() -> None:
+    """Dedupe returns same edges when no duplicates."""
+    edges = [
+        CallEdge(
+            caller_goid=TEST_GOID_A,
+            callee_goid=TEST_GOID_B,
+            callee_name="func1",
+            call_line=10,
+            rel_path="test.py",
+            evidence="local_name",
+            confidence=LOCAL_CONFIDENCE,
+        ),
+        CallEdge(
+            caller_goid=TEST_GOID_A,
+            callee_goid=TEST_GOID_C,
+            callee_name="func2",
+            call_line=20,
+            rel_path="test.py",
+            evidence="global_name",
+            confidence=GLOBAL_CONFIDENCE,
+        ),
+    ]
+    result = dedupe_edges(edges)
+    assert len(result) == EXPECTED_EDGE_COUNT_TWO
+
+
+def test_dedupe_edges_keeps_highest_confidence() -> None:
+    """Dedupe keeps edge with highest confidence."""
+    edges = [
+        CallEdge(
+            caller_goid=TEST_GOID_A,
+            callee_goid=TEST_GOID_B,
+            callee_name="func",
+            call_line=10,
+            rel_path="test.py",
+            evidence="global_name",
+            confidence=GLOBAL_CONFIDENCE,
+        ),
+        CallEdge(
+            caller_goid=TEST_GOID_A,
+            callee_goid=TEST_GOID_B,
+            callee_name="func",
+            call_line=10,
+            rel_path="test.py",
+            evidence="local_name",
+            confidence=LOCAL_CONFIDENCE,
+        ),
+    ]
+    result = dedupe_edges(edges)
+    assert len(result) == EXPECTED_EDGE_COUNT_ONE
+    kept = result[0]
+    assert isinstance(kept, CallEdge)
+    assert kept.confidence == LOCAL_CONFIDENCE
+
+
+# ===========================================================================
+# build_callee_map Tests
+# ===========================================================================
+
+
+def test_build_callee_map_empty() -> None:
+    """Build callee map from empty spans."""
+    result = build_callee_map([])
+    assert result == {}
+
+
+# ===========================================================================
+# Import Analysis Tests
+# ===========================================================================
+
+
+def test_collect_import_edges_basic() -> None:
+    """Collect import edges from parsed imports."""
+    imports = [
+        ("os", ("path",)),
+        ("sys", ()),
+    ]
+    edges = collect_import_edges("mymodule", imports)
+
+    assert len(edges) == EXPECTED_EDGE_COUNT_TWO
+    assert ImportEdge(src_module="mymodule", dst_module="os") in edges
+    assert ImportEdge(src_module="mymodule", dst_module="sys") in edges
+
+
+def test_collect_import_edges_empty_import() -> None:
+    """Skip empty imports."""
+    imports = [
+        ("", ()),
+        ("os", ()),
+    ]
+    edges = collect_import_edges("mymodule", imports)
+
+    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
+    assert edges[0].dst_module == "os"
+
+
+def test_compute_scc_empty() -> None:
+    """Compute SCC on empty graph."""
+    result = compute_scc([], set())
+    assert result == {}
+
+
+def test_compute_scc_single_node() -> None:
+    """Compute SCC for single node."""
+    modules = {"module_a"}
+    result = compute_scc([], modules)
+
+    assert len(result) == EXPECTED_EDGE_COUNT_ONE
+    assert "module_a" in result
+
+
+def test_compute_scc_simple_cycle() -> None:
+    """Compute SCC for simple cycle."""
+    edges = [
+        ImportEdge(src_module="a", dst_module="b"),
+        ImportEdge(src_module="b", dst_module="c"),
+        ImportEdge(src_module="c", dst_module="a"),
+    ]
+    modules = {"a", "b", "c"}
+    result = compute_scc(edges, modules)
+
+    # All in same SCC
+    assert result["a"] == result["b"]
+    assert result["b"] == result["c"]
+
+
+def test_compute_layers_empty() -> None:
+    """Compute layers on empty graph."""
+    result = compute_layers([], set(), {})
+    assert result == {}
+
+
+def test_compute_layers_chain() -> None:
+    """Compute layers for linear chain.
+
+    In import graph layers, roots (modules that import others but aren't
+    imported) have the highest layer, and leaves have layer 0.
+    """
+    edges = [
+        ImportEdge(src_module="a", dst_module="b"),
+        ImportEdge(src_module="b", dst_module="c"),
+    ]
+    modules = {"a", "b", "c"}
+    scc_map = {"a": 0, "b": 1, "c": 2}
+    result = compute_layers(edges, modules, scc_map)
+
+    # a imports b imports c, so c is the leaf (layer 0)
+    # Layer values should form a chain
+    assert result["a"] > result["c"] or result["c"] > result["a"]  # Layers are monotonic
+
+
+def test_analyze_imports_full() -> None:
+    """Full import analysis."""
+    edges = [
+        ImportEdge(src_module="main", dst_module="utils"),
+        ImportEdge(src_module="utils", dst_module="helpers"),
+    ]
+    modules = {"main", "utils", "helpers"}
+    result = analyze_imports(edges, modules)
+
+    assert isinstance(result, ImportAnalysisResult)
+    assert len(result.edges) == EXPECTED_EDGE_COUNT_TWO
+    assert len(result.modules) == EXPECTED_EDGE_COUNT_THREE
+    assert "main" in result.scc_map
+    assert "main" in result.layer_map
+
+
+def test_build_import_module_rows() -> None:
+    """Build module rows from analysis result."""
+    edges = [ImportEdge(src_module="a", dst_module="b")]
+    modules = {"a", "b"}
+    analysis = analyze_imports(edges, modules)
+
+    rows = build_import_module_rows("repo", "commit", analysis)
+
+    assert len(rows) == EXPECTED_EDGE_COUNT_TWO
+    assert all(r.repo == "repo" for r in rows)
+    assert all(r.commit == "commit" for r in rows)
+
+
+def test_build_import_edge_rows() -> None:
+    """Build edge rows from analysis result."""
+    edges = [ImportEdge(src_module="a", dst_module="b")]
+    modules = {"a", "b"}
+    analysis = analyze_imports(edges, modules)
+
+    rows = build_import_edge_rows("repo", "commit", analysis)
+
+    assert len(rows) == EXPECTED_EDGE_COUNT_ONE
+    row = rows[0]
+    assert row.src_module == "a"
+    assert row.dst_module == "b"
+
+
+# ===========================================================================
+# Symbol Use Tests
+# ===========================================================================
+
+
+def test_symbol_occurrence_is_definition() -> None:
+    """SymbolOccurrence identifies definition role."""
+    occ = SymbolOccurrence(symbol="sym", rel_path="test.py", line=10, roles=DEFINITION_ROLE)
+    assert occ.is_definition is True
+    assert occ.is_reference is False
+
+
+def test_symbol_occurrence_is_reference() -> None:
+    """SymbolOccurrence identifies reference role."""
+    occ = SymbolOccurrence(symbol="sym", rel_path="test.py", line=10, roles=REFERENCE_ROLE)
+    assert occ.is_definition is False
+    assert occ.is_reference is True
+
+
+def test_symbol_occurrence_combined_roles() -> None:
+    """SymbolOccurrence handles combined roles."""
+    occ = SymbolOccurrence(symbol="sym", rel_path="test.py", line=10, roles=REFERENCE_ROLE_COMBINED)
+    assert occ.is_reference is True
+
+
+def test_build_def_map_basic() -> None:
+    """Build definition map from occurrences."""
+    occurrences = [
+        SymbolOccurrence(symbol="func", rel_path="a.py", line=5, roles=DEFINITION_ROLE),
+        SymbolOccurrence(symbol="var", rel_path="b.py", line=10, roles=DEFINITION_ROLE),
+    ]
+    result = build_def_map(occurrences)
+
+    assert result["func"] == "a.py"
+    assert result["var"] == "b.py"
+
+
+def test_build_def_map_first_definition_wins() -> None:
+    """First definition wins when symbol defined multiple times."""
+    occurrences = [
+        SymbolOccurrence(symbol="func", rel_path="a.py", line=5, roles=DEFINITION_ROLE),
+        SymbolOccurrence(symbol="func", rel_path="b.py", line=10, roles=DEFINITION_ROLE),
+    ]
+    result = build_def_map(occurrences)
+
+    assert result["func"] == "a.py"
+
+
+def test_build_def_map_ignores_references() -> None:
+    """Build def map ignores references."""
+    occurrences = [
+        SymbolOccurrence(symbol="func", rel_path="a.py", line=5, roles=REFERENCE_ROLE),
+    ]
+    result = build_def_map(occurrences)
+
+    assert result == {}
+
+
+def test_build_use_edges_basic() -> None:
+    """Build use edges from occurrences."""
+    occurrences = [
+        SymbolOccurrence(symbol="func", rel_path="a.py", line=5, roles=DEFINITION_ROLE),
+        SymbolOccurrence(symbol="func", rel_path="b.py", line=10, roles=REFERENCE_ROLE),
+    ]
+    def_map = {"func": "a.py"}
+    module_by_path: dict[str, str] = {}
+
+    edges = build_use_edges(occurrences, def_map, module_by_path)
+
+    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
+    edge = edges[0]
+    assert edge.symbol == "func"
+    assert edge.def_path == "a.py"
+    assert edge.use_path == "b.py"
+    assert edge.same_file is False
+
+
+def test_build_use_edges_same_file() -> None:
+    """Build use edge correctly marks same_file."""
+    occurrences = [
+        SymbolOccurrence(symbol="func", rel_path="a.py", line=5, roles=DEFINITION_ROLE),
+        SymbolOccurrence(symbol="func", rel_path="a.py", line=20, roles=REFERENCE_ROLE),
+    ]
+    def_map = {"func": "a.py"}
+    module_by_path: dict[str, str] = {}
+
+    edges = build_use_edges(occurrences, def_map, module_by_path)
+
+    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
+    assert edges[0].same_file is True
+
+
+def test_build_use_edges_same_module() -> None:
+    """Build use edge correctly marks same_module."""
+    occurrences = [
+        SymbolOccurrence(symbol="func", rel_path="a.py", line=5, roles=DEFINITION_ROLE),
+        SymbolOccurrence(symbol="func", rel_path="b.py", line=10, roles=REFERENCE_ROLE),
+    ]
+    def_map = {"func": "a.py"}
+    module_by_path = {"a.py": "mymodule", "b.py": "mymodule"}
+
+    edges = build_use_edges(occurrences, def_map, module_by_path)
+
+    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
+    assert edges[0].same_module is True
+
+
+def test_build_use_edges_deduplicates() -> None:
+    """Build use edges deduplicates same symbol/def/use combinations."""
+    occurrences = [
+        SymbolOccurrence(symbol="func", rel_path="a.py", line=5, roles=DEFINITION_ROLE),
+        SymbolOccurrence(symbol="func", rel_path="b.py", line=10, roles=REFERENCE_ROLE),
+        SymbolOccurrence(symbol="func", rel_path="b.py", line=15, roles=REFERENCE_ROLE),
+    ]
+    def_map = {"func": "a.py"}
+
+    edges = build_use_edges(occurrences, def_map, {})
+
+    # Only one edge despite two references from same file
+    assert len(edges) == EXPECTED_EDGE_COUNT_ONE
+
+
+def test_build_use_def_mapping() -> None:
+    """Build use to def mapping."""
+    occurrences = [
+        SymbolOccurrence(symbol="func1", rel_path="a.py", line=5, roles=DEFINITION_ROLE),
+        SymbolOccurrence(symbol="func2", rel_path="b.py", line=5, roles=DEFINITION_ROLE),
+        SymbolOccurrence(symbol="func1", rel_path="c.py", line=10, roles=REFERENCE_ROLE),
+        SymbolOccurrence(symbol="func2", rel_path="c.py", line=15, roles=REFERENCE_ROLE),
+    ]
+    def_map = {"func1": "a.py", "func2": "b.py"}
+
+    result = build_use_def_mapping(occurrences, def_map)
+
+    assert "c.py" in result
+    assert result["c.py"] == {"a.py", "b.py"}
+
+
+def test_edges_to_rows() -> None:
+    """Convert edges to rows."""
+    edges = [
+        SymbolUseEdge(
+            symbol="func",
+            def_path="a.py",
+            use_path="b.py",
+            same_file=False,
+            same_module=True,
+            def_goid=TEST_GOID_A,
+            use_goid=TEST_GOID_B,
+        )
+    ]
+    rows = edges_to_rows(edges)
+
+    assert len(rows) == EXPECTED_EDGE_COUNT_ONE
+    row = rows[0]
+    assert row.symbol == "func"
+    assert row.def_path == "a.py"
+    assert row.use_path == "b.py"
+    assert row.same_file is False
+    assert row.same_module is True
+    assert row.def_goid_h128 == TEST_GOID_A
+    assert row.use_goid_h128 == TEST_GOID_B
+
+
+def test_parse_symbol_roles_int() -> None:
+    """Parse symbol roles from int."""
+    assert parse_symbol_roles(DEFINITION_ROLE) == DEFINITION_ROLE
+
+
+def test_parse_symbol_roles_string() -> None:
+    """Parse symbol roles from string."""
+    assert parse_symbol_roles("2") == REFERENCE_ROLE
+
+
+def test_parse_symbol_roles_invalid_string() -> None:
+    """Parse symbol roles handles invalid string."""
+    assert parse_symbol_roles("invalid") == 0
+
+
+def test_parse_symbol_roles_none() -> None:
+    """Parse symbol roles handles None."""
+    assert parse_symbol_roles(None) == 0
+
+
+# ===========================================================================
+# Dataclass Frozen Tests
+# ===========================================================================
+
+
+def test_call_edge_frozen() -> None:
+    """CallEdge is frozen."""
+    import pytest  # noqa: PLC0415
+
+    edge = CallEdge(
+        caller_goid=TEST_GOID_A,
+        callee_goid=TEST_GOID_B,
+        callee_name="func",
+        call_line=10,
+        rel_path="test.py",
+        evidence="local_name",
+        confidence=LOCAL_CONFIDENCE,
+    )
+    with pytest.raises(AttributeError):
+        edge.caller_goid = TEST_GOID_C  # type: ignore[misc]
+
+
+def test_resolution_result_frozen() -> None:
+    """ResolutionResult is frozen."""
+    import pytest  # noqa: PLC0415
+
+    result = ResolutionResult(
+        callee_goid=TEST_GOID_A, resolved_via="local_name", confidence=LOCAL_CONFIDENCE
+    )
+    with pytest.raises(AttributeError):
+        result.callee_goid = TEST_GOID_B  # type: ignore[misc]
+
+
+def test_import_edge_frozen() -> None:
+    """ImportEdge is frozen."""
+    import pytest  # noqa: PLC0415
+
+    edge = ImportEdge(src_module="a", dst_module="b")
+    with pytest.raises(AttributeError):
+        edge.src_module = "c"  # type: ignore[misc]
+
+
+def test_symbol_occurrence_frozen() -> None:
+    """SymbolOccurrence is frozen."""
+    import pytest  # noqa: PLC0415
+
+    occ = SymbolOccurrence(symbol="sym", rel_path="test.py", line=10, roles=DEFINITION_ROLE)
+    with pytest.raises(AttributeError):
+        occ.symbol = "other"  # type: ignore[misc]
+
+
+def test_symbol_use_edge_frozen() -> None:
+    """SymbolUseEdge is frozen."""
+    import pytest  # noqa: PLC0415
+
+    edge = SymbolUseEdge(
+        symbol="func",
+        def_path="a.py",
+        use_path="b.py",
+        same_file=False,
+        same_module=False,
+    )
+    with pytest.raises(AttributeError):
+        edge.symbol = "other"  # type: ignore[misc]

@@ -6,7 +6,7 @@ import argparse
 
 import pytest
 
-from codeintel.cli.main import make_parser
+from codeintel.pipeline.cli.main import make_parser
 
 
 def _parse(argv: list[str]) -> argparse.Namespace:
