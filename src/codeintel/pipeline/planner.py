@@ -488,6 +488,7 @@ def build_pipeline_plan(  # noqa: PLR0913
     gateway: StorageGateway,
     tools: ToolsConfig,
     trigger: TriggerKind = "cli",
+    run_kind_override: RunKind | None = None,
 ) -> PipelinePlan:
     """Build a concrete execution plan for a pipeline specification.
 
@@ -508,6 +509,10 @@ def build_pipeline_plan(  # noqa: PLR0913
         Tools configuration.
     trigger
         How the run was triggered.
+    run_kind_override
+        If provided, use this RunKind instead of inferring from spec stages.
+        Useful for operation prerequisite runs where the kind should be
+        ``"op_prereqs"`` regardless of the spec.
 
     Returns
     -------
@@ -519,7 +524,7 @@ def build_pipeline_plan(  # noqa: PLR0913
     ValueError
         If a stage module is not recognized or recipe cannot be resolved.
     """
-    run_kind = _infer_run_kind(spec)
+    run_kind = run_kind_override if run_kind_override is not None else _infer_run_kind(spec)
     run_ctx = new_run_context(
         snapshot=snapshot,
         kind=run_kind,

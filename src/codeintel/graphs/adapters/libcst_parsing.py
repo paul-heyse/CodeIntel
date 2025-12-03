@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import libcst as cst
 
@@ -24,151 +24,50 @@ from codeintel.graphs.ports.parsing import (
 log = logging.getLogger(__name__)
 
 
-class _ImportCollector(cst.CSTVisitor):
-    """Visitor that collects import statements from a CST."""
+@dataclass
+class _LibcstCollector(cst.CSTVisitor):
+    """Single-pass collector for imports and functions using libcst hooks."""
 
-    def __init__(self) -> None:
-        """Initialize the collector."""
-        self.imports: list[tuple[str, tuple[str, ...]]] = []
-        self.aliases: dict[str, str] = {}
+    imports: list[tuple[str, tuple[str, ...]]] = field(default_factory=list)
+    aliases: dict[str, str] = field(default_factory=dict)
+    functions: list[ParsedFunction] = field(default_factory=list)
+    _class_stack: list[str] = field(default_factory=list, repr=False)
 
-    def visit_Import(self, node: cst.Import) -> bool:  # noqa: N802
-        """Visit an import statement.
-
-        Parameters
-        ----------
-        node
-            Import node to visit.
+    def on_visit(self, node: cst.CSTNode) -> bool:
+        """Process nodes using libcst generic visit hooks.
 
         Returns
         -------
         bool
-            Always True to continue visiting.
+            True to continue traversal.
         """
-        if isinstance(node.names, cst.ImportStar):
-            return True
-        for alias in node.names:
-            if isinstance(alias, cst.ImportAlias):
-                module_name = _get_module_name(alias.name)
-                if module_name:
-                    local_name = (
-                        alias.asname.name.value
-                        if alias.asname and isinstance(alias.asname.name, cst.Name)
-                        else module_name.split(".")[-1]
-                    )
-                    self.imports.append((module_name, (local_name,)))
-                    self.aliases[local_name] = module_name
+        if isinstance(node, cst.ClassDef):
+            self._class_stack.append(node.name.value)
+        elif isinstance(node, cst.FunctionDef):
+            self._handle_function(node)
+        elif isinstance(node, cst.Import):
+            self._handle_import(node)
+        elif isinstance(node, cst.ImportFrom):
+            self._handle_import_from(node)
         return True
 
-    def visit_ImportFrom(self, node: cst.ImportFrom) -> bool:  # noqa: N802
-        """Visit a from-import statement.
-
-        Parameters
-        ----------
-        node
-            ImportFrom node to visit.
-
-        Returns
-        -------
-        bool
-            Always True to continue visiting.
-        """
-        if node.module is None:
-            return True
-        module_name = _get_module_name(node.module)
-        if not module_name:
-            return True
-
-        if isinstance(node.names, cst.ImportStar):
-            self.imports.append((module_name, ("*",)))
-            return True
-
-        names: list[str] = []
-        for alias in node.names:
-            if isinstance(alias, cst.ImportAlias):
-                name_str = _get_name_value(alias.name)
-                if name_str:
-                    local_name = (
-                        alias.asname.name.value
-                        if alias.asname and isinstance(alias.asname.name, cst.Name)
-                        else name_str
-                    )
-                    names.append(local_name)
-                    self.aliases[local_name] = f"{module_name}.{name_str}"
-        if names:
-            self.imports.append((module_name, tuple(names)))
-        return True
-
-
-class _FunctionCollector(cst.CSTVisitor):
-    """Visitor that collects function definitions from a CST."""
-
-    def __init__(self) -> None:
-        """Initialize the collector."""
-        self.functions: list[ParsedFunction] = []
-        self._class_stack: list[str] = []
-
-    def visit_ClassDef(self, node: cst.ClassDef) -> bool:  # noqa: N802
-        """Enter a class definition.
-
-        Parameters
-        ----------
-        node
-            ClassDef node being entered.
-
-        Returns
-        -------
-        bool
-            True to visit children.
-        """
-        self._class_stack.append(node.name.value)
-        return True
-
-    def leave_ClassDef(self, original_node: cst.ClassDef) -> None:  # noqa: N802
-        """Leave a class definition.
-
-        Parameters
-        ----------
-        original_node
-            ClassDef node being left.
-        """
-        _ = original_node  # Unused, but required by protocol
-        if self._class_stack:
+    def on_leave(self, original_node: cst.CSTNode) -> None:
+        """Track class nesting when leaving nodes."""
+        if isinstance(original_node, cst.ClassDef) and self._class_stack:
             self._class_stack.pop()
 
-    def visit_FunctionDef(self, node: cst.FunctionDef) -> bool:  # noqa: N802
-        """Visit a function definition.
-
-        Parameters
-        ----------
-        node
-            FunctionDef node to visit.
-
-        Returns
-        -------
-        bool
-            True to visit children (nested functions).
-        """
+    def _handle_function(self, node: cst.FunctionDef) -> None:
         name = node.name.value
         qualname = ".".join([*self._class_stack, name])
 
-        # Extract position info from metadata if available
-        start_line = 1
-        end_line = 1
-        # LibCST doesn't directly expose line numbers on nodes
-        # We use a heuristic based on the node structure
-
-        # Check if async
         is_async = node.asynchronous is not None
 
-        # Extract decorator names
-        decorators: list[str] = []
-        for dec in node.decorators:
-            dec_name = _get_decorator_name(dec.decorator)
-            if dec_name:
-                decorators.append(dec_name)
+        decorators = [
+            dec_name
+            for dec in node.decorators
+            if (dec_name := _get_decorator_name(dec.decorator)) is not None
+        ]
 
-        # Extract parameter names
         params = [
             param.name.value for param in node.params.params if isinstance(param.name, cst.Name)
         ]
@@ -177,14 +76,56 @@ class _FunctionCollector(cst.CSTVisitor):
             ParsedFunction(
                 name=name,
                 qualname=qualname,
-                start_line=start_line,
-                end_line=end_line,
+                start_line=1,
+                end_line=1,
                 is_async=is_async,
                 decorator_names=tuple(decorators),
                 parameters=tuple(params),
             )
         )
-        return True
+
+    def _handle_import(self, node: cst.Import) -> None:
+        if isinstance(node.names, cst.ImportStar):
+            return
+        for alias in node.names:
+            if isinstance(alias, cst.ImportAlias):
+                module_name = _get_module_name(alias.name)
+                if not module_name:
+                    continue
+                local_name = (
+                    alias.asname.name.value
+                    if alias.asname and isinstance(alias.asname.name, cst.Name)
+                    else module_name.split(".")[-1]
+                )
+                self.imports.append((module_name, (local_name,)))
+                self.aliases[local_name] = module_name
+
+    def _handle_import_from(self, node: cst.ImportFrom) -> None:
+        if node.module is None:
+            return
+        module_name = _get_module_name(node.module)
+        if not module_name:
+            return
+
+        if isinstance(node.names, cst.ImportStar):
+            self.imports.append((module_name, ("*",)))
+            return
+
+        names: list[str] = []
+        for alias in node.names:
+            if isinstance(alias, cst.ImportAlias):
+                name_str = _get_name_value(alias.name)
+                if not name_str:
+                    continue
+                local_name = (
+                    alias.asname.name.value
+                    if alias.asname and isinstance(alias.asname.name, cst.Name)
+                    else name_str
+                )
+                names.append(local_name)
+                self.aliases[local_name] = f"{module_name}.{name_str}"
+        if names:
+            self.imports.append((module_name, tuple(names)))
 
 
 def _get_module_name(node: cst.BaseExpression) -> str | None:
@@ -288,23 +229,19 @@ class LibCSTParsingAdapter:
         except SyntaxError:
             ast_module = None
 
-        # Collect imports using MetadataWrapper for proper walking
-        import_collector = _ImportCollector()
+        # Collect imports and functions using a single visitor
+        collector = _LibcstCollector()
         wrapper = cst.MetadataWrapper(cst_module)
-        wrapper.visit(import_collector)
-
-        # Collect functions
-        func_collector = _FunctionCollector()
-        wrapper.visit(func_collector)
+        wrapper.visit(collector)
 
         return ParseResult.ok(
             ParsedModule(
                 source=source,
-                functions=tuple(func_collector.functions),
-                imports=tuple(import_collector.imports),
+                functions=tuple(collector.functions),
+                imports=tuple(collector.imports),
                 cst_module=cst_module,
                 ast_module=ast_module,
-                _import_aliases=import_collector.aliases,
+                _import_aliases=collector.aliases,
             )
         )
 

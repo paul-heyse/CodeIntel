@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.sql_builder import SafeColumn, SafeTable
+from codeintel.storage.sql_builder import QueryBuilder, SafeColumn, SafeTable, render_sql
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -254,17 +254,13 @@ class DatasetContractValidator:
         int
             Number of rows matching the filter criteria.
         """
-        safe_table = SafeTable(table)
-        # S608: table validated by SafeTable; values parameterized
-        query = f"SELECT COUNT(*) FROM {safe_table}"  # noqa: S608
-        params: list[object] = []
-
+        where: dict[str, object] = {}
         if repo is not None:
-            query += " WHERE repo = ?"
-            params.append(repo)
-            if commit is not None:
-                query += " AND commit = ?"
-                params.append(commit)
+            where["repo"] = repo
+        if commit is not None:
+            where["commit"] = commit
+
+        query, params = QueryBuilder.count(SafeTable(table), where=where or None)
 
         try:
             result = self._gateway.con.execute(query, params)
@@ -284,7 +280,9 @@ class DatasetContractValidator:
         """
         try:
             # DuckDB-specific: use DESCRIBE
-            result = self._gateway.con.execute(f"DESCRIBE {table}")
+            safe_table = SafeTable(table)
+            describe_sql = render_sql(["DESCRIBE", str(safe_table)])
+            result = self._gateway.con.execute(describe_sql)
             return {str(row[0]) for row in result.fetchall()}
         except DuckDBError:
             log.warning("Failed to get columns for %s", table, exc_info=True)
@@ -323,9 +321,13 @@ class DatasetContractValidator:
         if rule.not_null:
             safe_table = SafeTable(table)
             safe_col = SafeColumn(column)
-            # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
-            query = (
-                f"SELECT COUNT(*) FROM {safe_table} WHERE ({where_clause}) AND {safe_col} IS NULL"  # noqa: S608
+            query = render_sql(
+                [
+                    "SELECT COUNT(*) FROM",
+                    str(safe_table),
+                    "WHERE",
+                    f"({where_clause}) AND {safe_col} IS NULL",
+                ]
             )
             try:
                 result = self._gateway.con.execute(query, params)

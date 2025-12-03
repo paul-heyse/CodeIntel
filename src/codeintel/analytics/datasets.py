@@ -34,7 +34,7 @@ from codeintel.config.datasets import (
 from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_builder import SafeTable
+from codeintel.storage.sql_builder import QueryBuilder, SafeTable
 
 type RowType = Mapping[str, object]
 RowT = TypeVar("RowT", bound=RowType)
@@ -63,9 +63,7 @@ def _build_delete_sql_by_table() -> dict[str, str]:
         col_names = contract.schema.column_names()
         if "repo" in col_names and "commit" in col_names:
             # SafeTable validates the table name from contract definition
-            safe_table = SafeTable(table_key)
-            # S608: table validated by SafeTable; values parameterized
-            result[table_key] = f"DELETE FROM {safe_table} WHERE repo = ? AND commit = ?"  # noqa: S608
+            result[table_key] = QueryBuilder.delete_repo_commit(SafeTable(table_key))
     return result
 
 

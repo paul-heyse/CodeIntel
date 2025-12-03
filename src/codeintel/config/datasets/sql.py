@@ -14,7 +14,7 @@ from functools import lru_cache
 from typing import Final, TypeVar
 
 from codeintel.config.datasets.contracts import get_table_schemas
-from codeintel.storage.sql_builder import SafeColumn, SafeTable
+from codeintel.storage.sql_builder import QueryBuilder, SafeColumn, SafeTable
 
 _Column = TypeVar("_Column", bound=str)
 
@@ -49,12 +49,8 @@ def build_insert_sql(table_key: str) -> str:
         raise ValueError(message)
     col_names = [col.name for col in schema.columns]
     # Validate table and column names
-    safe_table = SafeTable(table_key)
     safe_cols = [SafeColumn(name) for name in col_names]
-    cols_str = ", ".join(str(c) for c in safe_cols)
-    placeholders = ", ".join("?" * len(col_names))
-    # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
-    return f"INSERT INTO {safe_table} ({cols_str}) VALUES ({placeholders})"  # noqa: S608
+    return QueryBuilder.insert(SafeTable(table_key), safe_cols)
 
 
 def build_delete_sql(table_key: str) -> str | None:
@@ -76,9 +72,7 @@ def build_delete_sql(table_key: str) -> str | None:
         return None
     col_names = [col.name for col in schema.columns]
     if "repo" in col_names and "commit" in col_names:
-        safe_table = SafeTable(table_key)
-        # S608: table validated by SafeTable; values parameterized
-        return f"DELETE FROM {safe_table} WHERE repo = ? AND commit = ?"  # noqa: S608
+        return QueryBuilder.delete_repo_commit(SafeTable(table_key))
     return None
 
 

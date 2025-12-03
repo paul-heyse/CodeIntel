@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -51,6 +51,7 @@ def resolve_worker_count(
     explicit_count: int | None = None,
     default_max: int = DEFAULT_MAX_WORKERS,
     default_min: int = DEFAULT_MIN_WORKERS,
+    env: Mapping[str, str] | None = None,
 ) -> int:
     """
     Resolve worker pool size from explicit value, environment, or CPU count.
@@ -65,16 +66,20 @@ def resolve_worker_count(
         Maximum worker count when derived from CPU.
     default_min
         Minimum worker count floor.
+    env
+        Optional environment mapping to read overrides from.
 
     Returns
     -------
     int
         Resolved worker count.
     """
+    environment = env or os.environ
+
     if explicit_count is not None and explicit_count > 0:
         return explicit_count
 
-    env_value = os.getenv(env_var)
+    env_value = environment.get(env_var)
     if env_value:
         try:
             value = int(env_value)

@@ -104,12 +104,18 @@ class CatalogProvider(LazyResource["FunctionCatalogProvider"]):
                 "Use from_catalog() with a pre-loaded catalog or provide gateway and snapshot.",
             )
 
-        # FunctionCatalogService.from_db creates the service from the gateway
-        return FunctionCatalogService.from_db(
-            self._gateway,
-            repo=self._snapshot.repo,
-            commit=self._snapshot.commit,
-        )
+        return _load_function_catalog(self._gateway, self._snapshot)
+
+
+def _load_function_catalog(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> FunctionCatalogProvider:
+    return FunctionCatalogService.from_db(
+        gateway,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
 
 
 class CatalogQueryProvider(LazyResource[dict[int, object]]):
@@ -142,7 +148,7 @@ class CatalogQueryProvider(LazyResource[dict[int, object]]):
         self._snapshot = snapshot
         self._query_name = query_name
 
-    def _load(self) -> dict[int, object]:  # noqa: PLR6301
+    def _load(self) -> dict[int, object]:
         """Load query results.
 
         Default implementation returns empty dict. Subclasses override

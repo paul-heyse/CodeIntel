@@ -7,7 +7,6 @@ including timing histograms and row count counters.
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
@@ -132,7 +131,6 @@ class MetricsMiddleware:
     error_recorder: CounterRecorder | None = None
     in_memory: InMemoryMetrics | None = None
     metric_prefix: str = "codeintel.ingest"
-    _start_times: dict[str, float] = field(default_factory=dict, repr=False)
 
     def before_execute(
         self,
@@ -146,10 +144,10 @@ class MetricsMiddleware:
         plugin
             The plugin about to execute.
         ctx
-            Execution context (unused, required by protocol).
+            Execution context used to store timing.
         """
         plugin_name = plugin.metadata.name
-        self._start_times[plugin_name] = time.perf_counter()
+        ctx.start_plugin_timer(plugin_name)
 
     def after_execute(
         self,
@@ -169,8 +167,7 @@ class MetricsMiddleware:
             Execution result.
         """
         plugin_name = plugin.metadata.name
-        start_time = self._start_times.pop(plugin_name, None)
-        duration = time.perf_counter() - start_time if start_time else 0.0
+        duration = ctx.finish_plugin_timer(plugin_name)
 
         status = "skipped" if result.skipped else ("success" if result.success else "error")
         attributes: dict[str, str] = {
@@ -212,8 +209,10 @@ class MetricsMiddleware:
             The exception that was raised.
         """
         plugin_name = plugin.metadata.name
-        start_time = self._start_times.pop(plugin_name, None)
-        duration = time.perf_counter() - start_time if start_time else 0.0
+        duration = ctx.finish_plugin_timer(plugin_name)
+        if duration == 0.0:
+            ctx.start_plugin_timer(plugin_name)
+            duration = ctx.finish_plugin_timer(plugin_name)
 
         attributes: dict[str, str] = {
             "plugin": plugin_name,

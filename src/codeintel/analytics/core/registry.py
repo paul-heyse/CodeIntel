@@ -469,6 +469,112 @@ def register_plugin(plugin: AnalyticsPluginProtocol) -> None:
 
 
 @dataclass
+class PluginMetaOptions:
+    """Options container for plugin metadata.
+
+    Grouping metadata in a single object keeps decorator signatures small and
+    makes future evolution easier (new fields are added here without touching
+    call sites).
+    """
+
+    name: str | None = None
+    description: str | None = None
+    stage: PluginStage = "other"
+    version: str = "1.0.0"
+    enabled_by_default: bool = True
+    severity: PluginSeverity = "fatal"
+    inputs: Sequence[PluginInputSpec] = ()
+    outputs: Sequence[PluginOutputSpec] = ()
+    provides: Sequence[str | PluginCapability] = ()
+    requires: Sequence[str | PluginCapability] = ()
+    depends_on: Sequence[str] = ()
+    resource_hints: PluginResourceHints | None = None
+    requires_isolation: bool = False
+    isolation_kind: Literal["process", "thread"] | None = None
+    tags: Sequence[str] = ()
+
+    @staticmethod
+    def from_kwargs(**kwargs: object) -> PluginMetaOptions:
+        """Build options from legacy kwargs while keeping a narrow public API.
+
+        Returns
+        -------
+        PluginMetaOptions
+            Options instance built from provided kwargs.
+
+        Raises
+        ------
+        ValueError
+            If unknown option keys are provided.
+        """
+        allowed_keys = {
+            "name",
+            "description",
+            "stage",
+            "version",
+            "enabled_by_default",
+            "severity",
+            "inputs",
+            "outputs",
+            "provides",
+            "requires",
+            "depends_on",
+            "resource_hints",
+            "requires_isolation",
+            "isolation_kind",
+            "tags",
+        }
+        unknown = set(kwargs) - allowed_keys
+        if unknown:
+            message = f"Unsupported plugin option keys: {', '.join(sorted(unknown))}"
+            raise ValueError(message)
+        return PluginMetaOptions(**kwargs)  # type: ignore[arg-type]
+
+    def to_metadata(
+        self,
+        fn: Callable[[PluginExecutionContext], PluginResult],
+    ) -> PluginMetadata:
+        """Convert options to PluginMetadata using function defaults.
+
+        Parameters
+        ----------
+        fn
+            Plugin callable used for deriving defaults (name/docstring).
+
+        Returns
+        -------
+        PluginMetadata
+            Metadata populated from the options and function defaults.
+        """
+
+        def _normalize_capability(cap: str | PluginCapability) -> PluginCapability:
+            if isinstance(cap, PluginCapability):
+                return cap
+            return PluginCapability(name=cap)
+
+        resolved_name = self.name or fn.__name__.replace("_", ".")
+        resolved_description = self.description or fn.__doc__ or ""
+
+        return PluginMetadata(
+            name=resolved_name,
+            description=resolved_description.strip(),
+            stage=self.stage,
+            version=self.version,
+            enabled_by_default=self.enabled_by_default,
+            severity=self.severity,
+            inputs=tuple(self.inputs),
+            outputs=tuple(self.outputs),
+            capabilities_provided=tuple(_normalize_capability(c) for c in self.provides),
+            capabilities_required=tuple(_normalize_capability(c) for c in self.requires),
+            depends_on=tuple(self.depends_on),
+            resource_hints=self.resource_hints,
+            requires_isolation=self.requires_isolation,
+            isolation_kind=self.isolation_kind,
+            tags=tuple(self.tags),
+        )
+
+
+@dataclass
 class FunctionalPlugin:
     """Plugin implementation wrapping a callable.
 
@@ -522,45 +628,20 @@ def plugin(
 
 @overload
 def plugin(
+    func: None = None,
     *,
-    name: str,
-    description: str,
-    stage: PluginStage,
-    version: str = "1.0.0",
-    enabled_by_default: bool = True,
-    severity: PluginSeverity = "fatal",
-    inputs: Sequence[PluginInputSpec] = (),
-    outputs: Sequence[PluginOutputSpec] = (),
-    provides: Sequence[str | PluginCapability] = (),
-    requires: Sequence[str | PluginCapability] = (),
-    depends_on: Sequence[str] = (),
-    resource_hints: PluginResourceHints | None = None,
-    requires_isolation: bool = False,
-    isolation_kind: Literal["process", "thread"] | None = None,
-    tags: Sequence[str] = (),
+    meta: PluginMetaOptions | None = None,
     register: bool = True,
+    **kwargs: object,
 ) -> Callable[[Callable[[PluginExecutionContext], PluginResult]], FunctionalPlugin]: ...
 
 
-def plugin(  # noqa: PLR0913 - decorator with many params by design
+def plugin(
     func: Callable[[PluginExecutionContext], PluginResult] | None = None,
     *,
-    name: str | None = None,
-    description: str | None = None,
-    stage: PluginStage = "other",
-    version: str = "1.0.0",
-    enabled_by_default: bool = True,
-    severity: PluginSeverity = "fatal",
-    inputs: Sequence[PluginInputSpec] = (),
-    outputs: Sequence[PluginOutputSpec] = (),
-    provides: Sequence[str | PluginCapability] = (),
-    requires: Sequence[str | PluginCapability] = (),
-    depends_on: Sequence[str] = (),
-    resource_hints: PluginResourceHints | None = None,
-    requires_isolation: bool = False,
-    isolation_kind: Literal["process", "thread"] | None = None,
-    tags: Sequence[str] = (),
+    meta: PluginMetaOptions | None = None,
     register: bool = True,
+    **kwargs: object,
 ) -> (
     FunctionalPlugin
     | Callable[[Callable[[PluginExecutionContext], PluginResult]], FunctionalPlugin]
@@ -581,38 +662,12 @@ def plugin(  # noqa: PLR0913 - decorator with many params by design
     ----------
     func
         The function to wrap (when used without arguments).
-    name
-        Plugin name (defaults to function name with dots).
-    description
-        Human-readable description (defaults to docstring).
-    stage
-        Processing stage.
-    version
-        Plugin version.
-    enabled_by_default
-        Whether enabled when no explicit list is provided.
-    severity
-        How failures should be handled.
-    inputs
-        Required/optional inputs.
-    outputs
-        Tables/artifacts produced.
-    provides
-        Capabilities provided (strings converted to PluginCapability).
-    requires
-        Capabilities required (strings converted to PluginCapability).
-    depends_on
-        Explicit plugin dependencies.
-    resource_hints
-        Runtime hints.
-    requires_isolation
-        Whether process/thread isolation is needed.
-    isolation_kind
-        Type of isolation.
-    tags
-        Free-form tags.
+    meta
+        Plugin metadata/options container.
     register
         Whether to auto-register with global registry.
+    **kwargs
+        Legacy metadata fields; prefer `meta`.
 
     Returns
     -------
@@ -620,36 +675,17 @@ def plugin(  # noqa: PLR0913 - decorator with many params by design
         The plugin instance or a decorator.
     """
 
-    def _normalize_capability(cap: str | PluginCapability) -> PluginCapability:
-        if isinstance(cap, PluginCapability):
-            return cap
-        return PluginCapability(name=cap)
-
     def _make_plugin(
         fn: Callable[[PluginExecutionContext], PluginResult],
     ) -> FunctionalPlugin:
-        resolved_name = name or fn.__name__.replace("_", ".")
-        resolved_description = description or fn.__doc__ or ""
+        if meta is not None and kwargs:
+            message = "Provide either meta or individual keyword options, not both."
+            raise ValueError(message)
 
-        meta = PluginMetadata(
-            name=resolved_name,
-            description=resolved_description.strip(),
-            stage=stage,
-            version=version,
-            enabled_by_default=enabled_by_default,
-            severity=severity,
-            inputs=tuple(inputs),
-            outputs=tuple(outputs),
-            capabilities_provided=tuple(_normalize_capability(c) for c in provides),
-            capabilities_required=tuple(_normalize_capability(c) for c in requires),
-            depends_on=tuple(depends_on),
-            resource_hints=resource_hints,
-            requires_isolation=requires_isolation,
-            isolation_kind=isolation_kind,
-            tags=tuple(tags),
-        )
+        options = meta or PluginMetaOptions.from_kwargs(**kwargs)
+        metadata = options.to_metadata(fn)
 
-        plugin_instance = FunctionalPlugin(_metadata=meta, _execute_fn=fn)
+        plugin_instance = FunctionalPlugin(_metadata=metadata, _execute_fn=fn)
 
         if register:
             get_registry().register(plugin_instance)
@@ -666,6 +702,7 @@ def plugin(  # noqa: PLR0913 - decorator with many params by design
 
 __all__ = [
     "FunctionalPlugin",
+    "PluginMetaOptions",
     "PluginPlan",
     "PluginRegistry",
     "PluginSkip",

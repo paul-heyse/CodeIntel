@@ -7,8 +7,7 @@ including timing, row counts, and error details.
 from __future__ import annotations
 
 import logging
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -40,7 +39,6 @@ class LoggingMiddleware:
     log_level: int = logging.INFO
     error_level: int = logging.ERROR
     include_row_counts: bool = True
-    _start_times: dict[str, float] = field(default_factory=dict, repr=False)
 
     def _get_logger(self) -> logging.Logger:
         """Get the logger instance.
@@ -67,7 +65,7 @@ class LoggingMiddleware:
             Execution context.
         """
         plugin_name = plugin.metadata.name
-        self._start_times[plugin_name] = time.perf_counter()
+        ctx.start_plugin_timer(plugin_name)
 
         logger = self._get_logger()
         logger.log(
@@ -97,8 +95,7 @@ class LoggingMiddleware:
             Execution result.
         """
         plugin_name = plugin.metadata.name
-        start_time = self._start_times.pop(plugin_name, None)
-        duration = time.perf_counter() - start_time if start_time else 0.0
+        duration = ctx.finish_plugin_timer(plugin_name)
 
         logger = self._get_logger()
 
@@ -161,8 +158,10 @@ class LoggingMiddleware:
             The exception that was raised.
         """
         plugin_name = plugin.metadata.name
-        start_time = self._start_times.pop(plugin_name, None)
-        duration = time.perf_counter() - start_time if start_time else 0.0
+        duration = ctx.finish_plugin_timer(plugin_name)
+        if duration == 0.0:
+            ctx.start_plugin_timer(plugin_name)
+            duration = ctx.finish_plugin_timer(plugin_name)
 
         logger = self._get_logger()
         logger.log(

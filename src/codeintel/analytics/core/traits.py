@@ -624,8 +624,8 @@ class WithDependencyData:
     ...         # Use metrics...
     """
 
-    def get_dependency_data[T](  # noqa: PLR6301
-        self,
+    @staticmethod
+    def get_dependency_data[T](
         ctx: PluginExecutionContext,
         key: str,
         default: T | None = None,
@@ -648,8 +648,8 @@ class WithDependencyData:
         """
         return ctx.scratch.consume(key, default)
 
-    def set_dependency_data(  # noqa: PLR6301
-        self,
+    @staticmethod
+    def set_dependency_data(
         ctx: PluginExecutionContext,
         key: str,
         value: object,
@@ -731,8 +731,8 @@ class WithCleanup:
     ...         # Use temp_file...
     """
 
-    def register_cleanup(  # noqa: PLR6301
-        self,
+    @staticmethod
+    def register_cleanup(
         ctx: PluginExecutionContext,
         callback: Callable[[], None],
     ) -> None:
