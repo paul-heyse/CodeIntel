@@ -7,6 +7,7 @@ utilities for building step configurations from plugin context.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
@@ -18,6 +19,7 @@ from codeintel.ingestion.plugins.config_factory import (
     get_config_fields,
     infer_config_mapping,
 )
+from tests._helpers.fakes import FakeBuildPaths, FakeSnapshotRef
 
 
 # Test config classes for factory tests
@@ -25,8 +27,8 @@ from codeintel.ingestion.plugins.config_factory import (
 class SimpleDataclassConfig:
     """Simple dataclass config for testing."""
 
-    snapshot: object
-    paths: object
+    snapshot: FakeSnapshotRef
+    paths: FakeBuildPaths
     extra_value: str = "default"
 
 
@@ -34,11 +36,11 @@ class SimpleDataclassConfig:
 class ConfigWithTools:
     """Config with tool-related fields."""
 
-    snapshot: object
-    paths: object
-    tools: object | None = None
-    tracker: object | None = None
-    tool_service: object | None = None
+    snapshot: FakeSnapshotRef
+    paths: FakeBuildPaths
+    tools: dict[str, str] | None = None
+    tracker: dict[str, str] | None = None
+    tool_service: dict[str, str] | None = None
 
 
 class NonDataclassConfig:
@@ -46,8 +48,8 @@ class NonDataclassConfig:
 
     def __init__(
         self,
-        snapshot: object,
-        paths: object,
+        snapshot: FakeSnapshotRef,
+        paths: FakeBuildPaths,
         *,
         optional_value: str = "default",
     ) -> None:
@@ -59,14 +61,14 @@ class NonDataclassConfig:
 
 @dataclass
 class MockContext:
-    """Mock execution context for testing."""
+    """Mock execution context for testing with typed fields."""
 
-    snapshot: object = field(default_factory=lambda: {"repo": "test", "commit": "abc"})
-    paths: object = field(default_factory=lambda: {"build_dir": "/build"})
-    tools: object | None = None
-    code_profile: object | None = None
-    config_profile: object | None = None
-    tool_runner: object | None = None
+    snapshot: FakeSnapshotRef = field(default_factory=FakeSnapshotRef)
+    paths: FakeBuildPaths = field(default_factory=FakeBuildPaths)
+    tools: Any | None = None
+    code_profile: Any | None = None
+    config_profile: Any | None = None
+    tool_runner: Any | None = None
 
 
 class TestConfigMapping:
@@ -137,14 +139,16 @@ class TestBuildOptions:
 
     def test_create_with_tracker(self) -> None:
         """Test creating BuildOptions with tracker."""
-        tracker = object()  # Mock tracker
+        # Use a dict as a mock tracker value for testing
+        tracker: Any = {"mock": "tracker"}
         options = BuildOptions(tracker=tracker)
 
         assert options.tracker is tracker
 
     def test_create_with_tool_service(self) -> None:
         """Test creating BuildOptions with tool_service."""
-        service = object()  # Mock service
+        # Use a dict as a mock service value for testing
+        service: Any = {"mock": "service"}
         options = BuildOptions(tool_service=service)
 
         assert options.tool_service is service
@@ -272,18 +276,16 @@ class TestConfigFactory:
         class CustomFieldConfig:
             """Config with custom field names."""
 
-            custom_snapshot: object
-            custom_paths: object
+            custom_snapshot: Any
+            custom_paths: Any
 
         # Create a context with the expected attributes
         @dataclass
         class CustomContext:
             """Context with custom attribute names."""
 
-            my_snapshot: object = field(
-                default_factory=lambda: {"repo": "test", "commit": "abc"}
-            )
-            my_paths: object = field(default_factory=lambda: {"build_dir": "/build"})
+            my_snapshot: FakeSnapshotRef = field(default_factory=FakeSnapshotRef)
+            my_paths: FakeBuildPaths = field(default_factory=FakeBuildPaths)
 
         ctx = CustomContext()
         options = BuildOptions(
@@ -294,6 +296,7 @@ class TestConfigFactory:
         )
 
         config = factory.build(CustomFieldConfig, ctx, options)  # type: ignore[arg-type]
+        assert isinstance(config, CustomFieldConfig)
 
         assert config.custom_snapshot == ctx.my_snapshot
         assert config.custom_paths == ctx.my_paths
@@ -302,7 +305,7 @@ class TestConfigFactory:
         """Test building config with tracker in options via custom mapping."""
         factory = ConfigFactory()
         ctx = MockContext()
-        mock_tracker = object()
+        mock_tracker: Any = {"mock": "tracker"}
         # tracker requires custom mapping since it's not in DEFAULT_CONTEXT_MAPPINGS
         options = BuildOptions(
             tracker=mock_tracker,
@@ -310,6 +313,7 @@ class TestConfigFactory:
         )
 
         config = factory.build(ConfigWithTools, ctx, options)  # type: ignore[arg-type]
+        assert isinstance(config, ConfigWithTools)
 
         # tracker should be set from options
         assert config.tracker is mock_tracker
@@ -318,7 +322,7 @@ class TestConfigFactory:
         """Test building config with tool_service in options via custom mapping."""
         factory = ConfigFactory()
         ctx = MockContext()
-        mock_service = object()
+        mock_service: Any = {"mock": "service"}
         # tool_service requires custom mapping since it's not in DEFAULT_CONTEXT_MAPPINGS
         options = BuildOptions(
             tool_service=mock_service,
@@ -326,6 +330,7 @@ class TestConfigFactory:
         )
 
         config = factory.build(ConfigWithTools, ctx, options)  # type: ignore[arg-type]
+        assert isinstance(config, ConfigWithTools)
 
         # tool_service should be set from options
         assert config.tool_service is mock_service
@@ -337,6 +342,7 @@ class TestConfigFactory:
         ctx = MockContext(tools=mock_tools)
 
         config = factory.build(ConfigWithTools, ctx)  # type: ignore[arg-type]
+        assert isinstance(config, ConfigWithTools)
 
         assert config.tools is mock_tools
 
@@ -364,6 +370,7 @@ class TestConfigFactory:
         )
 
         config = factory.build(SimpleDataclassConfig, ctx, options)  # type: ignore[arg-type]
+        assert isinstance(config, SimpleDataclassConfig)
 
         assert config.extra_value == "custom"
         # nonexistent_field should be silently ignored
@@ -376,14 +383,17 @@ class TestConfigFactory:
         class ContextWithBoth:
             """Context with both snapshot and alt_snapshot."""
 
-            snapshot: object = field(default_factory=lambda: {"name": "default"})
-            alt_snapshot: object = field(default_factory=lambda: {"name": "alternate"})
-            paths: object = field(default_factory=lambda: {"build_dir": "/build"})
+            snapshot: FakeSnapshotRef = field(default_factory=FakeSnapshotRef)
+            alt_snapshot: FakeSnapshotRef = field(
+                default_factory=lambda: FakeSnapshotRef(repo="alt/repo", commit="altcommit")
+            )
+            paths: FakeBuildPaths = field(default_factory=FakeBuildPaths)
 
         ctx = ContextWithBoth()
         options = BuildOptions(mapping={"snapshot": "alt_snapshot"})
 
         config = factory.build(SimpleDataclassConfig, ctx, options)  # type: ignore[arg-type]
+        assert isinstance(config, SimpleDataclassConfig)
 
         # Should use alt_snapshot due to custom mapping
         assert config.snapshot == ctx.alt_snapshot
@@ -395,11 +405,13 @@ class TestGetContextValue:
     def test_get_existing_attribute(self) -> None:
         """Test getting an existing attribute from context."""
         factory = ConfigFactory()
-        ctx = MockContext(snapshot={"repo": "test-repo"})
+        custom_snapshot = FakeSnapshotRef(repo="test-repo", commit="abc")
+        ctx = MockContext(snapshot=custom_snapshot)
 
         config = factory.build(SimpleDataclassConfig, ctx)  # type: ignore[arg-type]
+        assert isinstance(config, SimpleDataclassConfig)
 
-        assert config.snapshot == {"repo": "test-repo"}
+        assert config.snapshot == custom_snapshot
 
     def test_get_none_attribute(self) -> None:
         """Test getting a None attribute from context."""
@@ -407,6 +419,7 @@ class TestGetContextValue:
         ctx = MockContext(tools=None)
 
         config = factory.build(ConfigWithTools, ctx)  # type: ignore[arg-type]
+        assert isinstance(config, ConfigWithTools)
 
         # tools should not be set when context value is None
         assert config.tools is None
@@ -419,12 +432,12 @@ class TestGetContextValue:
         class ContextWithTracker:
             """Context with tracker attribute."""
 
-            snapshot: object = field(default_factory=dict)
-            paths: object = field(default_factory=dict)
-            tracker: object = field(default_factory=lambda: {"from": "context"})
+            snapshot: FakeSnapshotRef = field(default_factory=FakeSnapshotRef)
+            paths: FakeBuildPaths = field(default_factory=FakeBuildPaths)
+            tracker: Any = field(default_factory=lambda: {"from": "context"})
 
         ctx = ContextWithTracker()
-        options_tracker = {"from": "options"}
+        options_tracker: Any = {"from": "options"}
         # tracker requires explicit mapping to be resolved
         options = BuildOptions(
             tracker=options_tracker,
@@ -432,6 +445,7 @@ class TestGetContextValue:
         )
 
         config = factory.build(ConfigWithTools, ctx, options)  # type: ignore[arg-type]
+        assert isinstance(config, ConfigWithTools)
 
         assert config.tracker == options_tracker
 

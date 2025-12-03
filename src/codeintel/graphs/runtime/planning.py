@@ -170,6 +170,23 @@ class GraphPluginRunOptions:
     plugin_options: dict[str, dict[str, object]] | None = None
 
 
+@dataclass(frozen=True)
+class ResolvedPlanInputs:
+    """Resolved inputs for building a GraphPluginExecutionPlan."""
+
+    plan_id: str
+    run_id: str
+    policy: GraphPluginPolicy
+    telemetry: GraphRuntimeTelemetry
+    scope: GraphRunScope
+    repo: str
+    commit: str
+    plugin_plan: GraphPluginPlan
+    options_by_plugin: dict[str, object | None]
+    settings_by_plugin: dict[str, PluginExecutionSettings]
+    prior_manifest: Mapping[str, Mapping[str, object]] | None
+
+
 def _resolve_plugin_options_map(
     plugins: Sequence[GraphPluginProtocol],
     cfg_options: Mapping[str, dict[str, object]] | None,
@@ -307,25 +324,11 @@ def _resolve_target(
     return runtime_snapshot.repo, runtime_snapshot.commit
 
 
-def plan_graph_plugin_run(  # noqa: PLR0914
-    *,
-    plugin_names: Sequence[str] | None = None,
+def _prepare_execution_inputs(
+    plugin_names: Sequence[str] | None,
     context: GraphPlanContext,
-) -> GraphPluginExecutionPlan:
-    """Build an execution plan and per-plugin settings for a batch run.
-
-    Parameters
-    ----------
-    plugin_names
-        Explicit plugin names to run.
-    context
-        Planning context.
-
-    Returns
-    -------
-    GraphPluginExecutionPlan
-        Concrete plan for execution.
-    """
+) -> ResolvedPlanInputs:
+    """Resolve all derived inputs needed to build an execution plan."""
     run_id = uuid4().hex
     plan_id = uuid4().hex
     cfg = context.cfg
@@ -345,14 +348,9 @@ def plan_graph_plugin_run(  # noqa: PLR0914
         target=context.target,
     )
 
-    # Build plugin plan using registry
     registry = get_graph_registry()
-
-    # Determine enabled/disabled from config
     enabled = cfg.enabled_plugins if cfg is not None else None
     disabled = cfg.disabled_plugins if cfg is not None else None
-
-    # Get plugin plan from registry
     plugin_plan: GraphPluginPlan = registry.plan(
         plugin_names=plugin_names or list(DEFAULT_GRAPH_PLUGINS),
         enabled=enabled,
@@ -393,21 +391,57 @@ def plan_graph_plugin_run(  # noqa: PLR0914
             version_hash=plugin.metadata.version_hash,
         )
 
-    return GraphPluginExecutionPlan(
+    return ResolvedPlanInputs(
         plan_id=plan_id,
         run_id=run_id,
-        repo=repo,
-        commit=commit,
         policy=policy,
-        prior_manifest=context.prior_manifest,
         telemetry=telemetry,
         scope=scope,
-        plugins=plugins,
+        repo=repo,
+        commit=commit,
+        plugin_plan=plugin_plan,
+        options_by_plugin=dict(options_by_plugin),
+        settings_by_plugin=settings_by_plugin,
+        prior_manifest=context.prior_manifest,
+    )
+
+
+def plan_graph_plugin_run(
+    *,
+    plugin_names: Sequence[str] | None = None,
+    context: GraphPlanContext,
+) -> GraphPluginExecutionPlan:
+    """Build an execution plan and per-plugin settings for a batch run.
+
+    Parameters
+    ----------
+    plugin_names
+        Explicit plugin names to run.
+    context
+        Planning context.
+
+    Returns
+    -------
+    GraphPluginExecutionPlan
+        Concrete plan for execution.
+    """
+    resolved = _prepare_execution_inputs(plugin_names, context)
+    plugin_plan = resolved.plugin_plan
+    return GraphPluginExecutionPlan(
+        plan_id=resolved.plan_id,
+        run_id=resolved.run_id,
+        repo=resolved.repo,
+        commit=resolved.commit,
+        policy=resolved.policy,
+        prior_manifest=resolved.prior_manifest,
+        telemetry=resolved.telemetry,
+        scope=resolved.scope,
+        plugins=plugin_plan.plugins,
         ordered_names=plugin_plan.ordered_names,
         skipped_plugins=plugin_plan.skipped_plugins,
         dep_graph=plugin_plan.dep_graph,
-        settings_by_plugin=settings_by_plugin,
-        options_by_plugin=dict(options_by_plugin),
+        settings_by_plugin=resolved.settings_by_plugin,
+        options_by_plugin=resolved.options_by_plugin,
     )
 
 

@@ -37,7 +37,39 @@ from codeintel.analytics.core.plugin_protocol import (
 )
 
 
-@dataclass  # noqa: PLR0904
+@dataclass
+class PluginMetaSection:
+    """Metadata-focused fields for plugin specification."""
+
+    name: str
+    description: str = ""
+    stage: PluginStage = "other"
+    version: str = "1.0.0"
+    enabled_by_default: bool = True
+    severity: PluginSeverity = "fatal"
+    tags: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PluginContractsSection:
+    """Contracts and dependency fields for plugin specification."""
+
+    inputs: list[PluginInputSpec] = field(default_factory=list)
+    outputs: list[PluginOutputSpec] = field(default_factory=list)
+    capabilities_provided: list[PluginCapability] = field(default_factory=list)
+    capabilities_required: list[PluginCapability] = field(default_factory=list)
+    depends_on: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PluginRuntimeSection:
+    """Runtime/resource fields for plugin specification."""
+
+    resource_hints: PluginResourceHints | None = None
+    requires_isolation: bool = False
+    isolation_kind: Literal["process", "thread"] | None = None
+
+
 class PluginSpecBuilder:
     """Fluent builder for constructing PluginMetadata.
 
@@ -45,21 +77,10 @@ class PluginSpecBuilder:
     All setter methods return self for chaining.
     """
 
-    _name: str
-    _description: str = ""
-    _stage: PluginStage = "other"
-    _version: str = "1.0.0"
-    _enabled_by_default: bool = True
-    _severity: PluginSeverity = "fatal"
-    _inputs: list[PluginInputSpec] = field(default_factory=list)
-    _outputs: list[PluginOutputSpec] = field(default_factory=list)
-    _capabilities_provided: list[PluginCapability] = field(default_factory=list)
-    _capabilities_required: list[PluginCapability] = field(default_factory=list)
-    _depends_on: list[str] = field(default_factory=list)
-    _resource_hints: PluginResourceHints | None = None
-    _requires_isolation: bool = False
-    _isolation_kind: Literal["process", "thread"] | None = None
-    _tags: list[str] = field(default_factory=list)
+    def __init__(self, name: str) -> None:
+        self._meta = PluginMetaSection(name=name)
+        self._contracts = PluginContractsSection()
+        self._runtime = PluginRuntimeSection()
 
     def description(self, desc: str) -> PluginSpecBuilder:
         """Set the plugin description.
@@ -74,7 +95,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._description = desc
+        self._meta.description = desc
         return self
 
     def stage(self, stage: PluginStage) -> PluginSpecBuilder:
@@ -90,7 +111,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._stage = stage
+        self._meta.stage = stage
         return self
 
     def version(self, ver: str) -> PluginSpecBuilder:
@@ -106,7 +127,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._version = ver
+        self._meta.version = ver
         return self
 
     def enabled_by_default(self, *, enabled: bool = True) -> PluginSpecBuilder:
@@ -122,7 +143,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._enabled_by_default = enabled
+        self._meta.enabled_by_default = enabled
         return self
 
     def disabled_by_default(self) -> PluginSpecBuilder:
@@ -133,7 +154,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._enabled_by_default = False
+        self._meta.enabled_by_default = False
         return self
 
     def severity(self, sev: PluginSeverity) -> PluginSpecBuilder:
@@ -149,7 +170,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._severity = sev
+        self._meta.severity = sev
         return self
 
     def fatal(self) -> PluginSpecBuilder:
@@ -160,7 +181,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._severity = "fatal"
+        self._meta.severity = "fatal"
         return self
 
     def soft_fail(self) -> PluginSpecBuilder:
@@ -171,7 +192,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._severity = "soft_fail"
+        self._meta.severity = "soft_fail"
         return self
 
     def skip_on_error(self) -> PluginSpecBuilder:
@@ -182,7 +203,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._severity = "skip_on_error"
+        self._meta.severity = "skip_on_error"
         return self
 
     def input(
@@ -211,7 +232,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._inputs.append(
+        self._contracts.inputs.append(
             PluginInputSpec(
                 name=name or config_type.__name__,
                 type_ref=config_type.__name__,
@@ -234,7 +255,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._inputs.append(spec)
+        self._contracts.inputs.append(spec)
         return self
 
     def output(
@@ -264,7 +285,7 @@ class PluginSpecBuilder:
             Self for chaining.
         """
         logical_name = name or table.rsplit(".", maxsplit=1)[-1]
-        self._outputs.append(
+        self._contracts.outputs.append(
             PluginOutputSpec(
                 name=logical_name,
                 tables=(table,),
@@ -304,7 +325,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._outputs.append(spec)
+        self._contracts.outputs.append(spec)
         return self
 
     def provides(self, *capabilities: str) -> PluginSpecBuilder:
@@ -321,7 +342,7 @@ class PluginSpecBuilder:
             Self for chaining.
         """
         for cap in capabilities:
-            self._capabilities_provided.append(PluginCapability(name=cap))
+            self._contracts.capabilities_provided.append(PluginCapability(name=cap))
         return self
 
     def provides_capability(self, capability: PluginCapability) -> PluginSpecBuilder:
@@ -337,7 +358,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._capabilities_provided.append(capability)
+        self._contracts.capabilities_provided.append(capability)
         return self
 
     def requires(self, *capabilities: str) -> PluginSpecBuilder:
@@ -354,7 +375,7 @@ class PluginSpecBuilder:
             Self for chaining.
         """
         for cap in capabilities:
-            self._capabilities_required.append(PluginCapability(name=cap))
+            self._contracts.capabilities_required.append(PluginCapability(name=cap))
         return self
 
     def requires_capability(self, capability: PluginCapability) -> PluginSpecBuilder:
@@ -370,7 +391,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._capabilities_required.append(capability)
+        self._contracts.capabilities_required.append(capability)
         return self
 
     def depends_on(self, *plugins: str) -> PluginSpecBuilder:
@@ -386,7 +407,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._depends_on.extend(plugins)
+        self._contracts.depends_on.extend(plugins)
         return self
 
     def resources(
@@ -415,7 +436,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._resource_hints = PluginResourceHints(
+        self._runtime.resource_hints = PluginResourceHints(
             max_runtime_ms=max_runtime_ms,
             max_memory_mb=max_memory_mb,
             requires_gpu=requires_gpu,
@@ -439,8 +460,8 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._requires_isolation = True
-        self._isolation_kind = kind
+        self._runtime.requires_isolation = True
+        self._runtime.isolation_kind = kind
         return self
 
     def tag(self, *tags: str) -> PluginSpecBuilder:
@@ -456,7 +477,7 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        self._tags.extend(tags)
+        self._meta.tags.extend(tags)
         return self
 
     def build(self) -> PluginMetadata:
@@ -468,21 +489,21 @@ class PluginSpecBuilder:
             Complete plugin metadata.
         """
         return PluginMetadata(
-            name=self._name,
-            description=self._description,
-            stage=self._stage,
-            version=self._version,
-            enabled_by_default=self._enabled_by_default,
-            severity=self._severity,
-            inputs=tuple(self._inputs),
-            outputs=tuple(self._outputs),
-            capabilities_provided=tuple(self._capabilities_provided),
-            capabilities_required=tuple(self._capabilities_required),
-            depends_on=tuple(self._depends_on),
-            resource_hints=self._resource_hints,
-            requires_isolation=self._requires_isolation,
-            isolation_kind=self._isolation_kind,
-            tags=tuple(self._tags),
+            name=self._meta.name,
+            description=self._meta.description,
+            stage=self._meta.stage,
+            version=self._meta.version,
+            enabled_by_default=self._meta.enabled_by_default,
+            severity=self._meta.severity,
+            inputs=tuple(self._contracts.inputs),
+            outputs=tuple(self._contracts.outputs),
+            capabilities_provided=tuple(self._contracts.capabilities_provided),
+            capabilities_required=tuple(self._contracts.capabilities_required),
+            depends_on=tuple(self._contracts.depends_on),
+            resource_hints=self._runtime.resource_hints,
+            requires_isolation=self._runtime.requires_isolation,
+            isolation_kind=self._runtime.isolation_kind,
+            tags=tuple(self._meta.tags),
         )
 
 
@@ -508,7 +529,7 @@ class PluginSpec:
         PluginSpecBuilder
             A new builder instance.
         """
-        return PluginSpecBuilder(_name=name)
+        return PluginSpecBuilder(name)
 
 
 # =============================================================================
@@ -854,6 +875,9 @@ class OutputSpec:
 
 
 __all__ = [
+    "PluginContractsSection",
+    "PluginMetaSection",
+    "PluginRuntimeSection",
     "OutputSpec",
     "OutputSpecBuilder",
     "PluginSpec",

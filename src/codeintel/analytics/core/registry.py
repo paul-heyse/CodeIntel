@@ -11,7 +11,7 @@ import importlib.metadata
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Literal, TypeVar, TypedDict, Unpack, overload
 from uuid import uuid4
 
 from codeintel.analytics.core.plugin_protocol import (
@@ -468,6 +468,26 @@ def register_plugin(plugin: AnalyticsPluginProtocol) -> None:
     get_registry().register(plugin)
 
 
+class PluginMetaOptionsInput(TypedDict, total=False):
+    """Typed kwargs for PluginMetaOptions.from_kwargs."""
+
+    name: str
+    description: str
+    stage: PluginStage
+    version: str
+    enabled_by_default: bool
+    severity: PluginSeverity
+    inputs: Sequence[PluginInputSpec]
+    outputs: Sequence[PluginOutputSpec]
+    provides: Sequence[str | PluginCapability]
+    requires: Sequence[str | PluginCapability]
+    depends_on: Sequence[str]
+    resource_hints: PluginResourceHints | None
+    requires_isolation: bool
+    isolation_kind: Literal["process", "thread"] | None
+    tags: Sequence[str]
+
+
 @dataclass
 class PluginMetaOptions:
     """Options container for plugin metadata.
@@ -494,41 +514,14 @@ class PluginMetaOptions:
     tags: Sequence[str] = ()
 
     @staticmethod
-    def from_kwargs(**kwargs: object) -> PluginMetaOptions:
-        """Build options from legacy kwargs while keeping a narrow public API.
-
-        Returns
-        -------
-        PluginMetaOptions
-            Options instance built from provided kwargs.
-
-        Raises
-        ------
-        ValueError
-            If unknown option keys are provided.
-        """
-        allowed_keys = {
-            "name",
-            "description",
-            "stage",
-            "version",
-            "enabled_by_default",
-            "severity",
-            "inputs",
-            "outputs",
-            "provides",
-            "requires",
-            "depends_on",
-            "resource_hints",
-            "requires_isolation",
-            "isolation_kind",
-            "tags",
-        }
+    def from_kwargs(**kwargs: Unpack[PluginMetaOptionsInput]) -> PluginMetaOptions:
+        """Build options from legacy kwargs while keeping a narrow public API."""
+        allowed_keys = set(PluginMetaOptionsInput.__annotations__)
         unknown = set(kwargs) - allowed_keys
         if unknown:
             message = f"Unsupported plugin option keys: {', '.join(sorted(unknown))}"
             raise ValueError(message)
-        return PluginMetaOptions(**kwargs)  # type: ignore[arg-type]
+        return PluginMetaOptions(**kwargs)
 
     def to_metadata(
         self,
@@ -572,6 +565,26 @@ class PluginMetaOptions:
             isolation_kind=self.isolation_kind,
             tags=tuple(self.tags),
         )
+
+
+class PluginMetaOptionsInput(TypedDict, total=False):
+    """Typed kwargs for PluginMetaOptions.from_kwargs."""
+
+    name: str
+    description: str
+    stage: PluginStage
+    version: str
+    enabled_by_default: bool
+    severity: PluginSeverity
+    inputs: Sequence[PluginInputSpec]
+    outputs: Sequence[PluginOutputSpec]
+    provides: Sequence[str | PluginCapability]
+    requires: Sequence[str | PluginCapability]
+    depends_on: Sequence[str]
+    resource_hints: PluginResourceHints | None
+    requires_isolation: bool
+    isolation_kind: Literal["process", "thread"] | None
+    tags: Sequence[str]
 
 
 @dataclass

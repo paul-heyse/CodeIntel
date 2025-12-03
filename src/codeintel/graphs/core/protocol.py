@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, cast, runtime_checkable
+from typing import Literal, Protocol, TypedDict, Unpack, cast, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -200,6 +200,37 @@ class GraphPluginProtocol(Protocol):
         ...
 
 
+class GraphPluginMetaOptionsInput(TypedDict, total=False):
+    """Typed kwargs for GraphPluginMetaOptions.from_kwargs."""
+
+    name: str
+    description: str
+    kind: GraphPluginKind
+    stage: GraphPluginStage
+    severity: GraphPluginSeverity
+    enabled_by_default: bool
+    depends_on: tuple[str, ...]
+    provides: tuple[str, ...]
+    requires: tuple[str, ...]
+    produces_tables: tuple[str, ...]
+    produces_graphs: tuple[GraphKind, ...]
+    requires_graphs: tuple[GraphKind, ...]
+    resource_hints: GraphPluginResourceHints | None
+    supports_incremental: bool
+    isolation_kind: GraphPluginIsolation
+    options_model: type[BaseModel] | None
+    options_default: object | None
+    version_hash: str | None
+    config_schema_ref: str | None
+    row_count_tables: tuple[str, ...]
+    cache_populates: tuple[str, ...]
+    cache_consumes: tuple[str, ...]
+    requires_isolation: bool
+    scope_aware: bool
+    supported_scopes: tuple[str, ...]
+    contract_checkers: tuple[str, ...]
+
+
 @dataclass(frozen=True)
 class GraphPluginMetaOptions:
     """Options container for graph plugin metadata."""
@@ -232,52 +263,14 @@ class GraphPluginMetaOptions:
     contract_checkers: tuple[str, ...] = ()
 
     @staticmethod
-    def from_kwargs(**kwargs: object) -> GraphPluginMetaOptions:
-        """Build options from legacy kwargs.
-
-        Returns
-        -------
-        GraphPluginMetaOptions
-            Options instance built from provided kwargs.
-
-        Raises
-        ------
-        ValueError
-            If unsupported option keys are provided.
-        """
-        allowed_keys = {
-            "name",
-            "description",
-            "kind",
-            "stage",
-            "severity",
-            "enabled_by_default",
-            "depends_on",
-            "provides",
-            "requires",
-            "produces_tables",
-            "produces_graphs",
-            "requires_graphs",
-            "resource_hints",
-            "supports_incremental",
-            "isolation_kind",
-            "options_model",
-            "options_default",
-            "version_hash",
-            "config_schema_ref",
-            "row_count_tables",
-            "cache_populates",
-            "cache_consumes",
-            "requires_isolation",
-            "scope_aware",
-            "supported_scopes",
-            "contract_checkers",
-        }
+    def from_kwargs(**kwargs: Unpack[GraphPluginMetaOptionsInput]) -> GraphPluginMetaOptions:
+        """Build options from legacy kwargs."""
+        allowed_keys = set(GraphPluginMetaOptionsInput.__annotations__)
         unknown = set(kwargs) - allowed_keys
         if unknown:
             message = f"Unsupported graph plugin option keys: {', '.join(sorted(unknown))}"
             raise ValueError(message)
-        return GraphPluginMetaOptions(**kwargs)  # type: ignore[arg-type]
+        return GraphPluginMetaOptions(**kwargs)
 
     def to_metadata(
         self,

@@ -219,7 +219,7 @@ class TracingMiddleware:
 
     def after_execute(
         self,
-        ctx: PluginExecutionContext,  # noqa: ARG002
+        ctx: PluginExecutionContext,
         plugin: AnalyticsPluginProtocol,
         result: PluginResult,
     ) -> PluginResult:
@@ -244,6 +244,11 @@ class TracingMiddleware:
 
         if span is not None:
             span.attributes["result.success"] = result.success
+            span.attributes.setdefault("repo", ctx.repo)
+            span.attributes.setdefault("commit", ctx.commit)
+            if ctx.run_id is not None:
+                span.attributes.setdefault("run.id", ctx.run_id)
+
             if result.row_counts:
                 span.attributes["result.row_counts"] = dict(result.row_counts)
                 span.attributes["result.total_rows"] = sum(result.row_counts.values())
@@ -259,7 +264,7 @@ class TracingMiddleware:
 
     def on_error(
         self,
-        ctx: PluginExecutionContext,  # noqa: ARG002
+        ctx: PluginExecutionContext,
         plugin: AnalyticsPluginProtocol,
         error: Exception,
     ) -> Exception | None:
@@ -285,6 +290,10 @@ class TracingMiddleware:
         if span is not None:
             span.attributes["error.type"] = type(error).__name__
             span.attributes["error.message"] = str(error)
+            span.attributes.setdefault("repo", ctx.repo)
+            span.attributes.setdefault("commit", ctx.commit)
+            if ctx.run_id is not None:
+                span.attributes.setdefault("run.id", ctx.run_id)
             span.finish("error")
             self.exporter.export(span)
 

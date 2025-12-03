@@ -35,9 +35,13 @@ from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
+from codeintel.ingestion.tool_service import ToolService
+from tests._helpers.fakes import FakeToolRunner, FakeToolService, FakeToolServiceConfig
 from tests._helpers.tooling import make_tools_config
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -216,3 +220,133 @@ class IngestTestSetup:
         )
         new_setup._register_default_providers()
         return new_setup
+
+    @classmethod
+    def with_tool_service(
+        cls,
+        repo_root: Path,
+        *,
+        gateway: StorageGateway,
+        payloads: "dict[str, Any] | None" = None,
+        repo: str = "test/repo",
+        commit: str = "testcommit",
+    ) -> "tuple[Self, ToolService]":
+        """Create setup with real ToolService backed by FakeToolRunner.
+
+        This factory creates a fully functional ToolService that uses
+        FakeToolRunner for deterministic tool outputs, enabling tests
+        to verify tool integration without running external binaries.
+
+        Parameters
+        ----------
+        repo_root
+            Path to the repository root directory.
+        gateway
+            Storage gateway for database access.
+        payloads
+            Optional dict of tool name -> output for FakeToolRunner.
+        repo
+            Repository identifier (default: "test/repo").
+        commit
+            Commit identifier (default: "testcommit").
+
+        Returns
+        -------
+        tuple[Self, ToolService]
+            Setup instance and the configured ToolService.
+        """
+        setup = cls.from_repo(repo_root, gateway=gateway, repo=repo, commit=commit)
+        fake_runner = FakeToolRunner(cache_dir=setup.paths.tool_cache, payloads=payloads)
+        tool_service = ToolService(fake_runner, setup.tools)
+        return setup, tool_service
+
+    @classmethod
+    def with_fake_tool_service(
+        cls,
+        repo_root: Path,
+        *,
+        gateway: StorageGateway,
+        tool_config: FakeToolServiceConfig | None = None,
+        repo: str = "test/repo",
+        commit: str = "testcommit",
+    ) -> "tuple[Self, FakeToolService]":
+        """Create setup with FakeToolService for fully deterministic tests.
+
+        This factory creates a FakeToolService that returns configured
+        responses without any tool execution, enabling pure unit tests
+        of components that depend on ToolService.
+
+        Parameters
+        ----------
+        repo_root
+            Path to the repository root directory.
+        gateway
+            Storage gateway for database access.
+        tool_config
+            Optional FakeToolServiceConfig for configuring responses.
+        repo
+            Repository identifier (default: "test/repo").
+        commit
+            Commit identifier (default: "testcommit").
+
+        Returns
+        -------
+        tuple[Self, FakeToolService]
+            Setup instance and the configured FakeToolService.
+        """
+        setup = cls.from_repo(repo_root, gateway=gateway, repo=repo, commit=commit)
+        fake_service = FakeToolService(tool_config)
+        return setup, fake_service
+
+    @classmethod
+    def for_config_factory_tests(
+        cls,
+        repo_root: Path,
+        *,
+        gateway: StorageGateway,
+    ) -> Self:
+        """Create setup pre-configured for config factory testing.
+
+        This factory creates a setup with all the components typically
+        needed for testing ConfigFactory, including proper types for
+        snapshot, paths, and tools.
+
+        Parameters
+        ----------
+        repo_root
+            Path to the repository root directory.
+        gateway
+            Storage gateway for database access.
+
+        Returns
+        -------
+        Self
+            Setup configured for config factory tests.
+        """
+        return cls.from_repo(repo_root, gateway=gateway)
+
+    @classmethod
+    def for_plugin_registry_tests(
+        cls,
+        repo_root: Path,
+        *,
+        gateway: StorageGateway,
+    ) -> Self:
+        """Create setup pre-configured for plugin registry testing.
+
+        This factory creates a minimal setup suitable for testing
+        plugin registration, dependency resolution, and execution ordering.
+
+        Parameters
+        ----------
+        repo_root
+            Path to the repository root directory.
+        gateway
+            Storage gateway for database access.
+
+        Returns
+        -------
+        Self
+            Setup configured for plugin registry tests.
+        """
+        return cls.from_repo(repo_root, gateway=gateway)

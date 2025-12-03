@@ -40,6 +40,9 @@ class PluginMetrics:
     """
 
     plugin_name: str
+    run_id: str | None = None
+    repo: str | None = None
+    commit: str | None = None
     duration_ms: float = 0.0
     row_counts: dict[str, int] = field(default_factory=dict)
     success: bool = True
@@ -64,7 +67,7 @@ class MetricsStore:
     by_run: dict[str, list[PluginMetrics]] = field(default_factory=lambda: defaultdict(list))
     totals: dict[str, float] = field(default_factory=lambda: defaultdict(float))
 
-    def record(self, run_id: str, metrics: PluginMetrics) -> None:
+    def record(self, run_id: str | None, metrics: PluginMetrics) -> None:
         """Record plugin metrics.
 
         Parameters
@@ -75,7 +78,7 @@ class MetricsStore:
             Metrics to record.
         """
         self.by_plugin[metrics.plugin_name].append(metrics)
-        self.by_run[run_id].append(metrics)
+        self.by_run[run_id or "unknown"].append(metrics)
         self.totals["executions"] += 1
         self.totals["total_duration_ms"] += metrics.duration_ms
         self.totals["total_rows"] += sum(metrics.row_counts.values())
@@ -168,7 +171,7 @@ class MetricsMiddleware:
 
     def before_execute(
         self,
-        ctx: PluginExecutionContext,  # noqa: ARG002
+        ctx: PluginExecutionContext,
         plugin: AnalyticsPluginProtocol,
     ) -> None:
         """Record execution start time.
@@ -211,6 +214,9 @@ class MetricsMiddleware:
 
         metrics = PluginMetrics(
             plugin_name=plugin_name,
+            run_id=ctx.run_id,
+            repo=ctx.repo,
+            commit=ctx.commit,
             duration_ms=duration_ms,
             row_counts=dict(result.row_counts) if result.row_counts else {},
             success=result.success,

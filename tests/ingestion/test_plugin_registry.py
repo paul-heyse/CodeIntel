@@ -35,7 +35,7 @@ class MockPlugin(IngestPluginProtocol):
     """A simple mock plugin for testing."""
 
     name: str = "mock_plugin"
-    stage: IngestStage = "extract"
+    stage: IngestStage = "parse"
     provides: tuple[str, ...] = ()
     requires: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
@@ -60,11 +60,11 @@ class MockPlugin(IngestPluginProtocol):
 
     def execute(self, _ctx: IngestExecutionContext) -> IngestPluginResult:
         """Execute the mock plugin."""
-        return IngestPluginResult.success({})
+        return IngestPluginResult(success=True, row_counts={})
 
     def validate_inputs(self, _ctx: IngestExecutionContext) -> object:
         """Validate inputs."""
-        from codeintel.ingestion.plugins.protocol import ValidationResult
+        from codeintel.ingestion.core.base import ValidationResult
 
         return ValidationResult.success()
 
@@ -213,10 +213,10 @@ class TestPluginStages:
     def test_list_by_stage(self) -> None:
         """Registry should find plugins by stage."""
         registry = IngestPluginRegistry()
-        plugin = MockPlugin(name="extractor", stage="extract")
+        plugin = MockPlugin(name="extractor", stage="parse")
 
         registry.register(plugin)
-        result = registry.list_by_stage("extract")
+        result = registry.list_by_stage("parse")
 
         names = [p.metadata.name for p in result]
         assert "extractor" in names
@@ -224,13 +224,13 @@ class TestPluginStages:
     def test_list_by_stage_multiple(self) -> None:
         """Registry should find multiple plugins in same stage."""
         registry = IngestPluginRegistry()
-        plugin1 = MockPlugin(name="ext1", stage="extract")
-        plugin2 = MockPlugin(name="ext2", stage="extract")
+        plugin1 = MockPlugin(name="ext1", stage="parse")
+        plugin2 = MockPlugin(name="ext2", stage="parse")
 
         registry.register(plugin1)
         registry.register(plugin2)
 
-        result = registry.list_by_stage("extract")
+        result = registry.list_by_stage("parse")
         names = [p.metadata.name for p in result]
 
         assert "ext1" in names
@@ -372,13 +372,13 @@ class TestUnregisterCleanup:
     def test_unregister_removes_from_stage_index(self) -> None:
         """Unregister should remove plugin from stage index."""
         registry = IngestPluginRegistry()
-        plugin = MockPlugin(name="p", stage="extract")
+        plugin = MockPlugin(name="p", stage="parse")
 
         registry.register(plugin)
-        initial_count = len(registry.list_by_stage("extract"))
+        initial_count = len(registry.list_by_stage("parse"))
 
         registry.unregister("p")
-        final_count = len(registry.list_by_stage("extract"))
+        final_count = len(registry.list_by_stage("parse"))
 
         assert final_count == initial_count - 1
 

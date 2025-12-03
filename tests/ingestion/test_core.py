@@ -161,7 +161,7 @@ class TestPlugin(BaseIngestPlugin):
 
     plugin_name: ClassVar[str] = "test_plugin"
     plugin_description: ClassVar[str] = "Test plugin for testing"
-    plugin_stage: ClassVar[IngestStage] = "extract"
+    plugin_stage: ClassVar[IngestStage] = "parse"
     plugin_version: ClassVar[str] = "1.0.0"
     output_tables: ClassVar[tuple[str, ...]] = ("core.test",)
 
@@ -176,7 +176,7 @@ class TrackerPlugin(TrackerRequiringPlugin):
 
     plugin_name: ClassVar[str] = "tracker_plugin"
     plugin_description: ClassVar[str] = "Plugin requiring tracker"
-    plugin_stage: ClassVar[IngestStage] = "extract"
+    plugin_stage: ClassVar[IngestStage] = "parse"
     plugin_version: ClassVar[str] = "1.0.0"
     output_tables: ClassVar[tuple[str, ...]] = ("core.test",)
     tracker_required: ClassVar[bool] = True
@@ -202,7 +202,7 @@ class TestBaseIngestPlugin:
 
         assert meta.name == "test_plugin"
         assert meta.description == "Test plugin for testing"
-        assert meta.stage == "extract"
+        assert meta.stage == "parse"
         assert meta.version_hash == "1.0.0"
         assert "core.test" in meta.produces_tables
 
@@ -314,7 +314,7 @@ class TestIngestPluginMetadata:
         meta = IngestPluginMetadata(
             name="test",
             description="Test plugin",
-            stage="extract",
+            stage="parse",
             provides=(),
             requires=(),
             depends_on=(),
@@ -326,14 +326,14 @@ class TestIngestPluginMetadata:
         )
 
         assert meta.name == "test"
-        assert meta.stage == "extract"
+        assert meta.stage == "parse"
 
     def test_frozen(self) -> None:
         """IngestPluginMetadata should be immutable."""
         meta = IngestPluginMetadata(
             name="test",
             description="Test plugin",
-            stage="extract",
+            stage="parse",
             provides=(),
             requires=(),
             depends_on=(),
@@ -378,4 +378,3 @@ class TestIngestResourceHints:
         assert hints.io_intensive is True
         assert hints.memory_mb_hint == 1024
         assert hints.max_runtime_ms == 60000
-

@@ -15,7 +15,6 @@ import ast
 import json
 from pathlib import Path
 
-from codeintel.ingestion.ports.storage import BatchResult
 from codeintel.ingestion.steps.config_ingest import (
     _flatten_dict,
     _flatten_list_items,
@@ -32,6 +31,7 @@ from codeintel.ingestion.steps.typing_ingest import (
     _compute_annotation_info,
     _is_fully_typed,
 )
+from tests._helpers.fakes import FakeIngestStorage
 
 # Test constants
 EXPECTED_PARAMS_RATIO_HALF = 0.5
@@ -521,45 +521,7 @@ def test_annotation_info_dataclass() -> None:
 # =============================================================================
 
 
-class MockStoragePort:
-    """Simple mock storage port for testing.
-
-    Attributes
-    ----------
-    batches
-        List of recorded batch writes.
-    """
-
-    def __init__(self) -> None:
-        """Initialize the mock with empty batches."""
-        self.batches: list[tuple[str, list[object]]] = []
-
-    def write_batch(
-        self,
-        table_key: str,
-        rows: list[object],
-        *,
-        scope: str | None = None,
-    ) -> BatchResult:
-        """Record the batch write and return success.
-
-        Parameters
-        ----------
-        table_key
-            Table identifier.
-        rows
-            Rows to write.
-        scope
-            Optional scope (ignored).
-
-        Returns
-        -------
-        BatchResult
-            Result with row count.
-        """
-        _ = scope
-        self.batches.append((table_key, rows))
-        return BatchResult(table_key=table_key, rows_written=len(rows))
+# MockStoragePort replaced with FakeIngestStorage from tests._helpers.fakes
 
 
 def test_tests_ingest_step_success(tmp_path: Path) -> None:
@@ -579,20 +541,21 @@ def test_tests_ingest_step_success(tmp_path: Path) -> None:
     }
     report_path.write_text(json.dumps(report_data))
 
-    storage = MockStoragePort()
+    storage = FakeIngestStorage()
     step = TestsIngestStep(storage)
     result = step.execute([], repo="test/repo", commit="abc123", json_report_path=report_path)
 
     expected_rows = 3  # 2 test rows + 1 summary row
     assert result.rows_written == expected_rows
-    assert len(storage.batches) == EXPECTED_UNTYPED_DEFS_TWO
+    # FakeIngestStorage stores data by table_key, check operations count
+    assert len(storage.data) == EXPECTED_UNTYPED_DEFS_TWO
 
 
 def test_tests_ingest_step_missing_report(tmp_path: Path) -> None:
     """TestsIngestStep should skip when report is missing."""
     report_path = tmp_path / "nonexistent.json"
 
-    storage = MockStoragePort()
+    storage = FakeIngestStorage()
     step = TestsIngestStep(storage)
     result = step.execute([], repo="test/repo", commit="abc123", json_report_path=report_path)
 
@@ -607,7 +570,7 @@ def test_tests_ingest_step_invalid_json(tmp_path: Path) -> None:
     report_path = tmp_path / "invalid.json"
     report_path.write_text("not valid json {{{")
 
-    storage = MockStoragePort()
+    storage = FakeIngestStorage()
     step = TestsIngestStep(storage)
     result = step.execute([], repo="test/repo", commit="abc123", json_report_path=report_path)
 
@@ -622,7 +585,7 @@ def test_tests_ingest_step_empty_tests(tmp_path: Path) -> None:
     report_data = {"tests": [], "summary": {}}
     report_path.write_text(json.dumps(report_data))
 
-    storage = MockStoragePort()
+    storage = FakeIngestStorage()
     step = TestsIngestStep(storage)
     result = step.execute([], repo="test/repo", commit="abc123", json_report_path=report_path)
 
@@ -640,14 +603,15 @@ def test_tests_ingest_step_long_longrepr_truncated(tmp_path: Path) -> None:
     }
     report_path.write_text(json.dumps(report_data))
 
-    storage = MockStoragePort()
+    storage = FakeIngestStorage()
     step = TestsIngestStep(storage)
     step.execute([], repo="test/repo", commit="abc123", json_report_path=report_path)
 
-    # Get the test result row
-    test_rows = [b for b in storage.batches if b[0] == "core.test_results"]
+    # Get the test result rows from FakeIngestStorage
+    test_rows = storage.data.get("core.test_results", [])
     assert len(test_rows) == 1
-    rows = test_rows[0][1]
-    # The longrepr is at index 6
+    first_row = test_rows[0]
+    # The longrepr is at index 6 - cast to str to check length
+    longrepr = str(first_row[6]) if first_row[6] is not None else ""
     expected_len = 1000
-    assert len(rows[0][6]) == expected_len
+    assert len(longrepr) == expected_len

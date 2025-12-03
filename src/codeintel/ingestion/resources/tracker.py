@@ -6,8 +6,6 @@ manages access to the change tracker for incremental ingestion.
 NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
 
-# ruff: noqa: PLC0415
-
 from __future__ import annotations
 
 import logging

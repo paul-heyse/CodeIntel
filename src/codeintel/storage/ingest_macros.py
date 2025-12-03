@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import threading
 
+from contextlib import closing
+
 from duckdb import DuckDBPyConnection
 
 from codeintel.storage.metadata_bootstrap import (
@@ -66,8 +68,7 @@ def ensure_ingest_macros(con: DuckDBPyConnection) -> None:
             return
 
         # Avoid thrashing shared connections by using a dedicated cursor for macro setup.
-        setup_con = con.cursor()
-        try:
+        with closing(con.cursor()) as setup_con:
             setup_con.execute("\n".join(METADATA_SCHEMA_DDL_BASE))
             for ddl in INGEST_MACRO_DDLS:
                 setup_con.execute(ddl)
@@ -87,12 +88,6 @@ def ensure_ingest_macros(con: DuckDBPyConnection) -> None:
             primary_registered = _registered_macros(con)
             updated = primary_registered if macro_set.issubset(primary_registered) else registered
             _MACRO_CACHE[cache_key] = updated
-        finally:
-            try:
-                setup_con.close()  # type: ignore[attr-defined]
-            except Exception:
-                # DuckDB connections may not expose close; ignore cleanup errors.
-                pass
 
 
 def clear_macro_cache_for_connection(con_or_key: DuckDBPyConnection | int) -> None:

@@ -72,52 +72,68 @@ class ProblemDetail:
 
 
 @dataclass(frozen=True)
-class ProblemDetailParams:
-    """Optional parameters for constructing a ProblemDetail."""
+class ProblemDetails:
+    """Builder-friendly problem description."""
 
+    code: str
+    title: str
+    detail: str | None
     status: int | None = None
     instance: str | None = None
     type_uri: str | None = None
-    extras: dict[str, Any] | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_exception(
+        cls,
+        exc: Exception,
+        *,
+        code: str,
+        title: str,
+        status: int | None = None,
+        type_uri: str | None = None,
+        extras: dict[str, Any] | None = None,
+    ) -> ProblemDetails:
+        """Create details from an exception."""
+        return cls(
+            code=code,
+            title=title,
+            detail=str(exc),
+            status=status,
+            type_uri=type_uri,
+            extras=extras or {},
+        )
+
+    def to_problem_detail(self) -> ProblemDetail:
+        """Convert to ProblemDetail with defaults applied."""
+        resolved_instance = self.instance or generate_correlation_id()
+        resolved_type = self.type_uri or f"https://problems.codeintel.dev/{self.code}"
+        return ProblemDetail(
+            type=resolved_type,
+            title=self.title,
+            detail=self.detail,
+            status=self.status,
+            instance=resolved_instance,
+            code=self.code,
+            extras=self.extras,
+        )
 
 
-def problem(
-    code: str,
-    title: str,
-    detail: str | None,
-    params: ProblemDetailParams | None = None,
-) -> ProblemDetail:
+def problem(details: ProblemDetails) -> ProblemDetail:
     """
-    Create a ProblemDetail with defaults for type/instance.
+    Create a ProblemDetail from ProblemDetails.
 
     Parameters
     ----------
-    code
-        Stable problem code (e.g., 'pipeline.task_failed').
-    title
-        Human-readable error summary.
-    detail
-        Detailed description of the error.
-    params
-        Optional bundle containing status, instance, type URI, and extras.
+    details
+        Structured problem description with optional defaults.
 
     Returns
     -------
     ProblemDetail
         Structured problem payload.
     """
-    effective = params or ProblemDetailParams()
-    resolved_instance = effective.instance or generate_correlation_id()
-    resolved_type = effective.type_uri or f"https://problems.codeintel.dev/{code}"
-    return ProblemDetail(
-        type=resolved_type,
-        title=title,
-        detail=detail,
-        status=effective.status,
-        instance=resolved_instance,
-        code=code,
-        extras=effective.extras or {},
-    )
+    return details.to_problem_detail()
 
 
 def log_problem(logger: logging.Logger | logging.LoggerAdapter, detail: ProblemDetail) -> None:
@@ -172,16 +188,15 @@ class DatasetNotFoundError(ProblemError):
         DatasetNotFoundError
             Structured problem error with dataset context.
         """
-        return cls(
-            ProblemDetail(
-                type="https://codeintel/problems/dataset-not-found",
-                title="Invalid argument",
-                detail=f"Unknown dataset: {dataset_name}",
-                status=400,
-                code="dataset-not-found",
-                extras={"dataset": dataset_name},
-            )
+        details = ProblemDetails(
+            code="dataset-not-found",
+            title="Invalid argument",
+            detail=f"Unknown dataset: {dataset_name}",
+            status=400,
+            type_uri="https://codeintel/problems/dataset-not-found",
+            extras={"dataset": dataset_name},
         )
+        return cls(problem(details))
 
 
 class DatasetSchemaDriftError(ProblemError):
@@ -210,6 +225,7 @@ __all__ = [
     "PipelineError",
     "ProblemDetail",
     "ProblemError",
+    "ProblemDetails",
     "SchemaDriftError",
     "ValidationError",
     "generate_correlation_id",

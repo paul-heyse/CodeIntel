@@ -18,6 +18,7 @@ from codeintel.graphs.core.protocol import (
     GraphPluginIsolation,
     GraphPluginKind,
     GraphPluginMetadata,
+    GraphPluginMetaOptions,
     GraphPluginProtocol,
     GraphPluginResourceHints,
     GraphPluginSeverity,
@@ -113,7 +114,50 @@ class GraphPluginSpec:
     row_count_tables: tuple[str, ...] | None = None
     cache_populates: tuple[str, ...] = ()
     cache_consumes: tuple[str, ...] = ()
+    requires_isolation: bool = False
+    scope_aware: bool = False
+    supported_scopes: tuple[str, ...] = ()
+    contract_checkers: tuple[str, ...] = ()
     register: bool = True
+
+    @staticmethod
+    def from_meta(
+        *,
+        meta: GraphPluginMetaOptions,
+        computation: ComputationFn,
+        register: bool = True,
+    ) -> GraphPluginSpec:
+        """Construct a specification from metadata options and a computation."""
+        return GraphPluginSpec(
+            name=meta.name or computation.__name__,
+            computation=computation,
+            kind=meta.kind or "metric",
+            stage=meta.stage or "core",
+            description=meta.description,
+            severity=meta.severity,
+            enabled_by_default=meta.enabled_by_default,
+            depends_on=meta.depends_on,
+            provides=meta.provides,
+            requires=meta.requires,
+            produces_tables=meta.produces_tables,
+            produces_graphs=meta.produces_graphs,
+            requires_graphs=meta.requires_graphs,
+            resource_hints=meta.resource_hints,
+            supports_incremental=meta.supports_incremental,
+            isolation_kind=meta.isolation_kind,
+            options_model=meta.options_model,
+            options_default=meta.options_default,
+            version_hash=meta.version_hash,
+            config_schema_ref=meta.config_schema_ref,
+            row_count_tables=meta.row_count_tables,
+            cache_populates=meta.cache_populates,
+            cache_consumes=meta.cache_consumes,
+            requires_isolation=meta.requires_isolation,
+            scope_aware=meta.scope_aware,
+            supported_scopes=meta.supported_scopes,
+            contract_checkers=meta.contract_checkers,
+            register=register,
+        )
 
 
 log = logging.getLogger(__name__)
@@ -282,6 +326,10 @@ def make_plugin_from_spec(spec: GraphPluginSpec) -> GraphPluginProtocol:
         row_count_tables=resolved_row_count_tables,
         cache_populates=spec.cache_populates,
         cache_consumes=spec.cache_consumes,
+        requires_isolation=spec.requires_isolation,
+        scope_aware=spec.scope_aware,
+        supported_scopes=spec.supported_scopes,
+        contract_checkers=spec.contract_checkers,
     )
 
     plugin = FactoryPlugin(
@@ -298,295 +346,74 @@ def make_plugin_from_spec(spec: GraphPluginSpec) -> GraphPluginProtocol:
     return plugin
 
 
-def make_graph_plugin(  # noqa: PLR0913 - factory function; prefer make_plugin_from_spec for complex cases
+def make_graph_plugin(
     *,
-    name: str,
     computation: ComputationFn,
-    kind: GraphPluginKind,
-    stage: GraphPluginStage,
-    description: str | None = None,
-    severity: GraphPluginSeverity = "fatal",
-    enabled_by_default: bool = True,
-    depends_on: tuple[str, ...] = (),
-    provides: tuple[str, ...] = (),
-    requires: tuple[str, ...] = (),
-    produces_tables: tuple[str, ...] = (),
-    produces_graphs: tuple[GraphKind, ...] = (),
-    requires_graphs: tuple[GraphKind, ...] = (),
-    resource_hints: GraphPluginResourceHints | None = None,
-    supports_incremental: bool = False,
-    isolation_kind: GraphPluginIsolation = "none",
-    options_model: type[BaseModel] | None = None,
-    options_default: object | None = None,
-    version_hash: str | None = None,
-    config_schema_ref: str | None = None,
-    row_count_tables: tuple[str, ...] | None = None,
-    cache_populates: tuple[str, ...] = (),
-    cache_consumes: tuple[str, ...] = (),
+    meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
+    **kwargs: object,
 ) -> GraphPluginProtocol:
-    """Create a graph plugin from a computation function.
+    """Create a graph plugin from a computation function using metadata options."""
+    if meta is not None and kwargs:
+        message = "Provide either meta or keyword metadata, not both."
+        raise ValueError(message)
 
-    This factory handles all common concerns: logging, error handling,
-    row counting, and result wrapping. The computation function only
-    needs to focus on its core logic.
-
-    For new code, prefer using :func:`make_plugin_from_spec` with a
-    :class:`GraphPluginSpec` to bundle parameters.
-
-    Parameters
-    ----------
-    name
-        Unique plugin identifier.
-    computation
-        Function implementing the plugin logic.
-    kind
-        Plugin kind: builder, metric, or validation.
-    stage
-        Processing stage in the graph pipeline.
-    description
-        Human-readable description. Defaults to computation docstring.
-    severity
-        How failures should be handled.
-    enabled_by_default
-        Whether enabled when no explicit list is provided.
-    depends_on
-        Explicit plugin dependencies that must run first.
-    provides
-        Capabilities or artifacts this plugin produces.
-    requires
-        Capabilities required from other plugins.
-    produces_tables
-        DuckDB table keys populated by this plugin.
-    produces_graphs
-        GraphKind values this plugin builds (for builders).
-    requires_graphs
-        GraphKind values this plugin needs (for metrics).
-    resource_hints
-        Runtime resource hints for planning.
-    supports_incremental
-        Whether incremental execution is supported.
-    isolation_kind
-        Type of isolation needed for execution.
-    options_model
-        Optional Pydantic model for plugin options validation.
-    options_default
-        Default options value.
-    version_hash
-        Version hash for cache invalidation.
-    config_schema_ref
-        Reference to configuration schema.
-    row_count_tables
-        Tables to report row counts from. Defaults to produces_tables.
-    cache_populates
-        Cache keys this plugin populates.
-    cache_consumes
-        Cache keys this plugin consumes.
-    register
-        Whether to auto-register with global registry.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        A fully configured plugin ready for execution.
-    """
-    return make_plugin_from_spec(
-        GraphPluginSpec(
-            name=name,
-            computation=computation,
-            kind=kind,
-            stage=stage,
-            description=description,
-            severity=severity,
-            enabled_by_default=enabled_by_default,
-            depends_on=depends_on,
-            provides=provides,
-            requires=requires,
-            produces_tables=produces_tables,
-            produces_graphs=produces_graphs,
-            requires_graphs=requires_graphs,
-            resource_hints=resource_hints,
-            supports_incremental=supports_incremental,
-            isolation_kind=isolation_kind,
-            options_model=options_model,
-            options_default=options_default,
-            version_hash=version_hash,
-            config_schema_ref=config_schema_ref,
-            row_count_tables=row_count_tables,
-            cache_populates=cache_populates,
-            cache_consumes=cache_consumes,
-            register=register,
-        )
-    )
+    options = meta or GraphPluginMetaOptions.from_kwargs(**kwargs)
+    spec = GraphPluginSpec.from_meta(meta=options, computation=computation, register=register)
+    return make_plugin_from_spec(spec)
 
 
-def make_metric_plugin(  # noqa: PLR0913 - convenience wrapper over make_graph_plugin
-    name: str,
+def make_metric_plugin(
+    *,
     computation: ComputationFn,
     stage: GraphPluginStage,
-    *,
-    description: str | None = None,
-    depends_on: tuple[str, ...] = (),
-    provides: tuple[str, ...] = (),
-    produces_tables: tuple[str, ...] = (),
-    requires_graphs: tuple[GraphKind, ...] = (),
-    row_count_tables: tuple[str, ...] | None = None,
+    meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
+    **kwargs: object,
 ) -> GraphPluginProtocol:
-    """Create a metric plugin with sensible defaults.
-
-    This is a shorthand for make_graph_plugin with kind="metric".
-
-    Parameters
-    ----------
-    name
-        Unique plugin identifier.
-    computation
-        Function implementing the metric computation.
-    stage
-        Processing stage (e.g., "core", "cfg", "symbol").
-    description
-        Human-readable description.
-    depends_on
-        Plugins that must run first.
-    provides
-        Capabilities or artifacts this plugin produces.
-    produces_tables
-        Tables this plugin writes to.
-    requires_graphs
-        Graph types this plugin needs.
-    row_count_tables
-        Tables to report row counts from.
-    register
-        Whether to auto-register.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        A metric plugin ready for execution.
-    """
-    return make_graph_plugin(
-        name=name,
-        computation=computation,
-        kind="metric",
-        stage=stage,
-        description=description,
-        depends_on=depends_on,
-        provides=provides,
-        produces_tables=produces_tables,
-        requires_graphs=requires_graphs,
-        row_count_tables=row_count_tables,
-        register=register,
-    )
+    """Create a metric plugin with sensible defaults."""
+    options = meta or GraphPluginMetaOptions.from_kwargs(kind="metric", stage=stage, **kwargs)
+    return make_graph_plugin(computation=computation, meta=options, register=register)
 
 
-def make_builder_plugin(  # noqa: PLR0913 - convenience wrapper over make_graph_plugin
-    name: str,
+def make_builder_plugin(
+    *,
     computation: ComputationFn,
     stage: GraphPluginStage,
-    *,
     produces_graphs: tuple[GraphKind, ...],
-    description: str | None = None,
-    depends_on: tuple[str, ...] = (),
-    provides: tuple[str, ...] = (),
-    produces_tables: tuple[str, ...] = (),
-    row_count_tables: tuple[str, ...] | None = None,
+    meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
+    **kwargs: object,
 ) -> GraphPluginProtocol:
-    """Create a builder plugin with sensible defaults.
-
-    This is a shorthand for make_graph_plugin with kind="builder".
-
-    Parameters
-    ----------
-    name
-        Unique plugin identifier.
-    computation
-        Function implementing the graph building.
-    stage
-        Processing stage (e.g., "goid", "edges", "structure").
-    produces_graphs
-        Graph types this builder creates.
-    description
-        Human-readable description.
-    depends_on
-        Plugins that must run first.
-    provides
-        Capabilities or artifacts this plugin produces.
-    produces_tables
-        Tables this plugin writes to.
-    row_count_tables
-        Tables to report row counts from.
-    register
-        Whether to auto-register.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        A builder plugin ready for execution.
-    """
-    return make_graph_plugin(
-        name=name,
-        computation=computation,
+    """Create a builder plugin with sensible defaults."""
+    options = meta or GraphPluginMetaOptions.from_kwargs(
         kind="builder",
         stage=stage,
         produces_graphs=produces_graphs,
-        description=description,
-        depends_on=depends_on,
-        provides=provides,
-        produces_tables=produces_tables,
-        row_count_tables=row_count_tables,
-        register=register,
+        **kwargs,
     )
+    return make_graph_plugin(computation=computation, meta=options, register=register)
 
 
-def make_validation_plugin(  # noqa: PLR0913 - convenience wrapper over make_graph_plugin
-    name: str,
-    computation: ComputationFn,
+def make_validation_plugin(
     *,
-    description: str | None = None,
-    depends_on: tuple[str, ...] = (),
-    requires_graphs: tuple[GraphKind, ...] = (),
+    computation: ComputationFn,
+    meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
+    **kwargs: object,
 ) -> GraphPluginProtocol:
-    """Create a validation plugin with sensible defaults.
-
-    This is a shorthand for make_graph_plugin with kind="validation".
-
-    Parameters
-    ----------
-    name
-        Unique plugin identifier.
-    computation
-        Function implementing the validation.
-    description
-        Human-readable description.
-    depends_on
-        Plugins that must run first.
-    requires_graphs
-        Graph types this validation checks.
-    register
-        Whether to auto-register.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        A validation plugin ready for execution.
-    """
-    return make_graph_plugin(
-        name=name,
-        computation=computation,
+    """Create a validation plugin with sensible defaults."""
+    options = meta or GraphPluginMetaOptions.from_kwargs(
         kind="validation",
         stage="validation",
-        description=description,
-        depends_on=depends_on,
-        requires_graphs=requires_graphs,
-        register=register,
+        **kwargs,
     )
+    return make_graph_plugin(computation=computation, meta=options, register=register)
 
 
 __all__ = [
     "FactoryPlugin",
+    "GraphPluginSpec",
     "make_builder_plugin",
     "make_graph_plugin",
     "make_metric_plugin",

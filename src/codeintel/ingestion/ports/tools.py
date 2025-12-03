@@ -175,7 +175,7 @@ class ScipOccurrence:
     symbol_roles: int
 
 
-@dataclass(frozen=True)
+@dataclass
 class ScipDocument:
     """A document from SCIP index.
 
@@ -190,16 +190,8 @@ class ScipDocument:
     """
 
     relative_path: str
-    symbols: Sequence[ScipSymbol] = field(default_factory=list)
-    occurrences: Sequence[ScipOccurrence] = field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        """Normalize symbol and occurrence sequences to mutable lists."""
-        # Accept any sequence inputs while storing mutable lists for downstream mutation.
-        if not isinstance(self.symbols, list):
-            object.__setattr__(self, "symbols", list(self.symbols))  # type: ignore[misc]
-        if not isinstance(self.occurrences, list):
-            object.__setattr__(self, "occurrences", list(self.occurrences))  # type: ignore[misc]
+    symbols: list[ScipSymbol] = field(default_factory=list)
+    occurrences: list[ScipOccurrence] = field(default_factory=list)
 
 
 @dataclass

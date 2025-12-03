@@ -7,11 +7,10 @@ tracking, stage dispatch, and failure handling.
 NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
 
-# ruff: noqa: PLC0415
-
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -20,15 +19,12 @@ from codeintel.pipeline.planner import (
     GraphsStagePlan,
     IngestionStagePlan,
     PipelinePlan,
+    PipelinePlanOptions,
     build_pipeline_plan,
 )
 from codeintel.pipeline.spec import PipelineSpec, PipelineStage
-from codeintel.runtime import RunKind, TriggerKind
 
 if TYPE_CHECKING:
-    from codeintel.config.models import ToolsConfig
-    from codeintel.config.primitives import BuildPaths, SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.run_tracking import (
         PipelineRunRecord,
         PipelineRunTracking,
@@ -49,6 +45,16 @@ def _now() -> datetime:
         Current datetime with UTC timezone.
     """
     return datetime.now(tz=UTC)
+
+
+@dataclass(frozen=True)
+class StageStepContext:
+    """Tracking context for a single stage step."""
+
+    runs: PipelineRunTracking
+    run_id: str
+    stage: PipelineStage
+    started_at: datetime
 
 
 # -----------------------------------------------------------------------------
@@ -96,12 +102,9 @@ def _start_stage_step(
     return started_at
 
 
-def _complete_stage_step(  # noqa: PLR0913
-    runs: PipelineRunTracking,
-    run_id: str,
-    stage: PipelineStage,
+def _complete_stage_step(
+    ctx: StageStepContext,
     status: StepStatus,
-    started_at: datetime,
     *,
     error: str | None = None,
 ) -> None:
@@ -128,14 +131,14 @@ def _complete_stage_step(  # noqa: PLR0913
     if error:
         extra = {"error": error}
 
-    runs.record_step(
+    ctx.runs.record_step(
         PipelineStepRecord(
-            run_id=run_id,
-            module=stage.module,
+            run_id=ctx.run_id,
+            module=ctx.stage.module,
             stage="orchestrator",
-            name=stage.name,
+            name=ctx.stage.name,
             status=status,
-            started_at=started_at,
+            started_at=ctx.started_at,
             completed_at=_now(),
             row_counts=None,
             extra=extra,
@@ -239,15 +242,10 @@ def _execute_analytics_stage(
 # -----------------------------------------------------------------------------
 
 
-def run_pipeline(  # noqa: PLR0913
+def run_pipeline(
     *,
     spec: PipelineSpec,
-    snapshot: SnapshotRef,
-    paths: BuildPaths,
-    gateway: StorageGateway,
-    tools: ToolsConfig,
-    trigger: TriggerKind = "cli",
-    run_kind_override: RunKind | None = None,
+    options: PipelinePlanOptions,
 ) -> PipelineRunRecord:
     """Execute a unified pipeline over ingestion, graphs, and/or analytics.
 
@@ -259,19 +257,8 @@ def run_pipeline(  # noqa: PLR0913
     ----------
     spec
         Declarative pipeline specification (e.g., FULL_PIPELINE).
-    snapshot
-        Repository snapshot to operate on.
-    paths
-        Build paths for this run.
-    gateway
-        Storage gateway for DuckDB and datasets.
-    tools
-        Tools configuration (used by ingestion).
-    trigger
-        How the run was triggered.
-    run_kind_override
-        If provided, use this RunKind instead of inferring from spec stages.
-        Useful for operation prerequisite runs (``"op_prereqs"``).
+    options
+        Bundled plan/execution options (snapshot, paths, gateway, tools, trigger).
 
     Returns
     -------
@@ -296,17 +283,12 @@ def run_pipeline(  # noqa: PLR0913
     >>> # )
     >>> # assert result.status in ("succeeded", "failed")
     """
-    runs = gateway.runs
+    runs = options.gateway.runs
 
     # Build the execution plan
     plan = build_pipeline_plan(
         spec=spec,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=gateway,
-        tools=tools,
-        trigger=trigger,
-        run_kind_override=run_kind_override,
+        options=options,
     )
     run_ctx = plan.run_context
     run_id = run_ctx.run_id
@@ -339,6 +321,7 @@ def run_pipeline(  # noqa: PLR0913
             continue
 
         started_at = _start_stage_step(runs, run_id, stage)
+        step_ctx = StageStepContext(runs=runs, run_id=run_id, stage=stage, started_at=started_at)
 
         log.info(
             "pipeline.executor.stage.start module=%s name=%s required=%s",
@@ -349,7 +332,7 @@ def run_pipeline(  # noqa: PLR0913
 
         try:
             _execute_stage(stage_plan)
-            _complete_stage_step(runs, run_id, stage, "succeeded", started_at)
+            _complete_stage_step(step_ctx, "succeeded")
             log.info(
                 "pipeline.executor.stage.complete module=%s name=%s status=succeeded",
                 stage.module,
@@ -358,7 +341,7 @@ def run_pipeline(  # noqa: PLR0913
         except Exception as exc:
             error_msg = f"Stage {stage.module}:{stage.name} failed: {exc}"
             last_error = error_msg
-            _complete_stage_step(runs, run_id, stage, "failed", started_at, error=str(exc))
+            _complete_stage_step(step_ctx, "failed", error=str(exc))
 
             log.exception(
                 "pipeline.executor.stage.failed module=%s name=%s",
