@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/groups/protocol.py
+# hypothesis_version: 6.148.5
+
+['GroupRegistry', 'PluginGroup', 'declaration', 'dependency']

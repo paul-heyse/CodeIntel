@@ -19,6 +19,7 @@ from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
 from codeintel.storage.schemas import apply_all_schemas
 from codeintel.storage.views import create_all_views
 
+
 def test_docs_views_is_defined() -> None:
     """Verify DOCS_VIEWS constant is defined and non-empty."""
     assert isinstance(DOCS_VIEWS, tuple)

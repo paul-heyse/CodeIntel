@@ -175,11 +175,15 @@ def _make_realistic_codebase() -> list[FunctionMetricInput]:
     untyped_complexity = 10
 
     metrics: list[FunctionMetricInput] = [
-        _make_typed_function(loc=base_loc + i * loc_step, complexity=base_complexity + i % complexity_mod)
+        _make_typed_function(
+            loc=base_loc + i * loc_step, complexity=base_complexity + i % complexity_mod
+        )
         for i in range(6)
     ]
     metrics.extend(
-        _make_partial_function(loc=partial_base_loc + i * partial_loc_step, complexity=partial_base_complexity + i)
+        _make_partial_function(
+            loc=partial_base_loc + i * partial_loc_step, complexity=partial_base_complexity + i
+        )
         for i in range(3)
     )
     metrics.append(_make_untyped_function(loc=untyped_loc, complexity=untyped_complexity))

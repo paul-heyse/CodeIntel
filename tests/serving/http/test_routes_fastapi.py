@@ -38,9 +38,7 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-def test_load_api_config_local_db_path_not_found(
-    tmp_path: Path, codeintel_env: None
-) -> None:
+def test_load_api_config_local_db_path_not_found(tmp_path: Path, codeintel_env: None) -> None:
     """Verify FileNotFoundError when local_db path does not exist.
 
     Parameters
@@ -61,9 +59,7 @@ def test_load_api_config_local_db_path_not_found(
         load_api_config()
 
 
-def test_load_api_config_local_db_path_is_directory(
-    tmp_path: Path, codeintel_env: None
-) -> None:
+def test_load_api_config_local_db_path_is_directory(tmp_path: Path, codeintel_env: None) -> None:
     """Verify ValueError when local_db path is a directory, not a file.
 
     Parameters
@@ -106,9 +102,7 @@ def test_load_api_config_remote_api_success(codeintel_env: None) -> None:
     assert config.mode == "remote_api"
 
 
-def test_load_api_config_local_db_success(
-    tmp_path: Path, codeintel_env: None
-) -> None:
+def test_load_api_config_local_db_success(tmp_path: Path, codeintel_env: None) -> None:
     """Verify config loads successfully for local_db mode with valid file.
 
     Parameters
@@ -324,9 +318,7 @@ def test_create_app_correlation_id_from_header(
     app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
-        response = client.get(
-            "/health", headers={"X-Request-ID": "test-correlation-id"}
-        )
+        response = client.get("/health", headers={"X-Request-ID": "test-correlation-id"})
 
     assert response.headers.get("X-Request-ID") == "test-correlation-id"
 
@@ -426,9 +418,7 @@ def test_create_app_x_correlation_id_header(
     app = create_app(config_loader=load_config, backend_factory=backend_factory)
 
     with TestClient(app) as client:
-        response = client.get(
-            "/health", headers={"X-Correlation-ID": "alt-correlation-id"}
-        )
+        response = client.get("/health", headers={"X-Correlation-ID": "alt-correlation-id"})
 
     # Should use X-Correlation-ID when X-Request-ID is not present
     assert response.headers.get("X-Request-ID") == "alt-correlation-id"

@@ -17,8 +17,7 @@ def test_graph_stats_records_counts_for_basic_graphs(test_ctx: TestContext) -> N
     compute_graph_stats(test_ctx.gateway, repo=test_ctx.repo, commit=test_ctx.commit)
 
     rows = test_ctx.query(
-        "SELECT graph_name, node_count FROM analytics.graph_stats "
-        "WHERE repo = ? AND commit = ?",
+        "SELECT graph_name, node_count FROM analytics.graph_stats WHERE repo = ? AND commit = ?",
         [test_ctx.repo, test_ctx.commit],
     )
     if not rows:
