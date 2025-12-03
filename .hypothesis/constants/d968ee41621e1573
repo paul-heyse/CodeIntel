@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/infrastructure_utilities/logging.py
+# hypothesis_version: 6.148.5
+
+['CODEINTEL_CHANGE_LOG', 'ChangeLogFileHandler', 'get_change_logger', 'log_progress', 'utf-8']

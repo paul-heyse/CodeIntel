@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from dataclasses import FrozenInstanceError, is_dataclass
+from typing import Any
+
+import pytest
 
 from codeintel.storage.gateway import StorageGateway
 
@@ -121,3 +125,22 @@ def expect_in(value: object, container: Iterable[object], message: str | None = 
     if value not in container:
         detail = message or f"Expected {value!r} to be in {container!r}"
         raise AssertionError(detail)
+
+
+def assert_cannot_setattr(instance: object, field_name: str, value: Any) -> None:
+    """
+    Assert that setting an attribute on a frozen/immutable instance fails.
+
+    This helper keeps immutability assertions type-safe by avoiding
+    direct assignments that static analysis treats as errors.
+    """
+    expected_errors = (AttributeError, FrozenInstanceError)
+
+    # Guard against using this helper on mutable instances to avoid false positives.
+    params = getattr(instance, "__dataclass_params__", None)
+    if is_dataclass(instance) and params is not None and not params.frozen:
+        message = f"{type(instance).__name__} is not frozen; cannot assert immutability."
+        raise AssertionError(message)
+
+    with pytest.raises(expected_errors):
+        setattr(instance, field_name, value)

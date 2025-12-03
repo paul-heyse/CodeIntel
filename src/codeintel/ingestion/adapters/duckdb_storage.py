@@ -370,7 +370,7 @@ class DuckDBStorageAdapter:
         self,
         sql: str,
         params: Sequence[object] | None = None,
-    ) -> object:
+    ) -> pd.DataFrame:
         """Execute a query and return results as a DataFrame.
 
         Parameters
@@ -382,7 +382,7 @@ class DuckDBStorageAdapter:
 
         Returns
         -------
-        object
+        pd.DataFrame
             Query results as a pandas DataFrame.
         """
         param_list = list(params) if params else []

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from codeintel.config import ScipIngestStepConfig
+from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.module_index import load_module_map
@@ -118,10 +119,6 @@ def resolve_scip_inputs(  # noqa: PLR0913 - convenience API; prefer ScipResolver
         if not isinstance(actual_cfg, ScipIngestStepConfig):
             message = "Invalid ScipIngestStepConfig"
             raise ValueError(message)
-
-        from codeintel.ingestion.adapters.filesystem_discovery import (  # noqa: PLC0415
-            FilesystemDiscoveryAdapter,
-        )
 
         module_map = load_module_map(
             gateway,

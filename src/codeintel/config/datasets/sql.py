@@ -10,6 +10,7 @@ This module provides:
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
 from typing import Final, TypeVar
 
 from codeintel.config.datasets.contracts import get_table_schemas
@@ -257,13 +258,6 @@ def serialize_row(row: Mapping[_Column, object], columns: Sequence[_Column]) -> 
 
 
 # ---------------------------------------------------------------------------
-# Lazy-loaded SQL dictionaries (for backward compatibility)
-# ---------------------------------------------------------------------------
-
-_INSERT_SQL_BY_TABLE: dict[str, str] | None = None
-_DELETE_SQL_BY_TABLE: dict[str, str] | None = None
-
-
 def get_insert_sql_by_table() -> dict[str, str]:
     """Return the INSERT_SQL_BY_TABLE dictionary.
 
@@ -272,10 +266,7 @@ def get_insert_sql_by_table() -> dict[str, str]:
     dict[str, str]
         Mapping from table key to INSERT SQL.
     """
-    global _INSERT_SQL_BY_TABLE  # noqa: PLW0603
-    if _INSERT_SQL_BY_TABLE is None:
-        _INSERT_SQL_BY_TABLE = build_insert_sql_by_table()
-    return _INSERT_SQL_BY_TABLE
+    return _insert_sql_cache()
 
 
 def get_delete_sql_by_table() -> dict[str, str]:
@@ -286,10 +277,17 @@ def get_delete_sql_by_table() -> dict[str, str]:
     dict[str, str]
         Mapping from table key to DELETE SQL.
     """
-    global _DELETE_SQL_BY_TABLE  # noqa: PLW0603
-    if _DELETE_SQL_BY_TABLE is None:
-        _DELETE_SQL_BY_TABLE = build_delete_sql_by_table()
-    return _DELETE_SQL_BY_TABLE
+    return _delete_sql_cache()
+
+
+@lru_cache(maxsize=1)
+def _insert_sql_cache() -> dict[str, str]:
+    return build_insert_sql_by_table()
+
+
+@lru_cache(maxsize=1)
+def _delete_sql_cache() -> dict[str, str]:
+    return build_delete_sql_by_table()
 
 
 def __getattr__(name: str) -> object:

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/cst_extract.py
+# hypothesis_version: 6.148.5
+
+['2.0.0', 'CstExtractPlugin', 'change_tracker', 'core.cst_nodes', 'cst_extract', 'parse', 'process', 'repo_scan']

@@ -36,6 +36,7 @@ from codeintel.graphs.recipes.executor import (
     StageExecutionResult,
     execute_graph_recipe,
 )
+from tests._helpers.assertions import assert_cannot_setattr
 
 if TYPE_CHECKING:
     from codeintel.graphs.core.context import GraphExecutionContext
@@ -761,22 +762,17 @@ def test_graph_recipe_with_options() -> None:
 
 def test_stage_execution_result_frozen() -> None:
     """StageExecutionResult is frozen."""
-    import pytest  # noqa: PLC0415
-
     result = StageExecutionResult(
         stage_name="test",
         records=(),
         success=True,
         duration_ms=0.0,
     )
-    with pytest.raises(AttributeError):
-        result.success = False  # type: ignore[misc]
+    assert_cannot_setattr(result, "success", False)
 
 
 def test_recipe_execution_result_frozen() -> None:
     """RecipeExecutionResult is frozen."""
-    import pytest  # noqa: PLC0415
-
     result = RecipeExecutionResult(
         recipe_name="test",
         run_id="run123",
@@ -786,30 +782,23 @@ def test_recipe_execution_result_frozen() -> None:
         started_at="2024-01-01T00:00:00Z",
         ended_at="2024-01-01T00:00:01Z",
     )
-    with pytest.raises(AttributeError):
-        result.success = False  # type: ignore[misc]
+    assert_cannot_setattr(result, "success", False)
 
 
 def test_graph_stage_frozen() -> None:
     """GraphStage is frozen."""
-    import pytest  # noqa: PLC0415
-
     stage = GraphStage(
         name="test",
         plugins=("p1",),
     )
-    with pytest.raises(AttributeError):
-        stage.name = "changed"  # type: ignore[misc]
+    assert_cannot_setattr(stage, "name", "changed")
 
 
 def test_graph_recipe_frozen() -> None:
     """GraphRecipe is frozen."""
-    import pytest  # noqa: PLC0415
-
     recipe = GraphRecipe(
         name="test",
         description="Test",
         stages=(),
     )
-    with pytest.raises(AttributeError):
-        recipe.name = "changed"  # type: ignore[misc]
+    assert_cannot_setattr(recipe, "name", "changed")

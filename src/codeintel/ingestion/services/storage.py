@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort
 
 if TYPE_CHECKING:
@@ -87,11 +88,6 @@ class IngestStorageService:
         IngestStorageService
             Service instance wrapping the storage adapter.
         """
-        # Deferred to avoid circular import: adapters → services → adapters
-        from codeintel.ingestion.adapters.duckdb_storage import (  # noqa: PLC0415
-            DuckDBStorageAdapter,
-        )
-
         return cls(storage=DuckDBStorageAdapter(gateway))
 
 

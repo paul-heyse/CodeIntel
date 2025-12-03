@@ -83,6 +83,23 @@ dependencies = [
     "opentelemetry-instrumentation-starlette>=0.59b0",
     "opentelemetry-instrumentation-tortoiseorm>=0.59b0",
     "opentelemetry-instrumentation-urllib3>=0.59b0",
+    "pydeps>=3.0.1",
+    "pylint>=4.0.4",
+    "graphviz>=0.21",
+    "jaraco-classes>=3.4.0",
+    "jaraco-context>=6.0.1",
+    "jaraco-functools>=4.3.0",
+    "secretstorage>=3.5.0",
+    "keyring>=25.7.0",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.0",
+    "mkdocstrings[python]>=1.0.0",
+    "mkdocs-gen-files>=0.6.0",
+    "mkdocs-literate-nav>=0.6.2",
+    "mkdocs-section-index>=0.3.10",
+    "mkdocs-autorefs>=1.4.3",
+    "pymdown-extensions>=10.17.2",
+    "markdown-exec>=1.12.1",
 ]
 
 [project.scripts]
@@ -209,6 +226,10 @@ ban-relative-imports = "all"
 "src/codeintel/config/primitives.py" = ["PLR0913", "DOC201"]
 # Test files use assert statements which is standard practice
 "tests/**/*.py" = ["S101"]
+# MkDocs generation tests need path manipulation before imports
+"tests/docs_export/test_mkdocs_generation.py" = ["S101", "E402"]
+# MkDocs generation scripts have hyphenated directory name, use subprocess safely, and are CLI tools
+"mkdocs-gen/*.py" = ["N999", "S404", "S603", "S607", "T201"]
 
 [tool.vulture]
 # Strict, but still manageable threshold.

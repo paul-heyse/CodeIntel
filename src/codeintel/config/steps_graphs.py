@@ -194,6 +194,13 @@ class GraphRunScope:
     modules: tuple[str, ...] = ()
     time_window: tuple[datetime, datetime] | None = None
 
+    def __post_init__(self) -> None:
+        """Normalize iterable inputs to tuples for type stability."""
+        if not isinstance(self.paths, tuple):
+            object.__setattr__(self, "paths", tuple(self.paths))
+        if not isinstance(self.modules, tuple):
+            object.__setattr__(self, "modules", tuple(self.modules))
+
 
 @dataclass(frozen=True)
 class GraphMetricsTuning:

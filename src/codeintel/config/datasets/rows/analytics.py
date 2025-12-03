@@ -17,6 +17,8 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Final, TypedDict, TypeVar
 
+from codeintel.config.datasets.schemas import TABLE_SCHEMAS
+
 _Column = TypeVar("_Column", bound=str)
 
 
@@ -59,8 +61,6 @@ def _get_contract_columns(table_key: str) -> tuple[str, ...]:
     ValueError
         If no schema is defined for the given table key.
     """
-    from codeintel.config.datasets.schemas import TABLE_SCHEMAS  # noqa: PLC0415
-
     schema = TABLE_SCHEMAS.get(table_key)
     if schema is None:
         message = f"No schema defined for table key: {table_key}"
@@ -512,24 +512,6 @@ class FunctionMetricsRow(TypedDict):
     has_docstring: bool
     complexity_bucket: str | None
     created_at: datetime
-
-
-# Lazy initialization for column constants
-_FUNCTION_METRICS_COLUMNS: tuple[str, ...] | None = None
-
-
-def _get_function_metrics_columns() -> tuple[str, ...]:
-    """Get column names for analytics.function_metrics.
-
-    Returns
-    -------
-    tuple[str, ...]
-        Column names in definition order.
-    """
-    global _FUNCTION_METRICS_COLUMNS  # noqa: PLW0603
-    if _FUNCTION_METRICS_COLUMNS is None:
-        _FUNCTION_METRICS_COLUMNS = _get_contract_columns("analytics.function_metrics")
-    return _FUNCTION_METRICS_COLUMNS
 
 
 FUNCTION_METRICS_COLUMNS: Final[tuple[str, ...]] = (

@@ -5,8 +5,6 @@ to declare specific capabilities. The runtime uses these traits to:
 - Automatically prepare contexts with required resources
 - Validate plugin requirements
 - Enable trait-based plugin discovery
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
 
 # ruff: noqa: PLC0415

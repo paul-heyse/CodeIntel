@@ -2,11 +2,7 @@
 
 This module provides `TestsIngestPlugin`, a class-based plugin that
 ingests pytest JSON reports.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -15,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.core.base import (
     TableWriterIngestPlugin,
     ToolDependentIngestPlugin,
@@ -25,6 +22,8 @@ from codeintel.ingestion.plugins.protocol import (
     IngestResourceHints,
     IngestStage,
 )
+from codeintel.ingestion.resources import ModuleProvider
+from codeintel.ingestion.steps.tests_ingest import TestsIngestStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
@@ -108,9 +107,6 @@ class TestsIngestPlugin(
             When tests ingestion fails.
         """
         _ = self  # Required by interface, accessed via ctx
-        from codeintel.ingestion.adapters import DuckDBStorageAdapter
-        from codeintel.ingestion.resources import ModuleProvider
-        from codeintel.ingestion.steps.tests_ingest import TestsIngestStep
 
         # Get modules from provider
         modules_provider = ctx.require(ModuleProvider)

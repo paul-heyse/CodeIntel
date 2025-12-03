@@ -64,6 +64,7 @@ from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
+
 class DFGBuilder:
     """Build DFG from CFG blocks - delegates to compute layer.
 

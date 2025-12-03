@@ -170,7 +170,9 @@ def test_call_graph_findings_with_isolated_nodes() -> None:
 
     isolated_findings = [f for f in findings if f["check_name"] == "call_graph_isolated_nodes"]
     assert len(isolated_findings) == EXPECTED_ONE
-    assert "isolated" in isolated_findings[0]["detail"].lower()
+    detail = isolated_findings[0]["detail"]
+    assert isinstance(detail, str)
+    assert "isolated" in detail.lower()
 
 
 def test_call_graph_findings_with_scc() -> None:

@@ -83,6 +83,7 @@ from tests._helpers.builders import (
 )
 from tests._helpers.duckdb import gateway_with_macros
 from tests._helpers.fakes import utcnow
+from tests._helpers.tooling import make_tools_config
 
 DEFAULT_REPO: Final = "demo/repo"
 DEFAULT_COMMIT: Final = "deadbeef"
@@ -596,7 +597,7 @@ def _build_provisioning_setup(
     )
     coverage_file = build_paths.coverage_json
 
-    tools_cfg = ToolsConfig.model_validate({})
+    tools_cfg = make_tools_config()
     runner = _make_runner(repo_root, files, coverage_file=coverage_file, tools_cfg=tools_cfg)
     tool_service = ToolService(runner, tools_cfg)
 
@@ -822,7 +823,7 @@ def provision_gateway_with_repo(
     ctx = make_repo_context(repo_root, repo=repo, commit=commit, db_path=opts.db_path)
     coverage_file = repo_root / ".coverage"
     coverage_file.touch()
-    tools_cfg = ToolsConfig.model_validate({})
+    tools_cfg = make_tools_config()
     runner = _make_runner(
         repo_root,
         [],

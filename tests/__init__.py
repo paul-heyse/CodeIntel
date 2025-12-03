@@ -1,1 +1,1 @@
-"""Test suite package for CodeIntel."""
+"""Test package marker for static analysis."""

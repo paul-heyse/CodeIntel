@@ -6,7 +6,7 @@
   "venv": ".venv",
   "useLibraryCodeForTypes": true,
   "stubPath": "src/codeintel",
-  "include": ["src", "tests", "docs"],
+  "include": ["src", "tests", "docs", "mkdocs-gen"],
   "exclude": [
     ".git",
     ".venv",
@@ -14,15 +14,40 @@
     ".pytest_cache",
     "docs/**"
   ],
+  "extraPaths": [
+    ".",
+    "src",
+    "tests",
+    "mkdocs-gen"
+  ],
   "executionEnvironments": [
     {
       "root": "src",
       "extraPaths": [
+        ".",
         "src",
         "tests",
+        "mkdocs-gen"
       ],
       "pythonVersion": "3.13"
     },
-
+    {
+      "root": "tests",
+      "extraPaths": [
+        ".",
+        "src",
+        "tests",
+        "mkdocs-gen"
+      ],
+      "pythonVersion": "3.13"
+    },
+    {
+      "root": "mkdocs-gen",
+      "extraPaths": [
+        ".",
+        "src"
+      ],
+      "pythonVersion": "3.13"
+    }
   ]
 }

@@ -2,20 +2,18 @@
 
 This module provides `CoverageIngestPlugin`, a class-based plugin that
 loads coverage.py data and populates analytics.coverage_lines.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
 from codeintel.ingestion.core.base import (
     TableWriterIngestPlugin,
     ToolDependentIngestPlugin,
@@ -27,6 +25,8 @@ from codeintel.ingestion.plugins.protocol import (
     IngestResourceHints,
     IngestStage,
 )
+from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
+from codeintel.ingestion.steps.coverage_ingest import CoverageIngestStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
@@ -113,12 +113,6 @@ class CoverageIngestPlugin(
         RuntimeError
             When coverage ingestion fails.
         """
-        import asyncio
-
-        from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
-        from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
-        from codeintel.ingestion.steps.coverage_ingest import CoverageIngestStep
-
         # Resolve coverage file
         coverage_path = self._resolve_coverage_file(ctx)
         if coverage_path is None:

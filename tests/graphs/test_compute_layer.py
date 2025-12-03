@@ -41,6 +41,7 @@ from codeintel.graphs.compute.symbols import (
     edges_to_rows,
     parse_symbol_roles,
 )
+from tests._helpers.assertions import assert_cannot_setattr
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -659,8 +660,6 @@ def test_parse_symbol_roles_none() -> None:
 
 def test_call_edge_frozen() -> None:
     """CallEdge is frozen."""
-    import pytest  # noqa: PLC0415
-
     edge = CallEdge(
         caller_goid=TEST_GOID_A,
         callee_goid=TEST_GOID_B,
@@ -670,43 +669,31 @@ def test_call_edge_frozen() -> None:
         evidence="local_name",
         confidence=LOCAL_CONFIDENCE,
     )
-    with pytest.raises(AttributeError):
-        edge.caller_goid = TEST_GOID_C  # type: ignore[misc]
+    assert_cannot_setattr(edge, "caller_goid", TEST_GOID_C)
 
 
 def test_resolution_result_frozen() -> None:
     """ResolutionResult is frozen."""
-    import pytest  # noqa: PLC0415
-
     result = ResolutionResult(
         callee_goid=TEST_GOID_A, resolved_via="local_name", confidence=LOCAL_CONFIDENCE
     )
-    with pytest.raises(AttributeError):
-        result.callee_goid = TEST_GOID_B  # type: ignore[misc]
+    assert_cannot_setattr(result, "callee_goid", TEST_GOID_B)
 
 
 def test_import_edge_frozen() -> None:
     """ImportEdge is frozen."""
-    import pytest  # noqa: PLC0415
-
     edge = ImportEdge(src_module="a", dst_module="b")
-    with pytest.raises(AttributeError):
-        edge.src_module = "c"  # type: ignore[misc]
+    assert_cannot_setattr(edge, "src_module", "c")
 
 
 def test_symbol_occurrence_frozen() -> None:
     """SymbolOccurrence is frozen."""
-    import pytest  # noqa: PLC0415
-
     occ = SymbolOccurrence(symbol="sym", rel_path="test.py", line=10, roles=DEFINITION_ROLE)
-    with pytest.raises(AttributeError):
-        occ.symbol = "other"  # type: ignore[misc]
+    assert_cannot_setattr(occ, "symbol", "other")
 
 
 def test_symbol_use_edge_frozen() -> None:
     """SymbolUseEdge is frozen."""
-    import pytest  # noqa: PLC0415
-
     edge = SymbolUseEdge(
         symbol="func",
         def_path="a.py",
@@ -714,5 +701,4 @@ def test_symbol_use_edge_frozen() -> None:
         same_file=False,
         same_module=False,
     )
-    with pytest.raises(AttributeError):
-        edge.symbol = "other"  # type: ignore[misc]
+    assert_cannot_setattr(edge, "symbol", "other")

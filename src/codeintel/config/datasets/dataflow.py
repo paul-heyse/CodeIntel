@@ -15,6 +15,13 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
+from codeintel.config.datasets.contracts import (
+    get_composite_schemas,
+    get_dataset_contracts,
+    get_dataset_contracts_by_table_key,
+)
+from codeintel.storage.views import ALIAS_DOCS_VIEWS
+
 # ---------------------------------------------------------------------------
 # Dataflow Graph Primitives
 # ---------------------------------------------------------------------------
@@ -80,11 +87,6 @@ def iter_dataset_nodes() -> Iterator[DataflowNode]:
     DataflowNode
         Node keyed by DatasetContract.table_key for tables and views.
     """
-    # Import lazily to avoid circular imports during module initialization
-    from codeintel.config.datasets.contracts import (  # noqa: PLC0415
-        get_dataset_contracts,
-    )
-
     for contract in get_dataset_contracts().values():
         kind: NodeKind = "view" if contract.is_view else "table"
         yield DataflowNode(
@@ -104,12 +106,6 @@ def iter_composite_edges() -> Iterator[DataflowEdge]:
     DataflowEdge
         Edge from each composed_of source table to the profile table.
     """
-    # Import lazily to avoid circular imports during module initialization
-    from codeintel.config.datasets.contracts import (  # noqa: PLC0415
-        get_composite_schemas,
-        get_dataset_contracts_by_table_key,
-    )
-
     composite_schemas = get_composite_schemas()
     contracts_by_key = get_dataset_contracts_by_table_key()
 
@@ -138,9 +134,6 @@ def iter_dependency_edges() -> Iterator[DataflowEdge]:
     DataflowEdge
         Edge from each declared upstream dependency to the dataset table_key.
     """
-    # Import lazily to avoid circular imports during module initialization
-    from codeintel.config.datasets.contracts import get_dataset_contracts  # noqa: PLC0415
-
     contracts = get_dataset_contracts()
 
     for contract in contracts.values():
@@ -168,8 +161,6 @@ def iter_docs_view_alias_edges() -> Iterator[DataflowEdge]:
     DataflowEdge
         Edge from the analytics table to its docs alias view.
     """
-    from codeintel.storage.views import ALIAS_DOCS_VIEWS  # noqa: PLC0415
-
     for view_key, table_key in ALIAS_DOCS_VIEWS.items():
         yield DataflowEdge(src=table_key, dst=view_key, edge_type="builds")
 
@@ -182,8 +173,6 @@ def iter_docs_view_alias_nodes() -> Iterator[DataflowNode]:
     DataflowNode
         Node keyed by the docs view alias.
     """
-    from codeintel.storage.views import ALIAS_DOCS_VIEWS  # noqa: PLC0415
-
     for view_key in ALIAS_DOCS_VIEWS:
         yield DataflowNode(
             id=view_key,

@@ -2,11 +2,7 @@
 
 This module provides `DocstringsIngestPlugin`, a class-based plugin that
 extracts docstrings and persists structured rows into core.docstrings.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -15,12 +11,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.ingestion.adapters import (
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+)
 from codeintel.ingestion.core.base import TableWriterIngestPlugin, TrackerRequiringPlugin
 from codeintel.ingestion.core.traits import WithDependencyData
 from codeintel.ingestion.plugins.protocol import (
     IngestResourceHints,
     IngestStage,
 )
+from codeintel.ingestion.resources import ModuleProvider
+from codeintel.ingestion.steps import DocstringsExtractStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
@@ -96,12 +98,6 @@ class DocstringsIngestPlugin(
             Row counts per table.
         """
         _ = self  # Required by interface, accessed via ctx
-        from codeintel.ingestion.adapters import (
-            DuckDBStorageAdapter,
-            FilesystemDiscoveryAdapter,
-        )
-        from codeintel.ingestion.resources import ModuleProvider
-        from codeintel.ingestion.steps import DocstringsExtractStep
 
         # Create adapters
         storage = DuckDBStorageAdapter(ctx.gateway)

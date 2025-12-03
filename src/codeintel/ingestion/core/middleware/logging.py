@@ -82,7 +82,7 @@ class LoggingMiddleware:
     def after_execute(
         self,
         plugin: BaseIngestPlugin,
-        _ctx: IngestExecutionContext,
+        ctx: IngestExecutionContext,
         result: IngestPluginResult,
     ) -> None:
         """Log plugin execution completion.
@@ -91,7 +91,7 @@ class LoggingMiddleware:
         ----------
         plugin
             The plugin that executed.
-        _ctx
+        ctx
             Execution context (unused, required by protocol).
         result
             Execution result.

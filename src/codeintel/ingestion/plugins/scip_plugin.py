@@ -2,19 +2,17 @@
 
 This module provides `ScipIngestPlugin`, a class-based plugin that
 runs scip-python and persists symbols and GOID crosswalk.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
 from codeintel.ingestion.core.base import (
     ToolDependentIngestPlugin,
     TrackerRequiringPlugin,
@@ -25,6 +23,8 @@ from codeintel.ingestion.plugins.protocol import (
     IngestResourceHints,
     IngestStage,
 )
+from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
+from codeintel.ingestion.steps.scip_ingest import ScipIngestConfig, ScipIngestStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
@@ -115,11 +115,6 @@ class ScipIngestPlugin(
             On SCIP execution failure.
         """
         _ = self  # Required by interface, accessed via ctx
-        import asyncio
-
-        from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
-        from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
-        from codeintel.ingestion.steps.scip_ingest import ScipIngestConfig, ScipIngestStep
 
         # Check if SCIP binaries are configured
         if ctx.tools.scip_python_bin is None or ctx.tools.scip_bin is None:

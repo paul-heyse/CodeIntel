@@ -13,11 +13,15 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
+from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
 from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.core.result import GraphPluginResult, GraphPluginRunRecord
+from codeintel.graphs.resources.container import ResourceContainer
+from codeintel.graphs.resources.graphs import GraphResource
+from codeintel.graphs.resources.storage import StorageResource
 from codeintel.graphs.runtime.manifest import (
     ManifestState,
     RecordParams,
@@ -30,11 +34,12 @@ from codeintel.graphs.runtime.planning import (
     PluginExecutionSettings,
 )
 from codeintel.storage.db_helpers import DUCKDB_ERRORS
+from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
-    from codeintel.graphs.engine import GraphEngine
+    from codeintel.graphs.engine import GraphEngine, NxGraphEngine
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.run_tracking import PipelineRunTracking
@@ -457,8 +462,6 @@ def run_graph_plugins(  # noqa: PLR0914, PLR0915
     GraphRunReport
         Report of execution results.
     """
-    from codeintel.storage.run_tracking import PipelineStatus  # noqa: PLC0415
-
     start = time.perf_counter()
     started_at = datetime.now(tz=UTC)
     records: list[GraphPluginRunRecord] = []
@@ -488,19 +491,9 @@ def run_graph_plugins(  # noqa: PLR0914, PLR0915
             options = plan.options_by_plugin.get(plugin.metadata.name)
 
             # Build resources from runtime context
-            from codeintel.graphs.resources.container import (  # noqa: PLC0415
-                ResourceContainer,
-            )
-            from codeintel.graphs.resources.graphs import GraphResource  # noqa: PLC0415
-            from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
             container = ResourceContainer()
             container.register(StorageResource(context.gateway, context.snapshot.repo_root))
             if context.engine is not None:
-                from typing import cast  # noqa: PLC0415
-
-                from codeintel.graphs.engine import NxGraphEngine  # noqa: PLC0415
-
                 container.register(GraphResource(cast("NxGraphEngine", context.engine)))
 
             plugin_ctx = GraphExecutionContext(
@@ -606,8 +599,6 @@ def _record_graph_steps(
     plan
         Execution plan with plugin metadata.
     """
-    from codeintel.storage.run_tracking import PipelineStepRecord, StepStatus  # noqa: PLC0415
-
     for rec in records:
         # Get plugin metadata for stage information
         plugin_meta = next(
@@ -689,7 +680,6 @@ def run_graph_plugin_batch(
     GraphRunReport
         Report of execution results.
     """
-    from codeintel.config.steps_graphs import GraphPluginPolicy  # noqa: PLC0415
     from codeintel.graphs.runtime.planning import (  # noqa: PLC0415
         GraphPlanContext,
         plan_graph_plugin_run,

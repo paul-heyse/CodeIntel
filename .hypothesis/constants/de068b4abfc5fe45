@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/core/traits.py
+# hypothesis_version: 6.148.5
+
+[1000, 'Incremental', 'Isolated', 'IsolatedPlugin', 'ProgressReporting', 'Retryable', 'RetryablePlugin', 'T | None', 'ToolAware', 'ToolAwarePlugin', 'TrackerAware', 'TrackerAwarePlugin', 'WithCaching', 'WithCleanup', 'WithDependencyData', 'WithRetries', 'WithRowCounts', 'WithToolDependencies', 'get_plugin_traits', 'is_incremental', 'is_isolated', 'is_retryable', 'is_tool_aware', 'is_tracker_aware', 'none', 'process', 'thread']

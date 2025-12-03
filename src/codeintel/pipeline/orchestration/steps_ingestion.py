@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 
 from codeintel.ingestion.change_tracker import ChangeTracker
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
@@ -23,31 +24,21 @@ from codeintel.pipeline.orchestration.core import (
 
 log = logging.getLogger(__name__)
 
-# Shared scratch space for ingestion plugins within a pipeline run.
-# This allows plugins to communicate (e.g., repo_scan -> change_tracker -> other plugins).
-_SHARED_SCRATCH: IngestRuntimeScratch | None = None
-
-
 def _get_shared_scratch() -> IngestRuntimeScratch:
-    """Get or create the shared scratch space for the current pipeline run.
-
-    Returns
-    -------
-    IngestRuntimeScratch
-        Shared scratch space instance.
-    """
-    global _SHARED_SCRATCH  # noqa: PLW0603
-    if _SHARED_SCRATCH is None:
-        _SHARED_SCRATCH = IngestRuntimeScratch()
-    return _SHARED_SCRATCH
+    """Get or create the shared scratch space for the current pipeline run."""
+    return _shared_scratch_cache()
 
 
 def reset_shared_scratch() -> None:
     """Reset the shared scratch space between pipeline runs."""
-    global _SHARED_SCRATCH  # noqa: PLW0603
-    if _SHARED_SCRATCH is not None:
-        _SHARED_SCRATCH.cleanup()
-    _SHARED_SCRATCH = None
+    scratch = _shared_scratch_cache()
+    scratch.cleanup()
+    _shared_scratch_cache.cache_clear()
+
+
+@lru_cache(maxsize=1)
+def _shared_scratch_cache() -> IngestRuntimeScratch:
+    return IngestRuntimeScratch()
 
 
 def _execute_plugin(ctx: PipelineContext, plugin_name: str) -> None:

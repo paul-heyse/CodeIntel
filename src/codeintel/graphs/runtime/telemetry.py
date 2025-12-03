@@ -8,8 +8,18 @@ on the analytics subsystem.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
+
+try:
+    from opentelemetry import metrics, trace
+    from opentelemetry.trace import StatusCode
+except ImportError:  # pragma: no cover - optional dependency
+    metrics = None
+    trace = None
+    StatusCode = None
 
 if TYPE_CHECKING:
     from codeintel.config.steps_graphs import GraphRunScope
@@ -82,31 +92,30 @@ class GraphRuntimeTelemetry:
 
     def _init_otel(self) -> None:
         """Initialize OpenTelemetry integration if available."""
-        try:
-            from opentelemetry import metrics, trace  # noqa: PLC0415
-
-            if self._tracing_enabled:
-                self._tracer = trace.get_tracer(self._service_name)
-
-            if self._metrics_enabled:
-                self._meter = metrics.get_meter(self._service_name)
-                self._plugin_duration_histogram = self._meter.create_histogram(
-                    name="graph_plugin_duration_ms",
-                    description="Duration of graph plugin execution in milliseconds",
-                    unit="ms",
-                )
-                self._plugin_success_counter = self._meter.create_counter(
-                    name="graph_plugin_success_total",
-                    description="Total successful graph plugin executions",
-                )
-                self._plugin_failure_counter = self._meter.create_counter(
-                    name="graph_plugin_failure_total",
-                    description="Total failed graph plugin executions",
-                )
-        except ImportError:
+        if trace is None or metrics is None:
             log.debug("OpenTelemetry not available; telemetry disabled")
             self._tracing_enabled = False
             self._metrics_enabled = False
+            return
+
+        if self._tracing_enabled:
+            self._tracer = trace.get_tracer(self._service_name)
+
+        if self._metrics_enabled:
+            self._meter = metrics.get_meter(self._service_name)
+            self._plugin_duration_histogram = self._meter.create_histogram(
+                name="graph_plugin_duration_ms",
+                description="Duration of graph plugin execution in milliseconds",
+                unit="ms",
+            )
+            self._plugin_success_counter = self._meter.create_counter(
+                name="graph_plugin_success_total",
+                description="Total successful graph plugin executions",
+            )
+            self._plugin_failure_counter = self._meter.create_counter(
+                name="graph_plugin_failure_total",
+                description="Total failed graph plugin executions",
+            )
 
     def start_plugin(
         self,
@@ -130,8 +139,6 @@ class GraphRuntimeTelemetry:
         GraphPluginSpan
             Span object for tracking execution.
         """
-        import time  # noqa: PLC0415
-
         span = GraphPluginSpan(
             plugin_name=plugin.metadata.name,
             run_id=run_id,
@@ -172,8 +179,6 @@ class GraphRuntimeTelemetry:
         record
             Execution record with results.
         """
-        import time  # noqa: PLC0415
-
         duration_ns = time.perf_counter_ns() - span.start_time_ns
         duration_ms = duration_ns / 1_000_000
 
@@ -187,18 +192,16 @@ class GraphRuntimeTelemetry:
         otel_span = span.context_data.get("otel_span")
         if otel_span is not None:
             try:
-                from opentelemetry.trace import StatusCode  # noqa: PLC0415
-
                 otel_span.set_attribute("status", record.status)
                 otel_span.set_attribute("duration_ms", duration_ms)
                 otel_span.set_attribute("attempts", record.attempts)
-                if record.error:
+                if record.error and StatusCode is not None:
                     otel_span.set_attribute("error", record.error)
                     otel_span.set_status(StatusCode.ERROR, record.error)
-                else:
+                elif StatusCode is not None:
                     otel_span.set_status(StatusCode.OK)
                 otel_span.end()
-            except (ImportError, AttributeError):
+            except AttributeError:
                 pass
 
     def record_metrics(
@@ -259,8 +262,6 @@ class GraphRuntimeTelemetry:
         GraphPluginSpan
             Span for the overall run.
         """
-        import time  # noqa: PLC0415
-
         span = GraphPluginSpan(
             plugin_name="__run__",
             run_id=run_id,
@@ -305,8 +306,6 @@ class GraphRuntimeTelemetry:
         skip_count
             Number of skipped executions.
         """
-        import time  # noqa: PLC0415
-
         duration_ns = time.perf_counter_ns() - span.start_time_ns
         duration_ms = duration_ns / 1_000_000
 
@@ -322,21 +321,16 @@ class GraphRuntimeTelemetry:
         otel_span = span.context_data.get("otel_span")
         if otel_span is not None:
             try:
-                from opentelemetry.trace import StatusCode  # noqa: PLC0415
-
                 otel_span.set_attribute("success_count", success_count)
                 otel_span.set_attribute("failure_count", failure_count)
                 otel_span.set_attribute("skip_count", skip_count)
                 otel_span.set_attribute("duration_ms", duration_ms)
-                status = StatusCode.OK if failure_count == 0 else StatusCode.ERROR
-                otel_span.set_status(status)
+                if StatusCode is not None:
+                    status = StatusCode.OK if failure_count == 0 else StatusCode.ERROR
+                    otel_span.set_status(status)
                 otel_span.end()
-            except (ImportError, AttributeError):
+            except AttributeError:
                 pass
-
-
-# Default telemetry instance
-_DEFAULT_TELEMETRY: GraphRuntimeTelemetry | None = None
 
 
 def get_graph_telemetry() -> GraphRuntimeTelemetry:
@@ -347,10 +341,12 @@ def get_graph_telemetry() -> GraphRuntimeTelemetry:
     GraphRuntimeTelemetry
         Singleton telemetry instance.
     """
-    global _DEFAULT_TELEMETRY  # noqa: PLW0603
-    if _DEFAULT_TELEMETRY is None:
-        _DEFAULT_TELEMETRY = GraphRuntimeTelemetry()
-    return _DEFAULT_TELEMETRY
+    return _telemetry_singleton()
+
+
+@lru_cache(maxsize=1)
+def _telemetry_singleton() -> GraphRuntimeTelemetry:
+    return GraphRuntimeTelemetry()
 
 
 __all__ = [

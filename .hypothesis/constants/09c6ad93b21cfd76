@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/config/datasets/dataflow.py
+# hypothesis_version: 6.148.5
+
+['DataflowEdge', 'DataflowNode', 'EdgeType', 'NodeKind', 'analytics', 'builds', 'core', 'depends_on', 'docs', 'exposes', 'graph', 'graphs', 'iter_composite_edges', 'iter_dataset_nodes', 'operation', 'qa', 'reads', 'table', 'view']
