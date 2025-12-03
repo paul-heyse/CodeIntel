@@ -3,14 +3,11 @@
 This module defines the protocol and types for ingestion plugins, providing
 a modernized interface aligned with the analytics graph plugin architecture
 while preserving ingestion-specific functionality.
-
-NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -201,8 +198,6 @@ class IngestRuntimeScratch:
 
     def cleanup(self) -> None:
         """Execute cleanup callbacks and clear stored values."""
-        import logging
-
         log = logging.getLogger(__name__)
         for callback in reversed(self._cleanup):
             try:

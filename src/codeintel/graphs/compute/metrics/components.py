@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 import networkx as nx
 
@@ -49,6 +49,16 @@ class SCCResult:
     components: tuple[ComponentInfo, ...]
     node_to_component: dict[Any, int]
     condensation: nx.DiGraph | None = None
+
+
+class ComponentStats(TypedDict):
+    """Summary statistics for a collection of components."""
+
+    count: int
+    largest_size: int
+    smallest_size: int
+    mean_size: float
+    singleton_count: int
 
 
 def find_strongly_connected(
@@ -199,7 +209,7 @@ def find_articulation_points(graph: nx.Graph) -> list[Any]:
 
 def compute_component_stats(
     components: Sequence[ComponentInfo],
-) -> dict[str, object]:
+) -> ComponentStats:
     """Compute summary statistics for components.
 
     Parameters
@@ -209,26 +219,26 @@ def compute_component_stats(
 
     Returns
     -------
-    dict[str, object]
+    ComponentStats
         Statistics including count, sizes, and largest component.
     """
     if not components:
-        return {
-            "count": 0,
-            "largest_size": 0,
-            "smallest_size": 0,
-            "mean_size": 0.0,
-            "singleton_count": 0,
-        }
+        return ComponentStats(
+            count=0,
+            largest_size=0,
+            smallest_size=0,
+            mean_size=0.0,
+            singleton_count=0,
+        )
 
     sizes = [c.size for c in components]
-    return {
-        "count": len(components),
-        "largest_size": max(sizes),
-        "smallest_size": min(sizes),
-        "mean_size": sum(sizes) / len(sizes),
-        "singleton_count": sum(1 for s in sizes if s == 1),
-    }
+    return ComponentStats(
+        count=len(components),
+        largest_size=max(sizes),
+        smallest_size=min(sizes),
+        mean_size=sum(sizes) / len(sizes),
+        singleton_count=sum(1 for s in sizes if s == 1),
+    )
 
 
 def find_cycles(graph: nx.DiGraph, limit: int | None = 100) -> list[list[Any]]:
@@ -319,6 +329,7 @@ def condensation_layers(
 
 __all__ = [
     "ComponentInfo",
+    "ComponentStats",
     "SCCResult",
     "compute_component_stats",
     "condensation_layers",

@@ -2,11 +2,7 @@
 
 This module provides `CstExtractPlugin`, a class-based plugin that
 parses CST via LibCST and writes rows into core.cst_nodes.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -15,6 +11,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.ingestion.adapters import (
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+)
 from codeintel.ingestion.core.base import TableWriterIngestPlugin, TrackerRequiringPlugin
 from codeintel.ingestion.core.traits import WithDependencyData
 from codeintel.ingestion.plugins.protocol import (
@@ -22,6 +22,8 @@ from codeintel.ingestion.plugins.protocol import (
     IngestResourceHints,
     IngestStage,
 )
+from codeintel.ingestion.resources import ModuleProvider
+from codeintel.ingestion.steps import CstExtractStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
@@ -94,12 +96,6 @@ class CstExtractPlugin(TrackerRequiringPlugin, TableWriterIngestPlugin, WithDepe
             Row counts per table, or None for auto-compute.
         """
         _ = self  # Required by interface, accessed via ctx
-        from codeintel.ingestion.adapters import (
-            DuckDBStorageAdapter,
-            FilesystemDiscoveryAdapter,
-        )
-        from codeintel.ingestion.resources import ModuleProvider
-        from codeintel.ingestion.steps import CstExtractStep
 
         # Create adapters
         storage = DuckDBStorageAdapter(ctx.gateway)

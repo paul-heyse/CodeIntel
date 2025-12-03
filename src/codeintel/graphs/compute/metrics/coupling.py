@@ -12,6 +12,15 @@ from typing import Any, cast
 
 import networkx as nx
 
+try:
+    from networkx.algorithms.community import (
+        label_propagation_communities,
+        louvain_communities,
+    )
+except ImportError:
+    label_propagation_communities = None
+    louvain_communities = None
+
 
 @dataclass(frozen=True)
 class CouplingMetrics:
@@ -154,14 +163,10 @@ def detect_communities_louvain(graph: nx.Graph) -> list[Community]:
     if graph.number_of_nodes() == 0:
         return []
 
-    # Use NetworkX's built-in community detection
-    try:
-        from networkx.algorithms.community import louvain_communities  # noqa: PLC0415
-
-        partitions = louvain_communities(graph)
-    except ImportError:
-        # Fallback to connected components if louvain not available
+    if louvain_communities is None:
         partitions = list(nx.connected_components(graph))
+    else:
+        partitions = louvain_communities(graph)
 
     return [
         Community(
@@ -189,11 +194,10 @@ def detect_communities_label_propagation(graph: nx.Graph) -> list[Community]:
     if graph.number_of_nodes() == 0:
         return []
 
-    from networkx.algorithms.community import (  # noqa: PLC0415
-        label_propagation_communities,
-    )
-
-    partitions = list(label_propagation_communities(graph))
+    if label_propagation_communities is None:
+        partitions = list(nx.connected_components(graph))
+    else:
+        partitions = list(label_propagation_communities(graph))
     return [
         Community(
             community_id=idx,

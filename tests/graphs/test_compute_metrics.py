@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Final
 
 import networkx as nx
-import pytest
 
 from codeintel.graphs.compute.metrics.centrality import (
     CentralityMetrics,
@@ -50,6 +49,7 @@ from codeintel.graphs.compute.metrics.coupling import (
     find_boundary_nodes,
     find_hub_nodes,
 )
+from tests._helpers.assertions import assert_cannot_setattr
 
 # ---------------------------------------------------------------------------
 # Constants for magic value compliance
@@ -795,15 +795,13 @@ def test_centrality_metrics_frozen() -> None:
         out_degree=1,
         degree=3,
     )
-    with pytest.raises(AttributeError):
-        metrics.pagerank = 0.9  # type: ignore[misc]
+    assert_cannot_setattr(metrics, "pagerank", 0.9)
 
 
 def test_component_info_frozen() -> None:
     """ComponentInfo is frozen."""
     info = ComponentInfo(component_id=0, size=5, nodes=frozenset([1, 2, 3, 4, 5]))
-    with pytest.raises(AttributeError):
-        info.size = 10  # type: ignore[misc]
+    assert_cannot_setattr(info, "size", 10)
 
 
 def test_coupling_metrics_frozen() -> None:
@@ -811,19 +809,248 @@ def test_coupling_metrics_frozen() -> None:
     metrics = CouplingMetrics(
         afferent=AFFERENT_THREE, efferent=EFFERENT_TWO, instability=INSTABILITY_POINT_FOUR
     )
-    with pytest.raises(AttributeError):
-        metrics.afferent = 5  # type: ignore[misc]
+    assert_cannot_setattr(metrics, "afferent", 5)
 
 
 def test_community_frozen() -> None:
     """Community is frozen."""
     comm = Community(community_id=0, nodes=frozenset([1, 2, 3]), size=COMMUNITY_SIZE_THREE)
-    with pytest.raises(AttributeError):
-        comm.size = 5  # type: ignore[misc]
+    assert_cannot_setattr(comm, "size", 5)
 
 
 def test_scc_result_frozen() -> None:
     """SCCResult is frozen."""
     result = SCCResult(components=(), node_to_component={})
-    with pytest.raises(AttributeError):
-        result.condensation = nx.DiGraph()  # type: ignore[misc]
+    assert_cannot_setattr(result, "condensation", nx.DiGraph())
+
+
+# ===========================================================================
+# REALISTIC GOLDEN DATASET TESTS
+# ===========================================================================
+# These tests use production-realistic graph structures from the golden dataset
+# to ensure algorithms work correctly on complex, realistic data.
+
+
+GOLDEN_MIN_NODES: Final[int] = 13
+GOLDEN_MIN_EDGES: Final[int] = 30
+GOLDEN_EXPECTED_COMMUNITIES: Final[int] = 2
+GOLDEN_EXPECTED_SCC: Final[int] = 1
+
+
+def _build_realistic_call_graph() -> nx.DiGraph:
+    """Build a realistic call graph simulating production patterns.
+
+    Returns
+    -------
+    nx.DiGraph
+        A directed graph with hub functions, layered architecture, and SCCs.
+    """
+    g = nx.DiGraph()
+
+    # Layer 0: Core utilities (no internal deps)
+    core_funcs = ["format_string", "parse_json", "validate_input", "hash_value"]
+    g.add_nodes_from(core_funcs)
+
+    # Layer 1: Services (depend on core)
+    services = ["authenticate", "query", "execute", "get_cached", "set_cached"]
+    g.add_nodes_from(services)
+    for s in services:
+        g.add_edge(s, "validate_input")
+        g.add_edge(s, "format_string")
+
+    # Layer 2: Handlers (depend on services, core)
+    handlers = ["create_user", "get_user", "update_user", "delete_user", "create_order"]
+    g.add_nodes_from(handlers)
+    for h in handlers:
+        g.add_edge(h, "authenticate")
+        g.add_edge(h, "query")
+        g.add_edge(h, "get_cached")
+
+    # Layer 3: API (depend on handlers)
+    api = ["handle_request", "register_routes"]
+    g.add_nodes_from(api)
+    for a in api:
+        for h in handlers:
+            g.add_edge(a, h)
+
+    # Hub function: log_info is called by many
+    g.add_node("log_info")
+    for node in services + handlers:
+        g.add_edge(node, "log_info")
+
+    # Small SCC: auth <-> cache interaction
+    g.add_edge("authenticate", "get_cached")
+    g.add_edge("get_cached", "authenticate")  # Cache validates with auth
+
+    return g
+
+
+def _build_realistic_import_graph() -> nx.DiGraph:
+    """Build a realistic import graph with layered architecture.
+
+    Returns
+    -------
+    nx.DiGraph
+        A directed graph representing module imports.
+    """
+    g = nx.DiGraph()
+
+    # Core modules
+    core = ["core.utils", "core.types", "core.errors", "core.config"]
+    g.add_nodes_from(core)
+
+    # Service modules
+    services = ["services.auth", "services.cache", "services.database"]
+    g.add_nodes_from(services)
+    for s in services:
+        g.add_edge(s, "core.utils")
+        g.add_edge(s, "core.errors")
+
+    # Handler modules
+    handlers = ["handlers.user", "handlers.product", "handlers.order"]
+    g.add_nodes_from(handlers)
+    for h in handlers:
+        g.add_edge(h, "services.auth")
+        g.add_edge(h, "services.database")
+        g.add_edge(h, "core.errors")
+
+    # API modules
+    api = ["api.routes", "api.middleware"]
+    g.add_nodes_from(api)
+    for a in api:
+        for h in handlers:
+            g.add_edge(a, h)
+
+    # Cross-cutting: utils.logging imported by many
+    g.add_node("utils.logging")
+    for node in services + handlers + api:
+        g.add_edge(node, "utils.logging")
+
+    # Intentional cycle: services.auth <-> services.cache
+    g.add_edge("services.auth", "services.cache")
+    g.add_edge("services.cache", "services.auth")
+
+    return g
+
+
+def test_realistic_pagerank_identifies_hub_functions() -> None:
+    """PageRank correctly identifies hub functions in realistic graphs."""
+    graph = _build_realistic_call_graph()
+
+    result = compute_pagerank(graph)
+
+    # Hub functions should have higher PageRank
+    # log_info is called by many, so should have high rank
+    hub_rank = result.get("log_info", 0)
+
+    # Hub should have meaningful PageRank
+    assert hub_rank > 0
+    # Ensure we got results for multiple nodes
+    assert len(result) >= GOLDEN_MIN_NODES
+
+
+def test_realistic_scc_finds_cycles() -> None:
+    """SCC detection correctly identifies cycles in realistic graphs."""
+    graph = _build_realistic_call_graph()
+
+    result = find_strongly_connected(graph)
+
+    # Should have at least one SCC (the auth-cache cycle)
+    # Most SCCs will be single nodes (trivial), but at least one should have >1 node
+    non_trivial_sccs = [comp for comp in result.components if comp.size > 1]
+    assert len(non_trivial_sccs) >= GOLDEN_EXPECTED_SCC
+
+
+def test_realistic_import_layers_computed() -> None:
+    """Topological layers work on realistic import graphs."""
+    graph = _build_realistic_import_graph()
+
+    # Need DAG for topological layers, so we use condensation first
+    scc_result = find_strongly_connected(graph, compute_condensation=True)
+
+    # The graph has a cycle, so use condensation layers
+    layers = condensation_layers(graph, scc_result)
+
+    # Should have multiple layers due to the layered architecture
+    assert len(layers) >= EXPECTED_NODE_COUNT_TWO
+
+
+def test_realistic_centrality_metrics() -> None:
+    """All centrality metrics work on realistic graphs."""
+    graph = _build_realistic_call_graph()
+
+    metrics = compute_all_centralities(graph)
+
+    # Should have metrics for all nodes
+    assert len(metrics) >= GOLDEN_MIN_NODES
+
+    # All metric values should be in valid ranges
+    for metric in metrics.values():
+        assert metric.pagerank >= 0
+        assert metric.betweenness >= 0
+        assert metric.in_degree >= 0
+        assert metric.out_degree >= 0
+
+
+def test_realistic_component_stats() -> None:
+    """Component statistics work on realistic graphs."""
+    graph = _build_realistic_import_graph()
+
+    sccs = find_strongly_connected(graph)
+    stats = compute_component_stats(sccs.components)
+
+    # Should have valid statistics
+    assert stats["count"] >= GOLDEN_EXPECTED_SCC
+    assert stats["mean_size"] > 0
+    assert stats["largest_size"] >= 1
+
+
+def test_realistic_community_detection() -> None:
+    """Community detection finds meaningful communities in realistic graphs."""
+    graph = _build_realistic_import_graph().to_undirected()
+
+    communities = detect_communities_louvain(graph)
+
+    # Should find at least 2 communities (core/services vs handlers/api)
+    assert len(communities) >= GOLDEN_EXPECTED_COMMUNITIES
+
+    # All nodes should be assigned to a community
+    all_nodes = set(graph.nodes())
+    community_nodes = set()
+    for comm in communities:
+        community_nodes.update(comm.nodes)
+    assert all_nodes == community_nodes
+
+
+def test_realistic_hub_detection() -> None:
+    """Hub detection finds high-connectivity nodes in realistic graphs."""
+    graph = _build_realistic_import_graph()
+
+    hubs = find_hub_nodes(graph, min_degree=3, threshold_ratio=0.05)
+
+    # Should find some hubs (modules imported by many)
+    assert len(hubs) >= 1
+
+    # Check that we have actual hub node names
+    assert all(isinstance(h, str) for h in hubs)
+
+
+def test_realistic_coupling_metrics() -> None:
+    """Coupling metrics work on realistic import graphs."""
+    graph = _build_realistic_import_graph()
+
+    # Test coupling for all nodes
+    all_metrics = compute_coupling(graph)
+
+    # Should have metrics for all nodes
+    assert len(all_metrics) >= GOLDEN_MIN_NODES
+
+    # Test specific module
+    metrics = all_metrics.get("handlers.user")
+    assert metrics is not None
+
+    # Handler modules have both afferent (api imports them) and efferent (import services)
+    assert metrics.afferent >= 1  # At least api imports it
+    assert metrics.efferent >= 1  # At least imports services.auth
+    assert metrics.instability >= 0
+    assert metrics.instability <= 1

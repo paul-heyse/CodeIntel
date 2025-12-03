@@ -76,6 +76,13 @@ def _write_tooling_repo(repo_root: Path) -> Path:
     return driver_path
 
 
+def make_tools_config(**overrides: str | float | Path | None) -> ToolsConfig:
+    """Return a fully populated ToolsConfig with optional overrides."""
+    if overrides:
+        return ToolsConfig.with_overrides(**overrides)
+    return ToolsConfig.default()
+
+
 @dataclass(frozen=True)
 class ToolingContext:
     """Context for invoking the real ToolRunner and ToolService."""
@@ -102,7 +109,7 @@ class ToolingOutputs:
 def build_tooling_context(base_dir: Path) -> ToolingContext:
     repo_root = base_dir / "repo"
     driver_path = _write_tooling_repo(repo_root)
-    tools_cfg = ToolsConfig.default().model_copy(update={"coverage_file": repo_root / ".coverage"})
+    tools_cfg = make_tools_config(coverage_file=repo_root / ".coverage")
     runner = ToolRunner(cache_dir=base_dir / ".tool_cache", tools_config=tools_cfg)
     service = ToolService(runner, tools_cfg)
     return ToolingContext(

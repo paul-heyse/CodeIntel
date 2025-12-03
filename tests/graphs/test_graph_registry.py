@@ -14,8 +14,10 @@ import pytest
 from codeintel.graphs.core.context import GraphExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
+    GraphPluginKind,
     GraphPluginMetadata,
     GraphPluginProtocol,
+    GraphPluginStage,
 )
 from codeintel.graphs.core.registry import (
     GraphPluginRegistry,
@@ -34,8 +36,8 @@ class PluginConfig:
     """Configuration for creating test plugins."""
 
     name: str
-    kind: str = "builder"
-    stage: str = "goid"
+    kind: GraphPluginKind = "builder"
+    stage: GraphPluginStage = "goid"
     depends_on: tuple[str, ...] = ()
     provides: tuple[str, ...] = ()
     requires: tuple[str, ...] = ()

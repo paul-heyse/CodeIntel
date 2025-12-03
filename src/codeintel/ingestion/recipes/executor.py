@@ -3,11 +3,7 @@
 This module provides the executor for running ingestion recipes,
 with support for parallel plugin execution, failure handling,
 and observability.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -15,7 +11,8 @@ import logging
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -39,7 +36,11 @@ from codeintel.ingestion.recipes.dsl import (
     RecipeStage,
     RecipeStageResult,
 )
+from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
+from codeintel.ingestion.resources.tools import ToolsProvider
+from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
+from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -529,10 +530,6 @@ class RecipeExecutor:
         ResourceRegistry
             Registry with tracker and tools providers.
         """
-        from codeintel.ingestion.resources.modules import ModuleProvider
-        from codeintel.ingestion.resources.tools import ToolsProvider
-        from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
-
         registry = ResourceRegistry()
 
         # Register tracker provider if we have tracker state
@@ -633,10 +630,6 @@ def execute_recipe_for_context(
     >>> # context = RecipeExecutorContext(..., run_context=run_ctx)
     >>> # result = execute_recipe_for_context(recipe, run_ctx, context)
     """
-    from dataclasses import replace
-
-    from codeintel.storage.run_tracking import PipelineStatus
-
     runs = context.gateway.runs
 
     # Start the run in the registry
@@ -692,10 +685,6 @@ def _record_ingestion_steps(
     result
         Recipe execution result.
     """
-    from datetime import UTC, datetime
-
-    from codeintel.storage.run_tracking import PipelineStepRecord, StepStatus
-
     for stage_result in result.stage_results:
         stage_name = stage_result.stage.name
         for plugin_name, plugin_data in stage_result.plugin_results.items():

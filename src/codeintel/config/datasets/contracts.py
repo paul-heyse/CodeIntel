@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Final, Literal, cast
 
 from codeintel.config.datasets.primitives import (
@@ -20,6 +21,78 @@ from codeintel.config.datasets.primitives import (
     RowToTuple,
     TableSchema,
 )
+from codeintel.config.datasets.rows import (
+    BehavioralCoverageRowModel,
+    CallGraphEdgeRow,
+    CallGraphNodeRow,
+    CFGBlockRow,
+    CFGEdgeRow,
+    ConfigValueRow,
+    CoverageLineRow,
+    DFGEdgeRow,
+    DocstringRow,
+    FileProfileRowModel,
+    FunctionAstFeaturesRow,
+    FunctionMetricsRow,
+    FunctionProfileRowModel,
+    FunctionTypesRow,
+    FunctionValidationRow,
+    GoidCrosswalkRow,
+    GoidRow,
+    GraphMetricsFunctionsExtRow,
+    GraphMetricsFunctionsRow,
+    GraphMetricsModulesExtRow,
+    GraphMetricsModulesRow,
+    GraphValidationRow,
+    HotspotRow,
+    ImportEdgeRow,
+    ImportModuleRow,
+    ModuleProfileRowModel,
+    ProfileRowModel,
+    StaticDiagnosticRow,
+    SubsystemCoverageCacheRow,
+    SubsystemProfileCacheRow,
+    SymbolUseRow,
+    TestCatalogRowModel,
+    TestCoverageEdgeRow,
+    TypednessRow,
+    behavioral_coverage_row_to_tuple,
+    call_graph_edge_to_tuple,
+    call_graph_node_to_tuple,
+    cfg_block_to_tuple,
+    cfg_edge_to_tuple,
+    config_value_to_tuple,
+    coverage_line_to_tuple,
+    dfg_edge_to_tuple,
+    docstring_row_to_tuple,
+    file_profile_row_to_tuple,
+    function_ast_features_row_to_tuple,
+    function_metrics_row_to_tuple,
+    function_profile_row_to_tuple,
+    function_types_row_to_tuple,
+    function_validation_row_to_tuple,
+    goid_crosswalk_to_tuple,
+    goid_to_tuple,
+    graph_metrics_functions_ext_row_to_tuple,
+    graph_metrics_functions_row_to_tuple,
+    graph_metrics_modules_ext_row_to_tuple,
+    graph_metrics_modules_row_to_tuple,
+    graph_validation_row_to_tuple,
+    hotspot_row_to_tuple,
+    import_edge_to_tuple,
+    import_module_to_tuple,
+    module_profile_row_to_tuple,
+    serialize_test_catalog_row,
+    serialize_test_coverage_edge,
+    serialize_test_profile_row,
+    static_diagnostic_to_tuple,
+    subsystem_coverage_cache_to_tuple,
+    subsystem_profile_cache_to_tuple,
+    symbol_use_to_tuple,
+    typedness_row_to_tuple,
+)
+from codeintel.config.datasets.schemas import COMPOSITE_SCHEMAS, TABLE_SCHEMAS
+from codeintel.storage.views import DERIVED_DOCS_VIEWS
 
 # ---------------------------------------------------------------------------
 # RowBinding and DatasetContract dataclasses
@@ -646,77 +719,6 @@ def _build_row_bindings() -> dict[str, RowBinding]:
     dict[str, RowBinding]
         Mapping from table_key to RowBinding.
     """
-    from codeintel.config.datasets.rows import (  # noqa: PLC0415
-        BehavioralCoverageRowModel,
-        CallGraphEdgeRow,
-        CallGraphNodeRow,
-        CFGBlockRow,
-        CFGEdgeRow,
-        ConfigValueRow,
-        CoverageLineRow,
-        DFGEdgeRow,
-        DocstringRow,
-        FileProfileRowModel,
-        FunctionAstFeaturesRow,
-        FunctionMetricsRow,
-        FunctionProfileRowModel,
-        FunctionTypesRow,
-        FunctionValidationRow,
-        GoidCrosswalkRow,
-        GoidRow,
-        GraphMetricsFunctionsExtRow,
-        GraphMetricsFunctionsRow,
-        GraphMetricsModulesExtRow,
-        GraphMetricsModulesRow,
-        GraphValidationRow,
-        HotspotRow,
-        ImportEdgeRow,
-        ImportModuleRow,
-        ModuleProfileRowModel,
-        ProfileRowModel,
-        StaticDiagnosticRow,
-        SubsystemCoverageCacheRow,
-        SubsystemProfileCacheRow,
-        SymbolUseRow,
-        TestCatalogRowModel,
-        TestCoverageEdgeRow,
-        TypednessRow,
-        behavioral_coverage_row_to_tuple,
-        call_graph_edge_to_tuple,
-        call_graph_node_to_tuple,
-        cfg_block_to_tuple,
-        cfg_edge_to_tuple,
-        config_value_to_tuple,
-        coverage_line_to_tuple,
-        dfg_edge_to_tuple,
-        docstring_row_to_tuple,
-        file_profile_row_to_tuple,
-        function_ast_features_row_to_tuple,
-        function_metrics_row_to_tuple,
-        function_profile_row_to_tuple,
-        function_types_row_to_tuple,
-        function_validation_row_to_tuple,
-        goid_crosswalk_to_tuple,
-        goid_to_tuple,
-        graph_metrics_functions_ext_row_to_tuple,
-        graph_metrics_functions_row_to_tuple,
-        graph_metrics_modules_ext_row_to_tuple,
-        graph_metrics_modules_row_to_tuple,
-        graph_validation_row_to_tuple,
-        hotspot_row_to_tuple,
-        import_edge_to_tuple,
-        import_module_to_tuple,
-        module_profile_row_to_tuple,
-        serialize_test_catalog_row,
-        serialize_test_coverage_edge,
-        serialize_test_profile_row,
-        static_diagnostic_to_tuple,
-        subsystem_coverage_cache_to_tuple,
-        subsystem_profile_cache_to_tuple,
-        symbol_use_to_tuple,
-        typedness_row_to_tuple,
-    )
-
     return {
         "analytics.coverage_lines": _row_binding(
             row_type=CoverageLineRow,
@@ -878,12 +880,6 @@ def _build_contracts() -> dict[str, DatasetContract]:
     dict[str, DatasetContract]
         All registered dataset contracts keyed by name.
     """
-    from codeintel.config.datasets.schemas import (  # noqa: PLC0415
-        COMPOSITE_SCHEMAS,
-        TABLE_SCHEMAS,
-    )
-    from codeintel.storage.views import DERIVED_DOCS_VIEWS  # noqa: PLC0415
-
     row_bindings = _build_row_bindings()
     contracts: dict[str, DatasetContract] = {}
 
@@ -965,15 +961,6 @@ def _build_contracts() -> dict[str, DatasetContract]:
     return contracts
 
 
-# ---------------------------------------------------------------------------
-# Module-level Registries (lazy-loaded)
-# ---------------------------------------------------------------------------
-
-_ROW_BINDINGS_BY_TABLE_KEY: dict[str, RowBinding] | None = None
-_DATASET_CONTRACTS: dict[str, DatasetContract] | None = None
-_DATASET_CONTRACTS_BY_TABLE_KEY: dict[str, DatasetContract] | None = None
-
-
 def get_table_schemas() -> dict[str, TableSchema]:
     """Return the TABLE_SCHEMAS dictionary.
 
@@ -1008,10 +995,7 @@ def get_row_bindings() -> dict[str, RowBinding]:
     dict[str, RowBinding]
         Mapping from table_key to RowBinding.
     """
-    global _ROW_BINDINGS_BY_TABLE_KEY  # noqa: PLW0603
-    if _ROW_BINDINGS_BY_TABLE_KEY is None:
-        _ROW_BINDINGS_BY_TABLE_KEY = _build_row_bindings()
-    return _ROW_BINDINGS_BY_TABLE_KEY
+    return _row_bindings_cache()
 
 
 def get_dataset_contracts() -> dict[str, DatasetContract]:
@@ -1022,10 +1006,7 @@ def get_dataset_contracts() -> dict[str, DatasetContract]:
     dict[str, DatasetContract]
         All registered dataset contracts keyed by name.
     """
-    global _DATASET_CONTRACTS  # noqa: PLW0603
-    if _DATASET_CONTRACTS is None:
-        _DATASET_CONTRACTS = _build_contracts()
-    return _DATASET_CONTRACTS
+    return _dataset_contracts_cache()
 
 
 def get_dataset_contracts_by_table_key() -> dict[str, DatasetContract]:
@@ -1036,11 +1017,23 @@ def get_dataset_contracts_by_table_key() -> dict[str, DatasetContract]:
     dict[str, DatasetContract]
         All registered dataset contracts keyed by table_key.
     """
-    global _DATASET_CONTRACTS_BY_TABLE_KEY  # noqa: PLW0603
-    if _DATASET_CONTRACTS_BY_TABLE_KEY is None:
-        contracts = get_dataset_contracts()
-        _DATASET_CONTRACTS_BY_TABLE_KEY = {c.table_key: c for c in contracts.values()}
-    return _DATASET_CONTRACTS_BY_TABLE_KEY
+    return _dataset_contracts_by_table_key_cache()
+
+
+@lru_cache(maxsize=1)
+def _row_bindings_cache() -> dict[str, RowBinding]:
+    return _build_row_bindings()
+
+
+@lru_cache(maxsize=1)
+def _dataset_contracts_cache() -> dict[str, DatasetContract]:
+    return _build_contracts()
+
+
+@lru_cache(maxsize=1)
+def _dataset_contracts_by_table_key_cache() -> dict[str, DatasetContract]:
+    contracts = _dataset_contracts_cache()
+    return {c.table_key: c for c in contracts.values()}
 
 
 # For backwards compatibility, expose as module-level attributes

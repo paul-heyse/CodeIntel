@@ -14,12 +14,6 @@ This package provides foundational utilities used across the ingestion system:
 
 from __future__ import annotations
 
-# SCIP resolver utilities
-from codeintel.ingestion.infrastructure_utilities._scip_resolver import (
-    ResolvedScipConfig,
-    resolve_scip_inputs,
-)
-
 # AST utilities
 from codeintel.ingestion.infrastructure_utilities.ast_utils import (
     AstSpanIndex,
@@ -120,7 +114,6 @@ __all__ = [
     "InvalidIdentifierError",
     "LineIndexedSource",
     "QueryError",
-    "ResolvedScipConfig",
     "SafeColumnRef",
     "SafeTableRef",
     "ScanProfile",
@@ -143,7 +136,6 @@ __all__ = [
     "profile_from_env",
     "relpath_to_module",
     "repo_relpath",
-    "resolve_scip_inputs",
     "resolve_worker_count",
     "safe_count",
     "safe_count_duplicates",

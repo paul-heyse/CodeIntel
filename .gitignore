@@ -11,3 +11,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# MkDocs build output
+mkdocs-output/
+
+# Generated architecture overview for LLM context
+CodeIntel_architecture_overview.md

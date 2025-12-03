@@ -2,10 +2,7 @@
 
 This module provides a contract system for validating plugin outputs,
 ensuring data quality and consistency across the ingestion pipeline.
-
-NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -13,6 +10,21 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
+
+from codeintel.ingestion.infrastructure_utilities.db_queries import (
+    ForeignKeyRef,
+    safe_count,
+    safe_count_duplicates,
+    safe_count_non_positive,
+    safe_count_nulls,
+    safe_count_orphan_refs,
+    safe_count_with_scope,
+    safe_get_columns,
+    safe_max_value,
+    safe_min_value,
+    safe_not_null_fraction,
+    safe_table_exists,
+)
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -263,8 +275,6 @@ def _check_not_null(ctx: ConstraintCheckerContext) -> ContractViolation | None:
     ContractViolation | None
         Violation if constraint fails, None otherwise.
     """
-    from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count_nulls
-
     null_count = safe_count_nulls(ctx.gateway, ctx.table, ctx.column)
     if null_count > 0:
         return ContractViolation(
@@ -286,8 +296,6 @@ def _check_min_value(ctx: ConstraintCheckerContext) -> ContractViolation | None:
     """
     if ctx.constraint.value is None:
         return None
-
-    from codeintel.ingestion.infrastructure_utilities.db_queries import safe_min_value
 
     min_val = safe_min_value(ctx.gateway, ctx.table, ctx.column)
     expected = (
@@ -316,8 +324,6 @@ def _check_max_value(ctx: ConstraintCheckerContext) -> ContractViolation | None:
     if ctx.constraint.value is None:
         return None
 
-    from codeintel.ingestion.infrastructure_utilities.db_queries import safe_max_value
-
     max_val = safe_max_value(ctx.gateway, ctx.table, ctx.column)
     expected = (
         float(ctx.constraint.value) if isinstance(ctx.constraint.value, (int, float, str)) else 0.0
@@ -342,10 +348,6 @@ def _check_positive(ctx: ConstraintCheckerContext) -> ContractViolation | None:
     ContractViolation | None
         Violation if constraint fails, None otherwise.
     """
-    from codeintel.ingestion.infrastructure_utilities.db_queries import (
-        safe_count_non_positive,
-    )
-
     non_positive = safe_count_non_positive(ctx.gateway, ctx.table, ctx.column)
     if non_positive > 0:
         return ContractViolation(
@@ -364,10 +366,6 @@ def _check_unique(ctx: ConstraintCheckerContext) -> ContractViolation | None:
     ContractViolation | None
         Violation if constraint fails, None otherwise.
     """
-    from codeintel.ingestion.infrastructure_utilities.db_queries import (
-        safe_count_duplicates,
-    )
-
     dup_count = safe_count_duplicates(ctx.gateway, ctx.table, ctx.column)
     if dup_count > 0:
         return ContractViolation(
@@ -388,10 +386,6 @@ def _check_min_fraction_not_null(ctx: ConstraintCheckerContext) -> ContractViola
     """
     if ctx.constraint.value is None:
         return None
-
-    from codeintel.ingestion.infrastructure_utilities.db_queries import (
-        safe_not_null_fraction,
-    )
 
     fraction = safe_not_null_fraction(ctx.gateway, ctx.table, ctx.column)
     expected = (
@@ -574,10 +568,6 @@ class IngestContractValidator:
         bool
             True if table exists.
         """
-        from codeintel.ingestion.infrastructure_utilities.db_queries import (
-            safe_table_exists,
-        )
-
         return safe_table_exists(self._gateway, table_key)
 
     def _get_row_count(self, table_key: str, snapshot: SnapshotRef) -> int:
@@ -588,11 +578,6 @@ class IngestContractValidator:
         int
             Row count.
         """
-        from codeintel.ingestion.infrastructure_utilities.db_queries import (
-            safe_count,
-            safe_count_with_scope,
-        )
-
         # Try with repo/commit scope first
         count = safe_count_with_scope(self._gateway, table_key, snapshot)
         if count is not None:
@@ -610,10 +595,6 @@ class IngestContractValidator:
         set[str]
             Column names.
         """
-        from codeintel.ingestion.infrastructure_utilities.db_queries import (
-            safe_get_columns,
-        )
-
         return safe_get_columns(self._gateway, table_key)
 
     def _validate_column_constraint(
@@ -710,11 +691,6 @@ class IngestContractValidator:
         list[ContractViolation]
             Violations found.
         """
-        from codeintel.ingestion.infrastructure_utilities.db_queries import (
-            ForeignKeyRef,
-            safe_count_orphan_refs,
-        )
-
         violations: list[ContractViolation] = []
 
         fk_ref = ForeignKeyRef(

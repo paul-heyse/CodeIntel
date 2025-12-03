@@ -3,29 +3,26 @@
 This module provides the execution context that plugins receive during
 execution, enabling typed access to resources, configuration, and
 shared scratch space.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from codeintel.core.config_registry import ConfigRegistry
+from codeintel.config.models import ToolsConfig
+from codeintel.core.config_registry import ConfigNotFoundError, ConfigRegistry
+from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
+from codeintel.ingestion.resources.registry import ResourceRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
     from codeintel.ingestion.resources.protocol import ResourceProvider
-    from codeintel.ingestion.resources.registry import ResourceRegistry
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
 
@@ -56,9 +53,12 @@ def _empty_registry() -> ResourceRegistry:
     ResourceRegistry
         Empty registry instance.
     """
-    from codeintel.ingestion.resources.registry import ResourceRegistry
-
     return ResourceRegistry()
+
+
+def _default_tools_config() -> ToolsConfig:
+    """Construct a default tools configuration."""
+    return ToolsConfig.default()
 
 
 @dataclass
@@ -99,9 +99,9 @@ class IngestExecutionContext:
     gateway: StorageGateway
     snapshot: SnapshotRef
     paths: BuildPaths
-    tools: ToolsConfig
     code_profile: ScanProfile
     config_profile: ScanProfile
+    tools: ToolsConfig = field(default_factory=_default_tools_config)
     resources: ResourceRegistry = field(default_factory=_empty_registry)
     scratch: IngestRuntimeScratch = field(default_factory=IngestRuntimeScratch)
     configs: ConfigRegistry = field(default_factory=ConfigRegistry)
@@ -179,8 +179,6 @@ class IngestExecutionContext:
         T
             The resource provider instance.
         """
-        from typing import cast
-
         return cast("T", self.resources.get(provider_type))
 
     def require_by_name(self, name: str) -> object:
@@ -271,10 +269,8 @@ class IngestExecutionContext:
         Raises
         ------
         KeyError
-            If the config type is not registered.
+        If the config type is not registered.
         """
-        from codeintel.core.config_registry import ConfigNotFoundError
-
         try:
             return self.configs.get(config_type)
         except ConfigNotFoundError as exc:
@@ -312,8 +308,6 @@ class IngestExecutionContext:
         Mapping[str, int]
             Mapping of table names to row counts.
         """
-        from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
-
         counts: dict[str, int] = {}
         for table in tables:
             count = safe_count(self.gateway, table)

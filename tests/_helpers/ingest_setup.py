@@ -35,6 +35,7 @@ from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
+from tests._helpers.tooling import make_tools_config
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -112,7 +113,7 @@ class IngestTestSetup:
         """
         snapshot = SnapshotRef.from_args(repo=repo, commit=commit, repo_root=repo_root)
         paths = BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
-        tools = ToolsConfig.default()
+        tools = make_tools_config()
         code_profile = default_code_profile(repo_root)
         config_profile = default_config_profile(repo_root)
         scratch = IngestRuntimeScratch()

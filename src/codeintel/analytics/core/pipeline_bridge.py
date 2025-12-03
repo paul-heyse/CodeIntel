@@ -36,6 +36,7 @@ from codeintel.analytics.runtime_manifest import (
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalogProvider
@@ -367,8 +368,6 @@ def run_analytics_plugins_for_context(
     >>> #     unified_run_context=run_ctx, plan=plan, run_context=analytics_ctx
     >>> # )
     """
-    from codeintel.storage.run_tracking import PipelineStatus  # noqa: PLC0415
-
     runs = run_context.gateway.runs
 
     # Start the run in the registry
@@ -467,8 +466,6 @@ def _record_analytics_steps(
     records
         Analytics run records.
     """
-    from codeintel.storage.run_tracking import PipelineStepRecord, StepStatus  # noqa: PLC0415
-
     for rec in records:
         # Extract row_counts from meta if present
         meta = rec.meta or {}

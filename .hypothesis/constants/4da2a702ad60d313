@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/metrics/coupling.py
+# hypothesis_version: 6.148.5
+
+[0.0, 0.1, 1.0, 'Community', 'CouplingMetrics', 'afferent_coupling', 'commit', 'compute_abstractness', 'compute_coupling', 'compute_modularity', 'coupling_to_rows', 'dict[Any, float]', 'efferent_coupling', 'find_boundary_nodes', 'find_hub_nodes', 'instability', 'int', 'module', 'repo']

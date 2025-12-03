@@ -8,13 +8,13 @@ import pytest
 
 from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
-from codeintel.ingestion.ports.change_detection import ChangeRequest
+from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 
-def compute_changes(gateway: StorageGateway, request: ChangeRequest) -> object:
+def compute_changes(gateway: StorageGateway, request: ChangeRequest) -> ChangeSet:
     """Compute changes using the adapter directly.
 
     Parameters

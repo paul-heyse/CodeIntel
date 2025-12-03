@@ -137,7 +137,7 @@ class MetricsMiddleware:
     def before_execute(
         self,
         plugin: BaseIngestPlugin,
-        _ctx: IngestExecutionContext,
+        ctx: IngestExecutionContext,
     ) -> None:
         """Record execution start time.
 
@@ -145,7 +145,7 @@ class MetricsMiddleware:
         ----------
         plugin
             The plugin about to execute.
-        _ctx
+        ctx
             Execution context (unused, required by protocol).
         """
         plugin_name = plugin.metadata.name

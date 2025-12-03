@@ -324,7 +324,9 @@ class DatasetContractValidator:
             safe_table = SafeTable(table)
             safe_col = SafeColumn(column)
             # S608: identifiers validated by SafeTable/SafeColumn; values parameterized
-            query = f"SELECT COUNT(*) FROM {safe_table} WHERE ({where_clause}) AND {safe_col} IS NULL"  # noqa: S608
+            query = (
+                f"SELECT COUNT(*) FROM {safe_table} WHERE ({where_clause}) AND {safe_col} IS NULL"  # noqa: S608
+            )
             try:
                 result = self._gateway.con.execute(query, params)
                 row = result.fetchone()

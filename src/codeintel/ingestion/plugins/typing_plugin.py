@@ -2,19 +2,21 @@
 
 This module provides `TypingIngestPlugin`, a class-based plugin that
 populates analytics.typedness and analytics.static_diagnostics.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.ingestion.adapters import (
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+    ToolRunnerAdapter,
+)
 from codeintel.ingestion.core.base import (
     TableWriterIngestPlugin,
     ToolDependentIngestPlugin,
@@ -25,6 +27,8 @@ from codeintel.ingestion.plugins.protocol import (
     IngestResourceHints,
     IngestStage,
 )
+from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
+from codeintel.ingestion.steps.typing_ingest import TypingIngestStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
@@ -114,15 +118,6 @@ class TypingIngestPlugin(
             When typing analysis fails.
         """
         _ = self  # Required by interface, accessed via ctx
-        import asyncio
-
-        from codeintel.ingestion.adapters import (
-            DuckDBStorageAdapter,
-            FilesystemDiscoveryAdapter,
-            ToolRunnerAdapter,
-        )
-        from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
-        from codeintel.ingestion.steps.typing_ingest import TypingIngestStep
 
         # Get tool service from provider
         tools_provider = ctx.require(ToolsProvider)

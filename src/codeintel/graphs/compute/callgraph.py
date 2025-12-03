@@ -25,6 +25,10 @@ import libcst as cst
 from libcst import MetadataWrapper, helpers, metadata
 
 from codeintel.config.datasets import CallGraphEdgeRow
+from codeintel.graphs.adapters.callgraph_persistence import (
+    dedupe_edge_rows,
+    default_edge_key,
+)
 from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
 
 if TYPE_CHECKING:
@@ -971,12 +975,6 @@ def dedupe_edges(
             if existing is None or edge.confidence > existing.confidence:
                 seen[key] = edge
         return list(seen.values())
-
-    # Handle CallGraphEdgeRow type
-    from codeintel.graphs.adapters.callgraph_persistence import (  # noqa: PLC0415
-        dedupe_edge_rows,
-        default_edge_key,
-    )
 
     return dedupe_edge_rows(cast("list[CallGraphEdgeRow]", list(edges)), key_fn or default_edge_key)
 

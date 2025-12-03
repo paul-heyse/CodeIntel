@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from duckdb import DuckDBPyConnection
 
 from codeintel.storage.metadata_bootstrap import (
@@ -11,6 +13,7 @@ from codeintel.storage.metadata_bootstrap import (
 )
 
 _MACRO_CACHE: dict[int, set[str]] = {}
+_MACRO_LOCK = threading.RLock()
 __all__ = [
     "assert_ingest_macros_present",
     "clear_macro_cache_for_connection",
@@ -54,32 +57,42 @@ def ensure_ingest_macros(con: DuckDBPyConnection) -> None:
     RuntimeError
         If macros cannot be registered on the connection.
     """
-    cache_key = id(con)
-    cached = _MACRO_CACHE.get(cache_key, set())
     macro_set = {macro.lower() for macro in INGEST_MACROS.values()}
-    if macro_set.issubset(cached):
-        # Verify the macros actually exist; connection ids can be recycled after close.
-        registered = _registered_macros(con)
-        if macro_set.issubset(registered):
+    cache_key = id(con)
+
+    with _MACRO_LOCK:
+        cached = _MACRO_CACHE.get(cache_key, set())
+        if macro_set.issubset(cached) and macro_set.issubset(_registered_macros(con)):
             return
-        _MACRO_CACHE.pop(cache_key, None)
-    con.execute("\n".join(METADATA_SCHEMA_DDL_BASE))
-    for ddl in INGEST_MACRO_DDLS:
-        con.execute(ddl)
 
-    registered = _registered_macros(con)
-    if not macro_set.issubset(registered):
-        # Retry once to account for transient creation issues.
-        for ddl in INGEST_MACRO_DDLS:
-            con.execute(ddl)
-        registered = _registered_macros(con)
-    if not macro_set.issubset(registered):
-        missing = sorted(macro_set.difference(registered))
-        message = f"Ingest macros missing after registration: {missing}"
-        raise RuntimeError(message)
+        # Avoid thrashing shared connections by using a dedicated cursor for macro setup.
+        setup_con = con.cursor()
+        try:
+            setup_con.execute("\n".join(METADATA_SCHEMA_DDL_BASE))
+            for ddl in INGEST_MACRO_DDLS:
+                setup_con.execute(ddl)
 
-    updated = registered if registered else macro_set
-    _MACRO_CACHE[cache_key] = updated
+            registered = _registered_macros(setup_con)
+            if not macro_set.issubset(registered):
+                # Retry once to account for transient creation issues.
+                for ddl in INGEST_MACRO_DDLS:
+                    setup_con.execute(ddl)
+                registered = _registered_macros(setup_con)
+            if not macro_set.issubset(registered):
+                missing = sorted(macro_set.difference(registered))
+                message = f"Ingest macros missing after registration: {missing}"
+                raise RuntimeError(message)
+
+            # Update cache using visibility from the primary connection to detect drift.
+            primary_registered = _registered_macros(con)
+            updated = primary_registered if macro_set.issubset(primary_registered) else registered
+            _MACRO_CACHE[cache_key] = updated
+        finally:
+            try:
+                setup_con.close()  # type: ignore[attr-defined]
+            except Exception:
+                # DuckDB connections may not expose close; ignore cleanup errors.
+                pass
 
 
 def clear_macro_cache_for_connection(con_or_key: DuckDBPyConnection | int) -> None:

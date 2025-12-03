@@ -809,15 +809,9 @@ class GraphMetricsPlugin(
         """
         errors: list[str] = []
         # Call each parent's validation - accessing protected methods is intentional
-        errors.extend(
-            TableWriterPlugin.validate_resource_requirements(self, ctx)
-        )
-        errors.extend(
-            GraphRuntimeRequiringPlugin.validate_resource_requirements(self, ctx)
-        )
-        errors.extend(
-            CatalogRequiringPlugin.validate_resource_requirements(self, ctx)
-        )
+        errors.extend(TableWriterPlugin.validate_resource_requirements(self, ctx))
+        errors.extend(GraphRuntimeRequiringPlugin.validate_resource_requirements(self, ctx))
+        errors.extend(CatalogRequiringPlugin.validate_resource_requirements(self, ctx))
         return errors
 
 

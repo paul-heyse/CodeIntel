@@ -2,11 +2,7 @@
 
 This module provides `RepoScanPlugin`, a class-based plugin that scans
 repository modules and builds change-tracker state.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -15,6 +11,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.ingestion.adapters import (
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+    HashChangeDetectionAdapter,
+)
+from codeintel.ingestion.change_tracker import ChangeTracker
 from codeintel.ingestion.core.base import BaseIngestPlugin
 from codeintel.ingestion.core.traits import WithDependencyData, WithRowCounts
 from codeintel.ingestion.plugins.protocol import (
@@ -22,6 +24,8 @@ from codeintel.ingestion.plugins.protocol import (
     IngestResourceHints,
     IngestStage,
 )
+from codeintel.ingestion.ports.change_detection import ChangeRequest
+from codeintel.ingestion.steps.repo_scan import RepoScanStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
@@ -91,15 +95,6 @@ class RepoScanPlugin(BaseIngestPlugin, WithDependencyData, WithRowCounts):
         Mapping[str, int] | None
             Row counts after scan, or None for auto-compute.
         """
-        from codeintel.ingestion.adapters import (
-            DuckDBStorageAdapter,
-            FilesystemDiscoveryAdapter,
-            HashChangeDetectionAdapter,
-        )
-        from codeintel.ingestion.change_tracker import ChangeTracker
-        from codeintel.ingestion.ports.change_detection import ChangeRequest
-        from codeintel.ingestion.steps.repo_scan import RepoScanStep
-
         # Create adapters
         storage = DuckDBStorageAdapter(ctx.gateway)
         discovery = FilesystemDiscoveryAdapter(ctx.snapshot.repo_root)

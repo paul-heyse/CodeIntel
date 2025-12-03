@@ -276,7 +276,7 @@ def test_goid_build_entries_generates_urn() -> None:
 
 def test_goid_build_entries_handles_none_end_line() -> None:
     """build_goid_entries_for_testing handles None end_lineno."""
-    row = _make_row(end_lineno=None)  # type: ignore[arg-type]
+    row = _make_row(end_lineno=None)
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path())
     cfg = builder.goid_builder(language="python")
     now = datetime.now(UTC)

@@ -7,6 +7,7 @@ tool invocation details to enable testing without real tool installations.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -189,8 +190,16 @@ class ScipDocument:
     """
 
     relative_path: str
-    symbols: tuple[ScipSymbol, ...] = ()
-    occurrences: tuple[ScipOccurrence, ...] = ()
+    symbols: Sequence[ScipSymbol] = field(default_factory=list)
+    occurrences: Sequence[ScipOccurrence] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Normalize symbol and occurrence sequences to mutable lists."""
+        # Accept any sequence inputs while storing mutable lists for downstream mutation.
+        if not isinstance(self.symbols, list):
+            object.__setattr__(self, "symbols", list(self.symbols))  # type: ignore[misc]
+        if not isinstance(self.occurrences, list):
+            object.__setattr__(self, "occurrences", list(self.occurrences))  # type: ignore[misc]
 
 
 @dataclass

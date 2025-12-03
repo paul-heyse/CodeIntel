@@ -115,6 +115,7 @@ class GraphPluginSpec:
     cache_consumes: tuple[str, ...] = ()
     register: bool = True
 
+
 log = logging.getLogger(__name__)
 
 
@@ -255,9 +256,7 @@ def make_plugin_from_spec(spec: GraphPluginSpec) -> GraphPluginProtocol:
 
     # Default row_count_tables to produces_tables
     resolved_row_count_tables = (
-        spec.row_count_tables
-        if spec.row_count_tables is not None
-        else spec.produces_tables
+        spec.row_count_tables if spec.row_count_tables is not None else spec.produces_tables
     )
 
     metadata = GraphPluginMetadata(

@@ -54,6 +54,7 @@ from codeintel.storage.sql_helpers import ensure_schema
 
 log = logging.getLogger(__name__)
 
+
 @dataclass(frozen=True)
 class FunctionAnalyticsResult:
     """Pure analysis output for function metrics/types plus validation."""

@@ -4,8 +4,6 @@ This adapter wraps the existing ToolService to provide port-compliant
 tool execution with normalized result types.
 """
 
-# ruff: noqa: PLC0415
-
 from __future__ import annotations
 
 import json
@@ -28,11 +26,11 @@ from codeintel.ingestion.ports.tools import (
     TestResult,
     ToolStatus,
 )
+from codeintel.ingestion.tool_service import ToolService
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-    from codeintel.ingestion.tool_service import ToolService
 
 log = logging.getLogger(__name__)
 
@@ -101,8 +99,6 @@ class ToolRunnerAdapter:
         ToolRunnerAdapter
             Configured adapter instance.
         """
-        from codeintel.ingestion.tool_service import ToolService
-
         service = ToolService(runner, tools_config)
         return cls(service)
 

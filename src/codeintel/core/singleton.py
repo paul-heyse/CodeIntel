@@ -20,13 +20,22 @@ Example
 from __future__ import annotations
 
 from threading import Lock
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Generic, TypeVar, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+T = TypeVar("T")
 
-class SingletonHolder[T]:
+
+class SingletonNotInitializedError(RuntimeError):
+    """Raised when a singleton is requested but not initialized."""
+
+    def __init__(self, cls_name: str) -> None:
+        super().__init__(f"{cls_name} singleton not initialized")
+
+
+class SingletonHolder(Generic[T]):
     """Thread-safe singleton holder using double-checked locking.
 
     Subclass this to create a holder for a specific type. Each subclass
@@ -71,8 +80,9 @@ class SingletonHolder[T]:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = factory()
-        # Safe cast: we know _instance is T after factory()
-        return cls._instance  # type: ignore[return-value]
+        if cls._instance is None:
+            raise SingletonNotInitializedError(cls.__name__)
+        return cast("T", cls._instance)
 
     @classmethod
     def get_or_none(cls) -> T | None:
@@ -83,7 +93,7 @@ class SingletonHolder[T]:
         T | None
             The singleton instance or None if not initialized.
         """
-        return cls._instance  # type: ignore[return-value]
+        return cast("T | None", cls._instance)
 
     @classmethod
     def reset(cls) -> None:

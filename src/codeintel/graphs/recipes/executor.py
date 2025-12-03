@@ -12,12 +12,17 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
+from codeintel.graphs.core.registry import get_graph_registry
 from codeintel.graphs.core.result import GraphPluginRunRecord
+from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.recipes.dsl import GraphRecipe, GraphStage
+from codeintel.graphs.resources.container import ResourceContainer
+from codeintel.graphs.resources.graphs import GraphResource
+from codeintel.graphs.resources.storage import StorageResource
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -280,8 +285,6 @@ class RecipeExecutor:
         )
 
         # Resolve plugins
-        from codeintel.graphs.core.registry import get_graph_registry  # noqa: PLC0415
-
         registry = get_graph_registry()
         plugins: list[GraphPluginProtocol] = []
 
@@ -500,17 +503,9 @@ class RecipeExecutor:
         )
 
         # Build resources from executor context
-        from codeintel.graphs.resources.container import ResourceContainer  # noqa: PLC0415
-        from codeintel.graphs.resources.graphs import GraphResource  # noqa: PLC0415
-        from codeintel.graphs.resources.storage import StorageResource  # noqa: PLC0415
-
         container = ResourceContainer()
         container.register(StorageResource(self._context.gateway, self._context.snapshot.repo_root))
         if self._context.engine is not None:
-            from typing import cast  # noqa: PLC0415
-
-            from codeintel.graphs.engine import NxGraphEngine  # noqa: PLC0415
-
             container.register(GraphResource(cast("NxGraphEngine", self._context.engine)))
 
         ctx = GraphExecutionContext(

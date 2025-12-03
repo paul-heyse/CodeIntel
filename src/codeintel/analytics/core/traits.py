@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from codeintel.analytics.runtime_manifest import AnalyticsScope
     from codeintel.graphs.engine import GraphKind
 
+from codeintel.analytics.core.providers import get_support_provider
+
 
 @runtime_checkable
 class GraphAwarePlugin(Protocol):
@@ -442,24 +444,12 @@ class WithRowCounts:
         dict[str, int]
             Mapping of table names to row counts.
         """
-        from codeintel.storage.db_helpers import safe_row_counts  # noqa: PLC0415
-
         target_tables = tables or self.output_tables
-        if not target_tables:
+        if not target_tables or ctx.snapshot is None:
             return {}
 
-        connection = getattr(ctx.gateway, "con", None)
-        if connection is None:
-            return {}
-
-        snapshot = ctx.snapshot
-        counts = safe_row_counts(
-            connection,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            tables=target_tables,
-        )
-        return counts or {}
+        provider = get_support_provider()
+        return provider.compute_row_counts(ctx.gateway, ctx.snapshot, target_tables)
 
 
 class WithContractValidation:
@@ -517,28 +507,20 @@ class WithContractValidation:
         tuple[bool, tuple[str, ...]]
             Success flag and list of error messages.
         """
-        from codeintel.analytics.core.contracts import (  # noqa: PLC0415
-            ContractValidator,
-            OutputContractSpec,
-        )
-
         if not self.validate_contracts:
+            return True, ()
+
+        snapshot = ctx.snapshot
+        if snapshot is None:
             return True, ()
 
         contracts = self.output_contracts
         if not contracts:
             return True, ()
 
-        # Filter to OutputContractSpec instances
-        valid_contracts = [c for c in contracts if isinstance(c, OutputContractSpec)]
-        if not valid_contracts:
-            return True, ()
-
-        validator = ContractValidator(ctx.gateway)
-        result = validator.validate(valid_contracts, ctx.snapshot)
-
-        errors = tuple(v.message for v in result.violations)
-        return result.valid, errors
+        provider = get_support_provider()
+        valid, errors = provider.validate_contracts(ctx.gateway, contracts, snapshot)
+        return valid, errors
 
 
 class WithCaching:

@@ -3,11 +3,7 @@
 This module provides the registry for ingestion plugins, supporting
 decorator-based registration, dependency resolution, topological ordering,
 and discovery via Python entry points.
-
-NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
-
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
@@ -18,6 +14,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import uuid4
 
+from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
+from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
+from codeintel.ingestion.plugins.coverage_plugin import CoverageIngestPlugin
+from codeintel.ingestion.plugins.cst_extract import CstExtractPlugin
+from codeintel.ingestion.plugins.docstrings_plugin import DocstringsIngestPlugin
 from codeintel.ingestion.plugins.protocol import (
     DEFAULT_INGEST_PLUGINS,
     IngestPluginPlan,
@@ -25,6 +26,10 @@ from codeintel.ingestion.plugins.protocol import (
     IngestPluginSkip,
     is_ingest_plugin,
 )
+from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
+from codeintel.ingestion.plugins.scip_plugin import ScipIngestPlugin
+from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
+from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
 
 log = logging.getLogger(__name__)
 
@@ -353,16 +358,6 @@ class IngestPluginRegistry:
 
     def _register_builtin_plugins(self) -> None:
         """Register the built-in class-based plugins."""
-        from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
-        from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
-        from codeintel.ingestion.plugins.coverage_plugin import CoverageIngestPlugin
-        from codeintel.ingestion.plugins.cst_extract import CstExtractPlugin
-        from codeintel.ingestion.plugins.docstrings_plugin import DocstringsIngestPlugin
-        from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
-        from codeintel.ingestion.plugins.scip_plugin import ScipIngestPlugin
-        from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
-        from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
-
         plugins: list[IngestPluginProtocol] = [
             RepoScanPlugin(),
             AstExtractPlugin(),
@@ -709,16 +704,6 @@ def register_class_based_plugins() -> tuple[IngestPluginProtocol, ...]:
     functional plugins in builtin.py but with a cleaner architecture
     that supports traits, middleware, and resource providers.
     """
-    from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
-    from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
-    from codeintel.ingestion.plugins.coverage_plugin import CoverageIngestPlugin
-    from codeintel.ingestion.plugins.cst_extract import CstExtractPlugin
-    from codeintel.ingestion.plugins.docstrings_plugin import DocstringsIngestPlugin
-    from codeintel.ingestion.plugins.repo_scan import RepoScanPlugin
-    from codeintel.ingestion.plugins.scip_plugin import ScipIngestPlugin
-    from codeintel.ingestion.plugins.tests_plugin import TestsIngestPlugin
-    from codeintel.ingestion.plugins.typing_plugin import TypingIngestPlugin
-
     registry = get_ingest_registry()
 
     # Create plugin instances
