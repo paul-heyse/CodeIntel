@@ -7,7 +7,7 @@ integration with the pipeline executor and run tracking.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 import pytest
 
@@ -16,6 +16,7 @@ from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.pipeline.op_planner import (
     build_pipeline_for_operation,
     ensure_prerequisites_for_operation,
+    OperationPrereqOptions,
 )
 from codeintel.pipeline.spec import FULL_PIPELINE, NOOP_PIPELINE
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
@@ -94,6 +95,28 @@ def tools_config() -> ToolsConfig:
     return make_tools_config()
 
 
+@pytest.fixture
+def prereq_options_builder(
+    gateway: StorageGateway,
+    sample_snapshot: SnapshotRef,
+    build_paths: BuildPaths,
+    tools_config: ToolsConfig,
+) -> Callable[[bool, str], OperationPrereqOptions]:
+    """Build an OperationPrereqOptions instance with common defaults."""
+
+    def _build(include_analytics: bool = False, trigger: str = "api") -> OperationPrereqOptions:
+        return OperationPrereqOptions(
+            snapshot=sample_snapshot,
+            paths=build_paths,
+            gateway=gateway,
+            tools=tools_config,
+            include_analytics=include_analytics,
+            trigger=trigger,
+        )
+
+    return _build
+
+
 class TestBuildPipelineForOperationIntegration:
     """Integration tests for build_pipeline_for_operation."""
 
@@ -140,16 +163,12 @@ class TestEnsurePrerequisitesForOperationNoop:
         sample_snapshot: SnapshotRef,
         build_paths: BuildPaths,
         tools_config: ToolsConfig,
+        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
     ) -> None:
         """NOOP operation should succeed with kind=op_prereqs."""
         run = ensure_prerequisites_for_operation(
             op_id="datasets.list",
-            snapshot=sample_snapshot,
-            paths=build_paths,
-            gateway=gateway,
-            tools=tools_config,
-            include_analytics=False,
-            trigger="api",
+            options=prereq_options_builder(include_analytics=False, trigger="api"),
         )
 
         assert run.status == "succeeded"
@@ -162,16 +181,12 @@ class TestEnsurePrerequisitesForOperationNoop:
         sample_snapshot: SnapshotRef,
         build_paths: BuildPaths,
         tools_config: ToolsConfig,
+        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
     ) -> None:
         """NOOP operation should record no pipeline steps."""
         run = ensure_prerequisites_for_operation(
             op_id="datasets.list",
-            snapshot=sample_snapshot,
-            paths=build_paths,
-            gateway=gateway,
-            tools=tools_config,
-            include_analytics=False,
-            trigger="api",
+            options=prereq_options_builder(include_analytics=False, trigger="api"),
         )
 
         steps = gateway.runs.fetch_steps(run.run_id)
@@ -183,16 +198,12 @@ class TestEnsurePrerequisitesForOperationNoop:
         sample_snapshot: SnapshotRef,
         build_paths: BuildPaths,
         tools_config: ToolsConfig,
+        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
     ) -> None:
         """health.status NOOP operation should succeed."""
         run = ensure_prerequisites_for_operation(
             op_id="health.status",
-            snapshot=sample_snapshot,
-            paths=build_paths,
-            gateway=gateway,
-            tools=tools_config,
-            include_analytics=False,
-            trigger="http",
+            options=prereq_options_builder(include_analytics=False, trigger="http"),
         )
 
         assert run.status == "succeeded"
@@ -207,16 +218,12 @@ class TestRunTracking:
         sample_snapshot: SnapshotRef,
         build_paths: BuildPaths,
         tools_config: ToolsConfig,
+        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
     ) -> None:
         """Run record should be created with kind=op_prereqs."""
         run = ensure_prerequisites_for_operation(
             op_id="datasets.list",
-            snapshot=sample_snapshot,
-            paths=build_paths,
-            gateway=gateway,
-            tools=tools_config,
-            include_analytics=False,
-            trigger="mcp",
+            options=prereq_options_builder(include_analytics=False, trigger="mcp"),
         )
 
         # Fetch run from database to verify persistence
@@ -235,16 +242,12 @@ class TestRunTracking:
         sample_snapshot: SnapshotRef,
         build_paths: BuildPaths,
         tools_config: ToolsConfig,
+        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
     ) -> None:
         """Completed run should have completed_at timestamp."""
         run = ensure_prerequisites_for_operation(
             op_id="datasets.list",
-            snapshot=sample_snapshot,
-            paths=build_paths,
-            gateway=gateway,
-            tools=tools_config,
-            include_analytics=False,
-            trigger="cli",
+            options=prereq_options_builder(include_analytics=False, trigger="cli"),
         )
 
         assert run.completed_at is not None
@@ -261,16 +264,12 @@ class TestOpPrereqsRunKind:
         sample_snapshot: SnapshotRef,
         build_paths: BuildPaths,
         tools_config: ToolsConfig,
+        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
     ) -> None:
         """NOOP operations should have kind=op_prereqs, not kind=full."""
         run = ensure_prerequisites_for_operation(
             op_id="datasets.list",
-            snapshot=sample_snapshot,
-            paths=build_paths,
-            gateway=gateway,
-            tools=tools_config,
-            include_analytics=False,
-            trigger="api",
+            options=prereq_options_builder(include_analytics=False, trigger="api"),
         )
 
         # Key assertion: even though NOOP_PIPELINE has empty stages (which
@@ -284,16 +283,12 @@ class TestOpPrereqsRunKind:
         sample_snapshot: SnapshotRef,
         build_paths: BuildPaths,
         tools_config: ToolsConfig,
+        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
     ) -> None:
         """Run ID should be prefixed with op_prereqs kind."""
         run = ensure_prerequisites_for_operation(
             op_id="datasets.list",
-            snapshot=sample_snapshot,
-            paths=build_paths,
-            gateway=gateway,
-            tools=tools_config,
-            include_analytics=False,
-            trigger="cli",
+            options=prereq_options_builder(include_analytics=False, trigger="cli"),
         )
 
         # Run IDs are prefixed with the kind
@@ -309,15 +304,13 @@ class TestErrorHandling:
         sample_snapshot: SnapshotRef,
         build_paths: BuildPaths,
         tools_config: ToolsConfig,
+        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
     ) -> None:
         """Unknown operation should raise ValueError."""
         with pytest.raises(ValueError, match="Unknown operation id"):
             ensure_prerequisites_for_operation(
                 op_id="nonexistent.operation",
-                snapshot=sample_snapshot,
-                paths=build_paths,
-                gateway=gateway,
-                tools=tools_config,
+                options=prereq_options_builder(),
             )
 
 
@@ -335,6 +328,7 @@ class TestTriggerKinds:
         build_paths: BuildPaths,
         tools_config: ToolsConfig,
         trigger: str,
+        prereq_options_builder: Callable[[bool, str], OperationPrereqOptions],
     ) -> None:
         """Different trigger kinds should be recorded in run records."""
         from codeintel.runtime import TriggerKind  # noqa: PLC0415
@@ -343,12 +337,7 @@ class TestTriggerKinds:
 
         run = ensure_prerequisites_for_operation(
             op_id="datasets.list",
-            snapshot=sample_snapshot,
-            paths=build_paths,
-            gateway=gateway,
-            tools=tools_config,
-            include_analytics=False,
-            trigger=trigger_kind,
+            options=prereq_options_builder(include_analytics=False, trigger=trigger_kind),
         )
 
         assert run.trigger == trigger

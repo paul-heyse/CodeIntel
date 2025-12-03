@@ -14,7 +14,7 @@ import pytest
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.pipeline.executor import run_pipeline
-from codeintel.pipeline.planner import build_pipeline_plan
+from codeintel.pipeline.planner import PipelinePlanOptions, build_pipeline_plan
 from codeintel.pipeline.spec import (
     ANALYTICS_ONLY,
     FULL_PIPELINE,
@@ -173,11 +173,13 @@ def test_build_plan_for_full_pipeline(
     """build_pipeline_plan creates plans for all stages in FULL_PIPELINE."""
     plan = build_pipeline_plan(
         spec=FULL_PIPELINE,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=fresh_gateway,
-        tools=tools,
-        trigger="cli",
+        options=PipelinePlanOptions(
+            snapshot=snapshot,
+            paths=paths,
+            gateway=fresh_gateway,
+            tools=tools,
+            trigger="cli",
+        ),
     )
 
     assert plan.spec is FULL_PIPELINE
@@ -197,11 +199,13 @@ def test_build_plan_for_ingest_only(
     """build_pipeline_plan creates only ingestion plan for INGEST_ONLY."""
     plan = build_pipeline_plan(
         spec=INGEST_ONLY,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=fresh_gateway,
-        tools=tools,
-        trigger="cli",
+        options=PipelinePlanOptions(
+            snapshot=snapshot,
+            paths=paths,
+            gateway=fresh_gateway,
+            tools=tools,
+            trigger="cli",
+        ),
     )
 
     assert plan.run_context.kind == "ingest"
@@ -219,11 +223,13 @@ def test_build_plan_for_graphs_only(
     """build_pipeline_plan creates only graphs plan for GRAPHS_ONLY."""
     plan = build_pipeline_plan(
         spec=GRAPHS_ONLY,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=fresh_gateway,
-        tools=tools,
-        trigger="cli",
+        options=PipelinePlanOptions(
+            snapshot=snapshot,
+            paths=paths,
+            gateway=fresh_gateway,
+            tools=tools,
+            trigger="cli",
+        ),
     )
 
     assert plan.run_context.kind == "graphs"
@@ -241,11 +247,13 @@ def test_build_plan_for_analytics_only(
     """build_pipeline_plan creates only analytics plan for ANALYTICS_ONLY."""
     plan = build_pipeline_plan(
         spec=ANALYTICS_ONLY,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=fresh_gateway,
-        tools=tools,
-        trigger="cli",
+        options=PipelinePlanOptions(
+            snapshot=snapshot,
+            paths=paths,
+            gateway=fresh_gateway,
+            tools=tools,
+            trigger="cli",
+        ),
     )
 
     assert plan.run_context.kind == "analytics"
@@ -263,19 +271,23 @@ def test_plan_run_id_uses_kind_prefix(
     """Run IDs are prefixed with the inferred run kind."""
     ingest_plan = build_pipeline_plan(
         spec=INGEST_ONLY,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=fresh_gateway,
-        tools=tools,
+        options=PipelinePlanOptions(
+            snapshot=snapshot,
+            paths=paths,
+            gateway=fresh_gateway,
+            tools=tools,
+        ),
     )
     assert ingest_plan.run_context.run_id.startswith("ingest-")
 
     graphs_plan = build_pipeline_plan(
         spec=GRAPHS_ONLY,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=fresh_gateway,
-        tools=tools,
+        options=PipelinePlanOptions(
+            snapshot=snapshot,
+            paths=paths,
+            gateway=fresh_gateway,
+            tools=tools,
+        ),
     )
     assert graphs_plan.run_context.run_id.startswith("graphs-")
 
@@ -318,11 +330,13 @@ def test_ingest_only_records_run(
 
     result = run_pipeline(
         spec=INGEST_ONLY,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=provisioned_ctx.gateway,
-        tools=tools,
-        trigger="cli",
+        options=PipelinePlanOptions(
+            snapshot=snapshot,
+            paths=paths,
+            gateway=provisioned_ctx.gateway,
+            tools=tools,
+            trigger="cli",
+        ),
     )
 
     # Verify run record
@@ -351,10 +365,12 @@ def test_run_tracking_persisted(
 
     result = run_pipeline(
         spec=INGEST_ONLY,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=provisioned_ctx.gateway,
-        tools=tools,
+        options=PipelinePlanOptions(
+            snapshot=snapshot,
+            paths=paths,
+            gateway=provisioned_ctx.gateway,
+            tools=tools,
+        ),
     )
 
     # Fetch the run back

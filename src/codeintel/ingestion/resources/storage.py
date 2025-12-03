@@ -6,8 +6,6 @@ lazily creates storage adapters for database operations.
 NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
 
-# ruff: noqa: PLC0415
-
 from __future__ import annotations
 
 import logging

@@ -8,8 +8,6 @@ stage module.
 NOTE: Imports inside functions are intentional to avoid circular dependencies.
 """
 
-# ruff: noqa: PLC0415
-
 from __future__ import annotations
 
 import logging
@@ -133,6 +131,29 @@ class PipelinePlan:
     analytics: AnalyticsStagePlan | None
 
 
+@dataclass(frozen=True)
+class PipelinePlanOptions:
+    """Bundled inputs for building a pipeline plan."""
+
+    snapshot: SnapshotRef
+    paths: BuildPaths
+    gateway: StorageGateway
+    tools: ToolsConfig
+    trigger: TriggerKind = "cli"
+    run_kind_override: RunKind | None = None
+
+
+@dataclass(frozen=True)
+class StageResources:
+    """Shared runtime resources for planning and execution."""
+
+    run_ctx: RunContext
+    snapshot: SnapshotRef
+    gateway: StorageGateway
+    paths: BuildPaths
+    tools: ToolsConfig
+
+
 # -----------------------------------------------------------------------------
 # RunKind Inference
 # -----------------------------------------------------------------------------
@@ -215,14 +236,10 @@ def _resolve_ingest_recipe(stage: PipelineStage) -> IngestRecipe:
     return recipe
 
 
-def _plan_ingestion_stage(  # noqa: PLR0913
+def _plan_ingestion_stage(
     *,
     stage: PipelineStage,
-    run_ctx: RunContext,
-    snapshot: SnapshotRef,
-    paths: BuildPaths,
-    gateway: StorageGateway,
-    tools: ToolsConfig,
+    resources: StageResources,
 ) -> IngestionStagePlan:
     """Plan an ingestion stage execution.
 
@@ -255,21 +272,21 @@ def _plan_ingestion_stage(  # noqa: PLR0913
 
     recipe = _resolve_ingest_recipe(stage)
 
-    code_profile = default_code_profile(snapshot.repo_root)
-    config_profile = default_config_profile(snapshot.repo_root)
+    code_profile = default_code_profile(resources.snapshot.repo_root)
+    config_profile = default_config_profile(resources.snapshot.repo_root)
 
     context = RecipeExecutorContext(
-        gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        tools=tools,
+        gateway=resources.gateway,
+        snapshot=resources.snapshot,
+        paths=resources.paths,
+        tools=resources.tools,
         code_profile=code_profile,
         config_profile=config_profile,
         tool_runner=None,
         tool_service=None,
         change_tracker=None,
         ingest_run_sink=None,
-        run_context=run_ctx,
+        run_context=resources.run_ctx,
     )
 
     options = RecipeOptions()
@@ -290,9 +307,7 @@ def _plan_ingestion_stage(  # noqa: PLR0913
 def _plan_graphs_stage(
     *,
     stage: PipelineStage,
-    run_ctx: RunContext,
-    snapshot: SnapshotRef,
-    gateway: StorageGateway,
+    resources: StageResources,
 ) -> GraphsStagePlan:
     """Plan a graphs stage execution.
 
@@ -319,8 +334,8 @@ def _plan_graphs_stage(
     policy = GraphPluginPolicy(fail_fast=True, skip_on_unchanged=False)
 
     plan_ctx = GraphPlanContext(
-        runtime_snapshot=snapshot,
-        target=(snapshot.repo, snapshot.commit),
+        runtime_snapshot=resources.snapshot,
+        target=(resources.snapshot.repo, resources.snapshot.commit),
         policy=policy,
         prior_manifest=None,
     )
@@ -334,11 +349,11 @@ def _plan_graphs_stage(
     )
 
     exec_ctx = GraphExecutorContext(
-        gateway=gateway,
-        snapshot=snapshot,
+        gateway=resources.gateway,
+        snapshot=resources.snapshot,
         engine=None,
         catalog_provider=None,
-        run_context=run_ctx,
+        run_context=resources.run_ctx,
     )
 
     return GraphsStagePlan(
@@ -411,9 +426,7 @@ def _get_analytics_plugin_names() -> tuple[str, ...]:
 def _plan_analytics_stage(
     *,
     stage: PipelineStage,
-    run_ctx: RunContext,
-    snapshot: SnapshotRef,
-    gateway: StorageGateway,
+    resources: StageResources,
 ) -> AnalyticsStagePlan:
     """Plan an analytics stage execution.
 
@@ -447,24 +460,24 @@ def _plan_analytics_stage(
     request = AnalyticsPlanRequest(
         plugin_names=plugin_names,
         policy=policy,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+        repo=resources.snapshot.repo,
+        commit=resources.snapshot.commit,
         scope=scope,
         prior_manifest=None,
         cfg_options=None,
         runtime_options=None,
-        run_id=run_ctx.run_id,
+        run_id=resources.run_ctx.run_id,
     )
 
     plan = plan_analytics_plugin_run(request)
 
     context = AnalyticsRunContext(
-        gateway=gateway,
+        gateway=resources.gateway,
         graph_runtime=None,
         cfgs={},
         extra={},
         catalog_provider=None,
-        snapshot=snapshot,
+        snapshot=resources.snapshot,
     )
 
     return AnalyticsStagePlan(
@@ -480,15 +493,10 @@ def _plan_analytics_stage(
 # -----------------------------------------------------------------------------
 
 
-def build_pipeline_plan(  # noqa: PLR0913
+def build_pipeline_plan(
     *,
     spec: PipelineSpec,
-    snapshot: SnapshotRef,
-    paths: BuildPaths,
-    gateway: StorageGateway,
-    tools: ToolsConfig,
-    trigger: TriggerKind = "cli",
-    run_kind_override: RunKind | None = None,
+    options: PipelinePlanOptions,
 ) -> PipelinePlan:
     """Build a concrete execution plan for a pipeline specification.
 
@@ -524,11 +532,11 @@ def build_pipeline_plan(  # noqa: PLR0913
     ValueError
         If a stage module is not recognized or recipe cannot be resolved.
     """
-    run_kind = run_kind_override if run_kind_override is not None else _infer_run_kind(spec)
+    run_kind = options.run_kind_override if options.run_kind_override is not None else _infer_run_kind(spec)
     run_ctx = new_run_context(
-        snapshot=snapshot,
+        snapshot=options.snapshot,
         kind=run_kind,
-        trigger=trigger,
+        trigger=options.trigger,
     )
 
     log.info(
@@ -543,30 +551,22 @@ def build_pipeline_plan(  # noqa: PLR0913
     graphs_plan: GraphsStagePlan | None = None
     analytics_plan: AnalyticsStagePlan | None = None
 
+    # Create shared resources once for all stages
+    resources = StageResources(
+        run_ctx=run_ctx,
+        snapshot=options.snapshot,
+        gateway=options.gateway,
+        paths=options.paths,
+        tools=options.tools,
+    )
+
     for stage in spec.stages:
         if stage.module == "ingestion":
-            ingestion_plan = _plan_ingestion_stage(
-                stage=stage,
-                run_ctx=run_ctx,
-                snapshot=snapshot,
-                paths=paths,
-                gateway=gateway,
-                tools=tools,
-            )
+            ingestion_plan = _plan_ingestion_stage(stage=stage, resources=resources)
         elif stage.module == "graphs":
-            graphs_plan = _plan_graphs_stage(
-                stage=stage,
-                run_ctx=run_ctx,
-                snapshot=snapshot,
-                gateway=gateway,
-            )
+            graphs_plan = _plan_graphs_stage(stage=stage, resources=resources)
         elif stage.module == "analytics":
-            analytics_plan = _plan_analytics_stage(
-                stage=stage,
-                run_ctx=run_ctx,
-                snapshot=snapshot,
-                gateway=gateway,
-            )
+            analytics_plan = _plan_analytics_stage(stage=stage, resources=resources)
         else:
             message = f"Unknown stage module: {stage.module}"
             raise ValueError(message)
@@ -585,5 +585,6 @@ __all__ = [
     "GraphsStagePlan",
     "IngestionStagePlan",
     "PipelinePlan",
+    "PipelinePlanOptions",
     "build_pipeline_plan",
 ]

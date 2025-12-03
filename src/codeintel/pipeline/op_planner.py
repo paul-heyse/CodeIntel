@@ -24,6 +24,7 @@ from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     DatasetContract,
 )
+from codeintel.pipeline.planner import PipelinePlanOptions
 from codeintel.pipeline.spec import (
     ANALYTICS_ONLY,
     FULL_PIPELINE,
@@ -32,6 +33,7 @@ from codeintel.pipeline.spec import (
     NOOP_PIPELINE,
     PipelineSpec,
 )
+from codeintel.pipeline.executor import run_pipeline
 from codeintel.serving.operations.catalog import Operation, get_operation
 
 if TYPE_CHECKING:
@@ -83,6 +85,18 @@ class OpPrereqSummary:
     graph_tables: frozenset[str]
     analytics_tables: frozenset[str]
     required_graphs: frozenset[str]
+
+
+@dataclass(frozen=True)
+class OperationPrereqOptions:
+    """Options for executing operation prerequisites."""
+
+    snapshot: SnapshotRef
+    paths: BuildPaths
+    gateway: StorageGateway
+    tools: ToolsConfig
+    include_analytics: bool = True
+    trigger: TriggerKind = "api"
 
 
 # -----------------------------------------------------------------------------
@@ -433,15 +447,10 @@ def build_prereq_summary(
 # -----------------------------------------------------------------------------
 
 
-def ensure_prerequisites_for_operation(  # noqa: PLR0913
+def ensure_prerequisites_for_operation(
     *,
     op_id: str,
-    snapshot: SnapshotRef,
-    paths: BuildPaths,
-    gateway: StorageGateway,
-    tools: ToolsConfig,
-    include_analytics: bool = True,
-    trigger: TriggerKind = "api",
+    options: OperationPrereqOptions,
 ) -> PipelineRunRecord:
     """Run whatever work is necessary before serving operation `op_id`.
 
@@ -476,35 +485,35 @@ def ensure_prerequisites_for_operation(  # noqa: PLR0913
     PipelineRunRecord
         Run record describing the prereq pipeline execution.
     """
-    # Avoid circular import by importing here
-    from codeintel.pipeline.executor import run_pipeline  # noqa: PLC0415
-
     spec = build_pipeline_for_operation(
         op_id,
-        snapshot,
-        include_analytics=include_analytics,
+        options.snapshot,
+        include_analytics=options.include_analytics,
     )
 
     log.info(
         "op_planner.ensure_prereqs op=%s spec=%s trigger=%s kind=op_prereqs",
         op_id,
         spec.id,
-        trigger,
+        options.trigger,
     )
 
     return run_pipeline(
         spec=spec,
-        snapshot=snapshot,
-        paths=paths,
-        gateway=gateway,
-        tools=tools,
-        trigger=trigger,
-        run_kind_override="op_prereqs",
+        options=PipelinePlanOptions(
+            snapshot=options.snapshot,
+            paths=options.paths,
+            gateway=options.gateway,
+            tools=options.tools,
+            trigger=options.trigger,
+            run_kind_override="op_prereqs",
+        ),
     )
 
 
 __all__ = [
     "OpPrereqSummary",
+    "OperationPrereqOptions",
     "build_pipeline_for_operation",
     "build_prereq_summary",
     "ensure_prerequisites_for_operation",

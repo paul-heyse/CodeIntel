@@ -207,7 +207,7 @@ class GraphRuntimeTelemetry:
     def record_metrics(
         self,
         record: GraphPluginRunRecord,
-        scope: GraphRunScope | None,  # noqa: ARG002 - Reserved for future scope-scoped metrics
+        scope: GraphRunScope | None,
     ) -> None:
         """Record execution metrics.
 
@@ -225,6 +225,11 @@ class GraphRuntimeTelemetry:
             "plugin_name": record.name,
             "status": record.status,
         }
+        if scope is not None:
+            if scope.paths:
+                labels["scope_path_count"] = len(scope.paths)
+            if scope.modules:
+                labels["scope_module_count"] = len(scope.modules)
 
         try:
             if self._plugin_duration_histogram is not None:

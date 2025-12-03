@@ -13,10 +13,12 @@ Quick Start
 >>> from codeintel.pipeline import FULL_PIPELINE, run_pipeline
 >>> # result = run_pipeline(
 >>> #     spec=FULL_PIPELINE,
->>> #     snapshot=...,
->>> #     paths=...,
->>> #     gateway=...,
->>> #     tools=...,
+>>> #     options=PipelinePlanOptions(
+>>> #         snapshot=...,
+>>> #         paths=...,
+>>> #         gateway=...,
+>>> #         tools=...,
+>>> #     ),
 >>> # )
 
 Operation-Driven Orchestration
@@ -30,6 +32,7 @@ from codeintel.pipeline import run_registry
 from codeintel.pipeline.executor import run_pipeline
 from codeintel.pipeline.op_planner import (
     OpPrereqSummary,
+    OperationPrereqOptions,
     build_pipeline_for_operation,
     build_prereq_summary,
     ensure_prerequisites_for_operation,
@@ -39,6 +42,7 @@ from codeintel.pipeline.planner import (
     GraphsStagePlan,
     IngestionStagePlan,
     PipelinePlan,
+    PipelinePlanOptions,
     build_pipeline_plan,
 )
 from codeintel.pipeline.spec import (
@@ -66,7 +70,9 @@ __all__ = [
     "GraphsStagePlan",
     "IngestionStagePlan",
     "OpPrereqSummary",
+    "OperationPrereqOptions",
     "PipelinePlan",
+    "PipelinePlanOptions",
     "PipelineSpec",
     "PipelineStage",
     "StageModule",

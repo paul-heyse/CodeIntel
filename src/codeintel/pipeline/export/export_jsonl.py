@@ -27,12 +27,7 @@ from codeintel.pipeline.export.manifest import (
 )
 from codeintel.pipeline.export.validate_exports import validate_files
 from codeintel.serving.http.datasets import validate_dataset_registry
-from codeintel.serving.services.errors import (
-    ExportError,
-    ProblemDetailParams,
-    log_problem,
-    problem,
-)
+from codeintel.serving.services.errors import ExportError, ProblemDetails, log_problem, problem
 from codeintel.storage.contract_validation import _schema_path
 from codeintel.storage.gateway import (
     DuckDBConnection,
@@ -103,10 +98,12 @@ def _validate_registry_or_raise(gateway: StorageGateway) -> None:
     except ValueError as exc:
         detail = str(exc)
         pd = problem(
-            code="export.validation_failed",
-            title="Export validation failed",
-            detail=detail,
-            params=ProblemDetailParams(extras={"stage": "dataset_registry"}),
+            ProblemDetails(
+                code="export.validation_failed",
+                title="Export validation failed",
+                detail=detail,
+                extras={"stage": "dataset_registry"},
+            )
         )
         log_problem(log, pd)
         if "schema mismatches" in detail:
@@ -540,23 +537,23 @@ def _validate_written_exports(
         result = validate_files(schema_name, matching)
         if result != 0 and profile == "lenient":
             pd = problem(
-                code="export.validation_failed",
-                title="Export validation failed",
-                detail=f"Validation failed for schema {schema_name}",
-                params=ProblemDetailParams(
-                    extras={"schema": schema_name, "files": [str(p) for p in matching]}
-                ),
+                ProblemDetails(
+                    code="export.validation_failed",
+                    title="Export validation failed",
+                    detail=f"Validation failed for schema {schema_name}",
+                    extras={"schema": schema_name, "files": [str(p) for p in matching]},
+                )
             )
             log_problem(log, pd)
             continue
         if result != 0:
             pd = problem(
-                code="export.validation_failed",
-                title="Export validation failed",
-                detail=f"Validation failed for schema {schema_name}",
-                params=ProblemDetailParams(
-                    extras={"schema": schema_name, "files": [str(p) for p in matching]}
-                ),
+                ProblemDetails(
+                    code="export.validation_failed",
+                    title="Export validation failed",
+                    detail=f"Validation failed for schema {schema_name}",
+                    extras={"schema": schema_name, "files": [str(p) for p in matching]},
+                )
             )
             log_problem(log, pd)
             raise ExportError(pd)

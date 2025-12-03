@@ -440,57 +440,22 @@ def _execute_planned_plugin(
     return record
 
 
-def run_graph_plugins(  # noqa: PLR0914, PLR0915
+def _execute_plugins_in_plan(
     *,
     plan: GraphPluginExecutionPlan,
     context: GraphExecutorContext,
-) -> GraphRunReport:
-    """Execute all plugins in an execution plan.
-
-    If a `run_context` is provided in the executor context, this function
-    records run and step metadata to the pipeline registry.
-
-    Parameters
-    ----------
-    plan
-        Execution plan.
-    context
-        Executor context.
-
-    Returns
-    -------
-    GraphRunReport
-        Report of execution results.
-    """
-    start = time.perf_counter()
-    started_at = datetime.now(tz=UTC)
+) -> tuple[list[GraphPluginRunRecord], dict[str, dict[str, object]], bool]:
+    """Execute all plugins in a plan, returning records and manifest."""
     records: list[GraphPluginRunRecord] = []
-    scratch = GraphRuntimeScratch()
     manifest: dict[str, dict[str, object]] = {}
     fatal_error = False
-
-    # Start the run in the registry if RunContext is available
-    run_context = context.run_context
-    runs = context.gateway.runs if run_context is not None else None
-    if run_context is not None and runs is not None:
-        runs.start_run(
-            run_context,
-            pipeline_name=f"graphs:{plan.scope}",
-        )
-
-    run_span = plan.telemetry.start_run(
-        run_id=plan.run_id,
-        repo=plan.repo,
-        commit=plan.commit,
-        plugin_count=len(plan.plugins),
-    )
+    scratch = GraphRuntimeScratch()
 
     try:
         for plugin in plan.plugins:
             settings = plan.settings_by_plugin[plugin.metadata.name]
             options = plan.options_by_plugin.get(plugin.metadata.name)
 
-            # Build resources from runtime context
             container = ResourceContainer()
             container.register(StorageResource(context.gateway, context.snapshot.repo_root))
             if context.engine is not None:
@@ -512,7 +477,10 @@ def run_graph_plugins(  # noqa: PLR0914, PLR0915
 
             try:
                 record = _execute_planned_plugin(
-                    plugin=plugin, ctx=plugin_ctx, settings=settings, plan=plan
+                    plugin=plugin,
+                    ctx=plugin_ctx,
+                    settings=settings,
+                    plan=plan,
                 )
             except PluginFatalError as exc:
                 records.append(exc.record)
@@ -521,7 +489,6 @@ def run_graph_plugins(  # noqa: PLR0914, PLR0915
 
             records.append(record)
 
-            # Update manifest
             if record.status == "succeeded":
                 manifest[plugin.metadata.name] = {
                     "input_hash": record.meta.get("input_hash"),
@@ -533,6 +500,36 @@ def run_graph_plugins(  # noqa: PLR0914, PLR0915
     finally:
         scratch.cleanup()
 
+    return records, manifest, fatal_error
+
+
+def run_graph_plugins(
+    *,
+    plan: GraphPluginExecutionPlan,
+    context: GraphExecutorContext,
+) -> GraphRunReport:
+    """Execute all plugins in an execution plan.
+
+    If a `run_context` is provided in the executor context, this function
+    records run and step metadata to the pipeline registry.
+    """
+    start = time.perf_counter()
+    started_at = datetime.now(tz=UTC)
+
+    run_context = context.run_context
+    runs = context.gateway.runs if run_context is not None else None
+    if run_context is not None and runs is not None:
+        runs.start_run(run_context, pipeline_name=f"graphs:{plan.scope}")
+
+    run_span = plan.telemetry.start_run(
+        run_id=plan.run_id,
+        repo=plan.repo,
+        commit=plan.commit,
+        plugin_count=len(plan.plugins),
+    )
+
+    records, manifest, fatal_error = _execute_plugins_in_plan(plan=plan, context=context)
+
     ended_at = datetime.now(tz=UTC)
     duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
@@ -542,11 +539,9 @@ def run_graph_plugins(  # noqa: PLR0914, PLR0915
 
     plan.telemetry.finish_run(run_span, success_count, failure_count, skip_count)
 
-    # Record steps and complete the run in the registry
     if run_context is not None and runs is not None:
         _record_graph_steps(runs, run_context.run_id, records, plan)
 
-        # Determine overall status
         status: PipelineStatus
         error_summary: str | None = None
         if fatal_error or failure_count > 0:

@@ -366,7 +366,7 @@ class BasePlugin(ABC):
     def _build_success_result(
         self,
         row_counts: Mapping[str, int] | None,
-        ctx: PluginExecutionContext,  # noqa: ARG002
+        ctx: PluginExecutionContext,
     ) -> PluginResult:
         """Build a successful result from compute output.
 
@@ -382,9 +382,17 @@ class BasePlugin(ABC):
         PluginResult
             Successful result with row counts.
         """
+        meta = {
+            "plugin_name": self.metadata.name,
+            "repo": ctx.repo,
+            "commit": ctx.commit,
+        }
+        if ctx.run_id is not None:
+            meta["run_id"] = ctx.run_id
+
         return PluginResult.ok(
             row_counts=row_counts or {},
-            meta={"plugin_name": self.metadata.name},
+            meta=meta,
         )
 
 
