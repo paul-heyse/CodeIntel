@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.datasets import JSON_SCHEMA_BY_DATASET_NAME
-from codeintel.pipeline.export import DEFAULT_VALIDATION_SCHEMAS, default_validation_schemas
+from codeintel.pipeline.export import default_validation_schemas
 
 
 def _require(*, condition: bool, message: str) -> None:
@@ -22,11 +22,6 @@ def test_default_validation_schemas_match_dataset_contract() -> None:
     _require(
         condition=dynamic == expected,
         message=f"default_validation_schemas mismatch: {dynamic} != {expected}",
-    )
-    constant = sorted(DEFAULT_VALIDATION_SCHEMAS)
-    _require(
-        condition=constant == expected,
-        message=f"DEFAULT_VALIDATION_SCHEMAS mismatch: {constant} != {expected}",
     )
 
 

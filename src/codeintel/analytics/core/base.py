@@ -286,14 +286,14 @@ class BasePlugin(ABC):
         return ValidationResult.success()
 
     @staticmethod
-    def validate_config_requirements(_ctx: PluginExecutionContext) -> list[str]:
+    def validate_config_requirements(ctx: PluginExecutionContext) -> list[str]:
         """Validate configuration requirements.
 
         Override in subclasses to add config validation.
 
         Parameters
         ----------
-        _ctx
+        ctx
             Execution context.
 
         Returns
@@ -301,17 +301,18 @@ class BasePlugin(ABC):
         list[str]
             List of validation error messages.
         """
+        _ = ctx  # Base implementation doesn't use context
         return []
 
     @staticmethod
-    def validate_resource_requirements(_ctx: PluginExecutionContext) -> list[str]:
+    def validate_resource_requirements(ctx: PluginExecutionContext) -> list[str]:
         """Validate resource requirements (catalog, runtime, etc.).
 
         Override in subclasses to add resource validation.
 
         Parameters
         ----------
-        _ctx
+        ctx
             Execution context.
 
         Returns
@@ -319,6 +320,7 @@ class BasePlugin(ABC):
         list[str]
             List of validation error messages.
         """
+        _ = ctx  # Base implementation doesn't use context
         return []
 
     def execute(self, ctx: PluginExecutionContext) -> PluginResult:
@@ -813,6 +815,7 @@ class GraphMetricsPlugin(
         """
         errors: list[str] = []
         # Call each parent's validation - accessing protected methods is intentional
+        # TableWriterPlugin inherits static method from BasePlugin, so no self
         errors.extend(TableWriterPlugin.validate_resource_requirements(ctx))
         errors.extend(GraphRuntimeRequiringPlugin.validate_resource_requirements(self, ctx))
         errors.extend(CatalogRequiringPlugin.validate_resource_requirements(self, ctx))

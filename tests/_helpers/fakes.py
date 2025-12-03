@@ -528,7 +528,11 @@ class FakeToolService(ToolService):
         self.calls.append(
             (
                 "run_coverage_json",
-                {"repo_root": repo_root, "coverage_file": coverage_file, "output_path": output_path},
+                {
+                    "repo_root": repo_root,
+                    "coverage_file": coverage_file,
+                    "output_path": output_path,
+                },
             )
         )
         if self.fake_config.raise_on_coverage is not None:

@@ -126,12 +126,6 @@ def reset_registration_state() -> None:
     _RegistrationState.registered = False
 
 
-# Default plugin names for backward compatibility
-DEFAULT_ANALYTICS_PLUGINS: tuple[str, ...] = tuple(
-    plugin.metadata.name for plugin in ALL_PLUGINS if plugin.metadata.enabled_by_default
-)
-
-
 __all__ = [
     "ALL_PLUGINS",
     "BEHAVIORAL_COVERAGE_PLUGIN",
@@ -141,7 +135,6 @@ __all__ = [
     "COVERAGE_TEST_EDGES_PLUGIN",
     "DATA_MODELS_PLUGIN",
     "DATA_MODEL_USAGE_PLUGIN",
-    "DEFAULT_ANALYTICS_PLUGINS",
     "ENTRYPOINTS_PLUGIN",
     "EXTERNAL_DEPS_PLUGIN",
     "FUNCTION_AST_FEATURES_PLUGIN",

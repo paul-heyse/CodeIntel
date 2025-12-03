@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import FrozenInstanceError, is_dataclass
-from typing import Any
 
 import pytest
 
@@ -127,12 +126,17 @@ def expect_in(value: object, container: Iterable[object], message: str | None = 
         raise AssertionError(detail)
 
 
-def assert_cannot_setattr(instance: object, field_name: str, value: Any) -> None:
+def assert_cannot_setattr(instance: object, field_name: str, value: object) -> None:
     """
     Assert that setting an attribute on a frozen/immutable instance fails.
 
     This helper keeps immutability assertions type-safe by avoiding
     direct assignments that static analysis treats as errors.
+
+    Raises
+    ------
+    AssertionError
+        If the target instance is not frozen or attribute setting succeeds.
     """
     expected_errors = (AttributeError, FrozenInstanceError)
 

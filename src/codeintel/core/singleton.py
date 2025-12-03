@@ -20,12 +20,10 @@ Example
 from __future__ import annotations
 
 from threading import Lock
-from typing import TYPE_CHECKING, ClassVar, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-T = TypeVar("T")
 
 
 class SingletonNotInitializedError(RuntimeError):
@@ -35,7 +33,7 @@ class SingletonNotInitializedError(RuntimeError):
         super().__init__(f"{cls_name} singleton not initialized")
 
 
-class SingletonHolder(Generic[T]):
+class SingletonHolder[T]:
     """Thread-safe singleton holder using double-checked locking.
 
     Subclass this to create a holder for a specific type. Each subclass
@@ -75,6 +73,11 @@ class SingletonHolder(Generic[T]):
         -------
         T
             The singleton instance.
+
+        Raises
+        ------
+        SingletonNotInitializedError
+            If the singleton remains uninitialized after invoking the factory.
         """
         if cls._instance is None:
             with cls._lock:

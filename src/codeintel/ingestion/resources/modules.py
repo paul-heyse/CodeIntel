@@ -3,8 +3,6 @@
 This module provides `ModuleProvider`, a resource provider that
 lazily loads module records from either a change tracker or
 the module inventory.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
 
 from __future__ import annotations
@@ -13,7 +11,9 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.resources.protocol import LazyResource
+from codeintel.storage.module_index import load_module_map
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -88,9 +88,6 @@ class ModuleProvider(LazyResource[Sequence["ModuleRecord"]]):
             return self._tracker.modules
 
         # Otherwise load from module inventory
-        from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
-        from codeintel.storage.module_index import load_module_map
-
         module_map = load_module_map(
             self._gateway,
             self._snapshot.repo,

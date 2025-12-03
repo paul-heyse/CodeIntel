@@ -198,7 +198,7 @@ def compute_graph_metrics(
     )
     resolved_runtime = resolve_graph_runtime(
         gateway,
-        cfg.snapshot,
+        cfg.snapshot_ref,
         runtime_input,
     )
     use_gpu = resolved_runtime.backend.use_gpu

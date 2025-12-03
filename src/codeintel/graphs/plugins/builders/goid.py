@@ -46,6 +46,7 @@ from codeintel.graphs.core import (
     make_builder_plugin,
 )
 from codeintel.graphs.resources import StorageResource
+from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.ingestion.infrastructure_utilities.paths import relpath_to_module
 from codeintel.ingestion.services.storage import IngestStorageService
 
@@ -349,8 +350,6 @@ def build_goids(
     cfg
         GOID builder configuration.
     """
-    from codeintel.graphs.resources.container import ResourceContainer  # noqa: PLC0415
-
     # Create context with resources
     container = ResourceContainer()
     container.register(StorageResource(gateway, cfg.snapshot.repo_root))

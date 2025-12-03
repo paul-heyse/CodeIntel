@@ -30,8 +30,10 @@ from codeintel.graphs.runtime.manifest import (
     skip_record,
 )
 from codeintel.graphs.runtime.planning import (
+    GraphPlanContext,
     GraphPluginExecutionPlan,
     PluginExecutionSettings,
+    plan_graph_plugin_run,
 )
 from codeintel.storage.db_helpers import DUCKDB_ERRORS
 from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord, StepStatus
@@ -190,7 +192,6 @@ def _execute_plugin(
     plugin: GraphPluginProtocol,
     ctx: GraphExecutionContext,
     settings: PluginExecutionSettings,
-    run_id: str,  # noqa: ARG001 - Reserved for future use
 ) -> GraphPluginRunRecord:
     """Execute a plugin with retry and timeout handling.
 
@@ -202,8 +203,6 @@ def _execute_plugin(
         Execution context.
     settings
         Execution settings.
-    run_id
-        Run identifier.
 
     Returns
     -------
@@ -394,13 +393,15 @@ def _execute_planned_plugin(
     record: GraphPluginRunRecord | None = None
     try:
         if plan.policy.dry_run:
-            record = dry_run_record(plugin=plugin, params=params, run_id=plan.run_id)
+            record = dry_run_record(plugin=plugin, params=params)
         elif plan.policy.skip_on_unchanged and is_unchanged(plan.prior_manifest, state):
-            record = skip_record(
-                plugin=plugin, params=params, reason="unchanged", run_id=plan.run_id
-            )
+            record = skip_record(plugin=plugin, params=params, reason="unchanged")
         else:
-            record = _execute_plugin(plugin=plugin, ctx=ctx, settings=settings, run_id=plan.run_id)
+            record = _execute_plugin(
+                plugin=plugin,
+                ctx=ctx,
+                settings=settings,
+            )
     except PluginFatalError:
         raise
     except PLUGIN_CATCHABLE_ERRORS:
@@ -445,7 +446,14 @@ def _execute_plugins_in_plan(
     plan: GraphPluginExecutionPlan,
     context: GraphExecutorContext,
 ) -> tuple[list[GraphPluginRunRecord], dict[str, dict[str, object]], bool]:
-    """Execute all plugins in a plan, returning records and manifest."""
+    """
+    Execute all plugins in a plan, returning records and manifest.
+
+    Returns
+    -------
+    tuple[list[GraphPluginRunRecord], dict[str, dict[str, object]], bool]
+        Plugin records, manifest payload, and fatal_error flag.
+    """
     records: list[GraphPluginRunRecord] = []
     manifest: dict[str, dict[str, object]] = {}
     fatal_error = False
@@ -456,16 +464,15 @@ def _execute_plugins_in_plan(
             settings = plan.settings_by_plugin[plugin.metadata.name]
             options = plan.options_by_plugin.get(plugin.metadata.name)
 
-            container = ResourceContainer()
-            container.register(StorageResource(context.gateway, context.snapshot.repo_root))
+            resources = ResourceContainer()
+            resources.register(StorageResource(context.gateway, context.snapshot.repo_root))
             if context.engine is not None:
-                container.register(GraphResource(cast("NxGraphEngine", context.engine)))
+                resources.register(GraphResource(cast("NxGraphEngine", context.engine)))
 
             plugin_ctx = GraphExecutionContext(
                 snapshot=context.snapshot,
-                resources=container,
+                resources=resources,
                 _gateway=context.gateway,
-                _engine=context.engine,
                 _catalog_provider=context.catalog_provider,
                 scratch=scratch,
                 options=options,
@@ -503,6 +510,22 @@ def _execute_plugins_in_plan(
     return records, manifest, fatal_error
 
 
+def _status_counts(records: Sequence[GraphPluginRunRecord]) -> dict[str, int]:
+    """
+    Summarize plugin run statuses.
+
+    Returns
+    -------
+    dict[str, int]
+        Counts keyed by success/failure/skipped.
+    """
+    return {
+        "success": sum(1 for r in records if r.status == "succeeded"),
+        "failure": sum(1 for r in records if r.status == "failed"),
+        "skipped": sum(1 for r in records if r.status == "skipped"),
+    }
+
+
 def run_graph_plugins(
     *,
     plan: GraphPluginExecutionPlan,
@@ -512,6 +535,11 @@ def run_graph_plugins(
 
     If a `run_context` is provided in the executor context, this function
     records run and step metadata to the pipeline registry.
+
+    Returns
+    -------
+    GraphRunReport
+        Summary of plugin execution outcomes.
     """
     start = time.perf_counter()
     started_at = datetime.now(tz=UTC)
@@ -533,22 +561,22 @@ def run_graph_plugins(
     ended_at = datetime.now(tz=UTC)
     duration_ms = round((time.perf_counter() - start) * 1000, 2)
 
-    success_count = sum(1 for r in records if r.status == "succeeded")
-    failure_count = sum(1 for r in records if r.status == "failed")
-    skip_count = sum(1 for r in records if r.status == "skipped")
+    status_counts = _status_counts(records)
 
-    plan.telemetry.finish_run(run_span, success_count, failure_count, skip_count)
+    plan.telemetry.finish_run(
+        run_span, status_counts["success"], status_counts["failure"], status_counts["skipped"]
+    )
 
     if run_context is not None and runs is not None:
         _record_graph_steps(runs, run_context.run_id, records, plan)
 
         status: PipelineStatus
         error_summary: str | None = None
-        if fatal_error or failure_count > 0:
+        if fatal_error or status_counts["failure"] > 0:
             status = "failed"
             failed_plugins = [r.name for r in records if r.status == "failed"]
             error_summary = f"Failed plugins: {', '.join(failed_plugins)}"
-        elif skip_count > 0 and success_count == 0:
+        elif status_counts["skipped"] > 0 and status_counts["success"] == 0:
             status = "partial"
         else:
             status = "succeeded"
@@ -564,9 +592,9 @@ def run_graph_plugins(
         repo=plan.repo,
         commit=plan.commit,
         records=tuple(records),
-        success_count=success_count,
-        failure_count=failure_count,
-        skip_count=skip_count,
+        success_count=status_counts["success"],
+        failure_count=status_counts["failure"],
+        skip_count=status_counts["skipped"],
         duration_ms=duration_ms,
         started_at=started_at.isoformat(),
         ended_at=ended_at.isoformat(),
@@ -675,11 +703,6 @@ def run_graph_plugin_batch(
     GraphRunReport
         Report of execution results.
     """
-    from codeintel.graphs.runtime.planning import (  # noqa: PLC0415
-        GraphPlanContext,
-        plan_graph_plugin_run,
-    )
-
     context = GraphPlanContext(
         runtime_snapshot=snapshot,
         policy=GraphPluginPolicy(),

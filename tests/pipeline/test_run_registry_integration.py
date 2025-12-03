@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -108,8 +109,6 @@ class TestGatewayRunsApi:
         sample_snapshot: SnapshotRef,
     ) -> None:
         """Verify step recording works with gateway.runs."""
-        from datetime import UTC, datetime  # noqa: PLC0415
-
         ctx = RunContext(
             run_id="integ-789",
             kind="graphs",
@@ -196,8 +195,6 @@ class TestFullRunLifecycle:
         sample_snapshot: SnapshotRef,
     ) -> None:
         """Verify a full run lifecycle across multiple modules."""
-        from datetime import UTC, datetime  # noqa: PLC0415
-
         # Create a full pipeline run context
         ctx = new_run_context(
             snapshot=sample_snapshot,
@@ -281,8 +278,6 @@ class TestFullRunLifecycle:
         sample_snapshot: SnapshotRef,
     ) -> None:
         """Verify failed run is recorded correctly."""
-        from datetime import UTC, datetime  # noqa: PLC0415
-
         ctx = new_run_context(
             snapshot=sample_snapshot,
             kind="analytics",

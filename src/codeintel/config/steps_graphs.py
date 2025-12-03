@@ -215,7 +215,10 @@ class GraphMetricsTuning:
 class GraphMetricsStepConfig:
     """Configuration for graph metrics analytics."""
 
-    snapshot: SnapshotRef
+    snapshot: SnapshotRef | None = None
+    repo: str = ""
+    commit: str = ""
+    repo_root: Path | None = None
     max_betweenness_sample: int | None = 200
     eigen_max_iter: int = 200
     pagerank_weight: str | None = "weight"
@@ -227,15 +230,55 @@ class GraphMetricsStepConfig:
     plugin_policy: GraphPluginPolicy = field(default_factory=GraphPluginPolicy)
     scope: GraphRunScope = field(default_factory=GraphRunScope)
 
-    @property
-    def repo(self) -> str:
-        """Repository slug."""
-        return self.snapshot.repo
+    def __post_init__(self) -> None:
+        """Normalize snapshot construction when repo/commit provided directly.
+
+        Raises
+        ------
+        ValueError
+            If neither snapshot nor repo/commit are provided.
+        """
+        snap = self.snapshot
+        if snap is None:
+            if self.repo is None or self.commit is None:
+                message = "GraphMetricsStepConfig requires snapshot or repo/commit"
+                raise ValueError(message)
+            resolved_root = self.repo_root or Path()
+            snap = SnapshotRef(repo=self.repo, commit=self.commit, repo_root=resolved_root)
+            object.__setattr__(self, "snapshot", snap)
+        else:
+            object.__setattr__(self, "repo", snap.repo)
+            object.__setattr__(self, "commit", snap.commit)
+            object.__setattr__(self, "repo_root", snap.repo_root)
 
     @property
-    def commit(self) -> str:
-        """Commit identifier."""
-        return self.snapshot.commit
+    def snapshot_ref(self) -> SnapshotRef:
+        """Return the resolved snapshot.
+
+        Returns
+        -------
+        SnapshotRef
+            Resolved snapshot reference.
+        """
+        return self._require_snapshot()
+
+    def _require_snapshot(self) -> SnapshotRef:
+        """Return snapshot, raising if not initialized.
+
+        Returns
+        -------
+        SnapshotRef
+            Resolved snapshot reference.
+
+        Raises
+        ------
+        ValueError
+            If snapshot is not initialized.
+        """
+        if self.snapshot is None:
+            message = "GraphMetricsStepConfig snapshot not initialized"
+            raise ValueError(message)
+        return self.snapshot
 
 
 @dataclass(frozen=True)

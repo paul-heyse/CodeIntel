@@ -241,11 +241,6 @@ class GraphProvider(LazyResource[GraphResources]):
         return self._runtime
 
     @property
-    def graph_runtime(self) -> GraphRuntime | None:
-        """Alias for runtime for compatibility with existing callers."""
-        return self._runtime
-
-    @property
     def call_graph(self) -> nx.DiGraph | None:
         """Access call graph directly, loading resources if needed.
 

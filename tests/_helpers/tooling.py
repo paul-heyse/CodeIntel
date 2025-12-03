@@ -77,7 +77,13 @@ def _write_tooling_repo(repo_root: Path) -> Path:
 
 
 def make_tools_config(**overrides: str | float | Path | None) -> ToolsConfig:
-    """Return a fully populated ToolsConfig with optional overrides."""
+    """Return a fully populated ToolsConfig with optional overrides.
+
+    Returns
+    -------
+    ToolsConfig
+        Base configuration populated with defaults and optional overrides applied.
+    """
     if overrides:
         return ToolsConfig.with_overrides(**overrides)
     return ToolsConfig.default()

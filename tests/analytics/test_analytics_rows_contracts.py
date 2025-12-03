@@ -8,7 +8,6 @@ from typing import get_type_hints
 import pytest
 
 from codeintel.config.datasets import (
-    DATASET_CONTRACTS_BY_TABLE_KEY,
     BehavioralCoverageRowModel,
     FunctionMetricsRow,
     FunctionTypesRow,
@@ -17,12 +16,13 @@ from codeintel.config.datasets import (
     GraphMetricsModulesExtRow,
     GraphMetricsModulesRow,
     ProfileRowModel,
+    get_dataset_contracts_by_table_key,
 )
 
 
 def _assert_row_matches_table(row_type: type[Mapping[str, object]], table_key: str) -> None:
     """Verify TypedDict annotations align with the DatasetContract schema."""
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+    contract = get_dataset_contracts_by_table_key().get(table_key)
     if contract is None or contract.schema is None:
         pytest.fail(f"{table_key} has no contract schema")
         return

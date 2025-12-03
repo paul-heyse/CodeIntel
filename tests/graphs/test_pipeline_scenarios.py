@@ -495,18 +495,10 @@ def test_fatal_error_stops_pipeline(
 # ---------------------------------------------------------------------------
 
 
-def test_large_dataset_execution(
-    golden_gateway: StorageGateway, golden_snapshot: SnapshotRef
-) -> None:
-    """Test plugin execution with a larger dataset volume.
-
-    This extends the golden dataset to stress test plugin performance
-    with more realistic production-scale data.
-    """
-    # Add additional data to stress test
-    additional_modules = 100
-    for i in range(additional_modules):
-        golden_gateway.con.execute(
+def _insert_stress_modules(gateway: StorageGateway, *, count: int) -> None:
+    """Seed additional modules for stress testing."""
+    for i in range(count):
+        gateway.con.execute(
             """
             INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -522,12 +514,13 @@ def test_large_dataset_execution(
             ],
         )
 
-    # Add call graph edges for stress testing
-    additional_edges = 200
-    for i in range(additional_edges):
+
+def _insert_stress_edges(gateway: StorageGateway, *, count: int) -> None:
+    """Seed additional call graph edges for stress testing."""
+    for i in range(count):
         caller_goid = 1000 + (i % 50)
         callee_goid = 1000 + ((i + 10) % 50)
-        golden_gateway.con.execute(
+        gateway.con.execute(
             """
             INSERT INTO graph.call_graph_edges (
                 repo, commit, caller_goid_h128, callee_goid_h128,
@@ -551,20 +544,50 @@ def test_large_dataset_execution(
             ],
         )
 
-    # Verify the expanded dataset
-    total_modules_row = golden_gateway.con.execute(
+
+def _fetch_repo_counts(gateway: StorageGateway) -> tuple[int, int]:
+    """Return module and call-edge counts for the golden repo.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway with seeded data.
+
+    Returns
+    -------
+    tuple[int, int]
+        Module count and call edge count for the golden repository.
+
+    Raises
+    ------
+    RuntimeError
+        If the counts cannot be retrieved.
+    """
+    modules_row = gateway.con.execute(
         "SELECT COUNT(*) FROM core.modules WHERE repo = ?",
         [GOLDEN_REPO],
     ).fetchone()
-    assert total_modules_row is not None
-    total_modules = total_modules_row[0]
-
-    total_edges_row = golden_gateway.con.execute(
+    edges_row = gateway.con.execute(
         "SELECT COUNT(*) FROM graph.call_graph_edges WHERE repo = ?",
         [GOLDEN_REPO],
     ).fetchone()
-    assert total_edges_row is not None
-    total_edges = total_edges_row[0]
+    if modules_row is None or edges_row is None:
+        message = "Failed to fetch stress test counts"
+        raise RuntimeError(message)
+    return modules_row[0], edges_row[0]
+
+
+def test_large_dataset_execution(
+    golden_gateway: StorageGateway, golden_snapshot: SnapshotRef
+) -> None:
+    """Test plugin execution with a larger dataset volume."""
+    additional_modules = 100
+    additional_edges = 200
+
+    _insert_stress_modules(golden_gateway, count=additional_modules)
+    _insert_stress_edges(golden_gateway, count=additional_edges)
+
+    total_modules, total_edges = _fetch_repo_counts(golden_gateway)
 
     expected_module_min = GOLDEN_MODULE_COUNT + additional_modules
     expected_edge_min = EXPECTED_MIN_CALL_EDGES + additional_edges

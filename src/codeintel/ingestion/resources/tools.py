@@ -3,8 +3,6 @@
 This module provides `ToolsProvider`, a resource provider that
 lazily initializes the tool service for running external tools
 like pyright, scip, coverage, etc.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
 
 from __future__ import annotations
@@ -12,14 +10,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.resources.protocol import LazyResource
+from codeintel.ingestion.tool_service import ToolService
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.models import ToolsConfig
-    from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-    from codeintel.ingestion.tool_service import ToolService
 
 log = logging.getLogger(__name__)
 
@@ -80,9 +78,6 @@ class ToolsProvider(LazyResource["ToolService"]):
         if self._service is not None:
             log.debug("Using pre-configured tool service")
             return self._service
-
-        from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-        from codeintel.ingestion.tool_service import ToolService
 
         # Create runner if not provided
         runner = self._runner or ToolRunner(

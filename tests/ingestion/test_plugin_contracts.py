@@ -26,6 +26,7 @@ from codeintel.ingestion.plugins.contracts import (
     row_count_contract,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.frozen_test import try_setattr
 
 # Test constants
 TEST_REPO = "test/repo"
@@ -61,7 +62,7 @@ def test_column_constraint_is_frozen() -> None:
     """ColumnConstraint should be immutable."""
     c = ColumnConstraint(column="x", constraint_type="not_null")
     with pytest.raises(FrozenInstanceError):
-        c.column = "y"  # type: ignore[misc]
+        try_setattr(c, "column", "y")
 
 
 def test_foreign_key_constraint_basic() -> None:
@@ -201,7 +202,9 @@ def test_validator_min_value_fail(fresh_gateway: StorageGateway) -> None:
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.test_min",
-        column_constraints=(ColumnConstraint(column="val", constraint_type="min_value", value=0.0),),
+        column_constraints=(
+            ColumnConstraint(column="val", constraint_type="min_value", value=0.0),
+        ),
     )
     result = validator.validate([contract], snapshot)
     assert result.valid is False
@@ -215,7 +218,9 @@ def test_validator_max_value_fail(fresh_gateway: StorageGateway) -> None:
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.test_max",
-        column_constraints=(ColumnConstraint(column="val", constraint_type="max_value", value=100.0),),
+        column_constraints=(
+            ColumnConstraint(column="val", constraint_type="max_value", value=100.0),
+        ),
     )
     result = validator.validate([contract], snapshot)
     assert result.valid is False
@@ -252,12 +257,16 @@ def test_validator_unique_fail(fresh_gateway: StorageGateway) -> None:
 def test_validator_min_fraction_not_null_fail(fresh_gateway: StorageGateway) -> None:
     """Validator should fail min_fraction_not_null when fraction not met."""
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.test_frac (id INT, val VARCHAR)")
-    fresh_gateway.con.execute("INSERT INTO core.test_frac VALUES (1, 'a'), (2, NULL), (3, NULL), (4, NULL)")
+    fresh_gateway.con.execute(
+        "INSERT INTO core.test_frac VALUES (1, 'a'), (2, NULL), (3, NULL), (4, NULL)"
+    )
     snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=TEST_REPO_ROOT)
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.test_frac",
-        column_constraints=(ColumnConstraint(column="val", constraint_type="min_fraction_not_null", value=0.9),),
+        column_constraints=(
+            ColumnConstraint(column="val", constraint_type="min_fraction_not_null", value=0.9),
+        ),
     )
     result = validator.validate([contract], snapshot)
     assert result.valid is False
@@ -265,7 +274,9 @@ def test_validator_min_fraction_not_null_fail(fresh_gateway: StorageGateway) -> 
 
 def test_validator_foreign_key_pass(fresh_gateway: StorageGateway) -> None:
     """Validator should pass FK constraint when all refs valid."""
-    fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.fk_p (id INT PRIMARY KEY, name VARCHAR)")
+    fresh_gateway.con.execute(
+        "CREATE TABLE IF NOT EXISTS core.fk_p (id INT PRIMARY KEY, name VARCHAR)"
+    )
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.fk_c (id INT, pid INT)")
     fresh_gateway.con.execute("INSERT INTO core.fk_p VALUES (1, 'a'), (2, 'b')")
     fresh_gateway.con.execute("INSERT INTO core.fk_c VALUES (1, 1), (2, 2)")
@@ -273,7 +284,9 @@ def test_validator_foreign_key_pass(fresh_gateway: StorageGateway) -> None:
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.fk_c",
-        foreign_keys=(ForeignKeyConstraint(column="pid", reference_table="core.fk_p", reference_column="id"),),
+        foreign_keys=(
+            ForeignKeyConstraint(column="pid", reference_table="core.fk_p", reference_column="id"),
+        ),
     )
     result = validator.validate([contract], snapshot)
     assert result.valid is True
@@ -281,7 +294,9 @@ def test_validator_foreign_key_pass(fresh_gateway: StorageGateway) -> None:
 
 def test_validator_foreign_key_fail(fresh_gateway: StorageGateway) -> None:
     """Validator should fail FK constraint when orphans exist."""
-    fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.fk_p2 (id INT PRIMARY KEY, name VARCHAR)")
+    fresh_gateway.con.execute(
+        "CREATE TABLE IF NOT EXISTS core.fk_p2 (id INT PRIMARY KEY, name VARCHAR)"
+    )
     fresh_gateway.con.execute("CREATE TABLE IF NOT EXISTS core.fk_c2 (id INT, pid INT)")
     fresh_gateway.con.execute("INSERT INTO core.fk_p2 VALUES (1, 'a')")
     fresh_gateway.con.execute("INSERT INTO core.fk_c2 VALUES (1, 1), (2, 999)")
@@ -289,7 +304,9 @@ def test_validator_foreign_key_fail(fresh_gateway: StorageGateway) -> None:
     validator = IngestContractValidator(fresh_gateway)
     contract = IngestContractSpec(
         table="core.fk_c2",
-        foreign_keys=(ForeignKeyConstraint(column="pid", reference_table="core.fk_p2", reference_column="id"),),
+        foreign_keys=(
+            ForeignKeyConstraint(column="pid", reference_table="core.fk_p2", reference_column="id"),
+        ),
     )
     result = validator.validate([contract], snapshot)
     assert result.valid is False

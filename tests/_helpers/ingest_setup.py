@@ -227,10 +227,10 @@ class IngestTestSetup:
         repo_root: Path,
         *,
         gateway: StorageGateway,
-        payloads: "dict[str, Any] | None" = None,
+        payloads: dict[str, Any] | None = None,
         repo: str = "test/repo",
         commit: str = "testcommit",
-    ) -> "tuple[Self, ToolService]":
+    ) -> tuple[Self, ToolService]:
         """Create setup with real ToolService backed by FakeToolRunner.
 
         This factory creates a fully functional ToolService that uses
@@ -269,7 +269,7 @@ class IngestTestSetup:
         tool_config: FakeToolServiceConfig | None = None,
         repo: str = "test/repo",
         commit: str = "testcommit",
-    ) -> "tuple[Self, FakeToolService]":
+    ) -> tuple[Self, FakeToolService]:
         """Create setup with FakeToolService for fully deterministic tests.
 
         This factory creates a FakeToolService that returns configured

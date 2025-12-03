@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/adapters/duckdb_storage.py
+# hypothesis_version: 6.148.5
+
+['DuckDBStorageAdapter', 'utf-8']

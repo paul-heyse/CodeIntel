@@ -24,31 +24,37 @@ Example
 ...     assert result.success
 ...     assert result.row_counts.get("core.ast_nodes", 0) >= 0
 
-Lazy imports (PLC0415) are used intentionally to avoid circular dependencies
-in the test infrastructure. The imports are deferred until methods are called.
+Lazy imports are avoided; dependencies are imported at module load to improve
+static analysis and make test wiring explicit.
 """
-# ruff: noqa: PLC0415
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Self, TypeVar
+from typing import Any, Self, TypeVar
 from uuid import uuid4
 
+from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.config_registry import ConfigRegistry
-
-if TYPE_CHECKING:
-    from codeintel.config.models import ToolsConfig
-    from codeintel.ingestion.core.base import BaseIngestPlugin, ValidationResult
-    from codeintel.ingestion.core.execution_context import IngestExecutionContext
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
-    from codeintel.ingestion.plugins.protocol import (
-        IngestPluginResult,
-    )
-    from codeintel.ingestion.resources.protocol import ResourceProvider
-    from codeintel.ingestion.resources.registry import ResourceRegistry
-    from codeintel.storage.gateway import StorageGateway
+from codeintel.ingestion.core.base import BaseIngestPlugin, ValidationResult
+from codeintel.ingestion.core.execution_context import IngestExecutionContext
+from codeintel.ingestion.infrastructure_utilities.source_scanner import (
+    ScanProfile,
+    default_code_profile,
+    default_config_profile,
+)
+from codeintel.ingestion.plugins.protocol import (
+    IngestPluginResult,
+    IngestRuntimeScratch,
+)
+from codeintel.ingestion.resources.modules import ModuleProvider
+from codeintel.ingestion.resources.protocol import ResourceProvider
+from codeintel.ingestion.resources.registry import ResourceRegistry
+from codeintel.ingestion.resources.tools import ToolsProvider
+from codeintel.ingestion.resources.tracker import TrackerProvider
+from codeintel.storage.gateway import StorageGateway
 
 T = TypeVar("T")
 
@@ -240,8 +246,6 @@ class IngestPluginTestHarness:
             Self for chaining.
         """
         if self._resources is None:
-            from codeintel.ingestion.resources.registry import ResourceRegistry
-
             self._resources = ResourceRegistry()
         self._resources.register(resource_type, provider)
         return self
@@ -259,8 +263,6 @@ class IngestPluginTestHarness:
         Self
             Self for chaining.
         """
-        from codeintel.ingestion.resources.modules import ModuleProvider
-
         return self.with_resource(ModuleProvider, provider)
 
     def with_tracker_provider(self, provider: ResourceProvider[Any]) -> Self:
@@ -276,8 +278,6 @@ class IngestPluginTestHarness:
         Self
             Self for chaining.
         """
-        from codeintel.ingestion.resources.tracker import TrackerProvider
-
         return self.with_resource(TrackerProvider, provider)
 
     def with_tools_provider(self, provider: ResourceProvider[Any]) -> Self:
@@ -293,8 +293,6 @@ class IngestPluginTestHarness:
         Self
             Self for chaining.
         """
-        from codeintel.ingestion.resources.tools import ToolsProvider
-
         return self.with_resource(ToolsProvider, provider)
 
     def with_code_profile(self, profile: ScanProfile) -> Self:
@@ -394,16 +392,6 @@ class IngestPluginTestHarness:
         ValueError
             If gateway is not set.
         """
-        from codeintel.config.models import ToolsConfig
-        from codeintel.config.primitives import BuildPaths, SnapshotRef
-        from codeintel.ingestion.core.execution_context import IngestExecutionContext
-        from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-            default_code_profile,
-            default_config_profile,
-        )
-        from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
-        from codeintel.ingestion.resources.registry import ResourceRegistry
-
         if self._gateway is None:
             message = "Gateway must be set before building context"
             raise ValueError(message)

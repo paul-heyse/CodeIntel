@@ -8,8 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.http.fastapi import create_app
-from codeintel.serving.services.factory import BackendResource, build_backend_resource
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import RepoMapRow, insert_repo_map
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from codeintel.serving.mcp.query_service import BackendLimits, clamp_limit_value
+from codeintel.serving.backend import BackendLimits, clamp_limit
 from codeintel.serving.services.query_service import HttpQueryService
 
 MAX_LIMIT = 5
@@ -18,10 +18,10 @@ def _expect(*, condition: bool, detail: str) -> None:
     raise AssertionError(detail)
 
 
-def test_clamp_limit_value_caps_and_reports() -> None:
-    """clamp_limit_value should cap at max and return a warning message."""
+def test_clamp_limit_caps_and_reports() -> None:
+    """clamp_limit should cap at max and return a warning message."""
     limits = BackendLimits(default_limit=10, max_rows_per_call=MAX_LIMIT)
-    clamp = clamp_limit_value(99, default=limits.default_limit, max_limit=limits.max_rows_per_call)
+    clamp = clamp_limit(99, default=limits.default_limit, max_limit=limits.max_rows_per_call)
     _expect(condition=clamp.applied == MAX_LIMIT, detail="limit was not clamped")
     _expect(condition=clamp.has_error is False, detail="clamp should not flag error")
     _expect(condition=bool(clamp.messages), detail="expected warning message")

@@ -20,7 +20,7 @@ from codeintel.serving.mcp.models import (
     ImportBoundaryResponse,
     TestsForFunctionResponse,
 )
-from codeintel.serving.registry import OperationSpec, get_operation_spec
+from codeintel.serving.operations import Operation, get_operation
 
 LOG = logging.getLogger("codeintel.serving.http.routes.functions")
 
@@ -37,10 +37,10 @@ class FunctionSummaryParams(BaseModel):
     scope: GraphScopePayload | None = None
 
 
-def _require_spec(op_id: str) -> OperationSpec:
-    spec = get_operation_spec(op_id)
+def _require_spec(op_id: str) -> Operation:
+    spec = get_operation(op_id)
     if spec is None:
-        message = f"OperationSpec {op_id} is not registered"
+        message = f"Operation {op_id} is not registered"
         raise ValueError(message)
     return spec
 
@@ -61,7 +61,7 @@ def _function_summary_params(
     )
 
 
-def _load_function_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
+def _load_function_specs() -> tuple[dict[str, Operation], dict[str, str]]:
     ids = [
         "function.summary",
         "functions.high_risk",
@@ -71,12 +71,12 @@ def _load_function_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
         "graph.import_boundary",
         "file.summary",
     ]
-    specs: dict[str, OperationSpec] = {}
+    specs: dict[str, Operation] = {}
     paths: dict[str, str] = {}
     missing: list[str] = []
     missing_paths: list[str] = []
     for op_id in ids:
-        spec = get_operation_spec(op_id)
+        spec = get_operation(op_id)
         if spec is None:
             missing.append(op_id)
             continue
@@ -86,15 +86,13 @@ def _load_function_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
         else:
             paths[op_id] = spec.http_path
     if missing or missing_paths:
-        message = (
-            f"Missing OperationSpec entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
-        )
+        message = f"Missing Operation entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
         raise ValueError(message)
     return specs, paths
 
 
 def _register_summary_and_risk_routes(
-    router: APIRouter, specs: dict[str, OperationSpec], paths: dict[str, str]
+    router: APIRouter, specs: dict[str, Operation], paths: dict[str, str]
 ) -> None:
     summary_spec = specs["function.summary"]
     risk_spec = specs["functions.high_risk"]
@@ -168,7 +166,7 @@ def _register_summary_and_risk_routes(
 
 
 def _register_graph_and_tests_routes(
-    router: APIRouter, specs: dict[str, OperationSpec], paths: dict[str, str]
+    router: APIRouter, specs: dict[str, Operation], paths: dict[str, str]
 ) -> None:
     neighbors_spec = specs["graph.call_neighbors"]
     neighborhood_spec = specs["graph.call_neighborhood"]
@@ -352,7 +350,7 @@ def _register_graph_and_tests_routes(
 
 
 def _register_file_summary_route(
-    router: APIRouter, specs: dict[str, OperationSpec], paths: dict[str, str]
+    router: APIRouter, specs: dict[str, Operation], paths: dict[str, str]
 ) -> None:
     file_spec = specs["file.summary"]
 
@@ -396,7 +394,7 @@ def build_functions_router() -> APIRouter:
     Raises
     ------
     ValueError
-        If required OperationSpec entries are missing or incomplete.
+        If required Operation entries are missing or incomplete.
 
     Returns
     -------
@@ -407,7 +405,7 @@ def build_functions_router() -> APIRouter:
     try:
         specs, paths = _load_function_specs()
     except ValueError as exc:
-        message = "Failed to load function OperationSpec entries"
+        message = "Failed to load function Operation entries"
         raise ValueError(message) from exc
     _register_summary_and_risk_routes(router, specs, paths)
     _register_graph_and_tests_routes(router, specs, paths)

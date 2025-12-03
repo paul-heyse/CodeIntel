@@ -112,6 +112,11 @@ class ConfigFactory:
         """
         self._default_mappings = dict(default_mappings or DEFAULT_CONTEXT_MAPPINGS)
 
+    @property
+    def default_mappings(self) -> Mapping[str, str]:
+        """Return a copy of the default context mappings."""
+        return dict(self._default_mappings)
+
     def build(
         self,
         config_class: type,

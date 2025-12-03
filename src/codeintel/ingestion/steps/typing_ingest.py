@@ -500,4 +500,56 @@ class TypingIngestStep:
         )
 
 
-__all__ = ["AnnotationInfo", "TypingIngestStep"]
+def collect_function_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg]:
+    """Public wrapper for collecting function parameters.
+
+    Returns
+    -------
+    list[ast.arg]
+        Parameter nodes for the given function.
+    """
+    return _collect_function_params(node)
+
+
+def compute_annotation_info(tree: ast.AST) -> AnnotationInfo | None:
+    """Compute annotation statistics from an AST.
+
+    Parameters
+    ----------
+    tree
+        Parsed AST node (typically a Module).
+
+    Returns
+    -------
+    AnnotationInfo | None
+        Aggregated annotation information, or None on failure.
+    """
+    source = ast.unparse(tree)
+    return _compute_annotation_info(source)
+
+
+def is_fully_typed(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Check if a function is fully typed.
+
+    Parameters
+    ----------
+    func
+        Function or async function definition node.
+
+    Returns
+    -------
+    bool
+        True if all parameters are annotated and return type is present.
+    """
+    params = _collect_function_params(func)
+    has_return = func.returns is not None
+    return _is_fully_typed(params, has_return=has_return)
+
+
+__all__ = [
+    "AnnotationInfo",
+    "TypingIngestStep",
+    "collect_function_params",
+    "compute_annotation_info",
+    "is_fully_typed",
+]

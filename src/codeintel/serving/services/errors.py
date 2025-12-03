@@ -84,28 +84,41 @@ class ProblemDetails:
     extras: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_exception(
-        cls,
-        exc: Exception,
-        *,
-        code: str,
-        title: str,
-        status: int | None = None,
-        type_uri: str | None = None,
-        extras: dict[str, Any] | None = None,
-    ) -> ProblemDetails:
-        """Create details from an exception."""
+    def from_exception(cls, exc: Exception, template: ProblemDetails) -> ProblemDetails:
+        """
+        Create details from an exception using a template.
+
+        Parameters
+        ----------
+        exc
+            Exception whose message is used as the detail.
+        template
+            Base problem description providing code/title and optional metadata.
+
+        Returns
+        -------
+        ProblemDetails
+            Fully populated problem description with detail from the exception.
+        """
         return cls(
-            code=code,
-            title=title,
-            detail=str(exc),
-            status=status,
-            type_uri=type_uri,
-            extras=extras or {},
+            code=template.code,
+            title=template.title,
+            detail=template.detail or str(exc),
+            status=template.status,
+            instance=template.instance,
+            type_uri=template.type_uri,
+            extras=template.extras,
         )
 
     def to_problem_detail(self) -> ProblemDetail:
-        """Convert to ProblemDetail with defaults applied."""
+        """
+        Convert to ProblemDetail with defaults applied.
+
+        Returns
+        -------
+        ProblemDetail
+            Concrete problem detail ready for serialization.
+        """
         resolved_instance = self.instance or generate_correlation_id()
         resolved_type = self.type_uri or f"https://problems.codeintel.dev/{self.code}"
         return ProblemDetail(
@@ -147,16 +160,6 @@ class ProblemError(Exception):
     def __init__(self, detail: ProblemDetail) -> None:
         self.detail = detail
         super().__init__(detail.detail or detail.title)
-
-    @property
-    def problem_detail(self) -> ProblemDetail:
-        """
-        Return the attached problem detail.
-
-        This alias exists for backward compatibility with callers expecting a
-        ``problem_detail`` attribute.
-        """
-        return self.detail
 
 
 class PipelineError(ProblemError):
@@ -224,8 +227,8 @@ __all__ = [
     "GraphScopeError",
     "PipelineError",
     "ProblemDetail",
-    "ProblemError",
     "ProblemDetails",
+    "ProblemError",
     "SchemaDriftError",
     "ValidationError",
     "generate_correlation_id",

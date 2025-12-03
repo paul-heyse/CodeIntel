@@ -11,7 +11,7 @@ import importlib.metadata
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, TypeVar, TypedDict, Unpack, overload
+from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, Unpack
 from uuid import uuid4
 
 from codeintel.analytics.core.plugin_protocol import (
@@ -468,26 +468,6 @@ def register_plugin(plugin: AnalyticsPluginProtocol) -> None:
     get_registry().register(plugin)
 
 
-class PluginMetaOptionsInput(TypedDict, total=False):
-    """Typed kwargs for PluginMetaOptions.from_kwargs."""
-
-    name: str
-    description: str
-    stage: PluginStage
-    version: str
-    enabled_by_default: bool
-    severity: PluginSeverity
-    inputs: Sequence[PluginInputSpec]
-    outputs: Sequence[PluginOutputSpec]
-    provides: Sequence[str | PluginCapability]
-    requires: Sequence[str | PluginCapability]
-    depends_on: Sequence[str]
-    resource_hints: PluginResourceHints | None
-    requires_isolation: bool
-    isolation_kind: Literal["process", "thread"] | None
-    tags: Sequence[str]
-
-
 @dataclass
 class PluginMetaOptions:
     """Options container for plugin metadata.
@@ -515,7 +495,18 @@ class PluginMetaOptions:
 
     @staticmethod
     def from_kwargs(**kwargs: Unpack[PluginMetaOptionsInput]) -> PluginMetaOptions:
-        """Build options from legacy kwargs while keeping a narrow public API."""
+        """Build options from legacy kwargs while keeping a narrow public API.
+
+        Returns
+        -------
+        PluginMetaOptions
+            Options built from the provided keyword arguments.
+
+        Raises
+        ------
+        ValueError
+            If unsupported option keys are supplied.
+        """
         allowed_keys = set(PluginMetaOptionsInput.__annotations__)
         unknown = set(kwargs) - allowed_keys
         if unknown:
@@ -633,28 +624,12 @@ class FunctionalPlugin:
         return ValidationResult.success()
 
 
-@overload
-def plugin(
-    func: Callable[[PluginExecutionContext], PluginResult],
-) -> FunctionalPlugin: ...
-
-
-@overload
-def plugin(
-    func: None = None,
-    *,
-    meta: PluginMetaOptions | None = None,
-    register: bool = True,
-    **kwargs: object,
-) -> Callable[[Callable[[PluginExecutionContext], PluginResult]], FunctionalPlugin]: ...
-
-
 def plugin(
     func: Callable[[PluginExecutionContext], PluginResult] | None = None,
     *,
     meta: PluginMetaOptions | None = None,
     register: bool = True,
-    **kwargs: object,
+    **kwargs: Unpack[PluginMetaOptionsInput],
 ) -> (
     FunctionalPlugin
     | Callable[[Callable[[PluginExecutionContext], PluginResult]], FunctionalPlugin]

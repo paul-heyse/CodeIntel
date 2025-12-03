@@ -15,7 +15,6 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
     RepoScanStep,
 )
-from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
 from codeintel.ingestion.steps import (
     ast_extract,

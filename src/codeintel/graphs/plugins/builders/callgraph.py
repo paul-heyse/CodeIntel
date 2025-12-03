@@ -34,7 +34,6 @@ from codeintel.graphs.adapters.callgraph_persistence import (
 )
 from codeintel.graphs.catalog import (
     FunctionCatalog,
-    FunctionCatalogProvider,
     FunctionCatalogService,
     FunctionMeta,
     FunctionSpan,
@@ -112,7 +111,8 @@ def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
         [repo, commit],
     ).fetchone()
     log.info(
-        "Callgraph inputs repo=%s commit=%s modules=%s goids=%s module_goids=%s class_goids=%s function_goids=%s",
+        "Callgraph inputs repo=%s commit=%s modules=%s goids=%s "
+        "module_goids=%s class_goids=%s function_goids=%s",
         repo,
         commit,
         int(modules[0]) if modules else 0,
@@ -122,8 +122,10 @@ def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
         int(function_goids[0]) if function_goids else 0,
     )
     _append_log(
-        f"[callgraph] repo={repo} commit={commit} modules={int(modules[0]) if modules else 0} "
-        f"goids={int(goids[0]) if goids else 0} module_goids={int(module_goids[0]) if module_goids else 0} "
+        f"[callgraph] repo={repo} commit={commit} "
+        f"modules={int(modules[0]) if modules else 0} "
+        f"goids={int(goids[0]) if goids else 0} "
+        f"module_goids={int(module_goids[0]) if module_goids else 0} "
         f"class_goids={int(class_goids[0]) if class_goids else 0} "
         f"function_goids={int(function_goids[0]) if function_goids else 0}"
     )
@@ -378,45 +380,8 @@ def get_callgraph_builder_plugin() -> GraphPluginProtocol:
 
 
 # =============================================================================
-# Backward Compatibility Functions
+# Test Utilities
 # =============================================================================
-
-
-def build_call_graph(
-    gateway: StorageGateway,
-    cfg: CallGraphStepConfig,
-    *,
-    _catalog_provider: FunctionCatalogProvider | None = None,
-) -> None:
-    """Build call graph using the plugin orchestration.
-
-    Convenience function for pipeline steps to invoke the callgraph_builder
-    plugin with a specific configuration. Creates the execution context and
-    resources internally.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    cfg
-        Call graph configuration.
-    _catalog_provider
-        Optional catalog provider (currently unused in new architecture).
-    """
-    from codeintel.graphs.resources.container import ResourceContainer  # noqa: PLC0415
-
-    # Create context with resources
-    container = ResourceContainer()
-    container.register(StorageResource(gateway, cfg.repo_root))
-
-    ctx = GraphExecutionContext(
-        snapshot=cfg.snapshot,
-        resources=container,
-    )
-
-    result = _build_call_graph(ctx)
-    if not result.success:
-        log.warning("Call graph build failed: %s", result.message)
 
 
 def _catalog_from_spans(spans: list[FunctionSpan]) -> FunctionCatalog:
@@ -493,7 +458,6 @@ def resolve_callee_for_testing(
 __all__ = [
     "CallGraphInputs",
     "CallGraphRunScope",
-    "build_call_graph",
     "callgraph_builder_plugin",
     "collect_edges_for_testing",
     "get_callgraph_builder_plugin",

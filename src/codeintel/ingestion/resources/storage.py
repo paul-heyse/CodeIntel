@@ -2,8 +2,6 @@
 
 This module provides `StorageProvider`, a resource provider that
 lazily creates storage adapters for database operations.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
 
 from __future__ import annotations
@@ -11,10 +9,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.resources.protocol import LazyResource
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.adapters import DuckDBStorageAdapter
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -50,8 +48,6 @@ class StorageProvider(LazyResource["DuckDBStorageAdapter"]):
         DuckDBStorageAdapter
             The storage adapter.
         """
-        from codeintel.ingestion.adapters import DuckDBStorageAdapter
-
         log.debug("Creating storage adapter")
         return DuckDBStorageAdapter(self._gateway)
 

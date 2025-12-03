@@ -13,18 +13,18 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
     SubsystemSummaryResponse,
 )
-from codeintel.serving.registry import OperationSpec, get_operation_spec
+from codeintel.serving.operations import Operation, get_operation
 
 
-def _require_spec(op_id: str) -> OperationSpec:
-    spec = get_operation_spec(op_id)
+def _require_spec(op_id: str) -> Operation:
+    spec = get_operation(op_id)
     if spec is None:
-        message = f"OperationSpec {op_id} is not registered"
+        message = f"Operation {op_id} is not registered"
         raise ValueError(message)
     return spec
 
 
-def _load_subsystem_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
+def _load_subsystem_specs() -> tuple[dict[str, Operation], dict[str, str]]:
     ids = [
         "subsystems.list",
         "subsystems.profiles",
@@ -32,12 +32,12 @@ def _load_subsystem_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
         "subsystems.module_memberships",
         "subsystems.detail",
     ]
-    specs: dict[str, OperationSpec] = {}
+    specs: dict[str, Operation] = {}
     paths: dict[str, str] = {}
     missing: list[str] = []
     missing_paths: list[str] = []
     for op_id in ids:
-        spec = get_operation_spec(op_id)
+        spec = get_operation(op_id)
         if spec is None:
             missing.append(op_id)
             continue
@@ -47,9 +47,7 @@ def _load_subsystem_specs() -> tuple[dict[str, OperationSpec], dict[str, str]]:
         else:
             paths[op_id] = spec.http_path
     if missing or missing_paths:
-        message = (
-            f"Missing OperationSpec entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
-        )
+        message = f"Missing Operation entries: {missing or 'ok'}; paths: {missing_paths or 'ok'}"
         raise ValueError(message)
     return specs, paths
 
@@ -61,7 +59,7 @@ def build_subsystem_router() -> APIRouter:
     Raises
     ------
     ValueError
-        If OperationSpec entries are missing or lack paths.
+        If Operation entries are missing or lack paths.
 
     Returns
     -------
@@ -72,7 +70,7 @@ def build_subsystem_router() -> APIRouter:
     try:
         specs, paths = _load_subsystem_specs()
     except ValueError as exc:
-        message = "Failed to load subsystem OperationSpec entries"
+        message = "Failed to load subsystem Operation entries"
         raise ValueError(message) from exc
     spec_list = specs["subsystems.list"]
     spec_profiles = specs["subsystems.profiles"]

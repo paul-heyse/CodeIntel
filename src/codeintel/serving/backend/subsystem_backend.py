@@ -14,7 +14,7 @@ from codeintel.serving.backend.domain_builders import (
     build_subsystem_search,
     build_subsystem_summary,
 )
-from codeintel.serving.backend.pagination import clamp_limit_value
+from codeintel.serving.backend.pagination import clamp_limit
 from codeintel.serving.backend.query_api import SubsystemQueriesApi
 from codeintel.storage.repositories import SubsystemRepository
 
@@ -44,12 +44,16 @@ class SubsystemBackend(SubsystemQueriesApi):
         dm.SubsystemSummaryResult
             Subsystem summaries plus pagination metadata.
         """
-        limit_clamp = clamp_limit_value(
+        limit_clamp = clamp_limit(
             limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
-        rows = self.subsystems.list_subsystems(limit=limit_clamp.applied, role=role, query=q)
+        rows = self.subsystems.list_subsystems(
+            limit=limit_clamp.limit_or_default(self.context.limits.default_limit),
+            role=role,
+            query=q,
+        )
         meta = ResponseMeta(
             requested_limit=limit,
             applied_limit=limit_clamp.applied,
@@ -91,7 +95,7 @@ class SubsystemBackend(SubsystemQueriesApi):
         SubsystemModulesResponse
             Subsystem summary and module membership list.
         """
-        limit_clamp = clamp_limit_value(
+        limit_clamp = clamp_limit(
             module_limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
@@ -118,12 +122,16 @@ class SubsystemBackend(SubsystemQueriesApi):
         dm.SubsystemSearchResult
             Search results plus pagination metadata.
         """
-        limit_clamp = clamp_limit_value(
+        limit_clamp = clamp_limit(
             limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
-        rows = self.subsystems.search_subsystems(limit=limit_clamp.applied, role=role, query=q)
+        rows = self.subsystems.search_subsystems(
+            limit=limit_clamp.limit_or_default(self.context.limits.default_limit),
+            role=role,
+            query=q,
+        )
         meta = ResponseMeta(
             requested_limit=limit,
             applied_limit=limit_clamp.applied,
@@ -153,12 +161,14 @@ class SubsystemBackend(SubsystemQueriesApi):
         dm.SubsystemProfileResult
             Subsystem profiles plus pagination metadata.
         """
-        limit_clamp = clamp_limit_value(
+        limit_clamp = clamp_limit(
             limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
-        rows = self.subsystems.list_subsystem_profiles(limit=limit_clamp.applied)
+        rows = self.subsystems.list_subsystem_profiles(
+            limit=limit_clamp.limit_or_default(self.context.limits.default_limit)
+        )
         meta = ResponseMeta(
             requested_limit=limit,
             applied_limit=limit_clamp.applied,
@@ -175,12 +185,14 @@ class SubsystemBackend(SubsystemQueriesApi):
         dm.SubsystemCoverageResult
             Coverage rollups plus pagination metadata.
         """
-        limit_clamp = clamp_limit_value(
+        limit_clamp = clamp_limit(
             limit,
             default=self.context.limits.default_limit,
             max_limit=self.context.limits.max_rows_per_call,
         )
-        rows = self.subsystems.list_subsystem_coverage(limit=limit_clamp.applied)
+        rows = self.subsystems.list_subsystem_coverage(
+            limit=limit_clamp.limit_or_default(self.context.limits.default_limit)
+        )
         messages = list(limit_clamp.messages)
         if not rows:
             messages.append(

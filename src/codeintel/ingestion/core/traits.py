@@ -7,12 +7,13 @@ to declare specific capabilities. The runtime uses these traits to:
 - Enable trait-based plugin discovery
 """
 
-# ruff: noqa: PLC0415
-
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, cast, runtime_checkable
+
+from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
@@ -239,8 +240,6 @@ class WithIncrementalSupport:
             Hash of inputs.
         """
         _ = self  # Required by interface, accessed via ctx
-        import hashlib
-
         data = f"{ctx.repo}:{ctx.commit}".encode()
         return hashlib.sha256(data).hexdigest()[:16]
 
@@ -310,8 +309,6 @@ class WithRowCounts:
         dict[str, int]
             Mapping of table names to row counts.
         """
-        from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
-
         target_tables = tables or self.output_tables
         if not target_tables:
             return {}
@@ -400,8 +397,6 @@ class WithCaching:
         T | None
             Cached value or default.
         """
-        from typing import cast
-
         result = ctx.scratch.consume(self._get_scratch_key(), default)
         return cast("T | None", result)
 
@@ -472,8 +467,6 @@ class WithDependencyData:
             Data from upstream plugin or default.
         """
         _ = self  # Required by interface, accessed via ctx
-        from typing import cast
-
         result = ctx.scratch.consume(key, default)
         return cast("T | None", result)
 

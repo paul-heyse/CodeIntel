@@ -311,7 +311,7 @@ def _assert_http_backend_metadata(backend: HttpBackend) -> None:
     )
     if not summary.found or summary.summary is None:
         pytest.fail("Expected function summary")
-    if summary.summary["qualname"] != "pkg.mod.func":
+    if summary.summary.model_dump().get("qualname") != "pkg.mod.func":
         pytest.fail("Unexpected qualname from HttpBackend summary")
 
     neighbors = backend.get_callgraph_neighbors(goid_h128=1, direction="both", limit=5)

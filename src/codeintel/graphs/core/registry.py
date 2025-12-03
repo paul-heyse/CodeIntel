@@ -333,11 +333,6 @@ class GraphPluginRegistry:
         -------
         tuple[GraphPluginProtocol, ...]
             Newly loaded plugins.
-
-        Raises
-        ------
-        TypeError
-            If an entry point does not return a valid plugin.
         """
         if self._entrypoints_loaded and not force:
             return ()
@@ -347,32 +342,34 @@ class GraphPluginRegistry:
         selected = eps.select(group=group)
 
         for entry_point in selected:
+            candidate: GraphPluginProtocol | None = None
             try:
                 loaded = entry_point.load()
-                # Support both direct plugin instances and factory functions
-                plugin: GraphPluginProtocol
-                if isinstance(loaded, type) or (
+                if isinstance(loaded, GraphPluginProtocol):
+                    candidate = loaded
+                elif isinstance(loaded, type) or (
                     callable(loaded) and not hasattr(loaded, "metadata")
                 ):
-                    candidate = loaded()
-                else:
-                    candidate = loaded
-
-                if not isinstance(candidate, GraphPluginProtocol):
-                    message = f"Entry point {entry_point.name} did not return GraphPluginProtocol"
-                    raise TypeError(message)  # noqa: TRY301
-
-                plugin = candidate
-
-                self.register(plugin)
-                discovered.append(plugin)
-                log.info("Discovered graph plugin from entrypoint: %s", plugin.metadata.name)
+                    instance = loaded()
+                    if isinstance(instance, GraphPluginProtocol):
+                        candidate = instance
             except (ImportError, AttributeError, TypeError) as exc:
                 log.warning(
                     "Failed to load graph plugin from entrypoint %s: %s",
                     entry_point.name,
                     exc,
                 )
+                continue
+
+            if not isinstance(candidate, GraphPluginProtocol):
+                log.warning("Entry point %s did not return GraphPluginProtocol", entry_point.name)
+                continue
+
+            plugin = candidate
+
+            self.register(plugin)
+            discovered.append(plugin)
+            log.info("Discovered graph plugin from entrypoint: %s", plugin.metadata.name)
 
         self._entrypoints_loaded = True
         return tuple(discovered)

@@ -9,9 +9,9 @@ from __future__ import annotations
 import pytest
 
 from codeintel.config.datasets import (
-    COMPOSITE_SCHEMAS,
-    DATASET_CONTRACTS,
-    TABLE_SCHEMAS,
+    get_composite_schemas,
+    get_dataset_contracts,
+    get_table_schemas,
 )
 
 
@@ -28,16 +28,17 @@ def _require(*, condition: bool, message: str) -> None:
 
 @pytest.mark.parametrize(
     "profile_key",
-    list(COMPOSITE_SCHEMAS.keys()),
+    list(get_composite_schemas().keys()),
     ids=lambda k: k.split(".")[-1],
 )
 def test_composite_schema_sources_exist(profile_key: str) -> None:
     """Verify all source tables referenced by CompositeSchema exist."""
-    composite = COMPOSITE_SCHEMAS[profile_key]
+    composite = get_composite_schemas()[profile_key]
+    table_schemas = get_table_schemas()
 
     for source_key in composite.composed_of:
         _require(
-            condition=source_key in TABLE_SCHEMAS,
+            condition=source_key in table_schemas,
             message=(
                 f"CompositeSchema for {profile_key} references non-existent "
                 f"source table: {source_key}"
@@ -47,20 +48,20 @@ def test_composite_schema_sources_exist(profile_key: str) -> None:
 
 @pytest.mark.parametrize(
     "profile_key",
-    list(COMPOSITE_SCHEMAS.keys()),
+    list(get_composite_schemas().keys()),
     ids=lambda k: k.split(".")[-1],
 )
 def test_composite_schema_profile_exists(profile_key: str) -> None:
     """Verify the profile table referenced by CompositeSchema exists."""
     _require(
-        condition=profile_key in TABLE_SCHEMAS,
+        condition=profile_key in get_table_schemas(),
         message=f"CompositeSchema defined for non-existent profile: {profile_key}",
     )
 
 
 @pytest.mark.parametrize(
     "profile_key",
-    list(COMPOSITE_SCHEMAS.keys()),
+    list(get_composite_schemas().keys()),
     ids=lambda k: k.split(".")[-1],
 )
 def test_composite_schema_validation_passes(profile_key: str) -> None:
@@ -71,10 +72,11 @@ def test_composite_schema_validation_passes(profile_key: str) -> None:
     - Be explicitly listed in excluded_columns (with a comment explaining why)
     - Be remapped via column_mappings
     """
-    composite = COMPOSITE_SCHEMAS[profile_key]
-    profile_schema = TABLE_SCHEMAS[profile_key]
+    table_schemas = get_table_schemas()
+    composite = get_composite_schemas()[profile_key]
+    profile_schema = table_schemas[profile_key]
 
-    errors = composite.validate_against_profile(profile_schema, TABLE_SCHEMAS)
+    errors = composite.validate_against_profile(profile_schema, table_schemas)
 
     _require(
         condition=not errors,
@@ -92,10 +94,11 @@ def test_composite_schema_validation_passes(profile_key: str) -> None:
 
 def test_get_source_for_column_shared() -> None:
     """Test that shared columns return the first source."""
-    composite = COMPOSITE_SCHEMAS["analytics.function_profile"]
+    composite = get_composite_schemas()["analytics.function_profile"]
+    table_schemas = get_table_schemas()
 
     # function_goid_h128 is in FUNCTION_ENTITY_COLS (shared)
-    source = composite.get_source_for_column("function_goid_h128", TABLE_SCHEMAS)
+    source = composite.get_source_for_column("function_goid_h128", table_schemas)
 
     _require(
         condition=source == "analytics.function_metrics",
@@ -105,10 +108,11 @@ def test_get_source_for_column_shared() -> None:
 
 def test_get_source_for_column_unique() -> None:
     """Test that unique columns return their correct source."""
-    composite = COMPOSITE_SCHEMAS["analytics.function_profile"]
+    composite = get_composite_schemas()["analytics.function_profile"]
+    table_schemas = get_table_schemas()
 
     # is_pure is from function_effects
-    source = composite.get_source_for_column("is_pure", TABLE_SCHEMAS)
+    source = composite.get_source_for_column("is_pure", table_schemas)
 
     _require(
         condition=source == "analytics.function_effects",
@@ -118,10 +122,11 @@ def test_get_source_for_column_unique() -> None:
 
 def test_get_source_for_column_additional() -> None:
     """Test that additional columns return None (profile-specific, no source)."""
-    composite = COMPOSITE_SCHEMAS["analytics.function_profile"]
+    composite = get_composite_schemas()["analytics.function_profile"]
+    table_schemas = get_table_schemas()
 
     # risk_component_coverage is an additional column (profile-specific)
-    source = composite.get_source_for_column("risk_component_coverage", TABLE_SCHEMAS)
+    source = composite.get_source_for_column("risk_component_coverage", table_schemas)
 
     # None means profile-specific with no source table
     _require(
@@ -132,10 +137,11 @@ def test_get_source_for_column_additional() -> None:
 
 def test_get_source_for_column_mapped() -> None:
     """Test that mapped columns are resolved correctly."""
-    composite = COMPOSITE_SCHEMAS["analytics.function_profile"]
+    composite = get_composite_schemas()["analytics.function_profile"]
+    table_schemas = get_table_schemas()
 
     # keyword_params is the profile name, keyword_only_params is the source name
-    source = composite.get_source_for_column("keyword_params", TABLE_SCHEMAS)
+    source = composite.get_source_for_column("keyword_params", table_schemas)
 
     # Should find keyword_only_params in function_metrics
     _require(
@@ -151,9 +157,10 @@ def test_get_source_for_column_mapped() -> None:
 
 def test_source_column_names_includes_shared() -> None:
     """Test that shared fragment columns are included."""
-    composite = COMPOSITE_SCHEMAS["analytics.function_profile"]
+    composite = get_composite_schemas()["analytics.function_profile"]
+    table_schemas = get_table_schemas()
 
-    col_names = composite.source_column_names(TABLE_SCHEMAS)
+    col_names = composite.source_column_names(table_schemas)
 
     # FUNCTION_ENTITY_COLS includes these
     _require(
@@ -172,9 +179,10 @@ def test_source_column_names_includes_shared() -> None:
 
 def test_source_column_names_excludes_excluded() -> None:
     """Test that excluded columns are not included."""
-    composite = COMPOSITE_SCHEMAS["analytics.function_profile"]
+    composite = get_composite_schemas()["analytics.function_profile"]
+    table_schemas = get_table_schemas()
 
-    col_names = composite.source_column_names(TABLE_SCHEMAS)
+    col_names = composite.source_column_names(table_schemas)
 
     # These are in excluded_columns
     _require(
@@ -189,9 +197,10 @@ def test_source_column_names_excludes_excluded() -> None:
 
 def test_source_column_names_applies_mappings() -> None:
     """Test that column mappings are applied."""
-    composite = COMPOSITE_SCHEMAS["analytics.function_profile"]
+    composite = get_composite_schemas()["analytics.function_profile"]
+    table_schemas = get_table_schemas()
 
-    col_names = composite.source_column_names(TABLE_SCHEMAS)
+    col_names = composite.source_column_names(table_schemas)
 
     # keyword_only_params should be mapped to keyword_params
     _require(
@@ -211,12 +220,12 @@ def test_source_column_names_applies_mappings() -> None:
 
 @pytest.mark.parametrize(
     "profile_key",
-    list(COMPOSITE_SCHEMAS.keys()),
+    list(get_composite_schemas().keys()),
     ids=lambda k: k.split(".")[-1],
 )
 def test_composite_has_sources(profile_key: str) -> None:
     """Verify each CompositeSchema has at least one source table."""
-    composite = COMPOSITE_SCHEMAS[profile_key]
+    composite = get_composite_schemas()[profile_key]
 
     _require(
         condition=len(composite.composed_of) > 0,
@@ -226,12 +235,12 @@ def test_composite_has_sources(profile_key: str) -> None:
 
 @pytest.mark.parametrize(
     "profile_key",
-    list(COMPOSITE_SCHEMAS.keys()),
+    list(get_composite_schemas().keys()),
     ids=lambda k: k.split(".")[-1],
 )
 def test_composite_has_shared_fragments(profile_key: str) -> None:
     """Verify each CompositeSchema has at least one shared fragment."""
-    composite = COMPOSITE_SCHEMAS[profile_key]
+    composite = get_composite_schemas()[profile_key]
 
     _require(
         condition=len(composite.shared_fragments) > 0,
@@ -241,6 +250,7 @@ def test_composite_has_shared_fragments(profile_key: str) -> None:
 
 def test_all_profiles_have_composite_schemas() -> None:
     """Verify all profile tables have corresponding CompositeSchemas."""
+    composite_schemas = get_composite_schemas()
     profile_keys = [
         "analytics.function_profile",
         "analytics.file_profile",
@@ -250,7 +260,7 @@ def test_all_profiles_have_composite_schemas() -> None:
 
     for profile_key in profile_keys:
         _require(
-            condition=profile_key in COMPOSITE_SCHEMAS,
+            condition=profile_key in composite_schemas,
             message=f"Missing CompositeSchema for {profile_key}",
         )
 
@@ -262,6 +272,7 @@ def test_all_profiles_have_composite_schemas() -> None:
 
 def test_profile_contracts_have_composition() -> None:
     """Verify profile DatasetContracts have composition field set."""
+    dataset_contracts = get_dataset_contracts()
     profile_names = [
         "function_profile",
         "file_profile",
@@ -270,7 +281,7 @@ def test_profile_contracts_have_composition() -> None:
     ]
 
     for name in profile_names:
-        contract = DATASET_CONTRACTS.get(name)
+        contract = dataset_contracts.get(name)
         _require(
             condition=contract is not None,
             message=f"Missing DatasetContract for {name}",
@@ -285,6 +296,7 @@ def test_profile_contracts_have_composition() -> None:
 
 def test_non_profile_contracts_no_composition() -> None:
     """Verify non-profile DatasetContracts don't have composition."""
+    dataset_contracts = get_dataset_contracts()
     non_profile_names = [
         "function_metrics",
         "function_types",
@@ -293,7 +305,7 @@ def test_non_profile_contracts_no_composition() -> None:
     ]
 
     for name in non_profile_names:
-        contract = DATASET_CONTRACTS.get(name)
+        contract = dataset_contracts.get(name)
         _require(
             condition=contract is not None,
             message=f"Missing DatasetContract for {name}",
@@ -308,9 +320,10 @@ def test_non_profile_contracts_no_composition() -> None:
 
 def test_composition_matches_composite_schemas() -> None:
     """Verify DatasetContract.composition matches COMPOSITE_SCHEMAS."""
-    for table_key, composite in COMPOSITE_SCHEMAS.items():
+    dataset_contracts = get_dataset_contracts()
+    for table_key, composite in get_composite_schemas().items():
         _, name = table_key.split(".", maxsplit=1)
-        contract = DATASET_CONTRACTS.get(name)
+        contract = dataset_contracts.get(name)
 
         _require(
             condition=contract is not None,

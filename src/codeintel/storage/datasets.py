@@ -8,7 +8,7 @@ from typing import cast
 
 from duckdb import DuckDBPyConnection
 
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY, DatasetContract
+from codeintel.config.datasets import DatasetContract, get_dataset_contracts_by_table_key
 
 __all__ = [
     "DatasetRegistry",
@@ -147,7 +147,7 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
         db_family,
         db_description,
     ) in rows:
-        base = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+        base = get_dataset_contracts_by_table_key().get(table_key)
         if base is None:
             msg = f"metadata.datasets row {table_key} has no DatasetContract"
             raise KeyError(msg)

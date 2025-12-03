@@ -152,7 +152,7 @@ class MetricsMiddleware:
 
     store: MetricsStore | None = None
 
-    _start_times: dict[str, float] = field(default_factory=dict, repr=False)
+    _start_times: dict[tuple[str | None, str], float] = field(default_factory=dict, repr=False)
 
     @property
     def name(self) -> str:
@@ -184,7 +184,7 @@ class MetricsMiddleware:
             Plugin about to execute.
         """
         plugin_name = plugin.metadata.name
-        self._start_times[plugin_name] = time.perf_counter()
+        self._start_times[ctx.run_id, plugin_name] = time.perf_counter()
 
     def after_execute(
         self,
@@ -209,7 +209,7 @@ class MetricsMiddleware:
             Unchanged result.
         """
         plugin_name = plugin.metadata.name
-        start_time = self._start_times.pop(plugin_name, None)
+        start_time = self._start_times.pop((ctx.run_id, plugin_name), None)
         duration_ms = (time.perf_counter() - start_time) * 1000 if start_time else 0
 
         metrics = PluginMetrics(
@@ -249,7 +249,7 @@ class MetricsMiddleware:
             The error unchanged.
         """
         plugin_name = plugin.metadata.name
-        start_time = self._start_times.pop(plugin_name, None)
+        start_time = self._start_times.pop((ctx.run_id, plugin_name), None)
         duration_ms = (time.perf_counter() - start_time) * 1000 if start_time else 0
 
         metrics = PluginMetrics(

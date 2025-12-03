@@ -58,7 +58,13 @@ def _empty_registry() -> ResourceRegistry:
 
 
 def _default_tools_config() -> ToolsConfig:
-    """Construct a default tools configuration."""
+    """Construct a default tools configuration.
+
+    Returns
+    -------
+    ToolsConfig
+        Default tools configuration instance.
+    """
     return ToolsConfig.default()
 
 
@@ -272,12 +278,11 @@ class IngestExecutionContext:
         Raises
         ------
         KeyError
-        If the config type is not registered.
+            If the config type is not registered.
         """
         try:
             return self.configs.get(config_type)
         except ConfigNotFoundError as exc:
-            # Re-raise as KeyError for backward compatibility
             raise KeyError(str(exc)) from exc
 
     def get_optional_config[T](self, config_type: type[T]) -> T | None:
@@ -324,7 +329,13 @@ class IngestExecutionContext:
             self._plugin_durations.pop(plugin_name, None)
 
     def finish_plugin_timer(self, plugin_name: str) -> float:
-        """Return elapsed time for a plugin execution."""
+        """Return elapsed time for a plugin execution.
+
+        Returns
+        -------
+        float
+            Duration in seconds for the specified plugin execution.
+        """
         if plugin_name in self._plugin_durations:
             return self._plugin_durations[plugin_name]
 

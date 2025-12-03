@@ -96,12 +96,24 @@ def validate_identifier(name: str) -> str:
 
 
 def _render_sql(parts: Sequence[str]) -> str:
-    """Render SQL from validated parts without inline interpolation."""
+    """Render SQL from validated parts without inline interpolation.
+
+    Returns
+    -------
+    str
+        The joined SQL string with whitespace normalization.
+    """
     return " ".join(part for part in parts if part)
 
 
 def render_sql(parts: Sequence[str]) -> str:
-    """Public helper for rendering SQL from validated parts."""
+    """Public helper for rendering SQL from validated parts.
+
+    Returns
+    -------
+    str
+        The rendered SQL string.
+    """
     return _render_sql(parts)
 
 
@@ -385,11 +397,15 @@ class QueryBuilder:
 
     @staticmethod
     def delete_repo_commit(table: str | SafeTable) -> str:
-        """Build a standard repo/commit scoped delete query."""
+        """Build a standard repo/commit scoped delete query.
+
+        Returns
+        -------
+        str
+            Delete statement scoped by repository and commit.
+        """
         table_name = str(table) if isinstance(table, SafeTable) else str(SafeTable(table))
-        where_clause = " AND ".join(
-            (f"{SafeColumn('repo')} = ?", f"{SafeColumn('commit')} = ?")
-        )
+        where_clause = " AND ".join((f"{SafeColumn('repo')} = ?", f"{SafeColumn('commit')} = ?"))
         return _render_sql(["DELETE FROM", table_name, "WHERE", where_clause])
 
 

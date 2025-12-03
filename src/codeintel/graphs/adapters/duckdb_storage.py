@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.graphs.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.storage.gateway import DuckDBConnection
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -34,7 +35,52 @@ class DuckDBStorageAdapter:
     """
 
     gateway: StorageGateway
-    _repo_root: Path
+    _repo_root: Path = field(default_factory=Path)
+
+    @classmethod
+    def from_gateway(
+        cls, gateway: StorageGateway, repo_root: Path | None = None
+    ) -> DuckDBStorageAdapter:
+        """Construct adapter using gateway config or provided root.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway providing DuckDB access.
+        repo_root
+            Optional repository root; defaults to current directory when unknown.
+
+        Returns
+        -------
+        DuckDBStorageAdapter
+            Configured adapter instance.
+        """
+        resolved_root = repo_root or Path()
+        return cls(gateway=gateway, _repo_root=resolved_root)
+
+    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBConnection:
+        """Execute raw SQL against the underlying gateway connection.
+
+        Parameters
+        ----------
+        sql
+            SQL statement to execute.
+        params
+            Optional parameter values to bind.
+
+        Returns
+        -------
+        DuckDBConnection
+            DuckDB relation/connection result from execution.
+
+        Notes
+        -----
+        This method intentionally propagates DuckDB exceptions so callers
+        (and tests) can observe failures.
+        """
+        if params is None:
+            return self.gateway.con.execute(sql)
+        return self.gateway.con.execute(sql, list(params))
 
     def execute_query(
         self,

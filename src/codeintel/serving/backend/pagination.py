@@ -2,17 +2,11 @@
 
 This module provides:
 - Standardized pagination handling (PaginatedFetch, paginate_items)
-- Limit/offset clamping with messaging (clamp_limit_value, clamp_offset_value)
+- Limit/offset clamping with messaging (clamp_limit, clamp_offset)
 - Backend configuration (BackendLimits)
 
 Every bounded operation should use these utilities to ensure consistent
 truncation detection and safe limit handling across all serving endpoints.
-
-Note
-----
-This module consolidates the previous ``limits.py`` module. The legacy
-``ClampResult`` and ``clamp_limit_value`` functions are preserved for
-backward compatibility.
 """
 
 from __future__ import annotations
@@ -67,115 +61,7 @@ class BackendLimits:
 
 
 # =============================================================================
-# Legacy Clamping (preserved for backward compatibility)
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class ClampResult:
-    """
-    Result of clamping limit/offset values with messaging.
-
-    This is the legacy result type. New code should prefer ``LimitClamp``.
-
-    Parameters
-    ----------
-    applied
-        The effective value after clamping (always an int).
-    messages
-        Warning or error messages from validation.
-    has_error
-        Whether validation failed.
-    """
-
-    applied: int
-    messages: list[Message] = field(default_factory=list)
-    has_error: bool = False
-
-
-def clamp_limit_value(
-    requested: int | None,
-    *,
-    default: int,
-    max_limit: int,
-) -> ClampResult:
-    """
-    Clamp a requested limit to safe bounds, returning warnings instead of raising.
-
-    Parameters
-    ----------
-    requested
-        Requested limit value; ``None`` means "use default".
-    default
-        Default limit to apply when none is requested.
-    max_limit
-        Maximum rows allowed for any call.
-
-    Returns
-    -------
-    ClampResult
-        Applied limit plus any informational or error messages.
-    """
-    messages: list[Message] = []
-    limit = default if requested is None else requested
-
-    if limit < 0:
-        messages.append(
-            Message(
-                code="limit_invalid",
-                severity="error",
-                detail="limit must be non-negative",
-                context={"requested": limit},
-            )
-        )
-        return ClampResult(applied=0, messages=messages, has_error=True)
-
-    if limit > max_limit:
-        messages.append(
-            Message(
-                code="limit_clamped",
-                severity="warning",
-                detail=f"Requested {limit} rows; delivering {max_limit} (max allowed).",
-                context={"requested": limit, "applied": max_limit, "max": max_limit},
-            )
-        )
-        limit = max_limit
-
-    return ClampResult(applied=limit, messages=messages, has_error=False)
-
-
-def clamp_offset_value(offset: int) -> ClampResult:
-    """
-    Clamp an offset to a non-negative value, returning messaging instead of raising.
-
-    Parameters
-    ----------
-    offset
-        Requested offset value.
-
-    Returns
-    -------
-    ClampResult
-        Applied offset and any validation messages.
-    """
-    if offset < 0:
-        return ClampResult(
-            applied=0,
-            messages=[
-                Message(
-                    code="offset_invalid",
-                    severity="error",
-                    detail="offset must be non-negative",
-                    context={"requested": offset},
-                )
-            ],
-            has_error=True,
-        )
-    return ClampResult(applied=offset)
-
-
-# =============================================================================
-# Modern Pagination Types
+# Pagination Types
 # =============================================================================
 
 
@@ -284,6 +170,21 @@ class LimitClamp:
     has_error: bool = False
     messages: list[Message] = field(default_factory=list)
 
+    def limit_or_default(self, default: int) -> int:
+        """Return applied limit or fallback to default when None.
+
+        Parameters
+        ----------
+        default
+            Fallback value when applied is None.
+
+        Returns
+        -------
+        int
+            The applied limit if set, otherwise the default.
+        """
+        return self.applied if self.applied is not None else default
+
 
 def clamp_limit(
     requested: int | None,
@@ -353,6 +254,60 @@ def clamp_limit(
     return LimitClamp(applied=requested, requested=requested, messages=messages)
 
 
+@dataclass(frozen=True)
+class OffsetClamp:
+    """
+    Result of clamping offset to non-negative.
+
+    Parameters
+    ----------
+    applied
+        The effective offset after clamping.
+    requested
+        The original offset requested.
+    has_error
+        Whether the requested offset was invalid.
+    messages
+        Any error messages from validation.
+    """
+
+    applied: int
+    requested: int
+    has_error: bool = False
+    messages: list[Message] = field(default_factory=list)
+
+
+def clamp_offset(offset: int) -> OffsetClamp:
+    """
+    Clamp an offset to a non-negative value.
+
+    Parameters
+    ----------
+    offset
+        Requested offset value.
+
+    Returns
+    -------
+    OffsetClamp
+        Applied offset and any validation messages.
+    """
+    if offset < 0:
+        return OffsetClamp(
+            applied=0,
+            requested=offset,
+            messages=[
+                Message(
+                    code="offset_invalid",
+                    severity="error",
+                    detail="offset must be non-negative",
+                    context={"requested": offset},
+                )
+            ],
+            has_error=True,
+        )
+    return OffsetClamp(applied=offset, requested=offset)
+
+
 def paginate_items[T](
     items: list[T],
     *,
@@ -398,11 +353,10 @@ def paginate_items[T](
 
 __all__ = [
     "BackendLimits",
-    "ClampResult",
     "LimitClamp",
+    "OffsetClamp",
     "PaginatedFetch",
     "clamp_limit",
-    "clamp_limit_value",
-    "clamp_offset_value",
+    "clamp_offset",
     "paginate_items",
 ]

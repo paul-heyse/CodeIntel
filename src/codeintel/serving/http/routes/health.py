@@ -7,14 +7,14 @@ from fastapi import APIRouter
 from codeintel.serving.http.dependencies import BackendDep, ConfigDep
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.registry import OperationSpec, get_operation_spec
+from codeintel.serving.operations import Operation, get_operation
 from codeintel.storage.gateway import DuckDBError
 
 
-def _require_spec(op_id: str) -> OperationSpec:
-    spec = get_operation_spec(op_id)
+def _require_spec(op_id: str) -> Operation:
+    spec = get_operation(op_id)
     if spec is None:
-        message = f"OperationSpec {op_id} is not registered"
+        message = f"Operation {op_id} is not registered"
         raise ValueError(message)
     return spec
 
@@ -26,7 +26,7 @@ def build_health_router() -> APIRouter:
     Raises
     ------
     ValueError
-        If the OperationSpec for health is missing or incomplete.
+        If the Operation for health is missing or incomplete.
 
     Returns
     -------
@@ -36,7 +36,7 @@ def build_health_router() -> APIRouter:
     router = APIRouter()
     spec = _require_spec("health.status")
     if spec.http_path is None:
-        message = "OperationSpec health.status is missing http_path"
+        message = "Operation health.status is missing http_path"
         raise ValueError(message)
     path = spec.http_path
 

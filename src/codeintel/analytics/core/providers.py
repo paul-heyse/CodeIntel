@@ -31,21 +31,33 @@ class AnalyticsSupportProvider(Protocol):
         ...
 
 
-_support_provider: AnalyticsSupportProvider | None = None
+class _SupportProviderState:
+    """Mutable holder for the analytics support provider."""
+
+    provider: AnalyticsSupportProvider | None = None
+
+
+_support_provider_state = _SupportProviderState()
 
 
 def set_support_provider(provider: AnalyticsSupportProvider) -> None:
     """Override the global analytics support provider (for testing/experiments)."""
-    global _support_provider
-    _support_provider = provider
+    _support_provider_state.provider = provider
 
 
 def get_support_provider() -> AnalyticsSupportProvider:
-    """Return the active analytics support provider."""
-    global _support_provider
-    if _support_provider is None:
-        _support_provider = DefaultAnalyticsSupportProvider()
-    return _support_provider
+    """Return the active analytics support provider.
+
+    Returns
+    -------
+    AnalyticsSupportProvider
+        Active support provider instance.
+    """
+    provider = _support_provider_state.provider
+    if provider is None:
+        provider = DefaultAnalyticsSupportProvider()
+        _support_provider_state.provider = provider
+    return provider
 
 
 __all__ = [

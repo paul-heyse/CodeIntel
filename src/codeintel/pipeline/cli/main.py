@@ -73,7 +73,7 @@ from codeintel.serving.mcp.models import (
 )
 from codeintel.serving.services.errors import (
     ExportError,
-    ProblemDetailParams,
+    ProblemDetails,
     log_problem,
     problem,
 )
@@ -2541,19 +2541,23 @@ def main(argv: Iterable[str] | None = None) -> int:
         return int(func(args))
     except ValueError as exc:  # pragma: no cover - error path
         pd = problem(
-            code="cli.invalid_argument",
-            title="CLI command failed",
-            detail=str(exc),
-            params=ProblemDetailParams(extras={"command": args.command}),
+            ProblemDetails(
+                code="cli.invalid_argument",
+                title="CLI command failed",
+                detail=str(exc),
+                extras={"command": args.command},
+            )
         )
         log_problem(LOG, pd)
         return 1
     except RuntimeError as exc:  # pragma: no cover - error path
         pd = problem(
-            code="cli.failure",
-            title="CLI command failed",
-            detail=str(exc),
-            params=ProblemDetailParams(extras={"command": args.command}),
+            ProblemDetails(
+                code="cli.failure",
+                title="CLI command failed",
+                detail=str(exc),
+                extras={"command": args.command},
+            )
         )
         log_problem(LOG, pd)
         return 1

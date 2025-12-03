@@ -190,7 +190,7 @@ def build_insert_sql(
 
 
 def prepared_statements_dynamic(
-    con: DuckDBPyConnection,  # noqa: ARG001 - Kept for backward compatibility
+    _unused_con: DuckDBPyConnection,
     table_key: str,
 ) -> PreparedStatements:
     """
@@ -198,7 +198,7 @@ def prepared_statements_dynamic(
 
     Parameters
     ----------
-    con :
+    _unused_con :
         DuckDB connection (kept for backward compatibility; not used).
     table_key :
         Registry key (e.g., "core.ast_nodes", "analytics.function_metrics").

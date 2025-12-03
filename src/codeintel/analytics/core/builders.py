@@ -74,7 +74,8 @@ class PluginSpecBuilder:
     """Fluent builder for constructing PluginMetadata.
 
     Provides a clean API for building plugin metadata incrementally.
-    All setter methods return self for chaining.
+    All setter methods return self for chaining. Public methods are kept
+    focused and orthogonal to avoid an overly wide surface area.
     """
 
     def __init__(self, name: str) -> None:
@@ -133,28 +134,12 @@ class PluginSpecBuilder:
     def enabled_by_default(self, *, enabled: bool = True) -> PluginSpecBuilder:
         """Set whether plugin runs by default.
 
-        Parameters
-        ----------
-        enabled
-            Whether to run when no explicit list is provided.
-
         Returns
         -------
         PluginSpecBuilder
             Self for chaining.
         """
         self._meta.enabled_by_default = enabled
-        return self
-
-    def disabled_by_default(self) -> PluginSpecBuilder:
-        """Mark plugin as disabled by default.
-
-        Returns
-        -------
-        PluginSpecBuilder
-            Self for chaining.
-        """
-        self._meta.enabled_by_default = False
         return self
 
     def severity(self, sev: PluginSeverity) -> PluginSpecBuilder:
@@ -173,105 +158,56 @@ class PluginSpecBuilder:
         self._meta.severity = sev
         return self
 
-    def fatal(self) -> PluginSpecBuilder:
-        """Mark failures as fatal.
-
-        Returns
-        -------
-        PluginSpecBuilder
-            Self for chaining.
-        """
-        self._meta.severity = "fatal"
-        return self
-
-    def soft_fail(self) -> PluginSpecBuilder:
-        """Mark failures as soft (continue execution).
-
-        Returns
-        -------
-        PluginSpecBuilder
-            Self for chaining.
-        """
-        self._meta.severity = "soft_fail"
-        return self
-
-    def skip_on_error(self) -> PluginSpecBuilder:
-        """Skip plugin on error without failing.
-
-        Returns
-        -------
-        PluginSpecBuilder
-            Self for chaining.
-        """
-        self._meta.severity = "skip_on_error"
-        return self
-
     def input(
         self,
-        config_type: type[object],
+        config: type[object] | PluginInputSpec,
         *,
         name: str | None = None,
         required: bool = True,
         source: Literal["config", "runtime", "prior_plugin"] = "config",
     ) -> PluginSpecBuilder:
-        """Add an input requirement.
+        """Add an input requirement or prebuilt spec.
 
         Parameters
         ----------
-        config_type
-            The configuration type required.
-        name
-            Optional name override (defaults to type name).
-        required
-            Whether this input is required.
-        source
-            Where the input comes from.
+        config
+            Configuration type required, or an existing PluginInputSpec.
+        name, required, source
+            Applied only when a configuration type is provided.
 
         Returns
         -------
         PluginSpecBuilder
             Self for chaining.
         """
+        if isinstance(config, PluginInputSpec):
+            self._contracts.inputs.append(config)
+            return self
+
         self._contracts.inputs.append(
             PluginInputSpec(
-                name=name or config_type.__name__,
-                type_ref=config_type.__name__,
+                name=name or config.__name__,
+                type_ref=config.__name__,
                 required=required,
                 source=source,
             )
         )
         return self
 
-    def input_spec(self, spec: PluginInputSpec) -> PluginSpecBuilder:
-        """Add a raw input specification.
-
-        Parameters
-        ----------
-        spec
-            Pre-built input spec.
-
-        Returns
-        -------
-        PluginSpecBuilder
-            Self for chaining.
-        """
-        self._contracts.inputs.append(spec)
-        return self
-
     def output(
         self,
-        table: str,
+        output: str | PluginOutputSpec,
         *,
         name: str | None = None,
         min_rows: int | None = None,
         required_columns: Sequence[str] = (),
     ) -> PluginSpecBuilder:
-        """Add an output table.
+        """Add an output specification.
 
         Parameters
         ----------
-        table
-            Full table name (e.g., "analytics.function_metrics").
+        output
+            Full table name (e.g., "analytics.function_metrics") or a PluginOutputSpec.
         name
             Logical name (defaults to table name without schema).
         min_rows
@@ -284,57 +220,28 @@ class PluginSpecBuilder:
         PluginSpecBuilder
             Self for chaining.
         """
-        logical_name = name or table.rsplit(".", maxsplit=1)[-1]
+        if isinstance(output, PluginOutputSpec):
+            self._contracts.outputs.append(output)
+            return self
+
+        logical_name = name or output.rsplit(".", maxsplit=1)[-1]
         self._contracts.outputs.append(
             PluginOutputSpec(
                 name=logical_name,
-                tables=(table,),
+                tables=(output,),
                 min_rows=min_rows,
                 required_columns=tuple(required_columns),
             )
         )
         return self
 
-    def outputs(self, *tables: str) -> PluginSpecBuilder:
-        """Add multiple output tables.
-
-        Parameters
-        ----------
-        tables
-            Table names to add.
-
-        Returns
-        -------
-        PluginSpecBuilder
-            Self for chaining.
-        """
-        for table in tables:
-            self.output(table)
-        return self
-
-    def output_spec(self, spec: PluginOutputSpec) -> PluginSpecBuilder:
-        """Add a raw output specification.
-
-        Parameters
-        ----------
-        spec
-            Pre-built output spec.
-
-        Returns
-        -------
-        PluginSpecBuilder
-            Self for chaining.
-        """
-        self._contracts.outputs.append(spec)
-        return self
-
-    def provides(self, *capabilities: str) -> PluginSpecBuilder:
+    def provides(self, *capabilities: PluginCapability | str) -> PluginSpecBuilder:
         """Declare capabilities this plugin provides.
 
         Parameters
         ----------
         capabilities
-            Capability names (e.g., "analytics.function_metrics").
+            Capability names or PluginCapability instances.
 
         Returns
         -------
@@ -342,32 +249,19 @@ class PluginSpecBuilder:
             Self for chaining.
         """
         for cap in capabilities:
-            self._contracts.capabilities_provided.append(PluginCapability(name=cap))
+            if isinstance(cap, PluginCapability):
+                self._contracts.capabilities_provided.append(cap)
+            else:
+                self._contracts.capabilities_provided.append(PluginCapability(name=cap))
         return self
 
-    def provides_capability(self, capability: PluginCapability) -> PluginSpecBuilder:
-        """Add a raw capability.
-
-        Parameters
-        ----------
-        capability
-            Pre-built capability.
-
-        Returns
-        -------
-        PluginSpecBuilder
-            Self for chaining.
-        """
-        self._contracts.capabilities_provided.append(capability)
-        return self
-
-    def requires(self, *capabilities: str) -> PluginSpecBuilder:
+    def requires(self, *capabilities: PluginCapability | str) -> PluginSpecBuilder:
         """Declare capabilities this plugin requires.
 
         Parameters
         ----------
         capabilities
-            Capability names (e.g., "core.goids").
+            Capability names or PluginCapability instances.
 
         Returns
         -------
@@ -375,23 +269,10 @@ class PluginSpecBuilder:
             Self for chaining.
         """
         for cap in capabilities:
-            self._contracts.capabilities_required.append(PluginCapability(name=cap))
-        return self
-
-    def requires_capability(self, capability: PluginCapability) -> PluginSpecBuilder:
-        """Add a raw required capability.
-
-        Parameters
-        ----------
-        capability
-            Pre-built capability.
-
-        Returns
-        -------
-        PluginSpecBuilder
-            Self for chaining.
-        """
-        self._contracts.capabilities_required.append(capability)
+            if isinstance(cap, PluginCapability):
+                self._contracts.capabilities_required.append(cap)
+            else:
+                self._contracts.capabilities_required.append(PluginCapability(name=cap))
         return self
 
     def depends_on(self, *plugins: str) -> PluginSpecBuilder:
@@ -875,11 +756,11 @@ class OutputSpec:
 
 
 __all__ = [
+    "OutputSpec",
+    "OutputSpecBuilder",
     "PluginContractsSection",
     "PluginMetaSection",
     "PluginRuntimeSection",
-    "OutputSpec",
-    "OutputSpecBuilder",
     "PluginSpec",
     "PluginSpecBuilder",
     "ResourceHints",

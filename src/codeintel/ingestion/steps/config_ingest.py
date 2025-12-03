@@ -10,7 +10,7 @@ import configparser
 import json
 import logging
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -313,4 +313,139 @@ class ConfigIngestStep:
         return StepResult(rows_written=total_rows, table_counts=table_counts, errors=errors)
 
 
-__all__ = ["ConfigIngestStep"]
+def flatten_dict(
+    data: dict[str, Any], parent_key: str = "", sep: str = "."
+) -> list[tuple[str, Any]]:
+    """Public wrapper for flattening nested dictionaries.
+
+    Parameters
+    ----------
+    data
+        Dictionary to flatten.
+    parent_key
+        Prefix for keys.
+    sep
+        Separator between key parts.
+
+    Returns
+    -------
+    list[tuple[str, Any]]
+        Flattened key/value pairs.
+    """
+    return _flatten_dict(data, parent_key, sep)
+
+
+def flatten_list_items(
+    items: list[Any], parent_key: str = "", sep: str = "."
+) -> list[tuple[str, Any]]:
+    """Public wrapper for flattening list structures.
+
+    Parameters
+    ----------
+    items
+        List to flatten.
+    parent_key
+        Prefix for keys.
+    sep
+        Separator between key parts.
+
+    Returns
+    -------
+    list[tuple[str, Any]]
+        Flattened key/value pairs.
+    """
+    return _flatten_list_items(items, parent_key, sep)
+
+
+def parse_config_file(file_path: Path, content: str) -> list[tuple[str, Any]] | None:
+    """Public wrapper for parsing config files by extension.
+
+    Parameters
+    ----------
+    file_path
+        File path for format detection.
+    content
+        File content.
+
+    Returns
+    -------
+    list[tuple[str, Any]] | None
+        Parsed key/value pairs or None when parsing fails.
+    """
+    return _parse_config_file(file_path, content)
+
+
+def parse_ini(content: str) -> list[tuple[str, Any]] | None:
+    """Public wrapper for parsing INI config content.
+
+    Parameters
+    ----------
+    content
+        INI content string.
+
+    Returns
+    -------
+    list[tuple[str, Any]] | None
+        Parsed key/value pairs or None on failure.
+    """
+    return _parse_ini(content)
+
+
+def parse_json(content: str) -> list[tuple[str, Any]] | None:
+    """Public wrapper for parsing JSON config content.
+
+    Parameters
+    ----------
+    content
+        JSON content string.
+
+    Returns
+    -------
+    list[tuple[str, Any]] | None
+        Parsed key/value pairs or None on failure.
+    """
+    return _parse_json(content)
+
+
+def parse_toml(content: str) -> list[tuple[str, Any]] | None:
+    """Public wrapper for parsing TOML config content.
+
+    Parameters
+    ----------
+    content
+        TOML content string.
+
+    Returns
+    -------
+    list[tuple[str, Any]] | None
+        Parsed key/value pairs or None on failure.
+    """
+    return _parse_toml(content)
+
+
+def parse_yaml(content: str) -> list[tuple[str, Any]] | None:
+    """Public wrapper for parsing YAML config content.
+
+    Parameters
+    ----------
+    content
+        YAML content string.
+
+    Returns
+    -------
+    list[tuple[str, Any]] | None
+        Parsed key/value pairs or None on failure.
+    """
+    return _parse_yaml(content)
+
+
+__all__ = [
+    "ConfigIngestStep",
+    "flatten_dict",
+    "flatten_list_items",
+    "parse_config_file",
+    "parse_ini",
+    "parse_json",
+    "parse_toml",
+    "parse_yaml",
+]

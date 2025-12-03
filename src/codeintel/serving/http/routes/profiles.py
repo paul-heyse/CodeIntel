@@ -11,13 +11,13 @@ from codeintel.serving.mcp.models import (
     FunctionProfileResponse,
     ModuleProfileResponse,
 )
-from codeintel.serving.registry import OperationSpec, get_operation_spec
+from codeintel.serving.operations import Operation, get_operation
 
 
-def _require_spec(op_id: str) -> OperationSpec:
-    spec = get_operation_spec(op_id)
+def _require_spec(op_id: str) -> Operation:
+    spec = get_operation(op_id)
     if spec is None:
-        message = f"OperationSpec {op_id} is not registered"
+        message = f"Operation {op_id} is not registered"
         raise ValueError(message)
     return spec
 
@@ -29,7 +29,7 @@ def build_profiles_router() -> APIRouter:
     Raises
     ------
     ValueError
-        If OperationSpec entries are missing or lack http_path values.
+        If Operation entries are missing or lack http_path values.
 
     Returns
     -------
@@ -45,7 +45,7 @@ def build_profiles_router() -> APIRouter:
         or spec_file.http_path is None
         or spec_module.http_path is None
     ):
-        message = "Profile OperationSpec entries must define http_path"
+        message = "Profile Operation entries must define http_path"
         raise ValueError(message)
     function_path = spec_function.http_path
     file_path = spec_file.http_path

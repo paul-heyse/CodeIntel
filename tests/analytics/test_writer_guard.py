@@ -7,7 +7,7 @@ from typing import cast
 import pytest
 
 from codeintel.analytics.profiles.writer_guard import WriterContext, write_rows_with_registry_guard
-from codeintel.config.datasets import TABLE_SCHEMAS
+from codeintel.config.datasets import get_table_schemas
 from codeintel.storage.gateway import DuckDBConnection
 from codeintel.storage.sql_builder import QueryBuilder, SafeColumn, SafeTable
 from codeintel.storage.sql_helpers import PreparedStatements
@@ -28,12 +28,12 @@ class _FakeCon:
 
 # Get a real table and its columns for testing
 _TEST_TABLE = "analytics.coverage_lines"
-_TEST_SCHEMA = TABLE_SCHEMAS[_TEST_TABLE]
+_TEST_SCHEMA = get_table_schemas()[_TEST_TABLE]
 _TEST_COLUMNS = tuple(col.name for col in _TEST_SCHEMA.columns)
 
 
 def _ctx(table: str = _TEST_TABLE, *, repo: str = "r", commit: str = "c") -> WriterContext:
-    schema = TABLE_SCHEMAS.get(table)
+    schema = get_table_schemas().get(table)
     if schema is None:
         msg = f"Table {table} not found in TABLE_SCHEMAS."
         raise ValueError(msg)

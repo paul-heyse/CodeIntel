@@ -6,11 +6,12 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from codeintel.graphs.plugins.builders.callgraph import build_call_graph
+from codeintel.graphs.plugins.builders.callgraph import get_callgraph_builder_plugin
 from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
 from codeintel.graphs.plugins.builders.goid import build_goids
 from codeintel.graphs.plugins.builders.import_graph import build_import_graph
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
+from codeintel.graphs.plugins.runner import GraphPluginRunner
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
@@ -53,13 +54,15 @@ class CallGraphStep:
     def run(self, ctx: PipelineContext) -> None:
         """Construct static call graph nodes and edges."""
         _log_step(self.name)
-        gateway = ctx.gateway
         catalog = _function_catalog(ctx)
         cfg = ctx.config_builder().call_graph(
             cst_collector=ctx.cst_collector,
             ast_collector=ctx.ast_collector,
         )
-        build_call_graph(gateway, cfg, _catalog_provider=catalog)
+        runner = GraphPluginRunner(gateway=ctx.gateway)
+        plugin = get_callgraph_builder_plugin()
+        exec_ctx = runner.build_context(cfg.snapshot, catalog_provider=catalog)
+        runner.run_plugin(plugin, exec_ctx)
 
 
 @dataclass

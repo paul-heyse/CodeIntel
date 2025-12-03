@@ -18,6 +18,7 @@ from codeintel.analytics.core.plugin_protocol import (
     PluginResult,
     ValidationResult,
 )
+from tests._helpers.frozen_test import try_setattr
 
 
 @pytest.mark.parametrize(
@@ -42,7 +43,7 @@ def test_plugin_capability_is_frozen() -> None:
     cap = PluginCapability(name="test")
 
     with pytest.raises(AttributeError):
-        setattr(cap, "name", "other")  # noqa: B010 - testing frozen dataclass
+        try_setattr(cap, "name", "other")
 
 
 @dataclass(frozen=True)

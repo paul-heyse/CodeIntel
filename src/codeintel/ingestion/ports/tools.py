@@ -190,8 +190,8 @@ class ScipDocument:
     """
 
     relative_path: str
-    symbols: list[ScipSymbol] = field(default_factory=list)
-    occurrences: list[ScipOccurrence] = field(default_factory=list)
+    symbols: Sequence[ScipSymbol] = field(default_factory=list)
+    occurrences: Sequence[ScipOccurrence] = field(default_factory=list)
 
 
 @dataclass

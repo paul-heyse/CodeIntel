@@ -11,6 +11,10 @@ from codeintel.storage.gateway import StorageGateway
 class DefaultAnalyticsSupportProvider:
     """Use storage helpers to implement analytics runtime conveniences."""
 
+    def __init__(self) -> None:
+        self._row_count_fn = safe_row_counts
+        self._validator_factory = ContractValidator
+
     def compute_row_counts(
         self,
         gateway: StorageGateway,
@@ -35,7 +39,7 @@ class DefaultAnalyticsSupportProvider:
         """
         if not tables:
             return {}
-        counts = safe_row_counts(
+        counts = self._row_count_fn(
             gateway.con,
             repo=snapshot.repo,
             commit=snapshot.commit,
@@ -72,7 +76,7 @@ class DefaultAnalyticsSupportProvider:
         if not valid_contracts:
             return True, ()
 
-        validator = ContractValidator(gateway)
+        validator = self._validator_factory(gateway)
         result = validator.validate(valid_contracts, snapshot)
         errors = tuple(v.message for v in result.violations)
         return result.valid, errors

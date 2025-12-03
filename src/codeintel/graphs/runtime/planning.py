@@ -315,7 +315,8 @@ def _resolve_target(
         If no target is available.
     """
     if cfg is not None:
-        return cfg.repo, cfg.commit
+        snap = cfg.snapshot_ref
+        return snap.repo, snap.commit
     if target is not None:
         return target
     if runtime_snapshot is None:
@@ -324,11 +325,64 @@ def _resolve_target(
     return runtime_snapshot.repo, runtime_snapshot.commit
 
 
+@dataclass(frozen=True)
+class PlanCoordinates:
+    """Repository/commit/scope tuple used for hashing and telemetry."""
+
+    repo: str
+    commit: str
+    scope: GraphRunScope
+
+
+def _build_plugin_settings(
+    plugin: GraphPluginProtocol,
+    policy: GraphPluginPolicy,
+    coords: PlanCoordinates,
+    options: object | None,
+) -> PluginExecutionSettings:
+    """
+    Construct execution settings for a single plugin.
+
+    Returns
+    -------
+    PluginExecutionSettings
+        Settings including severity, timeouts, and hashed inputs.
+    """
+    options_hash = compute_options_hash(plugin, options)
+    input_hash = compute_input_hash(
+        InputHashPayload(
+            repo=coords.repo,
+            commit=coords.commit,
+            plugin_name=plugin.metadata.name,
+            version_hash=plugin.metadata.version_hash,
+            scope=coords.scope,
+            options_hash=options_hash,
+        )
+    )
+    return PluginExecutionSettings(
+        name=plugin.metadata.name,
+        severity=_effective_severity(plugin, policy),
+        retry_cfg=policy.retries.get(plugin.metadata.name, GraphPluginRetryPolicy()),
+        timeout_ms=_effective_timeout(plugin, policy),
+        fail_fast=policy.fail_fast,
+        input_hash=input_hash,
+        options_hash=options_hash,
+        version_hash=plugin.metadata.version_hash,
+    )
+
+
 def _prepare_execution_inputs(
     plugin_names: Sequence[str] | None,
     context: GraphPlanContext,
 ) -> ResolvedPlanInputs:
-    """Resolve all derived inputs needed to build an execution plan."""
+    """
+    Resolve all derived inputs needed to build an execution plan.
+
+    Returns
+    -------
+    ResolvedPlanInputs
+        Computed plan identifiers, plugin settings, and scope metadata.
+    """
     run_id = uuid4().hex
     plan_id = uuid4().hex
     cfg = context.cfg
@@ -347,49 +401,30 @@ def _prepare_execution_inputs(
         runtime_snapshot=context.runtime_snapshot,
         target=context.target,
     )
+    coords = PlanCoordinates(repo=repo, commit=commit, scope=scope)
 
-    registry = get_graph_registry()
-    enabled = cfg.enabled_plugins if cfg is not None else None
-    disabled = cfg.disabled_plugins if cfg is not None else None
-    plugin_plan: GraphPluginPlan = registry.plan(
+    plugin_plan: GraphPluginPlan = get_graph_registry().plan(
         plugin_names=plugin_names or list(DEFAULT_GRAPH_PLUGINS),
-        enabled=enabled,
-        disabled=disabled,
+        enabled=cfg.enabled_plugins if cfg is not None else None,
+        disabled=cfg.disabled_plugins if cfg is not None else None,
         defaults=list(DEFAULT_GRAPH_PLUGINS),
     )
 
-    plugins = plugin_plan.plugins
     options_by_plugin = _resolve_plugin_options_map(
-        plugins=plugins,
+        plugins=plugin_plan.plugins,
         cfg_options=cfg.plugin_options if cfg is not None else {},
         runtime_options=(run_options.plugin_options if run_options is not None else {}) or {},
     )
 
-    settings_by_plugin: dict[str, PluginExecutionSettings] = {}
-    for plugin in plugins:
-        name = plugin.metadata.name
-        options = options_by_plugin.get(name)
-        options_hash = compute_options_hash(plugin, options)
-        input_hash = compute_input_hash(
-            InputHashPayload(
-                repo=repo,
-                commit=commit,
-                plugin_name=name,
-                version_hash=plugin.metadata.version_hash,
-                scope=scope,
-                options_hash=options_hash,
-            )
+    settings_by_plugin = {
+        plugin.metadata.name: _build_plugin_settings(
+            plugin=plugin,
+            policy=policy,
+            coords=coords,
+            options=options_by_plugin.get(plugin.metadata.name),
         )
-        settings_by_plugin[name] = PluginExecutionSettings(
-            name=name,
-            severity=_effective_severity(plugin, policy),
-            retry_cfg=policy.retries.get(name, GraphPluginRetryPolicy()),
-            timeout_ms=_effective_timeout(plugin, policy),
-            fail_fast=policy.fail_fast,
-            input_hash=input_hash,
-            options_hash=options_hash,
-            version_hash=plugin.metadata.version_hash,
-        )
+        for plugin in plugin_plan.plugins
+    }
 
     return ResolvedPlanInputs(
         plan_id=plan_id,

@@ -20,6 +20,7 @@ from codeintel.storage.run_tracking import (
     PipelineStepRecord,
     StepCompletionParams,
 )
+from tests._helpers.frozen_test import try_setattr
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ def test_con() -> PipelineRunTracking:
     PipelineRunTracking
         Pipeline run tracking accessor with in-memory database.
     """
-    import duckdb  # noqa: PLC0415
+    duckdb = pytest.importorskip("duckdb")
 
     # Use in-memory database with just the pipeline tables
     con = duckdb.connect(":memory:")
@@ -404,7 +405,7 @@ class TestDataclasses:
         )
 
         with pytest.raises(AttributeError):
-            setattr(record, "status", "succeeded")  # noqa: B010 - testing frozen dataclass
+            try_setattr(record, "status", "succeeded")
 
     @staticmethod
     def test_pipeline_step_record_frozen() -> None:
@@ -420,4 +421,4 @@ class TestDataclasses:
         )
 
         with pytest.raises(AttributeError):
-            setattr(record, "status", "succeeded")  # noqa: B010 - testing frozen dataclass
+            try_setattr(record, "status", "succeeded")

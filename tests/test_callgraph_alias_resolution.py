@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.config import ConfigBuilder
-from codeintel.graphs.plugins.builders.callgraph import build_call_graph
+from codeintel.graphs.plugins.builders.callgraph import get_callgraph_builder_plugin
+from codeintel.graphs.plugins.runner import GraphPluginRunner
 from codeintel.storage.gateway import StorageGateway
 
 REPO = "demo/repo"
@@ -32,7 +33,11 @@ def test_callgraph_resolves_import_alias(tmp_path: Path, fresh_gateway: StorageG
         repo_root=repo_root,
         build_dir=repo_root / "build",
     )
-    build_call_graph(fresh_gateway, builder.call_graph())
+    call_graph_cfg = builder.call_graph()
+    runner = GraphPluginRunner(gateway=fresh_gateway)
+    plugin = get_callgraph_builder_plugin()
+    exec_ctx = runner.build_context(call_graph_cfg.snapshot)
+    runner.run_plugin(plugin, exec_ctx)
 
     con = fresh_gateway.con
     node_goids = {

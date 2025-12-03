@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from codeintel.serving import domain_models as dm
-from codeintel.serving.backend import clamp_limit_value
+from codeintel.serving.backend import clamp_limit
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.models import (
     FileHintsResponse,
@@ -143,7 +143,7 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
     ) -> dm.SubsystemSummaryResult:
         def _run() -> SubsystemSummaryResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 applied_limit,
                 default=applied_limit,
                 max_limit=self.limits.max_rows_per_call,
@@ -231,7 +231,7 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
     ) -> dm.SubsystemSearchResult:
         def _run() -> SubsystemSearchResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 applied_limit,
                 default=applied_limit,
                 max_limit=self.limits.max_rows_per_call,
@@ -262,7 +262,7 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
     def list_subsystem_profiles(self, *, limit: int | None = None) -> dm.SubsystemProfileResult:
         def _run() -> SubsystemProfileResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 applied_limit, default=applied_limit, max_limit=self.limits.max_rows_per_call
             )
             if clamp.has_error:
@@ -287,7 +287,7 @@ class _HttpSubsystemQueryMixin(_HttpTransportMixin):
     def list_subsystem_coverage(self, *, limit: int | None = None) -> dm.SubsystemCoverageResult:
         def _run() -> SubsystemCoverageResponse:
             applied_limit = self.limits.default_limit if limit is None else limit
-            clamp = clamp_limit_value(
+            clamp = clamp_limit(
                 applied_limit, default=applied_limit, max_limit=self.limits.max_rows_per_call
             )
             if clamp.has_error:

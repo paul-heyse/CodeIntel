@@ -1,0 +1,343 @@
+"""Extended tests for coupling computation module.
+
+This module provides additional test coverage for the coupling module
+from `codeintel.graphs.compute.metrics.coupling`, including:
+
+- Coupling metrics computation
+- Instability metric calculation
+- Abstractness computation
+- Distance from main sequence
+"""
+
+from __future__ import annotations
+
+from dataclasses import FrozenInstanceError
+from typing import Final
+
+import networkx as nx
+import pytest
+
+from codeintel.graphs.compute.metrics.coupling import (
+    CouplingMetrics,
+    compute_abstractness,
+    compute_coupling,
+    compute_distance_from_main_sequence,
+)
+from tests._helpers.frozen_test import try_setattr
+
+INSTABILITY_TOLERANCE: Final = 0.01
+HUB_DEPENDENT_COUNT: Final = 4
+HALF_INSTABILITY: Final = 0.5
+BALANCED_AFFERENT: Final = 3
+BALANCED_EFFERENT: Final = 3
+HIGH_AFFERENT: Final = 5
+MODERATE_EFFERENT: Final = 3
+MODERATE_INSTABILITY: Final = 0.375
+HALF_RATIO: Final = 0.5
+
+
+def _make_independent_modules() -> nx.DiGraph:
+    """Create a graph with independent modules (no coupling).
+
+    Returns
+    -------
+    nx.DiGraph
+        A graph with disconnected nodes.
+    """
+    g = nx.DiGraph()
+    g.add_nodes_from(["module_a", "module_b", "module_c"])
+    return g
+
+
+def _make_linear_dependency() -> nx.DiGraph:
+    """Create a linear dependency chain.
+
+    Structure: A -> B -> C
+
+    Returns
+    -------
+    nx.DiGraph
+        A linear dependency graph.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from(
+        [
+            ("module_a", "module_b"),
+            ("module_b", "module_c"),
+        ]
+    )
+    return g
+
+
+def _make_hub_dependencies() -> nx.DiGraph:
+    """Create a hub module with many dependents.
+
+    Structure: Many modules depend on 'core'
+
+    Returns
+    -------
+    nx.DiGraph
+        A hub dependency graph.
+    """
+    g = nx.DiGraph()
+    # Many modules depend on core (high afferent)
+    g.add_edges_from(
+        [
+            ("module_a", "core"),
+            ("module_b", "core"),
+            ("module_c", "core"),
+            ("module_d", "core"),
+        ]
+    )
+    return g
+
+
+def _make_god_module() -> nx.DiGraph:
+    """Create a god module that depends on everything.
+
+    Structure: 'god' depends on many modules
+
+    Returns
+    -------
+    nx.DiGraph
+        A god module dependency graph.
+    """
+    g = nx.DiGraph()
+    # God module depends on everything (high efferent)
+    g.add_edges_from(
+        [
+            ("god", "module_a"),
+            ("god", "module_b"),
+            ("god", "module_c"),
+            ("god", "module_d"),
+        ]
+    )
+    return g
+
+
+def _make_bidirectional_deps() -> nx.DiGraph:
+    """Create bidirectional dependencies.
+
+    Structure: A <-> B (circular dependency)
+
+    Returns
+    -------
+    nx.DiGraph
+        A bidirectional dependency graph.
+    """
+    g = nx.DiGraph()
+    g.add_edges_from(
+        [
+            ("module_a", "module_b"),
+            ("module_b", "module_a"),
+        ]
+    )
+    return g
+
+
+def test_compute_coupling_independent() -> None:
+    """Compute coupling for independent modules."""
+    g = _make_independent_modules()
+
+    coupling = compute_coupling(g)
+
+    # No edges for any module
+    assert coupling["module_a"].afferent == 0
+    assert coupling["module_a"].efferent == 0
+    assert coupling["module_a"].instability == 0.0
+
+
+def test_compute_coupling_linear() -> None:
+    """Compute coupling for linear dependencies."""
+    g = _make_linear_dependency()
+
+    coupling = compute_coupling(g)
+
+    # A has one efferent, no afferent
+    assert coupling["module_a"].afferent == 0
+    assert coupling["module_a"].efferent == 1
+    assert coupling["module_a"].instability == 1.0
+
+    # B has one of each
+    assert coupling["module_b"].afferent == 1
+    assert coupling["module_b"].efferent == 1
+    assert abs(coupling["module_b"].instability - 0.5) < INSTABILITY_TOLERANCE
+
+    # C has one afferent, no efferent
+    assert coupling["module_c"].afferent == 1
+    assert coupling["module_c"].efferent == 0
+    assert coupling["module_c"].instability == 0.0
+
+
+def test_compute_coupling_hub() -> None:
+    """Compute coupling for hub module."""
+    g = _make_hub_dependencies()
+
+    coupling = compute_coupling(g)
+
+    # Core has high afferent (4 dependents), no efferent
+    assert coupling["core"].afferent == HUB_DEPENDENT_COUNT
+    assert coupling["core"].efferent == 0
+    assert coupling["core"].instability == 0.0
+
+    # Modules have one efferent each, no afferent
+    assert coupling["module_a"].afferent == 0
+    assert coupling["module_a"].efferent == 1
+    assert coupling["module_a"].instability == 1.0
+
+
+def test_compute_coupling_god() -> None:
+    """Compute coupling for god module."""
+    g = _make_god_module()
+
+    coupling = compute_coupling(g)
+
+    # God module has high efferent (4 dependencies)
+    assert coupling["god"].afferent == 0
+    assert coupling["god"].efferent == HUB_DEPENDENT_COUNT
+    assert coupling["god"].instability == 1.0
+
+    # Leaf modules have one afferent, no efferent
+    assert coupling["module_a"].afferent == 1
+    assert coupling["module_a"].efferent == 0
+    assert coupling["module_a"].instability == 0.0
+
+
+def test_compute_coupling_bidirectional() -> None:
+    """Compute coupling for bidirectional dependencies."""
+    g = _make_bidirectional_deps()
+
+    coupling = compute_coupling(g)
+
+    # Both modules have 1 afferent and 1 efferent
+    assert coupling["module_a"].afferent == 1
+    assert coupling["module_a"].efferent == 1
+    assert abs(coupling["module_a"].instability - 0.5) < INSTABILITY_TOLERANCE
+
+    assert coupling["module_b"].afferent == 1
+    assert coupling["module_b"].efferent == 1
+    assert abs(coupling["module_b"].instability - HALF_INSTABILITY) < INSTABILITY_TOLERANCE
+
+
+def test_compute_coupling_empty_graph() -> None:
+    """Compute coupling for empty graph."""
+    g = nx.DiGraph()
+
+    coupling = compute_coupling(g)
+
+    assert coupling == {}
+
+
+def test_compute_abstractness_no_abstracts() -> None:
+    """Compute abstractness with no abstract classes."""
+    abstractness = compute_abstractness("module", abstract_count=0, total_count=10)
+
+    assert abstractness == 0.0
+
+
+def test_compute_abstractness_all_abstract() -> None:
+    """Compute abstractness with all abstract classes."""
+    abstractness = compute_abstractness("module", abstract_count=5, total_count=5)
+
+    assert abstractness == 1.0
+
+
+def test_compute_abstractness_partial() -> None:
+    """Compute abstractness with some abstract classes."""
+    abstractness = compute_abstractness("module", abstract_count=3, total_count=6)
+
+    assert abstractness == HALF_RATIO
+
+
+def test_compute_abstractness_empty() -> None:
+    """Compute abstractness with no classes."""
+    abstractness = compute_abstractness("module", abstract_count=0, total_count=0)
+
+    assert abstractness == 0.0
+
+
+def test_distance_from_main_ideal_stable() -> None:
+    """Compute distance for ideal stable module (A=1, I=0)."""
+    coupling = CouplingMetrics(afferent=HIGH_AFFERENT, efferent=0, instability=0.0)
+
+    distance = compute_distance_from_main_sequence(coupling, abstractness=1.0)
+
+    assert distance == 0.0
+
+
+def test_distance_from_main_ideal_unstable() -> None:
+    """Compute distance for ideal unstable module (A=0, I=1)."""
+    coupling = CouplingMetrics(afferent=0, efferent=HIGH_AFFERENT, instability=1.0)
+
+    distance = compute_distance_from_main_sequence(coupling, abstractness=0.0)
+
+    assert distance == 0.0
+
+
+def test_distance_from_main_zone_of_pain() -> None:
+    """Compute distance for module in zone of pain (A=0, I=0)."""
+    coupling = CouplingMetrics(afferent=HIGH_AFFERENT, efferent=0, instability=0.0)
+
+    distance = compute_distance_from_main_sequence(coupling, abstractness=0.0)
+
+    assert distance == 1.0
+
+
+def test_distance_from_main_zone_of_uselessness() -> None:
+    """Compute distance for module in zone of uselessness (A=1, I=1)."""
+    coupling = CouplingMetrics(afferent=0, efferent=HIGH_AFFERENT, instability=1.0)
+
+    distance = compute_distance_from_main_sequence(coupling, abstractness=1.0)
+
+    assert distance == 1.0
+
+
+def test_distance_from_main_balanced() -> None:
+    """Compute distance for balanced module."""
+    coupling = CouplingMetrics(
+        afferent=BALANCED_AFFERENT, efferent=BALANCED_EFFERENT, instability=HALF_INSTABILITY
+    )
+
+    distance = compute_distance_from_main_sequence(coupling, abstractness=0.5)
+
+    assert distance == 0.0
+
+
+# Tests: CouplingMetrics dataclass
+
+
+def test_coupling_metrics_attributes() -> None:
+    """CouplingMetrics has all expected attributes."""
+    m = CouplingMetrics(
+        afferent=HIGH_AFFERENT,
+        efferent=MODERATE_EFFERENT,
+        instability=MODERATE_INSTABILITY,
+    )
+
+    assert m.afferent == HIGH_AFFERENT
+    assert m.efferent == MODERATE_EFFERENT
+    assert m.instability == MODERATE_INSTABILITY
+
+
+def test_coupling_metrics_equality() -> None:
+    """CouplingMetrics supports equality comparison."""
+    m1 = CouplingMetrics(
+        afferent=1,
+        efferent=2,
+        instability=HALF_INSTABILITY,
+    )
+    m2 = CouplingMetrics(
+        afferent=1,
+        efferent=2,
+        instability=HALF_INSTABILITY,
+    )
+
+    assert m1 == m2
+
+
+def test_coupling_metrics_frozen() -> None:
+    """CouplingMetrics is frozen (immutable)."""
+    m = CouplingMetrics(afferent=1, efferent=2, instability=0.5)
+
+    with pytest.raises(FrozenInstanceError):
+        try_setattr(m, "afferent", 10)

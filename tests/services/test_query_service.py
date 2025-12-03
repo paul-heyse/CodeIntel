@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving import domain_models as dm
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.http.datasets import build_registry_and_limits, validate_dataset_registry
 from codeintel.serving.http.fastapi import BackendResource, create_app
@@ -30,7 +31,6 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
     SubsystemProfileRow,
 )
-from codeintel.serving.mcp.query_service import BackendLimits
 from codeintel.serving.services.observability import RequestContext
 from codeintel.serving.services.query_service import (
     HttpQueryService,
@@ -353,7 +353,10 @@ def _seed_call_graph_edges(gateway: StorageGateway) -> None:
             confidence,
             evidence_json
         )
-        VALUES ('demo/repo', 'deadbeef', 101, NULL, 'pkg/mod.py', 1, 0, 'python', 'unresolved', 'unresolved', 0.0, '{}')
+        VALUES (
+            'demo/repo', 'deadbeef', 101, NULL, 'pkg/mod.py', 1, 0,
+            'python', 'unresolved', 'unresolved', 0.0, '{}'
+        )
         """
     )
 

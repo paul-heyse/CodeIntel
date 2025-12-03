@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Literal
 
-from codeintel.config.datasets import DATASET_CONTRACTS, DATASET_CONTRACTS_BY_TABLE_KEY
+from codeintel.config.datasets import get_dataset_contracts, get_dataset_contracts_by_table_key
 from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
 
 DOCS_VIEWS = {
-    name: contract.table_key for name, contract in DATASET_CONTRACTS.items() if contract.is_view
+    name: contract.table_key
+    for name, contract in get_dataset_contracts().items()
+    if contract.is_view
 }
 
 
@@ -38,7 +40,9 @@ def build_dataset_registry(
         Mapping of dataset name to fully qualified table/view name.
     """
     registry: OrderedDict[str, str] = OrderedDict()
-    for name, contract in sorted(DATASET_CONTRACTS.items(), key=lambda item: item[1].table_key):
+    for name, contract in sorted(
+        get_dataset_contracts().items(), key=lambda item: item[1].table_key
+    ):
         if include_docs_views == "exclude" and contract.is_view:
             continue
         registry[name] = contract.table_key
@@ -77,7 +81,7 @@ def describe_dataset(name: str, table: str) -> str:
     str
         Description string including a column preview when available.
     """
-    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table)
+    contract = get_dataset_contracts_by_table_key().get(table)
     if contract is None or contract.schema is None:
         return f"{name}: {table}"
     column_names = contract.schema.column_names()[:PREVIEW_COLUMN_COUNT]
@@ -129,7 +133,7 @@ def _collect_dataset_registry_issues(
             missing.append(f"{dataset_name} ({table})")
             continue
 
-        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table)
+        contract = get_dataset_contracts_by_table_key().get(table)
         if contract is None:
             missing.append(f"{dataset_name} ({table})")
             continue

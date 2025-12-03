@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/infrastructure_utilities/_scip_resolver.py
+# hypothesis_version: 6.148.5
+
+['ResolvedScipConfig', 'ScipResolverInput', 'build_dir', 'cfg', 'commit', 'document_output_dir', 'explicit', 'legacy', 'modules', 'python', 'repo', 'repo_root', 'resolve_scip_inputs', 'scip_bin', 'scip_python_bin']

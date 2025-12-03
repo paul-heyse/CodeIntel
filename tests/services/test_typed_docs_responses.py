@@ -7,6 +7,7 @@ from typing import TypedDict, cast
 
 import pytest
 
+from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.models import (
     FunctionSummaryResponse,
     FunctionSummaryRow,
@@ -16,7 +17,6 @@ from codeintel.serving.mcp.models import (
     SubsystemProfileResponse,
     SubsystemProfileRow,
 )
-from codeintel.serving.mcp.query_service import BackendLimits
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.subsystems import SubsystemRepository

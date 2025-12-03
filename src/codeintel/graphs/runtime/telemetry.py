@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 try:
     from opentelemetry import metrics, trace
@@ -161,7 +161,7 @@ class GraphRuntimeTelemetry:
                 )
                 span.context_data["otel_span"] = otel_span
             except (ImportError, AttributeError):
-                pass
+                span.context_data["otel_span"] = None
 
         return span
 
@@ -192,15 +192,16 @@ class GraphRuntimeTelemetry:
         otel_span = span.context_data.get("otel_span")
         if otel_span is not None:
             try:
-                otel_span.set_attribute("status", record.status)
-                otel_span.set_attribute("duration_ms", duration_ms)
-                otel_span.set_attribute("attempts", record.attempts)
+                span_any = cast("Any", otel_span)
+                span_any.set_attribute("status", record.status)
+                span_any.set_attribute("duration_ms", duration_ms)
+                span_any.set_attribute("attempts", record.attempts)
                 if record.error and StatusCode is not None:
-                    otel_span.set_attribute("error", record.error)
-                    otel_span.set_status(StatusCode.ERROR, record.error)
+                    span_any.set_attribute("error", record.error)
+                    span_any.set_status(StatusCode.ERROR, record.error)
                 elif StatusCode is not None:
-                    otel_span.set_status(StatusCode.OK)
-                otel_span.end()
+                    span_any.set_status(StatusCode.OK)
+                span_any.end()
             except AttributeError:
                 pass
 
@@ -221,7 +222,7 @@ class GraphRuntimeTelemetry:
         if not self._metrics_enabled:
             return
 
-        labels = {
+        labels: dict[str, str | int | float | bool] = {
             "plugin_name": record.name,
             "status": record.status,
         }

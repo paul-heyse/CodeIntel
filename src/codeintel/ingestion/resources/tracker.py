@@ -2,8 +2,6 @@
 
 This module provides `TrackerProvider`, a resource provider that
 manages access to the change tracker for incremental ingestion.
-
-NOTE: Imports inside methods are intentional to avoid circular dependencies.
 """
 
 from __future__ import annotations
@@ -12,11 +10,20 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.ingestion.adapters import (
+    DuckDBStorageAdapter,
+    FilesystemDiscoveryAdapter,
+    HashChangeDetectionAdapter,
+)
+from codeintel.ingestion.change_tracker import ChangeTracker
+from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
+from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.resources.protocol import LazyResource
+from codeintel.ingestion.steps.repo_scan import RepoScanStep
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
+    from codeintel.ingestion.change_tracker import IncrementalIngestPolicy
     from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
     from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
     from codeintel.storage.gateway import StorageGateway
@@ -98,8 +105,6 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
         ChangeTracker
             The change tracker.
         """
-        from codeintel.ingestion.change_tracker import ChangeTracker
-
         # First check scratch store (populated by repo_scan)
         if self._config.scratch is not None:
             tracker = self._config.scratch.consume("change_tracker")
@@ -117,17 +122,6 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
             self._snapshot.repo,
             self._snapshot.commit,
         )
-
-        from codeintel.ingestion.adapters import (
-            DuckDBStorageAdapter,
-            FilesystemDiscoveryAdapter,
-            HashChangeDetectionAdapter,
-        )
-        from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-            default_code_profile,
-        )
-        from codeintel.ingestion.ports.change_detection import ChangeRequest
-        from codeintel.ingestion.steps.repo_scan import RepoScanStep
 
         # Create adapters
         storage = DuckDBStorageAdapter(self._gateway)

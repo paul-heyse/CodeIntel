@@ -7,8 +7,6 @@ import pytest
 from codeintel.analytics.datasets import DELETE_SQL_BY_TABLE
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
-    DATASET_CONTRACTS,
-    DATASET_CONTRACTS_BY_TABLE_KEY,
     FILE_PROFILE_COLUMNS,
     FUNCTION_METRICS_COLUMNS,
     FUNCTION_PROFILE_COLUMNS,
@@ -21,9 +19,11 @@ from codeintel.config.datasets import (
     MODULE_PROFILE_COLUMNS,
     SUBSYSTEM_COVERAGE_COLUMNS,
     SUBSYSTEM_PROFILE_COLUMNS,
-    TABLE_SCHEMAS,
     TEST_COVERAGE_EDGE_COLUMNS,
     TEST_PROFILE_COLUMNS,
+    get_dataset_contracts,
+    get_dataset_contracts_by_table_key,
+    get_table_schemas,
 )
 
 
@@ -34,10 +34,11 @@ def _require(*, condition: bool, message: str) -> None:
 
 def test_all_tables_have_contracts() -> None:
     """Every non-temporary table should have a DatasetContract entry."""
+    contracts_by_key = get_dataset_contracts_by_table_key()
     missing = [
         table_key
-        for table_key in TABLE_SCHEMAS
-        if not table_key.startswith("tmp_") and table_key not in DATASET_CONTRACTS_BY_TABLE_KEY
+        for table_key in get_table_schemas()
+        if not table_key.startswith("tmp_") and table_key not in contracts_by_key
     ]
     _require(condition=not missing, message=f"Missing contracts for: {missing}")
 
@@ -46,7 +47,7 @@ def test_json_schema_map_matches_contracts() -> None:
     """Derived JSON Schema mapping should mirror contract definitions."""
     expected = {
         name: contract.json_schema_id
-        for name, contract in DATASET_CONTRACTS.items()
+        for name, contract in get_dataset_contracts().items()
         if contract.json_schema_id is not None
     }
     _require(
@@ -57,7 +58,7 @@ def test_json_schema_map_matches_contracts() -> None:
 
 def test_capabilities_shape() -> None:
     """Capability flags should include read-only and view indicators."""
-    contract = DATASET_CONTRACTS.get("function_profile")
+    contract = get_dataset_contracts().get("function_profile")
     _require(condition=contract is not None, message="function_profile contract missing")
     if contract is None:
         return
@@ -78,7 +79,7 @@ def test_capabilities_shape() -> None:
 
 def test_column_names_method() -> None:
     """Column names method should return schema columns in order."""
-    contract = DATASET_CONTRACTS.get("function_profile")
+    contract = get_dataset_contracts().get("function_profile")
     _require(condition=contract is not None, message="function_profile contract missing")
     if contract is None:
         return
@@ -91,13 +92,14 @@ def test_column_names_method() -> None:
 
 def test_contract_derived_columns_match_schemas() -> None:
     """Contract-derived columns should match original TABLE_SCHEMAS definitions."""
+    table_schemas = get_table_schemas()
     mismatches: list[str] = []
-    for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items():
+    for table_key, contract in get_dataset_contracts_by_table_key().items():
         if contract.schema is None:
             continue
-        if table_key not in TABLE_SCHEMAS:
+        if table_key not in table_schemas:
             continue
-        original_schema = TABLE_SCHEMAS[table_key]
+        original_schema = table_schemas[table_key]
         contract_cols = contract.column_names()
         original_cols = tuple(original_schema.column_names())
         if contract_cols != original_cols:
@@ -113,7 +115,7 @@ def test_contract_derived_columns_match_schemas() -> None:
 def test_delete_sql_covers_repo_commit_tables() -> None:
     """DELETE_SQL_BY_TABLE should cover all datasets with repo+commit columns."""
     missing: list[str] = []
-    for table_key, contract in DATASET_CONTRACTS_BY_TABLE_KEY.items():
+    for table_key, contract in get_dataset_contracts_by_table_key().items():
         if contract.schema is None or contract.is_view:
             continue
         col_names = contract.schema.column_names()
@@ -146,7 +148,7 @@ def test_row_models_column_constants_match_contracts() -> None:
     ]
     mismatches: list[str] = []
     for table_key, constant in column_mappings:
-        contract = DATASET_CONTRACTS_BY_TABLE_KEY.get(table_key)
+        contract = get_dataset_contracts_by_table_key().get(table_key)
         if contract is None or contract.schema is None:
             mismatches.append(f"{table_key}: no contract or schema")
             continue

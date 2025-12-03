@@ -21,7 +21,7 @@ from codeintel.graphs.core.registry import (
     register_graph_plugin,
     unregister_graph_plugin,
 )
-from codeintel.graphs.core.result import GraphPluginResult
+from codeintel.graphs.core.result import GraphPluginResult, GraphPluginRunRecord
 from codeintel.graphs.recipes.dsl import (
     GraphRecipe,
     GraphRecipeOptions,
@@ -267,8 +267,6 @@ def _make_multi_stage_recipe(
 
 def test_stage_execution_result_attributes() -> None:
     """StageExecutionResult has correct attributes."""
-    from codeintel.graphs.core.result import GraphPluginRunRecord  # noqa: PLC0415
-
     records = (
         GraphPluginRunRecord(
             name="test_plugin",
@@ -302,8 +300,6 @@ def test_stage_execution_result_attributes() -> None:
 
 def test_recipe_execution_result_all_records() -> None:
     """RecipeExecutionResult aggregates records from all stages."""
-    from codeintel.graphs.core.result import GraphPluginRunRecord  # noqa: PLC0415
-
     record1 = GraphPluginRunRecord(
         name="plugin1",
         status="succeeded",
@@ -356,8 +352,6 @@ def test_recipe_execution_result_all_records() -> None:
 
 def test_recipe_execution_result_counts_mixed_statuses() -> None:
     """RecipeExecutionResult counts mixed success/fail/skip."""
-    from codeintel.graphs.core.result import GraphPluginRunRecord  # noqa: PLC0415
-
     succeeded_record = GraphPluginRunRecord(
         name="succeeded_plugin",
         status="succeeded",
@@ -768,7 +762,7 @@ def test_stage_execution_result_frozen() -> None:
         success=True,
         duration_ms=0.0,
     )
-    assert_cannot_setattr(result, "success", False)
+    assert_cannot_setattr(result, "success", value=False)
 
 
 def test_recipe_execution_result_frozen() -> None:
@@ -782,7 +776,7 @@ def test_recipe_execution_result_frozen() -> None:
         started_at="2024-01-01T00:00:00Z",
         ended_at="2024-01-01T00:00:01Z",
     )
-    assert_cannot_setattr(result, "success", False)
+    assert_cannot_setattr(result, "success", value=False)
 
 
 def test_graph_stage_frozen() -> None:

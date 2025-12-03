@@ -6,7 +6,7 @@ for minimal boilerplate.
 
 These plugins delegate computation to the analytics package (per architecture
 decision Option B) and use resource injection pattern via ctx.require()
-with fallback to direct context properties for backward compatibility.
+for accessing storage resources.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Tests verifying alignment between canonical catalog, registry, and backend contracts."""
+"""Tests verifying alignment between canonical catalog and registry."""
 
 from __future__ import annotations
 
@@ -6,18 +6,15 @@ import re
 
 import pytest
 
-from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
-from codeintel.serving.backend.operations import OPERATION_CONTRACTS, OperationContract
+from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.serving.operations import (
     DataSourceType,
-    Operation,
     get_operation,
     iter_operations,
 )
 from codeintel.serving.registry import (
-    OperationSpec,
-    get_operation_spec,
-    iter_operation_specs,
+    get_registry_operation,
+    iter_registry_operations,
 )
 
 # =============================================================================
@@ -25,37 +22,31 @@ from codeintel.serving.registry import (
 # =============================================================================
 
 
-def test_operation_spec_is_operation_alias() -> None:
-    """OperationSpec should be an alias for the canonical Operation."""
-    if OperationSpec is not Operation:
-        pytest.fail("OperationSpec should be an alias for Operation")
-
-
 def test_registry_and_catalog_agree_on_ids() -> None:
     """Registry operation IDs must match catalog operation IDs."""
     catalog_ids = {op.id for op in iter_operations()}
-    registry_ids = {spec.id for spec in iter_operation_specs()}
+    registry_ids = {op.id for op in iter_registry_operations()}
     if catalog_ids != registry_ids:
         diff = catalog_ids.symmetric_difference(registry_ids)
         pytest.fail(f"Catalog and registry IDs differ: {diff}")
 
 
 def test_registry_returns_catalog_objects() -> None:
-    """Get_operation_spec should return objects with same attributes as catalog."""
+    """Get_registry_operation should return objects with same attributes as catalog."""
     for op in iter_operations():
-        spec = get_operation_spec(op.id)
+        registry_op = get_registry_operation(op.id)
         catalog_op = get_operation(op.id)
         # For non-patched operations, should have same attributes
         # datasets.rows is patched with exposed_datasets, so compare by ID
-        if spec is None:
-            pytest.fail(f"get_operation_spec returned None for {op.id}")
+        if registry_op is None:
+            pytest.fail(f"get_registry_operation returned None for {op.id}")
         if catalog_op is None:
             pytest.fail(f"get_operation returned None for {op.id}")
-        if spec.id != catalog_op.id:
+        if registry_op.id != catalog_op.id:
             pytest.fail(f"ID mismatch for {op.id}")
-        if spec.category != catalog_op.category:
+        if registry_op.category != catalog_op.category:
             pytest.fail(f"Category mismatch for {op.id}")
-        if spec.backend_method != catalog_op.backend_method:
+        if registry_op.backend_method != catalog_op.backend_method:
             pytest.fail(f"backend_method mismatch for {op.id}")
 
 
@@ -64,63 +55,6 @@ def test_all_operation_ids_are_unique() -> None:
     ids = [op.id for op in iter_operations()]
     if len(ids) != len(set(ids)):
         pytest.fail("Duplicate operation IDs found")
-
-
-# =============================================================================
-# Contract ↔ Catalog Alignment
-# =============================================================================
-
-
-def test_contracts_derived_from_catalog() -> None:
-    """OPERATION_CONTRACTS should have entries for all catalog operations."""
-    catalog_ids = {op.id for op in iter_operations()}
-    contract_names = set(OPERATION_CONTRACTS.keys())
-    if catalog_ids != contract_names:
-        diff = catalog_ids.symmetric_difference(contract_names)
-        pytest.fail(f"Catalog and contracts differ: {diff}")
-
-
-def test_contract_data_sources_match_catalog() -> None:
-    """Contract data_source should match the catalog operation."""
-    for op in iter_operations():
-        contract = OPERATION_CONTRACTS.get(op.id)
-        if contract is None:
-            pytest.fail(f"Missing contract for {op.id}")
-        if contract.data_source != op.data_source:
-            pytest.fail(
-                f"Data source mismatch for {op.id}: "
-                f"contract={contract.data_source}, catalog={op.data_source}"
-            )
-
-
-def test_contract_source_names_match_catalog() -> None:
-    """Contract source_name should match the catalog operation."""
-    for op in iter_operations():
-        contract = OPERATION_CONTRACTS.get(op.id)
-        if contract is None:
-            pytest.fail(f"Missing contract for {op.id}")
-        expected_source = op.source_name or ""
-        if contract.source_name != expected_source:
-            pytest.fail(
-                f"Source name mismatch for {op.id}: "
-                f"contract={contract.source_name}, catalog={expected_source}"
-            )
-
-
-def test_contract_from_operation_factory() -> None:
-    """OperationContract.from_operation should correctly derive fields."""
-    for op in iter_operations():
-        contract = OperationContract.from_operation(op)
-        if contract.name != op.id:
-            pytest.fail(f"Name mismatch for {op.id}")
-        if contract.data_source != op.data_source:
-            pytest.fail(f"data_source mismatch for {op.id}")
-        if contract.source_name != (op.source_name or ""):
-            pytest.fail(f"source_name mismatch for {op.id}")
-        if contract.supports_pagination != op.supports_pagination:
-            pytest.fail(f"supports_pagination mismatch for {op.id}")
-        if contract.repository_method != op.repository_method:
-            pytest.fail(f"repository_method mismatch for {op.id}")
 
 
 # =============================================================================
@@ -156,7 +90,7 @@ def test_graph_engine_operations_have_required_graphs() -> None:
 
 def test_required_datasets_are_valid() -> None:
     """All required_datasets should exist in DATASET_CONTRACTS_BY_TABLE_KEY."""
-    valid_keys = set(DATASET_CONTRACTS_BY_TABLE_KEY.keys())
+    valid_keys = set(get_dataset_contracts_by_table_key().keys())
 
     for op in iter_operations():
         for dataset_key in op.required_datasets:

@@ -1,4 +1,4 @@
-"""Dataset MCP tools registered from OperationSpec."""
+"""Dataset MCP tools registered from Operation."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from codeintel.serving.mcp.serialization import (
     SupportsModelValidate,
 )
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
-from codeintel.serving.registry import OperationSpec, iter_operation_specs
+from codeintel.serving.operations import Operation, iter_operations
 from codeintel.serving.services.errors import generate_correlation_id
 
 
@@ -49,14 +49,14 @@ def _serialize_list_payload(
 
 
 def _build_dataset_tool(
-    spec: OperationSpec,
+    spec: Operation,
     backend: QueryBackendOrService,
 ) -> Callable[..., list[dict[str, object]] | dict[str, object] | dict[str, ProblemDetail]]:
     backend_attr = getattr(backend, spec.backend_method, None)
     if not callable(backend_attr):
         message = (
             f"Backend {backend!r} does not implement method {spec.backend_method!r} "
-            f"for OperationSpec id={spec.id!r}"
+            f"for Operation id={spec.id!r}"
         )
         raise TypeError(message)
     backend_method: Callable[..., object] = backend_attr
@@ -96,8 +96,8 @@ def _build_dataset_tool(
 
 
 def register_dataset_tools(mcp: FastMCP, backend: QueryBackendOrService) -> None:
-    """Register dataset browsing MCP tools based on OperationSpec."""
-    for spec in iter_operation_specs():
+    """Register dataset browsing MCP tools based on Operation."""
+    for spec in iter_operations():
         if spec.category != "datasets" or spec.tool_name is None:
             continue
         tool = _build_dataset_tool(spec, backend)

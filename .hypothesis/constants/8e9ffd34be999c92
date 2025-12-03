@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/executor.py
+# hypothesis_version: 6.148.5
+
+[0.0, 100, 1000, 'ExecutionPolicy', 'ExecutionReport', 'ExecutionStatus', 'PluginExecutor', 'dry_run', 'execute_plugin_plan', 'failed', 'fatal', 'partial', 'skip_on_error', 'skipped', 'succeeded']

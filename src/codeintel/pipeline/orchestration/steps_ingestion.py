@@ -24,8 +24,15 @@ from codeintel.pipeline.orchestration.core import (
 
 log = logging.getLogger(__name__)
 
+
 def _get_shared_scratch() -> IngestRuntimeScratch:
-    """Get or create the shared scratch space for the current pipeline run."""
+    """Get or create the shared scratch space for the current pipeline run.
+
+    Returns
+    -------
+    IngestRuntimeScratch
+        Shared scratch space for storing intermediate data during ingestion.
+    """
     return _shared_scratch_cache()
 
 

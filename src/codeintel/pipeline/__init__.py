@@ -31,8 +31,8 @@ Operation-Driven Orchestration
 from codeintel.pipeline import run_registry
 from codeintel.pipeline.executor import run_pipeline
 from codeintel.pipeline.op_planner import (
-    OpPrereqSummary,
     OperationPrereqOptions,
+    OpPrereqSummary,
     build_pipeline_for_operation,
     build_prereq_summary,
     ensure_prerequisites_for_operation,

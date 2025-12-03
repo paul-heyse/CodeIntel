@@ -16,7 +16,7 @@ from codeintel.serving.mcp.models import (
 from codeintel.serving.registry import (
     build_dataset_meta,
     build_serving_dataflow_graph,
-    iter_operation_specs,
+    iter_registry_operations,
 )
 
 LOG_ROUTE_PREFIX = "/meta"
@@ -68,7 +68,7 @@ def build_meta_router() -> APIRouter:
     def list_operation_meta(cfg: ConfigDep) -> list[OperationMetaResponse]:
         limits = BackendLimits.from_config(cfg)
         results: list[OperationMetaResponse] = []
-        for spec in iter_operation_specs():
+        for spec in iter_registry_operations():
             default_limit = spec.default_limit or limits.default_limit
             max_limit = spec.max_limit or limits.max_rows_per_call
             results.append(

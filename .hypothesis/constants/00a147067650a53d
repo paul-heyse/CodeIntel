@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/serving/http/routes/datasets.py
+# hypothesis_version: 6.148.5
+
+['Cache-Control', 'ETag', 'datasets.list', 'datasets.rows', 'datasets.schema', 'datasets.specs', 'dict[str, object]', 'exclude', 'if-none-match', 'include', 'is_docs_view', 'is_read_only', 'only', 'public, max-age=60', 'utf-8']

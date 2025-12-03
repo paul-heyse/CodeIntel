@@ -10,8 +10,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
-from codeintel.serving.http.fastapi import BackendResource, create_app
-from codeintel.serving.services.wiring import build_backend_resource
+from codeintel.serving.bootstrap import BackendResource, build_backend_resource
+from codeintel.serving.http.fastapi import create_app
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
 
