@@ -58,7 +58,9 @@ def test_conformance_passes_with_empty_db(tmp_path: Path) -> None:
             if not destination.exists():
                 shutil.copy2(schema_file, destination)
         report = run_conformance(con, schema_base_dir=tmp_path, sample_rows=False)
-        assert report.ok, f"Unexpected contract issues: {[issue.message for issue in report.issues]}"
+        assert report.ok, (
+            f"Unexpected contract issues: {[issue.message for issue in report.issues]}"
+        )
     finally:
         con.close()
 
@@ -97,9 +99,7 @@ def test_conformance_skips_missing_schema_files(tmp_path: Path) -> None:
         empty_schema_dir = tmp_path / "empty_schemas"
         empty_schema_dir.mkdir()
 
-        report = run_conformance(
-            con, schema_base_dir=empty_schema_dir, sample_rows=True
-        )
+        report = run_conformance(con, schema_base_dir=empty_schema_dir, sample_rows=True)
 
         assert isinstance(report, ConformanceReport)
     finally:

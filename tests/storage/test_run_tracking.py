@@ -97,9 +97,7 @@ def _make_run_context(run_id: str, tmp_path: Path) -> RunContext:
     )
 
 
-def test_start_run_inserts_record(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_start_run_inserts_record(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """Verify start_run inserts a pipeline run record."""
     con = fresh_gateway.con
     tracking = PipelineRunTracking(con=con)
@@ -115,9 +113,7 @@ def test_start_run_inserts_record(
     assert result is not None
 
 
-def test_complete_run_updates_status(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_complete_run_updates_status(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """Verify complete_run updates run status."""
     con = fresh_gateway.con
     tracking = PipelineRunTracking(con=con)
@@ -135,18 +131,14 @@ def test_complete_run_updates_status(
     assert result[0] == "succeeded"
 
 
-def test_complete_run_with_error_summary(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_complete_run_with_error_summary(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """Verify complete_run stores error summary."""
     con = fresh_gateway.con
     tracking = PipelineRunTracking(con=con)
     ctx = _make_run_context(run_id="run-test-3", tmp_path=tmp_path)
 
     tracking.start_run(ctx)
-    tracking.complete_run(
-        "run-test-3", status="failed", error_summary="Test error occurred"
-    )
+    tracking.complete_run("run-test-3", status="failed", error_summary="Test error occurred")
 
     result = con.execute(
         "SELECT error_summary FROM metadata.pipeline_runs WHERE run_id = ?",
@@ -157,9 +149,7 @@ def test_complete_run_with_error_summary(
     assert result[0] == "Test error occurred"
 
 
-def test_fetch_run_returns_record(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_fetch_run_returns_record(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """Verify fetch_run returns PipelineRunRecord."""
     con = fresh_gateway.con
     tracking = PipelineRunTracking(con=con)

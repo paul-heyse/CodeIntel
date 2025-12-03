@@ -6,14 +6,16 @@ import os
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
-from codeintel.pipeline.cli.main import main
+from codeintel.cli import app
 from codeintel.storage.gateway import StorageConfig, open_gateway
+
+runner = CliRunner()
 
 
 def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
-    """
-    Build a minimal repo, run export_docs, and verify GOID export exists.
+    """Build a minimal repo, run export_docs, and verify GOID export exists.
 
     Raises
     ------
@@ -33,7 +35,8 @@ def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
 
     os.environ["CODEINTEL_SKIP_SCIP"] = "true"
     pytest.xfail("Pipeline export_docs currently fails in function_effects catalog integration")
-    exit_code = main(
+    result = runner.invoke(
+        app,
         [
             "pipeline",
             "run",
@@ -49,9 +52,9 @@ def test_pipeline_export_docs_smoke(tmp_path: Path) -> None:
             str(build_dir),
             "--target",
             "export_docs",
-        ]
+        ],
     )
-    if exit_code != 0:
+    if result.exit_code != 0:
         message = "Pipeline run failed"
         raise RuntimeError(message)
 

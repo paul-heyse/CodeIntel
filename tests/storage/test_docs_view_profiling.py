@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import duckdb
@@ -12,7 +11,6 @@ import pytest
 from codeintel.storage.docs_view_profiling import (
     DOCS_VIEWS,
     explain,
-    main,
     run_profile,
     write_text,
 )
@@ -20,10 +18,6 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
 from codeintel.storage.schemas import apply_all_schemas
 from codeintel.storage.views import create_all_views
-
-# Exit code returned by argparse on error
-ARGPARSE_ERROR_CODE = 2
-
 
 def test_docs_views_is_defined() -> None:
     """Verify DOCS_VIEWS constant is defined and non-empty."""
@@ -35,11 +29,6 @@ def test_docs_views_contains_expected_views() -> None:
     """Verify DOCS_VIEWS contains expected subsystem views."""
     assert "docs.v_subsystem_profile" in DOCS_VIEWS
     assert "docs.v_subsystem_coverage" in DOCS_VIEWS
-
-
-def test_main_is_callable() -> None:
-    """Verify main function is defined and callable."""
-    assert callable(main)
 
 
 def test_write_text_creates_file(tmp_path: Path) -> None:
@@ -97,9 +86,7 @@ def _create_test_db(db_path: Path) -> None:
     con = duckdb.connect(":memory:")
     try:
         # Attach file database with newer storage version
-        con.execute(
-            f"ATTACH DATABASE '{db_path}' AS test_db (STORAGE_VERSION 'v1.4.0')"
-        )
+        con.execute(f"ATTACH DATABASE '{db_path}' AS test_db (STORAGE_VERSION 'v1.4.0')")
         # Switch to the attached database
         con.execute("USE test_db")
 
@@ -158,48 +145,22 @@ def test_run_profile_analyze_mode_creates_artifacts(tmp_path: Path) -> None:
 
 
 def test_main_with_missing_db_calls_parser_error(tmp_path: Path) -> None:
-    """Verify main returns error for missing database."""
+    """Verify run_profile propagates error for missing database."""
     db_path = tmp_path / "missing.duckdb"
     output_dir = tmp_path / "output"
 
-    original_argv = sys.argv
-    try:
-        sys.argv = [
-            "docs_view_profiling",
-            "--db-path",
-            str(db_path),
-            "--output-dir",
-            str(output_dir),
-        ]
-        # main() calls parser.error() which raises SystemExit
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-        # argparse.error() raises SystemExit with code 2
-        assert exc_info.value.code == ARGPARSE_ERROR_CODE
-    finally:
-        sys.argv = original_argv
+    with pytest.raises(FileNotFoundError, match="DuckDB not found"):
+        run_profile(db_path=db_path, output_dir=output_dir, analyze=False)
 
 
 def test_main_with_valid_db_returns_success(tmp_path: Path) -> None:
-    """Verify main returns 0 on successful profiling."""
+    """Verify run_profile succeeds on a valid database."""
     db_path = tmp_path / "test.duckdb"
     output_dir = tmp_path / "output"
 
     _create_test_db(db_path)
 
-    original_argv = sys.argv
-    try:
-        sys.argv = [
-            "docs_view_profiling",
-            "--db-path",
-            str(db_path),
-            "--output-dir",
-            str(output_dir),
-        ]
-        result = main()
-        assert result == 0
-    finally:
-        sys.argv = original_argv
+    run_profile(db_path=db_path, output_dir=output_dir, analyze=False)
 
 
 def test_main_with_analyze_flag(tmp_path: Path) -> None:
@@ -209,20 +170,7 @@ def test_main_with_analyze_flag(tmp_path: Path) -> None:
 
     _create_test_db(db_path)
 
-    original_argv = sys.argv
-    try:
-        sys.argv = [
-            "docs_view_profiling",
-            "--db-path",
-            str(db_path),
-            "--output-dir",
-            str(output_dir),
-            "--analyze",
-        ]
-        result = main()
-        assert result == 0
+    run_profile(db_path=db_path, output_dir=output_dir, analyze=True)
 
-        # Verify analyze files were created
-        assert (output_dir / "docs_v_subsystem_profile.analyze.txt").exists()
-    finally:
-        sys.argv = original_argv
+    # Verify analyze files were created
+    assert (output_dir / "docs_v_subsystem_profile.analyze.txt").exists()

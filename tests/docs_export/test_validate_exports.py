@@ -9,7 +9,7 @@ import pytest
 
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions, export_all_jsonl
 from codeintel.pipeline.export.export_parquet import export_all_parquet
-from codeintel.pipeline.export.validate_exports import main
+from codeintel.pipeline.export.validate_exports import validate_files
 from codeintel.serving.services.errors import ExportError
 from tests._helpers.fixtures import (
     GatewayOptions,
@@ -41,10 +41,8 @@ def test_validate_jsonl_happy_path(tmp_path: Path) -> None:
             }
         ],
     )
-    exit_code = main(["--schema", "call_graph_edges", str(data_path)])
-    if exit_code != 0:
-        message = f"Expected success, got exit code {exit_code}"
-        pytest.fail(message)
+    exit_code = validate_files("call_graph_edges", [data_path])
+    assert exit_code == 0
 
 
 def test_validate_jsonl_failure(tmp_path: Path) -> None:
@@ -60,10 +58,8 @@ def test_validate_jsonl_failure(tmp_path: Path) -> None:
             }
         ],
     )
-    exit_code = main(["--schema", "call_graph_edges", str(data_path)])
-    if exit_code == 0:
-        message = "Expected validation failure for missing repo field"
-        pytest.fail(message)
+    exit_code = validate_files("call_graph_edges", [data_path])
+    assert exit_code != 0
 
 
 def test_docs_export_views_exist(tmp_path: Path) -> None:

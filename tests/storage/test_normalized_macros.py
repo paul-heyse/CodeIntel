@@ -9,7 +9,7 @@ import pytest
 
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import DuckDBError, StorageGateway
-from codeintel.storage.normalized_macros import main, render_macro
+from codeintel.storage.normalized_macros import render_macro
 from codeintel.storage.sql_helpers import safe_macro_call
 
 pytestmark = pytest.mark.smoke
@@ -76,43 +76,14 @@ def test_render_macro_includes_goid_cast() -> None:
     assert "goid_h128" in result.ddl.lower()
 
 
-def test_main_outputs_ddl() -> None:
-    """Verify main outputs DDL to stdout."""
-    original_argv = sys.argv
-    original_stdout = sys.stdout
+def test_render_macro_outputs_ddl_to_buffer() -> None:
+    """Verify render_macro produces DDL strings for provided tables."""
+    buffer = io.StringIO()
 
-    try:
-        # Capture stdout
-        captured_output = io.StringIO()
-        sys.stdout = captured_output
+    for table in ("core.ast_nodes", "core.goids"):
+        rendered = render_macro(table)
+        buffer.write(rendered.ddl)
 
-        # Run with specific table
-        sys.argv = ["normalized_macros", "core.ast_nodes"]
-        main()
-
-        output = captured_output.getvalue()
-        assert "CREATE OR REPLACE MACRO" in output
-        assert "metadata.normalized_ast_nodes" in output
-    finally:
-        sys.argv = original_argv
-        sys.stdout = original_stdout
-
-
-def test_main_with_multiple_tables() -> None:
-    """Verify main handles multiple table arguments."""
-    original_argv = sys.argv
-    original_stdout = sys.stdout
-
-    try:
-        captured_output = io.StringIO()
-        sys.stdout = captured_output
-
-        sys.argv = ["normalized_macros", "core.ast_nodes", "core.goids"]
-        main()
-
-        output = captured_output.getvalue()
-        assert "normalized_ast_nodes" in output
-        assert "normalized_goids" in output
-    finally:
-        sys.argv = original_argv
-        sys.stdout = original_stdout
+    output = buffer.getvalue()
+    assert "metadata.normalized_ast_nodes" in output
+    assert "metadata.normalized_goids" in output

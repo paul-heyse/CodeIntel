@@ -144,7 +144,7 @@ class PipelineReport:
     success: bool = True
     total_rows: int = 0
     total_duration_ms: float = 0.0
-    started_at: datetime = field(default_factory=datetime.now)
+    started_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     completed_at: datetime | None = None
     errors: list[str] = field(default_factory=list)
 

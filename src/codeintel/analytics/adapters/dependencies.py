@@ -29,8 +29,8 @@ _DELETE_DEPENDENCY_AGGREGATES = (
 _INSERT_DEPENDENCY_CALL = """
 INSERT INTO analytics.external_dependency_calls (
     repo, commit, dep_id, library, service_name,
-    function_goid_h128, function_urn, file_path, module, function_qualname,
-    callsite_count, modes, evidence, created_at
+    function_goid_h128, function_urn, rel_path, module, qualname,
+    callsite_count, modes, evidence_json, created_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
@@ -123,17 +123,17 @@ class DependencyCallRow:
         Function global ID (as Decimal for DuckDB hugeint).
     function_urn
         Function URN.
-    file_path
-        Source file path.
+    rel_path
+        Relative source file path.
     module
         Module name.
-    function_qualname
+    qualname
         Fully qualified function name.
     callsite_count
         Number of call sites.
     modes
         List of usage modes.
-    evidence
+    evidence_json
         Evidence data as list of dicts.
     created_at
         Row creation timestamp.
@@ -146,12 +146,12 @@ class DependencyCallRow:
     service_name: str
     function_goid_h128: Decimal
     function_urn: str
-    file_path: str
+    rel_path: str
     module: str
-    function_qualname: str
+    qualname: str
     callsite_count: int
     modes: list[str]
-    evidence: list[dict[str, object]]
+    evidence_json: list[dict[str, object]]
     created_at: datetime
 
 
@@ -261,12 +261,12 @@ class DependencyCallAdapter(BatchAdapter[DependencyCallRow]):
                 row.service_name,
                 row.function_goid_h128,
                 row.function_urn,
-                row.file_path,
+                row.rel_path,
                 row.module,
-                row.function_qualname,
+                row.qualname,
                 row.callsite_count,
                 row.modes,
-                row.evidence,
+                row.evidence_json,
                 row.created_at,
             )
             for row in rows

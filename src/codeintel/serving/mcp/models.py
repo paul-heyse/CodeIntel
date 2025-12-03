@@ -1742,3 +1742,72 @@ class DataflowGraphResponse(BaseModel):
 
     nodes: list[DataflowNodePayload]
     edges: list[DataflowEdgePayload]
+
+
+# -----------------------------------------------------------------------------
+# Auto-Pipeline Debug Models
+# -----------------------------------------------------------------------------
+
+
+class OperationPrereqDatasetStatus(BaseModel):
+    """Status of a single dataset prerequisite check.
+
+    Used by the debug endpoint to show whether each required dataset
+    has rows for the requested repo/commit.
+    """
+
+    table_key: str = Field(description="Dataset table key (e.g., 'analytics.function_profile')")
+    name: str = Field(description="Human-readable dataset name")
+    has_rows: bool = Field(description="Whether the dataset has rows for the repo/commit")
+    checked: bool = Field(description="Whether this dataset was successfully checked")
+    error: str | None = Field(default=None, description="Error message if check failed")
+
+
+class OperationPrereqRunSummary(BaseModel):
+    """Summary of a pipeline run considered for prerequisite satisfaction.
+
+    Used by the debug endpoint to show which runs were evaluated.
+    """
+
+    run_id: str = Field(description="Pipeline run identifier")
+    kind: str = Field(description="Run kind (full, op_prereqs, etc.)")
+    status: str = Field(description="Run status (succeeded, failed, etc.)")
+    started_at: datetime | None = Field(default=None, description="When the run started")
+    completed_at: datetime | None = Field(default=None, description="When the run completed")
+
+
+class OperationPrereqDebugResponse(BaseModel):
+    """Complete debug information for prerequisite checking.
+
+    This response provides full observability into why prerequisites
+    are or are not satisfied for an operation.
+    """
+
+    op_id: str = Field(description="Operation identifier (e.g., 'function.summary')")
+    repo: str = Field(description="Repository slug")
+    commit: str = Field(description="Commit SHA")
+    required_datasets: list[str] = Field(
+        default_factory=list,
+        description="Directly required dataset table keys from operation config",
+    )
+    expanded_datasets: list[str] = Field(
+        default_factory=list,
+        description="All required datasets after transitive dependency expansion",
+    )
+    dataset_statuses: list[OperationPrereqDatasetStatus] = Field(
+        default_factory=list,
+        description="Status of each dataset check",
+    )
+    runs_considered: list[OperationPrereqRunSummary] = Field(
+        default_factory=list,
+        description="Recent pipeline runs considered for this repo/commit",
+    )
+    data_satisfied: bool = Field(
+        description="Whether data-aware prerequisite check passed",
+    )
+    run_satisfied: bool = Field(
+        description="Whether run-based prerequisite check passed",
+    )
+    overall_satisfied: bool = Field(
+        description="Final determination of prerequisite satisfaction",
+    )

@@ -93,9 +93,7 @@ def test_load_module_map_uses_custom_logger(
         assert len(result) == 0
 
         handler.flush()
-        warning_found = any(
-            "No modules found" in record.message for record in handler.buffer
-        )
+        warning_found = any("No modules found" in record.message for record in handler.buffer)
         assert warning_found
     finally:
         test_logger.removeHandler(handler)

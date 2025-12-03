@@ -39,6 +39,7 @@ class RouterOptions:
 
     auto_pipeline: bool = False
 
+
 LOG = logging.getLogger("codeintel.serving.http.routes.functions")
 
 

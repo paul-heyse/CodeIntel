@@ -1,0 +1,508 @@
+"""Tests for meta HTTP routes.
+
+This module tests the meta introspection endpoints using real gateways.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from fastapi import status
+from fastapi.testclient import TestClient
+
+from codeintel.config.serving_models import ServingConfig
+from codeintel.serving.backend import BackendLimits
+from codeintel.serving.http.fastapi import (
+    BackendResource,
+    create_app,
+)
+from codeintel.serving.http.routes.meta import build_meta_router
+from codeintel.serving.mcp.backend import DuckDBBackend
+from codeintel.serving.services.query_service import LocalQueryService
+from tests._helpers.gateway import build_duckdb_query_service
+
+if TYPE_CHECKING:
+    from tests._helpers.fixtures import ProvisionedGateway
+
+
+# =============================================================================
+# build_meta_router Tests
+# =============================================================================
+
+
+def test_build_meta_router_returns_router() -> None:
+    """Verify build_meta_router returns an APIRouter with meta paths."""
+    router = build_meta_router()
+
+    routes: list[str] = []
+    for route in router.routes:
+        if hasattr(route, "path"):
+            path_value = getattr(route, "path", None)
+            if isinstance(path_value, str):
+                routes.append(path_value)
+
+    assert "/meta/datasets" in routes
+    assert "/meta/operations" in routes
+    assert "/meta/dataflow" in routes
+
+
+# =============================================================================
+# /meta/datasets Tests
+# =============================================================================
+
+
+def test_meta_datasets_returns_list(
+    provisioned_repo: ProvisionedGateway,
+) -> None:
+    """Verify /meta/datasets returns a list of dataset metadata.
+
+    Parameters
+    ----------
+    provisioned_repo
+        Provisioned gateway fixture.
+    """
+    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
+    query = build_duckdb_query_service(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+    )
+    service = LocalQueryService(
+        query=query,
+        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+    )
+    backend = DuckDBBackend(
+        gateway=provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+        observability=None,
+        service_override=service,
+    )
+
+    def load_config() -> ServingConfig:
+        return ServingConfig(
+            mode="remote_api",
+            repo=provisioned_repo.repo,
+            commit=provisioned_repo.commit,
+            api_base_url="http://test",
+        )
+
+    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
+        return BackendResource(backend=backend, service=service, close=lambda: None)
+
+    app = create_app(config_loader=load_config, backend_factory=backend_factory)
+
+    with TestClient(app) as client:
+        response = client.get("/meta/datasets")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert isinstance(data, list)
+    # Should have at least some datasets registered
+    if data:
+        first = data[0]
+        assert "id" in first
+        assert "table_key" in first
+        assert "description" in first
+
+
+def test_meta_datasets_includes_limit_info(
+    provisioned_repo: ProvisionedGateway,
+) -> None:
+    """Verify /meta/datasets includes limit configuration.
+
+    Parameters
+    ----------
+    provisioned_repo
+        Provisioned gateway fixture.
+    """
+    default_limit = 25
+    max_rows = 250
+    limits = BackendLimits(default_limit=default_limit, max_rows_per_call=max_rows)
+    query = build_duckdb_query_service(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+    )
+    service = LocalQueryService(
+        query=query,
+        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+    )
+    backend = DuckDBBackend(
+        gateway=provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+        observability=None,
+        service_override=service,
+    )
+
+    def load_config() -> ServingConfig:
+        return ServingConfig(
+            mode="remote_api",
+            repo=provisioned_repo.repo,
+            commit=provisioned_repo.commit,
+            api_base_url="http://test",
+            default_limit=default_limit,
+            max_rows_per_call=max_rows,
+        )
+
+    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
+        return BackendResource(backend=backend, service=service, close=lambda: None)
+
+    app = create_app(config_loader=load_config, backend_factory=backend_factory)
+
+    with TestClient(app) as client:
+        response = client.get("/meta/datasets")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    if data:
+        first = data[0]
+        assert "default_limit" in first
+        assert "max_limit" in first
+
+
+# =============================================================================
+# /meta/operations Tests
+# =============================================================================
+
+
+def test_meta_operations_returns_list(
+    provisioned_repo: ProvisionedGateway,
+) -> None:
+    """Verify /meta/operations returns a list of operation metadata.
+
+    Parameters
+    ----------
+    provisioned_repo
+        Provisioned gateway fixture.
+    """
+    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
+    query = build_duckdb_query_service(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+    )
+    service = LocalQueryService(
+        query=query,
+        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+    )
+    backend = DuckDBBackend(
+        gateway=provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+        observability=None,
+        service_override=service,
+    )
+
+    def load_config() -> ServingConfig:
+        return ServingConfig(
+            mode="remote_api",
+            repo=provisioned_repo.repo,
+            commit=provisioned_repo.commit,
+            api_base_url="http://test",
+        )
+
+    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
+        return BackendResource(backend=backend, service=service, close=lambda: None)
+
+    app = create_app(config_loader=load_config, backend_factory=backend_factory)
+
+    with TestClient(app) as client:
+        response = client.get("/meta/operations")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert isinstance(data, list)
+    # Should have many operations registered
+    assert len(data) > 0
+    first = data[0]
+    assert "id" in first
+    assert "category" in first
+    assert "summary" in first
+
+
+def test_meta_operations_includes_http_details(
+    provisioned_repo: ProvisionedGateway,
+) -> None:
+    """Verify /meta/operations includes HTTP method and path.
+
+    Parameters
+    ----------
+    provisioned_repo
+        Provisioned gateway fixture.
+    """
+    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
+    query = build_duckdb_query_service(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+    )
+    service = LocalQueryService(
+        query=query,
+        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+    )
+    backend = DuckDBBackend(
+        gateway=provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+        observability=None,
+        service_override=service,
+    )
+
+    def load_config() -> ServingConfig:
+        return ServingConfig(
+            mode="remote_api",
+            repo=provisioned_repo.repo,
+            commit=provisioned_repo.commit,
+            api_base_url="http://test",
+        )
+
+    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
+        return BackendResource(backend=backend, service=service, close=lambda: None)
+
+    app = create_app(config_loader=load_config, backend_factory=backend_factory)
+
+    with TestClient(app) as client:
+        response = client.get("/meta/operations")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    # Find an operation with HTTP details (most have them)
+    http_ops = [op for op in data if op.get("http_path") is not None]
+    assert len(http_ops) > 0
+    http_op = http_ops[0]
+    assert "http_method" in http_op
+    assert "http_path" in http_op
+
+
+# =============================================================================
+# /meta/dataflow Tests
+# =============================================================================
+
+
+def test_meta_dataflow_returns_graph(
+    provisioned_repo: ProvisionedGateway,
+) -> None:
+    """Verify /meta/dataflow returns nodes and edges.
+
+    Parameters
+    ----------
+    provisioned_repo
+        Provisioned gateway fixture.
+    """
+    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
+    query = build_duckdb_query_service(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+    )
+    service = LocalQueryService(
+        query=query,
+        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+    )
+    backend = DuckDBBackend(
+        gateway=provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+        observability=None,
+        service_override=service,
+    )
+
+    def load_config() -> ServingConfig:
+        return ServingConfig(
+            mode="remote_api",
+            repo=provisioned_repo.repo,
+            commit=provisioned_repo.commit,
+            api_base_url="http://test",
+        )
+
+    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
+        return BackendResource(backend=backend, service=service, close=lambda: None)
+
+    app = create_app(config_loader=load_config, backend_factory=backend_factory)
+
+    with TestClient(app) as client:
+        response = client.get("/meta/dataflow")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert "nodes" in data
+    assert "edges" in data
+    assert isinstance(data["nodes"], list)
+    assert isinstance(data["edges"], list)
+
+
+def test_meta_dataflow_nodes_have_expected_fields(
+    provisioned_repo: ProvisionedGateway,
+) -> None:
+    """Verify /meta/dataflow nodes have required fields.
+
+    Parameters
+    ----------
+    provisioned_repo
+        Provisioned gateway fixture.
+    """
+    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
+    query = build_duckdb_query_service(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+    )
+    service = LocalQueryService(
+        query=query,
+        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+    )
+    backend = DuckDBBackend(
+        gateway=provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+        observability=None,
+        service_override=service,
+    )
+
+    def load_config() -> ServingConfig:
+        return ServingConfig(
+            mode="remote_api",
+            repo=provisioned_repo.repo,
+            commit=provisioned_repo.commit,
+            api_base_url="http://test",
+        )
+
+    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
+        return BackendResource(backend=backend, service=service, close=lambda: None)
+
+    app = create_app(config_loader=load_config, backend_factory=backend_factory)
+
+    with TestClient(app) as client:
+        response = client.get("/meta/dataflow")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    nodes = data["nodes"]
+    if nodes:
+        first_node = nodes[0]
+        assert "id" in first_node
+        assert "kind" in first_node
+
+
+# =============================================================================
+# /meta/debug/pipeline/prereqs Tests
+# =============================================================================
+
+
+def test_meta_debug_prereqs_unknown_operation(
+    provisioned_repo: ProvisionedGateway,
+) -> None:
+    """Verify /meta/debug/pipeline/prereqs returns 404 for unknown operation.
+
+    Parameters
+    ----------
+    provisioned_repo
+        Provisioned gateway fixture.
+    """
+    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
+    query = build_duckdb_query_service(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+    )
+    service = LocalQueryService(
+        query=query,
+        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+    )
+    backend = DuckDBBackend(
+        gateway=provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+        observability=None,
+        service_override=service,
+    )
+
+    def load_config() -> ServingConfig:
+        return ServingConfig(
+            mode="remote_api",
+            repo=provisioned_repo.repo,
+            commit=provisioned_repo.commit,
+            api_base_url="http://test",
+        )
+
+    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
+        return BackendResource(backend=backend, service=service, close=lambda: None)
+
+    app = create_app(config_loader=load_config, backend_factory=backend_factory)
+
+    with TestClient(app) as client:
+        response = client.get("/meta/debug/pipeline/prereqs?op_id=nonexistent.op")
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_meta_debug_prereqs_valid_operation(
+    provisioned_repo: ProvisionedGateway,
+) -> None:
+    """Verify /meta/debug/pipeline/prereqs returns debug info for valid operation.
+
+    Parameters
+    ----------
+    provisioned_repo
+        Provisioned gateway fixture.
+    """
+    limits = BackendLimits(default_limit=10, max_rows_per_call=100)
+    query = build_duckdb_query_service(
+        provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+    )
+    service = LocalQueryService(
+        query=query,
+        dataset_tables=dict(provisioned_repo.gateway.datasets.mapping),
+    )
+    backend = DuckDBBackend(
+        gateway=provisioned_repo.gateway,
+        repo=provisioned_repo.repo,
+        commit=provisioned_repo.commit,
+        limits=limits,
+        observability=None,
+        service_override=service,
+    )
+
+    def load_config() -> ServingConfig:
+        return ServingConfig(
+            mode="remote_api",
+            repo=provisioned_repo.repo,
+            commit=provisioned_repo.commit,
+            api_base_url="http://test",
+        )
+
+    def backend_factory(_cfg: ServingConfig, **_kwargs: object) -> BackendResource:
+        return BackendResource(backend=backend, service=service, close=lambda: None)
+
+    app = create_app(config_loader=load_config, backend_factory=backend_factory)
+
+    # Use health.status as it's a known operation
+    with TestClient(app) as client:
+        response = client.get("/meta/debug/pipeline/prereqs?op_id=health.status")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert "op_id" in data
+    assert data["op_id"] == "health.status"
+    assert "repo" in data
+    assert "commit" in data
+    assert "overall_satisfied" in data

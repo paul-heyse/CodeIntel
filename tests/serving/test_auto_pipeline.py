@@ -10,26 +10,34 @@ import logging
 import os
 from collections.abc import Callable, Generator, Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
 import pytest
 
+from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.serving_models import ServingConfig
 from codeintel.runtime import RunContext, RunKind, TriggerKind
 from codeintel.serving.auto_pipeline import (
     AUTO_PIPELINE_ENV,
     build_paths_for_serving,
+    build_prereq_debug_info,
+    dataset_has_rows_for_snapshot,
     ensure_prereqs_for_http,
     ensure_prereqs_for_mcp,
+    get_required_table_keys_for_operation,
+    has_required_data_for_operation,
     has_successful_prereq_run,
     is_auto_pipeline_enabled,
+    operation_prereqs_satisfied,
     should_run_auto_pipeline,
 )
 from codeintel.serving.mcp.auto_pipeline_wrapper import wrap_tool_with_prereqs
 from codeintel.serving.mcp.backend import DuckDBBackend, QueryBackend
+from codeintel.serving.operations.catalog import get_operation
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.run_tracking import PipelineRunTracking, PipelineStatus
 from tests._helpers.duckdb import gateway_with_macros
@@ -1396,3 +1404,282 @@ def test_wrapped_tool_logs_when_prereqs_skipped(
 
     # Should have debug logs from wrapper and possibly from ensure_prereqs_for_mcp
     assert any("auto_pipeline" in r.message.lower() for r in caplog.records)
+
+
+# -----------------------------------------------------------------------------
+# Data-Aware Prerequisite Tests
+# -----------------------------------------------------------------------------
+
+
+def test_dataset_has_rows_for_snapshot_returns_true_when_data_present(
+    auto_pipeline_test_env: AutoPipelineTestEnv,
+) -> None:
+    """Verify dataset_has_rows_for_snapshot returns True when data exists.
+
+    Parameters
+    ----------
+    auto_pipeline_test_env
+        Test environment with gateway and configuration.
+    """
+    env = auto_pipeline_test_env
+    repo = "test/repo"
+    commit = "abc123"
+
+    created_at = datetime.now(UTC).isoformat()
+    env.gateway.core.insert_goids(
+        [
+            (
+                12345,
+                "test:urn",
+                repo,
+                commit,
+                "pkg/mod.py",
+                "python",
+                "function",
+                "pkg.mod.func",
+                1,
+                1,
+                created_at,
+            )
+        ]
+    )
+
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get("core.goids")
+    if contract is None:
+        pytest.skip("core.goids contract not found")
+
+    result = dataset_has_rows_for_snapshot(
+        env.gateway,
+        contract,
+        repo=repo,
+        commit=commit,
+    )
+
+    assert result is True
+
+
+def test_dataset_has_rows_for_snapshot_returns_false_when_empty(
+    auto_pipeline_test_env: AutoPipelineTestEnv,
+) -> None:
+    """Verify dataset_has_rows_for_snapshot returns False for empty table.
+
+    Parameters
+    ----------
+    auto_pipeline_test_env
+        Test environment with gateway and configuration.
+    """
+    env = auto_pipeline_test_env
+
+    contract = DATASET_CONTRACTS_BY_TABLE_KEY.get("core.goids")
+    if contract is None:
+        pytest.skip("core.goids contract not found")
+
+    # Query for data that doesn't exist
+    result = dataset_has_rows_for_snapshot(
+        env.gateway,
+        contract,
+        repo="nonexistent/repo",
+        commit="nonexistent",
+    )
+
+    assert result is False
+
+
+def test_get_required_table_keys_for_operation_returns_frozenset(
+    auto_pipeline_test_env: AutoPipelineTestEnv,
+) -> None:
+    """Verify get_required_table_keys_for_operation returns correct type.
+
+    Parameters
+    ----------
+    auto_pipeline_test_env
+        Test environment with gateway and configuration.
+    """
+    _ = auto_pipeline_test_env  # Use env for fixture consistency
+
+    result = get_required_table_keys_for_operation("function.summary")
+
+    assert isinstance(result, frozenset)
+
+
+def test_get_required_table_keys_for_unknown_operation_returns_empty(
+    auto_pipeline_test_env: AutoPipelineTestEnv,
+) -> None:
+    """Verify unknown operations return empty frozenset.
+
+    Parameters
+    ----------
+    auto_pipeline_test_env
+        Test environment with gateway and configuration.
+    """
+    _ = auto_pipeline_test_env  # Use env for fixture consistency
+
+    result = get_required_table_keys_for_operation("nonexistent.operation")
+
+    assert result == frozenset()
+
+
+def test_has_required_data_for_operation_returns_false_when_missing(
+    auto_pipeline_test_env: AutoPipelineTestEnv,
+) -> None:
+    """Verify has_required_data_for_operation returns False for missing data.
+
+    Parameters
+    ----------
+    auto_pipeline_test_env
+        Test environment with gateway and configuration.
+    """
+    env = auto_pipeline_test_env
+
+    # Query for data that doesn't exist
+    result = has_required_data_for_operation(
+        env.gateway,
+        "function.summary",
+        repo="nonexistent/repo",
+        commit="nonexistent",
+    )
+
+    # Should be False because data doesn't exist
+    assert result is False
+
+
+def test_operation_prereqs_satisfied_uses_data_check_when_datasets_declared(
+    auto_pipeline_test_env: AutoPipelineTestEnv,
+) -> None:
+    """Verify operation_prereqs_satisfied uses data-aware check for ops with datasets.
+
+    Parameters
+    ----------
+    auto_pipeline_test_env
+        Test environment with gateway and configuration.
+    """
+    env = auto_pipeline_test_env
+    repo = "test/repo"
+    commit = "abc123"
+
+    # Get an operation with required_datasets
+    op = get_operation("function.summary")
+    if op is None or not op.required_datasets:
+        pytest.skip("function.summary doesn't have required_datasets")
+
+    # Without seeding data, should return False
+    result = operation_prereqs_satisfied(
+        env.gateway,
+        "function.summary",
+        repo=repo,
+        commit=commit,
+    )
+
+    # Data doesn't exist, so should be False
+    assert result is False
+
+
+def test_operation_prereqs_satisfied_falls_back_to_run_check(
+    auto_pipeline_test_env: AutoPipelineTestEnv,
+) -> None:
+    """Verify operation_prereqs_satisfied falls back to run-based check.
+
+    Parameters
+    ----------
+    auto_pipeline_test_env
+        Test environment with gateway and configuration.
+    """
+    env = auto_pipeline_test_env
+    repo = "test/repo"
+    commit = "abc123"
+
+    # Seed a successful run
+    params = RunParams(repo=repo, commit=commit, status="succeeded", kind="full")
+    _seed_run(env.gateway.runs, params)
+
+    # Find an operation without required_datasets (if any)
+    # If function.summary has datasets, the run-based fallback won't apply
+    op = get_operation("function.summary")
+    if op is not None and op.required_datasets:
+        # If the operation has datasets, data-aware check takes precedence
+        result = operation_prereqs_satisfied(
+            env.gateway,
+            "function.summary",
+            repo=repo,
+            commit=commit,
+        )
+        # Data doesn't exist, so even with a run, should be False
+        assert result is False
+    else:
+        # For operations without declared datasets, run check applies
+        result = operation_prereqs_satisfied(
+            env.gateway,
+            "function.summary",
+            repo=repo,
+            commit=commit,
+        )
+        # Run exists, so should be True
+        assert result is True
+
+
+def test_build_prereq_debug_info_returns_complete_info(
+    auto_pipeline_test_env: AutoPipelineTestEnv,
+) -> None:
+    """Verify build_prereq_debug_info returns complete debug information.
+
+    Parameters
+    ----------
+    auto_pipeline_test_env
+        Test environment with gateway and configuration.
+    """
+    env = auto_pipeline_test_env
+    repo = "test/repo"
+    commit = "abc123"
+
+    debug_info = build_prereq_debug_info(
+        env.gateway,
+        "function.summary",
+        repo=repo,
+        commit=commit,
+    )
+
+    # Check all expected fields
+    assert debug_info.op_id == "function.summary"
+    assert debug_info.repo == repo
+    assert debug_info.commit == commit
+    assert isinstance(debug_info.required_datasets, tuple)
+    assert isinstance(debug_info.expanded_datasets, tuple)
+    assert isinstance(debug_info.dataset_statuses, tuple)
+    assert isinstance(debug_info.runs_considered, tuple)
+    assert isinstance(debug_info.data_satisfied, bool)
+    assert isinstance(debug_info.run_satisfied, bool)
+    assert isinstance(debug_info.overall_satisfied, bool)
+
+
+def test_build_prereq_debug_info_includes_run_summaries(
+    auto_pipeline_test_env: AutoPipelineTestEnv,
+) -> None:
+    """Verify build_prereq_debug_info includes run summaries.
+
+    Parameters
+    ----------
+    auto_pipeline_test_env
+        Test environment with gateway and configuration.
+    """
+    env = auto_pipeline_test_env
+    repo = "test/repo"
+    commit = "abc123"
+
+    # Seed a run for this repo/commit
+    params = RunParams(repo=repo, commit=commit, status="succeeded", kind="full")
+    _seed_run(env.gateway.runs, params)
+
+    debug_info = build_prereq_debug_info(
+        env.gateway,
+        "function.summary",
+        repo=repo,
+        commit=commit,
+    )
+
+    # Should have at least one run considered
+    assert len(debug_info.runs_considered) >= 1
+
+    # Run should match our seeded run
+    run = debug_info.runs_considered[0]
+    assert run.status == "succeeded"
+    assert run.kind == "full"

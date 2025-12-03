@@ -53,9 +53,7 @@ def register_profile_tools(
     """
     # Check auto-pipeline conditions once
     auto_pipeline = (
-        is_auto_pipeline_enabled()
-        and config is not None
-        and hasattr(backend, "gateway")
+        is_auto_pipeline_enabled() and config is not None and hasattr(backend, "gateway")
     )
     _ = _require_spec("profiles.function", "get_function_profile")
     _ = _require_spec("profiles.file", "get_file_profile")

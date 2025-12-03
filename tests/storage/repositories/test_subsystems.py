@@ -13,9 +13,7 @@ def test_list_subsystems_returns_rows(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystems(limit=10)
 
     assert isinstance(result, list)
@@ -28,9 +26,7 @@ def test_list_subsystems_respects_limit(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystems(limit=1)
 
     assert len(result) <= 1
@@ -43,9 +39,7 @@ def test_list_subsystems_filters_by_role(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
 
     result_with_role = repository.list_subsystems(limit=10, role="api")
 
@@ -59,9 +53,7 @@ def test_list_subsystems_searches_by_query(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
 
     result_with_query = repository.list_subsystems(limit=10, query="api")
 
@@ -75,9 +67,7 @@ def test_get_subsystem_summary_returns_row(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.get_subsystem_summary("subsysdemo")
 
     if result is not None:
@@ -91,9 +81,7 @@ def test_get_subsystem_summary_returns_none_for_missing(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.get_subsystem_summary("nonexistent_subsystem")
 
     assert result is None
@@ -106,9 +94,7 @@ def test_search_subsystems_is_alias_for_list(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     list_result = repository.list_subsystems(limit=10)
     search_result = repository.search_subsystems(limit=10)
 
@@ -122,9 +108,7 @@ def test_list_subsystem_modules_returns_rows(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_modules("subsysdemo")
 
     assert isinstance(result, list)
@@ -137,9 +121,7 @@ def test_list_subsystem_memberships_returns_rows(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_memberships()
 
     assert isinstance(result, list)
@@ -152,9 +134,7 @@ def test_list_subsystems_for_module_returns_rows(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystems_for_module("pkg.mod")
 
     assert isinstance(result, list)
@@ -167,9 +147,7 @@ def test_list_subsystem_profiles_returns_rows(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_profiles(limit=10)
 
     assert isinstance(result, list)
@@ -182,9 +160,7 @@ def test_list_subsystem_coverage_returns_rows(
     repo = "demo/repo"
     commit = "deadbeef"
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_coverage(limit=10)
 
     assert isinstance(result, list)
@@ -207,9 +183,7 @@ def test_list_subsystem_profiles_uses_cache_when_present(
         [repo, commit, "cached_sub", 5, "Cached Subsystem"],
     )
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_profiles(limit=10)
 
     has_cached = any(row.get("subsystem_id") == "cached_sub" for row in result)
@@ -233,9 +207,7 @@ def test_list_subsystem_coverage_uses_cache_when_present(
         [repo, commit, "cached_cov", 3, "Cached Coverage"],
     )
 
-    repository = SubsystemRepository(
-        gateway=architecture_gateway, repo=repo, commit=commit
-    )
+    repository = SubsystemRepository(gateway=architecture_gateway, repo=repo, commit=commit)
     result = repository.list_subsystem_coverage(limit=10)
 
     has_cached = any(row.get("subsystem_id") == "cached_cov" for row in result)

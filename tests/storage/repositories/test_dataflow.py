@@ -35,9 +35,7 @@ def test_list_nodes_returns_nodes(fresh_gateway: StorageGateway) -> None:
     """Verify list_nodes returns dataflow nodes including seeded data."""
     con = fresh_gateway.con
 
-    initial_count = len(
-        con.execute("SELECT id FROM metadata.dataset_dataflow_nodes").fetchall()
-    )
+    initial_count = len(con.execute("SELECT id FROM metadata.dataset_dataflow_nodes").fetchall())
 
     _seed_dataflow_data(con)
 
@@ -84,9 +82,7 @@ def test_list_edges_returns_edges(fresh_gateway: StorageGateway) -> None:
     """Verify list_edges returns edges including bootstrapped data."""
     con = fresh_gateway.con
 
-    initial_count = len(
-        con.execute("SELECT src FROM metadata.dataset_dataflow_edges").fetchall()
-    )
+    initial_count = len(con.execute("SELECT src FROM metadata.dataset_dataflow_edges").fetchall())
 
     _seed_dataflow_data(con)
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 
 import networkx as nx
@@ -13,22 +12,8 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.engine import views as nx_views
 from codeintel.graphs.engine.cache import GraphCache
-from tests._helpers.builders import (
-    CallGraphEdgeRow,
-    CallGraphNodeRow,
-    ConfigValueRow,
-    ImportGraphEdgeRow,
-    ModuleRow,
-    SymbolUseEdgeRow,
-    insert_call_graph_edges,
-    insert_call_graph_nodes,
-    insert_config_values,
-    insert_import_graph_edges,
-    insert_modules,
-    insert_symbol_use_edges,
-)
-from tests._helpers.coverage_env import CoverageSeedConfig
-from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
+from tests._helpers.context import TestContext
+from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
 
 
 def _node_payload(graph: nx.Graph) -> set[tuple[object, tuple[tuple[str, object], ...]]]:
@@ -46,172 +31,59 @@ def _assert_graph_match(name: str, expected: nx.Graph, actual: nx.Graph) -> None
         pytest.fail(f"{name} edges differ between engine and nx_views")
 
 
-def test_engine_matches_nx_views_for_core_graphs() -> None:
+def test_engine_matches_nx_views_for_core_graphs(test_ctx: TestContext) -> None:
     """NxGraphEngine should produce the same graphs as direct nx_views loaders."""
-    gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    try:
-        repo = "demo/repo"
-        commit = "deadbeef"
-        insert_call_graph_nodes(
-            gateway,
-            [
-                CallGraphNodeRow(1, "python", "function", 0, is_public=True, rel_path="pkg/a.py"),
-                CallGraphNodeRow(2, "python", "function", 0, is_public=True, rel_path="pkg/b.py"),
-            ],
-        )
-        insert_call_graph_edges(
-            gateway,
-            [
-                CallGraphEdgeRow(
-                    repo=repo,
-                    commit=commit,
-                    caller_goid_h128=1,
-                    callee_goid_h128=2,
-                    callsite_path="pkg/a.py",
-                    callsite_line=1,
-                    callsite_col=0,
-                    language="python",
-                    kind="direct",
-                    resolved_via="local_name",
-                    confidence=1.0,
-                )
-            ],
-        )
-        insert_import_graph_edges(
-            gateway,
-            [
-                ImportGraphEdgeRow(
-                    repo=repo,
-                    commit=commit,
-                    src_module="pkg.a",
-                    dst_module="pkg.b",
-                    src_fan_out=1,
-                    dst_fan_in=1,
-                    cycle_group=0,
-                )
-            ],
-        )
-        insert_modules(
-            gateway,
-            [
-                ModuleRow(module="pkg.a", path="pkg/a.py", repo=repo, commit=commit),
-                ModuleRow(module="pkg.b", path="pkg/b.py", repo=repo, commit=commit),
-            ],
-        )
-        insert_symbol_use_edges(
-            gateway,
-            [
-                SymbolUseEdgeRow(
-                    symbol="foo",
-                    def_path="pkg/a.py",
-                    use_path="pkg/b.py",
-                    same_file=False,
-                    same_module=False,
-                    def_goid_h128=1,
-                    use_goid_h128=2,
-                )
-            ],
-        )
-        insert_config_values(
-            gateway,
-            [
-                ConfigValueRow(
-                    repo=repo,
-                    commit=commit,
-                    config_path="config.yml",
-                    format="yaml",
-                    key="service.name",
-                    reference_paths=["pkg/a.py"],
-                    reference_modules=["pkg.a", "pkg.b"],
-                    reference_count=1,
-                )
-            ],
-        )
-        seed_cfg = CoverageSeedConfig(
-            module_import="pkg.a",
-            function_name="func",
-            test_id="tests/test_example.py::test_func",
-            repo=repo,
-            commit=commit,
-            function_goid=1,
-            test_goid=101,
-        )
-        gateway.con.execute(
-            """
-            INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
-            VALUES (?, ?, ?, ?, ?, 'passed', ?)
-            """,
-            [
-                seed_cfg.test_id,
-                "tests/test_example.py",
-                "tests.test_example.test_func",
-                repo,
-                commit,
-                datetime.now(tz=UTC),
-            ],
-        )
-        gateway.con.execute(
-            """
-            INSERT INTO analytics.test_coverage_edges (
-                test_id, function_goid_h128, urn, repo, commit, rel_path, qualname,
-                covered_lines, executable_lines, coverage_ratio, last_status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 1.0, 'passed', ?)
-            """,
-            [
-                seed_cfg.test_id,
-                seed_cfg.function_goid,
-                f"goid:{seed_cfg.repo}#python:function:{seed_cfg.module_import}.{seed_cfg.function_name}",
-                repo,
-                commit,
-                "pkg/a.py",
-                "pkg.a.func",
-                datetime.now(tz=UTC),
-            ],
-        )
-        engine = NxGraphEngine(
-            gateway=gateway,
-            snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=Path()),
-        )
-        comparisons: list[tuple[str, Callable[[], nx.Graph], Callable[[], nx.Graph]]] = [
-            (
-                "call_graph",
-                lambda: nx_views.load_call_graph(gateway, repo, commit),
-                engine.call_graph,
-            ),
-            (
-                "import_graph",
-                lambda: nx_views.load_import_graph(gateway, repo, commit),
-                engine.import_graph,
-            ),
-            (
-                "symbol_module_graph",
-                lambda: nx_views.load_symbol_module_graph(gateway, repo, commit),
-                engine.symbol_module_graph,
-            ),
-            (
-                "symbol_function_graph",
-                lambda: nx_views.load_symbol_function_graph(gateway, repo, commit),
-                engine.symbol_function_graph,
-            ),
-            (
-                "config_module_bipartite",
-                lambda: nx_views.load_config_module_bipartite(gateway, repo, commit),
-                engine.config_module_bipartite,
-            ),
-            (
-                "test_function_bipartite",
-                lambda: nx_views.load_test_function_bipartite(gateway, repo, commit),
-                engine.test_function_bipartite,
-            ),
-        ]
-        for name, direct_loader, engine_loader in comparisons:
-            expected = direct_loader()
-            actual = engine_loader()
-            _assert_graph_match(name, expected, actual)
-            if actual is not engine_loader():
-                pytest.fail(f"{name} was not cached on subsequent engine calls")
-    finally:
-        gateway.close()
+    # Apply all required seed packs
+    test_ctx.require(GRAPH_PACK, SYMBOL_PACK, CONFIG_PACK, COVERAGE_PACK)
+
+    repo = test_ctx.repo
+    commit = test_ctx.commit
+    gateway = test_ctx.gateway
+
+    engine = NxGraphEngine(
+        gateway=gateway,
+        snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=Path()),
+    )
+
+    comparisons: list[tuple[str, Callable[[], nx.Graph], Callable[[], nx.Graph]]] = [
+        (
+            "call_graph",
+            lambda: nx_views.load_call_graph(gateway, repo, commit),
+            engine.call_graph,
+        ),
+        (
+            "import_graph",
+            lambda: nx_views.load_import_graph(gateway, repo, commit),
+            engine.import_graph,
+        ),
+        (
+            "symbol_module_graph",
+            lambda: nx_views.load_symbol_module_graph(gateway, repo, commit),
+            engine.symbol_module_graph,
+        ),
+        (
+            "symbol_function_graph",
+            lambda: nx_views.load_symbol_function_graph(gateway, repo, commit),
+            engine.symbol_function_graph,
+        ),
+        (
+            "config_module_bipartite",
+            lambda: nx_views.load_config_module_bipartite(gateway, repo, commit),
+            engine.config_module_bipartite,
+        ),
+        (
+            "test_function_bipartite",
+            lambda: nx_views.load_test_function_bipartite(gateway, repo, commit),
+            engine.test_function_bipartite,
+        ),
+    ]
+
+    for name, direct_loader, engine_loader in comparisons:
+        expected = direct_loader()
+        actual = engine_loader()
+        _assert_graph_match(name, expected, actual)
+        if actual is not engine_loader():
+            pytest.fail(f"{name} was not cached on subsequent engine calls")
 
 
 # ===========================================================================

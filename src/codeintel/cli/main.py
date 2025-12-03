@@ -2,11 +2,23 @@
 
 This module provides Typer sub-applications for:
 - **pipeline**: Run full or operation-targeted pipelines, check status
-- **op**: List and invoke serving operations
+- **op**: List and invoke serving operations (with dynamic per-operation commands)
 - **dataset**: List, describe, and verify dataset contracts
 - **serve**: Start HTTP or MCP servers
 
 Each command group is a Typer app that can be composed into the main CLI.
+
+Dynamic Operation Commands
+--------------------------
+Operations from the catalog are automatically registered as individual CLI
+commands under the ``op`` group. For example:
+
+    codeintel op function-summary --goid-h128 123456
+    codeintel op datasets-list --limit 10
+
+This uses the "string tunnel" pattern where all operation parameters are
+accepted as strings via CLI and coerced to their proper Python types at
+runtime. This works around Typer's limitations with Union types.
 """
 
 from __future__ import annotations
@@ -17,11 +29,12 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 import uvicorn
 
+from codeintel.cli.op_params import register_dynamic_commands
 from codeintel.cli.project import (
     ProjectNotFoundError,
     ProjectRuntime,
@@ -51,7 +64,7 @@ LOG = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
 # Type Aliases for CLI Options
-# Using | None defaults with explicit is_flag=True to avoid FBT002
+# Using Optional[X] for Typer compatibility (Typer doesn't support X | None syntax)
 # -----------------------------------------------------------------------------
 
 ProjectRootOpt = Annotated[
@@ -216,7 +229,9 @@ def pipeline_run_op(
     )
 
 
-RunIdOpt = Annotated[str | None, typer.Option("--run-id", help="Specific run ID to show details for")]
+RunIdOpt = Annotated[
+    str | None, typer.Option("--run-id", help="Specific run ID to show details for")
+]
 LimitOpt = Annotated[int, typer.Option("--limit", "-n", help="Number of recent runs to show")]
 
 
@@ -278,7 +293,9 @@ op_app = typer.Typer(
     no_args_is_help=True,
 )
 
-CategoryOpt = Annotated[str | None, typer.Option("--category", "-c", help="Filter by operation category")]
+CategoryOpt = Annotated[
+    str | None, typer.Option("--category", "-c", help="Filter by operation category")
+]
 
 
 @op_app.command("list")
@@ -334,7 +351,7 @@ def _parse_param_value(value: str) -> str | int | float | bool:
 
 def _invoke_operation(
     op_id: str,
-    kwargs: dict[str, str | int | float | bool],
+    kwargs: dict[str, Any],
     runtime: ProjectRuntime,
 ) -> None:
     """Invoke an operation and print the result.
@@ -386,7 +403,9 @@ def _invoke_operation(
         stack.close()
 
 
-ParamsArg = Annotated[list[str] | None, typer.Argument(help="Operation parameters as key=value pairs")]
+ParamsArg = Annotated[
+    list[str] | None, typer.Argument(help="Operation parameters as key=value pairs")
+]
 
 
 @op_app.command("call")
@@ -446,6 +465,65 @@ def op_call(
         ensure_prerequisites_for_operation(op_id=op_id, options=prereq_options)
 
     _invoke_operation(op_id, kwargs, runtime)
+
+
+# -----------------------------------------------------------------------------
+# Dynamic Operation Commands
+# -----------------------------------------------------------------------------
+
+
+def _dynamic_op_invoke_callback(
+    op_id: str,
+    params: dict[str, Any],
+    project_root: Path | None,
+    *,
+    skip_prereqs: bool,
+    verbose: bool,
+) -> None:
+    """Invoke a dynamically registered operation command.
+
+    This function is called by dynamically registered operation commands
+    to actually execute the operation.
+
+    Parameters
+    ----------
+    op_id
+        Operation identifier.
+    params
+        Operation parameters (already coerced to proper types).
+    project_root
+        Optional project root path.
+    skip_prereqs
+        Whether to skip prerequisite pipeline execution.
+    verbose
+        Whether to enable verbose output.
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    runtime = _build_runtime_or_exit(project_root)
+
+    # Run prerequisites if not skipped
+    if not skip_prereqs:
+        typer.echo(f"Running prerequisites for '{op_id}'...")
+        prereq_options = OperationPrereqOptions(
+            snapshot=runtime.snapshot,
+            paths=runtime.paths,
+            gateway=runtime.gateway,
+            tools=runtime.tools,
+            include_analytics=True,
+            trigger="cli",
+        )
+        ensure_prerequisites_for_operation(op_id=op_id, options=prereq_options)
+
+    # Invoke the operation
+    _invoke_operation(op_id, params, runtime)
+
+
+# Register dynamic commands for all operations at module load time
+# This enables per-operation commands like: codeintel op function-summary --goid-h128 123
+_dynamic_command_count = register_dynamic_commands(op_app, _dynamic_op_invoke_callback)
+LOG.debug("Registered %d dynamic operation commands", _dynamic_command_count)
 
 
 # -----------------------------------------------------------------------------
@@ -518,8 +596,7 @@ def dataset_describe(
             "description": contract.description,
             "owner_package": contract.owner_package,
             "columns": [
-                {"name": col.name, "type": col.type, "nullable": col.nullable}
-                for col in columns
+                {"name": col.name, "type": col.type, "nullable": col.nullable} for col in columns
             ],
             "upstream_dependencies": list(contract.upstream_dependencies),
         }

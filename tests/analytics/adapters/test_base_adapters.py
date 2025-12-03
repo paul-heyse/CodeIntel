@@ -1,0 +1,548 @@
+"""Test base adapter classes and protocols.
+
+Test the foundational adapter abstractions using real DuckDB instances.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+
+from codeintel.analytics.adapters.base import (
+    AnalyticsAdapter,
+    BatchAdapter,
+    DeleteScope,
+    SimpleBatchAdapter,
+)
+from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+DEMO_REPO = "demo/repo"
+DEMO_COMMIT = "abc123"
+EXPECTED_COUNT_0 = 0
+EXPECTED_COUNT_1 = 1
+EXPECTED_COUNT_2 = 2
+EXPECTED_COUNT_3 = 3
+
+
+@dataclass(frozen=True)
+class SampleRow:
+    """Sample row for adapter tests."""
+
+    repo: str
+    commit: str
+    value: int
+    name: str
+
+
+# =============================================================================
+# Concrete Adapter Implementations for Testing
+# =============================================================================
+
+
+class ConcreteAnalyticsAdapter(AnalyticsAdapter[SampleRow]):
+    """Concrete implementation of AnalyticsAdapter for testing."""
+
+    def load(self) -> Iterator[SampleRow]:
+        """
+        Load sample rows from database.
+
+        Yields
+        ------
+        SampleRow
+            Sample rows from the database.
+        """
+        query = """
+            SELECT repo, commit, value, name
+            FROM sample_analytics
+            WHERE repo = ? AND commit = ?
+        """
+        result = self._gateway.con.execute(
+            query,
+            [self._snapshot.repo, self._snapshot.commit],
+        )
+        for row in result.fetchall():
+            yield SampleRow(
+                repo=str(row[0]),
+                commit=str(row[1]),
+                value=int(row[2]),
+                name=str(row[3]),
+            )
+
+    def persist(self, rows: Sequence[SampleRow]) -> int:
+        """
+        Persist sample rows to database.
+
+        Parameters
+        ----------
+        rows
+            Rows to persist.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        if not rows:
+            return EXPECTED_COUNT_0
+
+        # Delete existing rows first
+        delete_query = """
+            DELETE FROM sample_analytics
+            WHERE repo = ? AND commit = ?
+        """
+        self._gateway.con.execute(
+            delete_query,
+            [self._snapshot.repo, self._snapshot.commit],
+        )
+
+        # Insert new rows
+        for row in rows:
+            insert_query = """
+                INSERT INTO sample_analytics (repo, commit, value, name)
+                VALUES (?, ?, ?, ?)
+            """
+            self._gateway.con.execute(
+                insert_query,
+                [row.repo, row.commit, row.value, row.name],
+            )
+
+        return len(rows)
+
+
+class ConcreteBatchAdapter(BatchAdapter[SampleRow]):
+    """Concrete implementation of BatchAdapter for testing."""
+
+    @property
+    def table_name(self) -> str:
+        """Return the target table name."""
+        return "sample_batch"
+
+    def load(self) -> Iterator[SampleRow]:
+        """
+        Load sample rows from database.
+
+        Yields
+        ------
+        SampleRow
+            Sample rows from the database.
+        """
+        query = """
+            SELECT repo, commit, value, name
+            FROM sample_batch
+            WHERE repo = ? AND commit = ?
+        """
+        result = self._gateway.con.execute(
+            query,
+            [self._snapshot.repo, self._snapshot.commit],
+        )
+        for row in result.fetchall():
+            yield SampleRow(
+                repo=str(row[0]),
+                commit=str(row[1]),
+                value=int(row[2]),
+                name=str(row[3]),
+            )
+
+    def persist(self, rows: Sequence[SampleRow]) -> int:
+        """
+        Persist sample rows to database.
+
+        Parameters
+        ----------
+        rows
+            Rows to persist.
+
+        Returns
+        -------
+        int
+            Number of rows persisted.
+        """
+        if not rows:
+            return EXPECTED_COUNT_0
+
+        for row in rows:
+            insert_query = """
+                INSERT INTO sample_batch (repo, commit, value, name)
+                VALUES (?, ?, ?, ?)
+            """
+            self._gateway.con.execute(
+                insert_query,
+                [row.repo, row.commit, row.value, row.name],
+            )
+
+        return len(rows)
+
+
+class ConcreteSimpleBatchAdapter(SimpleBatchAdapter[SampleRow]):
+    """Concrete implementation of SimpleBatchAdapter for testing."""
+
+    @property
+    def table_name(self) -> str:
+        """Return the target table name."""
+        return "sample_simple_batch"
+
+    def insert_rows(
+        self,
+        gateway: StorageGateway,  # noqa: ARG002 (required by interface)
+        rows: Sequence[SampleRow],
+    ) -> int:
+        """
+        Insert sample rows into database.
+
+        Parameters
+        ----------
+        gateway
+            Storage gateway for database access (unused in test impl).
+        rows
+            Rows to insert.
+
+        Returns
+        -------
+        int
+            Number of rows inserted.
+        """
+        # Access self.table_name to satisfy PLR6301 (method uses self)
+        _ = self.table_name
+        return len(rows)
+
+
+# =============================================================================
+# Test Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def gateway_with_tables() -> Iterator[StorageGateway]:
+    """
+    Create gateway with sample tables.
+
+    Yields
+    ------
+    StorageGateway
+        Gateway with sample tables created.
+    """
+    gateway = open_memory_gateway(
+        apply_schema=True,
+        ensure_views=True,
+        validate_schema=True,
+    )
+    # Create sample tables
+    gateway.con.execute("""
+        CREATE TABLE IF NOT EXISTS sample_analytics (
+            repo VARCHAR,
+            commit VARCHAR,
+            value INTEGER,
+            name VARCHAR
+        )
+    """)
+    gateway.con.execute("""
+        CREATE TABLE IF NOT EXISTS sample_batch (
+            repo VARCHAR,
+            commit VARCHAR,
+            value INTEGER,
+            name VARCHAR
+        )
+    """)
+    gateway.con.execute("""
+        CREATE TABLE IF NOT EXISTS sample_simple_batch (
+            repo VARCHAR,
+            commit VARCHAR,
+            value INTEGER,
+            name VARCHAR
+        )
+    """)
+    try:
+        yield gateway
+    finally:
+        gateway.close()
+
+
+@pytest.fixture
+def snapshot() -> SnapshotRef:
+    """
+    Create snapshot reference.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot reference for testing.
+    """
+    return SnapshotRef(
+        repo=DEMO_REPO,
+        commit=DEMO_COMMIT,
+        repo_root=Path.cwd(),
+    )
+
+
+# =============================================================================
+# DeleteScope Tests
+# =============================================================================
+
+
+def test_create_delete_scope() -> None:
+    """Create delete scope with repo and commit."""
+    scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
+    assert scope.repo == DEMO_REPO
+    assert scope.commit == DEMO_COMMIT
+
+
+def test_delete_scope_defaults() -> None:
+    """Delete scope has None defaults."""
+    scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
+    assert scope.params is None
+    assert scope.columns is None
+
+
+def test_delete_scope_with_params() -> None:
+    """Create delete scope with params."""
+    scope = DeleteScope(
+        repo=DEMO_REPO,
+        commit=DEMO_COMMIT,
+        params=["extra", "params"],
+    )
+    assert scope.params is not None
+    assert len(scope.params) == EXPECTED_COUNT_2
+
+
+def test_delete_scope_with_columns() -> None:
+    """Create delete scope with custom columns."""
+    scope = DeleteScope(
+        repo=DEMO_REPO,
+        commit=DEMO_COMMIT,
+        columns=("repo", "commit", "version"),
+    )
+    assert scope.columns is not None
+    assert len(scope.columns) == EXPECTED_COUNT_3
+
+
+def test_delete_scope_is_frozen() -> None:
+    """Delete scope is immutable."""
+    scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
+    with pytest.raises(AttributeError):
+        scope.repo = "other"  # type: ignore[misc]
+
+
+# =============================================================================
+# AnalyticsAdapter Tests
+# =============================================================================
+
+
+def test_adapter_properties(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Adapter exposes gateway, snapshot, repo, commit properties."""
+    adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
+
+    assert adapter.gateway is gateway_with_tables
+    assert adapter.snapshot is snapshot
+    assert adapter.repo == DEMO_REPO
+    assert adapter.commit == DEMO_COMMIT
+
+
+def test_adapter_load_empty(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Load from empty table returns no rows."""
+    adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
+    rows = list(adapter.load())
+    assert not rows
+
+
+def test_adapter_persist_and_load(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist rows and load them back."""
+    adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
+
+    # Persist rows
+    sample_rows = [
+        SampleRow(repo=DEMO_REPO, commit=DEMO_COMMIT, value=1, name="first"),
+        SampleRow(repo=DEMO_REPO, commit=DEMO_COMMIT, value=2, name="second"),
+    ]
+    count = adapter.persist(sample_rows)
+    assert count == EXPECTED_COUNT_2
+
+    # Load back
+    loaded = list(adapter.load())
+    assert len(loaded) == EXPECTED_COUNT_2
+
+
+def test_adapter_persist_empty(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist empty list returns 0."""
+    adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
+    count = adapter.persist([])
+    assert count == EXPECTED_COUNT_0
+
+
+def test_adapter_persist_replaces_existing(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist replaces existing rows for same repo/commit."""
+    adapter = ConcreteAnalyticsAdapter(gateway_with_tables, snapshot)
+
+    # First persist
+    adapter.persist([SampleRow(DEMO_REPO, DEMO_COMMIT, 1, "original")])
+
+    # Second persist should replace
+    adapter.persist([SampleRow(DEMO_REPO, DEMO_COMMIT, 2, "replaced")])
+
+    loaded = list(adapter.load())
+    assert len(loaded) == EXPECTED_COUNT_1
+    assert loaded[0].name == "replaced"
+
+
+# =============================================================================
+# BatchAdapter Tests
+# =============================================================================
+
+
+def test_batch_table_name_property(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Batch adapter exposes table_name property."""
+    adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
+    assert adapter.table_name == "sample_batch"
+
+
+def test_batch_delete_scope_default(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Default delete scope uses repo/commit."""
+    adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
+    scope = adapter.delete_scope()
+    assert scope.repo == DEMO_REPO
+    assert scope.commit == DEMO_COMMIT
+
+
+def test_batch_persist_with_delete(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist batch deletes existing rows first."""
+    adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
+
+    # First persist
+    sample_rows = [SampleRow(DEMO_REPO, DEMO_COMMIT, 1, "first")]
+    adapter.persist_batch(sample_rows, delete_before=True)
+
+    # Second persist with delete
+    new_rows = [SampleRow(DEMO_REPO, DEMO_COMMIT, 2, "second")]
+    adapter.persist_batch(new_rows, delete_before=True)
+
+    loaded = list(adapter.load())
+    assert len(loaded) == EXPECTED_COUNT_1
+    assert loaded[0].name == "second"
+
+
+def test_batch_persist_without_delete(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist batch without delete appends rows."""
+    adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
+
+    # First persist
+    adapter.persist_batch(
+        [SampleRow(DEMO_REPO, DEMO_COMMIT, 1, "first")],
+        delete_before=False,
+    )
+
+    # Second persist without delete
+    adapter.persist_batch(
+        [SampleRow(DEMO_REPO, DEMO_COMMIT, 2, "second")],
+        delete_before=False,
+    )
+
+    loaded = list(adapter.load())
+    assert len(loaded) == EXPECTED_COUNT_2
+
+
+def test_batch_persist_empty(
+    gateway_with_tables: StorageGateway,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist empty batch returns 0."""
+    adapter = ConcreteBatchAdapter(gateway_with_tables, snapshot)
+    count = adapter.persist_batch([])
+    assert count == EXPECTED_COUNT_0
+
+
+# =============================================================================
+# SimpleBatchAdapter Tests
+# =============================================================================
+
+
+def test_simple_batch_table_name_property() -> None:
+    """Simple batch adapter exposes table_name property."""
+    adapter = ConcreteSimpleBatchAdapter()
+    assert adapter.table_name == "sample_simple_batch"
+
+
+def test_simple_batch_insert_rows(
+    gateway_with_tables: StorageGateway,
+) -> None:
+    """Insert rows returns count."""
+    adapter = ConcreteSimpleBatchAdapter()
+    rows = [
+        SampleRow(DEMO_REPO, DEMO_COMMIT, 1, "a"),
+        SampleRow(DEMO_REPO, DEMO_COMMIT, 2, "b"),
+    ]
+    # Note: Our test impl just returns len(rows)
+    count = adapter.insert_rows(gateway_with_tables, rows)
+    assert count == EXPECTED_COUNT_2
+
+
+def test_simple_batch_execute_delete(
+    gateway_with_tables: StorageGateway,
+) -> None:
+    """Execute delete removes matching rows."""
+    # Insert some rows
+    gateway_with_tables.con.execute(
+        """
+        INSERT INTO sample_simple_batch (repo, commit, value, name)
+        VALUES (?, ?, ?, ?)
+        """,
+        [DEMO_REPO, DEMO_COMMIT, 1, "test"],
+    )
+
+    adapter = ConcreteSimpleBatchAdapter()
+    scope = DeleteScope(repo=DEMO_REPO, commit=DEMO_COMMIT)
+    deleted = adapter.execute_delete(gateway_with_tables, scope)
+
+    assert deleted == EXPECTED_COUNT_1
+
+    # Verify row is gone
+    result = gateway_with_tables.con.execute(
+        "SELECT COUNT(*) FROM sample_simple_batch WHERE repo = ? AND commit = ?",
+        [DEMO_REPO, DEMO_COMMIT],
+    ).fetchone()
+    assert result is not None
+    assert result[0] == EXPECTED_COUNT_0
+
+
+def test_simple_batch_execute_delete_no_rows(
+    gateway_with_tables: StorageGateway,
+) -> None:
+    """Execute delete returns 0 when no matching rows."""
+    adapter = ConcreteSimpleBatchAdapter()
+    scope = DeleteScope(repo="nonexistent", commit="none")
+    deleted = adapter.execute_delete(gateway_with_tables, scope)
+
+    assert deleted == EXPECTED_COUNT_0

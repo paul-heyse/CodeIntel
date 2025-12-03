@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/semantic_roles/__init__.py
+# hypothesis_version: 6.148.5
+
+['FunctionContext', 'ModuleRecord', 'RoleAccumulator', 'RoleArtifacts', 'classify_modules']
