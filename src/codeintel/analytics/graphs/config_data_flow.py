@@ -18,7 +18,7 @@ from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.config import ConfigDataFlowStepConfig
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

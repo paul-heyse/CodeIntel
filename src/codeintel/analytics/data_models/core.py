@@ -23,7 +23,7 @@ from codeintel.config import DataModelsStepConfig
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

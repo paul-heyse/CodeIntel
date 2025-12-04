@@ -27,7 +27,7 @@ from codeintel.analytics.runtime.context import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 
 def _to_decimal(value: int) -> Decimal:

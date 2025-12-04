@@ -17,7 +17,7 @@ from codeintel.config import DataModelUsageStepConfig
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.data_models import DataModelRow, fetch_models
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

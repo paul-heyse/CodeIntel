@@ -10,6 +10,7 @@ from codeintel.storage.datasets import (
     build_dataset_dependency_graph,
     dataset_for_name,
     dataset_for_table,
+    describe_all_datasets,
     describe_dataset,
     list_dataset_specs,
     load_dataset_registry,
@@ -199,3 +200,102 @@ def test_load_dataset_registry_from_db(fresh_gateway: StorageGateway) -> None:
     assert isinstance(registry, DatasetRegistry)
     assert len(registry.by_name) > 0
     assert len(registry.by_table_key) > 0
+
+
+# -------------------------------------------------------------------------
+# Compatibility property tests (migrated from test_registry_helpers.py)
+# -------------------------------------------------------------------------
+
+
+def test_dataset_registry_mapping_property() -> None:
+    """Verify mapping returns name -> table_key dict."""
+    registry = _sample_registry()
+
+    mapping = registry.mapping
+
+    assert isinstance(mapping, dict)
+    assert mapping["ast_nodes"] == "core.ast_nodes"
+
+
+def test_dataset_registry_tables_property() -> None:
+    """Verify tables returns non-view dataset names."""
+    registry = _sample_registry()
+
+    tables = registry.tables
+
+    assert isinstance(tables, tuple)
+    assert "ast_nodes" in tables
+    assert "v_function_summary" not in tables
+
+
+def test_dataset_registry_views_property() -> None:
+    """Verify views returns view dataset names."""
+    registry = _sample_registry()
+
+    views = registry.views
+
+    assert isinstance(views, tuple)
+    assert "v_function_summary" in views
+    assert "ast_nodes" not in views
+
+
+def test_dataset_registry_meta_property() -> None:
+    """Verify meta returns by_name alias."""
+    registry = _sample_registry()
+
+    meta = registry.meta
+
+    assert meta is registry.by_name
+    assert "ast_nodes" in meta
+
+
+def test_dataset_registry_jsonl_mapping_property() -> None:
+    """Verify jsonl_mapping returns jsonl_datasets alias."""
+    registry = _sample_registry()
+
+    jsonl_mapping = registry.jsonl_mapping
+
+    assert jsonl_mapping is registry.jsonl_datasets
+
+
+def test_dataset_registry_parquet_mapping_property() -> None:
+    """Verify parquet_mapping returns parquet_datasets alias."""
+    registry = _sample_registry()
+
+    parquet_mapping = registry.parquet_mapping
+
+    assert parquet_mapping is registry.parquet_datasets
+
+
+def test_dataset_registry_table_for_name() -> None:
+    """Verify table_for_name is alias for resolve_table_key."""
+    registry = _sample_registry()
+
+    table_key = registry.table_for_name("ast_nodes")
+
+    assert table_key == "core.ast_nodes"
+
+
+def test_dataset_registry_table_for_name_raises_on_unknown() -> None:
+    """Verify table_for_name raises KeyError for unknown dataset."""
+    registry = _sample_registry()
+
+    with pytest.raises(KeyError, match="Unknown dataset"):
+        registry.table_for_name("nonexistent_dataset")
+
+
+def test_describe_all_datasets_returns_serializable_list(
+    fresh_gateway: StorageGateway,
+) -> None:
+    """Verify describe_all_datasets returns JSON-serializable list."""
+    con = fresh_gateway.con
+
+    descriptions = describe_all_datasets(con)
+
+    assert isinstance(descriptions, list)
+    assert len(descriptions) > 0
+
+    first_desc = descriptions[0]
+    assert isinstance(first_desc, dict)
+    assert "name" in first_desc
+    assert "table_key" in first_desc

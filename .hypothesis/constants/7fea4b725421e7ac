@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/recipes/__init__.py
+# hypothesis_version: 6.148.6
+
+['BaseRecipe', 'BaseRecipeOptions', 'BaseRecipeStage', 'Recipe', 'RecipeBuilder', 'RecipeOptions', 'RecipePluginRecord', 'RecipeScope', 'RecipeStage', 'recipe', 'stage']

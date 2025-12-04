@@ -18,7 +18,7 @@ from codeintel.storage.gateway import (
     SnapshotGatewayResolver,
     StorageGateway,
 )
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

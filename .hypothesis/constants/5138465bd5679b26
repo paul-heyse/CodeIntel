@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/adapters/filesystem_discovery.py
+# hypothesis_version: 6.148.6
+
+[5.0, '*', 'PROGRESS_LOG_EVERY', 'utf-8']

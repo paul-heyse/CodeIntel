@@ -17,23 +17,20 @@ def _as_int(value: Decimal | int | None) -> int | None:
     return int(value)
 
 
-def _decode_list(value: object) -> list[object]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    return []
-
-
-def _decode_dict(value: object) -> dict[str, object]:
-    if value is None:
-        return {}
-    if isinstance(value, dict):
-        return value
-    return {}
-
-
 def _decode_json(value: object) -> object:
+    """
+    Decode JSON from a DuckDB column value.
+
+    Parameters
+    ----------
+    value
+        Raw value from DuckDB (may be str, dict, list, or None).
+
+    Returns
+    -------
+    object
+        Parsed JSON (dict or list), or empty list on failure.
+    """
     if value is None:
         return []
     if isinstance(value, (dict, list)):
@@ -44,6 +41,24 @@ def _decode_json(value: object) -> object:
         except json.JSONDecodeError:
             return []
     return []
+
+
+def _decode_json_as_dict(value: object) -> dict[str, object]:
+    """
+    Decode JSON value expecting a dictionary result.
+
+    Parameters
+    ----------
+    value
+        Raw value from DuckDB column (may be str, dict, list, or None).
+
+    Returns
+    -------
+    dict[str, object]
+        Parsed dictionary, or empty dict if parsing fails or result is not a dict.
+    """
+    raw = _decode_json(value)
+    return raw if isinstance(raw, dict) else {}
 
 
 def _decode_base_classes(value: object) -> list[dict[str, str]]:
@@ -60,16 +75,6 @@ def _decode_base_classes(value: object) -> list[dict[str, str]]:
             continue
         base_classes.append({"name": name, "qualname": qualname})
     return base_classes
-
-
-def _decode_constraints(value: object) -> dict[str, object]:
-    raw = _decode_json(value)
-    return raw if isinstance(raw, dict) else {}
-
-
-def _decode_evidence(value: object) -> dict[str, object]:
-    raw = _decode_json(value)
-    return raw if isinstance(raw, dict) else {}
 
 
 def _normalize_created_at(value: object, default: datetime) -> datetime:
@@ -281,7 +286,7 @@ def fetch_fields(
                 required=bool(required),
                 has_default=bool(has_default),
                 default_expr=str(default_expr) if default_expr is not None else None,
-                constraints=_decode_constraints(constraints_json),
+                constraints=_decode_json_as_dict(constraints_json),
                 source=str(source),
                 rel_path=str(rel_path),
                 lineno=int(lineno) if lineno is not None else None,
@@ -359,7 +364,7 @@ def fetch_relationships(
                 relationship_kind=str(relationship_kind),
                 multiplicity=str(multiplicity) if multiplicity is not None else None,
                 via=str(via) if via is not None else None,
-                evidence=_decode_evidence(evidence_json),
+                evidence=_decode_json_as_dict(evidence_json),
                 rel_path=str(rel_path),
                 lineno=int(lineno) if lineno is not None else None,
                 created_at=created_at,
@@ -427,7 +432,7 @@ def _decode_field_structs(
                 default_expr=str(item.get("default_expr"))
                 if item.get("default_expr") is not None
                 else None,
-                constraints=_decode_constraints(item.get("constraints")),
+                constraints=_decode_json_as_dict(item.get("constraints")),
                 source=str(item.get("source") or ""),
                 rel_path=str(item.get("rel_path") or ""),
                 lineno=int(item["lineno"])
@@ -472,7 +477,7 @@ def _decode_relationship_structs(
                 if item.get("multiplicity") is not None
                 else None,
                 via=str(item.get("via")) if item.get("via") is not None else None,
-                evidence=_decode_evidence(item.get("evidence")),
+                evidence=_decode_json_as_dict(item.get("evidence")),
                 rel_path=str(item.get("rel_path") or ""),
                 lineno=int(item["lineno"])
                 if "lineno" in item and item["lineno"] is not None

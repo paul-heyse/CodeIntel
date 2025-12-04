@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/compute/tests_ingest.py
+# hypothesis_version: 6.148.6
+
+[0.0, 1000, '::', 'TestsIngestStep', 'core.test_results', 'core.test_summary', 'duration', 'error', 'failed', 'longrepr', 'nodeid', 'outcome', 'passed', 'skipped', 'summary', 'tests', 'unknown', 'utf-8']

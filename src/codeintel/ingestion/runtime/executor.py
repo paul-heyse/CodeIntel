@@ -18,6 +18,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.core.runtime.errors import (
+    PLUGIN_CATCHABLE_ERRORS,
+    PluginFatalError,
+)
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginProtocol,
     IngestPluginResult,
@@ -26,7 +30,6 @@ from codeintel.ingestion.runtime.telemetry import (
     IngestRuntimeTelemetry,
     get_ingest_telemetry,
 )
-from codeintel.storage.db_helpers import DUCKDB_ERRORS
 from codeintel.storage.run_tracking import PipelineStatus, StepStatus
 
 if TYPE_CHECKING:
@@ -34,40 +37,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Errors that can be caught and handled during plugin execution
-PLUGIN_CATCHABLE_ERRORS: tuple[type[Exception], ...] = (
-    *DUCKDB_ERRORS,
-    AttributeError,
-    LookupError,
-    RuntimeError,
-    TypeError,
-    ValueError,
-    OSError,
-)
-
 PluginSeverity = Literal["fatal", "soft_fail", "skip_on_error"]
-
-
-class PluginFatalError(Exception):
-    """Fatal plugin failure while respecting fail-fast semantics.
-
-    Raised when a plugin fails and fail-fast is enabled, carrying
-    the execution record for diagnostic purposes.
-    """
-
-    def __init__(self, record: PluginExecutionRecord, original: Exception) -> None:
-        """Initialize with execution record and original exception.
-
-        Parameters
-        ----------
-        record
-            The execution record at time of failure.
-        original
-            The exception that caused the failure.
-        """
-        super().__init__(str(original))
-        self.record = record
-        self.original = original
 
 
 @dataclass
@@ -257,7 +227,7 @@ def execute_plugin(
         started_at=datetime.now(tz=UTC),
     )
 
-    span = telemetry.start_span(plugin, settings.name)
+    span = telemetry.start_plugin_span(plugin, settings.name)
 
     try:
         result = plugin.execute(context)
@@ -326,7 +296,7 @@ def execute_plugin_with_timeout(
         started_at=datetime.now(tz=UTC),
     )
 
-    span = telemetry.start_span(plugin, plugin.metadata.name)
+    span = telemetry.start_plugin_span(plugin, plugin.metadata.name)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(execute_plugin, plugin, context, settings=settings, telemetry=None)

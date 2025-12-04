@@ -190,4 +190,6 @@ def test_plan_unknown_plugin_skipped() -> None:
     # Unknown plugins are skipped rather than raising errors
     plan = registry.plan(["nonexistent.plugin"])
     assert len(plan.plugins) == 0
-    assert any(s.name == "nonexistent.plugin" and s.reason == "missing_dependency" for s in plan.skipped)
+    assert any(
+        s.name == "nonexistent.plugin" and s.reason == "missing_dependency" for s in plan.skipped
+    )

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/data_models/build.py
+# hypothesis_version: 6.148.6
+
+[60000, '2.0.0', 'DataModelsPlugin', 'DataModelsStepConfig', 'analytics', 'ast_extract', 'config', 'core.goids', 'data_model', 'data_models', 'data_models.build', 'data_models_cfg', 'docstrings_ingest', 'extraction', 'fatal', 'goids', 'schema']

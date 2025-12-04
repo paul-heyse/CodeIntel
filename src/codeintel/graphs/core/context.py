@@ -182,6 +182,9 @@ class GraphPluginExecutionContextBuilder(PluginExecutionContextBuilder):
     ) -> GraphPluginExecutionContextBuilder:
         """Register a resource provider in the unified registry.
 
+        Registers by name (RESOURCE_NAME attribute) for backward compatibility.
+        For type-based registration, use ``with_resource(type, provider)``.
+
         Parameters
         ----------
         provider
@@ -193,6 +196,28 @@ class GraphPluginExecutionContextBuilder(PluginExecutionContextBuilder):
             Self for chaining.
         """
         self._resources.register_provider(provider)
+        return self
+
+    def with_resource[T](
+        self,
+        resource_type: type[T],
+        provider: object,
+    ) -> GraphPluginExecutionContextBuilder:
+        """Register a resource provider by type in the unified registry.
+
+        Parameters
+        ----------
+        resource_type
+            Type to register the provider under.
+        provider
+            Resource provider instance.
+
+        Returns
+        -------
+        GraphPluginExecutionContextBuilder
+            Self for chaining.
+        """
+        self._resources.register(resource_type, provider)
         return self
 
     def build_graph_context(

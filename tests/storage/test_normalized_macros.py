@@ -9,7 +9,7 @@ import pytest
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.normalized_macros import render_macro
-from codeintel.storage.sql_helpers import safe_macro_call
+from codeintel.storage.sql_builder import safe_macro_call
 
 pytestmark = pytest.mark.smoke
 

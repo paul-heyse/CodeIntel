@@ -20,7 +20,7 @@ from codeintel.analytics.runtime import (
 from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

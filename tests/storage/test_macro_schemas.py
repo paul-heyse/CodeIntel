@@ -7,7 +7,7 @@ import pytest
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_helpers import safe_macro_call
+from codeintel.storage.sql_builder import safe_macro_call
 
 
 def _canonical_type(type_str: str) -> str:

@@ -10,6 +10,9 @@ ingestion-specific fields:
 - config_profile: Config scanning profile
 - tools: External tools configuration
 - Plugin timing utilities for performance tracking
+
+The module also provides IngestExecutionContextBuilder for fluent
+construction of contexts with validation.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Self, cast
 
 from codeintel.config.models import ToolsConfig
 from codeintel.core.config_registry import ConfigNotFoundError, ConfigRegistry
@@ -28,9 +31,11 @@ from codeintel.ingestion.infrastructure.db_queries import safe_count
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.config.primitives import BuildPaths
+    from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.resources.protocol import ResourceProvider
+    from codeintel.runtime.context import RunContext
+    from codeintel.storage.gateway import StorageGateway
 
 
 def _empty_registry() -> ResourceRegistry:
@@ -66,6 +71,9 @@ class IngestExecutionContext(PluginExecutionContext):
     functionality including scan profiles, tools configuration, and
     plugin timing utilities.
 
+    For convenience, use IngestExecutionContextBuilder for fluent
+    construction with validation.
+
     Attributes
     ----------
     gateway
@@ -73,11 +81,11 @@ class IngestExecutionContext(PluginExecutionContext):
     snapshot
         Repository snapshot reference.
     paths
-        Build paths configuration (required for ingestion).
+        Build paths configuration (optional, use validated_paths property).
     code_profile
-        Code scanning profile.
+        Code scanning profile (optional, use validated_code_profile property).
     config_profile
-        Config scanning profile.
+        Config scanning profile (optional, use validated_config_profile property).
     tools
         Tools configuration.
     resources
@@ -94,20 +102,77 @@ class IngestExecutionContext(PluginExecutionContext):
         Optional unified run context for cross-engine correlation.
     """
 
-    # Override from base - required in ingestion
-    paths: BuildPaths = field(default=None)  # type: ignore[assignment]
-
-    # Ingestion-specific fields
-    code_profile: ScanProfile = field(default=None)  # type: ignore[assignment]
-    config_profile: ScanProfile = field(default=None)  # type: ignore[assignment]
+    # Ingestion-specific fields with honest optional types
+    # Use validated_* properties for safe access with runtime checks
+    code_profile: ScanProfile | None = None
+    config_profile: ScanProfile | None = None
     tools: ToolsConfig = field(default_factory=_default_tools_config)
 
-    # Override from base - use ConfigRegistry instead of ConfigProvider
-    configs: ConfigRegistry = field(default_factory=ConfigRegistry)  # type: ignore[assignment]
+    # Override from base - use ConfigRegistry for runtime validation
+    configs: ConfigRegistry = field(default_factory=ConfigRegistry)
 
     # Plugin timing - internal tracking
     _plugin_start_times: dict[str, float] = field(default_factory=dict, init=False, repr=False)
     _plugin_durations: dict[str, float] = field(default_factory=dict, init=False, repr=False)
+
+    # Error messages for validation
+    _ERR_PATHS_NOT_SET = "paths not initialized on IngestExecutionContext"
+    _ERR_CODE_PROFILE_NOT_SET = "code_profile not initialized on IngestExecutionContext"
+    _ERR_CONFIG_PROFILE_NOT_SET = "config_profile not initialized on IngestExecutionContext"
+
+    @property
+    def validated_paths(self) -> BuildPaths:
+        """Access paths with runtime validation.
+
+        Returns
+        -------
+        BuildPaths
+            The build paths configuration.
+
+        Raises
+        ------
+        RuntimeError
+            If paths is not set.
+        """
+        if self.paths is None:
+            raise RuntimeError(self._ERR_PATHS_NOT_SET)
+        return self.paths
+
+    @property
+    def validated_code_profile(self) -> ScanProfile:
+        """Access code_profile with runtime validation.
+
+        Returns
+        -------
+        ScanProfile
+            The code scanning profile.
+
+        Raises
+        ------
+        RuntimeError
+            If code_profile is not set.
+        """
+        if self.code_profile is None:
+            raise RuntimeError(self._ERR_CODE_PROFILE_NOT_SET)
+        return self.code_profile
+
+    @property
+    def validated_config_profile(self) -> ScanProfile:
+        """Access config_profile with runtime validation.
+
+        Returns
+        -------
+        ScanProfile
+            The config scanning profile.
+
+        Raises
+        ------
+        RuntimeError
+            If config_profile is not set.
+        """
+        if self.config_profile is None:
+            raise RuntimeError(self._ERR_CONFIG_PROFILE_NOT_SET)
+        return self.config_profile
 
     @property
     def build_dir(self) -> Path:
@@ -118,7 +183,7 @@ class IngestExecutionContext(PluginExecutionContext):
         Path
             Path to the build directory.
         """
-        return self.paths.build_dir
+        return self.validated_paths.build_dir
 
     def require[T: ResourceProvider[object]](self, resource_type: type[T]) -> T:
         """Get the resource provider, raising if unavailable.
@@ -307,8 +372,252 @@ class IngestExecutionContext(PluginExecutionContext):
         return duration
 
 
+@dataclass
+class IngestExecutionContextBuilder:
+    """Builder for constructing IngestExecutionContext with validation.
+
+    Provide a fluent API for configuring ingestion execution contexts,
+    with validation that all required fields are set before building.
+
+    Example
+    -------
+    >>> builder = IngestExecutionContextBuilder(gateway, snapshot)
+    >>> builder = builder.with_paths(paths).with_code_profile(profile)
+    >>> ctx = builder.build()  # raises if required fields missing
+    """
+
+    _gateway: StorageGateway
+    _snapshot: SnapshotRef
+    _run_id: str = ""
+    _paths: BuildPaths | None = None
+    _code_profile: ScanProfile | None = None
+    _config_profile: ScanProfile | None = None
+    _tools: ToolsConfig = field(default_factory=_default_tools_config)
+    _resources: ResourceRegistry = field(default_factory=_empty_registry)
+    _scratch: PluginScratch = field(default_factory=PluginScratch)
+    _configs: ConfigRegistry = field(default_factory=ConfigRegistry)
+    _plugin_name: str | None = None
+    _run_context: RunContext | None = None
+
+    def with_run_id(self, run_id: str) -> Self:
+        """Set the run identifier.
+
+        Parameters
+        ----------
+        run_id
+            Unique identifier for this execution run.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._run_id = run_id
+        return self
+
+    def with_paths(self, paths: BuildPaths) -> Self:
+        """Set the build paths configuration.
+
+        Parameters
+        ----------
+        paths
+            Build paths configuration.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._paths = paths
+        return self
+
+    def with_code_profile(self, profile: ScanProfile) -> Self:
+        """Set the code scanning profile.
+
+        Parameters
+        ----------
+        profile
+            Code scanning profile.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._code_profile = profile
+        return self
+
+    def with_config_profile(self, profile: ScanProfile) -> Self:
+        """Set the config scanning profile.
+
+        Parameters
+        ----------
+        profile
+            Config scanning profile.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._config_profile = profile
+        return self
+
+    def with_tools(self, tools: ToolsConfig) -> Self:
+        """Set the tools configuration.
+
+        Parameters
+        ----------
+        tools
+            Tools configuration.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._tools = tools
+        return self
+
+    def with_resources(self, resources: ResourceRegistry) -> Self:
+        """Set the resource registry.
+
+        Parameters
+        ----------
+        resources
+            Resource registry.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._resources = resources
+        return self
+
+    def with_scratch(self, scratch: PluginScratch) -> Self:
+        """Set the shared scratch space.
+
+        Parameters
+        ----------
+        scratch
+            Scratch space for inter-plugin communication.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._scratch = scratch
+        return self
+
+    def with_configs(self, configs: ConfigRegistry) -> Self:
+        """Set the configuration registry.
+
+        Parameters
+        ----------
+        configs
+            Configuration registry.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._configs = configs
+        return self
+
+    def with_plugin_name(self, name: str) -> Self:
+        """Set the executing plugin name.
+
+        Parameters
+        ----------
+        name
+            Plugin name.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._plugin_name = name
+        return self
+
+    def with_run_context(self, run_context: RunContext) -> Self:
+        """Set the unified run context.
+
+        Parameters
+        ----------
+        run_context
+            Run context for cross-engine correlation.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._run_context = run_context
+        return self
+
+    def build(self) -> IngestExecutionContext:
+        """Build the IngestExecutionContext.
+
+        Build the context. All fields are optional in the context itself,
+        but callers should ensure required fields are set for their use case.
+
+        Returns
+        -------
+        IngestExecutionContext
+            The configured execution context.
+        """
+        return IngestExecutionContext(
+            gateway=self._gateway,
+            snapshot=self._snapshot,
+            run_id=self._run_id,
+            paths=self._paths,
+            code_profile=self._code_profile,
+            config_profile=self._config_profile,
+            tools=self._tools,
+            resources=self._resources,
+            scratch=self._scratch,
+            configs=self._configs,
+            plugin_name=self._plugin_name,
+            run_context=self._run_context,
+        )
+
+    def build_validated(self) -> IngestExecutionContext:
+        """Build the IngestExecutionContext with full validation.
+
+        Ensure all required fields are set before building.
+
+        Returns
+        -------
+        IngestExecutionContext
+            The configured execution context.
+
+        Raises
+        ------
+        ValueError
+            If any required field is not set.
+        """
+        errors: list[str] = []
+        if self._paths is None:
+            errors.append("paths is required")
+        if self._code_profile is None:
+            errors.append("code_profile is required")
+        if self._config_profile is None:
+            errors.append("config_profile is required")
+
+        if errors:
+            message = f"IngestExecutionContextBuilder validation failed: {', '.join(errors)}"
+            raise ValueError(message)
+
+        return self.build()
+
+
 __all__ = [
     "IngestExecutionContext",
+    "IngestExecutionContextBuilder",
     "PluginScratch",
     "ResourceNotFoundError",
 ]

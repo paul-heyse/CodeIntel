@@ -29,7 +29,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.subsystems import SubsystemRepository
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 
 def _dag_layers(graph: nx.DiGraph) -> dict[str, int]:

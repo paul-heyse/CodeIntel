@@ -168,9 +168,9 @@ def _make_execution_context(
     resources = ResourceRegistry()
 
     # Always register storage; optionally graph resource
-    resources.register_provider(StorageResource(gateway, tmp_path))
+    resources.register(StorageResource, StorageResource(gateway, tmp_path))
     if use_resources and effective_engine is not None:
-        resources.register_provider(GraphResource(effective_engine))
+        resources.register(GraphResource, GraphResource(effective_engine))
 
     return GraphPluginExecutionContext(
         snapshot=snapshot,

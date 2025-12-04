@@ -15,7 +15,7 @@ from codeintel.config.datasets import (
     build_contract_dataflow_graph,
 )
 from codeintel.storage.normalized_macros import render_macro
-from codeintel.storage.sql_helpers import safe_macro_call
+from codeintel.storage.sql_builder import safe_macro_call
 from codeintel.storage.views import create_all_views
 
 

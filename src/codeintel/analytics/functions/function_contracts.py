@@ -16,7 +16,7 @@ from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_u
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionCatalogProvider

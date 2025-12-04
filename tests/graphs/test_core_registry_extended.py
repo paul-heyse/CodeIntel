@@ -177,7 +177,7 @@ def test_register_plugin_duplicate_raises(fresh_registry: GraphPluginRegistry) -
 
     fresh_registry.register(plugin1)
 
-    with pytest.raises(ValueError, match="Duplicate graph plugin"):
+    with pytest.raises(ValueError, match="Duplicate plugin name"):
         fresh_registry.register(plugin2)
 
 
@@ -274,7 +274,7 @@ def test_get_plugin_returns_registered(fresh_registry: GraphPluginRegistry) -> N
 
 def test_get_plugin_unknown_raises(fresh_registry: GraphPluginRegistry) -> None:
     """Get raises KeyError for unknown plugin."""
-    with pytest.raises(KeyError, match="Unknown graph plugin"):
+    with pytest.raises(KeyError, match="Unknown plugin"):
         fresh_registry.get("nonexistent")
 
 

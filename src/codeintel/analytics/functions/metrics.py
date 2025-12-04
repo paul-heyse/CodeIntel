@@ -50,7 +50,7 @@ from codeintel.analytics.utilities.datasets import (
 from codeintel.config import FunctionAnalyticsStepConfig
 from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

@@ -19,6 +19,10 @@ from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.core.plugins.context import PluginScratch
 from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
 from codeintel.core.resources import ResourceRegistry
+from codeintel.core.runtime.errors import (
+    PLUGIN_CATCHABLE_ERRORS,
+    PluginFatalError,
+)
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import GraphPluginProtocol
 from codeintel.graphs.resources.graphs import GraphResource
@@ -36,7 +40,6 @@ from codeintel.graphs.runtime.planning import (
     PluginExecutionSettings,
     plan_graph_plugin_run,
 )
-from codeintel.storage.db_helpers import DUCKDB_ERRORS
 from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
@@ -48,34 +51,6 @@ if TYPE_CHECKING:
     from codeintel.storage.run_tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
-
-# Errors that can be caught and handled during plugin execution
-PLUGIN_CATCHABLE_ERRORS: tuple[type[Exception], ...] = (
-    *DUCKDB_ERRORS,
-    AttributeError,
-    LookupError,
-    RuntimeError,
-    TypeError,
-    ValueError,
-    OSError,
-)
-
-
-class PluginFatalError(Exception):
-    """Fatal plugin failure while respecting fail-fast semantics."""
-
-    def __init__(self, record: PluginExecutionRecord, original: Exception) -> None:
-        """Initialize with execution record and original exception.
-
-        Parameters
-        ----------
-        record
-            The execution record at time of failure.
-        original
-            The exception that caused the failure.
-        """
-        super().__init__(str(original))
-        self.record = record
 
 
 @dataclass(frozen=True)
@@ -466,11 +441,13 @@ def _execute_plugins_in_plan(
             options = plan.options_by_plugin.get(plugin.metadata.name)
 
             resources = ResourceRegistry()
-            resources.register_provider(
-                StorageResource(context.gateway, context.snapshot.repo_root)
+            resources.register(
+                StorageResource, StorageResource(context.gateway, context.snapshot.repo_root)
             )
             if context.engine is not None:
-                resources.register_provider(GraphResource(cast("NxGraphEngine", context.engine)))
+                resources.register(
+                    GraphResource, GraphResource(cast("NxGraphEngine", context.engine))
+                )
 
             plugin_ctx = GraphPluginExecutionContext(
                 gateway=context.gateway,

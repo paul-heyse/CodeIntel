@@ -548,11 +548,14 @@ class RecipeExecutor:
 
         # Build resources from executor context
         resources = ResourceRegistry()
-        resources.register_provider(
-            StorageResource(self._context.gateway, self._context.snapshot.repo_root)
+        resources.register(
+            StorageResource,
+            StorageResource(self._context.gateway, self._context.snapshot.repo_root),
         )
         if self._context.engine is not None:
-            resources.register_provider(GraphResource(cast("NxGraphEngine", self._context.engine)))
+            resources.register(
+                GraphResource, GraphResource(cast("NxGraphEngine", self._context.engine))
+            )
 
         ctx = GraphPluginExecutionContext(
             gateway=self._context.gateway,

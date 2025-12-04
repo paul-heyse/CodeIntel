@@ -8,13 +8,14 @@ from pathlib import Path
 
 import pytest
 
+from codeintel.config.datasets import DatasetContract
 from codeintel.pipeline.export.export_jsonl import (
     ExportCallOptions,
     export_all_jsonl,
     export_dataset_to_jsonl,
 )
 from codeintel.pipeline.export.export_parquet import export_all_parquet, export_dataset_to_parquet
-from codeintel.storage.gateway import DatasetRegistry
+from codeintel.storage.datasets import DatasetRegistry
 from tests._helpers import ProvisionedGateway, provision_docs_export_ready
 
 
@@ -214,10 +215,18 @@ def test_export_validation_runs_against_registry(
 ) -> None:
     """Exports should validate the dataset registry before writing files."""
     output_dir = tmp_path / "Document Output"
+    # Create a broken registry with a dataset pointing to a non-existent table
+    broken_contract = DatasetContract(
+        table_key="missing.table",
+        name="broken",
+        schema=None,
+        is_view=False,
+    )
     docs_export_gateway.gateway.datasets = DatasetRegistry(
-        mapping={"broken": "missing.table"},
-        tables=("broken",),
-        views=(),
+        by_name={"broken": broken_contract},
+        by_table_key={"missing.table": broken_contract},
+        jsonl_datasets={},
+        parquet_datasets={},
     )
     with pytest.raises(ValueError, match="missing tables/views"):
         export_all_jsonl(

@@ -82,16 +82,16 @@ def test_telemetry_init_with_defaults() -> None:
     """Telemetry initializes with default settings."""
     telemetry = GraphRuntimeTelemetry()
 
-    state = vars(telemetry)
-    assert state["_service_name"] == "codeintel.graphs"
+    # Service name is accessible via public property
+    assert telemetry.service_name == "codeintel.graphs"
 
 
 def test_telemetry_init_with_custom_service_name() -> None:
     """Telemetry initializes with custom service name."""
     telemetry = GraphRuntimeTelemetry(service_name="custom.service")
 
-    state = vars(telemetry)
-    assert state["_service_name"] == "custom.service"
+    # Service name is accessible via public property
+    assert telemetry.service_name == "custom.service"
 
 
 def test_telemetry_init_without_otel_disables_features() -> None:
@@ -102,9 +102,8 @@ def test_telemetry_init_without_otel_disables_features() -> None:
     )
 
     # When explicitly disabled, features should be off
-    state = vars(telemetry)
-    assert state["_tracing_enabled"] is False
-    assert state["_metrics_enabled"] is False
+    assert telemetry.config_tracing_enabled is False
+    assert telemetry.config_metrics_enabled is False
 
 
 def test_telemetry_init_with_tracing_disabled() -> None:
@@ -114,8 +113,7 @@ def test_telemetry_init_with_tracing_disabled() -> None:
         enable_metrics=True,
     )
 
-    state = vars(telemetry)
-    assert state["_tracing_enabled"] is False
+    assert telemetry.config_tracing_enabled is False
 
 
 def test_telemetry_init_with_metrics_disabled() -> None:
@@ -125,8 +123,7 @@ def test_telemetry_init_with_metrics_disabled() -> None:
         enable_metrics=False,
     )
 
-    state = vars(telemetry)
-    assert state["_metrics_enabled"] is False
+    assert telemetry.config_metrics_enabled is False
 
 
 def test_start_plugin_captures_all_attributes(

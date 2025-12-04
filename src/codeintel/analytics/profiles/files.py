@@ -26,7 +26,7 @@ from codeintel.config.datasets import (
     file_profile_row_to_tuple,
 )
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
+from codeintel.storage.sql_builder import ensure_schema, prepared_statements_dynamic
 
 
 def compute_file_profile_inputs(

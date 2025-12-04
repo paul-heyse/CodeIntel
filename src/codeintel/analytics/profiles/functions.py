@@ -41,7 +41,7 @@ from codeintel.config.datasets import (
     function_profile_row_to_tuple,
 )
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema, prepared_statements_dynamic
+from codeintel.storage.sql_builder import ensure_schema, prepared_statements_dynamic
 
 log = logging.getLogger(__name__)
 

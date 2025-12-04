@@ -1,18 +1,24 @@
 """Telemetry utilities for ingestion plugin execution.
 
-This module provides telemetry integration for ingestion plugin execution,
-including metric recording and span management via OpenTelemetry (when available).
-Analogous to graphs/runtime/telemetry.py for structural alignment.
+This module provides ingestion-specific telemetry that extends the base
+RuntimeTelemetry from core with ingestion-specific span tracking, metrics,
+and the OtelIngestRunSink for run-level metrics.
 """
 
 from __future__ import annotations
 
 import importlib
 import logging
-import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Protocol, cast
+
+from codeintel.core.runtime.telemetry import (
+    OTEL_AVAILABLE,
+    PluginSpan,
+    RuntimeTelemetry,
+    TelemetryConfig,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -31,36 +37,31 @@ class _MetricRecorder(Protocol):
         ...
 
 
-@dataclass
-class IngestPluginSpan:
-    """Represent a telemetry span for plugin execution.
-
-    Attributes
-    ----------
-    plugin_name
-        Name of the plugin.
-    run_id
-        Run identifier.
-    start_time_ns
-        Start time in nanoseconds (monotonic).
-    attributes
-        Span attributes.
-    context_data
-        Additional context data.
-    """
-
-    plugin_name: str
-    run_id: str
-    start_time_ns: int
-    attributes: dict[str, Any] = field(default_factory=dict)
-    context_data: dict[str, Any] = field(default_factory=dict)
+# Alias for backwards compatibility
+IngestPluginSpan = PluginSpan
 
 
-class IngestRuntimeTelemetry:
+class IngestTelemetryConfig(TelemetryConfig):
+    """Configuration for ingestion telemetry."""
+
+    service_name: str = "codeintel.ingestion"
+
+
+class IngestRuntimeTelemetry(RuntimeTelemetry):
     """Telemetry manager for ingestion plugin execution.
 
-    Handle span creation, metric recording, and integration with
-    OpenTelemetry (when available).
+    Extend the base RuntimeTelemetry with ingestion-specific methods
+    including row count histograms and specialized span tracking.
+
+    Examples
+    --------
+    >>> telemetry = get_ingest_telemetry()
+    >>> span = telemetry.start_plugin_span(plugin, run_id)
+    >>> try:
+    ...     result = plugin.execute(ctx)
+    ...     telemetry.end_span(span, success=True, rows_written=100)
+    ... except Exception:
+    ...     telemetry.end_span(span, success=False, error="...")
     """
 
     def __init__(
@@ -70,63 +71,43 @@ class IngestRuntimeTelemetry:
         enable_tracing: bool = True,
         enable_metrics: bool = True,
     ) -> None:
-        """Initialize telemetry.
+        """Initialize ingestion telemetry.
 
         Parameters
         ----------
         service_name
-            Service name for traces.
+            Service name for traces and metrics.
         enable_tracing
             Whether tracing is enabled.
         enable_metrics
             Whether metrics are enabled.
         """
-        self._service_name = service_name
-        self._enable_tracing = enable_tracing
-        self._enable_metrics = enable_metrics
-        self._tracer: Any | None = None
-        self._meter: Any | None = None
-        self._duration_histogram: _MetricRecorder | None = None
+        config = TelemetryConfig(
+            service_name=service_name,
+            enable_tracing=enable_tracing,
+            enable_metrics=enable_metrics,
+        )
+        super().__init__(config)
         self._rows_histogram: _MetricRecorder | None = None
-        self._initialize_otel()
+        self._init_rows_histogram()
 
-    def _initialize_otel(self) -> None:
-        """Initialize OpenTelemetry if available."""
-        try:
-            trace_module = importlib.import_module("opentelemetry.trace")
-            metrics_module = importlib.import_module("opentelemetry.metrics")
+    def _init_rows_histogram(self) -> None:
+        """Initialize rows histogram for ingestion-specific metrics."""
+        if self._meter is not None:
+            self._rows_histogram = self._meter.create_histogram(
+                "codeintel.ingest.plugin.rows",
+                unit="rows",
+                description="Rows written by ingestion plugin",
+            )
 
-            if self._enable_tracing:
-                self._tracer = trace_module.get_tracer(self._service_name)
-
-            if self._enable_metrics:
-                meter = metrics_module.get_meter(self._service_name)
-                self._meter = meter
-                self._duration_histogram = meter.create_histogram(
-                    "codeintel.ingest.plugin.duration",
-                    unit="s",
-                    description="Ingestion plugin execution duration in seconds",
-                )
-                self._rows_histogram = meter.create_histogram(
-                    "codeintel.ingest.plugin.rows",
-                    unit="rows",
-                    description="Rows written by ingestion plugin",
-                )
-
-            log.debug("OpenTelemetry initialized for ingestion telemetry")
-        except ImportError:
-            log.debug("OpenTelemetry not available; telemetry will be no-op")
-            self._tracer = None
-            self._meter = None
-
-    def start_span(
+    def start_plugin_span(
         self,
         plugin: IngestPluginProtocol,
         run_id: str,
         *,
         attributes: dict[str, Any] | None = None,
-    ) -> IngestPluginSpan:
-        """Start a telemetry span for plugin execution.
+    ) -> PluginSpan:
+        """Start a telemetry span for ingestion plugin execution.
 
         Parameters
         ----------
@@ -139,31 +120,30 @@ class IngestRuntimeTelemetry:
 
         Returns
         -------
-        IngestPluginSpan
+        PluginSpan
             Span object for tracking execution.
         """
-        # Build context data from enabled telemetry features
-        context_data: dict[str, Any] = {
-            "tracing_enabled": self.tracing_enabled,
-            "metrics_enabled": self.metrics_enabled,
+        merged_attrs = {
+            "plugin.name": plugin.metadata.name,
+            "plugin.stage": plugin.metadata.stage,
+            "plugin.tables": ",".join(plugin.metadata.produces_tables),
+            **(attributes or {}),
         }
-        return IngestPluginSpan(
-            plugin_name=plugin.metadata.name,
-            run_id=run_id,
-            start_time_ns=time.perf_counter_ns(),
-            attributes=attributes or {},
-            context_data=context_data,
+        return self.start_span(
+            plugin.metadata.name,
+            run_id,
+            attributes=merged_attrs,
         )
 
-    def end_span(
+    def end_span_with_rows(
         self,
-        span: IngestPluginSpan,
+        span: PluginSpan,
         *,
         success: bool,
         rows_written: int = 0,
         error: str | None = None,
     ) -> float:
-        """End a telemetry span and record metrics.
+        """End a telemetry span and record both duration and row metrics.
 
         Parameters
         ----------
@@ -181,50 +161,21 @@ class IngestRuntimeTelemetry:
         float
             Duration in seconds.
         """
-        duration_ns = time.perf_counter_ns() - span.start_time_ns
-        duration_s = duration_ns / 1e9
-
-        labels = {
-            "plugin": span.plugin_name,
-            "status": "success" if success else "error",
-        }
-        if error:
-            labels["error_type"] = error
-
-        if self._duration_histogram:
-            self._duration_histogram.record(duration_s, labels)
-
-        if self._rows_histogram and success:
+        # Record rows metric
+        if self._rows_histogram is not None and success:
+            labels = {
+                "plugin": span.plugin_name,
+                "status": "success",
+            }
             self._rows_histogram.record(float(rows_written), labels)
 
-        if error:
-            log.debug(
-                "Plugin span ended: plugin=%s duration=%.3fs success=%s error=%s",
-                span.plugin_name,
-                duration_s,
-                success,
-                error,
-            )
-        else:
-            log.debug(
-                "Plugin span ended: plugin=%s duration=%.3fs success=%s rows=%d",
-                span.plugin_name,
-                duration_s,
-                success,
-                rows_written,
-            )
-
-        return duration_s
-
-    @property
-    def tracing_enabled(self) -> bool:
-        """Return True if tracing is enabled and available."""
-        return self._tracer is not None
-
-    @property
-    def metrics_enabled(self) -> bool:
-        """Return True if metrics are enabled and available."""
-        return self._meter is not None
+        # Use the base class end_span
+        return self.end_span(
+            span,
+            success=success,
+            rows_written=rows_written,
+            error=error,
+        )
 
 
 @lru_cache(maxsize=1)
@@ -260,11 +211,15 @@ class OtelIngestRunSink:
         RuntimeError
             If the optional opentelemetry dependency is missing.
         """
-        try:
+        if not OTEL_AVAILABLE:
+            try:
+                metrics_module = importlib.import_module("opentelemetry.metrics")
+            except ImportError as exc:  # pragma: no cover - optional dependency
+                message = "opentelemetry not installed; OtelIngestRunSink cannot emit metrics"
+                raise RuntimeError(message) from exc
+        else:
             metrics_module = importlib.import_module("opentelemetry.metrics")
-        except ImportError as exc:  # pragma: no cover - optional dependency
-            message = "opentelemetry not installed; OtelIngestRunSink cannot emit metrics"
-            raise RuntimeError(message) from exc
+
         meter = metrics_module.get_meter(self.meter_name)
         self._duration = cast(
             "_MetricRecorder",
@@ -314,6 +269,7 @@ class OtelIngestRunSink:
 __all__ = [
     "IngestPluginSpan",
     "IngestRuntimeTelemetry",
+    "IngestTelemetryConfig",
     "OtelIngestRunSink",
     "get_ingest_telemetry",
 ]

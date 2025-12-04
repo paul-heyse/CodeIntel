@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-import duckdb
+from codeintel.storage.gateway import DuckDBConnection, DuckDBError
 
-DuckDBConnection = duckdb.DuckDBPyConnection
-DuckDBError = duckdb.Error
-
-DUCKDB_ERRORS: tuple[type[Exception], ...] = (duckdb.Error,)
+DUCKDB_ERRORS: tuple[type[Exception], ...] = (DuckDBError,)
 
 
 def row_counts_for_tables(
@@ -39,13 +36,13 @@ def row_counts_for_tables(
             if result is None:
                 return None
             counts[table] = int(result[0])
-        except duckdb.Error:
+        except DuckDBError:
             return None
     return counts
 
 
 def safe_row_counts(
-    con: duckdb.DuckDBPyConnection | None,
+    con: DuckDBConnection | None,
     *,
     repo: str,
     commit: str,

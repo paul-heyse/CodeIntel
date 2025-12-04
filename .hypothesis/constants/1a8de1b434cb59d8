@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/infrastructure/macros.py
+# hypothesis_version: 6.148.6
+
+['.', 'INGEST_MACRO_TABLES', 'analytics.typedness', 'core.ast_metrics', 'core.ast_nodes', 'core.cst_nodes', 'core.docstrings', 'core.file_state', 'core.goid_crosswalk', 'core.goids', 'core.modules', 'core.repo_map', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'macro_exists']

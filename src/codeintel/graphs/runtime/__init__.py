@@ -11,10 +11,10 @@ Key Components
 - run_graph_plugins: Executes a plan and returns a report
 """
 
+from codeintel.core.runtime.errors import PLUGIN_CATCHABLE_ERRORS, PluginFatalError
 from codeintel.graphs.runtime.executor import (
     GraphExecutorContext,
     GraphRunReport,
-    PluginFatalError,
     run_graph_plugin_batch,
     run_graph_plugins,
 )
@@ -39,6 +39,7 @@ from codeintel.graphs.runtime.telemetry import (
 )
 
 __all__ = [
+    "PLUGIN_CATCHABLE_ERRORS",
     "GraphExecutorContext",
     "GraphPlanContext",
     "GraphPluginExecutionPlan",

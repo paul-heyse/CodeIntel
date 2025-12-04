@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/adapters/callgraph_persistence.py
+# hypothesis_version: 6.148.6
+
+['call_graph_edges', 'callee_goid_h128', 'caller_goid_h128', 'callsite_col', 'callsite_line', 'callsite_path', 'commit', 'dedupe_edge_rows', 'default_edge_key', 'repo']

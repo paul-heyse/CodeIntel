@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/core/__init__.py
+# hypothesis_version: 6.148.6
+
+['BaseIngestPlugin', 'IngestRun', 'IngestRunMode', 'IngestRunSink', 'IngestRunStatus', 'IsolatedPlugin', 'ResolvedConfig', 'RetryablePlugin', 'ToolAwarePlugin', 'TrackerAwarePlugin', 'ValidationResult', 'WithDependencyData', 'WithRowCounts', 'WithToolDependencies', 'get_plugin_traits', 'is_incremental', 'is_isolated', 'is_retryable', 'is_tool_aware', 'is_tracker_aware']

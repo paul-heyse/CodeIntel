@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/hotspots/build.py
+# hypothesis_version: 6.148.6
+
+[60000, '2.0.0', 'HotspotsPlugin', 'analytics.hotspots', 'churn', 'core.ast_metrics', 'hotspots', 'hotspots.build', 'risk', 'tool_runner']

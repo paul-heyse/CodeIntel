@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
+from codeintel.storage.data_models import fetch_models_normalized
 from codeintel.storage.repositories import (
     DatasetReadRepository,
     FunctionRepository,
@@ -13,7 +14,6 @@ from codeintel.storage.repositories import (
     SubsystemRepository,
     TestRepository,
 )
-from codeintel.storage.repositories.data_models import DataModelRepository
 from tests._helpers import ProvisionedGateway
 
 
@@ -184,13 +184,12 @@ def test_subsystem_repository_reads(docs_export_gateway: ProvisionedGateway) -> 
     _expect_equal(memberships[0]["subsystem_id"], "subsystem-1", "membership id mismatch")
 
 
-def test_data_model_repository_reads(docs_export_gateway: ProvisionedGateway) -> None:
-    """Data model repository should surface normalized rows."""
+def test_data_model_accessors(docs_export_gateway: ProvisionedGateway) -> None:
+    """Data model accessors should surface normalized rows directly."""
     ctx = docs_export_gateway
     gateway = ctx.gateway
     repo = ctx.repo
     commit = ctx.commit
-    repo_dm = DataModelRepository(gateway)
     now = datetime.now().astimezone()
 
     gateway.con.execute(
@@ -222,7 +221,7 @@ def test_data_model_repository_reads(docs_export_gateway: ProvisionedGateway) ->
         [repo, commit, "ModelA", "ModelB", "field_a", "association", "foo.py", 1, now],
     )
 
-    normalized = repo_dm.models_normalized(repo, commit)
+    normalized = fetch_models_normalized(gateway, repo, commit)
     _expect_equal(len(normalized), 1, "normalized model count mismatch")
     model = normalized[0]
     _expect_equal(model.model_id, "ModelA", "model id mismatch")

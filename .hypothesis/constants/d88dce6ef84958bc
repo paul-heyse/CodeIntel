@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/functions/metrics.py
+# hypothesis_version: 6.148.6
+
+[60000, '3.0.0', 'AstProvider', 'AstResourceData', 'core.goids', 'function', 'functions', 'functions.metrics', 'metrics', 'metrics_rows', 'types', 'types_rows']

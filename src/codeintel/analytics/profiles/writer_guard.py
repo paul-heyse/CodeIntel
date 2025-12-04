@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from codeintel.config.datasets import load_columns_by_table
 from codeintel.storage.gateway import DuckDBConnection
-from codeintel.storage.sql_helpers import PreparedStatements
+from codeintel.storage.sql_builder import PreparedStatements
 
 SerializeRow = Callable[[Mapping[str, object]], tuple[object, ...]]
 
