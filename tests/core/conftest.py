@@ -55,40 +55,66 @@ class SampleCacheConfig:
 
 @pytest.fixture
 def config_registry() -> ConfigRegistry:
-    """Create a fresh ConfigRegistry instance for testing."""
+    """Create a fresh ConfigRegistry instance for testing.
+
+    Returns
+    -------
+    ConfigRegistry
+        Empty registry instance.
+    """
     return ConfigRegistry()
 
 
 @pytest.fixture
 def populated_config_registry() -> ConfigRegistry:
-    """Create a ConfigRegistry with sample configurations registered."""
+    """Create a ConfigRegistry with sample configurations registered.
+
+    Returns
+    -------
+    ConfigRegistry
+        Registry with database and app configs pre-registered.
+    """
     registry = ConfigRegistry()
-    registry.register(SampleDatabaseConfig, SampleDatabaseConfig(
-        host="localhost",
-        port=5432,
-        database="test_db",
-    ))
-    registry.register(SampleAppConfig, SampleAppConfig(
-        debug=True,
-        log_level="DEBUG",
-    ))
+    registry.register(
+        SampleDatabaseConfig,
+        SampleDatabaseConfig(
+            host="localhost",
+            port=5432,
+            database="test_db",
+        ),
+    )
+    registry.register(
+        SampleAppConfig,
+        SampleAppConfig(
+            debug=True,
+            log_level="DEBUG",
+        ),
+    )
     return registry
 
 
 @pytest.fixture
 def config_provider() -> ConfigProvider:
-    """Create a ConfigProvider with sample configurations."""
-    return ConfigProvider({
-        SampleDatabaseConfig: SampleDatabaseConfig(
-            host="localhost",
-            port=5432,
-            database="test_db",
-        ),
-        SampleAppConfig: SampleAppConfig(
-            debug=True,
-            log_level="DEBUG",
-        ),
-    })
+    """Create a ConfigProvider with sample configurations.
+
+    Returns
+    -------
+    ConfigProvider
+        Provider with database and app configs.
+    """
+    return ConfigProvider(
+        {
+            SampleDatabaseConfig: SampleDatabaseConfig(
+                host="localhost",
+                port=5432,
+                database="test_db",
+            ),
+            SampleAppConfig: SampleAppConfig(
+                debug=True,
+                log_level="DEBUG",
+            ),
+        }
+    )
 
 
 # =============================================================================
@@ -98,7 +124,13 @@ def config_provider() -> ConfigProvider:
 
 @pytest.fixture
 def resource_registry() -> ResourceRegistry:
-    """Create a fresh ResourceRegistry instance for testing."""
+    """Create a fresh ResourceRegistry instance for testing.
+
+    Returns
+    -------
+    ResourceRegistry
+        Empty resource registry instance.
+    """
     return ResourceRegistry()
 
 
@@ -109,7 +141,13 @@ def resource_registry() -> ResourceRegistry:
 
 @pytest.fixture
 def sample_plugin_metadata() -> PluginMetadata:
-    """Create a sample PluginMetadata for testing."""
+    """Create a sample PluginMetadata for testing.
+
+    Returns
+    -------
+    PluginMetadata
+        Fully populated metadata instance.
+    """
     return PluginMetadata(
         name="test.sample_plugin",
         description="A sample plugin for testing",
@@ -126,7 +164,13 @@ def sample_plugin_metadata() -> PluginMetadata:
 
 @pytest.fixture
 def minimal_plugin_metadata() -> PluginMetadata:
-    """Create minimal PluginMetadata with only required fields."""
+    """Create minimal PluginMetadata with only required fields.
+
+    Returns
+    -------
+    PluginMetadata
+        Metadata with only required fields set.
+    """
     return PluginMetadata(
         name="test.minimal",
         description="Minimal test plugin",
@@ -137,7 +181,13 @@ def minimal_plugin_metadata() -> PluginMetadata:
 
 @pytest.fixture
 def builder_plugin_metadata() -> PluginMetadata:
-    """Create PluginMetadata for a builder-type plugin."""
+    """Create PluginMetadata for a builder-type plugin.
+
+    Returns
+    -------
+    PluginMetadata
+        Builder plugin metadata that produces graphs.
+    """
     return PluginMetadata(
         name="test.builder",
         description="A builder plugin for testing",
@@ -149,7 +199,13 @@ def builder_plugin_metadata() -> PluginMetadata:
 
 @pytest.fixture
 def metric_plugin_metadata() -> PluginMetadata:
-    """Create PluginMetadata for a metric-type plugin."""
+    """Create PluginMetadata for a metric-type plugin.
+
+    Returns
+    -------
+    PluginMetadata
+        Metric plugin metadata that requires graphs.
+    """
     return PluginMetadata(
         name="test.metric",
         description="A metric plugin for testing",
@@ -161,7 +217,13 @@ def metric_plugin_metadata() -> PluginMetadata:
 
 @pytest.fixture
 def plugin_scratch() -> PluginScratch:
-    """Create a fresh PluginScratch instance for testing."""
+    """Create a fresh PluginScratch instance for testing.
+
+    Returns
+    -------
+    PluginScratch
+        Empty scratch store.
+    """
     return PluginScratch()
 
 
@@ -172,7 +234,13 @@ def plugin_scratch() -> PluginScratch:
 
 @pytest.fixture
 def repo_root(tmp_path: Path) -> Path:
-    """Create a temporary repository root directory."""
+    """Create a temporary repository root directory.
+
+    Returns
+    -------
+    Path
+        Path to the temporary repo directory.
+    """
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     return repo
@@ -180,7 +248,13 @@ def repo_root(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def build_dir(tmp_path: Path) -> Path:
-    """Create a temporary build directory."""
+    """Create a temporary build directory.
+
+    Returns
+    -------
+    Path
+        Path to the temporary build directory.
+    """
     build = tmp_path / "build"
     build.mkdir(parents=True, exist_ok=True)
     return build

@@ -1,8 +1,7 @@
-"""DuckDB helpers for row operations and queries.
+"""DuckDB helpers for bulk row insertion.
 
-This module combines utilities for:
-- Row count queries (from db_helpers)
-- Bulk row insertion (from ingest_helpers)
+This module provides the canonical bulk insertion function for DuckDB tables.
+For row count operations, use codeintel.storage.validation.data_checks.
 """
 
 from __future__ import annotations
@@ -16,67 +15,12 @@ from duckdb import Error as DuckDBError
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.sql import build_insert_sql, quote_identifier
 
-# Use DuckDBPyConnection directly to avoid circular imports with gateway
-DuckDBConnection = DuckDBPyConnection
-
 __all__ = [
     "DUCKDB_ERRORS",
     "macro_insert_rows",
-    "row_counts_for_tables",
-    "safe_row_counts",
 ]
 
 DUCKDB_ERRORS: tuple[type[Exception], ...] = (DuckDBError,)
-
-
-def row_counts_for_tables(
-    con: DuckDBConnection,
-    *,
-    repo: str,
-    commit: str,
-    tables: Sequence[str],
-) -> dict[str, int] | None:
-    """Compute row counts for each table filtered by repo/commit.
-
-    Returns
-    -------
-    dict[str, int] | None
-        Mapping of table name to counts, or None if any table fails to count.
-    """
-    counts: dict[str, int] = {}
-    for table in tables:
-        try:
-            escaped_repo = repo.replace("'", "''")
-            escaped_commit = commit.replace("'", "''")
-            relation = con.table(table).filter(
-                f"repo = '{escaped_repo}' AND commit = '{escaped_commit}'"
-            )
-            result = relation.count("*").fetchone()
-            if result is None:
-                return None
-            counts[table] = int(result[0])
-        except DuckDBError:
-            return None
-    return counts
-
-
-def safe_row_counts(
-    con: DuckDBConnection | None,
-    *,
-    repo: str,
-    commit: str,
-    tables: Iterable[str],
-) -> dict[str, int] | None:
-    """Variant that tolerates missing connection or empty tables.
-
-    Returns
-    -------
-    dict[str, int] | None
-        Row counts or None when unavailable.
-    """
-    if con is None:
-        return None
-    return row_counts_for_tables(con, repo=repo, commit=commit, tables=tuple(tables))
 
 
 def macro_insert_rows(
@@ -84,15 +28,46 @@ def macro_insert_rows(
     table_key: str,
     rows: Iterable[Sequence[object]],
 ) -> None:
-    """Insert rows via ingest macro using table schema as ground truth.
+    """Insert rows into a table using schema-driven column order.
 
-    Pads missing trailing columns with NULLs; raises if rows exceed schema width.
+    This is the canonical method for bulk row insertion into DuckDB tables.
+    It uses the DatasetContract schema as the source of truth for column
+    order, automatically padding missing trailing columns with NULL values.
+
+    The function creates a temporary table to stage the data, then inserts
+    it into the target table. This approach ensures type safety and handles
+    schema evolution gracefully.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    table_key
+        Fully qualified table name (schema.table).
+    rows
+        Iterable of row tuples. Each tuple should contain values in the order
+        defined by the table's DatasetContract schema. Trailing columns may
+        be omitted and will be padded with NULL.
 
     Raises
     ------
     ValueError
         If the table name is invalid or rows exceed the column count.
         If the table has no DatasetContract schema.
+
+    Notes
+    -----
+    This function is used internally by the table accessor classes
+    (CoreTables, GraphTables, AnalyticsTables) via the BaseTableAccessor
+    base class. For direct bulk insertion, prefer using accessor methods
+    like ``gateway.core.insert_goids(rows)`` which provide typed signatures.
+
+    See Also
+    --------
+    codeintel.storage.gateway.base_accessor.BaseTableAccessor._insert_rows
+        Base accessor method that calls this function.
+    codeintel.storage.sql.builder.prepared_statements_dynamic
+        Alternative approach for generating parameterized SQL.
     """
     rows_list = list(rows)
     if not rows_list:

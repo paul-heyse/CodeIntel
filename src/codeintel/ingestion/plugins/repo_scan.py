@@ -111,7 +111,7 @@ class RepoScanPlugin(BaseIngestPlugin, WithDependencyData, WithRowCounts):
             repo=ctx.snapshot.repo,
             commit=ctx.snapshot.commit,
             repo_root=ctx.snapshot.repo_root,
-            profile=ctx.code_profile,
+            profile=ctx.validated_code_profile,
             full_rebuild=False,
         )
 
@@ -122,7 +122,7 @@ class RepoScanPlugin(BaseIngestPlugin, WithDependencyData, WithRowCounts):
             repo_root=ctx.snapshot.repo_root,
             language="python",
             full_rebuild=False,
-            scan_profile=ctx.code_profile,
+            scan_profile=ctx.validated_code_profile,
         )
 
         # Create change tracker

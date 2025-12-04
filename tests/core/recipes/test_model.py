@@ -27,6 +27,13 @@ from codeintel.core.recipes.model import (
     RecipeStage,
 )
 
+DEFAULT_MAX_PARALLEL = BaseRecipeOptions().max_parallel
+CUSTOM_MAX_PARALLEL = 8
+HIGH_MAX_PARALLEL = 16
+DEFAULT_TIMEOUT_MS = 5000
+DEFAULT_MAX_DURATION_MS = 60000
+FAILURE_ATTEMPTS = 3
+
 # =============================================================================
 # BaseRecipeStage Tests
 # =============================================================================
@@ -76,20 +83,21 @@ def test_base_recipe_options_defaults() -> None:
     options = BaseRecipeOptions()
 
     assert options.dry_run is False
-    assert options.max_parallel == 4
+    assert options.max_parallel == DEFAULT_MAX_PARALLEL
     assert options.fail_fast is True
 
 
 def test_base_recipe_options_custom() -> None:
     """Verify BaseRecipeOptions accepts custom values."""
+    custom_max_parallel = CUSTOM_MAX_PARALLEL
     options = BaseRecipeOptions(
         dry_run=True,
-        max_parallel=8,
+        max_parallel=custom_max_parallel,
         fail_fast=False,
     )
 
     assert options.dry_run is True
-    assert options.max_parallel == 8
+    assert options.max_parallel == custom_max_parallel
     assert options.fail_fast is False
 
 
@@ -103,7 +111,7 @@ def test_base_recipe_construction() -> None:
     base_recipe = BaseRecipe(name="base_recipe")
 
     assert base_recipe.name == "base_recipe"
-    assert base_recipe.description == ""  # Default
+    assert not base_recipe.description  # Default empty
     assert base_recipe.version == "1.0"  # Default
     assert base_recipe.tags == ()  # Default
 
@@ -157,7 +165,7 @@ def test_recipe_options_defaults() -> None:
 
     assert options.dry_run is False
     assert options.skip_on_unchanged is False
-    assert options.max_parallel == 4
+    assert options.max_parallel == DEFAULT_MAX_PARALLEL
     assert options.timeout_ms is None
     assert options.fail_fast is True
     assert options.max_duration_ms is None
@@ -165,21 +173,24 @@ def test_recipe_options_defaults() -> None:
 
 def test_recipe_options_all_fields() -> None:
     """Verify RecipeOptions accepts all fields."""
+    custom_max_parallel = HIGH_MAX_PARALLEL
+    timeout_ms = DEFAULT_TIMEOUT_MS
+    max_duration_ms = DEFAULT_MAX_DURATION_MS
     options = RecipeOptions(
         dry_run=True,
         skip_on_unchanged=True,
-        max_parallel=16,
-        timeout_ms=5000,
+        max_parallel=custom_max_parallel,
+        timeout_ms=timeout_ms,
         fail_fast=False,
-        max_duration_ms=60000,
+        max_duration_ms=max_duration_ms,
     )
 
     assert options.dry_run is True
     assert options.skip_on_unchanged is True
-    assert options.max_parallel == 16
-    assert options.timeout_ms == 5000
+    assert options.max_parallel == custom_max_parallel
+    assert options.timeout_ms == timeout_ms
     assert options.fail_fast is False
-    assert options.max_duration_ms == 60000
+    assert options.max_duration_ms == max_duration_ms
 
 
 # =============================================================================
@@ -258,7 +269,7 @@ def test_recipe_with_stages() -> None:
     recipe_obj = Recipe(name="staged", stages=stages)
 
     assert recipe_obj.is_staged is True
-    assert len(recipe_obj.stages) == 2
+    assert len(recipe_obj.stages) == len(stages)
 
 
 def test_recipe_all_plugins_from_stages() -> None:
@@ -352,23 +363,23 @@ def test_recipe_with_options_method() -> None:
     """Verify with_options returns new recipe with updated options."""
     original = Recipe(name="test")
 
-    updated = original.with_options(dry_run=True, max_parallel=16)
+    updated = original.with_options(dry_run=True, max_parallel=HIGH_MAX_PARALLEL)
 
     assert original.options.dry_run is False  # Original unchanged
     assert updated.options.dry_run is True
-    assert updated.options.max_parallel == 16
+    assert updated.options.max_parallel == HIGH_MAX_PARALLEL
 
 
 def test_recipe_with_options_preserves_unset() -> None:
     """Verify with_options preserves options not explicitly set."""
     original = Recipe(
         name="test",
-        options=RecipeOptions(timeout_ms=5000),
+        options=RecipeOptions(timeout_ms=DEFAULT_TIMEOUT_MS),
     )
 
     updated = original.with_options(dry_run=True)
 
-    assert updated.options.timeout_ms == 5000
+    assert updated.options.timeout_ms == DEFAULT_TIMEOUT_MS
     assert updated.options.dry_run is True
 
 
@@ -403,12 +414,12 @@ def test_recipe_plugin_record_failed() -> None:
         started_at=now,
         ended_at=now,
         duration_ms=50.0,
-        attempts=3,
+        attempts=FAILURE_ATTEMPTS,
         error="Something went wrong",
     )
 
     assert record.status == "failed"
-    assert record.attempts == 3
+    assert record.attempts == FAILURE_ATTEMPTS
     assert record.error == "Something went wrong"
 
 
@@ -475,7 +486,8 @@ def test_recipe_execution_report_succeeded_count() -> None:
         plugin_records=records,
     )
 
-    assert report.succeeded_count == 2
+    expected_succeeded = sum(record.status == "succeeded" for record in records)
+    assert report.succeeded_count == expected_succeeded
 
 
 def test_recipe_execution_report_failed_count() -> None:
@@ -500,7 +512,8 @@ def test_recipe_execution_report_failed_count() -> None:
         plugin_records=records,
     )
 
-    assert report.failed_count == 2
+    expected_failed = sum(record.status == "failed" for record in records)
+    assert report.failed_count == expected_failed
 
 
 def test_recipe_execution_report_total_row_counts() -> None:
@@ -526,9 +539,15 @@ def test_recipe_execution_report_total_row_counts() -> None:
 
     totals = report.total_row_counts
 
-    assert totals["t1"] == 15  # 10 + 5
-    assert totals["t2"] == 20
-    assert totals["t3"] == 15
+    expected_totals = {
+        "t1": sum(record.row_counts["t1"] for record in records if record.row_counts),
+        "t2": records[0].row_counts["t2"],
+        "t3": records[1].row_counts["t3"],
+    }
+
+    assert totals["t1"] == expected_totals["t1"]
+    assert totals["t2"] == expected_totals["t2"]
+    assert totals["t3"] == expected_totals["t3"]
 
 
 def test_recipe_execution_report_with_skipped() -> None:

@@ -483,13 +483,15 @@ def test_find_cycles_nested_cycles() -> None:
     graph = nx.DiGraph()
     # Outer cycle: A -> B -> C -> A
     # Inner cycle: B -> D -> B
-    graph.add_edges_from([
-        ("A", "B"),
-        ("B", "C"),
-        ("C", "A"),
-        ("B", "D"),
-        ("D", "B"),
-    ])
+    graph.add_edges_from(
+        [
+            ("A", "B"),
+            ("B", "C"),
+            ("C", "A"),
+            ("B", "D"),
+            ("D", "B"),
+        ]
+    )
 
     result = find_dfg_cycles(graph)
 

@@ -298,28 +298,32 @@ def _seed_call_graph_data(
     )
 
     # Insert call graph nodes
-    fresh_gateway.graph.insert_call_graph_nodes([
-        (EXPECTED_GOID_CALLER, "python", "function", 0, True, "caller.py"),
-        (EXPECTED_GOID_CALLEE, "python", "function", 1, True, "callee.py"),
-    ])
+    fresh_gateway.graph.insert_call_graph_nodes(
+        [
+            (EXPECTED_GOID_CALLER, "python", "function", 0, True, "caller.py"),
+            (EXPECTED_GOID_CALLEE, "python", "function", 1, True, "callee.py"),
+        ]
+    )
 
     # Insert call graph edge (caller -> callee)
-    fresh_gateway.graph.insert_call_graph_edges([
-        (
-            repo,
-            commit,
-            EXPECTED_GOID_CALLER,
-            EXPECTED_GOID_CALLEE,
-            "caller.py",
-            5,
-            10,
-            "python",
-            "direct",
-            "callee",
-            1.0,
-            "{}",
-        )
-    ])
+    fresh_gateway.graph.insert_call_graph_edges(
+        [
+            (
+                repo,
+                commit,
+                EXPECTED_GOID_CALLER,
+                EXPECTED_GOID_CALLEE,
+                "caller.py",
+                5,
+                10,
+                "python",
+                "direct",
+                "callee",
+                1.0,
+                "{}",
+            )
+        ]
+    )
 
     return EXPECTED_GOID_CALLER, EXPECTED_GOID_CALLEE
 
@@ -462,9 +466,11 @@ def test_get_outgoing_callgraph_neighbors_respects_limit(
             now,
         ],
     )
-    fresh_gateway.graph.insert_call_graph_nodes([
-        (EXPECTED_GOID_CALLER, "python", "function", 0, True, "caller.py"),
-    ])
+    fresh_gateway.graph.insert_call_graph_nodes(
+        [
+            (EXPECTED_GOID_CALLER, "python", "function", 0, True, "caller.py"),
+        ]
+    )
 
     # Insert multiple callees
     for i in range(5):
@@ -490,25 +496,29 @@ def test_get_outgoing_callgraph_neighbors_respects_limit(
                 now,
             ],
         )
-        fresh_gateway.graph.insert_call_graph_nodes([
-            (callee_goid, "python", "function", i + 1, True, f"callee{i}.py"),
-        ])
-        fresh_gateway.graph.insert_call_graph_edges([
-            (
-                repo_slug,
-                commit,
-                EXPECTED_GOID_CALLER,
-                callee_goid,
-                "caller.py",
-                5 + i,
-                10,
-                "python",
-                "direct",
-                f"callee{i}",
-                1.0,
-                "{}",
-            )
-        ])
+        fresh_gateway.graph.insert_call_graph_nodes(
+            [
+                (callee_goid, "python", "function", i + 1, True, f"callee{i}.py"),
+            ]
+        )
+        fresh_gateway.graph.insert_call_graph_edges(
+            [
+                (
+                    repo_slug,
+                    commit,
+                    EXPECTED_GOID_CALLER,
+                    callee_goid,
+                    "caller.py",
+                    5 + i,
+                    10,
+                    "python",
+                    "direct",
+                    f"callee{i}",
+                    1.0,
+                    "{}",
+                )
+            ]
+        )
 
     graph_repo = GraphRepository(
         gateway=fresh_gateway,

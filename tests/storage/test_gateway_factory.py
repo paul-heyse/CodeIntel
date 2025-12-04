@@ -189,9 +189,11 @@ def test_open_memory_gateway_supports_insert_and_query() -> None:
     """Verify gateway supports data operations."""
     gateway = open_memory_gateway(validate_schema=False)
     try:
-        gateway.core.insert_modules([
-            ("test_mod", "test.py", "test/repo", "abc123"),
-        ])
+        gateway.core.insert_modules(
+            [
+                ("test_mod", "test.py", "test/repo", "abc123"),
+            ]
+        )
         result = gateway.con.execute(
             "SELECT module FROM core.modules WHERE repo = ?", ["test/repo"]
         ).fetchone()
@@ -480,10 +482,12 @@ def test_full_gateway_lifecycle(tmp_path: Path) -> None:
         validate_schema=False,
     )
     gw_write = open_gateway(cfg_write)
-    gw_write.core.insert_modules([
-        ("mod_a", "mod_a.py", "test/repo", "v1"),
-        ("mod_b", "mod_b.py", "test/repo", "v1"),
-    ])
+    gw_write.core.insert_modules(
+        [
+            ("mod_a", "mod_a.py", "test/repo", "v1"),
+            ("mod_b", "mod_b.py", "test/repo", "v1"),
+        ]
+    )
     gw_write.close()
 
     # Reopen and verify

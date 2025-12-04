@@ -112,7 +112,7 @@ def test_validate_option_keys_multiple_unknown() -> None:
     allowed = {"name"}
     provided = {"name": "test", "bad1": "x", "bad2": "y"}
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(ValueError, match=r"Unsupported plugin option keys") as exc_info:
         BasePluginMetaOptions.validate_option_keys(allowed, provided)
 
     error_msg = str(exc_info.value)
@@ -146,7 +146,7 @@ def test_to_base_metadata_uses_function_name() -> None:
     """Verify to_base_metadata uses function name when not provided."""
     options = BasePluginMetaOptions()
 
-    def my_plugin_function(ctx: object) -> PluginResult:
+    def my_plugin_function(_ctx: object) -> PluginResult:
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(my_plugin_function)
@@ -158,7 +158,7 @@ def test_to_base_metadata_uses_custom_name() -> None:
     """Verify to_base_metadata uses provided name over function name."""
     options = BasePluginMetaOptions(name="custom.name")
 
-    def my_function(ctx: object) -> PluginResult:
+    def my_function(_ctx: object) -> PluginResult:
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(my_function)
@@ -170,21 +170,33 @@ def test_to_base_metadata_uses_function_docstring() -> None:
     """Verify to_base_metadata uses function docstring for description."""
     options = BasePluginMetaOptions()
 
-    def documented_function(ctx: object) -> PluginResult:
-        """This is the function description."""
+    def documented_function(_ctx: object) -> PluginResult:
+        """Execute the documented function.
+
+        Returns
+        -------
+        PluginResult
+            Successful plugin result.
+        """
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(documented_function)
 
-    assert metadata.description == "This is the function description."
+    assert metadata.description == "Execute the documented function."
 
 
 def test_to_base_metadata_uses_custom_description() -> None:
     """Verify to_base_metadata uses provided description over docstring."""
     options = BasePluginMetaOptions(description="Custom description")
 
-    def documented_function(ctx: object) -> PluginResult:
-        """This docstring should be ignored."""
+    def documented_function(_ctx: object) -> PluginResult:
+        """Execute and return success.
+
+        Returns
+        -------
+        PluginResult
+            Successful plugin result.
+        """
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(documented_function)
@@ -196,32 +208,38 @@ def test_to_base_metadata_strips_whitespace() -> None:
     """Verify to_base_metadata strips description whitespace."""
     options = BasePluginMetaOptions()
 
-    def func(ctx: object) -> PluginResult:
-        """Description with whitespace."""
+    def func(_ctx: object) -> PluginResult:
+        """Handle description with whitespace.
+
+        Returns
+        -------
+        PluginResult
+            Successful plugin result.
+        """
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(func)
 
-    assert metadata.description == "Description with whitespace."
+    assert metadata.description == "Handle description with whitespace."
 
 
 def test_to_base_metadata_empty_docstring() -> None:
     """Verify to_base_metadata handles missing docstring."""
     options = BasePluginMetaOptions()
 
-    def no_doc_function(ctx: object) -> PluginResult:
+    def no_doc_function(_ctx: object) -> PluginResult:
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(no_doc_function)
 
-    assert metadata.description == ""
+    assert not metadata.description
 
 
 def test_to_base_metadata_uses_default_kind() -> None:
     """Verify to_base_metadata uses default kind when not specified."""
     options = BasePluginMetaOptions()
 
-    def func(ctx: object) -> PluginResult:
+    def func(_ctx: object) -> PluginResult:
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(func, default_kind="builder")
@@ -233,7 +251,7 @@ def test_to_base_metadata_uses_default_stage() -> None:
     """Verify to_base_metadata uses default stage when not specified."""
     options = BasePluginMetaOptions()
 
-    def func(ctx: object) -> PluginResult:
+    def func(_ctx: object) -> PluginResult:
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(func, default_stage="graph")
@@ -245,7 +263,7 @@ def test_to_base_metadata_overrides_defaults() -> None:
     """Verify to_base_metadata uses options over defaults."""
     options = BasePluginMetaOptions(kind="metric", stage="function")
 
-    def func(ctx: object) -> PluginResult:
+    def func(_ctx: object) -> PluginResult:
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(
@@ -267,7 +285,7 @@ def test_to_base_metadata_converts_sequences() -> None:
         tags=["tag1"],
     )
 
-    def func(ctx: object) -> PluginResult:
+    def func(_ctx: object) -> PluginResult:
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(func)
@@ -305,7 +323,7 @@ def test_to_base_metadata_preserves_all_fields() -> None:
         tags=["test"],
     )
 
-    def func(ctx: object) -> PluginResult:
+    def func(_ctx: object) -> PluginResult:
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(func)

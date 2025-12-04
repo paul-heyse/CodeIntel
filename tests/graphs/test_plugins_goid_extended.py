@@ -54,17 +54,19 @@ def sample_ast_row() -> pd.Series:
     pd.Series
         Sample AST node row.
     """
-    return pd.Series({
-        "path": TEST_PATH,
-        "node_type": "FunctionDef",
-        "name": "my_method",
-        "qualname": TEST_QUALNAME,
-        "lineno": EXPECTED_START_LINE,
-        "end_lineno": EXPECTED_END_LINE,
-        "decorator_start_line": None,
-        "decorator_end_line": None,
-        "parent_qualname": "MyClass",
-    })
+    return pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": "FunctionDef",
+            "name": "my_method",
+            "qualname": TEST_QUALNAME,
+            "lineno": EXPECTED_START_LINE,
+            "end_lineno": EXPECTED_END_LINE,
+            "decorator_start_line": None,
+            "decorator_end_line": None,
+            "parent_qualname": "MyClass",
+        }
+    )
 
 
 @pytest.fixture
@@ -76,17 +78,19 @@ def decorated_ast_row() -> pd.Series:
     pd.Series
         Decorated AST node row.
     """
-    return pd.Series({
-        "path": TEST_PATH,
-        "node_type": "FunctionDef",
-        "name": "decorated_method",
-        "qualname": "MyClass.decorated_method",
-        "lineno": EXPECTED_START_LINE,
-        "end_lineno": EXPECTED_END_LINE,
-        "decorator_start_line": DECORATOR_START_LINE,
-        "decorator_end_line": 9,
-        "parent_qualname": "MyClass",
-    })
+    return pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": "FunctionDef",
+            "name": "decorated_method",
+            "qualname": "MyClass.decorated_method",
+            "lineno": EXPECTED_START_LINE,
+            "end_lineno": EXPECTED_END_LINE,
+            "decorator_start_line": DECORATOR_START_LINE,
+            "decorator_end_line": 9,
+            "parent_qualname": "MyClass",
+        }
+    )
 
 
 @pytest.fixture
@@ -98,17 +102,19 @@ def module_ast_row() -> pd.Series:
     pd.Series
         Module-level AST node row.
     """
-    return pd.Series({
-        "path": TEST_PATH,
-        "node_type": "Module",
-        "name": "module",
-        "qualname": "module",
-        "lineno": 1,
-        "end_lineno": 100,
-        "decorator_start_line": None,
-        "decorator_end_line": None,
-        "parent_qualname": None,
-    })
+    return pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": "Module",
+            "name": "module",
+            "qualname": "module",
+            "lineno": 1,
+            "end_lineno": 100,
+            "decorator_start_line": None,
+            "decorator_end_line": None,
+            "parent_qualname": None,
+        }
+    )
 
 
 @pytest.fixture
@@ -120,17 +126,19 @@ def class_ast_row() -> pd.Series:
     pd.Series
         Class definition AST node row.
     """
-    return pd.Series({
-        "path": TEST_PATH,
-        "node_type": "ClassDef",
-        "name": "MyClass",
-        "qualname": "MyClass",
-        "lineno": 5,
-        "end_lineno": 50,
-        "decorator_start_line": None,
-        "decorator_end_line": None,
-        "parent_qualname": None,
-    })
+    return pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": "ClassDef",
+            "name": "MyClass",
+            "qualname": "MyClass",
+            "lineno": 5,
+            "end_lineno": 50,
+            "decorator_start_line": None,
+            "decorator_end_line": None,
+            "parent_qualname": None,
+        }
+    )
 
 
 @pytest.fixture
@@ -142,17 +150,19 @@ def async_function_ast_row() -> pd.Series:
     pd.Series
         Async function AST node row.
     """
-    return pd.Series({
-        "path": TEST_PATH,
-        "node_type": "AsyncFunctionDef",
-        "name": "async_method",
-        "qualname": "MyClass.async_method",
-        "lineno": 30,
-        "end_lineno": 40,
-        "decorator_start_line": None,
-        "decorator_end_line": None,
-        "parent_qualname": "MyClass",
-    })
+    return pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": "AsyncFunctionDef",
+            "name": "async_method",
+            "qualname": "MyClass.async_method",
+            "lineno": 30,
+            "end_lineno": 40,
+            "decorator_start_line": None,
+            "decorator_end_line": None,
+            "parent_qualname": "MyClass",
+        }
+    )
 
 
 @pytest.fixture
@@ -270,9 +280,7 @@ def test_build_goid_entries_module(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {TEST_PATH: TEST_MODULE}
 
-    goid_row, _ = build_goid_entries_for_testing(
-        module_ast_row, goid_config, now, module_by_path
-    )
+    goid_row, _ = build_goid_entries_for_testing(module_ast_row, goid_config, now, module_by_path)
 
     assert goid_row["kind"] == "module"
     assert goid_row["start_line"] == 1
@@ -286,9 +294,7 @@ def test_build_goid_entries_class(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {TEST_PATH: TEST_MODULE}
 
-    goid_row, _ = build_goid_entries_for_testing(
-        class_ast_row, goid_config, now, module_by_path
-    )
+    goid_row, _ = build_goid_entries_for_testing(class_ast_row, goid_config, now, module_by_path)
 
     assert goid_row["kind"] == "class"
     assert goid_row["qualname"] == "MyClass"
@@ -337,17 +343,19 @@ def test_build_goid_entries_windows_path_normalized(
     module_by_path: dict[str, str] = {}
 
     # Windows-style path
-    row = pd.Series({
-        "path": "src\\pkg\\module.py",
-        "node_type": "FunctionDef",
-        "name": "func",
-        "qualname": "func",
-        "lineno": 1,
-        "end_lineno": 10,
-        "decorator_start_line": None,
-        "decorator_end_line": None,
-        "parent_qualname": None,
-    })
+    row = pd.Series(
+        {
+            "path": "src\\pkg\\module.py",
+            "node_type": "FunctionDef",
+            "name": "func",
+            "qualname": "func",
+            "lineno": 1,
+            "end_lineno": 10,
+            "decorator_start_line": None,
+            "decorator_end_line": None,
+            "parent_qualname": None,
+        }
+    )
 
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
@@ -368,17 +376,19 @@ def test_build_goid_entries_none_end_line(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {}
 
-    row = pd.Series({
-        "path": TEST_PATH,
-        "node_type": "FunctionDef",
-        "name": "func",
-        "qualname": "func",
-        "lineno": 1,
-        "end_lineno": None,
-        "decorator_start_line": None,
-        "decorator_end_line": None,
-        "parent_qualname": None,
-    })
+    row = pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": "FunctionDef",
+            "name": "func",
+            "qualname": "func",
+            "lineno": 1,
+            "end_lineno": None,
+            "decorator_start_line": None,
+            "decorator_end_line": None,
+            "parent_qualname": None,
+        }
+    )
 
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
@@ -393,17 +403,19 @@ def test_build_goid_entries_nan_values(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {}
 
-    row = pd.Series({
-        "path": TEST_PATH,
-        "node_type": "FunctionDef",
-        "name": "func",
-        "qualname": "func",
-        "lineno": pd.NA,  # pandas NA
-        "end_lineno": float("nan"),  # NaN
-        "decorator_start_line": pd.NA,
-        "decorator_end_line": None,
-        "parent_qualname": None,
-    })
+    row = pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": "FunctionDef",
+            "name": "func",
+            "qualname": "func",
+            "lineno": pd.NA,  # pandas NA
+            "end_lineno": float("nan"),  # NaN
+            "decorator_start_line": pd.NA,
+            "decorator_end_line": None,
+            "parent_qualname": None,
+        }
+    )
 
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
@@ -418,17 +430,19 @@ def test_build_goid_entries_top_level_function(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {}
 
-    row = pd.Series({
-        "path": TEST_PATH,
-        "node_type": "FunctionDef",
-        "name": "top_level_func",
-        "qualname": "top_level_func",
-        "lineno": 5,
-        "end_lineno": 15,
-        "decorator_start_line": None,
-        "decorator_end_line": None,
-        "parent_qualname": None,  # No parent = top-level
-    })
+    row = pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": "FunctionDef",
+            "name": "top_level_func",
+            "qualname": "top_level_func",
+            "lineno": 5,
+            "end_lineno": 15,
+            "decorator_start_line": None,
+            "decorator_end_line": None,
+            "parent_qualname": None,  # No parent = top-level
+        }
+    )
 
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
@@ -443,21 +457,21 @@ def test_build_goid_entries_init_file(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {"src/pkg/__init__.py": "src.pkg"}
 
-    row = pd.Series({
-        "path": "src/pkg/__init__.py",
-        "node_type": "Module",
-        "name": "__init__",
-        "qualname": "__init__",
-        "lineno": 1,
-        "end_lineno": 10,
-        "decorator_start_line": None,
-        "decorator_end_line": None,
-        "parent_qualname": None,
-    })
-
-    goid_row, xwalk_row = build_goid_entries_for_testing(
-        row, goid_config, now, module_by_path
+    row = pd.Series(
+        {
+            "path": "src/pkg/__init__.py",
+            "node_type": "Module",
+            "name": "__init__",
+            "qualname": "__init__",
+            "lineno": 1,
+            "end_lineno": 10,
+            "decorator_start_line": None,
+            "decorator_end_line": None,
+            "parent_qualname": None,
+        }
     )
+
+    goid_row, xwalk_row = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
     assert goid_row["kind"] == "module"
     assert xwalk_row["module_path"] == "src.pkg"
@@ -476,12 +490,8 @@ def test_build_goid_entries_consistent_hash(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {TEST_PATH: TEST_MODULE}
 
-    goid_row1, _ = build_goid_entries_for_testing(
-        sample_ast_row, goid_config, now, module_by_path
-    )
-    goid_row2, _ = build_goid_entries_for_testing(
-        sample_ast_row, goid_config, now, module_by_path
-    )
+    goid_row1, _ = build_goid_entries_for_testing(sample_ast_row, goid_config, now, module_by_path)
+    goid_row2, _ = build_goid_entries_for_testing(sample_ast_row, goid_config, now, module_by_path)
 
     # Same input should produce same GOID hash
     assert goid_row1["goid_h128"] == goid_row2["goid_h128"]
@@ -497,12 +507,8 @@ def test_build_goid_entries_different_hash_for_different_input(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {TEST_PATH: TEST_MODULE}
 
-    goid_row1, _ = build_goid_entries_for_testing(
-        sample_ast_row, goid_config, now, module_by_path
-    )
-    goid_row2, _ = build_goid_entries_for_testing(
-        class_ast_row, goid_config, now, module_by_path
-    )
+    goid_row1, _ = build_goid_entries_for_testing(sample_ast_row, goid_config, now, module_by_path)
+    goid_row2, _ = build_goid_entries_for_testing(class_ast_row, goid_config, now, module_by_path)
 
     # Different input should produce different GOID hash
     assert goid_row1["goid_h128"] != goid_row2["goid_h128"]
@@ -521,9 +527,7 @@ def test_build_goid_entries_urn_format(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {TEST_PATH: TEST_MODULE}
 
-    goid_row, _ = build_goid_entries_for_testing(
-        sample_ast_row, goid_config, now, module_by_path
-    )
+    goid_row, _ = build_goid_entries_for_testing(sample_ast_row, goid_config, now, module_by_path)
 
     # URN should be well-formed
     assert goid_row["urn"] is not None
@@ -579,17 +583,19 @@ def test_goid_kind_determination(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {}
 
-    row = pd.Series({
-        "path": TEST_PATH,
-        "node_type": node_type,
-        "name": "test_entity",
-        "qualname": "test_entity",
-        "lineno": 1,
-        "end_lineno": 10,
-        "decorator_start_line": None,
-        "decorator_end_line": None,
-        "parent_qualname": parent_qualname,
-    })
+    row = pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": node_type,
+            "name": "test_entity",
+            "qualname": "test_entity",
+            "lineno": 1,
+            "end_lineno": 10,
+            "decorator_start_line": None,
+            "decorator_end_line": None,
+            "parent_qualname": parent_qualname,
+        }
+    )
 
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
@@ -617,17 +623,19 @@ def test_start_line_computation(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {}
 
-    row = pd.Series({
-        "path": TEST_PATH,
-        "node_type": "FunctionDef",
-        "name": "func",
-        "qualname": "func",
-        "lineno": lineno,
-        "end_lineno": 20,
-        "decorator_start_line": decorator_start,
-        "decorator_end_line": None,
-        "parent_qualname": None,
-    })
+    row = pd.Series(
+        {
+            "path": TEST_PATH,
+            "node_type": "FunctionDef",
+            "name": "func",
+            "qualname": "func",
+            "lineno": lineno,
+            "end_lineno": 20,
+            "decorator_start_line": decorator_start,
+            "decorator_end_line": None,
+            "parent_qualname": None,
+        }
+    )
 
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 

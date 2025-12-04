@@ -11,15 +11,24 @@ queries to minimize database overhead.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
+
+from duckdb import DuckDBPyConnection
+from duckdb import Error as DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.config.datasets import DatasetContract
-    from codeintel.storage.gateway import DuckDBConnection
+
+# Type alias for DuckDB connection
+DuckDBConnection = DuckDBPyConnection
 
 LOG = logging.getLogger(__name__)
 
 __all__ = [
+    "count_rows_for_snapshot",
+    "count_rows_for_tables",
+    "safe_count_rows",
     "table_has_rows_for_snapshot",
 ]
 
@@ -84,3 +93,103 @@ def table_has_rows_for_snapshot(
         return False
     else:
         return result is not None
+
+
+def count_rows_for_snapshot(
+    con: DuckDBConnection,
+    table_key: str,
+    *,
+    repo: str,
+    commit: str,
+) -> int:
+    """Count rows in a table filtered by repo/commit.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    table_key
+        Fully qualified table name (schema.table).
+    repo
+        Repository slug.
+    commit
+        Commit SHA.
+
+    Returns
+    -------
+    int
+        Number of rows matching the repo/commit filter.
+    """
+    escaped_repo = repo.replace("'", "''")
+    escaped_commit = commit.replace("'", "''")
+    relation = con.table(table_key).filter(
+        f"repo = '{escaped_repo}' AND commit = '{escaped_commit}'"
+    )
+    result = relation.count("*").fetchone()
+    if result is None:
+        return 0
+    return int(result[0])
+
+
+def count_rows_for_tables(
+    con: DuckDBConnection,
+    tables: Sequence[str],
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, int] | None:
+    """Compute row counts for multiple tables filtered by repo/commit.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    tables
+        Sequence of fully qualified table names.
+    repo
+        Repository slug.
+    commit
+        Commit SHA.
+
+    Returns
+    -------
+    dict[str, int] | None
+        Mapping of table name to row counts, or None if any table fails.
+    """
+    counts: dict[str, int] = {}
+    for table in tables:
+        try:
+            counts[table] = count_rows_for_snapshot(con, table, repo=repo, commit=commit)
+        except DuckDBError:
+            return None
+    return counts
+
+
+def safe_count_rows(
+    con: DuckDBConnection | None,
+    tables: Iterable[str],
+    *,
+    repo: str,
+    commit: str,
+) -> dict[str, int] | None:
+    """Tolerant variant of count_rows_for_tables that handles None connection.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection, or None.
+    tables
+        Iterable of fully qualified table names.
+    repo
+        Repository slug.
+    commit
+        Commit SHA.
+
+    Returns
+    -------
+    dict[str, int] | None
+        Row counts, or None when connection is unavailable or query fails.
+    """
+    if con is None:
+        return None
+    return count_rows_for_tables(con, tuple(tables), repo=repo, commit=commit)

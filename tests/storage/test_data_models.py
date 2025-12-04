@@ -578,9 +578,7 @@ def test_fetch_fields_filters_by_model_ids(fresh_gateway: StorageGateway) -> Non
         )
 
     # Fetch only for model_1 and model_2
-    result = fetch_fields(
-        fresh_gateway, "test/repo", "abc123", model_ids=["model_1", "model_2"]
-    )
+    result = fetch_fields(fresh_gateway, "test/repo", "abc123", model_ids=["model_1", "model_2"])
     assert len(result) == EXPECTED_COUNT_2
 
     model_ids = {f.model_id for f in result}
@@ -759,9 +757,7 @@ def test_fetch_relationships_filters_by_model_ids(
             ],
         )
 
-    result = fetch_relationships(
-        fresh_gateway, "test/repo", "abc123", model_ids=["model_1"]
-    )
+    result = fetch_relationships(fresh_gateway, "test/repo", "abc123", model_ids=["model_1"])
     assert len(result) == 1
     assert result[0].source_model_id == "model_1"
 

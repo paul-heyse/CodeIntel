@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
+from codeintel.core.config_protocol import ConfigAccessor
 from codeintel.core.resources.registry import ResourceNotFoundError, ResourceRegistry
 
 if TYPE_CHECKING:
@@ -240,7 +241,7 @@ class PluginExecutionContext:
     resources: ResourceRegistry = field(default_factory=ResourceRegistry)
 
     # Typed config accessor - uses ConfigAccessor protocol for flexibility
-    configs: ConfigProvider = field(default_factory=ConfigProvider)
+    configs: ConfigAccessor = field(default_factory=ConfigProvider)
 
     # Scratch for inter-plugin communication
     scratch: PluginScratch = field(default_factory=PluginScratch)

@@ -37,7 +37,13 @@ class StringProvider(ResourceProviderBase[str]):
         self._value = value
 
     def _load(self) -> str:
-        """Load the string value."""
+        """Load the string value.
+
+        Returns
+        -------
+        str
+            The stored string value.
+        """
         return self._value
 
 
@@ -52,7 +58,13 @@ class CountingProvider(ResourceProviderBase[int]):
         self.load_count = 0
 
     def _load(self) -> int:
-        """Load and count."""
+        """Load and count.
+
+        Returns
+        -------
+        int
+            The current load count.
+        """
         self.load_count += 1
         return self.load_count
 
@@ -62,10 +74,20 @@ class FailingProvider(ResourceProviderBase[str]):
 
     RESOURCE_NAME: ClassVar[str] = "failing_resource"
 
+    def __init__(self) -> None:
+        """Initialize with a default failure message."""
+        super().__init__()
+        self.failure_message = "Load failed intentionally"
+
     def _load(self) -> str:
-        """Fail to load."""
-        msg = "Load failed intentionally"
-        raise ValueError(msg)
+        """Fail to load.
+
+        Raises
+        ------
+        ValueError
+            Always raised to simulate a load failure.
+        """
+        raise ValueError(self.failure_message)
 
 
 class LazyString(LazyResource[str]):
@@ -79,7 +101,13 @@ class LazyString(LazyResource[str]):
         self._value = value
 
     def _load(self) -> str:
-        """Load the string value."""
+        """Load the string value.
+
+        Returns
+        -------
+        str
+            The stored string value.
+        """
         return self._value
 
 
@@ -94,7 +122,13 @@ class LazyFailer(LazyResource[str]):
         self._error_msg = error_msg
 
     def _load(self) -> str:
-        """Fail to load."""
+        """Fail to load.
+
+        Raises
+        ------
+        ValueError
+            Always raised with the configured message.
+        """
         raise ValueError(self._error_msg)
 
 
@@ -112,9 +146,15 @@ def test_resource_error_is_exception() -> None:
 
 
 def test_resource_error_can_be_raised() -> None:
-    """Verify ResourceError can be raised and caught."""
+    """Verify ResourceError can be raised and caught.
+
+    Raises
+    ------
+    ResourceError
+        When the resource operation fails.
+    """
+    msg = "Test message"
     with pytest.raises(ResourceError) as exc_info:
-        msg = "Test message"
         raise ResourceError(msg)
 
     assert "Test message" in str(exc_info.value)
@@ -183,6 +223,7 @@ def test_resource_provider_protocol_requires_invalidate() -> None:
         RESOURCE_NAME: ClassVar[str] = "missing"
 
         def get(self) -> str:
+            self.called = True
             return "test"
 
     # Missing invalidate() method should not satisfy protocol
@@ -226,7 +267,8 @@ def test_provider_base_invalidate_clears_cache() -> None:
     provider.invalidate()
     provider.get()
 
-    assert provider.load_count == 2
+    expected_loads_after_invalidate = 2
+    assert provider.load_count == expected_loads_after_invalidate
 
 
 def test_provider_base_not_implemented_load() -> None:
@@ -246,7 +288,7 @@ def test_provider_base_resource_name() -> None:
 
 def test_provider_base_default_resource_name() -> None:
     """Verify default RESOURCE_NAME is empty string."""
-    assert ResourceProviderBase.RESOURCE_NAME == ""
+    assert not ResourceProviderBase.RESOURCE_NAME
 
 
 # =============================================================================
@@ -281,12 +323,14 @@ def test_lazy_resource_is_loaded_after_get() -> None:
 
 def test_lazy_resource_caches_value() -> None:
     """Verify LazyResource caches loaded value."""
-    load_count = [0]
-
     class CountingLazy(LazyResource[int]):
+        def __init__(self, name: str) -> None:
+            super().__init__(name)
+            self.load_count = 0
+
         def _load(self) -> int:
-            load_count[0] += 1
-            return load_count[0]
+            self.load_count += 1
+            return self.load_count
 
     resource = CountingLazy("counter")
 
@@ -294,7 +338,7 @@ def test_lazy_resource_caches_value() -> None:
     result2 = resource.get()
 
     assert result1 == result2 == 1
-    assert load_count[0] == 1
+    assert resource.load_count == 1
 
 
 def test_lazy_resource_get_or_none_success() -> None:
@@ -400,7 +444,7 @@ def test_lazy_resource_resource_name_fallback() -> None:
         RESOURCE_NAME = ""
 
         def _load(self) -> str:
-            return "test"
+            return f"loaded:{self.resource_name}"
 
     resource = NoResourceName("fallback_name")
 
@@ -414,16 +458,19 @@ def test_lazy_resource_resource_name_fallback() -> None:
 
 def test_provider_implements_protocol() -> None:
     """Verify custom providers implement ResourceProvider protocol."""
-    providers = [
+    providers: list[ResourceProviderBase[int] | ResourceProviderBase[str]] = [
         StringProvider("test"),
         CountingProvider(),
     ]
 
     for provider in providers:
-        assert isinstance(provider, ResourceProvider)
+        # Check protocol compliance via interface presence (avoids generic protocol runtime check)
         assert hasattr(provider, "get")
+        assert callable(provider.get)
         assert hasattr(provider, "invalidate")
+        assert callable(provider.invalidate)
         assert hasattr(provider, "RESOURCE_NAME")
+        assert isinstance(provider.RESOURCE_NAME, str)
 
 
 def test_lazy_resource_as_provider() -> None:

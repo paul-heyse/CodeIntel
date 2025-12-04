@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Self, cast
 
 from codeintel.config.models import ToolsConfig
+from codeintel.core.config_protocol import ConfigAccessor
 from codeintel.core.config_registry import ConfigNotFoundError, ConfigRegistry
 from codeintel.core.plugins.context import PluginExecutionContext, PluginScratch
 from codeintel.core.resources import ResourceNotFoundError, ResourceRegistry
@@ -109,7 +110,7 @@ class IngestExecutionContext(PluginExecutionContext):
     tools: ToolsConfig = field(default_factory=_default_tools_config)
 
     # Override from base - use ConfigRegistry for runtime validation
-    configs: ConfigRegistry = field(default_factory=ConfigRegistry)
+    configs: ConfigAccessor = field(default_factory=ConfigRegistry)
 
     # Plugin timing - internal tracking
     _plugin_start_times: dict[str, float] = field(default_factory=dict, init=False, repr=False)

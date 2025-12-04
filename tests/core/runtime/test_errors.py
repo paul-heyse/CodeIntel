@@ -71,7 +71,13 @@ def test_plugin_catchable_errors_can_catch() -> None:
 
 @pytest.fixture
 def sample_record() -> PluginExecutionRecord:
-    """Create a sample execution record for testing."""
+    """Create a sample execution record for testing.
+
+    Returns
+    -------
+    PluginExecutionRecord
+        Record with failed status for testing.
+    """
     now = datetime.now(UTC)
     return PluginExecutionRecord(
         plugin_name="test.plugin",

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.helpers.json import decode_json, decode_json_dict
 
 
 def _as_int(value: Decimal | int | None) -> int | None:
@@ -17,52 +17,8 @@ def _as_int(value: Decimal | int | None) -> int | None:
     return int(value)
 
 
-def _decode_json(value: object) -> object:
-    """
-    Decode JSON from a DuckDB column value.
-
-    Parameters
-    ----------
-    value
-        Raw value from DuckDB (may be str, dict, list, or None).
-
-    Returns
-    -------
-    object
-        Parsed JSON (dict or list), or empty list on failure.
-    """
-    if value is None:
-        return []
-    if isinstance(value, (dict, list)):
-        return value
-    if isinstance(value, str):
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return []
-    return []
-
-
-def _decode_json_as_dict(value: object) -> dict[str, object]:
-    """
-    Decode JSON value expecting a dictionary result.
-
-    Parameters
-    ----------
-    value
-        Raw value from DuckDB column (may be str, dict, list, or None).
-
-    Returns
-    -------
-    dict[str, object]
-        Parsed dictionary, or empty dict if parsing fails or result is not a dict.
-    """
-    raw = _decode_json(value)
-    return raw if isinstance(raw, dict) else {}
-
-
 def _decode_base_classes(value: object) -> list[dict[str, str]]:
-    raw = _decode_json(value)
+    raw = decode_json(value)
     if not isinstance(raw, list):
         return []
     base_classes: list[dict[str, str]] = []
@@ -286,7 +242,7 @@ def fetch_fields(
                 required=bool(required),
                 has_default=bool(has_default),
                 default_expr=str(default_expr) if default_expr is not None else None,
-                constraints=_decode_json_as_dict(constraints_json),
+                constraints=decode_json_dict(constraints_json),
                 source=str(source),
                 rel_path=str(rel_path),
                 lineno=int(lineno) if lineno is not None else None,
@@ -364,7 +320,7 @@ def fetch_relationships(
                 relationship_kind=str(relationship_kind),
                 multiplicity=str(multiplicity) if multiplicity is not None else None,
                 via=str(via) if via is not None else None,
-                evidence=_decode_json_as_dict(evidence_json),
+                evidence=decode_json_dict(evidence_json),
                 rel_path=str(rel_path),
                 lineno=int(lineno) if lineno is not None else None,
                 created_at=created_at,
@@ -411,7 +367,7 @@ def _decode_field_structs(
     model_id: str,
     default_created_at: datetime,
 ) -> list[DataModelFieldRow]:
-    decoded = _decode_json(fields)
+    decoded = decode_json(fields)
     if not isinstance(decoded, list):
         return []
     parsed: list[DataModelFieldRow] = []
@@ -432,7 +388,7 @@ def _decode_field_structs(
                 default_expr=str(item.get("default_expr"))
                 if item.get("default_expr") is not None
                 else None,
-                constraints=_decode_json_as_dict(item.get("constraints")),
+                constraints=decode_json_dict(item.get("constraints")),
                 source=str(item.get("source") or ""),
                 rel_path=str(item.get("rel_path") or ""),
                 lineno=int(item["lineno"])
@@ -452,7 +408,7 @@ def _decode_relationship_structs(
     model_id: str,
     default_created_at: datetime,
 ) -> list[DataModelRelationshipRow]:
-    decoded = _decode_json(relationships)
+    decoded = decode_json(relationships)
     if not isinstance(decoded, list):
         return []
     parsed: list[DataModelRelationshipRow] = []
@@ -477,7 +433,7 @@ def _decode_relationship_structs(
                 if item.get("multiplicity") is not None
                 else None,
                 via=str(item.get("via")) if item.get("via") is not None else None,
-                evidence=_decode_json_as_dict(item.get("evidence")),
+                evidence=decode_json_dict(item.get("evidence")),
                 rel_path=str(item.get("rel_path") or ""),
                 lineno=int(item["lineno"])
                 if "lineno" in item and item["lineno"] is not None

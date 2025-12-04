@@ -40,7 +40,7 @@ def test_functional_plugin_metadata() -> None:
         stage="function",
     )
 
-    def execute_fn(ctx: MockContext) -> PluginResult:
+    def execute_fn(_ctx: MockContext) -> PluginResult:
         return PluginResult.ok()
 
     plugin = BaseFunctionalPlugin(
@@ -205,10 +205,10 @@ def test_functional_plugin_dataclass_fields() -> None:
         stage="function",
     )
 
-    def execute_fn(ctx: MockContext) -> PluginResult:
+    def execute_fn(_ctx: MockContext) -> PluginResult:
         return PluginResult.ok()
 
-    def validate_fn(ctx: MockContext) -> ValidationResult:
+    def validate_fn(_ctx: MockContext) -> ValidationResult:
         return ValidationResult.success()
 
     plugin = BaseFunctionalPlugin(
@@ -218,9 +218,9 @@ def test_functional_plugin_dataclass_fields() -> None:
     )
 
     # Dataclass fields should be directly accessible
-    assert plugin._metadata is metadata
-    assert plugin._execute_fn is execute_fn
-    assert plugin._validate_fn is validate_fn
+    assert plugin._metadata is metadata  # noqa: SLF001
+    assert plugin._execute_fn is execute_fn  # noqa: SLF001
+    assert plugin._validate_fn is validate_fn  # noqa: SLF001
 
 
 def test_functional_plugin_execute_passes_context() -> None:

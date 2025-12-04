@@ -55,14 +55,18 @@ def test_simple_paths_empty_graph() -> None:
 def test_simple_paths_no_sources() -> None:
     """Empty sources returns zero paths."""
     graph = chain_graph(4)
-    result = count_simple_paths(graph, [], ["D"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT)
+    result = count_simple_paths(
+        graph, [], ["D"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
+    )
     assert result == EXPECTED_PATH_COUNT_ZERO
 
 
 def test_simple_paths_no_targets() -> None:
     """Empty targets returns zero paths."""
     graph = chain_graph(4)
-    result = count_simple_paths(graph, ["A"], [], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT)
+    result = count_simple_paths(
+        graph, ["A"], [], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
+    )
     assert result == EXPECTED_PATH_COUNT_ZERO
 
 
@@ -118,14 +122,16 @@ def test_simple_paths_max_paths_limit() -> None:
     """Max paths parameter limits count."""
     graph = nx.DiGraph()
     # Multiple paths: A -> B -> D, A -> C -> D, A -> E -> D
-    graph.add_edges_from([
-        ("A", "B"),
-        ("A", "C"),
-        ("A", "E"),
-        ("B", "D"),
-        ("C", "D"),
-        ("E", "D"),
-    ])
+    graph.add_edges_from(
+        [
+            ("A", "B"),
+            ("A", "C"),
+            ("A", "E"),
+            ("B", "D"),
+            ("C", "D"),
+            ("E", "D"),
+        ]
+    )
     result = count_simple_paths(
         graph, ["A"], ["D"], max_paths=MAX_PATHS_LIMITED, cutoff=CUTOFF_DEFAULT
     )
@@ -136,7 +142,9 @@ def test_simple_paths_cutoff_limit() -> None:
     """Cutoff parameter limits path length."""
     graph = chain_graph(5)  # A -> B -> C -> D -> E
     # With cutoff=1, can only reach one hop away
-    result = count_simple_paths(graph, ["A"], ["E"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_SHORT)
+    result = count_simple_paths(
+        graph, ["A"], ["E"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_SHORT
+    )
     assert result == EXPECTED_PATH_COUNT_ZERO  # E is 4 hops away
 
     # With cutoff=4, can reach E
@@ -149,7 +157,9 @@ def test_simple_paths_self_loop_handled() -> None:
     graph = nx.DiGraph()
     graph.add_edge("A", "A")
     # NetworkX all_simple_paths excludes self-loops for same source/target
-    result = count_simple_paths(graph, ["A"], ["A"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT)
+    result = count_simple_paths(
+        graph, ["A"], ["A"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
+    )
     # Simple path from A to A is just [A] (length 0) - not counted
     assert result >= EXPECTED_PATH_COUNT_ZERO
 
@@ -421,6 +431,8 @@ def test_paths_with_various_cutoffs(chain_length: int, cutoff: int, expected_pat
     # Get the last node name
     last_node = chr(ord("A") + chain_length - 1)
 
-    result = count_simple_paths(graph, ["A"], [last_node], max_paths=MAX_PATHS_DEFAULT, cutoff=cutoff)
+    result = count_simple_paths(
+        graph, ["A"], [last_node], max_paths=MAX_PATHS_DEFAULT, cutoff=cutoff
+    )
 
     assert result == expected_paths

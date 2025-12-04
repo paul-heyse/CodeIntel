@@ -13,9 +13,15 @@ This package provides fake implementations for testing, organized by domain:
 from __future__ import annotations
 
 from tests._helpers.fakes.configs import (
+    DEFAULT_TEST_COMMIT,
+    DEFAULT_TEST_REPO,
+    DEFAULT_TEST_RUN_ID,
     FakeBuildPaths,
     FakePluginContext,
     FakeSnapshotRef,
+    create_test_build_paths,
+    create_test_run_context,
+    create_test_snapshot,
 )
 from tests._helpers.fakes.coverage import (
     CoverageLoader,
@@ -77,6 +83,9 @@ __all__ = [
     "CAPTURE_HANDLER_LEVEL",
     "CapturingHandler",
     "CoverageLoader",
+    "DEFAULT_TEST_COMMIT",
+    "DEFAULT_TEST_REPO",
+    "DEFAULT_TEST_RUN_ID",
     "FakeBuildPaths",
     "FakeCoverage",
     "FakeCoverageData",
@@ -108,6 +117,9 @@ __all__ = [
     "create_graph_plugin_context",
     "create_graph_snapshot",
     "create_graph_telemetry_env",
+    "create_test_build_paths",
+    "create_test_run_context",
+    "create_test_snapshot",
     "cyclic_graph",
     "diamond_graph",
     "disconnected_graph",

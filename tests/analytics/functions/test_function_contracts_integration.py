@@ -1,6 +1,6 @@
 """Integration tests for function_contracts module with catalog.
 
-This module tests compute_function_contracts with a mock catalog provider
+This module tests compute_function_contracts with a realistic fake catalog
 to exercise the main execution paths including docstrings and type info.
 """
 
@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import ast
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -21,6 +20,7 @@ from codeintel.analytics.functions.function_contracts import (
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.config.primitives import SnapshotRef
+from codeintel.graphs.catalog import FunctionCatalog, FunctionCatalogProvider
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -107,8 +107,88 @@ def _create_function_ast(
     )
 
 
-def _create_mock_catalog(spans: list[FunctionSpan]) -> MagicMock:
-    """Create a mock catalog provider with given spans.
+@dataclass
+class FakeFunctionCatalog:
+    """Fake function catalog for testing.
+
+    Attributes
+    ----------
+    function_spans
+        List of function spans in the catalog.
+    """
+
+    function_spans: list[FunctionSpan] = field(default_factory=list)
+
+
+@dataclass
+class FakeCatalogProvider:
+    """Fake catalog provider implementing FunctionCatalogProvider protocol.
+
+    Attributes
+    ----------
+    _catalog
+        The inner function catalog.
+    """
+
+    _catalog: FakeFunctionCatalog = field(default_factory=FakeFunctionCatalog)
+
+    def catalog(self) -> FunctionCatalog:
+        """Return the function catalog.
+
+        Returns
+        -------
+        FunctionCatalog
+            The inner catalog containing function spans (cast from fake).
+        """
+        # Cast is safe: FakeFunctionCatalog has function_spans which is all
+        # that compute_function_contracts uses
+        return cast("FunctionCatalog", self._catalog)
+
+    def urn_for_goid(self, _goid: int) -> str | None:  # noqa: PLR6301
+        """Return URN for a GOID (stub implementation).
+
+        Parameters
+        ----------
+        _goid
+            The GOID to look up.
+
+        Returns
+        -------
+        str | None
+            Always returns None in this fake.
+        """
+        return None
+
+    def lookup_goid(  # noqa: PLR6301
+        self,
+        _rel_path: str,
+        _start_line: int,
+        _end_line: int | None,
+        _qualname: str | None,
+    ) -> int | None:
+        """Resolve GOID from span (stub implementation).
+
+        Parameters
+        ----------
+        _rel_path
+            Relative path to the file.
+        _start_line
+            Starting line number.
+        _end_line
+            Ending line number.
+        _qualname
+            Qualified name of the function.
+
+        Returns
+        -------
+        int | None
+            Always returns None in this fake.
+        """
+        return None
+
+
+def _create_fake_catalog(spans: list[FunctionSpan]) -> FunctionCatalogProvider:
+    """Create a fake catalog provider with given spans.
 
     Parameters
     ----------
@@ -117,14 +197,14 @@ def _create_mock_catalog(spans: list[FunctionSpan]) -> MagicMock:
 
     Returns
     -------
-    MagicMock
-        Mock catalog provider.
+    FunctionCatalogProvider
+        Fake catalog provider implementing the protocol.
     """
-    mock_catalog = MagicMock()
-    inner_catalog = MagicMock()
-    inner_catalog.function_spans = spans
-    mock_catalog.catalog.return_value = inner_catalog
-    return mock_catalog
+    # Cast to protocol type - the fake implements the needed subset
+    return cast(
+        "FunctionCatalogProvider",
+        FakeCatalogProvider(_catalog=FakeFunctionCatalog(function_spans=spans)),
+    )
 
 
 def _seed_docstrings(
@@ -226,7 +306,7 @@ def test_compute_contracts_with_catalog_goid_iteration(
         code=code,
     )
     spans = [FunctionSpan(GOID_SIMPLE, "module.py", "simple", 1, 3)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     compute_function_contracts(
         fresh_gateway,
@@ -254,7 +334,7 @@ def test_compute_contracts_with_missing_ast(
 ) -> None:
     """Compute contracts handles GOIDs without AST gracefully."""
     spans = [FunctionSpan(GOID_MISSING, "missing.py", "missing_func", 1, 3)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     # No AST map provided for the GOID
     compute_function_contracts(
@@ -294,7 +374,7 @@ def test_compute_contracts_with_docstring_data(
         code=code,
     )
     spans = [FunctionSpan(GOID_SIMPLE, "module.py", "with_docs", 1, 3)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     # Seed docstring with optional parameter info
     _seed_docstrings(
@@ -344,7 +424,7 @@ def test_compute_contracts_with_type_annotations(
         code=code,
     )
     spans = [FunctionSpan(GOID_TYPED, "module.py", "typed_func", 1, 3)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     # Seed type info with nullable and non-nullable types
     _seed_function_types(
@@ -395,7 +475,7 @@ def test_compute_contracts_with_guards_and_catalog(
         code=code,
     )
     spans = [FunctionSpan(GOID_GUARDED, "module.py", "guarded", 1, 6)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     compute_function_contracts(
         fresh_gateway,
@@ -436,7 +516,7 @@ def test_compute_contracts_with_bool_return_type(
         code=code,
     )
     spans = [FunctionSpan(GOID_SIMPLE, "module.py", "is_valid", 1, 3)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     _seed_function_types(
         fresh_gateway,
@@ -486,7 +566,7 @@ def test_compute_contracts_confidence_score(
         code=code,
     )
     spans = [FunctionSpan(GOID_SIMPLE, "module.py", "well_documented", 1, 5)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     # Add both docstrings and type info for higher confidence
     _seed_docstrings(
@@ -542,7 +622,7 @@ def test_compute_contracts_multiple_goids(
         FunctionSpan(GOID_SIMPLE, "mod.py", "func1", 1, 3),
         FunctionSpan(GOID_TYPED, "mod.py", "func2", 1, 3),
     ]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     compute_function_contracts(
         fresh_gateway,
@@ -581,7 +661,7 @@ def test_compute_contracts_with_nullable_return(
         code=code,
     )
     spans = [FunctionSpan(GOID_SIMPLE, "module.py", "maybe_return", 1, 5)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     _seed_function_types(
         fresh_gateway,
@@ -627,7 +707,7 @@ def test_compute_contracts_with_isinstance_guard(
         code=code,
     )
     spans = [FunctionSpan(GOID_SIMPLE, "module.py", "typed_guard", 1, 5)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     compute_function_contracts(
         fresh_gateway,
@@ -670,7 +750,7 @@ def test_compute_contracts_with_len_check(
         code=code,
     )
     spans = [FunctionSpan(GOID_SIMPLE, "module.py", "check_len", 1, 5)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     compute_function_contracts(
         fresh_gateway,
@@ -706,7 +786,7 @@ def test_compute_contracts_with_predicate_name(
         code=code,
     )
     spans = [FunctionSpan(GOID_SIMPLE, "module.py", "is_valid", 1, 3)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     # No type info, just rely on name
     compute_function_contracts(
@@ -744,7 +824,7 @@ def test_compute_contracts_with_doc_return_none(
         code=code,
     )
     spans = [FunctionSpan(GOID_SIMPLE, "module.py", "maybe_find", 1, 3)]
-    catalog = _create_mock_catalog(spans)
+    catalog = _create_fake_catalog(spans)
 
     _seed_docstrings(
         fresh_gateway,

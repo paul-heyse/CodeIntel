@@ -9,10 +9,10 @@ This module tests:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
 from dataclasses import dataclass
-from typing import ClassVar
-from unittest.mock import MagicMock
+from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 
@@ -21,11 +21,18 @@ from codeintel.analytics.core.base import (
     ResolvedConfig,
     TableWriterPlugin,
 )
+from codeintel.analytics.core.context import PluginExecutionContext
 from codeintel.analytics.core.protocol import (
     PluginResult,
     PluginStage,
     ValidationResult,
 )
+from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.fakes.graph_contexts import create_graph_gateway
+
+if TYPE_CHECKING:
+    from codeintel.analytics.core.context import PluginExecutionContext
 
 # Test constants
 CONFIG_TEST_VALUE = 42
@@ -33,6 +40,70 @@ TABLE_A_ROW_COUNT = 5
 TABLE_B_ROW_COUNT = 3
 TEST_TABLE_ROW_COUNT = 10
 EXPECTED_TWO_OUTPUT_SPECS = 2
+DEFAULT_REPO = "test/repo"
+DEFAULT_COMMIT = "abc123"
+
+
+# =============================================================================
+# Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def test_gateway() -> Generator[StorageGateway, None, None]:
+    """Provide a test gateway that auto-closes.
+
+    Yields
+    ------
+    StorageGateway
+        In-memory gateway with schema applied.
+    """
+    gateway = create_graph_gateway()
+    yield gateway
+    gateway.close()
+
+
+@pytest.fixture
+def test_snapshot(tmp_path: Path) -> SnapshotRef:
+    """Provide a test snapshot.
+
+    Parameters
+    ----------
+    tmp_path
+        Pytest temporary path fixture.
+
+    Returns
+    -------
+    SnapshotRef
+        Test snapshot reference.
+    """
+    return SnapshotRef(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT, repo_root=tmp_path)
+
+
+@pytest.fixture
+def test_context(
+    test_gateway: StorageGateway,
+    test_snapshot: SnapshotRef,
+) -> PluginExecutionContext:
+    """Provide a test execution context.
+
+    Parameters
+    ----------
+    test_gateway
+        Storage gateway fixture.
+    test_snapshot
+        Snapshot reference fixture.
+
+    Returns
+    -------
+    PluginExecutionContext
+        Test execution context.
+    """
+    return PluginExecutionContext(
+        gateway=test_gateway,
+        snapshot=test_snapshot,
+        run_id="test-run-001",
+    )
 
 
 # =============================================================================
@@ -96,13 +167,13 @@ def test_resolved_config_get_or_none_not_resolved() -> None:
 
 
 # =============================================================================
-# Mock Plugin Implementations
+# Sample Plugin Implementations
 # =============================================================================
 
 
 @dataclass
-class TestPlugin(BasePlugin):
-    """Test implementation of BasePlugin.
+class SamplePlugin(BasePlugin):
+    """Sample implementation of BasePlugin for testing.
 
     Attributes
     ----------
@@ -118,13 +189,13 @@ class TestPlugin(BasePlugin):
 
     should_fail: bool = False
 
-    def compute(self, ctx: MagicMock) -> Mapping[str, int] | None:
+    def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
         """Execute test computation.
 
         Parameters
         ----------
         ctx
-            Execution context (used for interface compliance).
+            Execution context.
 
         Returns
         -------
@@ -144,8 +215,8 @@ class TestPlugin(BasePlugin):
 
 
 @dataclass
-class TestTableWriter(TableWriterPlugin):
-    """Test implementation of TableWriterPlugin.
+class SampleTableWriter(TableWriterPlugin):
+    """Sample implementation of TableWriterPlugin for testing.
 
     Attributes
     ----------
@@ -163,13 +234,13 @@ class TestTableWriter(TableWriterPlugin):
 
     should_fail: bool = False
 
-    def compute(self, ctx: MagicMock) -> Mapping[str, int] | None:
+    def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
         """Execute test computation.
 
         Parameters
         ----------
         ctx
-            Execution context (used for interface compliance).
+            Execution context.
 
         Returns
         -------
@@ -198,7 +269,7 @@ class TestTableWriter(TableWriterPlugin):
 
 def test_base_plugin_metadata() -> None:
     """Plugin metadata is synthesized from class attributes."""
-    plugin = TestPlugin()
+    plugin = SamplePlugin()
 
     meta = plugin.metadata
 
@@ -217,7 +288,7 @@ def test_base_plugin_metadata_defaults_name_to_class() -> None:
     class UnnamedPlugin(BasePlugin):
         """Plugin without explicit name."""
 
-        def compute(self, ctx: MagicMock) -> Mapping[str, int] | None:
+        def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
             _ = (self, ctx)  # Required by interface
             return None
 
@@ -227,26 +298,25 @@ def test_base_plugin_metadata_defaults_name_to_class() -> None:
     assert meta.name == "UnnamedPlugin"
 
 
-def test_base_plugin_validate_inputs_default() -> None:
+def test_base_plugin_validate_inputs_default(
+    test_context: PluginExecutionContext,
+) -> None:
     """Default validate_inputs returns success."""
-    plugin = TestPlugin()
-    mock_ctx = MagicMock()
+    plugin = SamplePlugin()
 
-    result = plugin.validate_inputs(mock_ctx)
+    result = plugin.validate_inputs(test_context)
 
     assert isinstance(result, ValidationResult)
     assert result.valid is True
 
 
-def test_base_plugin_execute_success() -> None:
+def test_base_plugin_execute_success(
+    test_context: PluginExecutionContext,
+) -> None:
     """Execute returns success result on successful compute."""
-    plugin = TestPlugin(should_fail=False)
-    mock_ctx = MagicMock()
-    mock_ctx.repo = "test-repo"
-    mock_ctx.commit = "abc123"
-    mock_ctx.run_id = "run-001"
+    plugin = SamplePlugin(should_fail=False)
 
-    result = plugin.execute(mock_ctx)
+    result = plugin.execute(test_context)
 
     assert isinstance(result, PluginResult)
     assert result.success is True
@@ -254,12 +324,13 @@ def test_base_plugin_execute_success() -> None:
     assert result.row_counts.get("analytics.test_table") == TEST_TABLE_ROW_COUNT
 
 
-def test_base_plugin_execute_failure() -> None:
+def test_base_plugin_execute_failure(
+    test_context: PluginExecutionContext,
+) -> None:
     """Execute returns failure result when compute raises."""
-    plugin = TestPlugin(should_fail=True)
-    mock_ctx = MagicMock()
+    plugin = SamplePlugin(should_fail=True)
 
-    result = plugin.execute(mock_ctx)
+    result = plugin.execute(test_context)
 
     assert isinstance(result, PluginResult)
     assert result.success is False
@@ -269,7 +340,7 @@ def test_base_plugin_execute_failure() -> None:
 
 def test_base_plugin_build_input_specs_default() -> None:
     """Default build_input_specs returns empty tuple."""
-    specs = TestPlugin.build_input_specs()
+    specs = SamplePlugin.build_input_specs()
 
     assert specs == ()
 
@@ -281,7 +352,7 @@ def test_base_plugin_build_input_specs_default() -> None:
 
 def test_table_writer_output_specs() -> None:
     """TableWriterPlugin builds output specs from output_tables."""
-    plugin = TestTableWriter()
+    plugin = SampleTableWriter()
 
     meta = plugin.metadata
 
@@ -292,15 +363,13 @@ def test_table_writer_output_specs() -> None:
     assert "table_b" in output_names or "analytics.table_b" in output_names
 
 
-def test_table_writer_execute_success() -> None:
+def test_table_writer_execute_success(
+    test_context: PluginExecutionContext,
+) -> None:
     """TableWriterPlugin execute returns row counts."""
-    plugin = TestTableWriter(should_fail=False)
-    mock_ctx = MagicMock()
-    mock_ctx.repo = "test-repo"
-    mock_ctx.commit = "abc123"
-    mock_ctx.run_id = None
+    plugin = SampleTableWriter(should_fail=False)
 
-    result = plugin.execute(mock_ctx)
+    result = plugin.execute(test_context)
 
     assert result.success is True
     assert result.row_counts is not None
@@ -308,12 +377,13 @@ def test_table_writer_execute_success() -> None:
     assert result.row_counts.get("analytics.table_b") == TABLE_B_ROW_COUNT
 
 
-def test_table_writer_execute_failure() -> None:
+def test_table_writer_execute_failure(
+    test_context: PluginExecutionContext,
+) -> None:
     """TableWriterPlugin execute handles compute failures."""
-    plugin = TestTableWriter(should_fail=True)
-    mock_ctx = MagicMock()
+    plugin = SampleTableWriter(should_fail=True)
 
-    result = plugin.execute(mock_ctx)
+    result = plugin.execute(test_context)
 
     assert result.success is False
     assert result.error is not None
@@ -331,7 +401,7 @@ def test_table_writer_with_contract_specs() -> None:
         plugin_stage: ClassVar[PluginStage] = "function"
         output_tables: ClassVar[tuple[str, ...]] = ("analytics.contracted_table",)
 
-        def compute(self, ctx: MagicMock) -> Mapping[str, int] | None:
+        def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
             _ = (self, ctx)  # Required by interface
             return {"analytics.contracted_table": 1}
 
@@ -354,7 +424,7 @@ def test_table_writer_empty_output_tables() -> None:
         plugin_stage: ClassVar[PluginStage] = "other"
         output_tables: ClassVar[tuple[str, ...]] = ()
 
-        def compute(self, ctx: MagicMock) -> Mapping[str, int] | None:
+        def compute(self, ctx: PluginExecutionContext) -> Mapping[str, int] | None:
             _ = (self, ctx)  # Required by interface
             return None
 

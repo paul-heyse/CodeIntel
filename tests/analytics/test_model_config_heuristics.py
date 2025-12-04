@@ -19,8 +19,8 @@ from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.config import ConfigBuilder
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine.views import load_call_graph
-from codeintel.storage.repositories import NormalizedDataModel, fetch_models_normalized
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+from codeintel.storage.repositories import NormalizedDataModel, fetch_models_normalized
 from tests._helpers.builders import (
     CallGraphNodeRow,
     FunctionTypesRow,

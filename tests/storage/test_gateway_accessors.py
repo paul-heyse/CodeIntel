@@ -370,9 +370,7 @@ def test_docs_views_function_summary_returns_relation(fresh_gateway: StorageGate
 def test_docs_views_call_graph_enriched_returns_relation(fresh_gateway: StorageGateway) -> None:
     """Verify call_graph_enriched() returns DuckDB relation by direct SQL."""
     # The view has complex joins so test via direct SQL count
-    result = fresh_gateway.con.execute(
-        "SELECT COUNT(*) FROM docs.v_call_graph_enriched"
-    ).fetchone()
+    result = fresh_gateway.con.execute("SELECT COUNT(*) FROM docs.v_call_graph_enriched").fetchone()
     assert result is not None
     assert isinstance(result[0], int)
 
@@ -688,47 +686,53 @@ def test_gateway_table_returns_relation(fresh_gateway: StorageGateway) -> None:
 def test_insert_and_query_full_flow(fresh_gateway: StorageGateway) -> None:
     """Verify inserting via accessors and querying via relations."""
     # Insert modules
-    fresh_gateway.core.insert_modules([
-        ("mod_a", "mod_a.py", "test/repo", "abc123"),
-        ("mod_b", "mod_b.py", "test/repo", "abc123"),
-    ])
+    fresh_gateway.core.insert_modules(
+        [
+            ("mod_a", "mod_a.py", "test/repo", "abc123"),
+            ("mod_b", "mod_b.py", "test/repo", "abc123"),
+        ]
+    )
 
     # Insert goids
     now = datetime.now(tz=UTC).isoformat()
-    fresh_gateway.core.insert_goids([
-        (
-            1001,
-            "urn:mod_a:func_a",
-            "test/repo",
-            "abc123",
-            "mod_a.py",
-            "python",
-            "function",
-            "mod_a.func_a",
-            1,
-            5,
-            now,
-        ),
-        (
-            1002,
-            "urn:mod_b:func_b",
-            "test/repo",
-            "abc123",
-            "mod_b.py",
-            "python",
-            "function",
-            "mod_b.func_b",
-            1,
-            5,
-            now,
-        ),
-    ])
+    fresh_gateway.core.insert_goids(
+        [
+            (
+                1001,
+                "urn:mod_a:func_a",
+                "test/repo",
+                "abc123",
+                "mod_a.py",
+                "python",
+                "function",
+                "mod_a.func_a",
+                1,
+                5,
+                now,
+            ),
+            (
+                1002,
+                "urn:mod_b:func_b",
+                "test/repo",
+                "abc123",
+                "mod_b.py",
+                "python",
+                "function",
+                "mod_b.func_b",
+                1,
+                5,
+                now,
+            ),
+        ]
+    )
 
     # Insert call graph data
-    fresh_gateway.graph.insert_call_graph_nodes([
-        (1001, "python", "function", 0, True, "mod_a.py"),
-        (1002, "python", "function", 1, True, "mod_b.py"),
-    ])
+    fresh_gateway.graph.insert_call_graph_nodes(
+        [
+            (1001, "python", "function", 0, True, "mod_a.py"),
+            (1002, "python", "function", 1, True, "mod_b.py"),
+        ]
+    )
 
     # Query using relations
     modules_count = fresh_gateway.core.modules().count("*").fetchone()
@@ -750,10 +754,12 @@ def test_insert_and_query_full_flow(fresh_gateway: StorageGateway) -> None:
 
 def test_relations_support_filtering(fresh_gateway: StorageGateway) -> None:
     """Verify relations support DuckDB filtering."""
-    fresh_gateway.core.insert_modules([
-        ("mod_a", "mod_a.py", "repo_a", "commit1"),
-        ("mod_b", "mod_b.py", "repo_b", "commit2"),
-    ])
+    fresh_gateway.core.insert_modules(
+        [
+            ("mod_a", "mod_a.py", "repo_a", "commit1"),
+            ("mod_b", "mod_b.py", "repo_b", "commit2"),
+        ]
+    )
 
     # Filter using relation API
     relation = fresh_gateway.core.modules().filter("repo = 'repo_a'")

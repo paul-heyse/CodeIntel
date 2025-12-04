@@ -9,7 +9,6 @@ This module tests:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import MagicMock
 
 import networkx as nx
 import pytest
@@ -409,11 +408,11 @@ def test_provider_runtime_property() -> None:
 
 def test_provider_backend_property() -> None:
     """Backend property returns runtime backend."""
-    mock_backend = MagicMock()
-    mock_runtime = MockGraphRuntime(backend=mock_backend)
+    backend_obj = object()  # Use a plain object as placeholder
+    mock_runtime = MockGraphRuntime(backend=backend_obj)
     provider = GraphProvider.from_runtime(mock_runtime)  # type: ignore[arg-type]
 
-    assert provider.backend is mock_backend
+    assert provider.backend is backend_obj
 
 
 def test_provider_use_gpu_property() -> None:

@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from duckdb import DuckDBPyConnection
 
 from codeintel.config.datasets import TableSchema, get_dataset_contracts_by_table_key
+from codeintel.storage.sql.primitives import quote_identifier
 
 SCHEMAS = ("core", "graph", "analytics", "docs")
 log = logging.getLogger(__name__)
@@ -29,18 +30,6 @@ __all__ = [
 ]
 
 
-def _quote(identifier: str) -> str:
-    """Quote an identifier for DuckDB.
-
-    Returns
-    -------
-    str
-        Identifier wrapped in double quotes with internal quotes escaped.
-    """
-    escaped = identifier.replace('"', '""')
-    return f'"{escaped}"'
-
-
 def _build_table_ddl(table: TableSchema) -> str:
     """Generate CREATE TABLE DDL from a TableSchema.
 
@@ -52,14 +41,14 @@ def _build_table_ddl(table: TableSchema) -> str:
     col_lines: list[str] = []
     for col in table.columns:
         nullable_sql = "" if col.nullable else " NOT NULL"
-        col_lines.append(f"    {_quote(col.name)} {col.type}{nullable_sql}")
+        col_lines.append(f"    {quote_identifier(col.name)} {col.type}{nullable_sql}")
     if table.primary_key:
-        pk_cols = ", ".join(_quote(col) for col in table.primary_key)
+        pk_cols = ", ".join(quote_identifier(col) for col in table.primary_key)
         col_lines.append(f"    PRIMARY KEY ({pk_cols})")
     cols_sql = ",\n".join(col_lines)
     return (
-        f"DROP TABLE IF EXISTS {_quote(table.schema)}.{_quote(table.name)};\n"
-        f"CREATE TABLE {_quote(table.schema)}.{_quote(table.name)} (\n"
+        f"DROP TABLE IF EXISTS {quote_identifier(table.schema)}.{quote_identifier(table.name)};\n"
+        f"CREATE TABLE {quote_identifier(table.schema)}.{quote_identifier(table.name)} (\n"
         f"{cols_sql}\n"
         ");"
     )
@@ -76,14 +65,12 @@ def _build_table_ddl_if_not_exists(table: TableSchema) -> str:
     col_lines: list[str] = []
     for col in table.columns:
         nullable_sql = "" if col.nullable else " NOT NULL"
-        col_lines.append(f"    {_quote(col.name)} {col.type}{nullable_sql}")
+        col_lines.append(f"    {quote_identifier(col.name)} {col.type}{nullable_sql}")
     if table.primary_key:
-        pk_cols = ", ".join(_quote(col) for col in table.primary_key)
+        pk_cols = ", ".join(quote_identifier(col) for col in table.primary_key)
         col_lines.append(f"    PRIMARY KEY ({pk_cols})")
     cols_sql = ",\n".join(col_lines)
-    return (
-        f"CREATE TABLE IF NOT EXISTS {_quote(table.schema)}.{_quote(table.name)} (\n{cols_sql}\n);"
-    )
+    return f"CREATE TABLE IF NOT EXISTS {quote_identifier(table.schema)}.{quote_identifier(table.name)} (\n{cols_sql}\n);"
 
 
 _TABLE_CREATION_DENYLIST = {"docs.v_validation_summary"}
@@ -104,11 +91,11 @@ TABLE_DDL_IF_NOT_EXISTS: dict[str, str] = {
 def _build_index_ddl(table: TableSchema) -> list[str]:
     statements: list[str] = []
     for index in table.indexes:
-        columns = ", ".join(_quote(col) for col in index.columns)
+        columns = ", ".join(quote_identifier(col) for col in index.columns)
         uniqueness = "UNIQUE " if index.unique else ""
         statements.append(
-            f"CREATE {uniqueness}INDEX IF NOT EXISTS {_quote(index.name)} "
-            f"ON {_quote(table.schema)}.{_quote(table.name)}({columns});"
+            f"CREATE {uniqueness}INDEX IF NOT EXISTS {quote_identifier(index.name)} "
+            f"ON {quote_identifier(table.schema)}.{quote_identifier(table.name)}({columns});"
         )
     return statements
 

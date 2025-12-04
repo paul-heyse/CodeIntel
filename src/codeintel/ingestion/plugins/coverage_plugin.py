@@ -187,10 +187,11 @@ class CoverageIngestPlugin(
             Path to coverage file or None if not found.
         """
         # Check common locations
+        paths = ctx.paths
         candidates = [
             ctx.repo_root / ".coverage",
             ctx.repo_root / "coverage.json",
-            ctx.paths.coverage_json if hasattr(ctx.paths, "coverage_json") else None,
+            paths.coverage_json if paths is not None and hasattr(paths, "coverage_json") else None,
         ]
         for candidate in candidates:
             if candidate is not None and candidate.exists():

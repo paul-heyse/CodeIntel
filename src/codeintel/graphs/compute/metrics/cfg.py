@@ -129,9 +129,9 @@ def compute_dominator_depths(
     if not idoms:
         return {}
 
-    depths: dict[Hashable, int] = {}
+    depths: dict[NodeT, int] = {}
 
-    def get_depth(node: Hashable) -> int:
+    def get_depth(node: NodeT) -> int:
         if node in depths:
             return depths[node]
         idom = idoms.get(node)

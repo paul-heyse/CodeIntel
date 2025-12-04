@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/validation/data_checks.py
+# hypothesis_version: 6.148.6
+
+["'", "''", '*', 'commit', 'repo', 'safe_count_rows']

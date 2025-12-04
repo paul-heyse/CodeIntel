@@ -25,6 +25,8 @@ from codeintel.core.resources.registry import (
     ResourceRegistry,
 )
 
+INT_PROVIDER_VALUE = 42
+
 # =============================================================================
 # Test Implementations
 # =============================================================================
@@ -41,7 +43,13 @@ class StringProvider(ResourceProviderBase[str]):
         self._value = value
 
     def _load(self) -> str:
-        """Load the string value."""
+        """Load the string value.
+
+        Returns
+        -------
+        str
+            The stored string value.
+        """
         return self._value
 
 
@@ -56,8 +64,36 @@ class IntProvider(ResourceProviderBase[int]):
         self._value = value
 
     def _load(self) -> int:
-        """Load the int value."""
+        """Load the int value.
+
+        Returns
+        -------
+        int
+            The stored int value.
+        """
         return self._value
+
+
+class CountingProvider(ResourceProviderBase[int]):
+    """Provider that increments each time it loads."""
+
+    RESOURCE_NAME: ClassVar[str] = "counting_provider"
+
+    def __init__(self) -> None:
+        """Initialize with zero count."""
+        super().__init__()
+        self.load_count = 0
+
+    def _load(self) -> int:
+        """Increment and return the load count.
+
+        Returns
+        -------
+        int
+            The incremented count value.
+        """
+        self.load_count += 1
+        return self.load_count
 
 
 class LazyStringResource(LazyResource[str]):
@@ -71,7 +107,13 @@ class LazyStringResource(LazyResource[str]):
         self._value = value
 
     def _load(self) -> str:
-        """Load the string value."""
+        """Load the string value.
+
+        Returns
+        -------
+        str
+            The stored string value.
+        """
         return self._value
 
 
@@ -319,12 +361,12 @@ def test_registry_require_missing_raises(resource_registry: ResourceRegistry) ->
 
 def test_registry_require_or_none(resource_registry: ResourceRegistry) -> None:
     """Verify require_or_none() returns value when present."""
-    provider = IntProvider(42)
+    provider = IntProvider(INT_PROVIDER_VALUE)
     resource_registry.register(IntProvider, provider)
 
     result = resource_registry.require_or_none(IntProvider)
 
-    assert result == 42
+    assert result == INT_PROVIDER_VALUE
 
 
 def test_registry_require_or_none_missing(resource_registry: ResourceRegistry) -> None:
@@ -399,35 +441,43 @@ def test_registry_contains(resource_registry: ResourceRegistry) -> None:
 
 def test_registry_invalidate_single(resource_registry: ResourceRegistry) -> None:
     """Verify invalidate() invalidates single resource."""
-    provider = StringProvider("test")
-    resource_registry.register(StringProvider, provider)
+    provider = CountingProvider()
+    resource_registry.register(CountingProvider, provider)
 
-    # Load the value
-    provider.get()
-    assert provider._cached is not None
+    # Load and capture count
+    resource_registry.require(CountingProvider)
+    first_count = provider.load_count
 
     # Invalidate
-    resource_registry.invalidate(StringProvider)
+    resource_registry.invalidate(CountingProvider)
 
-    assert provider._cached is None
+    # Reload
+    resource_registry.require(CountingProvider)
+    second_count = provider.load_count
+
+    assert second_count == first_count + 1
 
 
 def test_registry_invalidate_all(resource_registry: ResourceRegistry) -> None:
     """Verify invalidate() without args invalidates all resources."""
-    provider1 = StringProvider("test1")
-    provider2 = IntProvider(42)
-    resource_registry.register(StringProvider, provider1)
+    provider1 = CountingProvider()
+    provider2 = IntProvider(INT_PROVIDER_VALUE)
+    resource_registry.register(CountingProvider, provider1)
     resource_registry.register(IntProvider, provider2)
 
     # Load values
-    provider1.get()
-    provider2.get()
+    resource_registry.require(CountingProvider)
+    first_count = provider1.load_count
+    resource_registry.require(IntProvider)
 
     # Invalidate all
     resource_registry.invalidate()
 
-    assert provider1._cached is None
-    assert provider2._cached is None
+    # Reload
+    resource_registry.require(CountingProvider)
+    refreshed_count = provider1.load_count
+    assert refreshed_count == first_count + 1
+    assert provider2.get() == INT_PROVIDER_VALUE
 
 
 def test_registry_invalidate_missing_no_error(
@@ -458,13 +508,15 @@ def test_registry_clear(resource_registry: ResourceRegistry) -> None:
 
 def test_registry_cleanup(resource_registry: ResourceRegistry) -> None:
     """Verify cleanup() invalidates and clears."""
-    provider = StringProvider("test")
-    resource_registry.register(StringProvider, provider)
-    provider.get()  # Load value
+    provider = CountingProvider()
+    resource_registry.register(CountingProvider, provider)
+    resource_registry.require(CountingProvider)
+    first_count = provider.load_count
 
     resource_registry.cleanup()
 
-    assert provider._cached is None
+    reloaded_value = provider.get()
+    assert reloaded_value == first_count + 1
     assert len(resource_registry) == 0
 
 
@@ -500,13 +552,13 @@ def test_registry_registered_types(resource_registry: ResourceRegistry) -> None:
 
 def test_registry_len(resource_registry: ResourceRegistry) -> None:
     """Verify __len__ returns provider count."""
-    assert len(resource_registry) == 0
+    initial_count = len(resource_registry)
 
     resource_registry.register(StringProvider, StringProvider("test"))
-    assert len(resource_registry) == 1
+    assert len(resource_registry) == initial_count + 1
 
     resource_registry.register(IntProvider, IntProvider(42))
-    assert len(resource_registry) == 2
+    assert len(resource_registry) == initial_count + 2
 
 
 # =============================================================================
@@ -531,21 +583,23 @@ def test_registry_with_lazy_resource(resource_registry: ResourceRegistry) -> Non
 def test_registry_full_lifecycle(resource_registry: ResourceRegistry) -> None:
     """Verify full registry lifecycle."""
     # Register
-    provider = StringProvider("lifecycle")
-    resource_registry.register(StringProvider, provider, name="lifecycle_test")
+    provider = CountingProvider()
+    resource_registry.register(CountingProvider, provider, name="lifecycle_test")
 
     # Verify present
-    assert resource_registry.has(StringProvider)
+    assert resource_registry.has(CountingProvider)
     assert resource_registry.has_by_name("lifecycle_test")
-    assert StringProvider in resource_registry
+    assert CountingProvider in resource_registry
 
     # Get and require
-    assert resource_registry.get(StringProvider) is provider
-    assert resource_registry.require(StringProvider) == "lifecycle"
+    assert resource_registry.get(CountingProvider) is provider
+    resource_registry.require(CountingProvider)
+    first_count = provider.load_count
 
     # Invalidate
-    resource_registry.invalidate(StringProvider)
-    assert provider._cached is None
+    resource_registry.invalidate(CountingProvider)
+    resource_registry.require(CountingProvider)
+    assert provider.load_count == first_count + 1
 
     # Replace
     new_provider = StringProvider("replaced")

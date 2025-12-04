@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
+from codeintel.storage.helpers.json import decode_json_list, encode_json_compact
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -68,7 +70,7 @@ def _serialize_datasets(datasets: Sequence[str]) -> str:
     str
         JSON-encoded list of dataset names.
     """
-    return json.dumps(list(datasets), separators=(",", ":"))
+    return encode_json_compact(list(datasets))
 
 
 def _deserialize_datasets(raw: str | None) -> tuple[str, ...]:
@@ -86,13 +88,8 @@ def _deserialize_datasets(raw: str | None) -> tuple[str, ...]:
     """
     if not raw:
         return ()
-    try:
-        value = json.loads(raw)
-        if isinstance(value, list):
-            return tuple(str(x) for x in value)
-    except json.JSONDecodeError:
-        pass
-    return ()
+    items = decode_json_list(raw)
+    return tuple(str(x) for x in items)
 
 
 @dataclass(frozen=True)
