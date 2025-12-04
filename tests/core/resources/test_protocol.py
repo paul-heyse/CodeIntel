@@ -114,7 +114,8 @@ def test_resource_error_is_exception() -> None:
 def test_resource_error_can_be_raised() -> None:
     """Verify ResourceError can be raised and caught."""
     with pytest.raises(ResourceError) as exc_info:
-        raise ResourceError("Test message")
+        msg = "Test message"
+        raise ResourceError(msg)
 
     assert "Test message" in str(exc_info.value)
 

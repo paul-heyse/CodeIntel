@@ -9,8 +9,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Hashable
 from dataclasses import dataclass
+from typing import TypeVar
 
 import networkx as nx
+
+# Type variable for node types in CFG computations
+NodeT = TypeVar("NodeT", bound=Hashable)
 
 log = logging.getLogger(__name__)
 
@@ -108,8 +112,8 @@ def compute_dominance_frontier(
 
 
 def compute_dominator_depths(
-    idoms: dict[Hashable, Hashable | None],
-) -> dict[Hashable, int]:
+    idoms: dict[NodeT, NodeT | None],
+) -> dict[NodeT, int]:
     """Compute depth in dominator tree for all nodes.
 
     Parameters
@@ -119,7 +123,7 @@ def compute_dominator_depths(
 
     Returns
     -------
-    dict[Hashable, int]
+    dict[NodeT, int]
         Node to depth mapping (root = 0).
     """
     if not idoms:

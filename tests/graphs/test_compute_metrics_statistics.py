@@ -57,7 +57,7 @@ TOLERANCE: Final[float] = 0.01
 DIAMETER_CHAIN_FIVE: Final[float] = 4.0
 DIAMETER_COMPLETE: Final[float] = 1.0
 DIAMETER_STAR: Final[float] = 2.0
-AVG_PATH_CHAIN_FOUR: Final[float] = 4 / 3
+AVG_PATH_CHAIN_FOUR: Final[float] = 5 / 3  # (1+2+3+1+2+1) / 6 paths
 AVG_PATH_COMPLETE: Final[float] = 1.0
 DENSITY_COMPLETE_FOUR: Final[float] = 1.0
 DENSITY_CHAIN_FOUR: Final[float] = 3 / 12  # 3 edges, max 12
@@ -314,7 +314,7 @@ def test_avg_path_length_chain_graph() -> None:
     graph = chain_graph(4)
     result = compute_avg_shortest_path_length(graph)
 
-    # For undirected path of 4 nodes, avg path length is 4/3
+    # For directed chain A->B->C->D, avg = (1+2+3+1+2+1)/6 = 10/6 = 5/3
     assert result is not None
     assert abs(result - AVG_PATH_CHAIN_FOUR) < TOLERANCE
 

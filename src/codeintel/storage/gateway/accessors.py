@@ -298,7 +298,9 @@ class GraphTables:
 
     def insert_dfg_edges(
         self,
-        rows: Iterable[tuple[int, str, str, str | None, str | None, str | None]],
+        rows: Iterable[
+            tuple[int, str, str, str | None, str | None, str | None, bool | None, str | None]
+        ],
     ) -> None:
         """
         Insert rows into graph.dfg_edges.
@@ -306,7 +308,8 @@ class GraphTables:
         Parameters
         ----------
         rows
-            Iterable of values matching dfg_edges columns.
+            Iterable of (function_goid_h128, src_block_id, dst_block_id, src_var,
+            dst_var, edge_kind, via_phi, use_kind).
         """
         macro_insert_rows(self.con, "graph.dfg_edges", rows)
 

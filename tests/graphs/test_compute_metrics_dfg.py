@@ -124,13 +124,17 @@ def test_path_lengths_star_graph() -> None:
 
 
 def test_path_lengths_max_depth_limiting() -> None:
-    """Max depth parameter limits search depth."""
+    """Max depth parameter limits search depth.
+
+    With max_depth=2, we explore from nodes at depth 2 and can still
+    find their successors at depth 3 (the check is `dist > max_depth`).
+    """
     graph = chain_graph(10)  # A -> B -> ... -> J (long chain)
     result = compute_dfg_path_lengths(graph, max_depth=MAX_DEPTH_LIMITED)
 
-    # A can only reach B (dist 1) and C (dist 2) within depth limit
-    assert result["A"].max_def_use_distance == MAX_DEPTH_LIMITED
-    assert result["A"].reach_count == MAX_DEPTH_LIMITED
+    # A reaches B (1), C (2), and D (3) since we explore from depth 2
+    assert result["A"].max_def_use_distance == EXPECTED_MAX_DISTANCE_THREE
+    assert result["A"].reach_count == EXPECTED_REACH_COUNT_THREE
 
 
 def test_path_lengths_avg_calculation() -> None:

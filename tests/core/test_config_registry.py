@@ -20,7 +20,6 @@ from codeintel.core.config_registry import (
     ConfigValidationError,
 )
 
-
 # =============================================================================
 # Test Fixtures
 # =============================================================================
@@ -386,4 +385,3 @@ def test_config_validation_error() -> None:
     assert error.reason == "Invalid value"
     assert "TestConfig" in str(error)
     assert "Invalid value" in str(error)
-

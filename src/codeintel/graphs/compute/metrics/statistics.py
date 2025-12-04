@@ -6,20 +6,18 @@ for networkx graphs.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Hashable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import networkx as nx
 
-if TYPE_CHECKING:
-    from collections.abc import Hashable
-
 # Type variable for node types (typically int for GOIDs)
-NodeT = TypeVar("NodeT", bound="Hashable")
+NodeT = TypeVar("NodeT", bound=Hashable)
 
 # NetworkX DegreeView is Iterable[tuple[node, degree]] but stubs type it as int
-DegreeViewT = Iterable[tuple[int, int]]
+# Use Any for node type since graphs can have any hashable node type
+DegreeViewT = Iterable[tuple[Any, int]]
 
 
 @dataclass(frozen=True)
@@ -56,7 +54,7 @@ class GraphStatistics:
     is_dag: bool
 
 
-def get_in_degrees(graph: nx.DiGraph) -> list[tuple[int, int]]:
+def get_in_degrees(graph: nx.DiGraph) -> list[tuple[Any, int]]:
     """Extract in-degree tuples from a directed graph.
 
     Parameters
@@ -66,7 +64,7 @@ def get_in_degrees(graph: nx.DiGraph) -> list[tuple[int, int]]:
 
     Returns
     -------
-    list[tuple[int, int]]
+    list[tuple[Any, int]]
         List of (node, in_degree) tuples for all nodes in the graph.
 
     Examples
@@ -80,7 +78,7 @@ def get_in_degrees(graph: nx.DiGraph) -> list[tuple[int, int]]:
     return [(node, degree) for node, degree in degrees]
 
 
-def get_out_degrees(graph: nx.DiGraph) -> list[tuple[int, int]]:
+def get_out_degrees(graph: nx.DiGraph) -> list[tuple[Any, int]]:
     """Extract out-degree tuples from a directed graph.
 
     Parameters
@@ -90,7 +88,7 @@ def get_out_degrees(graph: nx.DiGraph) -> list[tuple[int, int]]:
 
     Returns
     -------
-    list[tuple[int, int]]
+    list[tuple[Any, int]]
         List of (node, out_degree) tuples for all nodes in the graph.
 
     Examples
@@ -104,7 +102,7 @@ def get_out_degrees(graph: nx.DiGraph) -> list[tuple[int, int]]:
     return [(node, degree) for node, degree in degrees]
 
 
-def get_degrees(graph: nx.Graph) -> list[tuple[int, int]]:
+def get_degrees(graph: nx.Graph) -> list[tuple[Any, int]]:
     """Extract degree tuples from an undirected graph.
 
     Parameters
@@ -114,7 +112,7 @@ def get_degrees(graph: nx.Graph) -> list[tuple[int, int]]:
 
     Returns
     -------
-    list[tuple[int, int]]
+    list[tuple[Any, int]]
         List of (node, degree) tuples for all nodes in the graph.
 
     Examples

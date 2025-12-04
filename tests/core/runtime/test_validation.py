@@ -25,7 +25,6 @@ from codeintel.core.runtime.validation import (
     has_error_findings,
 )
 
-
 # =============================================================================
 # Test Fixtures and Helpers
 # =============================================================================
@@ -355,7 +354,7 @@ def test_filter_by_severity_warning_threshold() -> None:
 
     result = filter_by_severity(findings, "warning", get_severity)
     assert len(result) == 2
-    assert all(f.severity in ("warning", "error") for f in result)
+    assert all(f.severity in {"warning", "error"} for f in result)
 
 
 def test_filter_by_severity_error_threshold() -> None:

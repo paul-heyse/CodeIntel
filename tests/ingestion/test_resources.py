@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar, cast
 
 import pytest
 
@@ -56,6 +57,8 @@ class TestResource:
 class TestProvider(ResourceProvider[TestResource]):
     """Provider that returns a TestResource."""
 
+    RESOURCE_NAME: ClassVar[str] = "test_resource"
+
     def __init__(self, value: str = "test", count: int = 10) -> None:
         """Initialize with test data."""
         self._value = value
@@ -88,11 +91,6 @@ class TestProvider(ResourceProvider[TestResource]):
         """
         return TestResource(value=self._value, count=self._count)
 
-    @property
-    def resource_name(self) -> str:
-        """Return the registry key for this resource."""
-        return "test_resource"
-
     def invalidate(self) -> None:
         """Reset the loaded flag."""
         self._loaded = False  # Modifies instance state
@@ -100,6 +98,8 @@ class TestProvider(ResourceProvider[TestResource]):
 
 class ListProvider(ResourceProvider[Sequence[str]]):
     """Provider that returns a list of strings."""
+
+    RESOURCE_NAME: ClassVar[str] = "list_resource"
 
     def __init__(self, items: Sequence[str] | None = None) -> None:
         """Initialize with optional items."""
@@ -132,11 +132,6 @@ class ListProvider(ResourceProvider[Sequence[str]]):
         """
         return self._items
 
-    @property
-    def resource_name(self) -> str:
-        """Return the registry key for this resource."""
-        return "list_resource"
-
     def invalidate(self) -> None:
         """Reset the loaded flag."""
         self._loaded = False  # Modifies instance state
@@ -144,6 +139,8 @@ class ListProvider(ResourceProvider[Sequence[str]]):
 
 class FailingProvider(ResourceProvider[str]):
     """Provider that always fails."""
+
+    RESOURCE_NAME: ClassVar[str] = "failing_resource"
 
     def get(self) -> str:
         """Raise an error on access.
@@ -172,11 +169,6 @@ class FailingProvider(ResourceProvider[str]):
         """
         _ = self  # Use self for PLR6301
         return None
-
-    @property
-    def resource_name(self) -> str:
-        """Return the registry key for this resource."""
-        return "failing_resource"
 
     def invalidate(self) -> None:
         """Failing provider has no cache to clear."""
@@ -240,7 +232,7 @@ def test_registry_get_resource_value() -> None:
     provider = TestProvider(value="hello", count=TEST_COUNT_42)
     registry.register(TestProvider, provider)
 
-    retrieved = registry.get(TestProvider)
+    retrieved = cast("TestProvider", registry.get(TestProvider))
     resource = retrieved.get()
 
     assert resource.value == "hello"
@@ -276,7 +268,7 @@ def test_registry_register_or_replace() -> None:
     registry.register(TestProvider, provider1)
     registry.register_or_replace(TestProvider, provider2)
 
-    retrieved = registry.get(TestProvider)
+    retrieved = cast("TestProvider", registry.get(TestProvider))
     assert retrieved.get().value == "second"
 
 
@@ -430,8 +422,8 @@ def test_registry_multiple_different_types() -> None:
     registry.register(TestProvider, test_provider)
     registry.register(ListProvider, list_provider)
 
-    assert registry.get(TestProvider).get().value == "test"
-    items = registry.get(ListProvider).get()
+    assert cast("TestProvider", registry.get(TestProvider)).get().value == "test"
+    items = cast("ListProvider", registry.get(ListProvider)).get()
     assert len(items) == EXPECTED_LEN_3
 
 
@@ -441,10 +433,12 @@ def test_registry_multiple_different_types() -> None:
 
 
 def test_provider_resource_name_attribute() -> None:
-    """ResourceProvider should have resource_name attribute."""
+    """ResourceProvider should have RESOURCE_NAME class attribute."""
     provider = TestProvider()
 
-    assert provider.resource_name == "test_resource"
+    assert TestProvider.RESOURCE_NAME == "test_resource"
+    # Also verify via the instance access
+    assert provider.RESOURCE_NAME == "test_resource"
 
 
 def test_failing_provider_raises() -> None:
@@ -473,8 +467,8 @@ def test_registry_workflow() -> None:
     registry.register(ListProvider, list_provider)
 
     # Use providers
-    test_resource = registry.get(TestProvider).get()
-    list_resource = registry.get(ListProvider).get()
+    test_resource = cast("TestProvider", registry.get(TestProvider)).get()
+    list_resource = cast("ListProvider", registry.get(ListProvider)).get()
 
     assert test_resource.value == "hello"
     assert test_resource.count == TEST_COUNT_100
@@ -487,7 +481,7 @@ def test_registry_optional_access() -> None:
 
     # Check before access using has()
     if registry.has(TestProvider):
-        provider = registry.get(TestProvider)
+        provider = cast("TestProvider", registry.get(TestProvider))
         _ = provider.get()
     else:
         # Provider not registered - expected path
