@@ -3,20 +3,71 @@
 This module defines the protocol and types for ingestion plugins, providing
 a modernized interface aligned with the analytics graph plugin architecture
 while preserving ingestion-specific functionality.
+
+Migration Note
+--------------
+The following types are deprecated and will be removed in a future version:
+
+- ``IngestRuntimeScratch`` -> Use ``PluginScratch`` from ``codeintel.core.plugins``
+- ``IngestResourceHints`` -> Use ``PluginResourceHints`` from ``codeintel.core.plugins``
+
+These aliases exist for backward compatibility. New code should import directly
+from ``codeintel.core.plugins``.
 """
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard, runtime_checkable
 
 from pydantic import BaseModel
 
+from codeintel.core.plugins.context import PluginScratch
+from codeintel.core.plugins.protocol import PluginResourceHints
+from codeintel.core.plugins.result import BasePluginResult
+
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
+
+# =============================================================================
+# Deprecated Aliases (will be removed in future version)
+# =============================================================================
+
+IngestRuntimeScratch = PluginScratch
+"""DEPRECATED: Use ``PluginScratch`` from ``codeintel.core.plugins.context`` instead.
+
+This alias exists for backward compatibility with existing code.
+Migrate to the core type:
+
+.. code-block:: python
+
+    # Old (deprecated):
+    from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
+
+    # New (recommended):
+    from codeintel.core.plugins import PluginScratch
+"""
+
+IngestResourceHints = PluginResourceHints
+"""DEPRECATED: Use ``PluginResourceHints`` from ``codeintel.core.plugins.protocol`` instead.
+
+This alias exists for backward compatibility with existing code.
+Migrate to the core type:
+
+.. code-block:: python
+
+    # Old (deprecated):
+    from codeintel.ingestion.plugins.protocol import IngestResourceHints
+
+    # New (recommended):
+    from codeintel.core.plugins import PluginResourceHints
+"""
+
+# =============================================================================
+# Ingestion-Specific Types
+# =============================================================================
 
 IngestStage = Literal[
     "scan",
@@ -37,28 +88,6 @@ IngestIsolationKind = Literal[
     "thread",
     "none",
 ]
-
-
-@dataclass(frozen=True)
-class IngestResourceHints:
-    """Optional resource hints used for planning and observability.
-
-    Attributes
-    ----------
-    max_runtime_ms
-        Maximum expected runtime in milliseconds.
-    memory_mb_hint
-        Expected memory usage in megabytes.
-    cpu_intensive
-        Whether this plugin is CPU-bound and benefits from parallelism.
-    io_intensive
-        Whether this plugin is I/O-bound.
-    """
-
-    max_runtime_ms: int | None = None
-    memory_mb_hint: int | None = None
-    cpu_intensive: bool = False
-    io_intensive: bool = False
 
 
 @dataclass(frozen=True)
@@ -131,141 +160,26 @@ class IngestPluginMetadata:
     config_mapping: Mapping[str, str] | None = None
 
 
-@dataclass
-class IngestRuntimeScratch:
-    """Ephemeral scratch/cache store shared across plugin executions in a run.
-
-    Provides a way for plugins to share intermediate data within a single
-    execution run without persisting to the database.
-    """
-
-    _store: dict[str, object] = field(default_factory=dict)
-    _cleanup: list[Callable[[], None]] = field(default_factory=list)
-
-    def declare(self, key: str, value: object) -> None:
-        """Record a value for later consumption by other plugins.
-
-        Parameters
-        ----------
-        key
-            Identifier for the stored value.
-        value
-            Value to store.
-        """
-        self._store[key] = value
-
-    def consume(self, key: str, default: object | None = None) -> object | None:
-        """Retrieve a value populated by another plugin.
-
-        Parameters
-        ----------
-        key
-            Identifier of the value to retrieve.
-        default
-            Value to return if key is not found.
-
-        Returns
-        -------
-        object | None
-            Cached value or provided default.
-        """
-        return self._store.get(key, default)
-
-    def has(self, key: str) -> bool:
-        """Check if a key exists in the scratch store.
-
-        Parameters
-        ----------
-        key
-            Identifier to check.
-
-        Returns
-        -------
-        bool
-            True if key exists.
-        """
-        return key in self._store
-
-    def register_cleanup(self, callback: Callable[[], None]) -> None:
-        """Register a cleanup callback executed after the run completes.
-
-        Parameters
-        ----------
-        callback
-            Function to call during cleanup.
-        """
-        self._cleanup.append(callback)
-
-    def cleanup(self) -> None:
-        """Execute cleanup callbacks and clear stored values."""
-        log = logging.getLogger(__name__)
-        for callback in reversed(self._cleanup):
-            try:
-                callback()
-            except (RuntimeError, OSError, ValueError):
-                log.exception("scratch.cleanup_failed")
-        self._store.clear()
-        self._cleanup.clear()
-
-    def __len__(self) -> int:
-        """Return the number of declared cache entries.
-
-        Returns
-        -------
-        int
-            Count of cached entries.
-        """
-        return len(self._store)
-
-    def keys(self) -> tuple[str, ...]:
-        """Return declared cache keys.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Cache key names.
-        """
-        return tuple(self._store.keys())
-
-
 @dataclass(frozen=True)
-class IngestPluginResult:
-    """Result returned by plugin execution.
+class IngestPluginResult(BasePluginResult):
+    """Result returned by ingestion plugin execution.
+
+    Extend BasePluginResult with ingestion-specific artifact tracking.
+    The artifacts field uses Path specifically for file-based artifacts
+    produced during ingestion.
 
     Attributes
     ----------
-    success
-        Whether execution completed successfully.
-    row_counts
-        Mapping of table names to row counts written.
-    error
-        Error message if execution failed.
-    error_kind
-        Classification of the error type.
-    skipped
-        Whether the plugin was skipped (e.g., missing tool).
-    skip_reason
-        Reason for skipping if applicable.
     artifacts
-        Mapping of artifact names to paths produced.
-    input_hash
-        Hash of inputs for caching.
-    options_hash
-        Hash of options for caching.
+        Mapping of artifact names to file paths produced.
     """
 
-    success: bool = True
-    row_counts: Mapping[str, int] | None = None
-    error: str | None = None
-    error_kind: str | None = None
-    skipped: bool = False
-    skip_reason: str | None = None
+    # Ingestion-specific: artifacts are always file paths
     artifacts: Mapping[str, Path] | None = None
-    input_hash: str | None = None
-    options_hash: str | None = None
 
-    @staticmethod
+    @classmethod
     def ok(
+        cls,
         *,
         row_counts: Mapping[str, int] | None = None,
         artifacts: Mapping[str, Path] | None = None,
@@ -290,47 +204,13 @@ class IngestPluginResult:
         IngestPluginResult
             Result object marked as successful.
         """
-        return IngestPluginResult(
+        return cls(
             success=True,
             row_counts=row_counts,
             artifacts=artifacts,
             input_hash=input_hash,
             options_hash=options_hash,
         )
-
-    @staticmethod
-    def fail(error: str, *, error_kind: str | None = None) -> IngestPluginResult:
-        """Create a failed result.
-
-        Parameters
-        ----------
-        error
-            Error message describing the failure.
-        error_kind
-            Optional classification of the error type.
-
-        Returns
-        -------
-        IngestPluginResult
-            Result object marked as failed.
-        """
-        return IngestPluginResult(success=False, error=error, error_kind=error_kind)
-
-    @staticmethod
-    def skip(reason: str) -> IngestPluginResult:
-        """Create a skipped result.
-
-        Parameters
-        ----------
-        reason
-            Reason for skipping execution.
-
-        Returns
-        -------
-        IngestPluginResult
-            Result object marked as skipped.
-        """
-        return IngestPluginResult(success=True, skipped=True, skip_reason=reason)
 
 
 @runtime_checkable

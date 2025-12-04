@@ -1,11 +1,12 @@
-"""Unified recipe infrastructure for graphs and analytics.
+"""Unified recipe infrastructure for graphs, analytics, and ingestion.
 
-This package provides a single recipe DSL used by both the graphs
-and analytics subsystems, eliminating DSL duplication.
+This package provides a single recipe DSL used by the graphs, analytics,
+and ingestion subsystems, eliminating DSL duplication. Base classes are
+provided for domain-specific extensions.
 
 Modules
 -------
-- model: Unified recipe model (Recipe, RecipeStage, RecipeOptions)
+- model: Unified recipe model (Recipe, RecipeStage, RecipeOptions) and base classes
 - dsl: Fluent builder and helper functions for recipe construction
 - executor: Unified recipe executor
 """
@@ -18,6 +19,9 @@ from codeintel.core.recipes.dsl import (
     stage,
 )
 from codeintel.core.recipes.model import (
+    BaseRecipe,
+    BaseRecipeOptions,
+    BaseRecipeStage,
     Recipe,
     RecipeExecutionReport,
     RecipeOptions,
@@ -27,6 +31,11 @@ from codeintel.core.recipes.model import (
 )
 
 __all__ = [
+    # Base classes (for domain extension)
+    "BaseRecipe",
+    "BaseRecipeOptions",
+    "BaseRecipeStage",
+    # Core types
     "Recipe",
     "RecipeBuilder",
     "RecipeExecutionReport",

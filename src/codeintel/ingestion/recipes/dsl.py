@@ -2,6 +2,9 @@
 
 This module provides the data structures for defining ingestion recipes,
 which are declarative compositions of plugins organized into stages.
+
+Ingestion-specific recipe types extend the base classes from core to
+provide domain-specific functionality like YAML parsing and serialization.
 """
 
 from __future__ import annotations
@@ -12,13 +15,19 @@ from pathlib import Path
 
 import yaml
 
+from codeintel.core.recipes.model import (
+    BaseRecipe,
+    BaseRecipeOptions,
+    BaseRecipeStage,
+)
+
 
 @dataclass(frozen=True)
-class RecipeStage:
+class RecipeStage(BaseRecipeStage):
     """A stage in the ingestion recipe.
 
-    Stages group plugins that can potentially run together and define
-    execution semantics like parallelism and failure handling.
+    Extends BaseRecipeStage with ingestion-specific fields like timeout
+    and description, plus serialization methods.
 
     Attributes
     ----------
@@ -28,6 +37,8 @@ class RecipeStage:
         Plugin names to execute in this stage.
     parallel
         Whether plugins in this stage can run in parallel.
+    fail_fast
+        Whether to abort stage on first plugin failure.
     required
         Whether this stage must succeed for the recipe to continue.
     timeout_s
@@ -36,9 +47,6 @@ class RecipeStage:
         Human-readable description of the stage.
     """
 
-    name: str
-    plugins: tuple[str, ...]
-    parallel: bool = False
     required: bool = True
     timeout_s: int | None = None
     description: str = ""
@@ -64,6 +72,7 @@ class RecipeStage:
             name=str(data.get("name", "")),
             plugins=plugins,
             parallel=bool(data.get("parallel", False)),
+            fail_fast=bool(data.get("fail_fast", True)),
             required=bool(data.get("required", True)),
             timeout_s=int(str(data["timeout_s"])) if data.get("timeout_s") else None,
             description=str(data.get("description", "")),
@@ -83,6 +92,8 @@ class RecipeStage:
         }
         if self.parallel:
             result["parallel"] = True
+        if not self.fail_fast:
+            result["fail_fast"] = False
         if not self.required:
             result["required"] = False
         if self.timeout_s is not None:
@@ -93,31 +104,31 @@ class RecipeStage:
 
 
 @dataclass(frozen=True)
-class RecipeOptions:
-    """Global options for recipe execution.
+class RecipeOptions(BaseRecipeOptions):
+    """Global options for ingestion recipe execution.
+
+    Extends BaseRecipeOptions with ingestion-specific options like
+    incremental processing and contract validation.
 
     Attributes
     ----------
+    dry_run
+        Validate recipe without executing.
+    max_parallel
+        Maximum number of plugins to run in parallel.
+    fail_fast
+        Stop on first plugin failure.
     enable_incremental
         Whether to enable incremental ingestion.
     enable_contracts
         Whether to validate output contracts.
-    max_parallel_plugins
-        Maximum number of plugins to run in parallel.
-    fail_fast
-        Stop on first plugin failure.
     continue_on_soft_fail
         Continue execution after soft failures.
-    dry_run
-        Validate recipe without executing.
     """
 
     enable_incremental: bool = True
     enable_contracts: bool = True
-    max_parallel_plugins: int = 4
-    fail_fast: bool = True
     continue_on_soft_fail: bool = True
-    dry_run: bool = False
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> RecipeOptions:
@@ -133,15 +144,15 @@ class RecipeOptions:
         RecipeOptions
             Parsed options instance.
         """
-        max_parallel_raw = data.get("max_parallel_plugins", 4)
+        max_parallel_raw = data.get("max_parallel_plugins", data.get("max_parallel", 4))
         max_parallel = int(str(max_parallel_raw)) if max_parallel_raw is not None else 4
         return cls(
+            dry_run=bool(data.get("dry_run", False)),
+            max_parallel=max_parallel,
+            fail_fast=bool(data.get("fail_fast", True)),
             enable_incremental=bool(data.get("enable_incremental", True)),
             enable_contracts=bool(data.get("enable_contracts", True)),
-            max_parallel_plugins=max_parallel,
-            fail_fast=bool(data.get("fail_fast", True)),
             continue_on_soft_fail=bool(data.get("continue_on_soft_fail", True)),
-            dry_run=bool(data.get("dry_run", False)),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -153,30 +164,32 @@ class RecipeOptions:
             Dictionary suitable for serialization.
         """
         return {
+            "dry_run": self.dry_run,
+            "max_parallel_plugins": self.max_parallel,
+            "fail_fast": self.fail_fast,
             "enable_incremental": self.enable_incremental,
             "enable_contracts": self.enable_contracts,
-            "max_parallel_plugins": self.max_parallel_plugins,
-            "fail_fast": self.fail_fast,
             "continue_on_soft_fail": self.continue_on_soft_fail,
-            "dry_run": self.dry_run,
         }
 
 
 @dataclass(frozen=True)
-class IngestRecipe:
+class IngestRecipe(BaseRecipe):
     """Declarative recipe for ingestion pipeline composition.
 
-    Recipes define which plugins run in what order, with options
-    for parallelism, failure handling, and conditional execution.
+    Extends BaseRecipe with ingestion-specific features like YAML
+    serialization, plugin enable/disable lists, and recipe includes.
 
     Attributes
     ----------
     name
-        Unique recipe identifier.
+        Unique recipe identifier (inherited from BaseRecipe).
     description
-        Human-readable description.
+        Human-readable description (inherited from BaseRecipe).
     version
-        Recipe version string.
+        Recipe version string (inherited from BaseRecipe).
+    tags
+        Classification tags for the recipe (inherited from BaseRecipe).
     stages
         Ordered list of execution stages.
     options
@@ -187,19 +200,13 @@ class IngestRecipe:
         Explicit list of plugins to enable (overrides defaults).
     includes
         Other recipes to include before this one.
-    tags
-        Classification tags for the recipe.
     """
 
-    name: str
-    description: str = ""
-    version: str = "1.0.0"
     stages: tuple[RecipeStage, ...] = ()
     options: RecipeOptions = field(default_factory=RecipeOptions)
     disabled_plugins: tuple[str, ...] = ()
     enabled_plugins: tuple[str, ...] | None = None
     includes: tuple[str, ...] = ()
-    tags: tuple[str, ...] = ()
 
     @property
     def all_plugins(self) -> tuple[str, ...]:

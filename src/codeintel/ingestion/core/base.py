@@ -34,6 +34,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, cast
 
+from codeintel.core.plugins.protocol import ValidationResult
 from codeintel.ingestion.infrastructure.db_queries import safe_count
 from codeintel.ingestion.plugins.protocol import (
     IngestIsolationKind,
@@ -50,54 +51,6 @@ if TYPE_CHECKING:
     from codeintel.ingestion.tracker import ChangeTracker
 
 log = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Validation Result
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class ValidationResult:
-    """Result of plugin input validation.
-
-    Attributes
-    ----------
-    valid
-        Whether validation passed.
-    errors
-        Tuple of error messages if validation failed.
-    """
-
-    valid: bool
-    errors: tuple[str, ...]
-
-    @staticmethod
-    def success() -> ValidationResult:
-        """Create a successful validation result.
-
-        Returns
-        -------
-        ValidationResult
-            Result indicating validation passed.
-        """
-        return ValidationResult(valid=True, errors=())
-
-    @staticmethod
-    def failure(errors: tuple[str, ...]) -> ValidationResult:
-        """Create a failed validation result.
-
-        Parameters
-        ----------
-        errors
-            Error messages describing validation failures.
-
-        Returns
-        -------
-        ValidationResult
-            Result indicating validation failed.
-        """
-        return ValidationResult(valid=False, errors=errors)
 
 
 # =============================================================================

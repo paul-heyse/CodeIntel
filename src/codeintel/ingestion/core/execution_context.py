@@ -3,6 +3,13 @@
 This module provides the execution context that plugins receive during
 execution, enabling typed access to resources, configuration, and
 shared scratch space.
+
+IngestExecutionContext extends the core PluginExecutionContext with
+ingestion-specific fields:
+- code_profile: Code scanning profile
+- config_profile: Config scanning profile
+- tools: External tools configuration
+- Plugin timing utilities for performance tracking
 """
 
 from __future__ import annotations
@@ -14,18 +21,16 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.config.models import ToolsConfig
 from codeintel.core.config_registry import ConfigNotFoundError, ConfigRegistry
+from codeintel.core.plugins.context import PluginExecutionContext, PluginScratch
+from codeintel.core.resources import ResourceNotFoundError, ResourceRegistry
 from codeintel.ingestion.infrastructure.db_queries import safe_count
-from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
-from codeintel.ingestion.resources.registry import ResourceNotFoundError, ResourceRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.config.primitives import BuildPaths, SnapshotRef
+    from codeintel.config.primitives import BuildPaths
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.resources.protocol import ResourceProvider
-    from codeintel.runtime import RunContext
-    from codeintel.storage.gateway import StorageGateway
 
 
 def _empty_registry() -> ResourceRegistry:
@@ -54,11 +59,12 @@ def _default_tools_config() -> ToolsConfig:
 
 
 @dataclass
-class IngestExecutionContext:
+class IngestExecutionContext(PluginExecutionContext):
     """Execution context for ingestion plugins.
 
-    Provide access to storage, configuration, change tracking, and shared
-    scratch space for inter-plugin communication.
+    Extend the core PluginExecutionContext with ingestion-specific
+    functionality including scan profiles, tools configuration, and
+    plugin timing utilities.
 
     Attributes
     ----------
@@ -67,19 +73,19 @@ class IngestExecutionContext:
     snapshot
         Repository snapshot reference.
     paths
-        Build paths configuration.
-    tools
-        Tools configuration.
+        Build paths configuration (required for ingestion).
     code_profile
         Code scanning profile.
     config_profile
         Config scanning profile.
+    tools
+        Tools configuration.
     resources
         Resource registry for lazy resource access.
     scratch
         Shared scratch space for inter-plugin data.
     configs
-        Mapping of config types to config instances.
+        Configuration registry (uses ConfigRegistry for runtime validation).
     plugin_name
         Name of the executing plugin.
     run_id
@@ -88,53 +94,20 @@ class IngestExecutionContext:
         Optional unified run context for cross-engine correlation.
     """
 
-    gateway: StorageGateway
-    snapshot: SnapshotRef
-    paths: BuildPaths
-    code_profile: ScanProfile
-    config_profile: ScanProfile
+    # Override from base - required in ingestion
+    paths: BuildPaths = field(default=None)  # type: ignore[assignment]
+
+    # Ingestion-specific fields
+    code_profile: ScanProfile = field(default=None)  # type: ignore[assignment]
+    config_profile: ScanProfile = field(default=None)  # type: ignore[assignment]
     tools: ToolsConfig = field(default_factory=_default_tools_config)
-    resources: ResourceRegistry = field(default_factory=_empty_registry)
-    scratch: IngestRuntimeScratch = field(default_factory=IngestRuntimeScratch)
-    configs: ConfigRegistry = field(default_factory=ConfigRegistry)
-    plugin_name: str | None = None
-    run_id: str | None = None
-    run_context: RunContext | None = None
+
+    # Override from base - use ConfigRegistry instead of ConfigProvider
+    configs: ConfigRegistry = field(default_factory=ConfigRegistry)  # type: ignore[assignment]
+
+    # Plugin timing - internal tracking
     _plugin_start_times: dict[str, float] = field(default_factory=dict, init=False, repr=False)
     _plugin_durations: dict[str, float] = field(default_factory=dict, init=False, repr=False)
-
-    @property
-    def repo_root(self) -> Path:
-        """Repository root for the current snapshot.
-
-        Returns
-        -------
-        Path
-            Absolute path to the repository root.
-        """
-        return self.snapshot.repo_root
-
-    @property
-    def repo(self) -> str:
-        """Repository slug for the current snapshot.
-
-        Returns
-        -------
-        str
-            Repository identifier.
-        """
-        return self.snapshot.repo
-
-    @property
-    def commit(self) -> str:
-        """Commit identifier for the current snapshot.
-
-        Returns
-        -------
-        str
-            Commit hash or identifier.
-        """
-        return self.snapshot.commit
 
     @property
     def build_dir(self) -> Path:
@@ -147,25 +120,14 @@ class IngestExecutionContext:
         """
         return self.paths.build_dir
 
-    @property
-    def effective_run_id(self) -> str | None:
-        """Get run ID preferring unified RunContext if present.
-
-        Returns
-        -------
-        str | None
-            Run ID from run_context if set, otherwise falls back to run_id.
-        """
-        if self.run_context is not None:
-            return self.run_context.run_id
-        return self.run_id
-
-    def require[T: ResourceProvider[object]](self, provider_type: type[T]) -> T:
+    def require[T: ResourceProvider[object]](self, resource_type: type[T]) -> T:
         """Get the resource provider, raising if unavailable.
+
+        Override to provide more specific type bounds for ingestion.
 
         Parameters
         ----------
-        provider_type
+        resource_type
             The type of resource provider to retrieve.
 
         Returns
@@ -173,7 +135,7 @@ class IngestExecutionContext:
         T
             The resource provider instance.
         """
-        return cast("T", self.resources.get(provider_type))
+        return cast("T", self.resources.get(resource_type))
 
     def require_by_name(self, name: str) -> object:
         """Get a resource by name for duck-typing scenarios.
@@ -190,12 +152,12 @@ class IngestExecutionContext:
         """
         return self.resources.require_by_name(name)
 
-    def has_resource[T: ResourceProvider[object]](self, provider_type: type[T]) -> bool:
+    def has_resource[T: ResourceProvider[object]](self, resource_type: type[T]) -> bool:
         """Check if a resource is available.
 
         Parameters
         ----------
-        provider_type
+        resource_type
             The type of resource provider to check.
 
         Returns
@@ -203,7 +165,7 @@ class IngestExecutionContext:
         bool
             True if the resource is registered.
         """
-        return self.resources.has(provider_type)
+        return self.resources.has(resource_type)
 
     def has_resource_by_name(self, name: str) -> bool:
         """Check if a resource is available by name.
@@ -308,13 +270,24 @@ class IngestExecutionContext:
         return counts
 
     def start_plugin_timer(self, plugin_name: str) -> None:
-        """Record the start time for a plugin execution."""
+        """Record the start time for a plugin execution.
+
+        Parameters
+        ----------
+        plugin_name
+            Name of the plugin to time.
+        """
         if plugin_name not in self._plugin_start_times:
             self._plugin_start_times[plugin_name] = time.perf_counter()
             self._plugin_durations.pop(plugin_name, None)
 
     def finish_plugin_timer(self, plugin_name: str) -> float:
         """Return elapsed time for a plugin execution.
+
+        Parameters
+        ----------
+        plugin_name
+            Name of the plugin.
 
         Returns
         -------
@@ -336,5 +309,6 @@ class IngestExecutionContext:
 
 __all__ = [
     "IngestExecutionContext",
+    "PluginScratch",
     "ResourceNotFoundError",
 ]

@@ -327,8 +327,8 @@ class RecipeExecutor:
             gateway=context.gateway,
             snapshot=context.snapshot,
             run_id=run_id,
-            scope=_to_analytics_scope(context.scope),
         )
+        builder = builder.with_scope(_to_analytics_scope(context.scope))
         builder = builder.with_resources(context.resources)
 
         # Register resource providers
@@ -399,7 +399,7 @@ class RecipeExecutor:
                 "succeeded" if result.success else "failed"
             )
             error = result.error
-            row_counts = dict(result.row_counts)
+            row_counts = dict(result.row_counts) if result.row_counts is not None else {}
         except Exception as exc:
             log.exception("Plugin %s failed with exception", plugin_name)
             status = "failed"

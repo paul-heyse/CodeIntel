@@ -14,6 +14,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import uuid4
 
+from codeintel.core.plugins.sorting import (
+    build_provider_index_from_metadata,
+    topological_sort,
+)
 from codeintel.ingestion.plugins.ast_extract import AstExtractPlugin
 from codeintel.ingestion.plugins.config_plugin import ConfigIngestPlugin
 from codeintel.ingestion.plugins.coverage_plugin import CoverageIngestPlugin
@@ -442,11 +446,16 @@ class IngestPluginRegistry:
 
         return selected, tuple(skipped)
 
+    @staticmethod
     def _resolve_dependencies(
-        self,
         selected: dict[str, IngestPluginProtocol],
     ) -> dict[str, set[str]]:
         """Build dependency graph for selected plugins.
+
+        Parameters
+        ----------
+        selected
+            Selected plugins keyed by name.
 
         Returns
         -------
@@ -471,8 +480,11 @@ class IngestPluginRegistry:
                     raise ValueError(message)
                 dependencies[name].add(dep)
 
-        # Capability-based dependencies
-        provider_index = self._build_provider_index(selected)
+        # Capability-based dependencies using shared utility
+        provider_index = build_provider_index_from_metadata(
+            selected,
+            lambda p: p.metadata.provides,
+        )
         for name, plugin in selected.items():
             for requirement in plugin.metadata.requires:
                 providers = provider_index.get(requirement, set())
@@ -506,16 +518,22 @@ class IngestPluginRegistry:
     ) -> dict[str, set[str]]:
         """Build index of capability -> provider plugins.
 
+        Delegates to the shared utility from `codeintel.core.plugins.sorting`.
+
+        Parameters
+        ----------
+        selected
+            Selected plugins to index.
+
         Returns
         -------
         dict[str, set[str]]
             Mapping of capability name to provider plugin names.
         """
-        index: dict[str, set[str]] = {}
-        for name, plugin in selected.items():
-            for cap in plugin.metadata.provides:
-                index.setdefault(cap, set()).add(name)
-        return index
+        return build_provider_index_from_metadata(
+            selected,
+            lambda p: p.metadata.provides,
+        )
 
     @staticmethod
     def _topological_sort(
@@ -524,32 +542,25 @@ class IngestPluginRegistry:
     ) -> list[IngestPluginProtocol]:
         """Perform topological sort with cycle detection.
 
+        Delegates to the shared utility from `codeintel.core.plugins.sorting`.
+
+        Parameters
+        ----------
+        selected
+            Selected plugins keyed by name.
+        dependencies
+            Dependency graph.
+
         Returns
         -------
         list[IngestPluginProtocol]
             Plugins ordered based on dependencies.
+
+        Notes
+        -----
+        May raise `ValueError` if a dependency cycle is detected.
         """
-        ordered: list[IngestPluginProtocol] = []
-        temporary: set[str] = set()
-        permanent: set[str] = set()
-
-        def visit(name: str) -> None:
-            if name in permanent:
-                return
-            if name in temporary:
-                message = f"Dependency cycle detected involving ingest plugin: {name}"
-                raise ValueError(message)
-            temporary.add(name)
-            for dep in dependencies.get(name, set()):
-                visit(dep)
-            temporary.remove(name)
-            permanent.add(name)
-            ordered.append(selected[name])
-
-        for name in selected:
-            visit(name)
-
-        return ordered
+        return topological_sort(selected, dependencies)
 
     def dependency_graph(self) -> dict[str, tuple[str, ...]]:
         """Return mapping of plugin name to direct dependencies.

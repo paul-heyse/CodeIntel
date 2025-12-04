@@ -5,13 +5,28 @@ to declare specific capabilities. The runtime uses these traits to:
 - Automatically prepare contexts with required resources
 - Validate plugin requirements
 - Enable trait-based plugin discovery
+
+Domain-agnostic traits are imported from codeintel.core.plugins.traits.
+This module extends with ingestion-specific traits like ToolAwarePlugin
+and TrackerAwarePlugin.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
+# Re-export domain-agnostic traits from core
+from codeintel.core.plugins.traits import (
+    IsolatedPlugin,
+    ProgressReportingMixin,
+    ProgressReportingPlugin,
+    RetryableMixin,
+    RetryablePlugin,
+    is_isolated,
+    is_progress_reporting,
+    is_retryable,
+)
 from codeintel.ingestion.infrastructure.db_queries import safe_count
 
 if TYPE_CHECKING:
@@ -19,7 +34,7 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# Trait Protocols
+# Ingestion-Specific Trait Protocols
 # =============================================================================
 
 
@@ -108,92 +123,8 @@ class TrackerAwarePlugin(Protocol):
         ...
 
 
-@runtime_checkable
-class IsolatedPlugin(Protocol):
-    """Trait for plugins requiring process or thread isolation.
-
-    Plugins implementing this trait will be executed in a separate
-    process or thread to prevent interference with other plugins.
-    """
-
-    @property
-    def isolation_kind(self) -> Literal["process", "thread", "none"]:
-        """Return the isolation type required.
-
-        Returns
-        -------
-        Literal["process", "thread", "none"]
-            Type of isolation needed.
-        """
-        ...
-
-
-@runtime_checkable
-class RetryablePlugin(Protocol):
-    """Trait for plugins with custom retry behavior.
-
-    Plugins implementing this trait can specify which exceptions
-    are retryable and custom retry parameters.
-    """
-
-    @property
-    def retryable_exceptions(self) -> tuple[type[Exception], ...]:
-        """Return exception types that should trigger retry.
-
-        Returns
-        -------
-        tuple[type[Exception], ...]
-            Exception types that are retryable.
-        """
-        ...
-
-    @property
-    def max_retries(self) -> int:
-        """Return maximum retry attempts.
-
-        Returns
-        -------
-        int
-            Maximum number of retries.
-        """
-        ...
-
-    @property
-    def retry_backoff_ms(self) -> int:
-        """Return backoff time between retries.
-
-        Returns
-        -------
-        int
-            Backoff time in milliseconds.
-        """
-        ...
-
-
-@runtime_checkable
-class ProgressReportingPlugin(Protocol):
-    """Trait for plugins that report execution progress.
-
-    Plugins implementing this trait can provide progress updates
-    during long-running operations.
-    """
-
-    def set_progress_callback(
-        self,
-        callback: Callable[[float, str], None],
-    ) -> None:
-        """Set a callback for progress reporting.
-
-        Parameters
-        ----------
-        callback
-            Callback receiving progress (0-1) and status message.
-        """
-        ...
-
-
 # =============================================================================
-# Trait Mixins for Implementation
+# Ingestion-Specific Trait Mixins
 # =============================================================================
 
 
@@ -304,8 +235,7 @@ class WithDependencyData:
             Data from upstream plugin or default.
         """
         _ = self  # Required by interface, accessed via ctx
-        result = ctx.scratch.consume(key, default)
-        return cast("T | None", result)
+        return ctx.scratch.consume(key, default)
 
     def set_dependency_data(
         self,
@@ -381,38 +311,6 @@ def is_tracker_aware(plugin: object) -> bool:
     return isinstance(plugin, TrackerAwarePlugin)
 
 
-def is_isolated(plugin: object) -> bool:
-    """Check if a plugin implements IsolatedPlugin.
-
-    Parameters
-    ----------
-    plugin
-        Plugin to check.
-
-    Returns
-    -------
-    bool
-        True if plugin requires isolation.
-    """
-    return isinstance(plugin, IsolatedPlugin)
-
-
-def is_retryable(plugin: object) -> bool:
-    """Check if a plugin implements RetryablePlugin.
-
-    Parameters
-    ----------
-    plugin
-        Plugin to check.
-
-    Returns
-    -------
-    bool
-        True if plugin supports retries.
-    """
-    return isinstance(plugin, RetryablePlugin)
-
-
 def get_plugin_traits(plugin: object) -> tuple[str, ...]:
     """Return names of all traits implemented by a plugin.
 
@@ -432,7 +330,7 @@ def get_plugin_traits(plugin: object) -> tuple[str, ...]:
         (is_tracker_aware, "TrackerAware"),
         (is_isolated, "Isolated"),
         (is_retryable, "Retryable"),
-        (lambda p: isinstance(p, ProgressReportingPlugin), "ProgressReporting"),
+        (is_progress_reporting, "ProgressReporting"),
     )
     return tuple(name for predicate, name in checks if predicate(plugin))
 
@@ -440,7 +338,9 @@ def get_plugin_traits(plugin: object) -> tuple[str, ...]:
 __all__ = [
     "IncrementalIngestPlugin",
     "IsolatedPlugin",
+    "ProgressReportingMixin",
     "ProgressReportingPlugin",
+    "RetryableMixin",
     "RetryablePlugin",
     "ToolAwarePlugin",
     "TrackerAwarePlugin",
@@ -450,6 +350,7 @@ __all__ = [
     "get_plugin_traits",
     "is_incremental",
     "is_isolated",
+    "is_progress_reporting",
     "is_retryable",
     "is_tool_aware",
     "is_tracker_aware",

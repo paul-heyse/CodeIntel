@@ -14,14 +14,16 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, TypeVar, runtime_checkable
+from typing import Protocol, runtime_checkable
 from uuid import uuid4
 
 from codeintel.core.plugins.protocol import PluginMetadata
+from codeintel.core.plugins.sorting import (
+    build_provider_index_from_metadata,
+    topological_sort,
+)
 
 log = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 
 # =============================================================================
@@ -431,11 +433,16 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
 
         return selected, tuple(skipped)
 
-    def _resolve_dependencies(
-        self,
-        selected: dict[str, P],
+    @staticmethod
+    def _resolve_dependencies[Q: RegistrablePlugin](
+        selected: dict[str, Q],
     ) -> dict[str, set[str]]:
         """Build dependency graph for selected plugins.
+
+        Parameters
+        ----------
+        selected
+            Selected plugins keyed by name.
 
         Returns
         -------
@@ -452,8 +459,11 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
                 else:
                     log.debug("Skipping unmet dependency %s for plugin %s", dep, name)
 
-        # Capability-based dependencies
-        provider_index = self._build_provider_index(selected)
+        # Capability-based dependencies using shared utility
+        provider_index = build_provider_index_from_metadata(
+            selected,
+            lambda p: p.metadata.provides,
+        )
         for name, plugin in selected.items():
             for cap_name in plugin.metadata.requires:
                 providers = provider_index.get(cap_name, set())
@@ -473,35 +483,14 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         return dependencies
 
     @staticmethod
-    def _build_provider_index(
-        selected: Mapping[str, RegistrablePlugin],
-    ) -> dict[str, set[str]]:
-        """Build index of capability -> provider plugins.
-
-        Parameters
-        ----------
-        selected
-            Selected plugins to index.
-
-        Returns
-        -------
-        dict[str, set[str]]
-            Mapping of capability name to provider plugin names.
-        """
-        index: dict[str, set[str]] = {}
-        for name, plugin in selected.items():
-            for cap_name in plugin.metadata.provides:
-                index.setdefault(cap_name, set()).add(name)
-        return index
-
-    @staticmethod
     def _topological_sort[Q](
         selected: dict[str, Q],
         dependencies: dict[str, set[str]],
     ) -> list[Q]:
         """Perform topological sort with cycle detection.
 
-        Use iterative DFS with explicit stack to detect cycles and order plugins.
+        Delegates to the shared `topological_sort` utility from
+        `codeintel.core.plugins.sorting`.
 
         Parameters
         ----------
@@ -515,56 +504,11 @@ class BasePluginRegistry[P: RegistrablePlugin](ABC):
         list[Q]
             Plugins ordered based on dependencies.
 
-        Raises
-        ------
-        ValueError
-            If a dependency cycle is detected.
+        Notes
+        -----
+        May raise `ValueError` if a dependency cycle is detected.
         """
-        ordered: list[Q] = []
-        permanent: set[str] = set()
-        temporary: set[str] = set()
-
-        # Iterative DFS with explicit stack
-        for start in selected:
-            if start in permanent:
-                continue
-
-            # Stack entries: (name, deps_list, is_processing)
-            stack: list[tuple[str, list[str], bool]] = [
-                (start, list(dependencies.get(start, set())), False)
-            ]
-
-            while stack:
-                name, deps, processing = stack.pop()
-
-                if processing:
-                    # Finished processing all deps, mark permanent
-                    temporary.discard(name)
-                    permanent.add(name)
-                    ordered.append(selected[name])
-                    continue
-
-                if name in permanent:
-                    continue
-
-                if name in temporary:
-                    # Cycle detected - raise at function level
-                    message = f"Dependency cycle detected involving plugin: {name}"
-                    raise ValueError(message)
-
-                temporary.add(name)
-                # Push back with processing=True to finalize after deps
-                stack.append((name, [], True))
-
-                # Push dependencies to process (filter for unvisited)
-                unvisited_deps = [
-                    (dep, list(dependencies.get(dep, set())), False)
-                    for dep in deps
-                    if dep not in permanent
-                ]
-                stack.extend(unvisited_deps)
-
-        return ordered
+        return topological_sort(selected, dependencies)
 
     # -------------------------------------------------------------------------
     # Loading
