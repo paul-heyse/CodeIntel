@@ -27,7 +27,7 @@ from codeintel.analytics.runtime.context import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 MAX_BETWEENNESS_NODES = 1000
 

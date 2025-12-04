@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/profiles/build.py
+# hypothesis_version: 6.148.6
+
+[120000, '3.0.0', 'CatalogProvider', 'ModuleMapProvider', 'ProfilesPlugin', 'aggregation', 'analytics', 'callgraph', 'config', 'fatal', 'file_profile', 'function_profile', 'functions.contracts', 'functions.effects', 'functions.history', 'import_graph', 'module_profile', 'profiles', 'profiles.build', 'profiles_cfg', 'risk_factors.build', 'semantic.roles']

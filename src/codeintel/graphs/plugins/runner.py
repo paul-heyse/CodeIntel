@@ -181,11 +181,11 @@ class GraphPluginRunner:
             Ready-to-use execution context with resources registered.
         """
         resources = ResourceRegistry()
-        resources.register_provider(StorageResource(self.gateway, snapshot.repo_root))
+        resources.register(StorageResource, StorageResource(self.gateway, snapshot.repo_root))
 
         # Register catalog if provided - call .catalog() to get the FunctionCatalog
         if catalog_provider is not None:
-            resources.register_provider(CatalogResource(catalog_provider.catalog()))
+            resources.register(CatalogResource, CatalogResource(catalog_provider.catalog()))
 
         return GraphPluginExecutionContext(
             gateway=self.gateway,

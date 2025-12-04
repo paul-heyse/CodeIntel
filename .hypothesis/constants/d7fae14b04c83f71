@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/history/timeseries.py
+# hypothesis_version: 6.148.6
+
+[120000, '2.0.0', 'analytics', 'config', 'fatal', 'history', 'history.timeseries', 'history_cfg', 'history_timeseries', 'profiles.build', 'timeseries', 'tool_runner', 'trends']

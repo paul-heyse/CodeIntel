@@ -15,7 +15,7 @@ from codeintel.storage.metadata_bootstrap import (
     validate_normalized_macro_schemas,
 )
 from codeintel.storage.metadata_bootstrap import NORMALIZED_MACROS as BOOTSTRAP_MACROS
-from codeintel.storage.sql_helpers import safe_macro_call
+from codeintel.storage.sql_builder import safe_macro_call
 
 pytestmark = pytest.mark.smoke
 

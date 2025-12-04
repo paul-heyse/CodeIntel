@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/adapters/functions.py
+# hypothesis_version: 6.148.6
+
+['/', 'FunctionGoid', 'FunctionGoidLoader', 'FunctionMetricsRow', 'FunctionTypesAdapter', 'FunctionTypesRow', 'GoidRow', '\\', 'commit', 'end_line', 'goid_h128', 'kind', 'language', 'qualname', 'rel_path', 'repo', 'start_line', 'urn']

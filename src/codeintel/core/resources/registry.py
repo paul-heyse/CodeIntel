@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, TypeVar, cast
+from typing import Any, Protocol, TypeGuard, TypeVar, cast, runtime_checkable
 
 from codeintel.core.resources.protocol import ResourceError
 
@@ -20,6 +20,61 @@ log = logging.getLogger(__name__)
 
 T = TypeVar("T")
 K = TypeVar("K")
+
+
+# =============================================================================
+# Type Guards for Provider Protocol
+# =============================================================================
+
+
+@runtime_checkable
+class _Gettable(Protocol):
+    """Protocol for objects with a get() method."""
+
+    def get(self) -> object:
+        """Return the resource value."""
+        ...
+
+
+@runtime_checkable
+class _Invalidatable(Protocol):
+    """Protocol for objects with an invalidate() method."""
+
+    def invalidate(self) -> None:
+        """Invalidate the cached resource."""
+        ...
+
+
+def _is_gettable(obj: object) -> TypeGuard[_Gettable]:
+    """Type guard to check if object has a callable get() method.
+
+    Parameters
+    ----------
+    obj
+        Object to check.
+
+    Returns
+    -------
+    TypeGuard[_Gettable]
+        True if object implements get().
+    """
+    return isinstance(obj, _Gettable)
+
+
+def _is_invalidatable(obj: object) -> TypeGuard[_Invalidatable]:
+    """Type guard to check if object has a callable invalidate() method.
+
+    Parameters
+    ----------
+    obj
+        Object to check.
+
+    Returns
+    -------
+    TypeGuard[_Invalidatable]
+        True if object implements invalidate().
+    """
+    return isinstance(obj, _Invalidatable)
 
 
 class ResourceNotFoundError(ResourceError):
@@ -334,8 +389,8 @@ class ResourceRegistry:
             raise ResourceNotFoundError(resource_type)
         provider = self._providers[resource_type]
         # Call .get() if the provider has it, otherwise return the provider itself
-        if hasattr(provider, "get"):
-            return cast("T", provider.get())  # type: ignore[union-attr]
+        if _is_gettable(provider):
+            return cast("T", provider.get())
         return cast("T", provider)
 
     def require_or_none(self, resource_type: type[T]) -> T | None:
@@ -358,9 +413,9 @@ class ResourceRegistry:
         if provider is None:
             return None
         # Call .get() if available, with error handling
-        if hasattr(provider, "get"):
+        if _is_gettable(provider):
             try:
-                return cast("T", provider.get())  # type: ignore[union-attr]
+                return cast("T", provider.get())
             except ResourceError:
                 return None
         return cast("T | None", provider)
@@ -382,8 +437,8 @@ class ResourceRegistry:
 
         """
         provider = self.get_by_name(name)
-        if hasattr(provider, "get"):
-            return provider.get()  # type: ignore[union-attr]
+        if _is_gettable(provider):
+            return provider.get()
         return provider
 
     def has(self, resource_type: type) -> bool:
@@ -429,8 +484,8 @@ class ResourceRegistry:
         """
         if resource_type is not None:
             provider = self._providers.get(resource_type)
-            if provider is not None and hasattr(provider, "invalidate"):
-                provider.invalidate()  # type: ignore[union-attr]
+            if provider is not None and _is_invalidatable(provider):
+                provider.invalidate()
                 log.debug("Invalidated resource: %s", resource_type.__name__)
         else:
             # Collect all unique providers from both dicts (using id() for uniqueness)
@@ -439,8 +494,8 @@ class ResourceRegistry:
                 provider_id = id(provider)
                 if provider_id not in seen_ids:
                     seen_ids.add(provider_id)
-                    if hasattr(provider, "invalidate"):
-                        provider.invalidate()  # type: ignore[union-attr]
+                    if _is_invalidatable(provider):
+                        provider.invalidate()
             log.debug("Invalidated all resources")
 
     def clear(self) -> None:

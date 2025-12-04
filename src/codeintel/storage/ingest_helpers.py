@@ -8,7 +8,7 @@ from collections.abc import Iterable, Sequence
 from duckdb import DuckDBPyConnection
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
-from codeintel.storage.sql_helpers import build_insert_sql, quote_identifier
+from codeintel.storage.sql_builder import build_insert_sql, quote_identifier
 
 __all__ = ["macro_insert_rows"]
 

@@ -19,9 +19,9 @@ from codeintel.analytics.core.registry import (
     PluginRegistry,
     plugin,
 )
-from codeintel.core.plugins.functional import BaseFunctionalPlugin
 from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.plugins.functional import BaseFunctionalPlugin
 from tests._helpers.gateway import open_ingestion_gateway
 
 EXPECTED_TWO_PLUGINS = 2

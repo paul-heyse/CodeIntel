@@ -12,10 +12,10 @@ import duckdb
 from codeintel.storage.config import StorageConfig
 from codeintel.storage.contract_validation import validate_contract_or_raise
 from codeintel.storage.data_checks import table_has_rows_for_snapshot
+from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
 from codeintel.storage.ingest_helpers import macro_insert_rows
 from codeintel.storage.ingest_macros import assert_ingest_macros_present, ensure_ingest_macros
 from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
-from codeintel.storage.registry_helpers import DatasetRegistry, build_dataset_registry
 from codeintel.storage.run_tracking import PipelineRunTracking
 from codeintel.storage.schemas import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.views import create_all_views
@@ -934,7 +934,7 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
         _apply_schema_and_views(con, config)
         _ensure_macros_and_schema(con, config)
         bootstrap_metadata_datasets(con)
-    datasets = build_dataset_registry(con)
+    datasets = load_dataset_registry(con)
     validate_contract_or_raise(con)
     return _DuckDBGateway(config=config, datasets=datasets, con=con)
 

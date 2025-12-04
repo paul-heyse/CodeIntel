@@ -33,7 +33,7 @@ from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
 from codeintel.config import SubsystemsStepConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

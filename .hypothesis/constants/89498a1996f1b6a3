@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/runtime/timing.py
+# hypothesis_version: 6.148.6
+
+[1000000, 1000000000, 'T', 'TimingResult', 'measure_duration', 'measure_duration_ms', 'timed']

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/subsystems/build.py
+# hypothesis_version: 6.148.6
+
+[120000, '3.0.0', 'GraphProvider', 'SubsystemsPlugin', 'SubsystemsStepConfig', 'analytics', 'analytics.subsystems', 'architecture', 'config', 'core.modules', 'fatal', 'import_graph', 'modules', 'risk_factors.build', 'subsystem', 'subsystem_functions', 'subsystem_modules', 'subsystems', 'subsystems.build', 'subsystems_cfg', 'symbol_uses']

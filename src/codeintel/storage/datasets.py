@@ -15,6 +15,7 @@ __all__ = [
     "build_dataset_dependency_graph",
     "dataset_for_name",
     "dataset_for_table",
+    "describe_all_datasets",
     "describe_dataset",
     "list_dataset_specs",
     "load_dataset_registry",
@@ -102,6 +103,100 @@ class DatasetRegistry:
             message = f"Unknown dataset: {name}"
             raise KeyError(message)
         return ds.table_key
+
+    # -------------------------------------------------------------------------
+    # Compatibility properties (migrated from registry_helpers.DatasetRegistry)
+    # -------------------------------------------------------------------------
+
+    @property
+    def mapping(self) -> Mapping[str, str]:
+        """
+        Return name -> table_key mapping for compatibility.
+
+        Returns
+        -------
+        Mapping[str, str]
+            Mapping from dataset name to fully qualified table key.
+        """
+        return {name: ds.table_key for name, ds in self.by_name.items()}
+
+    @property
+    def tables(self) -> tuple[str, ...]:
+        """
+        Return table dataset names (non-views).
+
+        Returns
+        -------
+        tuple[str, ...]
+            Dataset names that are base tables (not views).
+        """
+        return tuple(name for name, ds in self.by_name.items() if not ds.is_view)
+
+    @property
+    def views(self) -> tuple[str, ...]:
+        """
+        Return view dataset names.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Dataset names that are views.
+        """
+        return tuple(name for name, ds in self.by_name.items() if ds.is_view)
+
+    @property
+    def meta(self) -> Mapping[str, DatasetContract]:
+        """
+        Return name -> contract mapping (alias for by_name).
+
+        Returns
+        -------
+        Mapping[str, DatasetContract]
+            Mapping from dataset name to DatasetContract.
+        """
+        return self.by_name
+
+    @property
+    def jsonl_mapping(self) -> Mapping[str, str]:
+        """
+        Return jsonl_datasets (alias for compatibility).
+
+        Returns
+        -------
+        Mapping[str, str]
+            Mapping from table key to JSONL filename.
+        """
+        return self.jsonl_datasets
+
+    @property
+    def parquet_mapping(self) -> Mapping[str, str]:
+        """
+        Return parquet_datasets (alias for compatibility).
+
+        Returns
+        -------
+        Mapping[str, str]
+            Mapping from table key to Parquet filename.
+        """
+        return self.parquet_datasets
+
+    def table_for_name(self, name: str) -> str:
+        """
+        Return table_key for dataset name (alias for resolve_table_key).
+
+        Delegates to :meth:`resolve_table_key` for actual resolution.
+
+        Parameters
+        ----------
+        name
+            Dataset name to resolve.
+
+        Returns
+        -------
+        str
+            Fully qualified table key.
+        """
+        return self.resolve_table_key(name)
 
 
 def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
@@ -297,3 +392,21 @@ def build_dataset_dependency_graph(registry: DatasetRegistry) -> dict[str, tuple
         Dependency mapping keyed by dataset name.
     """
     return registry.dataset_dependencies()
+
+
+def describe_all_datasets(con: DuckDBPyConnection) -> list[dict[str, object]]:
+    """
+    Return a JSON-serializable description of all dataset specs for a database.
+
+    Parameters
+    ----------
+    con
+        Active DuckDB connection with metadata tables initialized.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        Dataset descriptions derived from the active connection.
+    """
+    registry = load_dataset_registry(con)
+    return list_dataset_specs(registry)

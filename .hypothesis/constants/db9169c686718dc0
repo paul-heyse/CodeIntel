@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/validation/checks/database.py
+# hypothesis_version: 6.148.6
+
+[', ', 'callsite_line', 'check_name', 'commit', 'context', 'detail', 'end_line', 'function_count', 'goid_count', 'module has no GOIDs', 'orphan_module', 'path', 'repo', 'severity', 'start_line', 'warn_orphan_modules', 'warning']

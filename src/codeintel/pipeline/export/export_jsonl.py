@@ -36,7 +36,7 @@ from codeintel.storage.gateway import (
     StorageGateway,
 )
 from codeintel.storage.metadata_bootstrap import NORMALIZED_MACROS as BOOTSTRAP_MACROS
-from codeintel.storage.sql_helpers import macro_select_sql, prepared_statements_dynamic
+from codeintel.storage.sql_builder import macro_select_sql, prepared_statements_dynamic
 
 log = logging.getLogger(__name__)
 

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/graphs/structural.py
+# hypothesis_version: 6.148.6
+
+['structural_metrics', 'weight']

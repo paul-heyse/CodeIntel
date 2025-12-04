@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from uuid import uuid4
 
 from codeintel.core.plugins.registry import BasePluginRegistry
+from codeintel.core.plugins.sorting import build_provider_index_from_metadata, topological_sort
 from codeintel.core.singleton import SingletonHolder
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
@@ -174,8 +175,8 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
         # Build dependency graph
         dependencies = self._resolve_graph_dependencies(selected)
 
-        # Topological sort (reuse base class static method)
-        ordered = self._topological_sort(selected, dependencies)
+        # Topological sort using shared utility
+        ordered = topological_sort(selected, dependencies)
 
         return GraphPluginPlan(
             plugins=tuple(ordered),
@@ -236,11 +237,16 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
 
         return selected, tuple(skipped)
 
+    @staticmethod
     def _resolve_graph_dependencies(
-        self,
         selected: dict[str, GraphPluginProtocol],
     ) -> dict[str, set[str]]:
         """Build dependency graph for selected plugins.
+
+        Parameters
+        ----------
+        selected
+            Selected plugins keyed by name.
 
         Returns
         -------
@@ -265,8 +271,11 @@ class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
                     raise ValueError(message)
                 dependencies[name].add(dep)
 
-        # Capability-based dependencies
-        provider_index = self._build_provider_index(selected)
+        # Capability-based dependencies using shared utility
+        provider_index = build_provider_index_from_metadata(
+            selected,
+            get_provides=lambda p: p.metadata.provides,
+        )
         for name, plugin in selected.items():
             for requirement in plugin.metadata.requires:
                 providers = provider_index.get(requirement, set())

@@ -1,65 +1,65 @@
 """Telemetry utilities for graph plugin execution.
 
-This module provides telemetry integration for graph plugin execution,
-including span management and metric recording without any dependency
-on the analytics subsystem.
+This module provides graph-specific telemetry that extends the base
+RuntimeTelemetry from core with graph-specific span tracking and metrics.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
-try:
-    from opentelemetry import metrics, trace
-    from opentelemetry.trace import StatusCode
-except ImportError:  # pragma: no cover - optional dependency
-    metrics = None
-    trace = None
-    StatusCode = None
+from codeintel.core.runtime.telemetry import (
+    OTEL_AVAILABLE,
+    PluginSpan,
+    RuntimeTelemetry,
+    TelemetryConfig,
+)
 
 if TYPE_CHECKING:
+    from opentelemetry.trace import StatusCode as _StatusCodeType
+
     from codeintel.config.steps_graphs import GraphRunScope
     from codeintel.core.plugins.result import PluginExecutionRecord
     from codeintel.graphs.core.context import GraphPluginExecutionContext
     from codeintel.graphs.core.protocol import GraphPluginProtocol
 
+# Runtime-safe optional import for StatusCode
+# Use _StatusCode to access; will be None if OTel not available
+_StatusCode: type[_StatusCodeType] | None = None
+if OTEL_AVAILABLE:
+    from opentelemetry.trace import StatusCode as _StatusCode
+
 log = logging.getLogger(__name__)
 
-
-@dataclass
-class GraphPluginSpan:
-    """Represent a telemetry span for plugin execution.
-
-    Attributes
-    ----------
-    plugin_name
-        Name of the plugin.
-    run_id
-        Run identifier.
-    start_time_ns
-        Start time in nanoseconds (monotonic).
-    attributes
-        Span attributes.
-    context_data
-        Additional context data.
-    """
-
-    plugin_name: str
-    run_id: str
-    start_time_ns: int
-    attributes: dict[str, Any] = field(default_factory=dict)
-    context_data: dict[str, Any] = field(default_factory=dict)
+# Alias for backwards compatibility
+GraphPluginSpan = PluginSpan
 
 
-class GraphRuntimeTelemetry:
+class GraphTelemetryConfig(TelemetryConfig):
+    """Configuration for graph telemetry."""
+
+    service_name: str = "codeintel.graphs"
+
+
+class GraphRuntimeTelemetry(RuntimeTelemetry):
     """Telemetry manager for graph plugin execution.
 
-    Handle span creation, metric recording, and integration with
-    OpenTelemetry (when available).
+    Extend the base RuntimeTelemetry with graph-specific methods for
+    tracking plugin execution with context information, run-level spans,
+    and scope-aware metrics.
+
+    Examples
+    --------
+    >>> telemetry = get_graph_telemetry()
+    >>> span = telemetry.start_plugin(plugin, run_id, ctx)
+    >>> try:
+    ...     result = plugin.execute(ctx)
+    ...     telemetry.finish_plugin(span, record)
+    ... except Exception:
+    ...     telemetry.finish_plugin(span, record)
     """
 
     def __init__(
@@ -69,61 +69,31 @@ class GraphRuntimeTelemetry:
         enable_tracing: bool = True,
         enable_metrics: bool = True,
     ) -> None:
-        """Initialize telemetry.
+        """Initialize graph telemetry.
 
         Parameters
         ----------
         service_name
-            Service name for traces.
+            Service name for traces and metrics.
         enable_tracing
             Whether tracing is enabled.
         enable_metrics
             Whether metrics are enabled.
         """
-        self._service_name = service_name
-        self._tracing_enabled = enable_tracing
-        self._metrics_enabled = enable_metrics
-        self._tracer: Any = None
-        self._meter: Any = None
-        self._plugin_duration_histogram: Any = None
-        self._plugin_success_counter: Any = None
-        self._plugin_failure_counter: Any = None
-        self._init_otel()
-
-    def _init_otel(self) -> None:
-        """Initialize OpenTelemetry integration if available."""
-        if trace is None or metrics is None:
-            log.debug("OpenTelemetry not available; telemetry disabled")
-            self._tracing_enabled = False
-            self._metrics_enabled = False
-            return
-
-        if self._tracing_enabled:
-            self._tracer = trace.get_tracer(self._service_name)
-
-        if self._metrics_enabled:
-            self._meter = metrics.get_meter(self._service_name)
-            self._plugin_duration_histogram = self._meter.create_histogram(
-                name="graph_plugin_duration_ms",
-                description="Duration of graph plugin execution in milliseconds",
-                unit="ms",
-            )
-            self._plugin_success_counter = self._meter.create_counter(
-                name="graph_plugin_success_total",
-                description="Total successful graph plugin executions",
-            )
-            self._plugin_failure_counter = self._meter.create_counter(
-                name="graph_plugin_failure_total",
-                description="Total failed graph plugin executions",
-            )
+        config = TelemetryConfig(
+            service_name=service_name,
+            enable_tracing=enable_tracing,
+            enable_metrics=enable_metrics,
+        )
+        super().__init__(config)
 
     def start_plugin(
         self,
         plugin: GraphPluginProtocol,
         run_id: str,
         ctx: GraphPluginExecutionContext,
-    ) -> GraphPluginSpan:
-        """Start a telemetry span for plugin execution.
+    ) -> PluginSpan:
+        """Start a telemetry span for plugin execution with graph context.
 
         Parameters
         ----------
@@ -132,17 +102,16 @@ class GraphRuntimeTelemetry:
         run_id
             Run identifier.
         ctx
-            Execution context.
+            Execution context with repo and commit info.
 
         Returns
         -------
-        GraphPluginSpan
+        PluginSpan
             Span object for tracking execution.
         """
-        span = GraphPluginSpan(
-            plugin_name=plugin.metadata.name,
-            run_id=run_id,
-            start_time_ns=time.perf_counter_ns(),
+        return self.start_span(
+            plugin.metadata.name,
+            run_id,
             attributes={
                 "plugin.name": plugin.metadata.name,
                 "plugin.kind": plugin.metadata.kind,
@@ -153,21 +122,9 @@ class GraphRuntimeTelemetry:
             },
         )
 
-        if self._tracer is not None:
-            try:
-                otel_span = self._tracer.start_span(
-                    f"graph.plugin.{plugin.metadata.name}",
-                    attributes=span.attributes,
-                )
-                span.context_data["otel_span"] = otel_span
-            except (ImportError, AttributeError):
-                span.context_data["otel_span"] = None
-
-        return span
-
     @staticmethod
     def finish_plugin(
-        span: GraphPluginSpan,
+        span: PluginSpan,
         record: PluginExecutionRecord,
     ) -> None:
         """Finish a telemetry span with execution results.
@@ -196,11 +153,11 @@ class GraphRuntimeTelemetry:
                 span_any.set_attribute("status", record.status)
                 span_any.set_attribute("duration_ms", duration_ms)
                 span_any.set_attribute("attempts", record.attempts)
-                if record.error and StatusCode is not None:
+                if record.error and _StatusCode is not None:
                     span_any.set_attribute("error", record.error)
-                    span_any.set_status(StatusCode.ERROR, record.error)
-                elif StatusCode is not None:
-                    span_any.set_status(StatusCode.OK)
+                    span_any.set_status(_StatusCode.ERROR, record.error)
+                elif _StatusCode is not None:
+                    span_any.set_status(_StatusCode.OK)
                 span_any.end()
             except AttributeError:
                 pass
@@ -210,16 +167,16 @@ class GraphRuntimeTelemetry:
         record: PluginExecutionRecord,
         scope: GraphRunScope | None,
     ) -> None:
-        """Record execution metrics.
+        """Record execution metrics with optional scope information.
 
         Parameters
         ----------
         record
             Execution record with results.
         scope
-            Execution scope.
+            Optional execution scope for additional labels.
         """
-        if not self._metrics_enabled:
+        if not self.metrics_enabled:
             return
 
         labels: dict[str, str | int | float | bool] = {
@@ -233,13 +190,20 @@ class GraphRuntimeTelemetry:
                 labels["scope_module_count"] = len(scope.modules)
 
         try:
-            if self._plugin_duration_histogram is not None:
-                self._plugin_duration_histogram.record(record.duration_ms, labels)
+            if self._otel_duration_histogram is not None:
+                self._otel_duration_histogram.record(record.duration_ms, labels)
 
-            if record.status == "succeeded" and self._plugin_success_counter is not None:
-                self._plugin_success_counter.add(1, labels)
-            elif record.status == "failed" and self._plugin_failure_counter is not None:
-                self._plugin_failure_counter.add(1, labels)
+            if self._prom_duration_histogram is not None:
+                self._prom_duration_histogram.labels(
+                    plugin_name=record.plugin_name,
+                    status=record.status,
+                ).observe(record.duration_ms / 1000)  # Convert to seconds
+
+            if self._prom_executions_counter is not None:
+                self._prom_executions_counter.labels(
+                    plugin_name=record.plugin_name,
+                    status=record.status,
+                ).inc()
         except (AttributeError, TypeError):
             log.debug("graph_telemetry.metrics.record_failed plugin=%s", record.plugin_name)
 
@@ -249,7 +213,7 @@ class GraphRuntimeTelemetry:
         repo: str,
         commit: str,
         plugin_count: int,
-    ) -> GraphPluginSpan:
+    ) -> PluginSpan:
         """Start a telemetry span for an entire plugin run.
 
         Parameters
@@ -265,36 +229,22 @@ class GraphRuntimeTelemetry:
 
         Returns
         -------
-        GraphPluginSpan
+        PluginSpan
             Span for the overall run.
         """
-        span = GraphPluginSpan(
-            plugin_name="__run__",
-            run_id=run_id,
-            start_time_ns=time.perf_counter_ns(),
+        return self.start_span(
+            "__run__",
+            run_id,
             attributes={
                 "repo": repo,
                 "commit": commit,
                 "plugin_count": plugin_count,
-                "run_id": run_id,
             },
         )
 
-        if self._tracer is not None:
-            try:
-                otel_span = self._tracer.start_span(
-                    "graph.plugin_run",
-                    attributes=span.attributes,
-                )
-                span.context_data["otel_span"] = otel_span
-            except (ImportError, AttributeError):
-                pass
-
-        return span
-
     @staticmethod
     def finish_run(
-        span: GraphPluginSpan,
+        span: PluginSpan,
         success_count: int,
         failure_count: int,
         skip_count: int,
@@ -331,8 +281,8 @@ class GraphRuntimeTelemetry:
                 otel_span.set_attribute("failure_count", failure_count)
                 otel_span.set_attribute("skip_count", skip_count)
                 otel_span.set_attribute("duration_ms", duration_ms)
-                if StatusCode is not None:
-                    status = StatusCode.OK if failure_count == 0 else StatusCode.ERROR
+                if _StatusCode is not None:
+                    status = _StatusCode.OK if failure_count == 0 else _StatusCode.ERROR
                     otel_span.set_status(status)
                 otel_span.end()
             except AttributeError:
@@ -340,12 +290,12 @@ class GraphRuntimeTelemetry:
 
 
 def get_graph_telemetry() -> GraphRuntimeTelemetry:
-    """Return the default graph telemetry instance.
+    """Return the default graph telemetry singleton.
 
     Returns
     -------
     GraphRuntimeTelemetry
-        Singleton telemetry instance.
+        Shared telemetry instance.
     """
     return _telemetry_singleton()
 
@@ -358,5 +308,6 @@ def _telemetry_singleton() -> GraphRuntimeTelemetry:
 __all__ = [
     "GraphPluginSpan",
     "GraphRuntimeTelemetry",
+    "GraphTelemetryConfig",
     "get_graph_telemetry",
 ]

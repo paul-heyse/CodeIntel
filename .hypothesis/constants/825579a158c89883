@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/middleware/tracing.py
+# hypothesis_version: 6.148.6
+
+[0.0, 1000, 'InMemoryExporter', 'Span', 'SpanContext', 'SpanExporter', 'TracingMiddleware', 'commit', 'error', 'error.message', 'error.type', 'no-run-id', 'ok', 'plugin.name', 'plugin.stage', 'plugin.version', 'repo', 'result.row_counts', 'result.success', 'result.total_rows', 'run.id', 'tracing']

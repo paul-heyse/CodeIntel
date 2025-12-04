@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/datasets.py
+# hypothesis_version: 6.148.6
+
+['.', 'DatasetRegistry', 'capabilities', 'dataset_for_name', 'dataset_for_table', 'describe_dataset', 'description', 'docs.', 'family', 'freshness_sla', 'has_row_binding', 'is_view', 'json_schema_id', 'jsonl_filename', 'list_dataset_specs', 'name', 'owner', 'parquet_filename', 'retention_policy', 'schema_columns', 'schema_version', 'stable_id', 'str | None', 'table_key', 'validation_profile']

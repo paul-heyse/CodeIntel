@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/callgraph/resolution.py
+# hypothesis_version: 6.148.6
+
+[0.0, 0.55, 0.6, 0.7, 0.75, 0.8, '.', 'attr_chain', 'build_callee_map', 'build_evidence', 'callee_name', 'collect_aliases', 'collect_import_edges', 'cst.CSTNode', 'global_name', 'handle_import', 'handle_import_from', 'import_alias', 'local_attr', 'local_name', 'resolve_callee', 'resolve_via_scip', 'resolved_via', 'scip_candidates', 'scip_def_path', 'unresolved']

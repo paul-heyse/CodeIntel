@@ -28,6 +28,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
+from codeintel.core.runtime.retry import (
+    PLUGIN_RETRY_POLICY,
+    RetryPolicy,
+    get_retry_policy_for_retryable,
+)
+
 if TYPE_CHECKING:
     from codeintel.core.plugins.context import PluginScratch
 
@@ -143,11 +149,26 @@ class CacheAwarePlugin(Protocol):
 class RetryablePlugin(Protocol):
     """Trait for plugins with custom retry behavior.
 
-    Plugins implementing this trait can specify which exceptions
-    are retryable and custom retry parameters.
+    Plugins implementing this trait can specify retry configuration
+    either through the new `retry_policy` property (recommended) or
+    through legacy individual properties for backwards compatibility.
 
-    Example
-    -------
+    The `retry_policy` property returns a `RetryPolicy` instance from
+    `codeintel.core.runtime.retry` which provides tenacity-based retries.
+
+    Example (new style with RetryPolicy)
+    ------------------------------------
+    >>> from codeintel.core.runtime.retry import RetryPolicy
+    >>> class NetworkPlugin(BasePlugin, RetryablePlugin):
+    ...     @property
+    ...     def retry_policy(self) -> RetryPolicy:
+    ...         return RetryPolicy(
+    ...             max_attempts=5,
+    ...             retryable_exceptions=(TimeoutError, ConnectionError),
+    ...         )
+
+    Example (legacy style)
+    ----------------------
     >>> class NetworkPlugin(BasePlugin, RetryablePlugin):
     ...     @property
     ...     def retryable_exceptions(self) -> tuple[type[Exception], ...]:
@@ -337,7 +358,9 @@ class RetryableMixin:
     """Mixin providing retry behavior to plugins.
 
     Use this mixin to implement RetryablePlugin with configurable
-    retry parameters via class attributes.
+    retry parameters via class attributes. The mixin supports both
+    the legacy individual property approach and the new RetryPolicy
+    approach.
 
     Class Attributes
     ----------------
@@ -347,13 +370,21 @@ class RetryableMixin:
         Maximum number of retry attempts.
     _retry_backoff_ms
         Backoff time between retries in milliseconds.
+    _retry_policy
+        Optional pre-configured RetryPolicy (overrides individual attrs).
 
-    Example
-    -------
+    Example (using individual attributes)
+    -------------------------------------
     >>> class MyPlugin(BasePlugin, RetryableMixin):
     ...     _retryable_exceptions = (TimeoutError,)
     ...     _max_retries = 5
     ...     _retry_backoff_ms = 2000
+
+    Example (using RetryPolicy)
+    ---------------------------
+    >>> from codeintel.core.runtime.retry import RetryPolicy
+    >>> class MyPlugin(BasePlugin, RetryableMixin):
+    ...     _retry_policy = RetryPolicy(max_attempts=5, use_jitter=True)
     """
 
     _retryable_exceptions: tuple[type[Exception], ...] = (
@@ -363,6 +394,7 @@ class RetryableMixin:
     )
     _max_retries: int = 3
     _retry_backoff_ms: int = 1000
+    _retry_policy: RetryPolicy | None = None
 
     @property
     def retryable_exceptions(self) -> tuple[type[Exception], ...]:
@@ -396,6 +428,19 @@ class RetryableMixin:
             Backoff time between retries.
         """
         return self._retry_backoff_ms
+
+    def get_retry_policy(self) -> RetryPolicy:
+        """Return the retry policy for this plugin.
+
+        If `_retry_policy` is set, returns it directly. Otherwise,
+        constructs a RetryPolicy from the individual attributes.
+
+        Returns
+        -------
+        RetryPolicy
+            Configured retry policy.
+        """
+        return _build_retry_policy_from_mixin(self)
 
 
 class ProgressReportingMixin:
@@ -505,6 +550,31 @@ class WithDependencyData:
 
 
 # =============================================================================
+# Helper Functions
+# =============================================================================
+
+
+def _build_retry_policy_from_mixin(mixin: RetryableMixin) -> RetryPolicy:
+    """Build a RetryPolicy from a RetryableMixin's attributes.
+
+    Parameters
+    ----------
+    mixin
+        The mixin instance to build policy from.
+
+    Returns
+    -------
+    RetryPolicy
+        Configured retry policy instance.
+    """
+    return get_retry_policy_for_retryable(
+        max_retries=mixin.max_retries,
+        retry_backoff_ms=mixin.retry_backoff_ms,
+        retryable_exceptions=mixin.retryable_exceptions,
+    )
+
+
+# =============================================================================
 # Trait Detection Utilities
 # =============================================================================
 
@@ -589,6 +659,50 @@ def is_incremental(plugin: object) -> bool:
     return isinstance(plugin, IncrementalPlugin)
 
 
+def get_retry_policy(plugin: object) -> RetryPolicy:
+    """Get a RetryPolicy for a plugin.
+
+    If the plugin implements RetryablePlugin and has a `get_retry_policy`
+    method, calls that. If it has individual retry attributes,
+    constructs a policy from them. Otherwise returns the default
+    plugin retry policy.
+
+    Parameters
+    ----------
+    plugin
+        Plugin to get retry policy for.
+
+    Returns
+    -------
+    RetryPolicy
+        Retry policy for the plugin.
+
+    Examples
+    --------
+    >>> policy = get_retry_policy(my_plugin)
+    >>> for attempt in policy.create_retrying():
+    ...     with attempt:
+    ...         plugin.execute(ctx)
+    """
+    # Check for get_retry_policy method first (new style mixin)
+    method = getattr(plugin, "get_retry_policy", None)
+    if method is not None and callable(method):
+        policy = method()
+        if isinstance(policy, RetryPolicy):
+            return policy
+
+    # Check for legacy individual attributes (RetryablePlugin protocol)
+    if isinstance(plugin, RetryablePlugin):
+        return get_retry_policy_for_retryable(
+            max_retries=plugin.max_retries,
+            retry_backoff_ms=plugin.retry_backoff_ms,
+            retryable_exceptions=plugin.retryable_exceptions,
+        )
+
+    # Return default policy
+    return PLUGIN_RETRY_POLICY
+
+
 __all__ = [
     "CacheAwareMixin",
     "CacheAwarePlugin",
@@ -600,6 +714,7 @@ __all__ = [
     "RetryablePlugin",
     "ScratchContext",
     "WithDependencyData",
+    "get_retry_policy",
     "is_cache_aware",
     "is_incremental",
     "is_isolated",

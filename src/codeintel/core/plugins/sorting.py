@@ -146,6 +146,7 @@ def build_provider_index[T: CapabilityProvider](
     >>> class Plugin:
     ...     def __init__(self, provides):
     ...         self._provides = provides
+    ...
     ...     @property
     ...     def provides(self):
     ...         return self._provides
@@ -188,7 +189,7 @@ def build_provider_index_from_metadata[T](
     --------
     >>> class Plugin:
     ...     def __init__(self, provides):
-    ...         self.meta = type('Meta', (), {'provides': provides})()
+    ...         self.meta = type("Meta", (), {"provides": provides})()
     >>> plugins = {"a": Plugin(("cap1",)), "b": Plugin(("cap1", "cap2"))}
     >>> index = build_provider_index_from_metadata(plugins, lambda p: p.meta.provides)
     >>> sorted(index["cap1"])

@@ -27,12 +27,12 @@ from codeintel.storage.ingest_macros import (
     list_ingest_macros,
 )
 from codeintel.storage.schemas import apply_all_schemas
-from codeintel.storage.sql_builder import render_sql
-from codeintel.storage.sql_helpers import (
+from codeintel.storage.sql_builder import (
     ensure_schema as _ensure_schema,
 )
-from codeintel.storage.sql_helpers import (
+from codeintel.storage.sql_builder import (
     prepared_statements_dynamic,
+    render_sql,
 )
 
 if TYPE_CHECKING:

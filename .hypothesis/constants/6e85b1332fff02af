@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/traits.py
+# hypothesis_version: 6.148.6
+
+[1000, 'CacheAwareMixin', 'CacheAwarePlugin', 'IncrementalPlugin', 'IsolatedPlugin', 'RetryableMixin', 'RetryablePlugin', 'ScratchContext', 'WithDependencyData', 'get_retry_policy', 'is_cache_aware', 'is_incremental', 'is_isolated', 'is_retryable', 'none', 'process', 'thread']

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.adapters.base import BatchAdapter
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.storage.sql_helpers import ensure_schema
+from codeintel.storage.sql_builder import ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
