@@ -8,9 +8,7 @@ from dataclasses import dataclass
 import pytest
 
 from codeintel.analytics.core.plugin_protocol import (
-    CapabilityKind,
     InputSource,
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -18,31 +16,6 @@ from codeintel.analytics.core.plugin_protocol import (
     PluginResult,
     ValidationResult,
 )
-from tests._helpers.assertions import assert_cannot_setattr
-
-
-@pytest.mark.parametrize(
-    ("name", "kind", "expected_kind"),
-    [
-        ("analytics.function_metrics", "dataset", "dataset"),
-        ("test.cap", None, "dataset"),
-    ],
-)
-def test_plugin_capability_kind(
-    name: str, kind: CapabilityKind | None, expected_kind: CapabilityKind
-) -> None:
-    """Capabilities default to dataset kind unless overridden."""
-    cap = PluginCapability(name=name, kind=kind or "dataset")
-
-    assert cap.name == name
-    assert cap.kind == expected_kind
-
-
-def test_plugin_capability_is_frozen() -> None:
-    """Capabilities should be immutable after creation."""
-    cap = PluginCapability(name="test")
-
-    assert_cannot_setattr(cap, "name", "other")
 
 
 @dataclass(frozen=True)
@@ -259,6 +232,7 @@ def test_plugin_metadata_minimal() -> None:
     meta = PluginMetadata(
         name="test.plugin",
         description="A test plugin",
+        kind="analytics",
         stage="function",
     )
 
@@ -275,14 +249,15 @@ def test_plugin_metadata_full() -> None:
     meta = PluginMetadata(
         name="full.plugin",
         description="Full plugin",
+        kind="analytics",
         stage="graph",
         version="2.0.0",
         enabled_by_default=False,
         severity="soft_fail",
         inputs=(PluginInputSpec("cfg", "Config"),),
         outputs=(PluginOutputSpec("out", tables=("t1",)),),
-        capabilities_provided=(PluginCapability("cap1"),),
-        capabilities_required=(PluginCapability("cap2"),),
+        provides=("cap1",),
+        requires=("cap2",),
         depends_on=("other.plugin",),
         resource_hints=PluginResourceHints(max_runtime_ms=1000),
         requires_isolation=True,
@@ -296,8 +271,8 @@ def test_plugin_metadata_full() -> None:
     assert meta.severity == "soft_fail"
     assert len(meta.inputs) == 1
     assert len(meta.outputs) == 1
-    assert len(meta.capabilities_provided) == 1
-    assert len(meta.capabilities_required) == 1
+    assert len(meta.provides) == 1
+    assert len(meta.requires) == 1
     assert meta.depends_on == ("other.plugin",)
     assert meta.resource_hints is not None
     assert meta.requires_isolation is True

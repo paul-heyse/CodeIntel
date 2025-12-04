@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/recipes/registry.py
+# hypothesis_version: 6.148.5
+
+['RecipeRegistry', 'get_recipe_registry', 'register_recipe']

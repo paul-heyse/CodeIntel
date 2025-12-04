@@ -8,7 +8,6 @@ Adapters
 --------
 - DuckDBStorageAdapter: StoragePort implementation using DuckDB
 - LibCSTParsingAdapter: ParsingPort implementation using LibCST
-- CatalogAdapter: CatalogPort implementation wrapping FunctionCatalog
 - NxEngineAdapter: EnginePort implementation using NxGraphEngine
 - CallgraphPersistence: Persistence operations for call graph edges
 
@@ -36,13 +35,11 @@ from codeintel.graphs.adapters.callgraph_persistence import (
     default_edge_key,
     persist_call_graph_edges,
 )
-from codeintel.graphs.adapters.catalog_adapter import CatalogAdapter
 from codeintel.graphs.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.graphs.adapters.libcst_parsing import LibCSTParsingAdapter
 from codeintel.graphs.adapters.nx_engine_adapter import NxEngineAdapter
 
 __all__ = [
-    "CatalogAdapter",
     "DuckDBStorageAdapter",
     "LibCSTParsingAdapter",
     "NxEngineAdapter",

@@ -24,7 +24,7 @@ from codeintel.analytics.core.plugin_protocol import (
 )
 from codeintel.analytics.core.registry import PluginRegistry, get_registry
 from codeintel.analytics.recipes.model import (
-    AnalyticsRecipe,
+    Recipe,
     RecipeExecutionReport,
     RecipePluginRecord,
     RecipeScope,
@@ -96,7 +96,7 @@ class RecipeExecutionPlan:
         Merged configs for each plugin.
     """
 
-    recipe: AnalyticsRecipe
+    recipe: Recipe
     plugins: tuple[AnalyticsPluginProtocol, ...]
     run_id: str
     resolved_configs: Mapping[str, Mapping[str, object]]
@@ -131,7 +131,7 @@ class RecipeExecutor:
 
     def plan(
         self,
-        recipe: str | AnalyticsRecipe,
+        recipe: str | Recipe,
         *,
         config_overrides: Mapping[str, Mapping[str, object]] | None = None,
     ) -> RecipeExecutionPlan:
@@ -162,7 +162,7 @@ class RecipeExecutor:
 
     def execute(
         self,
-        recipe: str | AnalyticsRecipe,
+        recipe: str | Recipe,
         context: RecipeExecutionContext,
         *,
         config_overrides: Mapping[str, Mapping[str, object]] | None = None,
@@ -186,21 +186,21 @@ class RecipeExecutor:
         plan = self.plan(recipe, config_overrides=config_overrides)
         return self._execute_plan(plan, context)
 
-    def _resolve_recipe(self, recipe: str | AnalyticsRecipe) -> AnalyticsRecipe:
+    def _resolve_recipe(self, recipe: str | Recipe) -> Recipe:
         """Resolve a recipe reference to an instance.
 
         Returns
         -------
-        AnalyticsRecipe
+        Recipe
             Resolved recipe instance.
         """
-        if isinstance(recipe, AnalyticsRecipe):
+        if isinstance(recipe, Recipe):
             return recipe
         return self._recipe_registry.get(recipe)
 
     def _resolve_plugins(
         self,
-        recipe: AnalyticsRecipe,
+        recipe: Recipe,
     ) -> tuple[AnalyticsPluginProtocol, ...]:
         """Resolve and order plugins for a recipe.
 
@@ -214,7 +214,7 @@ class RecipeExecutor:
 
     @staticmethod
     def merge_configs(
-        recipe: AnalyticsRecipe,
+        recipe: Recipe,
         overrides: Mapping[str, Mapping[str, object]] | None,
     ) -> dict[str, dict[str, object]]:
         """Merge recipe default configs with overrides.
@@ -276,7 +276,7 @@ class RecipeExecutor:
             records.append(record)
 
             if record.status == "failed":
-                if plan.recipe.fail_fast:
+                if plan.recipe.options.fail_fast:
                     overall_status = "failed"
                     overall_error = f"Plugin {plugin_name} failed: {record.error}"
                     # Mark remaining plugins as skipped
@@ -449,7 +449,7 @@ class RecipeExecutionOptions:
 
 
 def execute_recipe(
-    recipe: str | AnalyticsRecipe,
+    recipe: str | Recipe,
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     options: RecipeExecutionOptions | None = None,

@@ -33,6 +33,7 @@ class _ValidatedStubPlugin:
         self._metadata = PluginMetadata(
             name=name,
             description="stub",
+            kind="analytics",
             stage="graph",
             outputs=outputs,
         )
@@ -85,6 +86,7 @@ class _CountingPlugin:
         self._metadata = PluginMetadata(
             name="counting",
             description="counts accesses",
+            kind="analytics",
             stage="graph",
         )
         self.access_count = 0

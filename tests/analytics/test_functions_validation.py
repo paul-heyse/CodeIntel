@@ -10,7 +10,8 @@ import pytest
 from codeintel.analytics.functions import compute_function_metrics_and_types
 from codeintel.config import ConfigBuilder
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.builders import GoidRow, insert_goids
+from tests._helpers.builders import GoidRow
+from tests._helpers.row_protocol import insert_rows
 
 
 def _insert_goid(
@@ -22,7 +23,7 @@ def _insert_goid(
     end_line: int = 2,
 ) -> None:
     now = datetime.now(UTC)
-    insert_goids(
+    insert_rows(
         gateway,
         [
             GoidRow(

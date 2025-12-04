@@ -17,7 +17,6 @@ from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -48,6 +47,7 @@ class FunctionAstFeaturesPlugin:
         return PluginMetadata(
             name="functions.ast_features",
             description="Compute AST-derived semantic features for each function.",
+            kind="analytics",
             stage="function",
             version="3.0.0",
             enabled_by_default=True,
@@ -66,10 +66,10 @@ class FunctionAstFeaturesPlugin:
                     tables=("analytics.function_ast_features",),
                 ),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.function_ast_features", kind="dataset"),
+            provides=(
+                "analytics.function_ast_features",
             ),
-            capabilities_required=(PluginCapability(name="core.goids", kind="dataset"),),
+            requires=("core.goids",),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=120_000,
                 requires_gpu=False,

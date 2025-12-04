@@ -6,6 +6,8 @@ This package provides fake implementations for testing, organized by domain:
 - storage: Fake storage adapters
 - configs: Fake configuration primitives
 - utilities: Shared utility functions
+- graph_plugins: Graph plugin testing helpers
+- networkx_graphs: Standard NetworkX graph fixtures
 """
 
 from __future__ import annotations
@@ -19,6 +21,34 @@ from tests._helpers.fakes.coverage import (
     CoverageLoader,
     FakeCoverage,
     FakeCoverageData,
+)
+from tests._helpers.fakes.graph_contexts import (
+    GraphExecutorTestEnv,
+    GraphPlanningTestEnv,
+    GraphTelemetryTestEnv,
+    create_graph_executor_env,
+    create_graph_gateway,
+    create_graph_planning_env,
+    create_graph_plugin_context,
+    create_graph_snapshot,
+    create_graph_telemetry_env,
+)
+from tests._helpers.fakes.graph_plugins import (
+    GraphPluginBuilder,
+    make_functional_plugin,
+    plugin_registrar,
+)
+from tests._helpers.fakes.networkx_graphs import (
+    bipartite_graph,
+    chain_graph,
+    complete_digraph,
+    cyclic_graph,
+    diamond_graph,
+    disconnected_graph,
+    hub_and_spoke_graph,
+    layered_graph,
+    star_graph,
+    tree_graph,
 )
 from tests._helpers.fakes.plugins import (
     GraphPluginPack,
@@ -54,14 +84,36 @@ __all__ = [
     "FakeToolRunner",
     "FakeToolService",
     "FakeToolServiceConfig",
+    "GraphExecutorTestEnv",
+    "GraphPlanningTestEnv",
+    "GraphPluginBuilder",
     "GraphPluginPack",
     "GraphPluginPackCounters",
     "GraphPluginPackSettings",
+    "GraphTelemetryTestEnv",
     "ScopeRecordingQuery",
     "ServingScopePack",
     "TestGraphPlugin",
+    "bipartite_graph",
     "build_graph_plugin_pack",
     "build_serving_scope_pack",
+    "chain_graph",
+    "complete_digraph",
+    "create_graph_executor_env",
+    "create_graph_gateway",
+    "create_graph_planning_env",
+    "create_graph_plugin_context",
+    "create_graph_snapshot",
+    "create_graph_telemetry_env",
+    "cyclic_graph",
+    "diamond_graph",
+    "disconnected_graph",
+    "hub_and_spoke_graph",
+    "layered_graph",
+    "make_functional_plugin",
+    "plugin_registrar",
+    "star_graph",
+    "tree_graph",
     "utcnow",
     "write_dummy_scip_files",
 ]

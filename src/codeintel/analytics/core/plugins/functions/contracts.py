@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -43,6 +42,7 @@ class FunctionContractsPlugin:
         return PluginMetadata(
             name="functions.contracts",
             description="Infer pre/postconditions and nullability contracts for functions.",
+            kind="analytics",
             stage="function",
             version="3.0.0",
             enabled_by_default=True,
@@ -61,12 +61,12 @@ class FunctionContractsPlugin:
                     tables=("analytics.function_contracts",),
                 ),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.function_contracts", kind="dataset"),
+            provides=(
+                "analytics.function_contracts",
             ),
-            capabilities_required=(
-                PluginCapability(name="analytics.function_metrics", kind="dataset"),
-                PluginCapability(name="analytics.docstrings", kind="dataset"),
+            requires=(
+                "analytics.function_metrics",
+                "analytics.docstrings",
             ),
             depends_on=("functions.metrics",),
             resource_hints=PluginResourceHints(

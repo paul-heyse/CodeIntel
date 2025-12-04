@@ -17,11 +17,11 @@ from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolRunner,
     ToolRunResult,
 )
+from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
 from codeintel.ingestion.tools.plugins import (
     ToolPlugin,
     ToolPluginMetadata,
     ToolPluginResult,
-    ToolStatus,
 )
 from codeintel.ingestion.tools.results import DiagnosticReport
 
@@ -154,7 +154,7 @@ class PyrightPlugin(ToolPlugin):
         except ToolExecutionError as exc:
             return ToolPluginResult(
                 tool=ToolName.PYRIGHT,
-                status=ToolStatus.ERROR,
+                status=ToolStatus.FAILED,
                 artifacts={},
                 run=exc.result,
                 error=exc,
@@ -165,7 +165,7 @@ class PyrightPlugin(ToolPlugin):
         if result.returncode not in {0, 1}:
             return ToolPluginResult(
                 tool=result.tool,
-                status=ToolStatus.ERROR,
+                status=ToolStatus.FAILED,
                 artifacts={},
                 run=result,
                 error=ToolExecutionError(result),

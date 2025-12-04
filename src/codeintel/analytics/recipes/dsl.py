@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from codeintel.analytics.recipes.model import AnalyticsRecipe
+from codeintel.analytics.recipes.model import Recipe, RecipeOptions
 from codeintel.core.recipes import RecipeBuilder as CoreRecipeBuilder
 from codeintel.core.recipes import recipe as core_recipe
 from codeintel.core.recipes import stage as core_stage
@@ -227,7 +227,7 @@ class RecipeBuilder:
         self._version = v
         return self
 
-    def extend(self, recipe: AnalyticsRecipe) -> RecipeBuilder:
+    def extend(self, recipe: Recipe) -> RecipeBuilder:
         """Extend this recipe with plugins from another recipe.
 
         Parameters
@@ -248,23 +248,24 @@ class RecipeBuilder:
             self.tag(t)
         return self
 
-    def build(self) -> AnalyticsRecipe:
+    def build(self) -> Recipe:
         """Build the recipe.
 
         Returns
         -------
-        AnalyticsRecipe
+        Recipe
             The constructed recipe.
         """
-        return AnalyticsRecipe(
+        return Recipe(
             name=self._name,
             description=self._description,
             plugins=tuple(self._plugins),
             default_configs=dict(self._configs),
             tags=tuple(self._tags),
-            fail_fast=self._fail_fast,
-            parallel_stages=self._parallel_stages,
-            max_duration_ms=self._max_duration_ms,
+            options=RecipeOptions(
+                fail_fast=self._fail_fast,
+                max_duration_ms=self._max_duration_ms,
+            ),
             version=self._version,
         )
 

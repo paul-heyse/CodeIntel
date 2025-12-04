@@ -2,6 +2,29 @@
 
 This adapter wraps the existing ToolService to provide port-compliant
 tool execution with normalized result types.
+
+Architecture Note
+-----------------
+This adapter bridges two type systems:
+
+**Input (ToolService side):**
+    Rich "Report" types from ``tools/results.py`` with aggregated counts,
+    factory methods, and helper functions (DiagnosticReport, CoverageReport,
+    TestReport, ScipIndexResult).
+
+**Output (Port side):**
+    Simpler "Result" types from ``ports/tools.py`` with status/error/duration
+    fields (DiagnosticResult, CoverageResult, TestResult, ScipResult).
+
+The adapter calls ``ToolService`` methods, receives rich Report objects,
+and converts them to the simpler Result types expected by the port interface.
+This keeps domain logic rich while maintaining clean boundaries.
+
+See Also
+--------
+codeintel.ingestion.tool_service : Service returning rich Report types
+codeintel.ingestion.tools.results : Rich domain types (input)
+codeintel.ingestion.ports.tools : Port interface types (output)
 """
 
 from __future__ import annotations

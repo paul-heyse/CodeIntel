@@ -17,12 +17,6 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.ingestion.core.middleware import (
-    LoggingMiddleware,
-    MetricsMiddleware,
-    MiddlewareChain,
-)
-from codeintel.ingestion.core.middleware.metrics import InMemoryMetrics
 from codeintel.ingestion.plugins import (
     DEFAULT_INGEST_PLUGINS,
     AstExtractPlugin,
@@ -424,41 +418,6 @@ def test_full_pipeline_repo_scan_to_ast_extract(tmp_path: Path) -> None:
         row = gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         assert row is not None, "Query returned None"
         assert row[0] > 0, "No modules found after pipeline"
-    finally:
-        gateway.close()
-
-
-def test_pipeline_with_middleware(tmp_path: Path) -> None:
-    """Test pipeline execution with middleware for observability."""
-    repo_root = tmp_path / "repo"
-    _create_realistic_repo(repo_root)
-
-    gateway = open_ingestion_gateway()
-    try:
-        metrics = InMemoryMetrics()
-        chain = MiddlewareChain(
-            middleware=[
-                LoggingMiddleware(),
-                MetricsMiddleware(in_memory=metrics),
-            ]
-        )
-
-        setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
-        ctx = setup.build_context("repo_scan")
-        plugin = RepoScanPlugin()
-
-        # Execute with middleware
-        chain.run_before(plugin, ctx)
-        result = plugin.execute(ctx)
-        chain.run_after(plugin, ctx, result)
-
-        assert result.success
-        assert len(metrics.durations) == 1
-
-        # Verify metrics captured the plugin
-        _, attrs = metrics.durations[0]
-        assert attrs["plugin"] == "repo_scan"
-        assert attrs["status"] == "success"
     finally:
         gateway.close()
 

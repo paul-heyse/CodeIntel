@@ -11,7 +11,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -43,6 +42,7 @@ class ProfilesPlugin:
         return PluginMetadata(
             name="profiles.build",
             description="Build aggregated profiles for functions, files, and modules.",
+            kind="analytics",
             stage="profiles",
             version="3.0.0",
             enabled_by_default=True,
@@ -60,13 +60,13 @@ class ProfilesPlugin:
                 PluginOutputSpec(name="file_profile", tables=("analytics.file_profile",)),
                 PluginOutputSpec(name="module_profile", tables=("analytics.module_profile",)),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.function_profile", kind="dataset"),
-                PluginCapability(name="analytics.file_profile", kind="dataset"),
-                PluginCapability(name="analytics.module_profile", kind="dataset"),
+            provides=(
+                "analytics.function_profile",
+                "analytics.file_profile",
+                "analytics.module_profile",
             ),
-            capabilities_required=(
-                PluginCapability(name="analytics.goid_risk_factors", kind="dataset"),
+            requires=(
+                "analytics.goid_risk_factors",
             ),
             depends_on=(
                 "risk_factors.build",

@@ -59,8 +59,8 @@ def build_plugin_catalog() -> dict[str, Any]:
             "severity": meta.severity,
             "enabled_by_default": meta.enabled_by_default,
             "depends_on": list(meta.depends_on),
-            "provides": [cap.name for cap in meta.capabilities_provided],
-            "requires": [cap.name for cap in meta.capabilities_required],
+            "provides": list(meta.provides),
+            "requires": list(meta.requires),
             "inputs": [
                 {
                     "name": inp.name,

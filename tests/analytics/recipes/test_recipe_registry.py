@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.recipes.model import AnalyticsRecipe
+from codeintel.analytics.recipes.model import Recipe
 from codeintel.analytics.recipes.registry import (
     RecipeRegistry,
     get_recipe_registry,
@@ -38,15 +38,15 @@ def empty_registry() -> RecipeRegistry:
 
 
 @pytest.fixture
-def sample_recipe() -> AnalyticsRecipe:
+def sample_recipe() -> Recipe:
     """Create a sample analytics recipe.
 
     Returns
     -------
-    AnalyticsRecipe
+    Recipe
         A sample recipe for testing.
     """
-    return AnalyticsRecipe(
+    return Recipe(
         name="test_recipe",
         description="A test recipe",
         plugins=("plugin.one", "plugin.two"),
@@ -56,15 +56,15 @@ def sample_recipe() -> AnalyticsRecipe:
 
 
 @pytest.fixture
-def another_recipe() -> AnalyticsRecipe:
+def another_recipe() -> Recipe:
     """Create another sample analytics recipe.
 
     Returns
     -------
-    AnalyticsRecipe
+    Recipe
         Another sample recipe for testing.
     """
-    return AnalyticsRecipe(
+    return Recipe(
         name="another_recipe",
         description="Another test recipe",
         plugins=("plugin.three",),
@@ -80,7 +80,7 @@ def test_registry_empty(empty_registry: RecipeRegistry) -> None:
     assert empty_registry.list_tags() == ()
 
 
-def test_registry_register(empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe) -> None:
+def test_registry_register(empty_registry: RecipeRegistry, sample_recipe: Recipe) -> None:
     """Register a recipe successfully."""
     empty_registry.register(sample_recipe)
 
@@ -89,7 +89,7 @@ def test_registry_register(empty_registry: RecipeRegistry, sample_recipe: Analyt
 
 
 def test_registry_register_duplicate_raises(
-    empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe
+    empty_registry: RecipeRegistry, sample_recipe: Recipe
 ) -> None:
     """Registering duplicate recipe raises ValueError."""
     empty_registry.register(sample_recipe)
@@ -98,7 +98,7 @@ def test_registry_register_duplicate_raises(
         empty_registry.register(sample_recipe)
 
 
-def test_registry_get(empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe) -> None:
+def test_registry_get(empty_registry: RecipeRegistry, sample_recipe: Recipe) -> None:
     """Get a recipe by name."""
     empty_registry.register(sample_recipe)
 
@@ -114,7 +114,7 @@ def test_registry_get_not_found(empty_registry: RecipeRegistry) -> None:
 
 
 def test_registry_get_optional(
-    empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe
+    empty_registry: RecipeRegistry, sample_recipe: Recipe
 ) -> None:
     """Get optional returns recipe when found."""
     empty_registry.register(sample_recipe)
@@ -132,7 +132,7 @@ def test_registry_get_optional_not_found(empty_registry: RecipeRegistry) -> None
 
 
 def test_registry_unregister(
-    empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe
+    empty_registry: RecipeRegistry, sample_recipe: Recipe
 ) -> None:
     """Unregister removes recipe from registry."""
     empty_registry.register(sample_recipe)
@@ -150,7 +150,7 @@ def test_registry_unregister_nonexistent(empty_registry: RecipeRegistry) -> None
 
 
 def test_registry_unregister_removes_from_tags(
-    empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe
+    empty_registry: RecipeRegistry, sample_recipe: Recipe
 ) -> None:
     """Unregister removes recipe from tag index."""
     empty_registry.register(sample_recipe)
@@ -163,8 +163,8 @@ def test_registry_unregister_removes_from_tags(
 
 def test_registry_list_all(
     empty_registry: RecipeRegistry,
-    sample_recipe: AnalyticsRecipe,
-    another_recipe: AnalyticsRecipe,
+    sample_recipe: Recipe,
+    another_recipe: Recipe,
 ) -> None:
     """List all returns all registered recipes."""
     empty_registry.register(sample_recipe)
@@ -179,8 +179,8 @@ def test_registry_list_all(
 
 def test_registry_list_names(
     empty_registry: RecipeRegistry,
-    sample_recipe: AnalyticsRecipe,
-    another_recipe: AnalyticsRecipe,
+    sample_recipe: Recipe,
+    another_recipe: Recipe,
 ) -> None:
     """List names returns all recipe names."""
     empty_registry.register(sample_recipe)
@@ -194,8 +194,8 @@ def test_registry_list_names(
 
 def test_registry_list_tags(
     empty_registry: RecipeRegistry,
-    sample_recipe: AnalyticsRecipe,
-    another_recipe: AnalyticsRecipe,
+    sample_recipe: Recipe,
+    another_recipe: Recipe,
 ) -> None:
     """List tags returns all unique tags."""
     empty_registry.register(sample_recipe)
@@ -210,8 +210,8 @@ def test_registry_list_tags(
 
 def test_registry_list_by_tag(
     empty_registry: RecipeRegistry,
-    sample_recipe: AnalyticsRecipe,
-    another_recipe: AnalyticsRecipe,
+    sample_recipe: Recipe,
+    another_recipe: Recipe,
 ) -> None:
     """List by tag returns recipes with specific tag."""
     empty_registry.register(sample_recipe)
@@ -236,8 +236,8 @@ def test_registry_list_by_tag_unknown(empty_registry: RecipeRegistry) -> None:
 
 def test_registry_compose(
     empty_registry: RecipeRegistry,
-    sample_recipe: AnalyticsRecipe,
-    another_recipe: AnalyticsRecipe,
+    sample_recipe: Recipe,
+    another_recipe: Recipe,
 ) -> None:
     """Compose creates new recipe from existing recipes."""
     empty_registry.register(sample_recipe)
@@ -260,8 +260,8 @@ def test_registry_compose(
 
 def test_registry_compose_with_instances(
     empty_registry: RecipeRegistry,
-    sample_recipe: AnalyticsRecipe,
-    another_recipe: AnalyticsRecipe,
+    sample_recipe: Recipe,
+    another_recipe: Recipe,
 ) -> None:
     """Compose accepts recipe instances directly."""
     # Not registering - using instances directly
@@ -279,13 +279,13 @@ def test_registry_compose_deduplicates_plugins(
     empty_registry: RecipeRegistry,
 ) -> None:
     """Compose deduplicates plugins while preserving order."""
-    recipe1 = AnalyticsRecipe(
+    recipe1 = Recipe(
         name="recipe1",
         description="Recipe 1",
         plugins=("plugin.a", "plugin.b", "plugin.c"),
         tags=(),
     )
-    recipe2 = AnalyticsRecipe(
+    recipe2 = Recipe(
         name="recipe2",
         description="Recipe 2",
         plugins=("plugin.b", "plugin.c", "plugin.d"),  # b and c overlap
@@ -305,8 +305,8 @@ def test_registry_compose_deduplicates_plugins(
 
 def test_registry_compose_merges_tags(
     empty_registry: RecipeRegistry,
-    sample_recipe: AnalyticsRecipe,
-    another_recipe: AnalyticsRecipe,
+    sample_recipe: Recipe,
+    another_recipe: Recipe,
 ) -> None:
     """Compose merges tags from all recipes."""
     composed = empty_registry.compose(
@@ -357,7 +357,7 @@ def test_register_recipe_function() -> None:
     """Register recipe function adds to global registry."""
     reset_recipe_registry()
 
-    custom_recipe = AnalyticsRecipe(
+    custom_recipe = Recipe(
         name="custom_global_recipe",
         description="Custom recipe for global registration",
         plugins=("plugin.custom",),

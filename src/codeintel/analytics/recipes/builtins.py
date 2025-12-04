@@ -7,7 +7,7 @@ extended via the recipe DSL.
 
 from __future__ import annotations
 
-from codeintel.analytics.recipes.model import AnalyticsRecipe
+from codeintel.analytics.recipes.model import Recipe, RecipeOptions
 
 # =============================================================================
 # Core Plugin Lists
@@ -79,7 +79,7 @@ PROFILE_PLUGINS: tuple[str, ...] = (
 # Built-in Recipes
 # =============================================================================
 
-QUICK_AUDIT = AnalyticsRecipe(
+QUICK_AUDIT = Recipe(
     name="quick_audit",
     description="Fast codebase health check (metrics + types + hotspots).",
     plugins=(
@@ -90,10 +90,10 @@ QUICK_AUDIT = AnalyticsRecipe(
         "graph_stats",
     ),
     tags=("fast", "audit", "health"),
-    max_duration_ms=120_000,  # 2 minutes
+    options=RecipeOptions(max_duration_ms=120_000),  # 2 minutes
 )
 
-FULL_ANALYSIS = AnalyticsRecipe(
+FULL_ANALYSIS = Recipe(
     name="full_analysis",
     description="Complete analytics suite for comprehensive codebase analysis.",
     plugins=(
@@ -113,10 +113,10 @@ FULL_ANALYSIS = AnalyticsRecipe(
         *API_PLUGINS,
     ),
     tags=("complete", "comprehensive"),
-    fail_fast=False,
+    options=RecipeOptions(fail_fast=False),
 )
 
-COVERAGE_FOCUS = AnalyticsRecipe(
+COVERAGE_FOCUS = Recipe(
     name="coverage_focus",
     description="Coverage-centric analysis for test quality assessment.",
     plugins=(
@@ -130,7 +130,7 @@ COVERAGE_FOCUS = AnalyticsRecipe(
     tags=("coverage", "testing", "quality"),
 )
 
-TEST_ANALYSIS = AnalyticsRecipe(
+TEST_ANALYSIS = Recipe(
     name="test_analysis",
     description="Deep test suite analysis including behavioral classification.",
     plugins=(
@@ -141,14 +141,14 @@ TEST_ANALYSIS = AnalyticsRecipe(
     tags=("testing", "quality"),
 )
 
-GRAPH_METRICS = AnalyticsRecipe(
+GRAPH_METRICS = Recipe(
     name="graph_metrics",
     description="Complete graph-based metrics for architecture analysis.",
     plugins=GRAPH_PLUGINS,
     tags=("graphs", "architecture", "metrics"),
 )
 
-RISK_ANALYSIS = AnalyticsRecipe(
+RISK_ANALYSIS = Recipe(
     name="risk_analysis",
     description="Risk-focused analysis for identifying code hotspots.",
     plugins=(
@@ -162,7 +162,7 @@ RISK_ANALYSIS = AnalyticsRecipe(
     tags=("risk", "hotspots", "maintenance"),
 )
 
-ARCHITECTURE_ANALYSIS = AnalyticsRecipe(
+ARCHITECTURE_ANALYSIS = Recipe(
     name="architecture_analysis",
     description="Architecture-focused analysis for understanding system structure.",
     plugins=(
@@ -174,7 +174,7 @@ ARCHITECTURE_ANALYSIS = AnalyticsRecipe(
     tags=("architecture", "structure", "design"),
 )
 
-HISTORY_ANALYSIS = AnalyticsRecipe(
+HISTORY_ANALYSIS = Recipe(
     name="history_analysis",
     description="Historical analysis for understanding code evolution.",
     plugins=(
@@ -185,7 +185,7 @@ HISTORY_ANALYSIS = AnalyticsRecipe(
     tags=("history", "evolution", "trends"),
 )
 
-API_ANALYSIS = AnalyticsRecipe(
+API_ANALYSIS = Recipe(
     name="api_analysis",
     description="API and entrypoint analysis for service documentation.",
     plugins=(

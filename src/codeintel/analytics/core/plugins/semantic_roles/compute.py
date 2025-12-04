@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -41,6 +40,7 @@ class SemanticRolesPlugin:
         return PluginMetadata(
             name="semantic.roles",
             description="Compute semantic roles for functions and calls.",
+            kind="analytics",
             stage="semantic",
             version="3.0.0",
             enabled_by_default=True,
@@ -56,10 +56,10 @@ class SemanticRolesPlugin:
             outputs=(
                 PluginOutputSpec(name="semantic_roles", tables=("analytics.semantic_roles",)),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.semantic_roles", kind="dataset"),
+            provides=(
+                "analytics.semantic_roles",
             ),
-            capabilities_required=(PluginCapability(name="core.goids", kind="dataset"),),
+            requires=("core.goids",),
             depends_on=("callgraph",),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=90_000,

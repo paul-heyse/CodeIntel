@@ -20,13 +20,8 @@ from tests._helpers.builders import (
     SubsystemModuleRow,
     SubsystemRow,
     SymbolUseEdgeRow,
-    insert_config_values,
-    insert_graph_metrics_modules_ext,
-    insert_modules,
-    insert_subsystem_modules,
-    insert_subsystems,
-    insert_symbol_use_edges,
 )
+from tests._helpers.row_protocol import insert_rows
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -39,14 +34,14 @@ def test_symbol_and_config_metrics_populate_and_views_create(
     """Compute symbol/config metrics and verify derived views materialize."""
     gateway = fresh_gateway
     con = gateway.con
-    insert_modules(
+    insert_rows(
         gateway,
         [
             ModuleRow(module="pkg.a", path="pkg/a.py", repo=REPO, commit=COMMIT),
             ModuleRow(module="pkg.b", path="pkg/b.py", repo=REPO, commit=COMMIT),
         ],
     )
-    insert_symbol_use_edges(
+    insert_rows(
         gateway,
         [
             SymbolUseEdgeRow(
@@ -58,7 +53,7 @@ def test_symbol_and_config_metrics_populate_and_views_create(
             )
         ],
     )
-    insert_config_values(
+    insert_rows(
         gateway,
         [
             ConfigValueRow(
@@ -108,7 +103,7 @@ def test_subsystem_agreement_exposed_in_views(
     gateway = fresh_gateway
     con = gateway.con
     now = datetime.now(UTC)
-    insert_subsystem_modules(
+    insert_rows(
         gateway,
         [
             SubsystemModuleRow(
@@ -120,7 +115,7 @@ def test_subsystem_agreement_exposed_in_views(
             )
         ],
     )
-    insert_graph_metrics_modules_ext(
+    insert_rows(
         gateway,
         [
             GraphMetricsModulesExtRow(
@@ -143,7 +138,7 @@ def test_subsystem_agreement_exposed_in_views(
             )
         ],
     )
-    insert_subsystems(
+    insert_rows(
         gateway,
         [
             SubsystemRow(

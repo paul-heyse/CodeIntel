@@ -16,8 +16,9 @@ from uuid import uuid4
 
 from codeintel.analytics.core.plugin_protocol import (
     AnalyticsPluginProtocol,
-    PluginCapability,
     PluginInputSpec,
+    PluginIsolation,
+    PluginKind,
     PluginMetadata,
     PluginOutputSpec,
     PluginResourceHints,
@@ -108,9 +109,9 @@ class PluginRegistry:
 
         self._plugins[meta.name] = plugin
 
-        # Index by capabilities
-        for cap in meta.capabilities_provided:
-            self._by_capability.setdefault(cap.name, set()).add(meta.name)
+        # Index by capabilities (provides is now tuple[str, ...])
+        for cap_name in meta.provides:
+            self._by_capability.setdefault(cap_name, set()).add(meta.name)
 
         # Index by stage
         self._by_stage.setdefault(meta.stage, set()).add(meta.name)
@@ -130,9 +131,9 @@ class PluginRegistry:
             return
 
         meta = plugin.metadata
-        for cap in meta.capabilities_provided:
-            if cap.name in self._by_capability:
-                self._by_capability[cap.name].discard(name)
+        for cap_name in meta.provides:
+            if cap_name in self._by_capability:
+                self._by_capability[cap_name].discard(name)
 
         if meta.stage in self._by_stage:
             self._by_stage[meta.stage].discard(name)
@@ -361,16 +362,16 @@ class PluginRegistry:
                         name,
                     )
 
-        # Capability-based dependencies
+        # Capability-based dependencies (requires is now tuple[str, ...])
         capability_providers = PluginRegistry._build_capability_index(selected)
         for name, plugin in selected.items():
-            for cap in plugin.metadata.capabilities_required:
-                providers = capability_providers.get(cap.name, set())
+            for cap_name in plugin.metadata.requires:
+                providers = capability_providers.get(cap_name, set())
                 if not providers:
                     log.warning(
                         "Plugin %s requires capability %s but no provider is selected",
                         name,
-                        cap.name,
+                        cap_name,
                     )
                     continue
                 # Add first provider as dependency (unless self-provided)
@@ -394,8 +395,8 @@ class PluginRegistry:
         """
         index: dict[str, set[str]] = {}
         for name, plugin in selected.items():
-            for cap in plugin.metadata.capabilities_provided:
-                index.setdefault(cap.name, set()).add(name)
+            for cap_name in plugin.metadata.provides:
+                index.setdefault(cap_name, set()).add(name)
         return index
 
     @staticmethod
@@ -479,18 +480,19 @@ class PluginMetaOptions:
 
     name: str | None = None
     description: str | None = None
+    kind: PluginKind = "analytics"
     stage: PluginStage = "other"
     version: str = "1.0.0"
     enabled_by_default: bool = True
     severity: PluginSeverity = "fatal"
     inputs: Sequence[PluginInputSpec] = ()
     outputs: Sequence[PluginOutputSpec] = ()
-    provides: Sequence[str | PluginCapability] = ()
-    requires: Sequence[str | PluginCapability] = ()
+    provides: Sequence[str] = ()
+    requires: Sequence[str] = ()
     depends_on: Sequence[str] = ()
     resource_hints: PluginResourceHints | None = None
     requires_isolation: bool = False
-    isolation_kind: Literal["process", "thread"] | None = None
+    isolation_kind: PluginIsolation = "none"
     tags: Sequence[str] = ()
 
     @staticmethod
@@ -535,26 +537,21 @@ class PluginMetaOptions:
         PluginMetadata
             Metadata populated from the options and function defaults.
         """
-
-        def _normalize_capability(cap: str | PluginCapability) -> PluginCapability:
-            if isinstance(cap, PluginCapability):
-                return cap
-            return PluginCapability(name=cap)
-
         resolved_name = self.name or fn.__name__.replace("_", ".")
         resolved_description = self.description or fn.__doc__ or ""
 
         return PluginMetadata(
             name=resolved_name,
             description=resolved_description.strip(),
+            kind=self.kind,
             stage=self.stage,
             version=self.version,
             enabled_by_default=self.enabled_by_default,
             severity=self.severity,
             inputs=tuple(self.inputs),
             outputs=tuple(self.outputs),
-            capabilities_provided=tuple(_normalize_capability(c) for c in self.provides),
-            capabilities_required=tuple(_normalize_capability(c) for c in self.requires),
+            provides=tuple(self.provides),
+            requires=tuple(self.requires),
             depends_on=tuple(self.depends_on),
             resource_hints=self.resource_hints,
             requires_isolation=self.requires_isolation,
@@ -568,18 +565,19 @@ class PluginMetaOptionsInput(TypedDict, total=False):
 
     name: str
     description: str
+    kind: PluginKind
     stage: PluginStage
     version: str
     enabled_by_default: bool
     severity: PluginSeverity
     inputs: Sequence[PluginInputSpec]
     outputs: Sequence[PluginOutputSpec]
-    provides: Sequence[str | PluginCapability]
-    requires: Sequence[str | PluginCapability]
+    provides: Sequence[str]
+    requires: Sequence[str]
     depends_on: Sequence[str]
     resource_hints: PluginResourceHints | None
     requires_isolation: bool
-    isolation_kind: Literal["process", "thread"] | None
+    isolation_kind: PluginIsolation
     tags: Sequence[str]
 
 

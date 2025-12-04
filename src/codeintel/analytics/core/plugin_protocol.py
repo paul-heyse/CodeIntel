@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from codeintel.core.plugins import (
     CapabilityKind,
     InputSource,
-    PluginCapability,
     PluginInputSpec,
     PluginIsolation,
     PluginKind,
@@ -86,19 +85,11 @@ class AnalyticsPluginProtocol(Protocol):
         ...
 
 
-# Alias for backward compatibility - some code uses PluginProtocol
-PluginProtocol = AnalyticsPluginProtocol
-
-
 # Re-export everything needed by analytics plugins
 __all__ = [
-    # Analytics protocol
     "AnalyticsPluginProtocol",
-    "PluginProtocol",
-    # Canonical unified types (from core.plugins)
     "CapabilityKind",
     "InputSource",
-    "PluginCapability",
     "PluginExecutionRecord",
     "PluginInputSpec",
     "PluginIsolation",

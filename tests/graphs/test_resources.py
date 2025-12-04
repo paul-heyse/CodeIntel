@@ -11,8 +11,9 @@ from typing import TYPE_CHECKING, ClassVar, Final
 
 import pytest
 
+from codeintel.core.resources import ResourceProviderBase
+from codeintel.graphs.resources import ResourceProvider
 from codeintel.graphs.resources.container import ResourceContainer, ResourceNotFoundError
-from codeintel.graphs.resources.protocol import BaseResourceProvider, ResourceProvider
 from codeintel.graphs.resources.storage import StorageResource
 
 if TYPE_CHECKING:
@@ -140,8 +141,10 @@ class _FactoryResourceProvider:
         """No-op invalidation."""
 
 
-class _ConcreteBaseProvider(BaseResourceProvider[str]):
-    """Concrete implementation of BaseResourceProvider for testing."""
+class _ConcreteBaseProvider(ResourceProviderBase[str]):
+    """Concrete implementation of ResourceProviderBase for testing."""
+
+    RESOURCE_NAME: ClassVar[str] = "concrete_base_provider"
 
     def __init__(self, name: str, value: str) -> None:
         """Initialize the provider.
@@ -149,15 +152,27 @@ class _ConcreteBaseProvider(BaseResourceProvider[str]):
         Parameters
         ----------
         name
-            Resource name.
+            Resource name (stored as instance attribute for test compatibility).
         value
             Resource value to return.
         """
-        super().__init__(name)
+        super().__init__()
+        self._name = name
         self._value = value
 
-    def _create(self) -> str:
-        """Create the resource value.
+    @property
+    def resource_name(self) -> str:
+        """Return the resource name.
+
+        Returns
+        -------
+        str
+            Resource name.
+        """
+        return self._name
+
+    def _load(self) -> str:
+        """Load the resource value.
 
         Returns
         -------
@@ -330,93 +345,116 @@ def test_container_overwrite_allows_new_value() -> None:
 
 
 # ===========================================================================
-# BaseResourceProvider Tests
+# ResourceProviderBase Tests
 # ===========================================================================
 
 
-class _CountingProvider(BaseResourceProvider[str]):
-    """Provider that counts creation calls."""
+class _CountingProvider(ResourceProviderBase[str]):
+    """Provider that counts load calls."""
 
-    create_count: ClassVar[int] = 0
+    RESOURCE_NAME: ClassVar[str] = "counting_provider"
+    load_count: ClassVar[int] = 0
     _return_value: str = "value"
 
-    def _create(self) -> str:
-        """Create and count.
+    def __init__(self, name: str) -> None:
+        """Initialize the provider.
+
+        Parameters
+        ----------
+        name
+            Resource name (stored as instance attribute for test compatibility).
+        """
+        super().__init__()
+        self._name = name
+
+    @property
+    def resource_name(self) -> str:
+        """Return the resource name.
 
         Returns
         -------
         str
-            Created value.
+            Resource name.
         """
-        _CountingProvider.create_count += 1
+        return self._name
+
+    def _load(self) -> str:
+        """Load and count.
+
+        Returns
+        -------
+        str
+            Loaded value.
+        """
+        _CountingProvider.load_count += 1
         return self._return_value
 
     @classmethod
     def reset_count(cls) -> None:
-        """Reset the creation counter."""
-        cls.create_count = 0
+        """Reset the load counter."""
+        cls.load_count = 0
 
 
-def test_base_provider_lazy_creation() -> None:
-    """BaseResourceProvider creates resource lazily on first get."""
+def test_base_provider_lazy_loading() -> None:
+    """ResourceProviderBase loads resource lazily on first get."""
     _CountingProvider.reset_count()
     provider = _CountingProvider("test")
 
-    # Not created yet - create_count is 0
-    assert _CountingProvider.create_count == 0
+    # Not loaded yet - load_count is 0
+    assert _CountingProvider.load_count == 0
 
-    # First access creates
+    # First access loads
     result = provider.get()
     assert result == "value"
-    assert _CountingProvider.create_count == EXPECTED_ONE
+    assert _CountingProvider.load_count == EXPECTED_ONE
 
 
 def test_base_provider_invalidate() -> None:
-    """BaseResourceProvider invalidate allows re-creation."""
+    """ResourceProviderBase invalidate allows re-loading."""
     _CountingProvider.reset_count()
     provider = _CountingProvider("test")
 
-    # Create and cache
+    # Load and cache
     provider.get()
-    assert _CountingProvider.create_count == EXPECTED_ONE
+    assert _CountingProvider.load_count == EXPECTED_ONE
 
     # Second get uses cache
     provider.get()
-    assert _CountingProvider.create_count == EXPECTED_ONE
+    assert _CountingProvider.load_count == EXPECTED_ONE
 
-    # Invalidate clears, next get recreates
+    # Invalidate clears, next get reloads
     provider.invalidate()
     provider.get()
-    assert _CountingProvider.create_count == EXPECTED_TWO
+    assert _CountingProvider.load_count == EXPECTED_TWO
 
 
-def test_base_provider_recreates_after_invalidate() -> None:
-    """BaseResourceProvider recreates after invalidation."""
+def test_base_provider_reloads_after_invalidate() -> None:
+    """ResourceProviderBase reloads after invalidation."""
     _CountingProvider.reset_count()
     provider = _CountingProvider("test")
 
     provider.get()
-    assert _CountingProvider.create_count == EXPECTED_ONE
+    assert _CountingProvider.load_count == EXPECTED_ONE
 
     provider.invalidate()
     provider.get()
-    assert _CountingProvider.create_count == EXPECTED_TWO
+    assert _CountingProvider.load_count == EXPECTED_TWO
 
 
 def test_base_provider_resource_name() -> None:
-    """BaseResourceProvider returns resource name."""
+    """ResourceProviderBase returns resource name."""
     provider = _ConcreteBaseProvider("my_resource", "value")
 
     assert provider.resource_name == "my_resource"
 
 
-def test_base_provider_create_not_implemented() -> None:
-    """BaseResourceProvider._create must be overridden."""
+def test_base_provider_load_not_implemented() -> None:
+    """ResourceProviderBase._load must be overridden."""
 
-    class UnimplementedProvider(BaseResourceProvider[str]):
-        pass
+    class UnimplementedProvider(ResourceProviderBase[str]):
+        RESOURCE_NAME: ClassVar[str] = "unimplemented"
 
-    provider = UnimplementedProvider("test")
+    provider = UnimplementedProvider()
 
     with pytest.raises(NotImplementedError):
         provider.get()
@@ -437,8 +475,8 @@ def test_resource_provider_protocol_conformance() -> None:
     assert hasattr(provider, "invalidate")
 
 
-def test_base_resource_provider_protocol_conformance() -> None:
-    """BaseResourceProvider conforms to ResourceProvider protocol."""
+def test_resource_provider_base_protocol_conformance() -> None:
+    """ResourceProviderBase conforms to ResourceProvider protocol."""
     provider = _ConcreteBaseProvider("test", "value")
 
     assert isinstance(provider, ResourceProvider)

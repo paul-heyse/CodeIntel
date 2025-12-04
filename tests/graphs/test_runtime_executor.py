@@ -27,6 +27,7 @@ from codeintel.config.steps_graphs import (
     GraphPluginPolicy,
     GraphPluginRetryPolicy,
 )
+from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
@@ -34,7 +35,6 @@ from codeintel.graphs.core.protocol import (
     GraphPluginProtocol,
 )
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
-from codeintel.graphs.core.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.runtime import executor
 from codeintel.graphs.runtime.executor import (

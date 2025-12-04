@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/core/plugins/__init__.py
+# hypothesis_version: 6.148.5
+
+['CapabilityKind', 'ConfigProvider', 'InputSource', 'PluginCapability', 'PluginInputSpec', 'PluginIsolation', 'PluginKind', 'PluginMetadata', 'PluginOutputSpec', 'PluginProtocol', 'PluginResourceHints', 'PluginResult', 'PluginScratch', 'PluginSeverity', 'PluginStage', 'PluginStatus', 'ResourceRegistry', 'ValidationResult']

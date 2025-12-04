@@ -6,19 +6,10 @@ filtering, dependency resolution, and topological sorting.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Final
 
 import pytest
 
-from codeintel.graphs.core.context import GraphPluginExecutionContext
-from codeintel.graphs.core.protocol import (
-    FunctionalGraphPlugin,
-    GraphPluginKind,
-    GraphPluginMetadata,
-    GraphPluginProtocol,
-    GraphPluginStage,
-)
 from codeintel.graphs.core.registry import (
     GraphPluginRegistry,
     get_graph_registry,
@@ -26,53 +17,9 @@ from codeintel.graphs.core.registry import (
     register_graph_plugin,
     unregister_graph_plugin,
 )
-from codeintel.graphs.core.result import PluginResult
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder
 
 EXPECTED_PLUGIN_COUNT: Final = 3
-
-
-@dataclass(frozen=True)
-class PluginConfig:
-    """Configuration for creating test plugins."""
-
-    name: str
-    kind: GraphPluginKind = "builder"
-    stage: GraphPluginStage = "goid"
-    depends_on: tuple[str, ...] = ()
-    provides: tuple[str, ...] = ()
-    requires: tuple[str, ...] = ()
-    produces_tables: tuple[str, ...] = ()
-
-
-def _make_test_plugin(config: PluginConfig) -> GraphPluginProtocol:
-    """Create a test plugin for registry tests.
-
-    Parameters
-    ----------
-    config
-        Plugin configuration.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        Test plugin instance.
-    """
-
-    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
-        return PluginResult.ok()
-
-    metadata = GraphPluginMetadata(
-        name=config.name,
-        description=f"Test plugin {config.name}",
-        kind=config.kind,
-        stage=config.stage,
-        depends_on=config.depends_on,
-        provides=config.provides,
-        requires=config.requires,
-        produces_tables=config.produces_tables,
-    )
-
-    return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
 
 
 # =============================================================================
@@ -89,7 +36,7 @@ def test_register_plugin() -> None:
         If registration fails.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="test_register"))
+    plugin = GraphPluginBuilder(name="test_register").build()
 
     registry.register(plugin)
 
@@ -101,7 +48,7 @@ def test_register_plugin() -> None:
 def test_register_duplicate_raises() -> None:
     """Registering duplicate plugin raises ValueError."""
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="duplicate_plugin"))
+    plugin = GraphPluginBuilder(name="duplicate_plugin").build()
 
     registry.register(plugin)
     with pytest.raises(ValueError, match="Duplicate"):
@@ -117,7 +64,7 @@ def test_unregister_plugin() -> None:
         If unregistration fails.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="test_unregister"))
+    plugin = GraphPluginBuilder(name="test_unregister").build()
 
     registry.register(plugin)
     registry.unregister("test_unregister")
@@ -148,7 +95,7 @@ def test_get_plugin() -> None:
         If plugin is not returned.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="test_get"))
+    plugin = GraphPluginBuilder(name="test_get").build()
     registry.register(plugin)
 
     retrieved = registry.get("test_get")
@@ -174,7 +121,7 @@ def test_contains() -> None:
         If contains check fails.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="test_contains"))
+    plugin = GraphPluginBuilder(name="test_contains").build()
     registry.register(plugin)
 
     if not registry.contains("test_contains"):
@@ -200,7 +147,7 @@ def test_list_all() -> None:
     """
     registry = GraphPluginRegistry()
     plugins = [
-        _make_test_plugin(PluginConfig(name=f"list_all_{i}")) for i in range(EXPECTED_PLUGIN_COUNT)
+        GraphPluginBuilder(name=f"list_all_{i}").build() for i in range(EXPECTED_PLUGIN_COUNT)
     ]
     for p in plugins:
         registry.register(p)
@@ -221,7 +168,7 @@ def test_list_names() -> None:
         If names are missing.
     """
     registry = GraphPluginRegistry()
-    plugins = [_make_test_plugin(PluginConfig(name=f"list_names_{i}")) for i in range(2)]
+    plugins = [GraphPluginBuilder(name=f"list_names_{i}").build() for i in range(2)]
     for p in plugins:
         registry.register(p)
 
@@ -244,8 +191,8 @@ def test_list_by_kind() -> None:
         If filter fails.
     """
     registry = GraphPluginRegistry()
-    builder = _make_test_plugin(PluginConfig(name="builder_plugin", kind="builder"))
-    metric = _make_test_plugin(PluginConfig(name="metric_plugin", kind="metric"))
+    builder = GraphPluginBuilder(name="builder_plugin").with_kind("builder").build()
+    metric = GraphPluginBuilder(name="metric_plugin").with_kind("metric").build()
     registry.register(builder)
     registry.register(metric)
 
@@ -272,8 +219,8 @@ def test_list_by_stage() -> None:
         If filter fails.
     """
     registry = GraphPluginRegistry()
-    goid = _make_test_plugin(PluginConfig(name="goid_plugin", stage="goid"))
-    core = _make_test_plugin(PluginConfig(name="core_plugin", stage="core"))
+    goid = GraphPluginBuilder(name="goid_plugin").with_stage("goid").build()
+    core = GraphPluginBuilder(name="core_plugin").with_stage("core").build()
     registry.register(goid)
     registry.register(core)
 
@@ -294,7 +241,7 @@ def test_list_providing() -> None:
         If filter fails.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="capability_provider", provides=("capability_a",)))
+    plugin = GraphPluginBuilder(name="capability_provider").with_provides("capability_a").build()
     registry.register(plugin)
 
     providers = registry.list_providing("capability_a")
@@ -316,8 +263,10 @@ def test_list_by_table() -> None:
         If filter fails.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(
-        PluginConfig(name="table_producer", produces_tables=("graph.test_table",))
+    plugin = (
+        GraphPluginBuilder(name="table_producer")
+        .with_produces_tables("graph.test_table")
+        .build()
     )
     registry.register(plugin)
 
@@ -342,7 +291,7 @@ def test_plan_simple() -> None:
         If plan is not built correctly.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="simple_plan_plugin"))
+    plugin = GraphPluginBuilder(name="simple_plan_plugin").build()
     registry.register(plugin)
 
     plan = registry.plan(plugin_names=["simple_plan_plugin"])
@@ -364,8 +313,8 @@ def test_plan_with_dependencies() -> None:
         If dependency order is wrong.
     """
     registry = GraphPluginRegistry()
-    plugin_a = _make_test_plugin(PluginConfig(name="dep_plan_a"))
-    plugin_b = _make_test_plugin(PluginConfig(name="dep_plan_b", depends_on=("dep_plan_a",)))
+    plugin_a = GraphPluginBuilder(name="dep_plan_a").build()
+    plugin_b = GraphPluginBuilder(name="dep_plan_b").with_dependencies("dep_plan_a").build()
     registry.register(plugin_a)
     registry.register(plugin_b)
 
@@ -386,8 +335,8 @@ def test_plan_capability_based_dependency() -> None:
         If capability dependency is not resolved.
     """
     registry = GraphPluginRegistry()
-    provider = _make_test_plugin(PluginConfig(name="cap_provider", provides=("cap_x",)))
-    consumer = _make_test_plugin(PluginConfig(name="cap_consumer", requires=("cap_x",)))
+    provider = GraphPluginBuilder(name="cap_provider").with_provides("cap_x").build()
+    consumer = GraphPluginBuilder(name="cap_consumer").with_requires("cap_x").build()
     registry.register(provider)
     registry.register(consumer)
 
@@ -408,8 +357,8 @@ def test_plan_with_disabled_plugins() -> None:
         If disabled plugins are included.
     """
     registry = GraphPluginRegistry()
-    plugin_a = _make_test_plugin(PluginConfig(name="enabled_plugin"))
-    plugin_b = _make_test_plugin(PluginConfig(name="disabled_plugin"))
+    plugin_a = GraphPluginBuilder(name="enabled_plugin").build()
+    plugin_b = GraphPluginBuilder(name="disabled_plugin").build()
     registry.register(plugin_a)
     registry.register(plugin_b)
 
@@ -430,8 +379,8 @@ def test_plan_with_disabled_plugins() -> None:
 def test_plan_cycle_detection() -> None:
     """Plan with dependency cycle raises ValueError."""
     registry = GraphPluginRegistry()
-    plugin_a = _make_test_plugin(PluginConfig(name="cycle_a", depends_on=("cycle_b",)))
-    plugin_b = _make_test_plugin(PluginConfig(name="cycle_b", depends_on=("cycle_a",)))
+    plugin_a = GraphPluginBuilder(name="cycle_a").with_dependencies("cycle_b").build()
+    plugin_b = GraphPluginBuilder(name="cycle_b").with_dependencies("cycle_a").build()
     registry.register(plugin_a)
     registry.register(plugin_b)
 
@@ -442,7 +391,7 @@ def test_plan_cycle_detection() -> None:
 def test_plan_missing_dependency_raises() -> None:
     """Plan with missing dependency raises ValueError."""
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="missing_dep", depends_on=("nonexistent",)))
+    plugin = GraphPluginBuilder(name="missing_dep").with_dependencies("nonexistent").build()
     registry.register(plugin)
 
     with pytest.raises(ValueError, match="depends on"):
@@ -452,7 +401,7 @@ def test_plan_missing_dependency_raises() -> None:
 def test_plan_missing_capability_raises() -> None:
     """Plan with missing capability raises ValueError."""
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="missing_cap", requires=("nonexistent_cap",)))
+    plugin = GraphPluginBuilder(name="missing_cap").with_requires("nonexistent_cap").build()
     registry.register(plugin)
 
     with pytest.raises(ValueError, match="requires capability"):
@@ -462,9 +411,9 @@ def test_plan_missing_capability_raises() -> None:
 def test_plan_ambiguous_capability_raises() -> None:
     """Plan with ambiguous capability providers raises ValueError."""
     registry = GraphPluginRegistry()
-    provider1 = _make_test_plugin(PluginConfig(name="ambig_provider1", provides=("ambig_cap",)))
-    provider2 = _make_test_plugin(PluginConfig(name="ambig_provider2", provides=("ambig_cap",)))
-    consumer = _make_test_plugin(PluginConfig(name="ambig_consumer", requires=("ambig_cap",)))
+    provider1 = GraphPluginBuilder(name="ambig_provider1").with_provides("ambig_cap").build()
+    provider2 = GraphPluginBuilder(name="ambig_provider2").with_provides("ambig_cap").build()
+    consumer = GraphPluginBuilder(name="ambig_consumer").with_requires("ambig_cap").build()
     registry.register(provider1)
     registry.register(provider2)
     registry.register(consumer)
@@ -502,7 +451,7 @@ def test_register_and_unregister_global() -> None:
     AssertionError
         If registration or unregistration fails.
     """
-    plugin = _make_test_plugin(PluginConfig(name="global_test_plugin"))
+    plugin = GraphPluginBuilder(name="global_test_plugin").build()
     registry = get_graph_registry()
 
     # Ensure clean state
@@ -551,8 +500,8 @@ def test_dependency_graph() -> None:
         If dependency graph is wrong.
     """
     registry = GraphPluginRegistry()
-    plugin_a = _make_test_plugin(PluginConfig(name="dep_graph_a"))
-    plugin_b = _make_test_plugin(PluginConfig(name="dep_graph_b", depends_on=("dep_graph_a",)))
+    plugin_a = GraphPluginBuilder(name="dep_graph_a").build()
+    plugin_b = GraphPluginBuilder(name="dep_graph_b").with_dependencies("dep_graph_a").build()
     registry.register(plugin_a)
     registry.register(plugin_b)
 
@@ -575,7 +524,12 @@ def test_metadata_for() -> None:
         If metadata is wrong.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="metadata_test", kind="metric", stage="core"))
+    plugin = (
+        GraphPluginBuilder(name="metadata_test")
+        .with_kind("metric")
+        .with_stage("core")
+        .build()
+    )
     registry.register(plugin)
 
     meta = registry.metadata_for("metadata_test")
@@ -605,7 +559,7 @@ def test_capability_index_updated_on_register() -> None:
         If index is not updated.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="cap_index_test", provides=("test_capability",)))
+    plugin = GraphPluginBuilder(name="cap_index_test").with_provides("test_capability").build()
     registry.register(plugin)
 
     providers = registry.list_providing("test_capability")
@@ -624,7 +578,7 @@ def test_capability_index_updated_on_unregister() -> None:
         If index is not cleaned up.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(PluginConfig(name="cap_unreg_test", provides=("unreg_capability",)))
+    plugin = GraphPluginBuilder(name="cap_unreg_test").with_provides("unreg_capability").build()
     registry.register(plugin)
     registry.unregister("cap_unreg_test")
 
@@ -644,8 +598,10 @@ def test_table_index_maintained() -> None:
         If table index is not maintained.
     """
     registry = GraphPluginRegistry()
-    plugin = _make_test_plugin(
-        PluginConfig(name="table_index_test", produces_tables=("graph.index_table",))
+    plugin = (
+        GraphPluginBuilder(name="table_index_test")
+        .with_produces_tables("graph.index_table")
+        .build()
     )
     registry.register(plugin)
 

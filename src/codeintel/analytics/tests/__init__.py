@@ -1,14 +1,17 @@
-"""
-Tests analytics: coverage edges, behavioral profiles, and graph metrics.
+"""Test analytics helpers - re-exports from testing/.
 
-This package consolidates the former monolithic test analytics modules.
+This module provides backward-compatible imports. New code should import
+directly from ``codeintel.analytics.testing``.
 """
 
 from __future__ import annotations
 
-from codeintel.analytics.tests.coverage_edges import compute_test_coverage_edges
-from codeintel.analytics.tests.graph_metrics import compute_test_graph_metrics
-from codeintel.analytics.tests.profiles import build_behavioral_coverage, build_test_profile
+from codeintel.analytics.testing.coverage.edges import compute_test_coverage_edges
+from codeintel.analytics.testing.graph_metrics import compute_test_graph_metrics
+from codeintel.analytics.testing.profiles.builder import (
+    build_behavioral_coverage,
+    build_test_profile,
+)
 
 __all__ = [
     "build_behavioral_coverage",

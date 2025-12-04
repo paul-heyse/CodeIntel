@@ -147,10 +147,9 @@ def test_contracts_plugin_metadata_outputs() -> None:
 def test_contracts_plugin_metadata_capabilities_provided() -> None:
     """Plugin metadata provides correct capabilities."""
     plugin = FunctionContractsPlugin()
-    assert len(plugin.metadata.capabilities_provided) == EXPECTED_CAPABILITY_COUNT
+    assert len(plugin.metadata.provides) == EXPECTED_CAPABILITY_COUNT
 
-    cap_names = {c.name for c in plugin.metadata.capabilities_provided}
-    assert "analytics.function_contracts" in cap_names
+    assert "analytics.function_contracts" in plugin.metadata.provides
 
 
 def test_contracts_plugin_metadata_tags() -> None:

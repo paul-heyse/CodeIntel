@@ -27,6 +27,7 @@ from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolRunner,
     ToolRunResult,
 )
+from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
 from codeintel.ingestion.ports.tools import (
     CoverageFileData,
     CoverageResult,
@@ -43,10 +44,8 @@ from codeintel.ingestion.ports.tools import (
 from codeintel.ingestion.ports.tools import (
     ScipOccurrence as PortScipOccurrence,
 )
-from codeintel.ingestion.ports.tools import ToolStatus as PortToolStatus
 from codeintel.ingestion.tool_service import ToolService
 from codeintel.ingestion.tools import ToolPluginResult, build_default_registry
-from codeintel.ingestion.tools.plugins import ToolStatus as PluginToolStatus
 from codeintel.ingestion.tools.pyright import PyrightPlugin
 from codeintel.ingestion.tools.pytest import PytestPlugin
 from codeintel.ingestion.tools.results import (
@@ -224,7 +223,7 @@ def test_pyright_plugin_not_found_downgrades_to_not_found_status() -> None:
 
     result = asyncio.run(plugin.run(repo_root=Path()))
 
-    assert result.status == PluginToolStatus.NOT_FOUND
+    assert result.status == ToolStatus.NOT_FOUND
     assert result.run is None
     assert isinstance(result.error, ToolNotFoundError)
 
@@ -246,7 +245,7 @@ def test_pyright_plugin_successful_run_returns_ok_status() -> None:
 
     result = asyncio.run(plugin.run(repo_root=Path()))
 
-    assert result.status == PluginToolStatus.OK
+    assert result.status == ToolStatus.OK
     assert result.ok is True
     assert result.run == run
     assert result.error is None
@@ -310,16 +309,16 @@ def test_tool_service_coverage_reports_normalization(tooling_outputs: ToolingOut
 
 def test_tool_status_enum_values() -> None:
     """ToolStatus should have expected enum values."""
-    assert PortToolStatus.OK.value == "ok"
-    assert PortToolStatus.NOT_FOUND.value == "not_found"
-    assert PortToolStatus.FAILED.value == "failed"
-    assert PortToolStatus.TIMEOUT.value == "timeout"
+    assert ToolStatus.OK.value == "ok"
+    assert ToolStatus.NOT_FOUND.value == "not_found"
+    assert ToolStatus.FAILED.value == "failed"
+    assert ToolStatus.TIMEOUT.value == "timeout"
 
 
 def test_tool_status_enum_comparison() -> None:
     """ToolStatus values should be comparable."""
-    assert PortToolStatus.OK == PortToolStatus.OK
-    assert PortToolStatus.OK != PortToolStatus.FAILED
+    assert ToolStatus.OK == ToolStatus.OK
+    assert ToolStatus.OK != ToolStatus.FAILED
 
 
 # =============================================================================
@@ -354,12 +353,12 @@ def test_diagnostic_entry_attributes() -> None:
 def test_diagnostic_result_ok_status() -> None:
     """DiagnosticResult should represent successful tool run."""
     result = DiagnosticResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         diagnostics=[],
         duration_s=DURATION_1_5,
     )
 
-    assert result.status == PortToolStatus.OK
+    assert result.status == ToolStatus.OK
     assert result.diagnostics == []
     assert result.error is None
     assert result.duration_s == DURATION_1_5
@@ -375,7 +374,7 @@ def test_diagnostic_result_with_diagnostics() -> None:
     )
 
     result = DiagnosticResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         diagnostics=[entry1, entry2],
     )
 
@@ -391,7 +390,7 @@ def test_diagnostic_result_errors_by_path() -> None:
         DiagnosticEntry("a.py", 3, 1, "warning", "W001", "Warn1"),  # Not an error
     ]
 
-    result = DiagnosticResult(status=PortToolStatus.OK, diagnostics=entries)
+    result = DiagnosticResult(status=ToolStatus.OK, diagnostics=entries)
     errors = result.errors_by_path()
 
     assert errors["a.py"] == EXPECTED_ERROR_COUNT
@@ -402,11 +401,11 @@ def test_diagnostic_result_errors_by_path() -> None:
 def test_diagnostic_result_failed_status() -> None:
     """DiagnosticResult should handle failed tool runs."""
     result = DiagnosticResult(
-        status=PortToolStatus.FAILED,
+        status=ToolStatus.FAILED,
         error="Tool crashed",
     )
 
-    assert result.status == PortToolStatus.FAILED
+    assert result.status == ToolStatus.FAILED
     assert result.error == "Tool crashed"
 
 
@@ -450,12 +449,12 @@ def test_coverage_file_data_default_excluded_lines() -> None:
 def test_coverage_result_ok_status() -> None:
     """CoverageResult should represent successful coverage run."""
     result = CoverageResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         files=[],
         duration_s=DURATION_1_5,
     )
 
-    assert result.status == PortToolStatus.OK
+    assert result.status == ToolStatus.OK
     assert result.files == []
     assert result.duration_s == DURATION_1_5
 
@@ -474,7 +473,7 @@ def test_coverage_result_with_files() -> None:
     )
 
     result = CoverageResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         files=[file1, file2],
     )
 
@@ -574,12 +573,12 @@ def test_port_scip_document_defaults() -> None:
 def test_scip_result_ok_status() -> None:
     """ScipResult should represent successful SCIP run."""
     result = ScipResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         documents=[],
         duration_s=DURATION_1_5,
     )
 
-    assert result.status == PortToolStatus.OK
+    assert result.status == ToolStatus.OK
     assert result.documents == []
     assert result.duration_s == DURATION_1_5
 
@@ -589,7 +588,7 @@ def test_scip_result_with_documents() -> None:
     doc = PortScipDocument(relative_path="mod.py", symbols=[], occurrences=[])
 
     result = ScipResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         documents=[doc],
     )
 
@@ -646,12 +645,12 @@ def test_test_case_defaults() -> None:
 def test_test_result_ok_status() -> None:
     """TestResult should represent successful test run."""
     result = TestResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         tests=[],
         duration_s=DURATION_1_5,
     )
 
-    assert result.status == PortToolStatus.OK
+    assert result.status == ToolStatus.OK
     assert result.tests == []
     assert result.duration_s == DURATION_1_5
 
@@ -664,7 +663,7 @@ def test_test_result_with_tests() -> None:
         TestCase("t::c", "skipped"),
     ]
 
-    result = TestResult(status=PortToolStatus.OK, tests=tests)
+    result = TestResult(status=ToolStatus.OK, tests=tests)
 
     assert len(result.tests) == EXPECTED_TEST_COUNT
 
@@ -678,7 +677,7 @@ def test_test_result_passed_count() -> None:
     ]
 
     result = TestResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         tests=tests,
         passed=EXPECTED_ERROR_COUNT,  # 2 passed
         failed=1,
@@ -697,7 +696,7 @@ def test_test_result_failed_count() -> None:
     ]
 
     result = TestResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         tests=tests,
         passed=1,
         failed=EXPECTED_ERROR_COUNT,  # 2 failed
@@ -721,13 +720,13 @@ def test_tool_result_diagnostic_workflow() -> None:
 
     # Create diagnostic result
     diag_result = DiagnosticResult(
-        status=PortToolStatus.OK,
+        status=ToolStatus.OK,
         diagnostics=diag_entries,
         duration_s=2.5,
     )
 
     # Verify structure
-    assert diag_result.status == PortToolStatus.OK
+    assert diag_result.status == ToolStatus.OK
     assert len(diag_result.diagnostics) == 1
     assert diag_result.errors_by_path() == {"src/a.py": 1}
 
@@ -784,7 +783,7 @@ def test_tool_service_run_plugin_success(tmp_path: Path) -> None:
     runner = PresetRunner(run)
     service = ToolService(runner)
     result = asyncio.run(service.run_plugin("pyright", repo_root=tmp_path))
-    assert result.status == PluginToolStatus.OK
+    assert result.status == ToolStatus.OK
 
 
 def test_tool_service_run_pyright_not_found(tmp_path: Path) -> None:
@@ -856,7 +855,7 @@ def test_tool_service_get_test_report_returns_parsed() -> None:
     )
     result = ToolPluginResult(
         tool=ToolName.PYTEST,
-        status=PluginToolStatus.OK,
+        status=ToolStatus.OK,
         artifacts={},
         run=None,
         parsed=test_report,
@@ -869,7 +868,7 @@ def test_tool_service_get_test_report_returns_empty_for_none() -> None:
     """ToolService.get_test_report should return empty for non-TestReport."""
     result = ToolPluginResult(
         tool=ToolName.PYTEST,
-        status=PluginToolStatus.OK,
+        status=ToolStatus.OK,
         artifacts={},
         run=None,
         parsed=None,
@@ -1194,7 +1193,7 @@ def test_scip_plugin_not_found_during_scip_python() -> None:
         )
     )
 
-    assert result.status == PluginToolStatus.NOT_FOUND
+    assert result.status == ToolStatus.NOT_FOUND
     assert result.run is None
     assert isinstance(result.error, ToolNotFoundError)
 
@@ -1300,7 +1299,7 @@ def test_pytest_plugin_not_found() -> None:
 
     result = asyncio.run(plugin.run(repo_root=Path(), json_report_path=Path("report.json")))
 
-    assert result.status == PluginToolStatus.NOT_FOUND
+    assert result.status == ToolStatus.NOT_FOUND
     assert result.run is None
     assert isinstance(result.error, ToolNotFoundError)
 
@@ -1332,7 +1331,7 @@ def test_pytest_plugin_execution_error() -> None:
 
     result = asyncio.run(plugin.run(repo_root=Path(), json_report_path=Path("report.json")))
 
-    assert result.status == PluginToolStatus.ERROR
+    assert result.status == ToolStatus.FAILED
     assert isinstance(result.error, ToolExecutionError)
 
 

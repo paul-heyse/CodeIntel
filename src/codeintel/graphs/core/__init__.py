@@ -64,17 +64,13 @@ from codeintel.core.plugins.result import (
     PluginResult,
     PluginStatus,
 )
-from codeintel.graphs.core.computation import (
-    ComputationFn,
-    ComputationResult,
-)
 from codeintel.graphs.core.context import (
-    GraphExecutionContext,
     GraphPluginExecutionContext,
     GraphPluginExecutionContextBuilder,
-    GraphRuntimeScratch,
 )
 from codeintel.graphs.core.factories import (
+    ComputationFn,
+    ComputationResult,
     FactoryPlugin,
     make_builder_plugin,
     make_graph_plugin,
@@ -114,7 +110,6 @@ __all__ = [
     "ComputationResult",
     "FactoryPlugin",
     "FunctionalGraphPlugin",
-    "GraphExecutionContext",
     "GraphPluginExecutionContext",
     "GraphPluginExecutionContextBuilder",
     "GraphPluginKind",
@@ -124,7 +119,6 @@ __all__ = [
     "GraphPluginRegistry",
     "GraphPluginSkip",
     "GraphPluginStage",
-    "GraphRuntimeScratch",
     "PluginExecutionRecord",
     "PluginIsolation",
     "PluginMetadata",

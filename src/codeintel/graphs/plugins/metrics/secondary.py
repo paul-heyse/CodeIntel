@@ -28,7 +28,7 @@ from codeintel.graphs.core import (
     make_metric_plugin,
 )
 from codeintel.graphs.engine import GraphKind
-from codeintel.graphs.plugins.metrics._runtime import resolve_analytics_runtime
+from codeintel.graphs.plugins.metrics.core import resolve_analytics_runtime
 from codeintel.graphs.resources import StorageResource
 
 # =============================================================================

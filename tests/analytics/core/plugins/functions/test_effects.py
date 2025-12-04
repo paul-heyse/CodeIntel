@@ -181,11 +181,10 @@ def test_effects_plugin_metadata_outputs() -> None:
 def test_effects_plugin_metadata_capabilities_provided() -> None:
     """Plugin metadata provides correct capabilities."""
     plugin = FunctionEffectsPlugin()
-    assert len(plugin.metadata.capabilities_provided) == EXPECTED_CAPABILITY_COUNT
+    assert len(plugin.metadata.provides) == EXPECTED_CAPABILITY_COUNT
 
-    cap_names = {c.name for c in plugin.metadata.capabilities_provided}
-    assert "analytics.function_effects" in cap_names
-    assert "analytics.function_effects_evidence" in cap_names
+    assert "analytics.function_effects" in plugin.metadata.provides
+    assert "analytics.function_effects_evidence" in plugin.metadata.provides
 
 
 def test_effects_plugin_metadata_tags() -> None:

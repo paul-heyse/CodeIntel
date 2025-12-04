@@ -18,13 +18,8 @@ from tests._helpers.builders import (
     ModuleRow,
     RiskFactorRow,
     SymbolUseEdgeRow,
-    insert_config_values,
-    insert_function_metrics,
-    insert_import_graph_edges,
-    insert_modules,
-    insert_risk_factors,
-    insert_symbol_use_edges,
 )
+from tests._helpers.row_protocol import insert_rows
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -36,7 +31,7 @@ EXPECTED_HIGH_RISK_COUNT = 1
 
 def _seed_modules(gateway: StorageGateway) -> None:
     """Insert sample modules, edges, and risk data to drive clustering."""
-    insert_modules(
+    insert_rows(
         gateway,
         [
             ModuleRow(
@@ -61,7 +56,7 @@ def _seed_modules(gateway: StorageGateway) -> None:
             ),
         ],
     )
-    insert_import_graph_edges(
+    insert_rows(
         gateway,
         [
             ImportGraphEdgeRow(
@@ -84,7 +79,7 @@ def _seed_modules(gateway: StorageGateway) -> None:
             ),
         ],
     )
-    insert_symbol_use_edges(
+    insert_rows(
         gateway,
         [
             SymbolUseEdgeRow(
@@ -96,7 +91,7 @@ def _seed_modules(gateway: StorageGateway) -> None:
             )
         ],
     )
-    insert_config_values(
+    insert_rows(
         gateway,
         [
             ConfigValueRow(
@@ -112,7 +107,7 @@ def _seed_modules(gateway: StorageGateway) -> None:
         ],
     )
     now = datetime.now(tz=UTC)
-    insert_function_metrics(
+    insert_rows(
         gateway,
         [
             FunctionMetricsRow(
@@ -179,7 +174,7 @@ def _seed_modules(gateway: StorageGateway) -> None:
             ),
         ],
     )
-    insert_risk_factors(
+    insert_rows(
         gateway,
         [
             RiskFactorRow(

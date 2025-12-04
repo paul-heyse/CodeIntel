@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -34,6 +33,7 @@ class DataModelsPlugin:
         return PluginMetadata(
             name="data_models.build",
             description="Extract structured data models from class definitions.",
+            kind="analytics",
             stage="data_model",
             version="2.0.0",
             enabled_by_default=True,
@@ -47,8 +47,8 @@ class DataModelsPlugin:
                 ),
             ),
             outputs=(PluginOutputSpec(name="data_models", tables=("analytics.data_models",)),),
-            capabilities_provided=(PluginCapability(name="analytics.data_models", kind="dataset"),),
-            capabilities_required=(PluginCapability(name="core.goids", kind="dataset"),),
+            provides=("analytics.data_models",),
+            requires=("core.goids",),
             depends_on=("ast_extract", "goids", "docstrings_ingest"),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=60_000,

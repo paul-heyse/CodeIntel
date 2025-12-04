@@ -10,7 +10,8 @@ from typer.testing import CliRunner
 
 from codeintel.cli import app
 from tests._helpers import GatewayOptions, provision_gateway_with_repo
-from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_function_types, insert_goids
+from tests._helpers.builders import FunctionTypesRow, GoidRow
+from tests._helpers.row_protocol import insert_rows
 
 runner = CliRunner()
 
@@ -38,7 +39,7 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
         """
     )
     now = datetime.now(tz=UTC)
-    insert_goids(
+    insert_rows(
         ctx.gateway,
         [
             GoidRow(
@@ -66,7 +67,7 @@ def _seed_invalid_function_profile(db_path: Path, repo_root: Path) -> None:
             (1, 'urn:demo', 'demo/repo', NULL, 'src/file.py')
         """
     )
-    insert_function_types(
+    insert_rows(
         ctx.gateway,
         [
             FunctionTypesRow(

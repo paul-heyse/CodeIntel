@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, cast
 import networkx as nx
 
 from codeintel.graphs.engine import views
+from codeintel.graphs.engine.backend import BackendEnablement
 from codeintel.graphs.engine.cache import GraphCache
 from codeintel.graphs.engine.protocol import GraphKind
-from codeintel.graphs.nx_backend import BackendEnablement
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef

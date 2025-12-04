@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -38,6 +37,7 @@ class HistoryTimeseriesPlugin:
         return PluginMetadata(
             name="history.timeseries",
             description="Aggregate analytics across commits into history timeseries.",
+            kind="analytics",
             stage="history",
             version="2.0.0",
             enabled_by_default=True,
@@ -55,11 +55,11 @@ class HistoryTimeseriesPlugin:
                     name="history_timeseries", tables=("analytics.history_timeseries",)
                 ),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.history_timeseries", kind="dataset"),
+            provides=(
+                "analytics.history_timeseries",
             ),
-            capabilities_required=(
-                PluginCapability(name="analytics.function_profile", kind="dataset"),
+            requires=(
+                "analytics.function_profile",
             ),
             depends_on=("profiles.build",),
             resource_hints=PluginResourceHints(

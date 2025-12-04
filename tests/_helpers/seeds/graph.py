@@ -20,13 +20,8 @@ from tests._helpers.builders import (
     CFGEdgeRow,
     DFGEdgeRow,
     ImportGraphEdgeRow,
-    insert_call_graph_edges,
-    insert_call_graph_nodes,
-    insert_cfg_blocks,
-    insert_cfg_edges,
-    insert_dfg_edges,
-    insert_import_graph_edges,
 )
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     GOID_FUNC_A,
@@ -165,7 +160,7 @@ class GraphPack:
                 rel_path=MOD_A_PATH,
             ),
         ]
-        insert_call_graph_nodes(ctx.gateway, nodes)
+        insert_rows(ctx.gateway, nodes)
 
         # Call graph edges: func_a -> func_b, func_a -> helper, func_b -> func_c
         edges = [
@@ -209,7 +204,7 @@ class GraphPack:
                 confidence=0.9,
             ),
         ]
-        insert_call_graph_edges(ctx.gateway, edges)
+        insert_rows(ctx.gateway, edges)
 
     @staticmethod
     def _seed_import_graph(ctx: TestContext) -> None:
@@ -250,7 +245,7 @@ class GraphPack:
                 cycle_group=0,
             ),
         ]
-        insert_import_graph_edges(ctx.gateway, edges)
+        insert_rows(ctx.gateway, edges)
 
     @staticmethod
     def _seed_cfg(ctx: TestContext) -> None:
@@ -303,7 +298,7 @@ class GraphPack:
                 out_degree=0,
             ),
         ]
-        insert_cfg_blocks(ctx.gateway, blocks)
+        insert_rows(ctx.gateway, blocks)
 
         # CFG edges: entry -> body -> exit
         edges = [
@@ -320,7 +315,7 @@ class GraphPack:
                 edge_kind="fallthrough",
             ),
         ]
-        insert_cfg_edges(ctx.gateway, edges)
+        insert_rows(ctx.gateway, edges)
 
     @staticmethod
     def _seed_dfg(ctx: TestContext) -> None:
@@ -354,7 +349,7 @@ class GraphPack:
                 use_kind="return",
             ),
         ]
-        insert_dfg_edges(ctx.gateway, edges)
+        insert_rows(ctx.gateway, edges)
 
 
 # Default instance for common usage

@@ -26,16 +26,15 @@ from codeintel.config.steps_graphs import (
     GraphPluginRetryPolicy,
     GraphRunScope,
 )
+from codeintel.core.plugins.protocol import PluginResourceHints, PluginSeverity
+from codeintel.core.plugins.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginMetadata,
     GraphPluginProtocol,
-    GraphPluginResourceHints,
-    GraphPluginSeverity,
 )
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
-from codeintel.graphs.core.result import PluginResult
 from codeintel.graphs.runtime import planning
 from codeintel.graphs.runtime.planning import (
     GraphPlanContext,
@@ -67,8 +66,8 @@ class PluginConfig:
 
     depends_on: tuple[str, ...] = ()
     provides: tuple[str, ...] = ()
-    severity: GraphPluginSeverity = "fatal"
-    resource_hints: GraphPluginResourceHints | None = None
+    severity: PluginSeverity = "fatal"
+    resource_hints: PluginResourceHints | None = None
     options_default: object | None = None
 
 
@@ -286,7 +285,7 @@ def test_effective_timeout_uses_policy_override() -> None:
 
 def test_effective_timeout_uses_resource_hints() -> None:
     """Timeout from plugin resource hints used when no policy override."""
-    hints = GraphPluginResourceHints(max_runtime_ms=TIMEOUT_DEFAULT_MS)
+    hints = PluginResourceHints(max_runtime_ms=TIMEOUT_DEFAULT_MS)
     plugin = _make_test_plugin("timeout_hints", resource_hints=hints)
     policy = GraphPluginPolicy()
 

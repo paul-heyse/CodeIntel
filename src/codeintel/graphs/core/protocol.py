@@ -80,25 +80,9 @@ class GraphPluginMetadata(PluginMetadata):
     options_default: object | None = None
 
     def __post_init__(self) -> None:
-        """Normalize derived flags and graph fields."""
+        """Normalize derived flags."""
         # Call parent's __post_init__ for isolation flag normalization
         super().__post_init__()
-
-        # Sync produces_graphs string tuple from GraphKind tuple
-        if self.produces_graph_kinds and not self.produces_graphs:
-            object.__setattr__(
-                self,
-                "produces_graphs",
-                tuple(str(g) for g in self.produces_graph_kinds),
-            )
-
-        # Sync requires_graphs string tuple from GraphKind tuple
-        if self.requires_graph_kinds and not self.requires_graphs:
-            object.__setattr__(
-                self,
-                "requires_graphs",
-                tuple(str(g) for g in self.requires_graph_kinds),
-            )
 
 
 def create_graph_metadata(
@@ -584,30 +568,18 @@ DEFAULT_GRAPH_PLUGINS: tuple[str, ...] = (
     *DEFAULT_VALIDATION_PLUGINS,
 )
 
-# Re-export types from core.plugins for convenience
-# These are the unified types that graph code should use
-GraphPluginResult = PluginResult
-GraphPluginIsolation = PluginIsolation
-GraphPluginSeverity = PluginSeverity
-GraphPluginResourceHints = PluginResourceHints
-
-
 __all__ = [
     "DEFAULT_BUILDER_PLUGINS",
     "DEFAULT_GRAPH_PLUGINS",
     "DEFAULT_METRIC_PLUGINS",
     "DEFAULT_VALIDATION_PLUGINS",
     "FunctionalGraphPlugin",
-    "GraphPluginIsolation",
     "GraphPluginKind",
     "GraphPluginMetaOptions",
     "GraphPluginMetaOptionsInput",
     "GraphPluginMetadata",
     "GraphPluginPlan",
     "GraphPluginProtocol",
-    "GraphPluginResourceHints",
-    "GraphPluginResult",
-    "GraphPluginSeverity",
     "GraphPluginSkip",
     "GraphPluginStage",
     "PluginCapability",

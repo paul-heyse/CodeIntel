@@ -10,7 +10,6 @@ from dataclasses import dataclass
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -38,6 +37,7 @@ class TestProfilePlugin:
         return PluginMetadata(
             name="tests.profile",
             description="Build per-test profiles with coverage and subsystem context.",
+            kind="analytics",
             stage="test",
             version="2.0.0",
             enabled_by_default=True,
@@ -56,12 +56,12 @@ class TestProfilePlugin:
                     tables=("analytics.test_profile",),
                 ),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.test_profile", kind="dataset"),
+            provides=(
+                "analytics.test_profile",
             ),
-            capabilities_required=(
-                PluginCapability(name="core.goids", kind="dataset"),
-                PluginCapability(name="coverage.test_edges", kind="dataset"),
+            requires=(
+                "core.goids",
+                "coverage.test_edges",
             ),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=60_000,

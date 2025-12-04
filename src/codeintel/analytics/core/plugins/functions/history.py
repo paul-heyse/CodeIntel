@@ -10,7 +10,6 @@ from dataclasses import dataclass
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -38,6 +37,7 @@ class FunctionHistoryPlugin:
         return PluginMetadata(
             name="functions.history",
             description="Aggregate git churn and commit history per function GOID.",
+            kind="analytics",
             stage="function_history",
             version="3.0.0",
             enabled_by_default=True,
@@ -56,10 +56,10 @@ class FunctionHistoryPlugin:
                     tables=("analytics.function_history",),
                 ),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.function_history", kind="dataset"),
+            provides=(
+                "analytics.function_history",
             ),
-            capabilities_required=(PluginCapability(name="core.goids", kind="dataset"),),
+            requires=("core.goids",),
             depends_on=("functions.metrics", "hotspots.build"),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=60_000,

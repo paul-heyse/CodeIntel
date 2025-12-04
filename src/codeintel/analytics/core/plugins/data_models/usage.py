@@ -11,7 +11,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -39,6 +38,7 @@ class DataModelUsagePlugin:
         return PluginMetadata(
             name="data_models.usage",
             description="Classify per-function data model read/write usage patterns.",
+            kind="analytics",
             stage="data_model_usage",
             version="3.0.0",
             enabled_by_default=True,
@@ -54,10 +54,10 @@ class DataModelUsagePlugin:
             outputs=(
                 PluginOutputSpec(name="data_model_usage", tables=("analytics.data_model_usage",)),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.data_model_usage", kind="dataset"),
+            provides=(
+                "analytics.data_model_usage",
             ),
-            capabilities_required=(PluginCapability(name="analytics.data_models", kind="dataset"),),
+            requires=("analytics.data_models",),
             depends_on=("data_models.build", "callgraph", "cfg", "functions.metrics"),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=90_000,

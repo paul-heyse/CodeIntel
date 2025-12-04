@@ -9,14 +9,41 @@ from decimal import Decimal
 from typing import Any
 
 import networkx as nx
-from networkx.algorithms import approximation, bipartite, community, structuralholes
+from networkx.algorithms import approximation, bipartite, structuralholes
 from networkx.exception import (
     NetworkXAlgorithmError,
     NetworkXError,
-    PowerIterationFailedConvergence,
 )
 
 from codeintel.analytics.graphs.runtime import GraphContext
+from codeintel.graphs.compute.metrics.centrality import (
+    compute_betweenness,
+    compute_closeness,
+    compute_eigenvector_centrality,
+    compute_harmonic_centrality,
+    compute_pagerank,
+)
+from codeintel.graphs.compute.metrics.cfg import (
+    compute_cfg_longest_path,
+    compute_dominance_frontier,
+    compute_dominator_depths,
+    compute_dominator_tree,
+)
+from codeintel.graphs.compute.metrics.community import detect_communities_greedy
+from codeintel.graphs.compute.metrics.components import (
+    find_connected,
+    find_strongly_connected,
+    find_weakly_connected,
+    topological_layers,
+)
+from codeintel.graphs.compute.metrics.dfg import compute_dfg_components
+from codeintel.graphs.compute.metrics.structural import (
+    compute_clustering_coefficient,
+    compute_constraint,
+    compute_core_number,
+    compute_effective_size,
+    compute_triangles,
+)
 
 log = logging.getLogger(__name__)
 
@@ -282,18 +309,17 @@ def centrality_directed(
     weight: str | None = None,
     include_eigen: bool = False,
 ) -> CentralityBundle:
-    """
-    Compute centrality metrics on a directed graph with shared defaults.
+    """Compute centrality metrics on a directed graph with shared defaults.
 
     Parameters
     ----------
-    graph : nx.DiGraph
+    graph
         Directed graph to evaluate.
-    ctx : GraphContext
+    ctx
         Execution context controlling sampling, iteration limits, and seeds.
-    weight : str | None, optional
+    weight
         Edge attribute storing the weight. Defaults to context betweenness/pagerank weight.
-    include_eigen : bool, optional
+    include_eigen
         Whether to compute eigenvector centrality on an undirected view.
 
     Returns
@@ -301,40 +327,27 @@ def centrality_directed(
     CentralityBundle
         PageRank, betweenness, closeness, harmonic, and optional eigenvector scores.
     """
-    betweenness_raw = nx.betweenness_centrality(
+    betweenness_weight = ctx.betweenness_weight if weight is None else weight
+    pagerank_weight = ctx.pagerank_weight if weight is None else weight
+
+    betweenness = compute_betweenness(
         graph,
-        weight=ctx.betweenness_weight if weight is None else weight,
         k=_betweenness_sample(graph, ctx),
+        weight=betweenness_weight,
         seed=ctx.seed,
     )
-    betweenness: dict[Any, float] = {node: float(val) for node, val in betweenness_raw.items()}
-    closeness: dict[Any, float] = {}
-    if graph.number_of_nodes() > 0:
-        closeness = {node: float(val) for node, val in nx.closeness_centrality(graph).items()}
-    harmonic: dict[Any, float] = {}
-    if graph.number_of_nodes() > 0:
-        harmonic = {node: float(val) for node, val in nx.harmonic_centrality(graph).items()}
-    pagerank: dict[Any, float] = {}
-    if graph.number_of_nodes() > 0:
-        pagerank = {
-            node: float(val)
-            for node, val in nx.pagerank(
-                graph,
-                weight=ctx.pagerank_weight if weight is None else weight,
-            ).items()
-        }
+    closeness = compute_closeness(graph)
+    harmonic = compute_harmonic_centrality(graph)
+    pagerank = compute_pagerank(graph, weight=pagerank_weight)
 
     eigenvector: dict[Any, float] = {}
     if include_eigen and graph.number_of_nodes() > 0:
-        undirected = graph.to_undirected()
-        try:
-            eigenvector = nx.eigenvector_centrality(
-                undirected,
-                max_iter=ctx.eigen_max_iter,
-                weight=weight,
-            )
-        except PowerIterationFailedConvergence:
+        eigenvector = compute_eigenvector_centrality(
+            graph, max_iter=ctx.eigen_max_iter, weight=weight
+        )
+        if not eigenvector:
             log.warning("Eigenvector centrality did not converge for graph=%s", graph)
+
     return CentralityBundle(
         pagerank=pagerank,
         betweenness=betweenness,
@@ -351,18 +364,17 @@ def centrality_undirected(
     weight: str | None = None,
     include_structural: bool = False,
 ) -> CentralityBundle:
-    """
-    Compute centrality metrics on an undirected graph.
+    """Compute centrality metrics on an undirected graph.
 
     Parameters
     ----------
-    graph : nx.Graph
+    graph
         Undirected graph to evaluate.
-    ctx : GraphContext
+    ctx
         Execution context controlling sampling, iteration limits, and seeds.
-    weight : str | None, optional
+    weight
         Edge attribute storing the weight. Defaults to "weight".
-    include_structural : bool, optional
+    include_structural
         Whether to compute additional structural hole metrics.
 
     Returns
@@ -370,44 +382,35 @@ def centrality_undirected(
     CentralityBundle
         PageRank, betweenness, closeness, harmonic, and eigenvector scores.
     """
-    betweenness_raw = nx.betweenness_centrality(
+    betweenness_weight = ctx.betweenness_weight if weight is None else weight
+    pagerank_weight = ctx.pagerank_weight if weight is None else weight
+
+    betweenness = compute_betweenness(
         graph,
-        weight=ctx.betweenness_weight if weight is None else weight,
         k=_betweenness_sample(graph, ctx),
+        weight=betweenness_weight,
         seed=ctx.seed,
     )
-    betweenness: dict[Any, float] = {node: float(val) for node, val in betweenness_raw.items()}
-    closeness: dict[Any, float] = {}
-    if graph.number_of_nodes() > 0:
-        closeness = {node: float(val) for node, val in nx.closeness_centrality(graph).items()}
-    harmonic: dict[Any, float] = {}
-    if graph.number_of_nodes() > 0:
-        harmonic = {node: float(val) for node, val in nx.harmonic_centrality(graph).items()}
-    pagerank: dict[Any, float] = {}
-    if graph.number_of_nodes() > 0:
-        pagerank = {
-            node: float(val)
-            for node, val in nx.pagerank(
-                graph,
-                weight=ctx.pagerank_weight if weight is None else weight,
-            ).items()
-        }
+    closeness = compute_closeness(graph)
+    harmonic = compute_harmonic_centrality(graph)
+    pagerank = compute_pagerank(graph, weight=pagerank_weight)
+
     eigenvector: dict[Any, float] = {}
     if graph.number_of_nodes() > 0:
-        try:
-            eigenvector = nx.eigenvector_centrality(
-                graph,
-                max_iter=ctx.eigen_max_iter,
-                weight=ctx.pagerank_weight if weight is None else weight,
+        eigenvector = compute_eigenvector_centrality(
+            graph, max_iter=ctx.eigen_max_iter, weight=pagerank_weight
+        )
+        if not eigenvector:
+            log.warning(
+                "Eigenvector centrality did not converge for undirected graph=%s", graph
             )
-        except PowerIterationFailedConvergence:
-            log.warning("Eigenvector centrality did not converge for undirected graph=%s", graph)
 
     if include_structural and graph.number_of_nodes() > 0:
         try:
             _ = structuralholes.constraint(graph, weight=weight)
         except NetworkXAlgorithmError:
             log.warning("Structural holes calculation failed for graph=%s", graph)
+
     return CentralityBundle(
         pagerank=pagerank,
         betweenness=betweenness,
@@ -418,12 +421,11 @@ def centrality_undirected(
 
 
 def component_metadata(graph: nx.DiGraph) -> ComponentBundle:
-    """
-    Return weak component, SCC, cycle, and layer metadata.
+    """Return weak component, SCC, cycle, and layer metadata.
 
     Parameters
     ----------
-    graph : nx.DiGraph
+    graph
         Directed graph from which to derive connectivity metadata.
 
     Returns
@@ -441,19 +443,29 @@ def component_metadata(graph: nx.DiGraph) -> ComponentBundle:
             layer={},
         )
 
-    weak_components = list(nx.weakly_connected_components(graph))
-    component_id: dict[Any, int] = {
-        node: idx for idx, comp in enumerate(weak_components) for node in comp
-    }
-    component_size: dict[Any, int] = {node: len(comp) for comp in weak_components for node in comp}
-    sccs = list(nx.strongly_connected_components(graph))
-    scc_id: dict[Any, int] = {node: idx for idx, comp in enumerate(sccs) for node in comp}
-    scc_size: dict[Any, int] = {node: len(comp) for idx, comp in enumerate(sccs) for node in comp}
-    in_cycle = {node: size > 1 for node, size in scc_size.items()}
+    # Use graphs.compute.metrics.components for component analysis
+    weak_infos = find_weakly_connected(graph)
+    component_id: dict[Any, int] = {}
+    component_size: dict[Any, int] = {}
+    for info in weak_infos:
+        for node in info.nodes:
+            component_id[node] = info.component_id
+            component_size[node] = info.size
 
-    condensation = nx.condensation(graph, sccs)
-    layer = _dag_layers(condensation)
-    layer_map = {node: layer.get(scc_id[node], 0) for node in graph.nodes}
+    scc_result = find_strongly_connected(graph, compute_condensation=True)
+    scc_id: dict[Any, int] = scc_result.node_to_component
+    scc_size: dict[Any, int] = {}
+    for comp in scc_result.components:
+        for node in comp.nodes:
+            scc_size[node] = comp.size
+    in_cycle = {node: scc_size.get(node, 1) > 1 for node in graph.nodes}
+
+    # Compute layers from condensation DAG
+    layer_map: dict[Any, int] = {}
+    if scc_result.condensation is not None:
+        condensation_layer = topological_layers(scc_result.condensation)
+        layer_map = {node: condensation_layer.get(scc_id.get(node, 0), 0) for node in graph.nodes}
+
     return ComponentBundle(
         component_id=component_id,
         component_size=component_size,
@@ -465,8 +477,12 @@ def component_metadata(graph: nx.DiGraph) -> ComponentBundle:
 
 
 def component_ids_undirected(graph: nx.Graph) -> tuple[dict[Any, int], dict[Any, int]]:
-    """
-    Return component ids and sizes for undirected graphs.
+    """Return component ids and sizes for undirected graphs.
+
+    Parameters
+    ----------
+    graph
+        Undirected graph.
 
     Returns
     -------
@@ -475,9 +491,16 @@ def component_ids_undirected(graph: nx.Graph) -> tuple[dict[Any, int], dict[Any,
     """
     if graph.number_of_nodes() == 0:
         return {}, {}
-    components = list(nx.connected_components(graph))
-    component_id = {node: idx for idx, comp in enumerate(components) for node in comp}
-    component_size = {node: len(components[component_id[node]]) for node in graph}
+
+    # Use graphs.compute.metrics.components for component analysis
+    comp_infos = find_connected(graph)
+    component_id: dict[Any, int] = {}
+    component_size: dict[Any, int] = {}
+    for info in comp_infos:
+        for node in info.nodes:
+            component_id[node] = info.component_id
+            component_size[node] = info.size
+
     return component_id, component_size
 
 
@@ -528,12 +551,11 @@ def _diameter_and_spl(graph: nx.Graph | nx.DiGraph) -> tuple[float | None, float
 
 
 def global_graph_stats(graph: nx.Graph | nx.DiGraph) -> GlobalGraphStats:
-    """
-    Return global statistics for the provided graph.
+    """Return global statistics for the provided graph.
 
     Parameters
     ----------
-    graph : nx.Graph | nx.DiGraph
+    graph
         Graph to evaluate.
 
     Returns
@@ -543,21 +565,31 @@ def global_graph_stats(graph: nx.Graph | nx.DiGraph) -> GlobalGraphStats:
     """
     diameter_estimate, avg_spl_estimate = _diameter_and_spl(graph)
     component_layers = _component_layers(graph)
-    try:
-        clustering = nx.average_clustering(graph)
-    except ZeroDivisionError:
-        clustering = 0.0
+
+    # Use average clustering from graphs/structural
+    clustering_map = compute_clustering_coefficient(graph)
+    avg_clustering = (
+        sum(clustering_map.values()) / len(clustering_map) if clustering_map else 0.0
+    )
+
+    # Component counts use the find_* functions from graphs
+    if isinstance(graph, nx.DiGraph):
+        weak_infos = find_weakly_connected(graph)
+        weak_component_count = len(weak_infos)
+        scc_result = find_strongly_connected(graph)
+        scc_count = len(scc_result.components)
+    else:
+        conn_infos = find_connected(graph)
+        weak_component_count = len(conn_infos)
+        scc_count = weak_component_count
+
     return GlobalGraphStats(
         node_count=graph.number_of_nodes(),
         edge_count=graph.number_of_edges(),
-        weak_component_count=nx.number_weakly_connected_components(graph)
-        if isinstance(graph, nx.DiGraph)
-        else nx.number_connected_components(graph),
-        scc_count=nx.number_strongly_connected_components(graph)
-        if isinstance(graph, nx.DiGraph)
-        else nx.number_connected_components(graph),
+        weak_component_count=weak_component_count,
+        scc_count=scc_count,
         component_layers=component_layers,
-        avg_clustering=float(clustering),
+        avg_clustering=avg_clustering,
         diameter_estimate=diameter_estimate,
         avg_shortest_path_estimate=avg_spl_estimate,
     )
@@ -729,20 +761,21 @@ def bipartite_degrees(
 
 
 def community_ids(graph: nx.Graph, *, weight: str | None = "weight") -> dict[Any, int]:
-    """
-    Compute community ids using greedy modularity.
+    """Compute community ids using greedy modularity.
+
+    Parameters
+    ----------
+    graph
+        Undirected graph.
+    weight
+        Edge attribute storing weight. Defaults to "weight".
 
     Returns
     -------
     dict[Any, int]
         Mapping of node to community id.
     """
-    try:
-        communities = community.greedy_modularity_communities(graph, weight=weight)
-    except (NetworkXAlgorithmError, ZeroDivisionError):
-        log.warning("Community detection failed for graph=%s", graph)
-        return {}
-    return {node: idx for idx, comm in enumerate(communities) for node in comm}
+    return detect_communities_greedy(graph, weight=weight)
 
 
 def structural_metrics(
@@ -751,16 +784,15 @@ def structural_metrics(
     weight: str | None = "weight",
     community_limit: int | None = None,
 ) -> StructuralMetrics:
-    """
-    Compute structural metrics for undirected graphs.
+    """Compute structural metrics for undirected graphs.
 
     Parameters
     ----------
-    graph :
+    graph
         Undirected graph to evaluate.
-    weight :
+    weight
         Edge attribute storing weight. Defaults to "weight".
-    community_limit :
+    community_limit
         Optional cap on node count beyond which community detection is skipped.
 
     Returns
@@ -768,7 +800,6 @@ def structural_metrics(
     StructuralMetrics
         Structural hole and core metrics.
     """
-    weight_attr = weight or "weight"
     node_count = graph.number_of_nodes()
     if node_count == 0:
         return StructuralMetrics(
@@ -779,22 +810,25 @@ def structural_metrics(
             effective_size={},
             community_id={},
         )
-    core_number = nx.core_number(graph)
-    clustering_val = nx.clustering(graph, weight=weight_attr)
-    clustering = clustering_val if isinstance(clustering_val, dict) else {}
-    triangles_val = nx.triangles(graph)
-    triangles = triangles_val if isinstance(triangles_val, dict) else {}
-    constraint_vals = structuralholes.constraint(graph, weight=weight_attr)
-    effective_size = structuralholes.effective_size(graph, weight=weight_attr)
+
+    # Use graphs.compute.metrics.structural for core computations
+    clustering = compute_clustering_coefficient(graph)
+    triangles = compute_triangles(graph)
+    core_number = compute_core_number(graph)
+    constraint_vals = compute_constraint(graph)
+    effective_size_vals = compute_effective_size(graph)
+
+    # Community detection
     community_id: dict[Any, int] = {}
     if community_limit is None or node_count <= community_limit:
-        community_id = community_ids(graph, weight=weight_attr)
+        community_id = community_ids(graph, weight=weight)
+
     return StructuralMetrics(
         clustering=clustering,
         triangles=triangles,
         core_number=core_number,
         constraint=constraint_vals,
-        effective_size=effective_size,
+        effective_size=effective_size_vals,
         community_id=community_id,
     )
 
@@ -832,30 +866,27 @@ def bounded_simple_path_count(
 
 
 def cfg_dominance_metrics(graph: nx.DiGraph, entry_idx: int) -> DominanceMetrics:
-    """
-    Compute dominator tree depth and frontier sizes for a CFG.
+    """Compute dominator tree depth and frontier sizes for a CFG.
+
+    Parameters
+    ----------
+    graph
+        Control flow graph (directed).
+    entry_idx
+        Entry block index.
 
     Returns
     -------
     DominanceMetrics
         Dominator depth, frontier sizes, and tree height.
     """
-    dom_depth: dict[Any, int] = {}
-    frontier_sizes: dict[Any, int] = {}
-    try:
-        idom = nx.immediate_dominators(graph, entry_idx)
-        for node in graph.nodes:
-            depth = 0
-            cur = node
-            while cur != entry_idx and cur in idom:
-                cur = idom[cur]
-                depth += 1
-            dom_depth[node] = depth
-        frontier = nx.dominance_frontiers(graph, entry_idx)
-        frontier_sizes = {node: len(frontier.get(node, ())) for node in graph.nodes}
-        height = max(dom_depth.values()) if dom_depth else None
-    except NetworkXError:
-        height = None
+    # Use graphs.compute.metrics.cfg for dominance computation
+    idoms = compute_dominator_tree(graph, entry_idx)
+    dom_depth = compute_dominator_depths(idoms)
+    frontiers = compute_dominance_frontier(graph, entry_idx)
+    frontier_sizes = {node: len(frontiers.get(node, frozenset())) for node in graph.nodes}
+    height = max(dom_depth.values()) if dom_depth else None
+
     return DominanceMetrics(depth=dom_depth, frontier_sizes=frontier_sizes, tree_height=height)
 
 
@@ -889,11 +920,19 @@ def cfg_longest_path_length(
     *,
     is_dag: bool | None = None,
 ) -> int:
-    """
-    Compute the longest path length for a CFG.
+    """Compute the longest path length for a CFG.
 
     When the graph is a DAG the search is limited to reachable nodes; otherwise the
     condensation DAG is used.
+
+    Parameters
+    ----------
+    graph
+        Control flow graph (directed).
+    entry_idx
+        Entry block index.
+    is_dag
+        Whether the graph is a DAG (computed if None).
 
     Returns
     -------
@@ -902,17 +941,20 @@ def cfg_longest_path_length(
     """
     if graph.number_of_nodes() == 0:
         return 0
+
+    # For reachable subgraph, delegate to graphs module
     if is_dag is None:
         is_dag = nx.is_directed_acyclic_graph(graph)
+
     if is_dag:
         try:
             reachable = nx.descendants(graph, entry_idx) | {entry_idx}
             subgraph = graph.subgraph(reachable).copy()
         except NetworkXError:
             return 0
-        return nx.dag_longest_path_length(nx.DiGraph(subgraph))
-    condensation = nx.condensation(graph)
-    return nx.dag_longest_path_length(condensation)
+        return compute_cfg_longest_path(nx.DiGraph(subgraph))
+
+    return compute_cfg_longest_path(graph)
 
 
 def cfg_avg_shortest_path_length(graph: nx.DiGraph, entry_idx: int) -> float:
@@ -983,16 +1025,22 @@ def build_cfg_graph(
 
 
 def dfg_component_stats(graph: nx.DiGraph) -> tuple[int, list[set[int]], bool]:
-    """
-    Return connected component stats for DFG graphs.
+    """Return connected component stats for DFG graphs.
+
+    Parameters
+    ----------
+    graph
+        Data flow graph (directed).
 
     Returns
     -------
     tuple[int, list[set[int]], bool]
         Component count, components, and cycle flag.
     """
-    components = list(nx.weakly_connected_components(graph))
-    has_cycles = any(len(comp) > 1 for comp in nx.strongly_connected_components(graph))
+    # Use graphs.compute.metrics.dfg for component analysis
+    sccs, wccs = compute_dfg_components(graph)
+    components: list[set[int]] = [set(wcc.nodes) for wcc in wccs]
+    has_cycles = any(scc.size > 1 for scc in sccs)
     return len(components), components, has_cycles
 
 

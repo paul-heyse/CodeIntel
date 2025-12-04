@@ -51,27 +51,30 @@ class CentralityMetrics:
 
 
 def compute_pagerank(
-    graph: nx.DiGraph,
+    graph: nx.DiGraph | nx.Graph,
     alpha: float = 0.85,
     max_iter: int = 100,
     tol: float = 1e-6,
+    weight: str | None = None,
 ) -> dict[Any, float]:
-    """Compute PageRank for all nodes in a directed graph.
+    """Compute PageRank for all nodes in a graph.
 
     Parameters
     ----------
     graph
-        Directed graph.
+        Graph (directed or undirected).
     alpha
         Damping factor.
     max_iter
         Maximum iterations.
     tol
         Convergence tolerance.
+    weight
+        Edge attribute to use as weight (None for unweighted).
 
     Returns
     -------
-    dict[N, float]
+    dict[Any, float]
         Node to PageRank score mapping.
 
     Examples
@@ -84,7 +87,12 @@ def compute_pagerank(
     if graph.number_of_nodes() == 0:
         return {}
     try:
-        return nx.pagerank(graph, alpha=alpha, max_iter=max_iter, tol=tol)
+        return {
+            node: float(val)
+            for node, val in nx.pagerank(
+                graph, alpha=alpha, max_iter=max_iter, tol=tol, weight=weight
+            ).items()
+        }
     except nx.PowerIterationFailedConvergence:
         # Fall back to uniform distribution
         n = graph.number_of_nodes()
@@ -96,6 +104,8 @@ def compute_betweenness(
     *,
     normalized: bool = True,
     k: int | None = None,
+    weight: str | None = None,
+    seed: int | None = None,
 ) -> dict[Any, float]:
     """Compute betweenness centrality for all nodes.
 
@@ -107,15 +117,24 @@ def compute_betweenness(
         Whether to normalize values.
     k
         Number of sample nodes (None for exact computation).
+    weight
+        Edge attribute to use as weight (None for unweighted).
+    seed
+        Random seed for sampling (used when k is specified).
 
     Returns
     -------
-    dict[N, float]
+    dict[Any, float]
         Node to betweenness centrality mapping.
     """
     if graph.number_of_nodes() == 0:
         return {}
-    return nx.betweenness_centrality(graph, normalized=normalized, k=k)
+    return {
+        node: float(val)
+        for node, val in nx.betweenness_centrality(
+            graph, normalized=normalized, k=k, weight=weight, seed=seed
+        ).items()
+    }
 
 
 def compute_closeness(

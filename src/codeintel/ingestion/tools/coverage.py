@@ -19,11 +19,11 @@ from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolNotFoundError,
     ToolRunner,
 )
+from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
 from codeintel.ingestion.tools.plugins import (
     ToolPlugin,
     ToolPluginMetadata,
     ToolPluginResult,
-    ToolStatus,
 )
 from codeintel.ingestion.tools.results import CoverageReport
 
@@ -177,7 +177,7 @@ class CoveragePlugin(ToolPlugin):
         except ToolExecutionError as exc:
             return ToolPluginResult(
                 tool=ToolName.COVERAGE,
-                status=ToolStatus.ERROR,
+                status=ToolStatus.FAILED,
                 artifacts={"coverage_json": output_path},
                 run=exc.result,
                 error=exc,
@@ -203,7 +203,7 @@ class CoveragePlugin(ToolPlugin):
 
             parsed = await to_thread.run_sync(_load_and_parse)
 
-        status = ToolStatus.OK if result.ok else ToolStatus.ERROR
+        status = ToolStatus.OK if result.ok else ToolStatus.FAILED
         artifacts = {"coverage_json": output_path}
 
         return ToolPluginResult(

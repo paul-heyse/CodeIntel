@@ -16,7 +16,6 @@ from codeintel.analytics.core.builders import (
     PluginSpecBuilder,
 )
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginOutputSpec,
 )
@@ -76,8 +75,8 @@ def test_plugin_contracts_section_defaults() -> None:
 
     assert section.inputs == []
     assert section.outputs == []
-    assert section.capabilities_provided == []
-    assert section.capabilities_required == []
+    assert section.provides == []
+    assert section.requires == []
     assert section.depends_on == []
 
 
@@ -87,7 +86,7 @@ def test_plugin_runtime_section_defaults() -> None:
 
     assert section.resource_hints is None
     assert section.requires_isolation is False
-    assert section.isolation_kind is None
+    assert section.isolation_kind == "none"
 
 
 # =============================================================================
@@ -203,40 +202,18 @@ def test_builder_provides_from_strings() -> None:
     """Builder creates capabilities from strings."""
     metadata = PluginSpecBuilder("test.plugin").provides("capability.one", "capability.two").build()
 
-    assert len(metadata.capabilities_provided) == EXPECTED_TWO_ITEMS
-    cap_names = {cap.name for cap in metadata.capabilities_provided}
-    assert "capability.one" in cap_names
-    assert "capability.two" in cap_names
-
-
-def test_builder_provides_from_capability() -> None:
-    """Builder accepts PluginCapability instances."""
-    cap = PluginCapability(name="custom.capability")
-
-    metadata = PluginSpecBuilder("test.plugin").provides(cap).build()
-
-    assert len(metadata.capabilities_provided) == 1
-    assert metadata.capabilities_provided[0] is cap
+    assert len(metadata.provides) == EXPECTED_TWO_ITEMS
+    assert "capability.one" in metadata.provides
+    assert "capability.two" in metadata.provides
 
 
 def test_builder_requires_from_strings() -> None:
     """Builder creates required capabilities from strings."""
     metadata = PluginSpecBuilder("test.plugin").requires("required.one", "required.two").build()
 
-    assert len(metadata.capabilities_required) == EXPECTED_TWO_ITEMS
-    cap_names = {cap.name for cap in metadata.capabilities_required}
-    assert "required.one" in cap_names
-    assert "required.two" in cap_names
-
-
-def test_builder_requires_from_capability() -> None:
-    """Builder accepts PluginCapability instances for requires."""
-    cap = PluginCapability(name="required.capability")
-
-    metadata = PluginSpecBuilder("test.plugin").requires(cap).build()
-
-    assert len(metadata.capabilities_required) == 1
-    assert metadata.capabilities_required[0] is cap
+    assert len(metadata.requires) == EXPECTED_TWO_ITEMS
+    assert "required.one" in metadata.requires
+    assert "required.two" in metadata.requires
 
 
 def test_builder_depends_on() -> None:
@@ -312,8 +289,8 @@ def test_builder_chaining() -> None:
     assert metadata.description == "A fully configured plugin"
     assert metadata.stage == "graph"
     assert metadata.version == "3.0.0"
-    assert len(metadata.capabilities_provided) == 1
-    assert len(metadata.capabilities_required) == 1
+    assert len(metadata.provides) == 1
+    assert len(metadata.requires) == 1
     assert metadata.depends_on == ("base.plugin",)
     assert "chained" in metadata.tags
 

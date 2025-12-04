@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Final
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphRunScope
+from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
@@ -27,7 +28,6 @@ from codeintel.graphs.core.protocol import (
     GraphPluginProtocol,
     GraphPluginStage,
 )
-from codeintel.graphs.core.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.runtime.telemetry import (
     GraphPluginSpan,

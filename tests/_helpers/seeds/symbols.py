@@ -12,10 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
-    SymbolUseEdgeRow,
-    insert_symbol_use_edges,
-)
+from tests._helpers.builders import SymbolUseEdgeRow
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     GOID_FUNC_A,
@@ -144,7 +142,7 @@ class SymbolPack:
                 use_goid_h128=GOID_FUNC_B if self.include_goids else None,
             ),
         ]
-        insert_symbol_use_edges(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
 
 # Default instance for common usage

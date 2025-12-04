@@ -16,10 +16,6 @@ from codeintel.config.datasets import (
 )
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
-# Aliases for backward compatibility
-FunctionGraphMetricsRow = GraphMetricsFunctionsRow
-ModuleGraphMetricsRow = GraphMetricsModulesRow
-
 
 @dataclass(frozen=True)
 class FunctionGraphMetricInputs:
@@ -49,7 +45,7 @@ class ModuleGraphMetricInputs:
 
 def build_function_graph_metric_rows(
     inputs: FunctionGraphMetricInputs,
-) -> list[FunctionGraphMetricsRow]:
+) -> list[GraphMetricsFunctionsRow]:
     """
     Construct rows for analytics.graph_metrics_functions.
 
@@ -60,11 +56,11 @@ def build_function_graph_metric_rows(
 
     Returns
     -------
-    list[FunctionGraphMetricsRow]
+    list[GraphMetricsFunctionsRow]
         Row dicts ready for graph_metrics_functions insertion.
     """
     return [
-        FunctionGraphMetricsRow(
+        GraphMetricsFunctionsRow(
             repo=inputs.cfg.repo,
             commit=inputs.cfg.commit,
             function_goid_h128=int(node),
@@ -227,7 +223,7 @@ def load_symbol_module_edges(
 
 def build_module_graph_metric_rows(
     inputs: ModuleGraphMetricInputs,
-) -> list[ModuleGraphMetricsRow]:
+) -> list[GraphMetricsModulesRow]:
     """
     Construct rows for analytics.graph_metrics_modules.
 
@@ -238,11 +234,11 @@ def build_module_graph_metric_rows(
 
     Returns
     -------
-    list[ModuleGraphMetricsRow]
+    list[GraphMetricsModulesRow]
         Row dicts ready for graph_metrics_modules insertion.
     """
     return [
-        ModuleGraphMetricsRow(
+        GraphMetricsModulesRow(
             repo=inputs.cfg.repo,
             commit=inputs.cfg.commit,
             module=module,

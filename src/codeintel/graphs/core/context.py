@@ -15,19 +15,14 @@ from codeintel.core.plugins.context import (
     PluginExecutionContext,
     PluginExecutionContextBuilder,
     PluginScratch,
-    ResourceRegistry,
 )
+from codeintel.core.resources import ResourceProvider
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.graphs import GraphResource
-from codeintel.graphs.resources.protocol import ResourceProvider
-from codeintel.graphs.resources.storage import StorageResource
 
 if TYPE_CHECKING:
-    from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.config.steps_graphs import GraphRunScope
     from codeintel.graphs.catalog import FunctionCatalogProvider
-    from codeintel.runtime import RunContext
-    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass
@@ -114,7 +109,9 @@ class GraphPluginExecutionContext(PluginExecutionContext):
         """
         # Try graph-specific container first
         if self.graph_resources.has(GraphResource.RESOURCE_NAME):
-            return cast("GraphResource", self.graph_resources.require_by_name(GraphResource.RESOURCE_NAME))
+            return cast(
+                "GraphResource", self.graph_resources.require_by_name(GraphResource.RESOURCE_NAME)
+            )
 
         # Fall back to unified resources registry
         if self.has_resource(GraphResource):
@@ -280,102 +277,7 @@ class GraphPluginExecutionContextBuilder(PluginExecutionContextBuilder):
         )
 
 
-# Backward-compatible aliases (will be removed in future versions)
-GraphExecutionContext = GraphPluginExecutionContext
-GraphRuntimeScratch = PluginScratch
-
-
-def create_graph_context_from_legacy(
-    snapshot: SnapshotRef,
-    *,
-    gateway: StorageGateway | None = None,
-    catalog_provider: FunctionCatalogProvider | None = None,
-    paths: BuildPaths | None = None,
-    scratch: PluginScratch | None = None,
-    options: object | None = None,
-    plugin_name: str | None = None,
-    run_id: str | None = None,
-    scope: GraphRunScope | None = None,
-    run_context: RunContext | None = None,
-    resources: ResourceContainer | None = None,
-) -> GraphPluginExecutionContext:
-    """Create a graph context from legacy-style arguments.
-
-    This factory function provides backward compatibility for code
-    that creates GraphExecutionContext with the old constructor signature.
-
-    Parameters
-    ----------
-    snapshot
-        Repository snapshot reference.
-    gateway
-        Optional storage gateway.
-    catalog_provider
-        Optional function catalog provider.
-    paths
-        Optional build paths configuration.
-    scratch
-        Optional shared scratch space.
-    options
-        Optional plugin-specific options.
-    plugin_name
-        Optional name of the executing plugin.
-    run_id
-        Optional unique identifier for this execution run.
-    scope
-        Optional scoping for incremental execution.
-    run_context
-        Optional unified run context for cross-engine correlation.
-    resources
-        Optional graph resource container.
-
-    Returns
-    -------
-    GraphPluginExecutionContext
-        Configured graph execution context.
-
-    Raises
-    ------
-    ValueError
-        If gateway is required but not provided and cannot be resolved.
-    """
-    # Create a minimal gateway if not provided
-    # This maintains backward compatibility but may raise errors
-    # when gateway is actually needed
-    actual_run_id = run_id or (run_context.run_id if run_context else "unknown")
-
-    # Handle case where gateway is required
-    if gateway is None:
-        # Try to get it from resources if provided
-        if resources is not None and resources.has(StorageResource.RESOURCE_NAME):
-            storage = cast("StorageResource", resources.require_by_name(StorageResource.RESOURCE_NAME))
-            gateway = storage.gateway
-        else:
-            msg = "Gateway is required but not provided"
-            raise ValueError(msg)
-
-    return GraphPluginExecutionContext(
-        gateway=gateway,
-        snapshot=snapshot,
-        run_id=actual_run_id,
-        resources=ResourceRegistry(),
-        configs=ConfigProvider(),
-        scratch=scratch or PluginScratch(),
-        paths=paths,
-        options=options,
-        plugin_name=plugin_name,
-        extra={},
-        run_context=run_context,
-        scope=scope,
-        graph_resources=resources or ResourceContainer(),
-        _catalog_provider=catalog_provider,
-    )
-
-
 __all__ = [
-    "GraphExecutionContext",
     "GraphPluginExecutionContext",
     "GraphPluginExecutionContextBuilder",
-    "GraphRuntimeScratch",
-    "create_graph_context_from_legacy",
 ]

@@ -11,7 +11,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -39,6 +38,7 @@ class ConfigDataFlowPlugin:
         return PluginMetadata(
             name="config.data_flow",
             description="Track configuration key usage and data flow at the function level.",
+            kind="analytics",
             stage="config",
             version="3.0.0",
             enabled_by_default=True,
@@ -54,10 +54,10 @@ class ConfigDataFlowPlugin:
             outputs=(
                 PluginOutputSpec(name="config_data_flow", tables=("analytics.config_data_flow",)),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.config_data_flow", kind="dataset"),
+            provides=(
+                "analytics.config_data_flow",
             ),
-            capabilities_required=(PluginCapability(name="core.config_keys", kind="dataset"),),
+            requires=("core.config_keys",),
             depends_on=("config_ingest", "callgraph", "functions.metrics", "entrypoints.build"),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=90_000,

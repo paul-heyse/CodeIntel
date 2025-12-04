@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -45,6 +44,7 @@ class FunctionEffectsPlugin:
         return PluginMetadata(
             name="functions.effects",
             description="Classify side effects and purity for functions.",
+            kind="analytics",
             stage="function",
             version="3.0.0",
             enabled_by_default=True,
@@ -67,11 +67,11 @@ class FunctionEffectsPlugin:
                     tables=("analytics.function_effects_evidence",),
                 ),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.function_effects", kind="dataset"),
-                PluginCapability(name="analytics.function_effects_evidence", kind="dataset"),
+            provides=(
+                "analytics.function_effects",
+                "analytics.function_effects_evidence",
             ),
-            capabilities_required=(PluginCapability(name="core.goids", kind="dataset"),),
+            requires=("core.goids",),
             depends_on=("functions.metrics", "callgraph"),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=90_000,

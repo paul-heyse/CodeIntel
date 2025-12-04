@@ -13,10 +13,9 @@ from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.builders import (
     FunctionMetricsRow,
     ModuleRow,
-    insert_function_metrics,
-    insert_modules,
 )
 from tests._helpers.orchestration.tooling import init_git_repo_with_history
+from tests._helpers.row_protocol import insert_rows
 
 EXPECTED_STABILITY_BUCKETS = {"new_hot", "stable", "churning", "legacy_hot"}
 MIN_EXPECTED_LINES_ADDED = 2
@@ -33,7 +32,7 @@ def test_function_history_populates_rows(
     commit = git_ctx.commits[0]
     gateway = fresh_gateway
     con = gateway.con
-    insert_function_metrics(
+    insert_rows(
         gateway,
         [
             FunctionMetricsRow(
@@ -69,7 +68,7 @@ def test_function_history_populates_rows(
             )
         ],
     )
-    insert_modules(
+    insert_rows(
         gateway,
         [
             ModuleRow(
@@ -115,7 +114,7 @@ def test_function_history_respects_min_threshold(
     gateway = fresh_gateway
     con = gateway.con
 
-    insert_function_metrics(
+    insert_rows(
         gateway,
         [
             FunctionMetricsRow(

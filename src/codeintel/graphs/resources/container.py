@@ -10,26 +10,12 @@ import logging
 from collections.abc import Callable
 from typing import TypeVar, cast
 
-from codeintel.graphs.resources.protocol import ResourceProvider
+from codeintel.core.resources import ResourceProvider
+from codeintel.core.resources.registry import ResourceNotFoundError
 
 log = logging.getLogger(__name__)
 
 T = TypeVar("T")
-
-
-class ResourceNotFoundError(KeyError):
-    """Raised when a required resource is not registered."""
-
-    def __init__(self, resource_name: str) -> None:
-        """Initialize the error.
-
-        Parameters
-        ----------
-        resource_name
-            Name of the missing resource.
-        """
-        super().__init__(f"Resource not found: {resource_name}")
-        self.resource_name = resource_name
 
 
 class ResourceContainer:

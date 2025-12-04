@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/core/protocol.py
+# hypothesis_version: 6.148.5
+
+['GraphPluginKind', 'GraphPluginMetadata', 'GraphPluginPlan', 'GraphPluginProtocol', 'GraphPluginSkip', 'GraphPluginStage', 'PluginCapability', 'PluginInputSpec', 'PluginIsolation', 'PluginKind', 'PluginMetadata', 'PluginOutputSpec', 'PluginResourceHints', 'PluginResult', 'PluginSeverity', 'PluginStage', 'PluginStatus', 'ValidationResult', 'builder', 'callgraph_builder', 'cfg', 'cfg_dfg_builder', 'cfg_metrics', 'config', 'config_error', 'config_graph_metrics', 'core', 'core_graph_metrics', 'dfg', 'dfg_metrics', 'disabled', 'edges', 'fatal', 'goid', 'goid_builder', 'graph_plugin', 'graph_stats', 'graph_validation', 'import_graph_builder', 'incremental_skip', 'metric', 'missing_dependency', 'missing_graph', 'none', 'stats', 'structure', 'subsystem', 'subsystem_agreement', 'symbol', 'symbol_uses_builder', 'test', 'test_graph_metrics', 'unchanged', 'validation']

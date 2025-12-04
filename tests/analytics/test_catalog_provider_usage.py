@@ -15,10 +15,8 @@ from tests._helpers.builders import (
     ModuleRow,
     RiskFactorRow,
     SymbolUseEdgeRow,
-    insert_modules,
-    insert_risk_factors,
-    insert_symbol_use_edges,
 )
+from tests._helpers.row_protocol import insert_rows
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -91,7 +89,7 @@ def test_symbol_uses_falls_back_to_modules_when_catalog_partial(
     """Catalog map may be partial; missing paths should fall back to core.modules."""
     gateway = fresh_gateway
     con = gateway.con
-    insert_modules(
+    insert_rows(
         gateway,
         [
             ModuleRow(module="pkg.use", path="pkg/b.py", repo="r", commit="c"),
@@ -139,7 +137,7 @@ def test_graph_metrics_uses_catalog_for_symbol_modules(
     """Graph metrics module rows derive module names from injected catalog."""
     gateway = fresh_gateway
     con = gateway.con
-    insert_symbol_use_edges(
+    insert_rows(
         gateway,
         [
             SymbolUseEdgeRow(
@@ -180,7 +178,7 @@ def test_profiles_use_catalog_module_map_when_modules_table_empty(
     gateway = fresh_gateway
     con = gateway.con
     now = datetime.now(tz=UTC)
-    insert_risk_factors(
+    insert_rows(
         gateway,
         [
             RiskFactorRow(

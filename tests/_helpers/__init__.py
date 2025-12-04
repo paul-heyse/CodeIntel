@@ -7,8 +7,11 @@ and ingestion plugins, including:
 - `IngestPluginTestHarness`: Fluent test harness for ingestion plugins
 - `TestContext`: Unified test environment for hexagonal architecture
 - `TestScenario`: Declarative scenario builder
+- `GraphPluginBuilder`: Fluent builder for graph test plugins
+- `plugin_registrar`: Context manager for scoped plugin registration
 - Seed packs for composable test data
 - Provisioning utilities for gateway setup
+- Standard NetworkX graph fixtures
 - Various assertion helpers and test utilities
 """
 
@@ -28,6 +31,19 @@ from tests._helpers.context import (
     SeedPack,
     TestContext,
     create_test_context,
+)
+from tests._helpers.fakes.graph_plugins import (
+    GraphPluginBuilder,
+    make_functional_plugin,
+    plugin_registrar,
+)
+from tests._helpers.fakes.networkx_graphs import (
+    chain_graph,
+    complete_digraph,
+    cyclic_graph,
+    diamond_graph,
+    disconnected_graph,
+    star_graph,
 )
 from tests._helpers.ingest_plugin_harness import (
     IngestPluginResultAssertions,
@@ -87,6 +103,7 @@ __all__ = [
     "CallgraphFixtureOptions",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
+    "GraphPluginBuilder",
     "IngestPluginResultAssertions",
     "IngestPluginTestHarness",
     "PluginResultAssertions",
@@ -103,13 +120,20 @@ __all__ = [
     "assert_result",
     "assert_validation",
     "build_callgraph_fixture_repo",
+    "chain_graph",
+    "complete_digraph",
     "coverage_context",
     "create_test_context",
+    "cyclic_graph",
+    "diamond_graph",
+    "disconnected_graph",
     "docs_views_ready_gateway",
     "full_context",
     "graph_context",
     "graph_metrics_ready_gateway",
+    "make_functional_plugin",
     "minimal_context",
+    "plugin_registrar",
     "provision_docs_export_ready",
     "provision_gateway_with_repo",
     "provision_graph_ready_repo",
@@ -122,4 +146,5 @@ __all__ = [
     "seed_mcp_backend",
     "seed_module_graph_inputs",
     "seed_profile_data",
+    "star_graph",
 ]

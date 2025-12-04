@@ -24,14 +24,8 @@ from tests._helpers.builders import (
     GoidRow,
     GraphMetricsModulesExtRow,
     SymbolGraphMetricsModulesRow,
-    insert_call_graph_edges,
-    insert_call_graph_nodes,
-    insert_config_values,
-    insert_coverage_functions,
-    insert_goids,
-    insert_graph_metrics_modules_ext,
-    insert_symbol_graph_metrics_modules,
 )
+from tests._helpers.row_protocol import insert_rows
 
 
 def test_provisioned_gateway_round_trip(tmp_path: Path) -> None:
@@ -60,7 +54,7 @@ def test_builder_inserts_round_trip(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     with provisioned_gateway(repo_root, config=ProvisioningConfig(run_ingestion=False)) as ctx:
         gateway = ctx.gateway
-        insert_goids(
+        insert_rows(
             gateway,
             [
                 GoidRow(
@@ -76,7 +70,7 @@ def test_builder_inserts_round_trip(tmp_path: Path) -> None:
                 )
             ],
         )
-        insert_call_graph_nodes(
+        insert_rows(
             gateway,
             [
                 CallGraphNodeRow(
@@ -89,7 +83,7 @@ def test_builder_inserts_round_trip(tmp_path: Path) -> None:
                 )
             ],
         )
-        insert_call_graph_edges(
+        insert_rows(
             gateway,
             [
                 CallGraphEdgeRow(
@@ -121,7 +115,7 @@ def test_docs_export_ready_has_non_nulls(tmp_path: Path) -> None:
             "analytics.coverage_functions",
             ["function_goid_h128", "urn", "repo", "commit", "coverage_ratio"],
         )
-        insert_coverage_functions(
+        insert_rows(
             ctx.gateway,
             [
                 CoverageFunctionRow(
@@ -156,7 +150,7 @@ def test_symbol_and_config_metrics_builder_round_trip(tmp_path: Path) -> None:
     ) as ctx:
         gateway = ctx.gateway
         now = datetime.now(tz=UTC)
-        insert_symbol_graph_metrics_modules(
+        insert_rows(
             gateway,
             [
                 SymbolGraphMetricsModulesRow(
@@ -177,7 +171,7 @@ def test_symbol_and_config_metrics_builder_round_trip(tmp_path: Path) -> None:
                 )
             ],
         )
-        insert_graph_metrics_modules_ext(
+        insert_rows(
             gateway,
             [
                 GraphMetricsModulesExtRow(
@@ -200,7 +194,7 @@ def test_symbol_and_config_metrics_builder_round_trip(tmp_path: Path) -> None:
                 )
             ],
         )
-        insert_config_values(
+        insert_rows(
             gateway,
             [
                 ConfigValueRow(

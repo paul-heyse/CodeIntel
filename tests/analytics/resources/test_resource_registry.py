@@ -8,7 +8,8 @@ This module tests:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import ClassVar
 
 import pytest
 
@@ -34,11 +35,15 @@ class MockProvider:
         Whether the resource has been loaded.
     _name
         Name of the resource.
+    RESOURCE_NAME
+        ClassVar identifying this resource type for registry lookup.
     """
+
+    RESOURCE_NAME: ClassVar[str] = "MockResource"
 
     _resource: object
     _loaded: bool = False
-    _name: str = "MockResource"
+    _name: str = field(default="MockResource")
 
     @property
     def is_loaded(self) -> bool:

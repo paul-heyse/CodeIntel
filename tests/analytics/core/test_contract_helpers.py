@@ -47,6 +47,7 @@ def test_builds_contracts_from_metadata_outputs() -> None:
         metadata=PluginMetadata(
             name="stub",
             description="stub plugin",
+            kind="analytics",
             stage="graph",
             outputs=(
                 PluginOutputSpec(
@@ -87,6 +88,7 @@ def test_prefers_explicit_output_contracts() -> None:
         metadata=PluginMetadata(
             name="stub_explicit",
             description="stub plugin",
+            kind="analytics",
             stage="graph",
             outputs=(
                 PluginOutputSpec(
@@ -116,6 +118,7 @@ def test_returns_empty_when_no_contracts_available() -> None:
         metadata=PluginMetadata(
             name="empty",
             description="no contracts",
+            kind="analytics",
             stage="graph",
         )
     )

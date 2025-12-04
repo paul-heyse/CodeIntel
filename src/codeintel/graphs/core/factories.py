@@ -3,19 +3,23 @@
 This module provides factory functions that handle all common plugin concerns:
 logging, error handling, row counting, and result wrapping. New plugins can
 be defined in ~5 lines instead of ~50 lines.
+
+This module also contains the computation contract types (`ComputationResult`,
+`ComputationFn`) that define the standardized interface for plugin computation
+functions.
 """
 
 from __future__ import annotations
 
 import importlib
 import logging
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, Unpack, cast
 
 from codeintel.core.plugins.protocol import PluginIsolation, PluginResourceHints, PluginSeverity
 from codeintel.core.plugins.result import PluginResult
-from codeintel.graphs.core.computation import ComputationFn
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     GraphPluginKind,
@@ -31,6 +35,93 @@ from codeintel.storage.db_helpers import safe_row_counts
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
+
+
+# ---------------------------------------------------------------------------
+# Computation contract types
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ComputationResult:
+    """Result from a plugin computation function.
+
+    This standardized result type allows computation functions to communicate
+    success/failure status, row counts, and artifacts back to the plugin
+    framework without coupling to the full PluginResult.
+
+    Attributes
+    ----------
+    success
+        Whether the computation succeeded.
+    row_counts
+        Mapping of table names to row counts produced.
+    artifacts
+        Additional artifacts produced by the computation.
+    message
+        Optional message describing the result or error.
+    """
+
+    success: bool = True
+    row_counts: dict[str, int] = field(default_factory=dict)
+    artifacts: dict[str, object] = field(default_factory=dict)
+    message: str | None = None
+
+    @classmethod
+    def ok(
+        cls,
+        row_counts: dict[str, int] | None = None,
+        artifacts: dict[str, object] | None = None,
+        message: str | None = None,
+    ) -> ComputationResult:
+        """Create a successful computation result.
+
+        Parameters
+        ----------
+        row_counts
+            Optional mapping of table names to row counts.
+        artifacts
+            Optional additional artifacts.
+        message
+            Optional success message.
+
+        Returns
+        -------
+        ComputationResult
+            A successful result with the provided data.
+        """
+        return cls(
+            success=True,
+            row_counts=row_counts or {},
+            artifacts=artifacts or {},
+            message=message,
+        )
+
+    @classmethod
+    def fail(cls, message: str) -> ComputationResult:
+        """Create a failed computation result.
+
+        Parameters
+        ----------
+        message
+            Error message describing the failure.
+
+        Returns
+        -------
+        ComputationResult
+            A failed result with the error message.
+        """
+        return cls(success=False, message=message)
+
+
+# Standard signature for all computation functions.
+# Computation functions take a GraphPluginExecutionContext and return a ComputationResult.
+ComputationFn = Callable[[GraphPluginExecutionContext], ComputationResult]
+
+
+# ---------------------------------------------------------------------------
+# Factory types and helpers
+# ---------------------------------------------------------------------------
 
 
 class _MetricMetaInput(TypedDict, total=False):
@@ -501,6 +592,8 @@ def make_validation_plugin(
 
 
 __all__ = [
+    "ComputationFn",
+    "ComputationResult",
     "FactoryPlugin",
     "GraphPluginSpec",
     "make_builder_plugin",

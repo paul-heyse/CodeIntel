@@ -10,9 +10,18 @@ graph access.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
+from codeintel.analytics.graph_runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.compute.metrics import centrality, components
 from codeintel.graphs.core import (
     ComputationResult,
@@ -24,7 +33,84 @@ from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.resources import StorageResource
 from codeintel.ingestion.services.storage import IngestStorageService
 
+if TYPE_CHECKING:
+    from codeintel.storage.gateway import StorageGateway
+
 log = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Runtime Resolution Helpers (merged from _runtime.py)
+# =============================================================================
+
+
+@dataclass
+class ResolvedRuntime:
+    """Resolved runtime context for analytics computations.
+
+    Attributes
+    ----------
+    gateway
+        Storage gateway for database access.
+    runtime
+        Graph runtime for graph operations.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    """
+
+    gateway: StorageGateway
+    runtime: GraphRuntime
+    repo: str
+    commit: str
+
+
+@contextmanager
+def resolve_analytics_runtime(
+    ctx: GraphPluginExecutionContext,
+) -> Iterator[ResolvedRuntime]:
+    """Resolve runtime for analytics computations.
+
+    Handle gateway access via resource injection with fallback,
+    and creates a standard runtime with default backend configuration.
+
+    Parameters
+    ----------
+    ctx
+        Graph execution context.
+
+    Yields
+    ------
+    ResolvedRuntime
+        Resolved runtime context with gateway, runtime, repo, and commit.
+
+    Examples
+    --------
+    >>> with resolve_analytics_runtime(ctx) as rt:
+    ...     compute_metrics(rt.gateway, repo=rt.repo, commit=rt.commit, runtime=rt.runtime)
+    """
+    # Get gateway via resource injection or fallback
+    if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
+        storage = ctx.graph_resources.require(StorageResource)
+        gateway = storage.gateway
+    else:
+        gateway = ctx.gateway
+
+    # Resolve runtime with default backend configuration
+    runtime = resolve_graph_runtime(
+        gateway,
+        ctx.snapshot,
+        GraphRuntimeOptions(snapshot=ctx.snapshot, backend=GraphBackendConfig()),
+    )
+
+    yield ResolvedRuntime(
+        gateway=gateway,
+        runtime=runtime,
+        repo=ctx.repo,
+        commit=ctx.commit,
+    )
+
 
 # =============================================================================
 # Computation Functions (using hexagonal compute layer)
@@ -431,10 +517,12 @@ def get_module_ext_metrics_plugin() -> GraphPluginProtocol:
 
 
 __all__ = [
+    "ResolvedRuntime",
     "core_graph_metrics_plugin",
     "function_ext_metrics_plugin",
     "get_core_graph_metrics_plugin",
     "get_function_ext_metrics_plugin",
     "get_module_ext_metrics_plugin",
     "module_ext_metrics_plugin",
+    "resolve_analytics_runtime",
 ]

@@ -21,6 +21,11 @@ from codeintel.graphs.compute.metrics.components import (
     condensation_layers,
     find_strongly_connected,
 )
+from tests._helpers.fakes.networkx_graphs import (
+    chain_graph,
+    cyclic_graph,
+    diamond_graph,
+)
 
 SIMPLE_DAG_NODE_COUNT: Final = 4
 SINGLE_CYCLE_SIZE: Final = 3
@@ -36,36 +41,6 @@ TRIPLE_NODE_SIZE: Final = 3
 DOUBLE_NODE_SIZE: Final = 2
 SINGLE_NODE_SIZE: Final = 1
 SINGLE_COMPONENT_COUNT: Final = 1
-
-
-def _make_simple_dag() -> nx.DiGraph:
-    """Create a simple DAG with no cycles.
-
-    Structure: A -> B -> C -> D
-
-    Returns
-    -------
-    nx.DiGraph
-        A simple directed acyclic graph.
-    """
-    g = nx.DiGraph()
-    g.add_edges_from([("A", "B"), ("B", "C"), ("C", "D")])
-    return g
-
-
-def _make_single_cycle() -> nx.DiGraph:
-    """Create a graph with a single cycle.
-
-    Structure: A -> B -> C -> A
-
-    Returns
-    -------
-    nx.DiGraph
-        A graph with one SCC (the entire graph).
-    """
-    g = nx.DiGraph()
-    g.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
-    return g
 
 
 def _make_two_sccs() -> nx.DiGraph:
@@ -109,24 +84,9 @@ def _make_complex_sccs() -> nx.DiGraph:
     return g
 
 
-def _make_diamond_dag() -> nx.DiGraph:
-    """Create a diamond-shaped DAG.
-
-    Structure: A -> B, A -> C, B -> D, C -> D
-
-    Returns
-    -------
-    nx.DiGraph
-        A diamond DAG where each node is its own SCC.
-    """
-    g = nx.DiGraph()
-    g.add_edges_from([("A", "B"), ("A", "C"), ("B", "D"), ("C", "D")])
-    return g
-
-
 def test_find_strongly_connected_dag() -> None:
     """Find SCCs in a DAG (each node is its own SCC)."""
-    g = _make_simple_dag()
+    g = chain_graph(4)
 
     result = find_strongly_connected(g)
 
@@ -138,7 +98,7 @@ def test_find_strongly_connected_dag() -> None:
 
 def test_find_strongly_connected_single_cycle() -> None:
     """Find SCCs in a single cycle graph."""
-    g = _make_single_cycle()
+    g = cyclic_graph(3)
 
     result = find_strongly_connected(g)
 
@@ -198,7 +158,7 @@ def test_find_strongly_connected_single_node() -> None:
 
 def test_find_strongly_connected_node_to_component_mapping() -> None:
     """Node to component mapping is correct."""
-    g = _make_single_cycle()
+    g = cyclic_graph(3)
 
     result = find_strongly_connected(g)
 
@@ -234,7 +194,7 @@ def test_find_strongly_connected_condensation_is_dag() -> None:
 
 def test_condensation_layers_dag() -> None:
     """Compute layers on a simple DAG."""
-    g = _make_simple_dag()
+    g = chain_graph(4)
     scc_result = find_strongly_connected(g, compute_condensation=True)
 
     layers = condensation_layers(g, scc_result)
@@ -249,7 +209,7 @@ def test_condensation_layers_dag() -> None:
 
 def test_condensation_layers_diamond_dag() -> None:
     """Compute layers on a diamond DAG."""
-    g = _make_diamond_dag()
+    g = diamond_graph()
     scc_result = find_strongly_connected(g, compute_condensation=True)
 
     layers = condensation_layers(g, scc_result)
@@ -301,7 +261,7 @@ def test_condensation_layers_single_node() -> None:
 
 def test_condensation_layers_cycle() -> None:
     """Compute layers on a cycle (single SCC)."""
-    g = _make_single_cycle()
+    g = cyclic_graph(3)
     scc_result = find_strongly_connected(g, compute_condensation=True)
 
     layers = condensation_layers(g, scc_result)

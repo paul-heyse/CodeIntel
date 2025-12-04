@@ -3,6 +3,27 @@
 This module defines structured result types that tool plugins return after
 parsing raw tool output. These domain objects provide type safety and a
 clear contract between tool plugins and ingestion consumers.
+
+Architecture Note
+-----------------
+These "Report" types (DiagnosticReport, CoverageReport, TestReport, ScipIndexResult)
+are **rich domain objects** used internally by tool plugins. They include:
+- Aggregated counts (total_errors, total_warnings, definition_count, etc.)
+- Factory methods for construction from raw data (from_error_counts, from_json_documents)
+- Helper methods for common access patterns (errors_by_path, by_path, definitions_by_location)
+
+In contrast, the "Result" types in ``ports/tools.py`` (DiagnosticResult, CoverageResult,
+TestResult, ScipResult) are **simpler port interface types** with status/error/duration
+fields suitable for clean architectural boundaries.
+
+The ``ToolRunnerAdapter`` converts from these rich Report types to the simpler Result
+types at the port boundary.
+
+See Also
+--------
+codeintel.ingestion.ports.tools : Simpler port interface types
+codeintel.ingestion.adapters.tool_runner : Adapter that bridges the layers
+codeintel.ingestion.tool_service : Facade using these Report types internally
 """
 
 from __future__ import annotations

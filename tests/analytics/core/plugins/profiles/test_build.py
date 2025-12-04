@@ -144,12 +144,11 @@ def test_profiles_plugin_metadata_outputs() -> None:
 def test_profiles_plugin_metadata_capabilities_provided() -> None:
     """Plugin metadata provides correct capabilities."""
     plugin = ProfilesPlugin()
-    assert len(plugin.metadata.capabilities_provided) == EXPECTED_CAPABILITY_COUNT
+    assert len(plugin.metadata.provides) == EXPECTED_CAPABILITY_COUNT
 
-    cap_names = {c.name for c in plugin.metadata.capabilities_provided}
-    assert "analytics.function_profile" in cap_names
-    assert "analytics.file_profile" in cap_names
-    assert "analytics.module_profile" in cap_names
+    assert "analytics.function_profile" in plugin.metadata.provides
+    assert "analytics.file_profile" in plugin.metadata.provides
+    assert "analytics.module_profile" in plugin.metadata.provides
 
 
 def test_profiles_plugin_metadata_tags() -> None:

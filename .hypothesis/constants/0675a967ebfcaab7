@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/config_data_flow/compute.py
+# hypothesis_version: 6.148.5
+
+[90000, '3.0.0', 'CatalogProvider', 'ConfigDataFlowPlugin', 'GraphProvider', 'analytics', 'callgraph', 'config', 'config.data_flow', 'config_data_flow', 'config_data_flow_cfg', 'config_ingest', 'core.config_keys', 'data_flow', 'entrypoints.build', 'fatal', 'functions.metrics', 'tracking']

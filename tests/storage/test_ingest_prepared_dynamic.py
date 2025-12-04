@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.ingestion.ingest_service import INGEST_MACRO_TABLES, macro_exists
+from codeintel.ingestion.infrastructure_utilities.macros import (
+    INGEST_MACRO_TABLES,
+    macro_exists,
+)
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import prepared_statements_dynamic
 

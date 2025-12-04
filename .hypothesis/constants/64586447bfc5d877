@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/resources/__init__.py
+# hypothesis_version: 6.148.5
+
+['CatalogResource', 'GraphResource', 'ResourceContainer', 'ResourceProvider', 'ResourceProviderBase', 'StorageResource']

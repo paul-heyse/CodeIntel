@@ -148,10 +148,9 @@ def test_coverage_test_edges_plugin_metadata_outputs() -> None:
 def test_coverage_test_edges_plugin_metadata_capabilities_provided() -> None:
     """Plugin metadata provides correct capabilities."""
     plugin = CoverageTestEdgesPlugin()
-    assert len(plugin.metadata.capabilities_provided) == EXPECTED_CAPABILITY_COUNT
+    assert len(plugin.metadata.provides) == EXPECTED_CAPABILITY_COUNT
 
-    cap_names = {c.name for c in plugin.metadata.capabilities_provided}
-    assert "coverage.test_edges" in cap_names
+    assert "coverage.test_edges" in plugin.metadata.provides
 
 
 def test_coverage_test_edges_plugin_metadata_tags() -> None:
@@ -313,5 +312,4 @@ def test_plugin_capabilities_required() -> None:
     """Plugin requires coverage.lines capability."""
     plugin = CoverageTestEdgesPlugin()
 
-    req_caps = {c.name for c in plugin.metadata.capabilities_required}
-    assert "coverage.lines" in req_caps
+    assert "coverage.lines" in plugin.metadata.requires

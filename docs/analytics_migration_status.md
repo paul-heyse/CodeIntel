@@ -1,368 +1,566 @@
-# Analytics Architecture Migration Status
+# Analytics Unified Architecture Migration Status
 
-## 1. Target End State Architecture
+## Executive Summary
 
-### 1.1 Architectural Layers
+This document summarizes the work completed to align the analytics subsystem with the unified infrastructure in `core/`, and outlines the remaining tasks needed to complete the migration.
 
-The new analytics architecture follows a clean layered design that separates concerns:
+---
+
+## Background: Previous Architecture
+
+### The Dual-System Problem
+
+The CodeIntel codebase evolved with two parallel plugin/computation systems:
+
+1. **Graphs Subsystem** (`src/codeintel/graphs/`)
+   - Purpose: Build and analyze code structure graphs (call graphs, import graphs, CFG/DFG)
+   - Plugin runtime with `GraphPluginProtocol`, `GraphPluginMetadata`
+   - Recipe DSL with `GraphRecipe`, `GraphStage`
+   - Resource providers with `ResourceContainer`
+   - Compute layer for centrality, structural, and community metrics
+
+2. **Analytics Subsystem** (`src/codeintel/analytics/`)
+   - Purpose: Compute derived metrics, coverage analysis, risk factors
+   - Separate plugin runtime with `AnalyticsPluginProtocol`, different metadata fields
+   - Separate recipe DSL with `AnalyticsRecipe`
+   - Separate resource registry with different registration patterns
+   - Duplicate graph metric computations in `graph_metrics/metrics.py`
+
+### Architectural Issues
+
+| Issue | Description |
+|-------|-------------|
+| **Code Duplication** | 1000+ lines of graph metric code duplicated between systems |
+| **Protocol Divergence** | `PluginMetadata` had different field names (`capabilities_provided` vs `provides`) |
+| **Type Fragmentation** | Different types for same concepts (`GraphRecipe` vs `AnalyticsRecipe`) |
+| **Resource Protocol Mismatch** | Graphs used `RESOURCE_NAME` ClassVar, analytics used `resource_name` property |
+| **Context Isolation** | Each system had its own `PluginExecutionContext` with incompatible interfaces |
+| **Maintenance Burden** | Bug fixes and improvements needed in two places |
+
+### Directory Structure (Before)
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    Plugins (Thin Orchestration)              │
-│                 codeintel/analytics/core/plugins/            │
-│   - Minimal code that wires together resources and compute   │
-│   - Uses ctx.require(ProviderType) for all resource access   │
-├──────────────────────────────────────────────────────────────┤
-│                     Resource Providers                       │
-│                  codeintel/analytics/resources/              │
-│   - GraphProvider, CatalogProvider, AstProvider              │
-│   - AnalyticsContextProvider (legacy bridge, to be removed)  │
-│   - Lazy loading via ResourceRegistry                        │
-├──────────────────────────────────────────────────────────────┤
-│                   Pure Computation Layer                     │
-│                   codeintel/analytics/compute/               │
-│   - Side-effect-free functions                               │
-│   - No I/O, no database access                               │
-│   - Easily testable in isolation                             │
-├──────────────────────────────────────────────────────────────┤
-│                    Persistence Adapters                      │
-│                   codeintel/analytics/adapters/              │
-│   - Database read/write operations                           │
-│   - Table-specific adapters with delete_scope/insert_rows    │
-└──────────────────────────────────────────────────────────────┘
+src/codeintel/
+├── graphs/
+│   ├── core/
+│   │   ├── protocol.py      # GraphPluginProtocol, GraphPluginMetadata
+│   │   ├── context.py       # GraphExecutionContext
+│   │   └── result.py        # GraphPluginResult
+│   ├── recipes/
+│   │   ├── dsl.py           # GraphRecipe, GraphStage
+│   │   └── executor.py
+│   ├── resources/
+│   │   ├── protocol.py      # ResourceProvider (RESOURCE_NAME)
+│   │   └── container.py
+│   └── compute/
+│       └── metrics/         # Centrality, structural metrics
+│
+├── analytics/
+│   ├── core/
+│   │   ├── plugin_protocol.py  # AnalyticsPluginProtocol
+│   │   ├── execution_context.py
+│   │   └── base.py             # capabilities_provided/required
+│   ├── recipes/
+│   │   ├── model.py            # AnalyticsRecipe
+│   │   └── executor.py
+│   ├── resources/
+│   │   ├── protocol.py         # LazyResource (resource_name property)
+│   │   └── registry.py
+│   └── graph_metrics/
+│       └── metrics.py          # Duplicated graph computations
 ```
 
-### 1.2 Resource Access Pattern
+---
 
-**Target Pattern:**
+## Why We Are Making Changes
 
+### Goals
+
+1. **Single Source of Truth**: One canonical definition for plugins, recipes, and resources
+2. **Eliminate Duplication**: Share graph computation code between systems
+3. **Consistent Types**: Same `PluginMetadata`, `Recipe`, `ResourceProvider` everywhere
+4. **Composability**: Analytics can use graph plugins, graphs can use analytics data
+5. **Maintainability**: Fix bugs once, improve once, test once
+
+### Design Principles
+
+- **Unified Core Package**: New `src/codeintel/core/` contains canonical definitions
+- **Inheritance for Extension**: Domain-specific contexts extend core contexts
+- **Re-export for Compatibility**: Subsystem modules re-export from core
+- **No Backward-Compatible Shims**: Full migration, no legacy code paths
+
+### Target Architecture
+
+```
+src/codeintel/
+├── core/                      # NEW: Unified infrastructure
+│   ├── plugins/
+│   │   ├── protocol.py        # PluginProtocol, PluginMetadata, ValidationResult
+│   │   ├── context.py         # PluginExecutionContext, PluginScratch
+│   │   └── result.py          # PluginResult, PluginExecutionRecord
+│   ├── recipes/
+│   │   ├── model.py           # Recipe, RecipeStage, RecipeOptions
+│   │   └── dsl.py             # RecipeBuilder, stage(), recipe()
+│   └── resources/
+│       ├── protocol.py        # ResourceProvider, ResourceProviderBase
+│       └── registry.py        # ResourceRegistry
+│
+├── graphs/
+│   ├── core/
+│   │   ├── protocol.py        # GraphPluginMetadata extends PluginMetadata
+│   │   └── context.py         # GraphPluginExecutionContext extends core
+│   ├── recipes/
+│   │   └── dsl.py             # Re-exports core + graph_stage(), graph_recipe()
+│   └── resources/
+│       └── protocol.py        # Re-exports core types
+│
+├── analytics/
+│   ├── core/
+│   │   ├── plugin_protocol.py # Re-exports core types
+│   │   └── execution_context.py # AnalyticsPluginExecutionContext extends core
+│   ├── recipes/
+│   │   └── model.py           # Re-exports core types
+│   └── resources/
+│       └── protocol.py        # Re-exports core types
+```
+
+---
+
+## Migration Scope
+
+### Phase A: Graphs Subsystem Migration (COMPLETED)
+
+The graphs subsystem was migrated first as a reference implementation.
+
+#### A.1 Unified Core Infrastructure Created
+
+| New File | Purpose |
+|----------|---------|
+| `core/plugins/protocol.py` | `PluginProtocol`, `PluginMetadata`, `ValidationResult`, `PluginResourceHints` |
+| `core/plugins/context.py` | `PluginExecutionContext`, `PluginExecutionContextBuilder`, `PluginScratch` |
+| `core/plugins/result.py` | `PluginResult`, `PluginExecutionRecord`, `PluginStatus` |
+| `core/recipes/model.py` | `Recipe`, `RecipeStage`, `RecipeOptions`, `RecipeScope` |
+| `core/recipes/dsl.py` | `RecipeBuilder`, `stage()`, `recipe()` |
+| `core/resources/protocol.py` | `ResourceProvider`, `ResourceProviderBase` |
+| `core/resources/registry.py` | `ResourceRegistry`, `ResourceNotFoundError` |
+
+#### A.2 Graph Protocol Updates
+
+| Change | Details |
+|--------|---------|
+| `GraphPluginMetadata` | Now extends `PluginMetadata` with graph-specific fields (`produces_graph_kinds`, `requires_graph_kinds`) |
+| `GraphPluginExecutionContext` | Extends `PluginExecutionContext` with `graph_resources`, `require_graphs()` |
+| Recipe DSL | `graph_recipe()` and `graph_stage()` wrap core `recipe()` and `stage()` |
+| Resource Providers | All use `RESOURCE_NAME` ClassVar pattern |
+
+#### A.3 Graph Files Updated
+
+- **10 plugin files** in `graphs/plugins/`
+- **4 runtime files** in `graphs/runtime/`
+- **2 recipe files** in `graphs/recipes/`
+- **40+ test files** in `tests/graphs/`
+
+#### A.4 Legacy Code Removed from Graphs
+
+| Removed | Replacement |
+|---------|-------------|
+| `GraphPluginResult` alias | Use `PluginResult` |
+| `GraphExecutionContext` alias | Use `GraphPluginExecutionContext` |
+| `GraphRecipe` type | Use `Recipe` |
+| `GraphStage` type | Use `RecipeStage` |
+| `BaseResourceProvider` | Use `ResourceProviderBase` |
+| `graphs/core/result.py` | Deleted (use `core/plugins/result.py`) |
+
+#### A.5 Graphs Validation Status
+
+```
+✓ ruff format: Pass
+✓ ruff check: Pass  
+✓ pyright: 0 errors
+✓ pyrefly: 0 errors
+✓ pytest tests/graphs/: 738 tests, 0 failures
+```
+
+### Phase B: Analytics Subsystem Migration (IN PROGRESS)
+
+The analytics subsystem follows the same patterns established in graphs.
+
+#### B.1 Completed Work
+
+| Component | Status | Changes |
+|-----------|--------|---------|
+| Plugin Metadata Fields | ✓ Complete | `capabilities_provided` → `provides`, added `kind` field |
+| Builders | ✓ Complete | Updated to construct unified `PluginMetadata` |
+| Registry | ✓ Complete | Uses `provides`/`requires` for capability tracking |
+| 16 Plugin Files | ✓ Complete | Migrated to string-based capability declarations |
+| Resource Providers | Partial | Added `RESOURCE_NAME` to 4 providers |
+
+#### B.2 Remaining Work
+
+| Component | Status | Required Changes |
+|-----------|--------|------------------|
+| `LazyResource` Protocol | Pending | Add `RESOURCE_NAME` ClassVar, bridge with `resource_name` property |
+| `ResourceRegistry` | Pending | Update to use `RESOURCE_NAME` pattern |
+| `PluginExecutionContext` | Pending | Create `AnalyticsPluginExecutionContext` extending core |
+| Recipe System | Pending | Re-export from `core/recipes`, alias `AnalyticsRecipe` |
+| Graph Metrics Façade | Deferred | Convert to use `graphs/compute/metrics` (large refactoring) |
+
+---
+
+## Part 1: Detailed Changes (This Session)
+
+### 1.1 Plugin Metadata Compatibility (COMPLETED)
+
+The unified `PluginMetadata` in `core/plugins/protocol.py` uses different field names than the analytics code was using. All changes have been applied to align analytics with the unified schema.
+
+#### Updated `analytics/core/builders.py`
+
+**Changes Made:**
+- Added `PluginKind` and `PluginIsolation` imports
+- Changed `PluginContractsSection` fields:
+  - `capabilities_provided: list[PluginCapability]` → `provides: list[str]`
+  - `capabilities_required: list[PluginCapability]` → `requires: list[str]`
+- Added `kind: PluginKind = "analytics"` to `PluginMetaSection`
+- Changed `isolation_kind` type from `Literal["process", "thread"] | None` to `PluginIsolation = "none"`
+- Added `kind()` builder method for fluent configuration
+- Updated `provides()` and `requires()` methods to extract string names from `PluginCapability` objects
+- Updated `build()` method to use new field names (`provides`, `requires`, `kind`)
+
+#### Verified `analytics/core/base.py`
+
+**Status:** Already using correct unified fields
+- Uses `plugin_kind: ClassVar[PluginKind] = "analytics"`
+- Uses `provides: ClassVar[tuple[str, ...]] = ()`
+- Uses `requires: ClassVar[tuple[str, ...]] = ()`
+- Uses `isolation_kind: ClassVar[PluginIsolation] = "none"`
+- `metadata` property constructs `PluginMetadata` with correct fields
+
+#### Updated `analytics/core/registry.py`
+
+**Changes Made:**
+- Added `PluginKind` and `PluginIsolation` imports
+- Updated capability indexing to use `meta.provides` (string tuple) instead of `meta.capabilities_provided` (PluginCapability objects)
+- Updated unregister method similarly
+- Updated `_resolve_dependencies()` to use `plugin.metadata.requires` instead of `capabilities_required`
+- Updated `_build_capability_index()` to use `plugin.metadata.provides`
+- Updated `PluginMetaOptions` class:
+  - Added `kind: PluginKind = "analytics"` field
+  - Changed `isolation_kind` type to `PluginIsolation = "none"`
+- Updated `PluginMetaOptionsInput` TypedDict with same changes
+- Updated `to_metadata()` method:
+  - Changed `_normalize_capability()` to return `str` instead of `PluginCapability`
+  - Added `kind=self.kind` to `PluginMetadata` constructor
+  - Changed `capabilities_provided` → `provides`
+  - Changed `capabilities_required` → `requires`
+
+#### Updated 16 Plugin Files
+
+**Pattern Applied (each file):**
 ```python
-def compute(self, ctx: PluginExecutionContext) -> dict[str, int]:
-    # Access resources via typed registry
-    graph_provider = ctx.require(GraphProvider)
-    catalog_provider = ctx.require(CatalogProvider)
-    
-    # Use pure compute functions
-    from codeintel.analytics.compute.functions import compute_complexity
-    metrics = compute_complexity(ast_nodes)
-    
-    # Persist via adapters
-    from codeintel.analytics.adapters.functions import FunctionMetricsAdapter
-    adapter = FunctionMetricsAdapter()
-    return {"analytics.function_metrics": adapter.persist(ctx.gateway, metrics)}
+# From:
+capabilities_provided=(PluginCapability(name="x", kind="dataset"),)
+capabilities_required=(PluginCapability(name="y", kind="dataset"),)
+
+# To:
+provides=("x",)
+requires=("y",)
 ```
 
-### 1.3 Key Principles
+**Files Updated:**
+| Directory | Files |
+|-----------|-------|
+| `functions/` | ast_features.py, history.py, effects.py, contracts.py |
+| `coverage/` | test_edges.py |
+| `data_models/` | build.py, usage.py |
+| `dependencies/` | external.py |
+| `semantic_roles/` | compute.py |
+| `subsystems/` | build.py |
+| `profiles/` | build.py |
+| `config_data_flow/` | compute.py |
+| `risk/` | factors.py |
+| `history/` | timeseries.py |
+| `tests/` | behavioral_coverage.py, profile.py |
 
-1. **No direct context access** - All resources via `ctx.require(ProviderType)`
-2. **Pure computation separated** - Business logic in `compute/` with no I/O
-3. **Adapters for persistence** - All database operations in `adapters/`
-4. **Lazy resource loading** - Resources loaded on first access via providers
-5. **Middleware for cross-cutting concerns** - Logging, metrics, tracing via middleware chain
+**Additional Changes:**
+- Removed unused `PluginCapability` imports (auto-fixed by Ruff)
+- Added `kind="analytics"` to all `PluginMetadata` constructors
 
----
+#### Updated `analytics/graphs/catalog.py`
 
-## 2. Recently Completed Work
+**Changes Made:**
+- Changed `meta.capabilities_provided` access to `meta.provides`
+- Changed `meta.capabilities_required` access to `meta.requires`
 
-### 2.1 Phase 1-4 (Initial Architecture)
+### 1.2 Resource Provider Protocol Fixes (PARTIAL)
 
-| Component | Status | Location |
-|-----------|--------|----------|
-| Pure Computation Layer | ✅ Complete | `analytics/compute/` |
-| - functions/complexity.py | ✅ | Cyclomatic complexity |
-| - functions/typedness.py | ✅ | Type annotation coverage |
-| - functions/signatures.py | ✅ | Signature analysis |
-| - functions/loc.py | ✅ | Lines of code metrics |
-| Persistence Adapters | ✅ Complete | `analytics/adapters/` |
-| - base.py | ✅ | BatchAdapter, DeleteScope |
-| - functions.py | ✅ | FunctionMetricsAdapter |
-| Resource Providers | ✅ Complete | `analytics/resources/` |
-| - protocol.py | ✅ | ResourceProvider, LazyResource |
-| - registry.py | ✅ | ResourceRegistry |
-| - graphs.py | ✅ | GraphProvider |
-| - catalog.py | ✅ | CatalogProvider |
-| - asts.py | ✅ | AstProvider |
-| Plugin Middleware | ✅ Complete | `core/plugins/middleware/` |
-| - protocol.py | ✅ | MiddlewareChain |
-| - logging.py | ✅ | LoggingMiddleware |
-| - metrics.py | ✅ | MetricsMiddleware |
-| - tracing.py | ✅ | TracingMiddleware |
-| Plugin Groups | ✅ Complete | `core/plugins/groups/` |
-| Dataset Pipeline | ✅ Complete | `analytics/pipeline/` |
-| - protocol.py | ✅ | DatasetSpec |
-| - contracts.py | ✅ | DatasetContract |
-| - lineage.py | ✅ | LineageStore |
-| - scheduler.py | ✅ | PipelineScheduler |
-
-### 2.2 Migration Infrastructure (Phases A-J)
-
-| Task | Status | Details |
-|------|--------|---------|
-| Convert functions/typedness.py to shim | ✅ Complete | Re-exports from compute layer |
-| Update functions/__init__.py lazy imports | ✅ Complete | Points to compute layer |
-| Create AnalyticsContextProvider | ✅ Complete | `resources/analytics_context.py` |
-| Add from_resources() to AnalyticsContext | ✅ Complete | Factory from ResourceRegistry |
-| Add deprecation to build_analytics_context() | ✅ Complete | Warning added |
-| Update plugin base classes with fallbacks | ✅ Complete | CatalogRequiringPlugin, etc. |
-| Create compute/dependencies/ | ✅ Complete | detection.py, classification.py |
-| Create adapters/dependencies.py | ✅ Complete | DependencyCallAdapter |
-| Create compute/profiles/ | ✅ Complete | aggregation.py, features.py |
-| Create compute/graphs/ | ✅ Complete | centrality.py, statistics.py |
-| Update pipeline_bridge.py with resources | ✅ Complete | Registers providers |
-| Add middleware to run_analytics_plugins() | ✅ Complete | LoggingMiddleware, MetricsMiddleware |
-| Add resources to RecipeExecutionContext | ✅ Complete | resources: ResourceRegistry field |
-| Update execute_plugin for resources | ✅ Complete | Passes registry through |
-| Enhance PluginTestHarness | ✅ Complete | with_resources(), with_resource() |
-| Add with_graph_provider(), with_catalog_provider() | ✅ Complete | Convenience methods |
-| Delete duplicate span_resolver.py | ✅ Complete | Removed |
-| Update AGENTS.md | ✅ Complete | New architecture documented |
-| Create migration guide | ✅ Complete | docs/analytics_migration_guide.md |
+**Changes Made:**
+- Added `RESOURCE_NAME: ClassVar[str]` to:
+  - `AstProvider` in `analytics/resources/asts.py`
+  - `FeaturesProvider` in `analytics/resources/features.py`
+  - `GraphProvider` in `analytics/resources/graphs.py` (from previous session)
+  - `CatalogProvider` in `analytics/resources/catalog.py` (from previous session)
 
 ---
 
-## 3. Remaining Work for Full Migration
+## Part 2: Remaining Work
 
-### 3.1 Phase 1: Plugin Migration (16 files)
+### Issue 1: Resource Provider Protocol Mismatch (CRITICAL)
 
-All plugins need to be updated from direct context access to `ctx.require()`:
+**Problem:** The analytics `LazyResource` base class uses `resource_name` as an instance property, but the unified `core/resources/protocol.py` defines `ResourceProvider` with `RESOURCE_NAME` as a ClassVar.
 
-**Function Plugins (5 files):**
+**Files Affected:**
+- `analytics/resources/protocol.py` - Contains `LazyResource` with `resource_name` property
+- `analytics/resources/registry.py` - Accesses `resource_name` on providers
+- `analytics/resources/module_map.py` - `ModuleMapProvider` needs `RESOURCE_NAME`
 
-- [ ] `core/plugins/functions/metrics.py` - Uses `ctx.analytics_context`
-- [ ] `core/plugins/functions/effects.py` - Uses `ctx.analytics_context`, `ctx.graph_runtime`
-- [ ] `core/plugins/functions/contracts.py` - Uses `ctx.analytics_context`, `ctx.graph_runtime`
-- [ ] `core/plugins/functions/history.py` - Uses `ctx.analytics_context`
-- [ ] `core/plugins/functions/ast_features.py` - Uses `ctx.analytics_context`, `ctx.graph_runtime`
-
-**Graph/Coverage Plugins (3 files):**
-
-- [ ] `core/plugins/graphs/core_metrics.py` - Uses `ctx.analytics_context`
-- [ ] `core/plugins/coverage/functions.py` - Uses `ctx.analytics_context`
-- [ ] `core/plugins/coverage/test_edges.py` - Uses `has_graph_runtime()`
-
-**Domain Plugins (8 files):**
-
-- [ ] `core/plugins/dependencies/external.py`
-- [ ] `core/plugins/subsystems/build.py`
-- [ ] `core/plugins/profiles/build.py`
-- [ ] `core/plugins/data_models/usage.py`
-- [ ] `core/plugins/config_data_flow/compute.py`
-- [ ] `core/plugins/entrypoints/build.py`
-- [ ] `core/plugins/semantic_roles/compute.py`
-- [ ] `core/plugins/risk/factors.py`
-
-### 3.2 Phase 2: Domain Module Extraction (10 modules)
-
-Extract pure computation and use adapters:
-
-| Module | Lines | Current State | Action Required |
-|--------|-------|---------------|-----------------|
-| `dependencies/core.py` | 723 | Mixed I/O | Refactor to use compute/adapters |
-| `profiles/__init__.py` | ~400 | Uses AnalyticsContext | Create adapters/profiles.py |
-| `subsystems/materialize.py` | ~300 | Direct DB + context | Create compute/subsystems/ |
-| `data_model_usage.py` | 582 | Mixed I/O | Create compute/data_models/ |
-| `entrypoints/core.py` | ~400 | ensure_analytics_context | Use resource providers |
-| `semantic_roles/core.py` | ~300 | Direct context | Create compute/semantic_roles/ |
-| `coverage_analytics.py` | 216 | Uses AnalyticsContext | Use providers |
-| `ast_features/extract.py` | ~400 | ensure_analytics_context | Use AstProvider |
-| `cfg_dfg/materialize.py` | ~300 | Uses AnalyticsContext | Use providers |
-| `graphs/config_data_flow.py` | ~400 | ensure_analytics_context | Use providers |
-
-### 3.3 Phase 3: Graph Runtime Consolidation (33 files)
-
-Update imports from `graph_runtime.py` to use `GraphProvider`:
-
-**Analytics Domain (18 files):**
-
-- [ ] `functions/function_effects.py`
-- [ ] `functions/function_contracts.py`
-- [ ] `dependencies/core.py`
-- [ ] `data_model_usage.py`
-- [ ] `entrypoints/core.py`
-- [ ] `subsystems/materialize.py`
-- [ ] `semantic_roles/core.py`
-- [ ] `tests/graph_metrics.py`
-- [ ] `graphs/config_graph_metrics.py`
-- [ ] `graphs/module_graph_metrics_ext.py`
-- [ ] `graphs/graph_metrics_ext.py`
-- [ ] `graphs/graph_stats.py`
-- [ ] `graphs/graph_metrics.py`
-- [ ] `graphs/config_data_flow.py`
-- [ ] `graphs/symbol_graph_metrics.py`
-- [ ] `graphs/subsystem_graph_metrics.py`
-- [ ] `core/pipeline_bridge.py`
-- [ ] `core/execution_context.py`
-
-**External Modules (15 files):**
-
-- [ ] `cli/main.py`
-- [ ] `serving/bootstrap.py`
-- [ ] `serving/services/wiring.py`
-- [ ] `pipeline/orchestration/core.py`
-- [ ] `graphs/validation/findings.py`
-- [ ] `graphs/validation/runner.py`
-- [ ] `graphs/plugins/validation.py`
-- [ ] `graphs/plugins/metrics/core.py`
-- [ ] `graphs/plugins/metrics/secondary.py`
-- [ ] `graphs/core/adapters.py`
-- [ ] `recipes/executor.py`
-- [ ] `core/base.py`
-- [ ] `resources/analytics_context.py`
-- [ ] 2 additional files
-
-### 3.4 Phase 4: Legacy Function Removal (9 files)
-
-Remove `ensure_analytics_context` usage:
-
-- [ ] `functions/function_contracts.py`
-- [ ] `dependencies/core.py`
-- [ ] `data_model_usage.py`
-- [ ] `entrypoints/core.py`
-- [ ] `ast_features/extract.py`
-- [ ] `semantic_roles/core.py`
-- [ ] `core/plugins/functions/ast_features.py`
-- [ ] `graphs/config_data_flow.py`
-- [ ] `context.py` - Remove the function definition
-
-### 3.5 Phase 5: Context Cleanup
-
-**Remove from PluginExecutionContext:**
-
-```python
-# Legacy fields to remove:
-_graph_runtime: GraphRuntime | None
-_graph_runtime_factory: Callable[[], GraphRuntime] | None
-_catalog_provider: FunctionCatalogProvider | None
-_catalog_factory: Callable[[], FunctionCatalogProvider] | None
-_analytics_context: AnalyticsContext | None
-_analytics_context_factory: Callable[[], AnalyticsContext] | None
-
-# Legacy properties to remove:
-@property graph_runtime
-@property catalog
-@property analytics_context
-
-# Legacy methods to remove:
-has_graph_runtime()
-has_catalog()
-has_analytics_context()
+**Current Errors:**
+```
+analytics/resources/registry.py:96 - Cannot access attribute "resource_name" 
+analytics/resources/registry.py:142 - Cannot access attribute "resource_name"
+analytics/resources/registry.py:143 - Cannot access attribute "resource_name"
+analytics/resources/registry.py:309 - Cannot access attribute "get_or_none"
+analytics/resources/module_map.py:43 - "ClassVar" is not defined
+analytics/resources/factory.py:158 - "ModuleMapProvider" incompatible with ResourceProvider
 ```
 
-**Remove from PluginExecutionContextBuilder:**
+**Required Actions:**
+1. Fix `ClassVar` import in `module_map.py`
+2. Decide on unified approach for `LazyResource`:
+   - Option A: Add `RESOURCE_NAME` ClassVar to `LazyResource` and all subclasses
+   - Option B: Update analytics `ResourceRegistry` to use both `RESOURCE_NAME` and `resource_name`
+   - Option C: Migrate all analytics providers to extend `core/resources/ResourceProviderBase`
 
-```python
-with_graph_runtime()
-with_catalog()
-with_analytics_context()
-```
+### Issue 2: Analytics ResourceRegistry vs Core ResourceRegistry
 
-### 3.6 Phase 6: Base Class Cleanup
+**Problem:** Analytics has its own `ResourceRegistry` in `analytics/resources/registry.py` that differs from `core/resources/registry.py`:
+- Analytics version uses `resource_type` (class) + `provider` pattern
+- Analytics version has `get_or_none()` method expectations
+- Core version uses `provider.RESOURCE_NAME` for registration
 
-Remove legacy fallbacks from:
+**Required Actions:**
+1. Compare both implementations
+2. Either:
+   - Update analytics `ResourceRegistry` to match core patterns
+   - Or keep analytics-specific registry and ensure protocol compatibility
 
-- [ ] `CatalogRequiringPlugin.get_catalog()` - Remove legacy fallback
-- [ ] `GraphRuntimeRequiringPlugin.get_graph_runtime()` - Remove legacy fallback
-- [ ] `AnalyticsContextRequiringPlugin` - Deprecate entire class
+### Issue 3: Graph Metrics Façade (DEFERRED)
 
-### 3.7 Phase 7: Pipeline/Recipe Updates
+**Status:** The plan indicated converting `analytics/graph_metrics/metrics.py` to use `graphs/compute/metrics/`, but this was marked as completed in a previous session.
 
-- [ ] `pipeline_bridge.py` - Remove legacy `with_*` calls
-- [ ] `recipes/executor.py` - Remove legacy fields from RecipeExecutionContext
-- [ ] `pipeline/orchestration/core.py` - Update to use resource providers
+**Current State:**
+- `analytics/graph_metrics/metrics.py` (1115 lines) still has 92 direct NetworkX calls
+- No imports from `codeintel.graphs.compute.metrics`
+- Contains analytics-specific context management (`GraphContext`) that adds value
 
-### 3.8 Phase 8: External Module Updates
+**Recommendation:** This is a larger refactoring that should be done incrementally:
+1. Identify functions that purely duplicate `graphs/compute/metrics`
+2. Replace those with calls to the unified compute functions
+3. Keep analytics-specific adapter functions and data structures
 
-- [ ] `cli/main.py` - Update GraphRuntime usage
-- [ ] `serving/bootstrap.py` - Use resource providers
-- [ ] `serving/services/wiring.py` - Update DI configuration
-- [ ] `graphs/validation/*.py` (3 files) - Update validation modules
-- [ ] `graphs/plugins/metrics/*.py` (2 files) - Update metrics plugins
-- [ ] `graphs/core/adapters.py` - Update graph adapters
+### Issue 4: Execution Context Unification (NOT STARTED)
 
-### 3.9 Phase 9: Test Migration
+**Current State:**
+- Analytics has `analytics/core/execution_context.py` with its own `PluginExecutionContext`
+- Core has unified `core/plugins/context.py` with `PluginExecutionContext`
+- Graphs uses `GraphPluginExecutionContext` extending the core context
 
-**Test Helpers:**
+**Required Actions:**
+1. Create `AnalyticsPluginExecutionContext` extending `core/plugins/context.PluginExecutionContext`
+2. Add analytics-specific fields (scope, analytics_resources)
+3. Update all plugins to use the new context type
 
-- [ ] `tests/_helpers/plugin_harness.py` - Remove legacy fields
-- [ ] `tests/_helpers/config_builders.py` - Use resource providers
+### Issue 5: Recipe System Unification (NOT STARTED)
 
-**Analytics Tests (14 files):**
+**Current State:**
+- Analytics has `analytics/recipes/model.py` with `AnalyticsRecipe`
+- Core has unified `core/recipes/model.py` with `Recipe`
+- Graphs already uses `core/recipes`
 
-- [ ] `test_graph_runtime_cache.py`
-- [ ] `test_runtime_pool.py`
-- [ ] `test_feature_flags_behavior.py`
-- [ ] `test_graph_metrics_runtime_reuse.py`
-- [ ] `test_graph_metric_filters_integration.py`
-- [ ] `test_graph_feature_flags.py`
-- [ ] `test_backend_resource_runtime.py`
-- [ ] `test_backend_selection.py`
-- [ ] `test_validation.py`
-- [ ] `test_graph_validation_catalog.py`
-- [ ] `test_validation_flags.py`
-- [ ] 3 additional test files
-
-### 3.10 Phase 10: Final Cleanup
-
-- [ ] Delete `analytics/graph_service.py` (after updating 2 imports)
-- [ ] Update `analytics/__init__.py` exports
-- [ ] Mark migration guide as complete
-- [ ] Remove deprecated export references
+**Required Actions:**
+1. Update `analytics/recipes/model.py` to import from `core/recipes`
+2. Make `AnalyticsRecipe` an alias or thin wrapper if needed
+3. Update `analytics/recipes/executor.py` to use unified types
 
 ---
 
-## 4. Summary Statistics
+## Part 3: Detailed Implementation Plan
 
-| Category | Completed | Remaining |
-|----------|-----------|-----------|
-| New Infrastructure Files | 25+ | 0 |
-| Plugin Migrations | 0 | 16 |
-| Domain Module Extractions | 4 | 10 |
-| Import Updates | 0 | 33 |
-| Legacy Function Removals | 0 | 9 |
-| Context Field Removals | 0 | 12 |
-| Test Updates | 1 | 14 |
-| **Total Files to Modify** | ~30 | ~50+ |
+### Phase 2: Fix Resource Provider Issues
 
----
-
-## 5. Migration Validation Commands
+#### Step 2.1: Fix Immediate Errors
 
 ```bash
-# Verify no legacy patterns remain after migration
-grep -r "ctx.analytics_context" src/codeintel/analytics/
-grep -r "ctx.graph_runtime" src/codeintel/analytics/
-grep -r "ensure_analytics_context" src/codeintel/analytics/
-grep -r "has_graph_runtime\|has_catalog\|has_analytics_context" src/codeintel/analytics/
+# Files to modify:
+src/codeintel/analytics/resources/module_map.py  # Add ClassVar import
+src/codeintel/analytics/resources/protocol.py    # Add RESOURCE_NAME to LazyResource
+src/codeintel/analytics/resources/registry.py    # Update to use RESOURCE_NAME
+```
 
-# Run quality checks
-uv run ruff check --fix
-uv run pyright --warnings --pythonversion=3.13
-uv run pytest -q
+**Changes:**
+
+1. **`module_map.py`**: Add `ClassVar` import
+```python
+from typing import TYPE_CHECKING, ClassVar
+```
+
+2. **`protocol.py`**: Add `RESOURCE_NAME` to `LazyResource`
+```python
+class LazyResource[T](ABC):
+    RESOURCE_NAME: ClassVar[str] = ""  # Override in subclasses
+    
+    @property
+    def resource_name(self) -> str:
+        """Return the resource name (backward compatibility)."""
+        return self.RESOURCE_NAME or self._name
+```
+
+3. **`registry.py`**: Update to check both `RESOURCE_NAME` and `resource_name`
+```python
+def _get_provider_name(self, provider: ResourceProvider[Any]) -> str:
+    # Check ClassVar first (unified protocol)
+    if hasattr(provider, "RESOURCE_NAME") and provider.RESOURCE_NAME:
+        return provider.RESOURCE_NAME
+    # Fall back to instance property (analytics LazyResource)
+    if hasattr(provider, "resource_name"):
+        return provider.resource_name
+    return provider.__class__.__name__
+```
+
+#### Step 2.2: Add RESOURCE_NAME to All LazyResource Subclasses
+
+**Files to update:**
+- `analytics/resources/asts.py` ✓ (already done)
+- `analytics/resources/features.py` ✓ (already done)
+- `analytics/resources/graphs.py` ✓ (already done)
+- `analytics/resources/catalog.py` ✓ (already done)
+- `analytics/resources/module_map.py` (partial - needs ClassVar import)
+
+### Phase 3: Unify Execution Context
+
+#### Step 3.1: Create AnalyticsPluginExecutionContext
+
+**File:** `src/codeintel/analytics/core/execution_context.py`
+
+```python
+from codeintel.core.plugins.context import (
+    PluginExecutionContext as CorePluginExecutionContext,
+    PluginExecutionContextBuilder as CorePluginExecutionContextBuilder,
+)
+
+@dataclass
+class AnalyticsPluginExecutionContext(CorePluginExecutionContext):
+    """Execution context for analytics plugins."""
+    
+    scope: AnalyticsScope | None = None
+    analytics_resources: ResourceRegistry = field(default_factory=ResourceRegistry)
+    
+    def require_analytics[T](self, resource_type: type[T]) -> T:
+        """Get an analytics-specific resource."""
+        return self.analytics_resources.require(resource_type)
+```
+
+#### Step 3.2: Update Plugin Signatures
+
+Update all analytics plugins to accept the new context type in their `execute()` and `validate_inputs()` methods.
+
+### Phase 4: Unify Recipe System
+
+#### Step 4.1: Update Recipe Model
+
+**File:** `src/codeintel/analytics/recipes/model.py`
+
+```python
+from codeintel.core.recipes import Recipe, RecipeStage, RecipeOptions
+
+# Alias for backward compatibility
+AnalyticsRecipe = Recipe
+```
+
+#### Step 4.2: Update Recipe Executor
+
+**File:** `src/codeintel/analytics/recipes/executor.py`
+
+Update to use unified `Recipe` and `RecipeStage` types.
+
+### Phase 5: Final Validation
+
+```bash
+# Run full validation suite
+uv run ruff format src/codeintel/analytics/
+uv run ruff check --fix src/codeintel/analytics/
+uv run pyright --warnings --pythonversion=3.13 src/codeintel/analytics/
+uv run pyrefly check src/codeintel/analytics/
+uv run pytest tests/analytics/ -q
 ```
 
 ---
 
-## 6. File Locations Reference
+## Part 4: Files Summary
 
-### New Architecture Components
+### Files Modified in This Session
 
-| Component | Path |
-|-----------|------|
-| Resource Providers | `src/codeintel/analytics/resources/` |
-| Pure Computation | `src/codeintel/analytics/compute/` |
-| Persistence Adapters | `src/codeintel/analytics/adapters/` |
-| Plugin Middleware | `src/codeintel/analytics/core/plugins/middleware/` |
-| Plugin Groups | `src/codeintel/analytics/core/plugins/groups/` |
-| Dataset Pipeline | `src/codeintel/analytics/pipeline/` |
+| File | Changes |
+|------|---------|
+| `analytics/core/builders.py` | Updated to use unified field names, added `kind` |
+| `analytics/core/registry.py` | Updated capability access patterns, added unified types |
+| `analytics/core/plugins/functions/ast_features.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/functions/history.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/functions/effects.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/functions/contracts.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/coverage/test_edges.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/data_models/build.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/data_models/usage.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/dependencies/external.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/semantic_roles/compute.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/subsystems/build.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/profiles/build.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/config_data_flow/compute.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/risk/factors.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/history/timeseries.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/tests/behavioral_coverage.py` | Migrated to string-based provides/requires |
+| `analytics/core/plugins/tests/profile.py` | Migrated to string-based provides/requires |
+| `analytics/graphs/catalog.py` | Updated capability access to use provides/requires |
+| `analytics/resources/asts.py` | Added RESOURCE_NAME ClassVar |
+| `analytics/resources/features.py` | Added RESOURCE_NAME ClassVar |
+| `analytics/resources/module_map.py` | Added RESOURCE_NAME (needs ClassVar import fix) |
 
-### Legacy Components (to be migrated/removed)
+### Files Still Requiring Changes
 
-| Component | Path | Status |
-|-----------|------|--------|
-| GraphRuntime | `src/codeintel/analytics/graph_runtime.py` | Keep as internal impl |
-| AnalyticsContext | `src/codeintel/analytics/context.py` | Deprecated, use providers |
-| graph_service.py | `src/codeintel/analytics/graph_service.py` | To be deleted |
-| ensure_analytics_context | `src/codeintel/analytics/context.py` | To be removed |
-| build_analytics_context | `src/codeintel/analytics/context.py` | Deprecated |
+| File | Required Changes |
+|------|-----------------|
+| `analytics/resources/module_map.py` | Add ClassVar import |
+| `analytics/resources/protocol.py` | Add RESOURCE_NAME to LazyResource |
+| `analytics/resources/registry.py` | Update to use RESOURCE_NAME pattern |
+| `analytics/core/execution_context.py` | Extend core PluginExecutionContext |
+| `analytics/recipes/model.py` | Import from core/recipes |
+| `analytics/recipes/executor.py` | Use unified recipe types |
 
+---
 
+## Validation Status
+
+| Check | Status |
+|-------|--------|
+| `ruff format` | ✓ Pass |
+| `ruff check` | ✓ Pass (analytics/core/) |
+| `pyright` | ✗ 6 errors in analytics/resources/ |
+| `pyrefly` | ✓ Pass (analytics/core/) |
+| `pytest` | Not yet run |
+
+---
+
+## Estimated Remaining Effort
+
+| Phase | Effort | Priority |
+|-------|--------|----------|
+| Fix Resource Provider Issues | 1-2 hours | HIGH |
+| Unify Execution Context | 2-3 hours | MEDIUM |
+| Unify Recipe System | 1 hour | MEDIUM |
+| Graph Metrics Façade | 4-6 hours | LOW |
+| Final Validation & Testing | 2 hours | HIGH |
+
+**Total Estimated:** 10-14 hours
+
+---
+
+*Document generated: Session summary for analytics migration work*

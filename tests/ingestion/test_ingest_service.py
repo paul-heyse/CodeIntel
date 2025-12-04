@@ -1,6 +1,6 @@
-"""Tests for the ingest_service module.
+"""Tests for the ingestion macros module.
 
-This module tests the ingestion service facade, including the macro_exists
+This module tests the ingestion macro utilities, including the macro_exists
 function and INGEST_MACRO_TABLES constant.
 """
 
@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.ingestion.ingest_service import INGEST_MACRO_TABLES, macro_exists
+from codeintel.ingestion.infrastructure_utilities.macros import (
+    INGEST_MACRO_TABLES,
+    macro_exists,
+)
 from codeintel.storage.gateway import StorageGateway
 
 # =============================================================================

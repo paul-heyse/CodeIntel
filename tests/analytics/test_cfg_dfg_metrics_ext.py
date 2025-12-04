@@ -12,12 +12,8 @@ from tests._helpers.builders import (
     DFGEdgeRow,
     GoidRow,
     ModuleRow,
-    insert_cfg_blocks,
-    insert_cfg_edges,
-    insert_dfg_edges,
-    insert_goids,
-    insert_modules,
 )
+from tests._helpers.row_protocol import insert_rows
 
 REPO = "demo/repo"
 COMMIT = "abc123"
@@ -25,11 +21,11 @@ REL_PATH = "pkg/mod.py"
 
 
 def _seed_function(gateway: StorageGateway) -> None:
-    insert_modules(
+    insert_rows(
         gateway,
         [ModuleRow(module="pkg.mod", path=REL_PATH, repo=REPO, commit=COMMIT)],
     )
-    insert_goids(
+    insert_rows(
         gateway,
         [
             GoidRow(
@@ -48,7 +44,7 @@ def _seed_function(gateway: StorageGateway) -> None:
 
 
 def _seed_cfg(gateway: StorageGateway) -> None:
-    insert_cfg_blocks(
+    insert_rows(
         gateway,
         [
             CFGBlockRow(1, 0, "1:block0", "entry", REL_PATH, 1, 1, "entry", "[]", 0, 1),
@@ -59,7 +55,7 @@ def _seed_cfg(gateway: StorageGateway) -> None:
         ],
     )
 
-    insert_cfg_edges(
+    insert_rows(
         gateway,
         [
             CFGEdgeRow(1, "1:block0", "1:block1", "fallthrough"),
@@ -71,7 +67,7 @@ def _seed_cfg(gateway: StorageGateway) -> None:
 
 
 def _seed_dfg(gateway: StorageGateway) -> None:
-    insert_dfg_edges(
+    insert_rows(
         gateway,
         [
             DFGEdgeRow(

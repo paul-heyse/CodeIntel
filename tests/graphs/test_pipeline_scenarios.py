@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Final
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.plugins.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
@@ -27,7 +28,6 @@ from codeintel.graphs.core.protocol import (
     GraphPluginStage,
 )
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
-from codeintel.graphs.core.result import PluginResult
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.recipes.dsl import graph_recipe, graph_stage
 from codeintel.graphs.recipes.executor import (

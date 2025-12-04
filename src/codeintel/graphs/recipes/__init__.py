@@ -1,13 +1,12 @@
 """Graph recipe DSL and executor.
 
 This package provides a declarative recipe system for composing
-graph construction and analysis pipelines, similar to the ingestion
-recipe system.
+graph construction and analysis pipelines.
 
 Key Components
 --------------
-- GraphRecipe: Declarative recipe definition
-- GraphStage: Stage within a recipe
+- Recipe: Declarative recipe definition
+- RecipeStage: Stage within a recipe
 - RecipeExecutor: Executes recipes
 - Builtin recipes: full, incremental, metrics_only, validation_only
 """
@@ -24,9 +23,9 @@ from codeintel.graphs.recipes.builtins import (
     list_builtin_recipes,
 )
 from codeintel.graphs.recipes.dsl import (
-    GraphRecipe,
-    GraphRecipeOptions,
-    GraphStage,
+    Recipe,
+    RecipeOptions,
+    RecipeStage,
     graph_recipe,
     graph_stage,
 )
@@ -46,12 +45,12 @@ __all__ = [
     "IMPORT_GRAPH_ONLY_RECIPE",
     "INCREMENTAL_RECIPE",
     "METRICS_ONLY_RECIPE",
-    "GraphRecipe",
-    "GraphRecipeOptions",
-    "GraphStage",
+    "Recipe",
     "RecipeExecutionResult",
     "RecipeExecutor",
     "RecipeExecutorContext",
+    "RecipeOptions",
+    "RecipeStage",
     "StageExecutionResult",
     "execute_graph_recipe",
     "get_builtin_recipe",

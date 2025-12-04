@@ -12,10 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
-    ConfigValueRow,
-    insert_config_values,
-)
+from tests._helpers.builders import ConfigValueRow
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     MOD_A_FQN,
@@ -165,7 +163,7 @@ class ConfigPack:
                 ]
             )
 
-        insert_config_values(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
 
 # Default instance for common usage

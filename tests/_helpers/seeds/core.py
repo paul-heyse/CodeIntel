@@ -17,10 +17,8 @@ from tests._helpers.builders import (
     GoidRow,
     ModuleRow,
     RepoMapRow,
-    insert_goids,
-    insert_modules,
-    insert_repo_map,
 )
+from tests._helpers.row_protocol import insert_rows
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
@@ -138,7 +136,7 @@ class CorePack:
         if self.include_util:
             modules_dict[MOD_UTIL_FQN] = MOD_UTIL_PATH
 
-        insert_repo_map(
+        insert_rows(
             ctx.gateway,
             [
                 RepoMapRow(
@@ -169,7 +167,7 @@ class CorePack:
                 ModuleRow(module=MOD_UTIL_FQN, path=MOD_UTIL_PATH, repo=ctx.repo, commit=ctx.commit)
             )
 
-        insert_modules(ctx.gateway, rows[: self.module_count])
+        insert_rows(ctx.gateway, rows[: self.module_count])
 
     def _seed_goids(self, ctx: TestContext, now: datetime) -> None:
         """Seed the goids table.
@@ -236,7 +234,7 @@ class CorePack:
             ),
         ]
 
-        insert_goids(ctx.gateway, goid_rows[: self.function_count])
+        insert_rows(ctx.gateway, goid_rows[: self.function_count])
 
 
 # Default instance for common usage
