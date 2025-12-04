@@ -19,7 +19,7 @@ from codeintel.config import ConfigBuilder, GraphRunScope, ScanProfiles, Snapsho
 from codeintel.config.models import ToolsConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig
-from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
+from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
 from codeintel.ingestion.infrastructure_utilities.source_scanner import (
     ScanProfile,
     default_code_profile,

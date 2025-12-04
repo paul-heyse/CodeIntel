@@ -9,9 +9,10 @@ The canonical protocol definition lives in codeintel.core.resources.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TypeVar
+from typing import ClassVar, TypeVar
 
 from codeintel.core.resources import (
+    ResourceError,
     ResourceNotFoundError,
     ResourceProvider,
     ResourceProviderBase,
@@ -19,10 +20,6 @@ from codeintel.core.resources import (
 )
 
 T = TypeVar("T")
-
-
-class ResourceError(Exception):
-    """Base exception for resource-related errors."""
 
 
 class ResourceNotLoadedError(ResourceError):
@@ -63,7 +60,15 @@ class LazyResource[T](ABC):
     ---------------
     T
         The type of resource this provider manages.
+
+    Attributes
+    ----------
+    RESOURCE_NAME
+        ClassVar identifying this resource type for registry lookup.
+        Subclasses should override this with their specific name.
     """
+
+    RESOURCE_NAME: ClassVar[str] = ""
 
     def __init__(self, name: str) -> None:
         """Initialize the lazy resource.
@@ -85,7 +90,9 @@ class LazyResource[T](ABC):
 
     @property
     def resource_name(self) -> str:
-        """Return the resource name."""
+        """Return the resource name, preferring RESOURCE_NAME ClassVar."""
+        if self.RESOURCE_NAME:
+            return self.RESOURCE_NAME
         return self._name
 
     @abstractmethod

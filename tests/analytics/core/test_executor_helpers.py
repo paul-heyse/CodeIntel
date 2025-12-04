@@ -13,7 +13,7 @@ from codeintel.analytics.core.plugin_protocol import (
     ValidationResult,
 )
 from codeintel.analytics.recipes.executor import RecipeExecutionContext, RecipeExecutor
-from codeintel.analytics.recipes.model import AnalyticsRecipe, RecipeScope
+from codeintel.analytics.recipes.model import Recipe, RecipeScope
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.gateway import open_ingestion_gateway
 
@@ -25,6 +25,7 @@ class _ValidationFailurePlugin(AnalyticsPluginProtocol):
         self._meta = PluginMetadata(
             name="invalid.plugin",
             description="Invalid plugin",
+            kind="analytics",
             stage="function",
         )
 
@@ -48,6 +49,7 @@ class _ErroringPlugin(AnalyticsPluginProtocol):
         self._meta = PluginMetadata(
             name="error.plugin",
             description="Erroring plugin",
+            kind="analytics",
             stage="function",
         )
 
@@ -73,6 +75,7 @@ class _SuccessPlugin(AnalyticsPluginProtocol):
         self._meta = PluginMetadata(
             name="success.plugin",
             description="Success plugin",
+            kind="analytics",
             stage="function",
         )
 
@@ -108,7 +111,7 @@ def _context(scope: RecipeScope | None = None) -> RecipeExecutionContext:
 
 def test_merge_configs_merges_without_mutation() -> None:
     """merge_configs should combine defaults and overrides immutably."""
-    recipe = AnalyticsRecipe(
+    recipe = Recipe(
         name="base",
         description="",
         plugins=("p1",),

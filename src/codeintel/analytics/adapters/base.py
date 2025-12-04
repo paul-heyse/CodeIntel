@@ -159,7 +159,7 @@ class ComputeAdapter[InputT, OutputT](InputAdapter[InputT], OutputAdapter[Output
 
 
 # =============================================================================
-# Legacy Adapter Base Classes
+# Adapter Base Classes
 # =============================================================================
 
 

@@ -22,7 +22,8 @@ from codeintel.serving.services.query_service import HttpQueryService, LocalQuer
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.views import create_all_views
 from tests._helpers import GatewayOptions, provision_gateway_with_repo
-from tests._helpers.builders import RepoMapRow, insert_repo_map
+from tests._helpers.builders import RepoMapRow
+from tests._helpers.row_protocol import insert_rows
 
 
 def _seed_repo_identity(repo_root: Path, db_path: Path, repo: str, commit: str) -> None:
@@ -39,7 +40,7 @@ def _seed_repo_identity(repo_root: Path, db_path: Path, repo: str, commit: str) 
             file_backed=True,
         ),
     ) as ctx:
-        insert_repo_map(
+        insert_rows(
             ctx.gateway,
             [
                 RepoMapRow(
@@ -167,7 +168,7 @@ def test_build_backend_resource_remote(tmp_path: Path) -> None:
 def test_build_backend_resource_gateway_path(fresh_gateway: StorageGateway) -> None:
     """Gateway-provided connection and registry are honored."""
     gateway = fresh_gateway
-    insert_repo_map(
+    insert_rows(
         gateway,
         [
             RepoMapRow(

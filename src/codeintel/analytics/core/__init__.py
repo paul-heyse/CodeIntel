@@ -71,7 +71,6 @@ from codeintel.analytics.core.plugin_protocol import (
     AnalyticsPluginProtocol,
     CapabilityKind,
     InputSource,
-    PluginCapability,
     PluginExecutionRecord,
     PluginInputSpec,
     PluginMetadata,
@@ -156,7 +155,6 @@ __all__ = [
     # Builders
     "OutputSpec",
     "OutputSpecBuilder",
-    "PluginCapability",
     "PluginExecutionContext",
     "PluginExecutionContextBuilder",
     "PluginExecutionRecord",

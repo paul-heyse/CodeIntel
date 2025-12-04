@@ -23,10 +23,12 @@ from codeintel.analytics.recipes.executor import (
     execute_recipe,
 )
 from codeintel.analytics.recipes.model import (
-    AnalyticsRecipe,
+    Recipe,
     RecipeExecutionReport,
+    RecipeOptions,
     RecipePluginRecord,
     RecipeScope,
+    RecipeStage,
 )
 from codeintel.analytics.recipes.registry import (
     RecipeRegistry,
@@ -41,15 +43,17 @@ __all__ = [
     "QUICK_AUDIT",
     "RISK_ANALYSIS",
     "TEST_ANALYSIS",
-    "AnalyticsRecipe",
+    "Recipe",
     "RecipeBuilder",
     "RecipeExecutionContext",
     "RecipeExecutionPlan",
     "RecipeExecutionReport",
     "RecipeExecutor",
+    "RecipeOptions",
     "RecipePluginRecord",
     "RecipeRegistry",
     "RecipeScope",
+    "RecipeStage",
     "execute_recipe",
     "get_recipe_registry",
     "recipe",

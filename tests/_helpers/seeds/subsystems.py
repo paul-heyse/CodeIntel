@@ -17,9 +17,8 @@ from typing import TYPE_CHECKING
 from tests._helpers.builders import (
     SubsystemModuleRow,
     SubsystemRow,
-    insert_subsystem_modules,
-    insert_subsystems,
 )
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     MOD_A_FQN,
@@ -130,7 +129,7 @@ class SubsystemPack:
                 role="shared",
             ),
         ]
-        insert_subsystem_modules(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
     def _seed_subsystems(self, ctx: TestContext, now: datetime) -> None:
         """Seed the subsystems table.
@@ -187,7 +186,7 @@ class SubsystemPack:
                 created_at=now,
             ),
         ]
-        insert_subsystems(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
 
 # Default instance for common usage

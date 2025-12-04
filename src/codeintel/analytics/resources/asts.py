@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.function_ast_cache import (
     FunctionAstLoadRequest,
@@ -134,6 +134,8 @@ class AstProvider(LazyResource[AstResourceData]):
     >>> data = provider.get()
     >>> func_ast = data.function_ast_map.get(function_goid)
     """
+
+    RESOURCE_NAME: ClassVar[str] = "AstProvider"
 
     def __init__(
         self,

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from codeintel.analytics.recipes.dsl import RecipeBuilder, recipe
-from codeintel.analytics.recipes.model import AnalyticsRecipe, RecipeScope
+from codeintel.analytics.recipes.model import Recipe, RecipeOptions, RecipeScope
 from codeintel.analytics.recipes.registry import RecipeRegistry
 
 FAST_RECIPES_COUNT = 2
@@ -27,13 +27,13 @@ def recipe_registry() -> RecipeRegistry:
 
 
 # -----------------------------------------------------------------------------
-# AnalyticsRecipe
+# Recipe
 # -----------------------------------------------------------------------------
 
 
 def test_create_minimal_recipe() -> None:
-    """Creating a minimal recipe should fill sensible defaults."""
-    rec = AnalyticsRecipe(
+    """Create a minimal recipe with sensible defaults."""
+    rec = Recipe(
         name="test",
         description="A test recipe",
         plugins=("plugin1", "plugin2"),
@@ -43,13 +43,12 @@ def test_create_minimal_recipe() -> None:
     assert rec.description == "A test recipe"
     assert rec.plugins == ("plugin1", "plugin2")
     assert rec.tags == ()
-    assert rec.fail_fast is True
-    assert rec.parallel_stages is False
+    assert rec.options.fail_fast is True
 
 
 def test_recipe_with_plugins_is_immutable() -> None:
     """with_plugins should return a new instance without mutating the original."""
-    rec = AnalyticsRecipe(
+    rec = Recipe(
         name="base",
         description="Base recipe",
         plugins=("plugin1",),
@@ -63,7 +62,7 @@ def test_recipe_with_plugins_is_immutable() -> None:
 
 def test_recipe_with_config_returns_new_instance() -> None:
     """with_config should add configuration without mutating the source recipe."""
-    rec = AnalyticsRecipe(
+    rec = Recipe(
         name="test",
         description="Test",
         plugins=("plugin1",),
@@ -90,19 +89,19 @@ class FailFastCase:
         FailFastCase(initial=False, updated=True),
     ],
 )
-def test_recipe_with_fail_fast_returns_new_instance(case: FailFastCase) -> None:
-    """with_fail_fast should flip fail_fast in a copied recipe."""
-    rec = AnalyticsRecipe(
+def test_recipe_with_options_returns_new_instance(case: FailFastCase) -> None:
+    """with_options should update fail_fast in a copied recipe."""
+    rec = Recipe(
         name="test",
         description="Test",
         plugins=(),
-        fail_fast=case.initial,
+        options=RecipeOptions(fail_fast=case.initial),
     )
 
-    updated = rec.with_fail_fast(fail_fast=case.updated)
+    updated = rec.with_options(fail_fast=case.updated)
 
-    assert updated.fail_fast is case.updated
-    assert rec.fail_fast is case.initial
+    assert updated.options.fail_fast is case.updated
+    assert rec.options.fail_fast is case.initial
 
 
 # -----------------------------------------------------------------------------
@@ -138,7 +137,7 @@ def test_create_scope_with_paths_and_modules() -> None:
 
 def test_register_and_get_recipe(recipe_registry: RecipeRegistry) -> None:
     """Registering a recipe should make it retrievable by name."""
-    rec = AnalyticsRecipe(
+    rec = Recipe(
         name="test",
         description="Test",
         plugins=(),
@@ -151,8 +150,8 @@ def test_register_and_get_recipe(recipe_registry: RecipeRegistry) -> None:
 
 def test_register_duplicate_raises(recipe_registry: RecipeRegistry) -> None:
     """Registering a duplicate recipe should raise a ValueError."""
-    rec1 = AnalyticsRecipe(name="test", description="", plugins=())
-    rec2 = AnalyticsRecipe(name="test", description="", plugins=())
+    rec1 = Recipe(name="test", description="", plugins=())
+    rec2 = Recipe(name="test", description="", plugins=())
 
     recipe_registry.register(rec1)
 
@@ -173,9 +172,9 @@ def test_get_optional_unknown_returns_none(recipe_registry: RecipeRegistry) -> N
 
 def test_list_by_tag_filters_recipes(recipe_registry: RecipeRegistry) -> None:
     """list_by_tag should only return recipes with the requested tag."""
-    rec1 = AnalyticsRecipe(name="r1", description="", plugins=(), tags=("fast",))
-    rec2 = AnalyticsRecipe(name="r2", description="", plugins=(), tags=("fast", "test"))
-    rec3 = AnalyticsRecipe(name="r3", description="", plugins=(), tags=("slow",))
+    rec1 = Recipe(name="r1", description="", plugins=(), tags=("fast",))
+    rec2 = Recipe(name="r2", description="", plugins=(), tags=("fast", "test"))
+    rec3 = Recipe(name="r3", description="", plugins=(), tags=("slow",))
 
     recipe_registry.register(rec1)
     recipe_registry.register(rec2)
@@ -191,13 +190,13 @@ def test_compose_recipes_deduplicates_plugins_and_merges_tags(
     recipe_registry: RecipeRegistry,
 ) -> None:
     """Compose should merge plugin lists and tags across recipes."""
-    rec1 = AnalyticsRecipe(
+    rec1 = Recipe(
         name="r1",
         description="",
         plugins=("p1", "p2"),
         tags=("tag1",),
     )
-    rec2 = AnalyticsRecipe(
+    rec2 = Recipe(
         name="r2",
         description="",
         plugins=("p2", "p3"),
@@ -231,7 +230,7 @@ class RecipeBuilderCase:
     plugins: tuple[str, ...]
     tags: tuple[str, ...]
     duration: int | None
-    flags: dict[str, bool]
+    fail_fast: bool
 
 
 @pytest.mark.parametrize(
@@ -246,7 +245,7 @@ class RecipeBuilderCase:
             plugins=("plugin1", "plugin2"),
             tags=(),
             duration=None,
-            flags={"fail_fast": True, "parallel_stages": False},
+            fail_fast=True,
         ),
         RecipeBuilderCase(
             builder=RecipeBuilder("test").description("Test").add_all("p1", "p2", "p3"),
@@ -254,7 +253,7 @@ class RecipeBuilderCase:
             plugins=("p1", "p2", "p3"),
             tags=(),
             duration=None,
-            flags={"fail_fast": True, "parallel_stages": False},
+            fail_fast=True,
         ),
         RecipeBuilderCase(
             builder=RecipeBuilder("test")
@@ -265,7 +264,7 @@ class RecipeBuilderCase:
             plugins=("p1", "p3"),
             tags=(),
             duration=None,
-            flags={"fail_fast": True, "parallel_stages": False},
+            fail_fast=True,
         ),
         RecipeBuilderCase(
             builder=(
@@ -275,14 +274,13 @@ class RecipeBuilderCase:
                 .with_config("plugin1", {"key": "value"})
                 .tag("fast", "audit")
                 .fail_fast(value=False)
-                .parallel_stages(value=True)
                 .max_duration(ms=MAX_DURATION_MS)
             ),
             name="test",
             plugins=("plugin1",),
             tags=("fast", "audit"),
             duration=MAX_DURATION_MS,
-            flags={"fail_fast": False, "parallel_stages": True},
+            fail_fast=False,
         ),
     ],
 )
@@ -294,11 +292,10 @@ def test_recipe_builder_variations(case: RecipeBuilderCase) -> None:
     assert rec.plugins == case.plugins
     assert rec.tags == case.tags
     if case.duration is None:
-        assert rec.max_duration_ms is None
+        assert rec.options.max_duration_ms is None
     else:
-        assert rec.max_duration_ms == case.duration
-    assert rec.fail_fast is case.flags["fail_fast"]
-    assert rec.parallel_stages is case.flags["parallel_stages"]
+        assert rec.options.max_duration_ms == case.duration
+    assert rec.options.fail_fast is case.fail_fast
 
 
 # -----------------------------------------------------------------------------

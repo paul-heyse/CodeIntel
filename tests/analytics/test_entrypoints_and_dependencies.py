@@ -33,9 +33,10 @@ from codeintel.ingestion import (
 )
 from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from tests._helpers.builders import CoverageFunctionRow, insert_coverage_functions
+from tests._helpers.builders import CoverageFunctionRow
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.orchestration import provision_gateway_with_repo
+from tests._helpers.row_protocol import insert_rows
 
 HTTP_CREATED = 201
 COVERAGE_TOLERANCE = 1e-6
@@ -313,7 +314,7 @@ def test_entrypoints_and_dependencies_round_trip(tmp_path: Path) -> None:
             test_goid=hello_row[0] + 1000,
         )
         now = datetime.now(tz=UTC)
-        insert_coverage_functions(
+        insert_rows(
             ctx.gateway,
             [
                 CoverageFunctionRow(

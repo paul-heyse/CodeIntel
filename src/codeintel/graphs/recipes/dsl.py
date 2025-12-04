@@ -1,24 +1,16 @@
 """Graph recipe DSL for declarative pipeline composition.
 
-This module re-exports unified recipe types from codeintel.core.recipes,
-providing backward compatibility for existing graph recipe code.
+This module provides graph-specific wrapper functions around the unified
+recipe types from codeintel.core.recipes.
 
-The canonical definitions now live in codeintel.core.recipes.
+The canonical types (Recipe, RecipeStage, RecipeOptions) are re-exported
+for convenience, while graph_recipe() and graph_stage() provide domain-
+specific factory functions.
 """
 
 from __future__ import annotations
 
 from codeintel.core.recipes import Recipe, RecipeOptions, RecipeStage, recipe, stage
-
-# Backward-compatible aliases for graph-specific naming
-GraphStage = RecipeStage
-"""Alias for RecipeStage for backward compatibility."""
-
-GraphRecipeOptions = RecipeOptions
-"""Alias for RecipeOptions for backward compatibility."""
-
-GraphRecipe = Recipe
-"""Alias for Recipe for backward compatibility."""
 
 
 def graph_stage(
@@ -96,11 +88,6 @@ def graph_recipe(
 
 
 __all__ = [
-    # Graph-specific backward-compatible aliases
-    "GraphRecipe",
-    "GraphRecipeOptions",
-    "GraphStage",
-    # Canonical names (from core.recipes)
     "Recipe",
     "RecipeOptions",
     "RecipeStage",

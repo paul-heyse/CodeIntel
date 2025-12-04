@@ -20,12 +20,8 @@ from tests._helpers.builders import (
     RiskFactorRow,
     StaticDiagnosticsRow,
     TypednessRow,
-    insert_function_metrics,
-    insert_graph_metrics_modules_ext,
-    insert_risk_factors,
-    insert_static_diagnostics,
-    insert_typedness,
 )
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     GOID_FUNC_A,
@@ -257,7 +253,7 @@ class MetricsPack:
                 created_at=now,
             ),
         ]
-        insert_function_metrics(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
     @staticmethod
     def _seed_risk_factors(ctx: TestContext, now: datetime) -> None:
@@ -400,7 +396,7 @@ class MetricsPack:
                 created_at=now,
             ),
         ]
-        insert_risk_factors(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
     @staticmethod
     def _seed_typedness(ctx: TestContext) -> None:
@@ -449,7 +445,7 @@ class MetricsPack:
                 overlay_needed=False,
             ),
         ]
-        insert_typedness(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
     @staticmethod
     def _seed_static_diagnostics(ctx: TestContext) -> None:
@@ -502,7 +498,7 @@ class MetricsPack:
                 has_errors=False,
             ),
         ]
-        insert_static_diagnostics(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
     @staticmethod
     def _seed_graph_metrics(ctx: TestContext, now: datetime) -> None:
@@ -589,7 +585,7 @@ class MetricsPack:
                 created_at=now,
             ),
         ]
-        insert_graph_metrics_modules_ext(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
 
 # Default instance for common usage

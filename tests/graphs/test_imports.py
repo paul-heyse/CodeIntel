@@ -19,7 +19,7 @@ from codeintel.config.datasets import (
     import_module_to_tuple,
 )
 from codeintel.graphs.compute.callgraph import collect_aliases, collect_import_edges
-from codeintel.graphs.engine_factory import build_graph_engine
+from codeintel.graphs.engine.factory import build_graph_engine
 from codeintel.graphs.plugins.builders.import_graph import (
     build_import_module_rows,
     components_and_layers,

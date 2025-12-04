@@ -7,7 +7,7 @@ Package Structure
 -----------------
 Core Infrastructure (graphs/core/):
 - GraphPluginProtocol: Unified interface for all graph plugins
-- GraphExecutionContext: Execution context providing storage and engine access
+- GraphPluginExecutionContext: Execution context providing storage and engine access
 - GraphPluginRegistry: Central registry with dependency resolution
 - graph_plugin: Decorator for defining graph plugins from functions
 
@@ -17,7 +17,7 @@ Runtime (graphs/runtime/):
 - run_graph_plugins: Executes a plan and returns a report
 
 Recipes (graphs/recipes/):
-- GraphRecipe: Declarative recipe definition
+- Recipe: Declarative recipe definition
 - RecipeExecutor: Executes recipes with stage orchestration
 - Builtin recipes: full, incremental, metrics_only, validation_only
 
@@ -88,7 +88,6 @@ from codeintel.graphs import adapters, compute, ports, resources
 
 # Re-export key types from submodules for convenience
 from codeintel.graphs.core import (
-    GraphExecutionContext,
     GraphPluginExecutionContext,
     GraphPluginMetadata,
     GraphPluginProtocol,
@@ -102,7 +101,7 @@ from codeintel.graphs.recipes import (
     BUILDERS_ONLY_RECIPE,
     FULL_GRAPH_RECIPE,
     METRICS_ONLY_RECIPE,
-    GraphRecipe,
+    Recipe,
     RecipeExecutionResult,
     execute_graph_recipe,
 )
@@ -115,14 +114,13 @@ __all__ = [
     "FULL_GRAPH_RECIPE",
     "METRICS_ONLY_RECIPE",
     "GraphEngine",
-    "GraphExecutionContext",
     "GraphKind",
     "GraphPluginExecutionContext",
     "GraphPluginMetadata",
     "GraphPluginProtocol",
-    "GraphRecipe",
     "NxGraphEngine",
     "PluginResult",
+    "Recipe",
     "RecipeExecutionResult",
     "ResourceContainer",
     "ResourceProvider",

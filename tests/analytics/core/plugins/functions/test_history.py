@@ -118,10 +118,9 @@ def test_function_history_plugin_metadata_outputs() -> None:
 def test_function_history_plugin_metadata_capabilities_provided() -> None:
     """Plugin metadata provides correct capabilities."""
     plugin = FunctionHistoryPlugin()
-    assert len(plugin.metadata.capabilities_provided) == EXPECTED_CAPABILITY_COUNT
+    assert len(plugin.metadata.provides) == EXPECTED_CAPABILITY_COUNT
 
-    cap_names = {c.name for c in plugin.metadata.capabilities_provided}
-    assert "analytics.function_history" in cap_names
+    assert "analytics.function_history" in plugin.metadata.provides
 
 
 def test_function_history_plugin_metadata_tags() -> None:
@@ -270,8 +269,7 @@ def test_plugin_capabilities_required() -> None:
     """Plugin requires core.goids capability."""
     plugin = FunctionHistoryPlugin()
 
-    req_caps = {c.name for c in plugin.metadata.capabilities_required}
-    assert "core.goids" in req_caps
+    assert "core.goids" in plugin.metadata.requires
 
 
 def test_plugin_resource_hints() -> None:

@@ -9,7 +9,6 @@ to declare specific capabilities. The runtime uses these traits to:
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, cast, runtime_checkable
 
@@ -213,60 +212,6 @@ class WithToolDependencies:
     tool_required: ClassVar[bool] = False
 
 
-class WithIncrementalSupport:
-    """Mixin for incremental ingestion support.
-
-    Class Attributes
-    ----------------
-    supports_incremental : bool
-        Whether incremental mode is supported.
-    """
-
-    supports_incremental: bool = True
-
-    def compute_input_hash(self, ctx: IngestExecutionContext) -> str:
-        """Compute a hash of inputs for change detection.
-
-        Default implementation hashes the module count and commit.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        str
-            Hash of inputs.
-        """
-        _ = self  # Required by interface, accessed via ctx
-        data = f"{ctx.repo}:{ctx.commit}".encode()
-        return hashlib.sha256(data).hexdigest()[:16]
-
-    def is_unchanged(
-        self,
-        ctx: IngestExecutionContext,
-        prior_hash: str | None,
-    ) -> bool:
-        """Check if inputs are unchanged.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-        prior_hash
-            Hash from prior execution.
-
-        Returns
-        -------
-        bool
-            True if unchanged.
-        """
-        if prior_hash is None:
-            return False
-        return self.compute_input_hash(ctx) == prior_hash
-
-
 class WithRowCounts:
     """Mixin that auto-computes row counts for declared output tables.
 
@@ -318,114 +263,6 @@ class WithRowCounts:
             count = safe_count(ctx.gateway, table)
             counts[table] = count if count is not None else 0
         return counts
-
-
-class WithRetries:
-    """Mixin providing retry behavior to plugins.
-
-    Class Attributes
-    ----------------
-    retryable_exceptions : tuple[type[Exception], ...]
-        Exception types that should trigger retry.
-    max_retries : int
-        Maximum retry attempts.
-    retry_backoff_ms : int
-        Backoff time between retries in milliseconds.
-    """
-
-    retryable_exceptions: tuple[type[Exception], ...] = (
-        RuntimeError,
-        ValueError,
-        OSError,
-    )
-    max_retries: int = 3
-    retry_backoff_ms: int = 1000
-
-
-class WithCaching:
-    """Mixin for plugins that cache intermediate results in scratch store.
-
-    Enable plugins to store and retrieve intermediate results across
-    plugin executions within the same run.
-
-    Class Attributes
-    ----------------
-    scratch_key : str
-        Key for storing results in scratch (default: plugin class name).
-
-    Example
-    -------
-    >>> class MyPlugin(BaseIngestPlugin, WithCaching):
-    ...     scratch_key = "my_plugin_data"
-    ...
-    ...     def compute(self, ctx):
-    ...         # Check if data is cached
-    ...         cached = self.get_cached(ctx)
-    ...         if cached is not None:
-    ...             return cached
-    ...
-    ...         # Compute and cache
-    ...         result = expensive_computation()
-    ...         self.cache_result(ctx, result)
-    ...         return result
-    """
-
-    scratch_key: str = ""
-
-    def _get_scratch_key(self) -> str:
-        """Return the scratch key for this plugin.
-
-        Returns
-        -------
-        str
-            Key for scratch store access.
-        """
-        return self.scratch_key or self.__class__.__name__
-
-    def get_cached[T](self, ctx: IngestExecutionContext, default: T | None = None) -> T | None:
-        """Retrieve cached result from scratch store.
-
-        Parameters
-        ----------
-        ctx
-            Execution context with scratch store.
-        default
-            Value to return if not cached.
-
-        Returns
-        -------
-        T | None
-            Cached value or default.
-        """
-        result = ctx.scratch.consume(self._get_scratch_key(), default)
-        return cast("T | None", result)
-
-    def cache_result(self, ctx: IngestExecutionContext, value: object) -> None:
-        """Store a result in the scratch store.
-
-        Parameters
-        ----------
-        ctx
-            Execution context with scratch store.
-        value
-            Value to cache.
-        """
-        ctx.scratch.declare(self._get_scratch_key(), value)
-
-    def has_cached(self, ctx: IngestExecutionContext) -> bool:
-        """Check if a cached result exists.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-
-        Returns
-        -------
-        bool
-            True if cached result exists.
-        """
-        return ctx.scratch.has(self._get_scratch_key())
 
 
 class WithDependencyData:
@@ -489,87 +326,6 @@ class WithDependencyData:
         """
         _ = self  # Required by interface, accessed via ctx
         ctx.scratch.declare(key, value)
-
-
-class WithProgressReporting:
-    """Mixin for plugins that report execution progress.
-
-    Enable plugins to report progress during long-running operations.
-
-    Class Attributes
-    ----------------
-    _progress_callback : Callable[[float, str], None] | None
-        Callback for progress reporting.
-
-    Example
-    -------
-    >>> class MyPlugin(BaseIngestPlugin, WithProgressReporting):
-    ...     def compute(self, ctx):
-    ...         for i, item in enumerate(items):
-    ...             self.report_progress(i / len(items), f"Processing {item}")
-    ...             process(item)
-    """
-
-    _progress_callback: Callable[[float, str], None] | None = None
-
-    def set_progress_callback(
-        self,
-        callback: Callable[[float, str], None],
-    ) -> None:
-        """Set the progress reporting callback.
-
-        Parameters
-        ----------
-        callback
-            Function receiving progress (0-1) and status message.
-        """
-        self._progress_callback = callback
-
-    def report_progress(self, progress: float, message: str = "") -> None:
-        """Report execution progress.
-
-        Parameters
-        ----------
-        progress
-            Progress value between 0.0 and 1.0.
-        message
-            Optional status message.
-        """
-        if self._progress_callback is not None:
-            self._progress_callback(progress, message)
-
-
-class WithCleanup:
-    """Mixin for plugins that need cleanup after execution.
-
-    Enable plugins to register cleanup callbacks that run after the
-    entire plugin execution batch completes.
-
-    Example
-    -------
-    >>> class MyPlugin(BaseIngestPlugin, WithCleanup):
-    ...     def compute(self, ctx):
-    ...         temp_file = create_temp_file()
-    ...         self.register_cleanup(ctx, lambda: temp_file.unlink())
-    ...         # Use temp_file...
-    """
-
-    def register_cleanup(
-        self,
-        ctx: IngestExecutionContext,
-        callback: Callable[[], None],
-    ) -> None:
-        """Register a cleanup callback.
-
-        Parameters
-        ----------
-        ctx
-            Execution context.
-        callback
-            Cleanup function to call after run completes.
-        """
-        _ = self  # Required by interface, accessed via ctx
-        ctx.scratch.register_cleanup(callback)
 
 
 # =============================================================================
@@ -688,12 +444,7 @@ __all__ = [
     "RetryablePlugin",
     "ToolAwarePlugin",
     "TrackerAwarePlugin",
-    "WithCaching",
-    "WithCleanup",
     "WithDependencyData",
-    "WithIncrementalSupport",
-    "WithProgressReporting",
-    "WithRetries",
     "WithRowCounts",
     "WithToolDependencies",
     "get_plugin_traits",

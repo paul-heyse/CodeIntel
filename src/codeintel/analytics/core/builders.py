@@ -24,11 +24,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal  # Keep for input() method source parameter
 
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
+    PluginIsolation,
+    PluginKind,
     PluginMetadata,
     PluginOutputSpec,
     PluginResourceHints,
@@ -43,6 +44,7 @@ class PluginMetaSection:
 
     name: str
     description: str = ""
+    kind: PluginKind = "analytics"
     stage: PluginStage = "other"
     version: str = "1.0.0"
     enabled_by_default: bool = True
@@ -56,8 +58,8 @@ class PluginContractsSection:
 
     inputs: list[PluginInputSpec] = field(default_factory=list)
     outputs: list[PluginOutputSpec] = field(default_factory=list)
-    capabilities_provided: list[PluginCapability] = field(default_factory=list)
-    capabilities_required: list[PluginCapability] = field(default_factory=list)
+    provides: list[str] = field(default_factory=list)
+    requires: list[str] = field(default_factory=list)
     depends_on: list[str] = field(default_factory=list)
 
 
@@ -67,7 +69,7 @@ class PluginRuntimeSection:
 
     resource_hints: PluginResourceHints | None = None
     requires_isolation: bool = False
-    isolation_kind: Literal["process", "thread"] | None = None
+    isolation_kind: PluginIsolation = "none"
 
 
 class PluginSpecBuilder:
@@ -97,6 +99,22 @@ class PluginSpecBuilder:
             Self for chaining.
         """
         self._meta.description = desc
+        return self
+
+    def kind(self, kind: PluginKind) -> PluginSpecBuilder:
+        """Set the plugin kind.
+
+        Parameters
+        ----------
+        kind
+            Plugin kind (e.g., "analytics", "builder", "metric").
+
+        Returns
+        -------
+        PluginSpecBuilder
+            Self for chaining.
+        """
+        self._meta.kind = kind
         return self
 
     def stage(self, stage: PluginStage) -> PluginSpecBuilder:
@@ -235,44 +253,36 @@ class PluginSpecBuilder:
         )
         return self
 
-    def provides(self, *capabilities: PluginCapability | str) -> PluginSpecBuilder:
+    def provides(self, *capabilities: str) -> PluginSpecBuilder:
         """Declare capabilities this plugin provides.
 
         Parameters
         ----------
         capabilities
-            Capability names or PluginCapability instances.
+            Capability names as strings.
 
         Returns
         -------
         PluginSpecBuilder
             Self for chaining.
         """
-        for cap in capabilities:
-            if isinstance(cap, PluginCapability):
-                self._contracts.capabilities_provided.append(cap)
-            else:
-                self._contracts.capabilities_provided.append(PluginCapability(name=cap))
+        self._contracts.provides.extend(capabilities)
         return self
 
-    def requires(self, *capabilities: PluginCapability | str) -> PluginSpecBuilder:
+    def requires(self, *capabilities: str) -> PluginSpecBuilder:
         """Declare capabilities this plugin requires.
 
         Parameters
         ----------
         capabilities
-            Capability names or PluginCapability instances.
+            Capability names as strings.
 
         Returns
         -------
         PluginSpecBuilder
             Self for chaining.
         """
-        for cap in capabilities:
-            if isinstance(cap, PluginCapability):
-                self._contracts.capabilities_required.append(cap)
-            else:
-                self._contracts.capabilities_required.append(PluginCapability(name=cap))
+        self._contracts.requires.extend(capabilities)
         return self
 
     def depends_on(self, *plugins: str) -> PluginSpecBuilder:
@@ -327,7 +337,7 @@ class PluginSpecBuilder:
 
     def isolate(
         self,
-        kind: Literal["process", "thread"] = "process",
+        kind: PluginIsolation = "process",
     ) -> PluginSpecBuilder:
         """Require isolation for this plugin.
 
@@ -372,14 +382,15 @@ class PluginSpecBuilder:
         return PluginMetadata(
             name=self._meta.name,
             description=self._meta.description,
+            kind=self._meta.kind,
             stage=self._meta.stage,
             version=self._meta.version,
             enabled_by_default=self._meta.enabled_by_default,
             severity=self._meta.severity,
             inputs=tuple(self._contracts.inputs),
             outputs=tuple(self._contracts.outputs),
-            capabilities_provided=tuple(self._contracts.capabilities_provided),
-            capabilities_required=tuple(self._contracts.capabilities_required),
+            provides=tuple(self._contracts.provides),
+            requires=tuple(self._contracts.requires),
             depends_on=tuple(self._contracts.depends_on),
             resource_hints=self._runtime.resource_hints,
             requires_isolation=self._runtime.requires_isolation,

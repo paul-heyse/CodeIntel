@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -47,6 +46,7 @@ class ExternalDepsPlugin:
         return PluginMetadata(
             name="deps.external",
             description="Identify external dependency usage across functions.",
+            kind="analytics",
             stage="other",
             version="3.0.0",
             enabled_by_default=True,
@@ -69,11 +69,11 @@ class ExternalDepsPlugin:
                     tables=("analytics.external_dependencies",),
                 ),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.external_dependency_calls", kind="dataset"),
-                PluginCapability(name="analytics.external_dependencies", kind="dataset"),
+            provides=(
+                "analytics.external_dependency_calls",
+                "analytics.external_dependencies",
             ),
-            capabilities_required=(PluginCapability(name="core.goids", kind="dataset"),),
+            requires=("core.goids",),
             depends_on=("goids", "config_ingest"),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=90_000,

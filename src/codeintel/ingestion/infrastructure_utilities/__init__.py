@@ -10,6 +10,8 @@ This package provides foundational utilities used across the ingestion system:
 - `ast_utils`: AST parsing and span lookup utilities
 - `_scip_resolver`: SCIP ingestion input resolution
 - `safe_sql`: Validated SQL identifiers preventing injection vulnerabilities
+- `types`: Canonical type definitions (ToolStatus) shared across ingestion
+- `macros`: DuckDB ingestion macro utilities and table registry
 """
 
 from __future__ import annotations
@@ -56,6 +58,12 @@ from codeintel.ingestion.infrastructure_utilities.db_queries import (
     safe_table_exists,
 )
 
+# Macro utilities
+from codeintel.ingestion.infrastructure_utilities.macros import (
+    INGEST_MACRO_TABLES,
+    macro_exists,
+)
+
 # Path utilities
 from codeintel.ingestion.infrastructure_utilities.paths import (
     ensure_repo_root,
@@ -94,6 +102,9 @@ from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolRunResult,
 )
 
+# Canonical types
+from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
+
 # Worker pool utilities
 from codeintel.ingestion.infrastructure_utilities.workers import (
     AST_WORKER_CONFIG,
@@ -115,6 +126,7 @@ __all__ = [
     "DEFAULT_MIN_WORKERS",
     "DUCKDB_QUERY_ERRORS",
     "IGNORES",
+    "INGEST_MACRO_TABLES",
     "AstSpanIndex",
     "ColumnNotFoundError",
     "CstCaptureConfig",
@@ -136,12 +148,14 @@ __all__ = [
     "ToolResult",
     "ToolRunResult",
     "ToolRunner",
+    "ToolStatus",
     "WorkerConfig",
     "create_executor",
     "default_code_profile",
     "default_config_profile",
     "ensure_repo_root",
     "executor_factory",
+    "macro_exists",
     "normalize_rel_path",
     "parse_python_module",
     "profile_from_env",

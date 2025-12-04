@@ -17,10 +17,8 @@ from tests._helpers.builders import (
     CoverageFunctionRow,
     TestCatalogRow,
     TestCoverageEdgeRow,
-    insert_coverage_functions,
-    insert_test_catalog,
-    insert_test_coverage_edges,
 )
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     GOID_FUNC_A,
@@ -187,7 +185,7 @@ class CoveragePack:
                 created_at=now,
             ),
         ]
-        insert_test_catalog(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
     @staticmethod
     def _seed_coverage_edges(ctx: TestContext, now: datetime) -> None:
@@ -262,7 +260,7 @@ class CoveragePack:
                 created_at=now,
             ),
         ]
-        insert_test_coverage_edges(ctx.gateway, edges)
+        insert_rows(ctx.gateway, edges)
 
     @staticmethod
     def _seed_coverage_functions(ctx: TestContext, now: datetime) -> None:
@@ -349,7 +347,7 @@ class CoveragePack:
                 created_at=now,
             ),
         ]
-        insert_coverage_functions(ctx.gateway, rows)
+        insert_rows(ctx.gateway, rows)
 
 
 # Default instance for common usage

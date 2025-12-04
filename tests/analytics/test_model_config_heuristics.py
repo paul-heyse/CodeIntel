@@ -26,12 +26,9 @@ from tests._helpers.builders import (
     FunctionTypesRow,
     GoidRow,
     ModuleRow,
-    insert_call_graph_nodes,
-    insert_function_types,
-    insert_goids,
-    insert_modules,
 )
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
+from tests._helpers.row_protocol import insert_rows
 
 REPO = "test/repo"
 COMMIT = "deadbeef"
@@ -82,11 +79,11 @@ def _goid_rows_for_defs(rel_path: str, source: str, start: int) -> list[GoidRow]
 
 
 def _seed_modules(gateway: StorageGateway, modules: Iterable[ModuleRow]) -> None:
-    insert_modules(gateway, modules)
+    insert_rows(gateway, list(modules))
 
 
 def _seed_goids(gateway: StorageGateway, goids: Iterable[GoidRow]) -> None:
-    insert_goids(gateway, goids)
+    insert_rows(gateway, list(goids))
 
 
 def _seed_call_graph_nodes(gateway: StorageGateway, goids: Iterable[GoidRow]) -> None:
@@ -102,7 +99,7 @@ def _seed_call_graph_nodes(gateway: StorageGateway, goids: Iterable[GoidRow]) ->
         )
         for row in goids
     ]
-    insert_call_graph_nodes(gateway, node_rows)
+    insert_rows(gateway, node_rows)
 
 
 def _seed_function_types(gateway: StorageGateway, goids: Iterable[GoidRow]) -> None:
@@ -157,7 +154,7 @@ def _seed_function_types(gateway: StorageGateway, goids: Iterable[GoidRow]) -> N
                 created_at=now,
             )
         )
-    insert_function_types(gateway, rows)
+    insert_rows(gateway, rows)
 
 
 def _seed_config_values(con: DuckDBConnection, rel_path: str) -> None:

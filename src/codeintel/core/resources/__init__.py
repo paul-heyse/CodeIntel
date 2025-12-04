@@ -12,9 +12,14 @@ Modules
 from __future__ import annotations
 
 from codeintel.core.resources.protocol import ResourceProvider, ResourceProviderBase
-from codeintel.core.resources.registry import ResourceNotFoundError, ResourceRegistry
+from codeintel.core.resources.registry import (
+    ResourceError,
+    ResourceNotFoundError,
+    ResourceRegistry,
+)
 
 __all__ = [
+    "ResourceError",
     "ResourceNotFoundError",
     "ResourceProvider",
     "ResourceProviderBase",

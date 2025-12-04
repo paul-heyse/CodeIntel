@@ -7,7 +7,7 @@ path-to-module mapping used in analytics.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.resources.protocol import LazyResource, ResourceNotLoadedError
 from codeintel.storage.module_index import load_module_map
@@ -39,6 +39,8 @@ class ModuleMapProvider(LazyResource[dict[str, str]]):
     >>> module_map = provider.get()
     >>> module_name = module_map.get("src/codeintel/analytics/core.py")
     """
+
+    RESOURCE_NAME: ClassVar[str] = "ModuleMapProvider"
 
     def __init__(
         self,

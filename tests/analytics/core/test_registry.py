@@ -300,10 +300,10 @@ def test_plugin_decorator_with_capabilities() -> None:
     )
 
     meta = cap_plugin.metadata
-    assert len(meta.capabilities_provided) == 1
-    assert meta.capabilities_provided[0].name == "cap.output"
-    assert len(meta.capabilities_required) == 1
-    assert meta.capabilities_required[0].name == "cap.input"
+    assert len(meta.provides) == 1
+    assert meta.provides[0] == "cap.output"
+    assert len(meta.requires) == 1
+    assert meta.requires[0] == "cap.input"
 
 
 def test_decorated_plugin_executes() -> None:

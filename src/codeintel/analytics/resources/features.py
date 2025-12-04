@@ -7,7 +7,7 @@ AST features used in analytics.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.ast_features.extract import compute_function_features
 from codeintel.analytics.function_ast_cache import (
@@ -40,6 +40,8 @@ class FeaturesProvider(LazyResource[dict[int, "FunctionAstFeatures"]]):
     >>> features = provider.get()
     >>> func_features = features.get(function_goid)
     """
+
+    RESOURCE_NAME: ClassVar[str] = "FeaturesProvider"
 
     def __init__(
         self,

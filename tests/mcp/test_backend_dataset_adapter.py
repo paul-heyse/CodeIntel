@@ -10,9 +10,8 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     FunctionValidationRow,
     RepoMapRow,
-    insert_function_validation,
-    insert_repo_map,
 )
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.gateway import build_duckdb_backend
 
 
@@ -26,7 +25,7 @@ def gateway(fresh_gateway: StorageGateway) -> StorageGateway:
     StorageGateway
         Gateway configured with repo/commit identity.
     """
-    insert_repo_map(
+    insert_rows(
         fresh_gateway,
         [
             RepoMapRow(
@@ -43,7 +42,7 @@ def gateway(fresh_gateway: StorageGateway) -> StorageGateway:
 def test_read_dataset_rows_delegates(gateway: StorageGateway) -> None:
     """Adapters should delegate dataset reads directly to the service."""
     backend = build_duckdb_backend(gateway, repo="r", commit="c")
-    insert_function_validation(
+    insert_rows(
         gateway,
         [
             FunctionValidationRow(

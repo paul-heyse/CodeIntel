@@ -11,14 +11,15 @@ import pytest
 from codeintel.pipeline.export.export_jsonl import export_all_jsonl
 from codeintel.pipeline.export.export_parquet import export_all_parquet
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.builders import FunctionValidationRow, insert_function_validation
+from tests._helpers.builders import FunctionValidationRow
+from tests._helpers.row_protocol import insert_rows
 
 
 def test_function_validation_export(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """Export writes function_validation artifacts when rows exist."""
     gateway = fresh_gateway
 
-    insert_function_validation(
+    insert_rows(
         gateway,
         [
             FunctionValidationRow(

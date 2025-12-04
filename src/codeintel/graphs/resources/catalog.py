@@ -12,7 +12,7 @@ Integration Architecture
 
 The CatalogResource wraps FunctionCatalog and exposes it via the CatalogPort
 protocol, enabling:
-- Dependency injection in GraphExecutionContext
+- Dependency injection in GraphPluginExecutionContext
 - Protocol-based testing with mock implementations
 - Clean separation of production logic from resource lifecycle
 """

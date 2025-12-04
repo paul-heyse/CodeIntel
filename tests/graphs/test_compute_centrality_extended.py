@@ -27,6 +27,13 @@ from codeintel.graphs.compute.metrics.centrality import (
     compute_out_degree_centrality,
     compute_pagerank,
 )
+from tests._helpers.fakes.networkx_graphs import (
+    chain_graph,
+    cyclic_graph,
+    diamond_graph,
+    disconnected_graph,
+    star_graph,
+)
 
 # Constants
 PAGERANK_TOLERANCE: Final = 0.01
@@ -46,97 +53,9 @@ EQUALITY_DEGREE_TOTAL: Final = 2
 DEFAULT_DEGREE_TOTAL: Final = 3
 
 
-# Test Fixtures - Realistic Graph Structures
-
-
-def _make_simple_chain() -> nx.DiGraph:
-    """Create a simple chain graph: A -> B -> C -> D.
-
-    Returns
-    -------
-    nx.DiGraph
-        A chain graph.
-    """
-    g = nx.DiGraph()
-    g.add_edges_from([("A", "B"), ("B", "C"), ("C", "D")])
-    return g
-
-
-def _make_star_graph() -> nx.DiGraph:
-    """Create a star graph with hub pointing to spokes.
-
-    Returns
-    -------
-    nx.DiGraph
-        A star graph (hub -> spoke1, spoke2, spoke3).
-    """
-    g = nx.DiGraph()
-    g.add_edges_from([("hub", "spoke1"), ("hub", "spoke2"), ("hub", "spoke3")])
-    return g
-
-
-def _make_reverse_star_graph() -> nx.DiGraph:
-    """Create a reverse star graph with spokes pointing to hub.
-
-    Returns
-    -------
-    nx.DiGraph
-        A reverse star graph (spoke1 -> hub, spoke2 -> hub).
-    """
-    g = nx.DiGraph()
-    g.add_edges_from([("spoke1", "hub"), ("spoke2", "hub"), ("spoke3", "hub")])
-    return g
-
-
-def _make_diamond_graph() -> nx.DiGraph:
-    """Create a diamond-shaped graph.
-
-    Structure: A -> B, A -> C, B -> D, C -> D
-
-    Returns
-    -------
-    nx.DiGraph
-        A diamond graph.
-    """
-    g = nx.DiGraph()
-    g.add_edges_from([("A", "B"), ("A", "C"), ("B", "D"), ("C", "D")])
-    return g
-
-
-def _make_cyclic_graph() -> nx.DiGraph:
-    """Create a graph with a cycle.
-
-    Structure: A -> B -> C -> A
-
-    Returns
-    -------
-    nx.DiGraph
-        A cyclic graph.
-    """
-    g = nx.DiGraph()
-    g.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
-    return g
-
-
-def _make_disconnected_graph() -> nx.DiGraph:
-    """Create a graph with disconnected components.
-
-    Returns
-    -------
-    nx.DiGraph
-        Graph with two disconnected components.
-    """
-    g = nx.DiGraph()
-    # Component 1
-    g.add_edges_from([("A", "B"), ("B", "C")])
-    # Component 2
-    g.add_edges_from([("X", "Y"), ("Y", "Z")])
-    return g
-
-
 def test_compute_pagerank_simple_chain() -> None:
     """Compute PageRank on a simple chain graph."""
-    g = _make_simple_chain()
+    g = chain_graph(4)
 
     pagerank = compute_pagerank(g)
 
@@ -148,7 +67,7 @@ def test_compute_pagerank_simple_chain() -> None:
 
 def test_compute_pagerank_star_graph() -> None:
     """Compute PageRank on a star graph."""
-    g = _make_star_graph()
+    g = star_graph(3)
 
     pagerank = compute_pagerank(g)
 
@@ -158,7 +77,7 @@ def test_compute_pagerank_star_graph() -> None:
 
 def test_compute_pagerank_reverse_star() -> None:
     """Compute PageRank on a reverse star graph."""
-    g = _make_reverse_star_graph()
+    g = star_graph(3, inward=True)
 
     pagerank = compute_pagerank(g)
 
@@ -168,7 +87,7 @@ def test_compute_pagerank_reverse_star() -> None:
 
 def test_compute_pagerank_cyclic() -> None:
     """Compute PageRank on a cyclic graph."""
-    g = _make_cyclic_graph()
+    g = cyclic_graph(3)
 
     pagerank = compute_pagerank(g)
 
@@ -199,7 +118,7 @@ def test_compute_pagerank_single_node() -> None:
 
 def test_compute_betweenness_chain() -> None:
     """Compute betweenness on a chain graph."""
-    g = _make_simple_chain()
+    g = chain_graph(4)
 
     betweenness = compute_betweenness(g)
 
@@ -210,7 +129,7 @@ def test_compute_betweenness_chain() -> None:
 
 def test_compute_betweenness_star() -> None:
     """Compute betweenness on a star graph."""
-    g = _make_star_graph()
+    g = star_graph(3)
 
     betweenness = compute_betweenness(g)
 
@@ -221,7 +140,7 @@ def test_compute_betweenness_star() -> None:
 
 def test_compute_betweenness_diamond() -> None:
     """Compute betweenness on a diamond graph."""
-    g = _make_diamond_graph()
+    g = diamond_graph()
 
     betweenness = compute_betweenness(g)
 
@@ -241,7 +160,7 @@ def test_compute_betweenness_empty_graph() -> None:
 
 def test_compute_betweenness_disconnected() -> None:
     """Compute betweenness on a disconnected graph."""
-    g = _make_disconnected_graph()
+    g = disconnected_graph()
 
     betweenness = compute_betweenness(g)
 
@@ -251,7 +170,7 @@ def test_compute_betweenness_disconnected() -> None:
 
 def test_compute_closeness_chain() -> None:
     """Compute closeness on a chain graph."""
-    g = _make_simple_chain()
+    g = chain_graph(4)
 
     closeness = compute_closeness(g)
 
@@ -262,7 +181,7 @@ def test_compute_closeness_chain() -> None:
 
 def test_compute_closeness_star() -> None:
     """Compute closeness on a star graph."""
-    g = _make_star_graph()
+    g = star_graph(3)
 
     closeness = compute_closeness(g)
 
@@ -283,7 +202,7 @@ def test_compute_closeness_empty_graph() -> None:
 
 def test_compute_closeness_disconnected() -> None:
     """Compute closeness on a disconnected graph."""
-    g = _make_disconnected_graph()
+    g = disconnected_graph()
 
     closeness = compute_closeness(g)
 
@@ -293,7 +212,7 @@ def test_compute_closeness_disconnected() -> None:
 
 def test_compute_degree_centrality_star() -> None:
     """Compute total degree centrality on a star graph."""
-    g = _make_star_graph()
+    g = star_graph(3)
 
     degree = compute_degree_centrality(g)
 
@@ -303,7 +222,7 @@ def test_compute_degree_centrality_star() -> None:
 
 def test_compute_in_degree_centrality_reverse_star() -> None:
     """Compute in-degree centrality on a reverse star graph."""
-    g = _make_reverse_star_graph()
+    g = star_graph(3, inward=True)
 
     in_degree = compute_in_degree_centrality(g)
 
@@ -313,7 +232,7 @@ def test_compute_in_degree_centrality_reverse_star() -> None:
 
 def test_compute_out_degree_centrality_star() -> None:
     """Compute out-degree centrality on a star graph."""
-    g = _make_star_graph()
+    g = star_graph(3)
 
     out_degree = compute_out_degree_centrality(g)
 
@@ -350,7 +269,7 @@ def test_compute_out_degree_empty_graph() -> None:
 
 def test_compute_all_centralities_simple_chain() -> None:
     """Compute all centralities on a simple chain."""
-    g = _make_simple_chain()
+    g = chain_graph(4)
 
     all_metrics = compute_all_centralities(g)
 
@@ -361,7 +280,7 @@ def test_compute_all_centralities_simple_chain() -> None:
 
 def test_compute_all_centralities_returns_centrality_metrics() -> None:
     """Compute all centralities returns CentralityMetrics objects."""
-    g = _make_simple_chain()
+    g = chain_graph(4)
 
     all_metrics = compute_all_centralities(g)
 
@@ -399,7 +318,7 @@ def test_compute_all_centralities_single_node() -> None:
 
 def test_compute_all_centralities_diamond() -> None:
     """Compute all centralities on a diamond graph."""
-    g = _make_diamond_graph()
+    g = diamond_graph()
 
     all_metrics = compute_all_centralities(g)
 
@@ -416,7 +335,7 @@ def test_compute_all_centralities_diamond() -> None:
 
 def test_compute_all_centralities_disconnected() -> None:
     """Compute all centralities on a disconnected graph."""
-    g = _make_disconnected_graph()
+    g = disconnected_graph()
 
     all_metrics = compute_all_centralities(g)
 

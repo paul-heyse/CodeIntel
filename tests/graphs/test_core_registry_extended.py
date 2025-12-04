@@ -20,6 +20,7 @@ from typing import Final
 
 import pytest
 
+from codeintel.core.plugins.result import PluginResult
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
@@ -35,7 +36,6 @@ from codeintel.graphs.core.registry import (
     register_graph_plugin,
     unregister_graph_plugin,
 )
-from codeintel.graphs.core.result import PluginResult
 
 # Constants
 TEST_PLUGIN_PREFIX: Final = "_test_registry_"

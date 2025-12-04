@@ -25,21 +25,15 @@ from tests._helpers.builders import (
     SubsystemRow,
     SymbolGraphMetricsModulesRow,
     SymbolUseEdgeRow,
-    insert_config_values,
-    insert_graph_metrics_modules_ext,
-    insert_modules,
-    insert_subsystem_modules,
-    insert_subsystems,
-    insert_symbol_graph_metrics_modules,
-    insert_symbol_use_edges,
 )
+from tests._helpers.row_protocol import insert_rows
 
 REPO = "demo/repo"
 COMMIT = "abc123"
 
 
 def _seed_modules(gateway: StorageGateway) -> None:
-    insert_modules(
+    insert_rows(
         gateway,
         [
             ModuleRow(module="pkg.a", path="pkg/a.py", repo=REPO, commit=COMMIT),
@@ -63,7 +57,7 @@ def test_graph_stats_include_symbol_and_config_graphs(
     gateway = fresh_gateway
     con = gateway.con
     _seed_modules(gateway)
-    insert_symbol_use_edges(
+    insert_rows(
         gateway,
         [
             SymbolUseEdgeRow(
@@ -77,7 +71,7 @@ def test_graph_stats_include_symbol_and_config_graphs(
             )
         ],
     )
-    insert_config_values(
+    insert_rows(
         gateway,
         [
             ConfigValueRow(
@@ -116,7 +110,7 @@ def test_subsystem_agreement_summary_aggregates(
     gateway = fresh_gateway
     con = gateway.con
     now = datetime.now(UTC)
-    insert_subsystem_modules(
+    insert_rows(
         gateway,
         [
             SubsystemModuleRow(
@@ -128,7 +122,7 @@ def test_subsystem_agreement_summary_aggregates(
             )
         ],
     )
-    insert_graph_metrics_modules_ext(
+    insert_rows(
         gateway,
         [
             GraphMetricsModulesExtRow(
@@ -151,7 +145,7 @@ def test_subsystem_agreement_summary_aggregates(
             )
         ],
     )
-    insert_subsystems(
+    insert_rows(
         gateway,
         [
             SubsystemRow(
@@ -202,7 +196,7 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
     gateway = fresh_gateway
     _seed_modules(gateway)
     # Seed symbol metrics table with a large community id
-    insert_symbol_graph_metrics_modules(
+    insert_rows(
         gateway,
         [
             SymbolGraphMetricsModulesRow(
@@ -255,7 +249,7 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
             ),
         ],
     )
-    insert_config_values(
+    insert_rows(
         gateway,
         [
             ConfigValueRow(

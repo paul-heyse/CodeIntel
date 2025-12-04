@@ -233,6 +233,20 @@ class TestContext:
         """
         return self.gateway.con
 
+    def to_snapshot_ref(self) -> SnapshotRef:
+        """Return the snapshot reference for use with graph plugins.
+
+        This is a convenience method for accessing the snapshot when
+        building graph plugin contexts or other components that need
+        a SnapshotRef.
+
+        Returns
+        -------
+        SnapshotRef
+            The test context's snapshot reference.
+        """
+        return self.snapshot
+
     def require(self, *seed_packs: SeedPack) -> Self:
         """Ensure seed packs are applied (idempotent).
 

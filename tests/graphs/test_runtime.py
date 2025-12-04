@@ -23,16 +23,7 @@ from codeintel.config.steps_graphs import (
     GraphPluginRetryPolicy,
     GraphRunScope,
 )
-from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
-from codeintel.graphs.core.protocol import (
-    FunctionalGraphPlugin,
-    GraphPluginMetadata,
-    GraphPluginProtocol,
-    GraphPluginSeverity,
-)
-from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
-from codeintel.graphs.core.result import PluginExecutionRecord, PluginResult
-from codeintel.graphs.resources.container import ResourceContainer
+from codeintel.core.plugins.result import PluginExecutionRecord
 from codeintel.graphs.runtime.executor import (
     GraphExecutorContext,
     GraphRunReport,
@@ -61,9 +52,11 @@ from codeintel.graphs.runtime.telemetry import (
     GraphRuntimeTelemetry,
     get_graph_telemetry,
 )
-from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schemas import apply_all_schemas
-from tests._helpers.gateway import open_ingestion_gateway_with_macros
+from tests._helpers.fakes.graph_contexts import (
+    GraphExecutorTestEnv,
+    GraphTelemetryTestEnv,
+)
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -75,453 +68,240 @@ EXPECTED_HASH_LENGTH: Final = 16
 EXPECTED_ATTR_VALUE: Final = 42
 
 
-# ---------------------------------------------------------------------------
-# Shared Helpers
-# ---------------------------------------------------------------------------
-
-
-class _PluginRegistrar:
-    """Context manager for registering and cleaning up test plugins."""
-
-    def __init__(self, plugins: list[GraphPluginProtocol]) -> None:
-        """Initialize with plugins to register.
-
-        Parameters
-        ----------
-        plugins
-            Plugins to register.
-        """
-        self._plugins = plugins
-        self._registry = get_graph_registry()
-
-    def __enter__(self) -> None:
-        """Register plugins on entry."""
-        for plugin in self._plugins:
-            register_graph_plugin(plugin)
-
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
-        """Unregister plugins on exit."""
-        for plugin in self._plugins:
-            self._registry.unregister(plugin.metadata.name)
-
-
-def _make_executor_test_plugin(
-    name: str,
-    *,
-    succeed: bool = True,
-    row_counts: dict[str, int] | None = None,
-    raise_exception: type[Exception] | None = None,
-    delay_ms: int = 0,
-) -> GraphPluginProtocol:
-    """Create a test plugin for execution tests.
-
-    Parameters
-    ----------
-    name
-        Plugin name.
-    succeed
-        Whether the plugin should succeed.
-    row_counts
-        Optional row counts to return.
-    raise_exception
-        Optional exception type to raise.
-    delay_ms
-        Optional delay in milliseconds before returning.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        Test plugin instance.
-    """
-
-    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
-        if delay_ms > 0:
-            time.sleep(delay_ms / 1000)
-        if raise_exception is not None:
-            error_msg = f"Test exception from {name}"
-            raise raise_exception(error_msg)
-        if succeed:
-            return PluginResult.ok(row_counts=row_counts)
-        return PluginResult.fail(f"Plugin {name} failed")
-
-    metadata = GraphPluginMetadata(
-        name=name,
-        description=f"Test plugin {name}",
-        kind="builder",
-        stage="goid",
-    )
-
-    return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
-
-
-def _make_planning_test_plugin(
-    name: str,
-    *,
-    depends_on: tuple[str, ...] = (),
-    provides: tuple[str, ...] = (),
-    severity: GraphPluginSeverity = "fatal",
-) -> GraphPluginProtocol:
-    """Create a test plugin for planning tests.
-
-    Parameters
-    ----------
-    name
-        Plugin name.
-    depends_on
-        Plugin dependencies.
-    provides
-        Capabilities provided.
-    severity
-        Failure severity.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        Test plugin instance.
-    """
-
-    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
-        return PluginResult.ok()
-
-    metadata = GraphPluginMetadata(
-        name=name,
-        description=f"Test plugin {name}",
-        kind="builder",
-        stage="goid",
-        depends_on=depends_on,
-        provides=provides,
-        severity=severity,
-    )
-
-    return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
-
-
-def _make_telemetry_test_plugin(name: str) -> GraphPluginProtocol:
-    """Create a test plugin for telemetry tests.
-
-    Parameters
-    ----------
-    name
-        Plugin name.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        Test plugin instance.
-    """
-
-    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
-        return PluginResult.ok()
-
-    metadata = GraphPluginMetadata(
-        name=name,
-        description=f"Test plugin {name}",
-        kind="builder",
-        stage="goid",
-    )
-
-    return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
-
-
-def _make_executor_context(tmp_path: Path) -> tuple[StorageGateway, SnapshotRef]:
-    """Create execution context for executor tests.
-
-    Parameters
-    ----------
-    tmp_path
-        Temporary path for test data.
-
-    Returns
-    -------
-    tuple
-        Gateway and snapshot for testing.
-    """
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
-    apply_all_schemas(gateway.con)
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
-    return gateway, snapshot
-
-
-def _make_telemetry_context() -> tuple[GraphPluginExecutionContext, StorageGateway]:
-    """Create a test execution context for telemetry tests.
-
-    Returns
-    -------
-    tuple
-        A tuple of (GraphPluginExecutionContext, gateway).
-        Caller is responsible for closing the gateway.
-    """
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
-    apply_all_schemas(gateway.con)
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=Path())
-    scratch = PluginScratch()
-    ctx = GraphPluginExecutionContext(
-        snapshot=snapshot,
-        graph_resources=ResourceContainer(),
-        gateway=gateway,
-        scratch=scratch,
-        plugin_name="metrics_test",
-        run_id="test-run-123",
-    )
-    return ctx, gateway
-
-
 # ===========================================================================
 # SECTION 1: Executor Tests
 # ===========================================================================
 
 
-def test_run_graph_plugins_basic_success(tmp_path: Path) -> None:
+def test_run_graph_plugins_basic_success(graph_executor_env: GraphExecutorTestEnv) -> None:
     """Execute a simple plugin batch successfully."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        plugin = _make_executor_test_plugin(
-            "basic_success_plugin", succeed=True, row_counts={"t": 5}
+    plugin = (
+        GraphPluginBuilder(name="basic_success_plugin")
+        .succeeding()
+        .with_row_counts({"t": 5})
+        .build()
+    )
+
+    with plugin_registrar([plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=graph_executor_env.snapshot,
+            policy=GraphPluginPolicy(),
+        )
+        plan = plan_graph_plugin_run(
+            plugin_names=[plugin.metadata.name],
+            context=context,
         )
 
-        with _PluginRegistrar([plugin]):
-            context = GraphPlanContext(
-                runtime_snapshot=snapshot,
-                policy=GraphPluginPolicy(),
-            )
-            plan = plan_graph_plugin_run(
-                plugin_names=[plugin.metadata.name],
-                context=context,
-            )
+        executor_context = GraphExecutorContext(
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            executor_context = GraphExecutorContext(
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+        report = run_graph_plugins(plan=plan, context=executor_context)
 
-            report = run_graph_plugins(plan=plan, context=executor_context)
-
-            assert report.success_count == 1
-            assert report.failure_count == 0
-    finally:
-        gateway.close()
+        assert report.success_count == 1
+        assert report.failure_count == 0
 
 
-def test_run_graph_plugins_with_failure(tmp_path: Path) -> None:
+def test_run_graph_plugins_with_failure(graph_executor_env: GraphExecutorTestEnv) -> None:
     """Plugin failure handling records the failure correctly."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        plugin = _make_executor_test_plugin("failing_plugin", succeed=False)
+    plugin = GraphPluginBuilder(name="failing_plugin").failing().build()
 
-        with _PluginRegistrar([plugin]):
-            context = GraphPlanContext(
-                runtime_snapshot=snapshot,
-                policy=GraphPluginPolicy(default_severity="soft_fail"),
-            )
-            plan = plan_graph_plugin_run(
-                plugin_names=[plugin.metadata.name],
-                context=context,
-            )
+    with plugin_registrar([plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=graph_executor_env.snapshot,
+            policy=GraphPluginPolicy(default_severity="soft_fail"),
+        )
+        plan = plan_graph_plugin_run(
+            plugin_names=[plugin.metadata.name],
+            context=context,
+        )
 
-            executor_context = GraphExecutorContext(
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+        executor_context = GraphExecutorContext(
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            report = run_graph_plugins(plan=plan, context=executor_context)
+        report = run_graph_plugins(plan=plan, context=executor_context)
 
-            assert report.failure_count == 1
-            assert report.success_count == 0
-    finally:
-        gateway.close()
+        assert report.failure_count == 1
+        assert report.success_count == 0
 
 
-def test_run_graph_plugins_timeout(tmp_path: Path) -> None:
+def test_run_graph_plugins_timeout(graph_executor_env: GraphExecutorTestEnv) -> None:
     """Timeout handling produces failed record with timeout error."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        # Use a plugin that delays long enough to trigger timeout
-        plugin = _make_executor_test_plugin("slow_plugin", succeed=True, delay_ms=2000)
+    # Use a plugin that delays long enough to trigger timeout
+    plugin = (
+        GraphPluginBuilder(name="slow_plugin").succeeding().with_delay(2000).build()
+    )
 
-        with _PluginRegistrar([plugin]):
-            context = GraphPlanContext(
-                runtime_snapshot=snapshot,
-                policy=GraphPluginPolicy(
-                    timeouts_ms={plugin.metadata.name: 50},
-                    default_severity="soft_fail",
-                ),
-            )
-            plan = plan_graph_plugin_run(
-                plugin_names=[plugin.metadata.name],
-                context=context,
-            )
+    with plugin_registrar([plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=graph_executor_env.snapshot,
+            policy=GraphPluginPolicy(
+                timeouts_ms={plugin.metadata.name: 50},
+                default_severity="soft_fail",
+            ),
+        )
+        plan = plan_graph_plugin_run(
+            plugin_names=[plugin.metadata.name],
+            context=context,
+        )
 
-            executor_context = GraphExecutorContext(
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+        executor_context = GraphExecutorContext(
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            report = run_graph_plugins(plan=plan, context=executor_context)
+        report = run_graph_plugins(plan=plan, context=executor_context)
 
-            assert report.failure_count == 1
-            assert report.records
-            rec = report.records[0]
-            assert rec.error == "timeout"
-    finally:
-        gateway.close()
+        assert report.failure_count == 1
+        assert report.records
+        rec = report.records[0]
+        assert rec.error == "timeout"
 
 
-def test_run_graph_plugins_retry_logic(tmp_path: Path) -> None:
+def test_run_graph_plugins_retry_logic(graph_executor_env: GraphExecutorTestEnv) -> None:
     """Retry logic executes multiple attempts before failing."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        plugin = _make_executor_test_plugin("retry_plugin", raise_exception=RuntimeError)
+    plugin = GraphPluginBuilder(name="retry_plugin").raising(RuntimeError).build()
 
-        with _PluginRegistrar([plugin]):
-            context = GraphPlanContext(
-                runtime_snapshot=snapshot,
-                policy=GraphPluginPolicy(
-                    default_severity="soft_fail",
-                    retries={plugin.metadata.name: GraphPluginRetryPolicy(max_attempts=3)},
-                ),
-            )
-            plan = plan_graph_plugin_run(
-                plugin_names=[plugin.metadata.name],
-                context=context,
-            )
+    with plugin_registrar([plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=graph_executor_env.snapshot,
+            policy=GraphPluginPolicy(
+                default_severity="soft_fail",
+                retries={plugin.metadata.name: GraphPluginRetryPolicy(max_attempts=3)},
+            ),
+        )
+        plan = plan_graph_plugin_run(
+            plugin_names=[plugin.metadata.name],
+            context=context,
+        )
 
-            executor_context = GraphExecutorContext(
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+        executor_context = GraphExecutorContext(
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            report = run_graph_plugins(plan=plan, context=executor_context)
+        report = run_graph_plugins(plan=plan, context=executor_context)
 
-            assert report.failure_count == 1
-            assert report.records
-            rec = report.records[0]
-            assert rec.attempts == EXPECTED_PLUGIN_COUNT
-    finally:
-        gateway.close()
+        assert report.failure_count == 1
+        assert report.records
+        rec = report.records[0]
+        assert rec.attempts == EXPECTED_PLUGIN_COUNT
 
 
-def test_run_graph_plugins_fatal_error(tmp_path: Path) -> None:
+def test_run_graph_plugins_fatal_error(graph_executor_env: GraphExecutorTestEnv) -> None:
     """PluginFatalError stops execution and is recorded."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        # First plugin raises exception with fatal severity + fail_fast
-        fatal_plugin = _make_executor_test_plugin("fatal_plugin", raise_exception=ValueError)
-        # Second plugin should not execute
-        second_plugin = _make_executor_test_plugin("second_plugin", succeed=True)
+    # First plugin raises exception with fatal severity + fail_fast
+    fatal_plugin = GraphPluginBuilder(name="fatal_plugin").raising(ValueError).build()
+    # Second plugin should not execute
+    second_plugin = GraphPluginBuilder(name="second_plugin").succeeding().build()
 
-        with _PluginRegistrar([fatal_plugin, second_plugin]):
-            context = GraphPlanContext(
-                runtime_snapshot=snapshot,
-                policy=GraphPluginPolicy(
-                    default_severity="fatal",
-                    fail_fast=True,
-                ),
-            )
-            plan = plan_graph_plugin_run(
-                plugin_names=[fatal_plugin.metadata.name, second_plugin.metadata.name],
-                context=context,
-            )
+    with plugin_registrar([fatal_plugin, second_plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=graph_executor_env.snapshot,
+            policy=GraphPluginPolicy(
+                default_severity="fatal",
+                fail_fast=True,
+            ),
+        )
+        plan = plan_graph_plugin_run(
+            plugin_names=[fatal_plugin.metadata.name, second_plugin.metadata.name],
+            context=context,
+        )
 
-            executor_context = GraphExecutorContext(
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+        executor_context = GraphExecutorContext(
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            report = run_graph_plugins(plan=plan, context=executor_context)
+        report = run_graph_plugins(plan=plan, context=executor_context)
 
-            assert report.fatal_error
-            # Only one record should exist (fatal stopped execution)
-            assert len(report.records) == 1
-    finally:
-        gateway.close()
+        assert report.fatal_error
+        # Only one record should exist (fatal stopped execution)
+        assert len(report.records) == 1
 
 
-def test_run_graph_plugin_batch_convenience(tmp_path: Path) -> None:
+def test_run_graph_plugin_batch_convenience(
+    graph_executor_env: GraphExecutorTestEnv,
+) -> None:
     """run_graph_plugin_batch convenience function executes plugins."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        plugins = [
-            _make_executor_test_plugin("batch_plugin_1", succeed=True),
-            _make_executor_test_plugin("batch_plugin_2", succeed=True),
-        ]
+    plugins = [
+        GraphPluginBuilder(name="batch_plugin_1").succeeding().build(),
+        GraphPluginBuilder(name="batch_plugin_2").succeeding().build(),
+    ]
 
-        with _PluginRegistrar(plugins):
-            report = run_graph_plugin_batch(
-                plugins=plugins,
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+    with plugin_registrar(plugins):
+        report = run_graph_plugin_batch(
+            plugins=plugins,
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            assert report.success_count == EXPECTED_BATCH_COUNT
-            assert report.repo == "demo/repo"
-    finally:
-        gateway.close()
+        assert report.success_count == EXPECTED_BATCH_COUNT
+        assert report.repo == "demo/repo"
 
 
-def test_run_graph_plugins_multiple_success(tmp_path: Path) -> None:
+def test_run_graph_plugins_multiple_success(
+    graph_executor_env: GraphExecutorTestEnv,
+) -> None:
     """Multiple successful plugins all complete and are recorded."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        plugins = [_make_executor_test_plugin(f"multi_plugin_{i}", succeed=True) for i in range(3)]
+    plugins = [
+        GraphPluginBuilder(name=f"multi_plugin_{i}").succeeding().build()
+        for i in range(3)
+    ]
 
-        with _PluginRegistrar(plugins):
-            context = GraphPlanContext(
-                runtime_snapshot=snapshot,
-                policy=GraphPluginPolicy(),
-            )
-            plan = plan_graph_plugin_run(
-                plugin_names=[p.metadata.name for p in plugins],
-                context=context,
-            )
+    with plugin_registrar(plugins):
+        context = GraphPlanContext(
+            runtime_snapshot=graph_executor_env.snapshot,
+            policy=GraphPluginPolicy(),
+        )
+        plan = plan_graph_plugin_run(
+            plugin_names=[p.metadata.name for p in plugins],
+            context=context,
+        )
 
-            executor_context = GraphExecutorContext(
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+        executor_context = GraphExecutorContext(
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            report = run_graph_plugins(plan=plan, context=executor_context)
+        report = run_graph_plugins(plan=plan, context=executor_context)
 
-            assert report.success_count == EXPECTED_PLUGIN_COUNT
-            assert len(report.records) == EXPECTED_PLUGIN_COUNT
-    finally:
-        gateway.close()
+        assert report.success_count == EXPECTED_PLUGIN_COUNT
+        assert len(report.records) == EXPECTED_PLUGIN_COUNT
 
 
-def test_run_graph_plugins_includes_timing(tmp_path: Path) -> None:
+def test_run_graph_plugins_includes_timing(
+    graph_executor_env: GraphExecutorTestEnv,
+) -> None:
     """Report includes duration and timestamps."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        plugin = _make_executor_test_plugin("timing_plugin", succeed=True)
+    plugin = GraphPluginBuilder(name="timing_plugin").succeeding().build()
 
-        with _PluginRegistrar([plugin]):
-            context = GraphPlanContext(
-                runtime_snapshot=snapshot,
-                policy=GraphPluginPolicy(),
-            )
-            plan = plan_graph_plugin_run(
-                plugin_names=[plugin.metadata.name],
-                context=context,
-            )
+    with plugin_registrar([plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=graph_executor_env.snapshot,
+            policy=GraphPluginPolicy(),
+        )
+        plan = plan_graph_plugin_run(
+            plugin_names=[plugin.metadata.name],
+            context=context,
+        )
 
-            executor_context = GraphExecutorContext(
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+        executor_context = GraphExecutorContext(
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            report = run_graph_plugins(plan=plan, context=executor_context)
+        report = run_graph_plugins(plan=plan, context=executor_context)
 
-            assert report.duration_ms >= 0
-            assert report.started_at is not None
-            assert report.ended_at is not None
-            # Validate timestamps are proper datetime objects
-            assert isinstance(report.started_at, datetime)
-            assert isinstance(report.ended_at, datetime)
-    finally:
-        gateway.close()
+        assert report.duration_ms >= 0
+        assert report.started_at is not None
+        assert report.ended_at is not None
+        # Validate timestamps are proper datetime objects
+        assert isinstance(report.started_at, datetime)
+        assert isinstance(report.ended_at, datetime)
 
 
 def test_graph_run_report_attributes() -> None:
@@ -568,65 +348,61 @@ def test_plugin_fatal_error_exception() -> None:
     assert "Original error" in str(exc)
 
 
-def test_run_graph_plugins_manifest_update(tmp_path: Path) -> None:
+def test_run_graph_plugins_manifest_update(
+    graph_executor_env: GraphExecutorTestEnv,
+) -> None:
     """Successful plugins update the manifest with execution metadata."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        plugin = _make_executor_test_plugin("manifest_plugin", succeed=True)
+    plugin = GraphPluginBuilder(name="manifest_plugin").succeeding().build()
 
-        with _PluginRegistrar([plugin]):
-            context = GraphPlanContext(
-                runtime_snapshot=snapshot,
-                policy=GraphPluginPolicy(),
-            )
-            plan = plan_graph_plugin_run(
-                plugin_names=[plugin.metadata.name],
-                context=context,
-            )
+    with plugin_registrar([plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=graph_executor_env.snapshot,
+            policy=GraphPluginPolicy(),
+        )
+        plan = plan_graph_plugin_run(
+            plugin_names=[plugin.metadata.name],
+            context=context,
+        )
 
-            executor_context = GraphExecutorContext(
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+        executor_context = GraphExecutorContext(
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            report = run_graph_plugins(plan=plan, context=executor_context)
+        report = run_graph_plugins(plan=plan, context=executor_context)
 
-            assert plugin.metadata.name in report.manifest
-            manifest_entry = report.manifest[plugin.metadata.name]
-            assert "executed_at" in manifest_entry
-    finally:
-        gateway.close()
+        assert plugin.metadata.name in report.manifest
+        manifest_entry = report.manifest[plugin.metadata.name]
+        assert "executed_at" in manifest_entry
 
 
-def test_run_graph_plugins_skip_on_error_severity(tmp_path: Path) -> None:
+def test_run_graph_plugins_skip_on_error_severity(
+    graph_executor_env: GraphExecutorTestEnv,
+) -> None:
     """Skip_on_error severity skips plugin on exception."""
-    gateway, snapshot = _make_executor_context(tmp_path)
-    try:
-        plugin = _make_executor_test_plugin("skip_error_plugin", raise_exception=ValueError)
+    plugin = GraphPluginBuilder(name="skip_error_plugin").raising(ValueError).build()
 
-        with _PluginRegistrar([plugin]):
-            context = GraphPlanContext(
-                runtime_snapshot=snapshot,
-                policy=GraphPluginPolicy(
-                    default_severity="skip_on_error",
-                ),
-            )
-            plan = plan_graph_plugin_run(
-                plugin_names=[plugin.metadata.name],
-                context=context,
-            )
+    with plugin_registrar([plugin]):
+        context = GraphPlanContext(
+            runtime_snapshot=graph_executor_env.snapshot,
+            policy=GraphPluginPolicy(
+                default_severity="skip_on_error",
+            ),
+        )
+        plan = plan_graph_plugin_run(
+            plugin_names=[plugin.metadata.name],
+            context=context,
+        )
 
-            executor_context = GraphExecutorContext(
-                gateway=gateway,
-                snapshot=snapshot,
-            )
+        executor_context = GraphExecutorContext(
+            gateway=graph_executor_env.gateway,
+            snapshot=graph_executor_env.snapshot,
+        )
 
-            report = run_graph_plugins(plan=plan, context=executor_context)
+        report = run_graph_plugins(plan=plan, context=executor_context)
 
-            assert report.skip_count == 1
-            assert report.failure_count == 0
-    finally:
-        gateway.close()
+        assert report.skip_count == 1
+        assert report.failure_count == 0
 
 
 # ===========================================================================
@@ -636,10 +412,10 @@ def test_run_graph_plugins_skip_on_error_severity(tmp_path: Path) -> None:
 
 def test_plan_graph_plugin_run_basic(tmp_path: Path) -> None:
     """Basic plan generation produces valid execution plan."""
-    plugin = _make_planning_test_plugin("basic_plan_plugin")
+    plugin = GraphPluginBuilder(name="basic_plan_plugin").build()
     snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(),
@@ -659,10 +435,14 @@ def test_plan_graph_plugin_run_basic(tmp_path: Path) -> None:
 def test_plan_with_dependencies() -> None:
     """Dependency resolution orders plugins correctly."""
     # Plugin B depends on Plugin A
-    plugin_a = _make_planning_test_plugin("dep_a", provides=("capability_a",))
-    plugin_b = _make_planning_test_plugin("dep_b", depends_on=("dep_a",))
+    plugin_a = (
+        GraphPluginBuilder(name="dep_a").with_provides("capability_a").build()
+    )
+    plugin_b = (
+        GraphPluginBuilder(name="dep_b").with_dependencies("dep_a").build()
+    )
 
-    with _PluginRegistrar([plugin_a, plugin_b]):
+    with plugin_registrar([plugin_a, plugin_b]):
         snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=Path())
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
@@ -682,9 +462,9 @@ def test_plan_with_dependencies() -> None:
 
 def test_plan_with_custom_policy() -> None:
     """Custom policy settings are applied to plan."""
-    plugin = _make_planning_test_plugin("policy_plugin")
+    plugin = GraphPluginBuilder(name="policy_plugin").build()
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=Path())
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
@@ -709,9 +489,9 @@ def test_plan_with_custom_policy() -> None:
 
 def test_plugin_execution_settings_hashes() -> None:
     """Execution settings include computed hashes."""
-    plugin = _make_planning_test_plugin("hash_plugin")
+    plugin = GraphPluginBuilder(name="hash_plugin").build()
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=Path())
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
@@ -729,9 +509,9 @@ def test_plugin_execution_settings_hashes() -> None:
 
 def test_plan_with_explicit_target() -> None:
     """Plan can use explicit target tuple instead of snapshot."""
-    plugin = _make_planning_test_plugin("target_plugin")
+    plugin = GraphPluginBuilder(name="target_plugin").build()
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             target=("explicit/repo", "explicit_commit"),
             policy=GraphPluginPolicy(),
@@ -747,9 +527,9 @@ def test_plan_with_explicit_target() -> None:
 
 def test_plan_missing_target_raises() -> None:
     """Plan without any target source raises ValueError."""
-    plugin = _make_planning_test_plugin("no_target_plugin")
+    plugin = GraphPluginBuilder(name="no_target_plugin").build()
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = GraphPlanContext(
             policy=GraphPluginPolicy(),
         )
@@ -762,9 +542,9 @@ def test_plan_missing_target_raises() -> None:
 
 def test_plan_with_run_options() -> None:
     """Runtime options override config settings."""
-    plugin = _make_planning_test_plugin("options_plugin")
+    plugin = GraphPluginBuilder(name="options_plugin").build()
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=Path())
         run_options = GraphPluginRunOptions(
             scope=GraphRunScope(paths=("src/",), modules=("mymodule",)),
@@ -832,7 +612,7 @@ def test_compute_input_hash_varies_with_inputs() -> None:
 
 def test_compute_options_hash_with_options() -> None:
     """Options hash is computed when options are provided."""
-    plugin = _make_planning_test_plugin("opt_hash_plugin")
+    plugin = GraphPluginBuilder(name="opt_hash_plugin").build()
     options = {"key": "value", "number": 42}
 
     hash_val = compute_options_hash(plugin, options)
@@ -843,105 +623,81 @@ def test_compute_options_hash_with_options() -> None:
 
 def test_compute_options_hash_none_returns_none() -> None:
     """Options hash is None when options are None."""
-    plugin = _make_planning_test_plugin("no_opt_plugin")
+    plugin = GraphPluginBuilder(name="no_opt_plugin").build()
 
     hash_val = compute_options_hash(plugin, None)
 
     assert hash_val is None
 
 
-def test_is_unchanged_when_hashes_match() -> None:
+def test_is_unchanged_when_hashes_match(graph_gateway) -> None:
     """Skip detection returns True when hashes match."""
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
-    try:
-        apply_all_schemas(gateway.con)
-
-        prior_manifest = {
-            "test_plugin": {
-                "input_hash": "abc123",
-                "options_hash": "opt456",
-            }
+    prior_manifest = {
+        "test_plugin": {
+            "input_hash": "abc123",
+            "options_hash": "opt456",
         }
+    }
 
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash="abc123",
-            options_hash="opt456",
-        )
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash="abc123",
+        options_hash="opt456",
+    )
 
-        result = is_unchanged(prior_manifest, state)
+    result = is_unchanged(prior_manifest, state)
 
-        assert result
-    finally:
-        gateway.close()
+    assert result
 
 
-def test_is_unchanged_when_hashes_differ() -> None:
+def test_is_unchanged_when_hashes_differ(graph_gateway) -> None:
     """Skip detection returns False when hashes differ."""
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
-    try:
-        apply_all_schemas(gateway.con)
-
-        prior_manifest = {
-            "test_plugin": {
-                "input_hash": "old_hash",
-                "options_hash": "opt456",
-            }
+    prior_manifest = {
+        "test_plugin": {
+            "input_hash": "old_hash",
+            "options_hash": "opt456",
         }
+    }
 
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash="new_hash",  # Different
-            options_hash="opt456",
-        )
-
-        result = is_unchanged(prior_manifest, state)
-
-        assert not result
-    finally:
-        gateway.close()
-
-
-def test_is_unchanged_no_prior_manifest() -> None:
-    """Skip detection returns False when no prior manifest."""
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash="new_hash",  # Different
+        options_hash="opt456",
     )
-    try:
-        apply_all_schemas(gateway.con)
 
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash="abc123",
-            options_hash="opt456",
-        )
+    result = is_unchanged(prior_manifest, state)
 
-        result = is_unchanged(None, state)
+    assert not result
 
-        assert not result
-    finally:
-        gateway.close()
+
+def test_is_unchanged_no_prior_manifest(graph_gateway) -> None:
+    """Skip detection returns False when no prior manifest."""
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash="abc123",
+        options_hash="opt456",
+    )
+
+    result = is_unchanged(None, state)
+
+    assert not result
 
 
 def test_dry_run_record() -> None:
     """Dry run mode produces skipped record with correct reason."""
-    plugin = _make_planning_test_plugin("dry_run_plugin")
+    plugin = GraphPluginBuilder(name="dry_run_plugin").build()
     params = RecordParams(
         severity="soft_fail",
         timeout_ms=1000,
@@ -960,7 +716,7 @@ def test_dry_run_record() -> None:
 
 def test_skip_record() -> None:
     """Skip record includes reason and metadata."""
-    plugin = _make_planning_test_plugin("skip_plugin")
+    plugin = GraphPluginBuilder(name="skip_plugin").build()
     params = RecordParams(
         severity="soft_fail",
         timeout_ms=1000,
@@ -1029,54 +785,48 @@ def test_graph_runtime_telemetry_initialization() -> None:
     assert telemetry is not None
 
 
-def test_start_plugin_creates_span() -> None:
+def test_start_plugin_creates_span(graph_telemetry_env: GraphTelemetryTestEnv) -> None:
     """Starting a plugin creates a telemetry span with correct attributes."""
     telemetry = GraphRuntimeTelemetry(
         enable_tracing=False,
         enable_metrics=False,
     )
-    plugin = _make_telemetry_test_plugin("span_test_plugin")
-    ctx, gateway = _make_telemetry_context()
+    plugin = GraphPluginBuilder(name="span_test_plugin").build()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-123", ctx)
+    span = telemetry.start_plugin(plugin, "run-123", graph_telemetry_env.context)
 
-        assert span.plugin_name == "span_test_plugin"
-        assert span.run_id == "run-123"
-        assert span.start_time_ns > 0
-        assert span.attributes.get("plugin.name") == "span_test_plugin"
-        assert span.attributes.get("repo") == "demo/repo"
-    finally:
-        gateway.close()
+    assert span.plugin_name == "span_test_plugin"
+    assert span.run_id == "run-123"
+    assert span.start_time_ns > 0
+    assert span.attributes.get("plugin.name") == "span_test_plugin"
+    assert span.attributes.get("repo") == "demo/repo"
 
 
-def test_finish_plugin_records_duration() -> None:
+def test_finish_plugin_records_duration(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Finishing a plugin span completes without error."""
     telemetry = GraphRuntimeTelemetry(
         enable_tracing=False,
         enable_metrics=False,
     )
-    plugin = _make_telemetry_test_plugin("duration_test_plugin")
-    ctx, gateway = _make_telemetry_context()
+    plugin = GraphPluginBuilder(name="duration_test_plugin").build()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-123", ctx)
+    span = telemetry.start_plugin(plugin, "run-123", graph_telemetry_env.context)
 
-        # Simulate some execution time
-        time.sleep(0.01)
+    # Simulate some execution time
+    time.sleep(0.01)
 
-        record = PluginExecutionRecord(
-            plugin_name="duration_test_plugin",
-            status="succeeded",
-            started_at=datetime.now(tz=UTC),
-            ended_at=datetime.now(tz=UTC),
-            duration_ms=10.0,
-        )
+    record = PluginExecutionRecord(
+        plugin_name="duration_test_plugin",
+        status="succeeded",
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
+        duration_ms=10.0,
+    )
 
-        # Should not raise
-        telemetry.finish_plugin(span, record)
-    finally:
-        gateway.close()
+    # Should not raise
+    telemetry.finish_plugin(span, record)
 
 
 def test_start_run_creates_run_span() -> None:
@@ -1158,82 +908,76 @@ def test_graph_plugin_span_attributes() -> None:
     assert span.attributes.get("key2") == EXPECTED_ATTR_VALUE
 
 
-def test_telemetry_handles_failed_plugin() -> None:
+def test_telemetry_handles_failed_plugin(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Telemetry correctly handles failed plugin records without error."""
     telemetry = GraphRuntimeTelemetry(
         enable_tracing=False,
         enable_metrics=False,
     )
-    plugin = _make_telemetry_test_plugin("failed_plugin")
-    ctx, gateway = _make_telemetry_context()
+    plugin = GraphPluginBuilder(name="failed_plugin").build()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-fail", ctx)
+    span = telemetry.start_plugin(plugin, "run-fail", graph_telemetry_env.context)
 
-        record = PluginExecutionRecord(
-            plugin_name="failed_plugin",
-            status="failed",
-            started_at=datetime.now(tz=UTC),
-            ended_at=datetime.now(tz=UTC),
-            duration_ms=50.0,
-            error="Test error message",
-        )
+    record = PluginExecutionRecord(
+        plugin_name="failed_plugin",
+        status="failed",
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
+        duration_ms=50.0,
+        error="Test error message",
+    )
 
-        # Should handle failed status without raising
-        telemetry.finish_plugin(span, record)
-    finally:
-        gateway.close()
+    # Should handle failed status without raising
+    telemetry.finish_plugin(span, record)
 
 
-def test_telemetry_handles_skipped_plugin() -> None:
+def test_telemetry_handles_skipped_plugin(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Telemetry correctly handles skipped plugin records without error."""
     telemetry = GraphRuntimeTelemetry(
         enable_tracing=False,
         enable_metrics=False,
     )
-    plugin = _make_telemetry_test_plugin("skipped_plugin")
-    ctx, gateway = _make_telemetry_context()
+    plugin = GraphPluginBuilder(name="skipped_plugin").build()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-skip", ctx)
+    span = telemetry.start_plugin(plugin, "run-skip", graph_telemetry_env.context)
 
-        record = PluginExecutionRecord(
-            plugin_name="skipped_plugin",
-            status="skipped",
-            started_at=datetime.now(tz=UTC),
-            ended_at=datetime.now(tz=UTC),
-            duration_ms=0.0,
-        )
+    record = PluginExecutionRecord(
+        plugin_name="skipped_plugin",
+        status="skipped",
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
+        duration_ms=0.0,
+    )
 
-        # Should handle skipped status without raising
-        telemetry.finish_plugin(span, record)
-    finally:
-        gateway.close()
+    # Should handle skipped status without raising
+    telemetry.finish_plugin(span, record)
 
 
-def test_telemetry_with_multiple_attempts() -> None:
+def test_telemetry_with_multiple_attempts(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Telemetry correctly records retry attempts without error."""
     telemetry = GraphRuntimeTelemetry(
         enable_tracing=False,
         enable_metrics=False,
     )
-    plugin = _make_telemetry_test_plugin("retry_plugin")
-    ctx, gateway = _make_telemetry_context()
+    plugin = GraphPluginBuilder(name="retry_plugin").build()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-retry", ctx)
+    span = telemetry.start_plugin(plugin, "run-retry", graph_telemetry_env.context)
 
-        record = PluginExecutionRecord(
-            plugin_name="retry_plugin",
-            status="failed",
-            started_at=datetime.now(tz=UTC),
-            ended_at=datetime.now(tz=UTC),
-            duration_ms=150.0,
-            attempts=3,
-            error="Failed after retries",
-        )
+    record = PluginExecutionRecord(
+        plugin_name="retry_plugin",
+        status="failed",
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
+        duration_ms=150.0,
+        attempts=3,
+        error="Failed after retries",
+    )
 
-        # Should handle multiple attempts without raising
-        telemetry.finish_plugin(span, record)
-    finally:
-        gateway.close()
+    # Should handle multiple attempts without raising
+    telemetry.finish_plugin(span, record)

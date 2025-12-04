@@ -10,7 +10,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginMetadata,
     PluginOutputSpec,
     PluginResourceHints,
@@ -89,6 +88,7 @@ class RiskFactorsPlugin:
         return PluginMetadata(
             name="risk_factors.build",
             description="Aggregate analytics into per-function risk scores and levels.",
+            kind="analytics",
             stage="risk",
             version="2.0.0",
             enabled_by_default=True,
@@ -97,11 +97,11 @@ class RiskFactorsPlugin:
             outputs=(
                 PluginOutputSpec(name="goid_risk_factors", tables=("analytics.goid_risk_factors",)),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.goid_risk_factors", kind="dataset"),
+            provides=(
+                "analytics.goid_risk_factors",
             ),
-            capabilities_required=(
-                PluginCapability(name="analytics.function_metrics", kind="dataset"),
+            requires=(
+                "analytics.function_metrics",
             ),
             depends_on=(
                 "functions.metrics",

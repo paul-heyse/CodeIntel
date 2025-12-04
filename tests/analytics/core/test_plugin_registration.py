@@ -71,7 +71,7 @@ def test_expected_plugins_are_registered() -> None:
         "history.timeseries",
         "risk_factors.build",
         "config.data_flow",
-        "core_graph_metrics",
+        # Note: core_graph_metrics is a graphs plugin, not an analytics plugin
     }
 
     registered_names = {p.metadata.name for p in registry.list_all()}

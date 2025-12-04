@@ -19,11 +19,11 @@ from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolRunner,
     ToolRunResult,
 )
+from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
 from codeintel.ingestion.tools.plugins import (
     ToolPlugin,
     ToolPluginMetadata,
     ToolPluginResult,
-    ToolStatus,
 )
 from codeintel.ingestion.tools.results import ScipIndexResult
 
@@ -165,7 +165,7 @@ class ScipPlugin(ToolPlugin):
         except ToolExecutionError as exc:
             return ToolPluginResult(
                 tool=ToolName.SCIP_PYTHON,
-                status=ToolStatus.ERROR,
+                status=ToolStatus.FAILED,
                 artifacts={"index_scip": output_scip},
                 run=exc.result,
                 error=exc,
@@ -187,7 +187,7 @@ class ScipPlugin(ToolPlugin):
         except ToolExecutionError as exc:
             return ToolPluginResult(
                 tool=ToolName.SCIP,
-                status=ToolStatus.ERROR,
+                status=ToolStatus.FAILED,
                 artifacts={"index_scip": output_scip, "index_json": output_json},
                 run=exc.result,
                 error=exc,

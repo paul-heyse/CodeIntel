@@ -29,10 +29,10 @@ spans = catalog.function_spans
 
 from __future__ import annotations
 
+from codeintel.core.resources import ResourceProvider, ResourceProviderBase
 from codeintel.graphs.resources.catalog import CatalogResource
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.graphs import GraphResource
-from codeintel.graphs.resources.protocol import ResourceProvider
 from codeintel.graphs.resources.storage import StorageResource
 
 __all__ = [
@@ -40,5 +40,6 @@ __all__ = [
     "GraphResource",
     "ResourceContainer",
     "ResourceProvider",
+    "ResourceProviderBase",
     "StorageResource",
 ]

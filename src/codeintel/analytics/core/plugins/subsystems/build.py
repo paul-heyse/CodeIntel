@@ -10,7 +10,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -38,6 +37,7 @@ class SubsystemsPlugin:
         return PluginMetadata(
             name="subsystems.build",
             description="Infer subsystems from module coupling and risk signals.",
+            kind="analytics",
             stage="subsystem",
             version="3.0.0",
             enabled_by_default=True,
@@ -57,12 +57,12 @@ class SubsystemsPlugin:
                     name="subsystem_functions", tables=("analytics.subsystem_functions",)
                 ),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.subsystems", kind="dataset"),
-                PluginCapability(name="analytics.subsystem_modules", kind="dataset"),
-                PluginCapability(name="analytics.subsystem_functions", kind="dataset"),
+            provides=(
+                "analytics.subsystems",
+                "analytics.subsystem_modules",
+                "analytics.subsystem_functions",
             ),
-            capabilities_required=(PluginCapability(name="core.modules", kind="dataset"),),
+            requires=("core.modules",),
             depends_on=("import_graph", "symbol_uses", "risk_factors.build"),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=120_000,

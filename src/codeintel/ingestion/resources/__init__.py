@@ -15,8 +15,6 @@ TrackerProvider
     Lazy loader for change tracker.
 ToolsProvider
     Lazy loader for tool service.
-StorageProvider
-    Lazy loader for storage adapter.
 
 Architecture
 ------------
@@ -45,7 +43,6 @@ from codeintel.ingestion.resources.registry import (
     ResourceNotFoundError,
     ResourceRegistry,
 )
-from codeintel.ingestion.resources.storage import StorageProvider
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
 
@@ -57,7 +54,6 @@ __all__ = [
     "ResourceNotLoadedError",
     "ResourceProvider",
     "ResourceRegistry",
-    "StorageProvider",
     "ToolsProvider",
     "TrackerConfig",
     "TrackerProvider",

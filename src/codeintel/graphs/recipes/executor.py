@@ -18,10 +18,10 @@ from uuid import uuid4
 from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.core.plugins.context import PluginScratch
 from codeintel.core.plugins.result import PluginExecutionRecord
+from codeintel.core.recipes import Recipe, RecipeStage
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.registry import get_graph_registry
 from codeintel.graphs.engine import NxGraphEngine
-from codeintel.graphs.recipes.dsl import GraphRecipe, GraphStage
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
@@ -183,7 +183,7 @@ class RecipeExecutor:
         self._context = context
         self._scratch = PluginScratch()
 
-    def execute(self, recipe: GraphRecipe) -> RecipeExecutionResult:
+    def execute(self, recipe: Recipe) -> RecipeExecutionResult:
         """Execute a graph recipe.
 
         Parameters
@@ -260,8 +260,8 @@ class RecipeExecutor:
     def _execute_stage(
         self,
         *,
-        stage: GraphStage,
-        recipe: GraphRecipe,
+        stage: RecipeStage,
+        recipe: Recipe,
         run_id: str,
     ) -> StageExecutionResult:
         """Execute a single stage.
@@ -334,8 +334,8 @@ class RecipeExecutor:
         self,
         *,
         plugins: Sequence[GraphPluginProtocol],
-        stage: GraphStage,
-        recipe: GraphRecipe,
+        stage: RecipeStage,
+        recipe: Recipe,
         run_id: str,
     ) -> list[PluginExecutionRecord]:
         """Execute plugins within a stage.
@@ -375,8 +375,8 @@ class RecipeExecutor:
         self,
         *,
         plugins: Sequence[GraphPluginProtocol],
-        stage: GraphStage,
-        recipe: GraphRecipe,
+        stage: RecipeStage,
+        recipe: Recipe,
         run_id: str,
     ) -> list[PluginExecutionRecord]:
         """Execute plugins sequentially.
@@ -417,8 +417,8 @@ class RecipeExecutor:
         self,
         *,
         plugins: Sequence[GraphPluginProtocol],
-        stage: GraphStage,
-        recipe: GraphRecipe,
+        stage: RecipeStage,
+        recipe: Recipe,
         run_id: str,
         max_workers: int,
     ) -> list[PluginExecutionRecord]:
@@ -614,7 +614,7 @@ class RecipeExecutor:
 
 
 def execute_graph_recipe(
-    recipe: GraphRecipe,
+    recipe: Recipe,
     *,
     gateway: StorageGateway,
     snapshot: SnapshotRef,

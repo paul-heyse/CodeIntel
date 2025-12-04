@@ -12,11 +12,9 @@ from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     ImportGraphEdgeRow,
-    insert_call_graph_edges,
-    insert_call_graph_nodes,
-    insert_import_graph_edges,
 )
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
+from tests._helpers.row_protocol import insert_rows
 
 
 def test_compute_graph_metrics_with_small_graph() -> None:
@@ -27,14 +25,14 @@ def test_compute_graph_metrics_with_small_graph() -> None:
         "DELETE FROM graph.call_graph_edges WHERE repo = ? AND commit = ?",
         ["demo/repo", "deadbeef"],
     )
-    insert_call_graph_nodes(
+    insert_rows(
         gateway,
         [
             CallGraphNodeRow(1, "python", "function", 0, is_public=True, rel_path="pkg/a.py"),
             CallGraphNodeRow(2, "python", "function", 0, is_public=True, rel_path="pkg/b.py"),
         ],
     )
-    insert_call_graph_edges(
+    insert_rows(
         gateway,
         [
             CallGraphEdgeRow(
@@ -52,7 +50,7 @@ def test_compute_graph_metrics_with_small_graph() -> None:
             )
         ],
     )
-    insert_import_graph_edges(
+    insert_rows(
         gateway,
         [
             ImportGraphEdgeRow(

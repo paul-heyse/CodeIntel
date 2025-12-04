@@ -27,7 +27,9 @@ import_graph = engine.import_graph()
 
 from __future__ import annotations
 
+from codeintel.graphs.engine.backend import BackendEnablement, maybe_enable_nx_gpu
 from codeintel.graphs.engine.cache import GraphCache
+from codeintel.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 from codeintel.graphs.engine.nx_engine import NxGraphEngine
 from codeintel.graphs.engine.protocol import GraphEngine, GraphKind
 from codeintel.graphs.engine.views import (
@@ -40,14 +42,18 @@ from codeintel.graphs.engine.views import (
 )
 
 __all__ = [
+    "BackendEnablement",
+    "EngineBuildOptions",
     "GraphCache",
     "GraphEngine",
     "GraphKind",
     "NxGraphEngine",
+    "build_graph_engine",
     "load_call_graph",
     "load_config_module_bipartite",
     "load_import_graph",
     "load_symbol_function_graph",
     "load_symbol_module_graph",
     "load_test_function_bipartite",
+    "maybe_enable_nx_gpu",
 ]

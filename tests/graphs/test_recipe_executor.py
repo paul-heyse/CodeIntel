@@ -7,26 +7,14 @@ parallelism and failure handling.
 
 from __future__ import annotations
 
-import contextlib
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Self
+from typing import TYPE_CHECKING, Final
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs.core.protocol import (
-    FunctionalGraphPlugin,
-    GraphPluginMetadata,
-    GraphPluginProtocol,
-)
-from codeintel.graphs.core.registry import (
-    register_graph_plugin,
-    unregister_graph_plugin,
-)
-from codeintel.graphs.core.result import PluginExecutionRecord, PluginResult
+from codeintel.core.plugins.result import PluginExecutionRecord
+from codeintel.core.recipes import Recipe, RecipeOptions, RecipeStage
 from codeintel.graphs.recipes.dsl import (
-    GraphRecipe,
-    GraphRecipeOptions,
-    GraphStage,
     graph_recipe,
     graph_stage,
 )
@@ -38,9 +26,9 @@ from codeintel.graphs.recipes.executor import (
     execute_graph_recipe,
 )
 from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 
 if TYPE_CHECKING:
-    from codeintel.graphs.core.context import GraphPluginExecutionContext
     from codeintel.storage.gateway import StorageGateway
 
 # ---------------------------------------------------------------------------
@@ -56,110 +44,6 @@ MS_TO_SECONDS: Final[float] = 1000.0
 TEST_TIMESTAMP_T0: Final[datetime] = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
 TEST_TIMESTAMP_T1: Final[datetime] = datetime(2024, 1, 1, 0, 0, 1, tzinfo=UTC)
 TEST_TIMESTAMP_T2: Final[datetime] = datetime(2024, 1, 1, 0, 0, 2, tzinfo=UTC)
-
-
-# ---------------------------------------------------------------------------
-# Test Plugin Helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_succeeding_plugin(
-    name: str = "test.succeeding",
-    row_count: int = SUCCESS_ROW_COUNT,
-) -> GraphPluginProtocol:
-    """Create a plugin that always succeeds.
-
-    Parameters
-    ----------
-    name
-        Plugin name.
-    row_count
-        Row count to return.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        Succeeding plugin.
-    """
-    metadata = GraphPluginMetadata(
-        name=name,
-        description="Test plugin that succeeds",
-        kind="metric",
-        stage="core",
-    )
-
-    def execute_fn(ctx: GraphPluginExecutionContext) -> PluginResult:
-        _ = ctx  # Required by protocol
-        return PluginResult(
-            success=True,
-            row_counts={"test_table": row_count},
-        )
-
-    return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute_fn)
-
-
-def _make_failing_plugin(
-    name: str = "test.failing",
-    error_message: str = "Test failure",
-) -> GraphPluginProtocol:
-    """Create a plugin that always fails.
-
-    Parameters
-    ----------
-    name
-        Plugin name.
-    error_message
-        Error message.
-
-    Returns
-    -------
-    GraphPluginProtocol
-        Failing plugin.
-    """
-    metadata = GraphPluginMetadata(
-        name=name,
-        description="Test plugin that fails",
-        kind="metric",
-        stage="core",
-    )
-
-    def execute_fn(ctx: GraphPluginExecutionContext) -> PluginResult:
-        _ = ctx  # Required by protocol
-        raise RuntimeError(error_message)
-
-    return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute_fn)
-
-
-class _PluginRegistrar:
-    """Context manager to register and unregister test plugins."""
-
-    def __init__(self, plugins: list[GraphPluginProtocol]) -> None:
-        """Initialize with plugins to register.
-
-        Parameters
-        ----------
-        plugins
-            Plugins to register.
-        """
-        self._plugins = plugins
-
-    def __enter__(self) -> Self:
-        """Register all plugins.
-
-        Returns
-        -------
-        Self
-            Self for context manager protocol.
-        """
-        for plugin in self._plugins:
-            register_graph_plugin(plugin)
-        return self
-
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
-        """Unregister plugins on exit."""
-        for plugin in self._plugins:
-            with contextlib.suppress(KeyError):
-                unregister_graph_plugin(plugin.metadata.name)
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +77,7 @@ def _make_simple_recipe(
     *,
     parallel: bool = False,
     fail_fast: bool = True,
-) -> GraphRecipe:
+) -> Recipe:
     """Create a simple single-stage recipe.
 
     Parameters
@@ -209,7 +93,7 @@ def _make_simple_recipe(
 
     Returns
     -------
-    GraphRecipe
+    Recipe
         Recipe definition.
     """
     return graph_recipe(
@@ -229,7 +113,7 @@ def _make_simple_recipe(
 def _make_multi_stage_recipe(
     name: str = "multi_stage_recipe",
     stage_configs: list[tuple[str, tuple[str, ...], bool]] | None = None,
-) -> GraphRecipe:
+) -> Recipe:
     """Create a multi-stage recipe.
 
     Parameters
@@ -241,7 +125,7 @@ def _make_multi_stage_recipe(
 
     Returns
     -------
-    GraphRecipe
+    Recipe
         Recipe definition.
     """
     if stage_configs is None:
@@ -421,10 +305,17 @@ def test_executor_basic_success(fresh_gateway: StorageGateway, tmp_path: Path) -
     """RecipeExecutor executes a simple recipe successfully."""
     snapshot = _make_snapshot(tmp_path)
 
-    succeeding_plugin = _make_succeeding_plugin()
-    recipe = _make_simple_recipe(plugin_names=(succeeding_plugin.metadata.name,))
+    plugin = (
+        GraphPluginBuilder(name="test.succeeding")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .with_row_counts({"test_table": SUCCESS_ROW_COUNT})
+        .build()
+    )
+    recipe = _make_simple_recipe(plugin_names=(plugin.metadata.name,))
 
-    with _PluginRegistrar([succeeding_plugin]):
+    with plugin_registrar([plugin]):
         context = RecipeExecutorContext(
             gateway=fresh_gateway,
             snapshot=snapshot,
@@ -444,13 +335,19 @@ def test_executor_plugin_failure_handling(fresh_gateway: StorageGateway, tmp_pat
     """RecipeExecutor handles plugin failures."""
     snapshot = _make_snapshot(tmp_path)
 
-    failing_plugin = _make_failing_plugin()
+    plugin = (
+        GraphPluginBuilder(name="test.failing")
+        .with_kind("metric")
+        .with_stage("core")
+        .raising(RuntimeError, "Test failure")
+        .build()
+    )
     recipe = _make_simple_recipe(
-        plugin_names=(failing_plugin.metadata.name,),
+        plugin_names=(plugin.metadata.name,),
         fail_fast=True,
     )
 
-    with _PluginRegistrar([failing_plugin]):
+    with plugin_registrar([plugin]):
         context = RecipeExecutorContext(
             gateway=fresh_gateway,
             snapshot=snapshot,
@@ -468,8 +365,20 @@ def test_executor_multi_stage_sequential(fresh_gateway: StorageGateway, tmp_path
     """RecipeExecutor executes multiple stages in order."""
     snapshot = _make_snapshot(tmp_path)
 
-    plugin1 = _make_succeeding_plugin(name="test.succeeding.1")
-    plugin2 = _make_succeeding_plugin(name="test.succeeding.2")
+    plugin1 = (
+        GraphPluginBuilder(name="test.succeeding.1")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .build()
+    )
+    plugin2 = (
+        GraphPluginBuilder(name="test.succeeding.2")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .build()
+    )
 
     recipe = _make_multi_stage_recipe(
         stage_configs=[
@@ -478,7 +387,7 @@ def test_executor_multi_stage_sequential(fresh_gateway: StorageGateway, tmp_path
         ]
     )
 
-    with _PluginRegistrar([plugin1, plugin2]):
+    with plugin_registrar([plugin1, plugin2]):
         context = RecipeExecutorContext(
             gateway=fresh_gateway,
             snapshot=snapshot,
@@ -498,8 +407,20 @@ def test_executor_fail_fast_stops_on_failure(fresh_gateway: StorageGateway, tmp_
     """RecipeExecutor stops on failure when fail_fast is True."""
     snapshot = _make_snapshot(tmp_path)
 
-    failing_plugin = _make_failing_plugin(name="test.failing.early")
-    succeeding_plugin = _make_succeeding_plugin(name="test.succeeding.later")
+    failing_plugin = (
+        GraphPluginBuilder(name="test.failing.early")
+        .with_kind("metric")
+        .with_stage("core")
+        .raising(RuntimeError, "Test failure")
+        .build()
+    )
+    succeeding_plugin = (
+        GraphPluginBuilder(name="test.succeeding.later")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .build()
+    )
 
     recipe = _make_multi_stage_recipe(
         stage_configs=[
@@ -508,7 +429,7 @@ def test_executor_fail_fast_stops_on_failure(fresh_gateway: StorageGateway, tmp_
         ]
     )
 
-    with _PluginRegistrar([failing_plugin, succeeding_plugin]):
+    with plugin_registrar([failing_plugin, succeeding_plugin]):
         context = RecipeExecutorContext(
             gateway=fresh_gateway,
             snapshot=snapshot,
@@ -557,10 +478,16 @@ def test_executor_result_has_timing_info(fresh_gateway: StorageGateway, tmp_path
     """RecipeExecutor result includes timing information."""
     snapshot = _make_snapshot(tmp_path)
 
-    plugin = _make_succeeding_plugin()
+    plugin = (
+        GraphPluginBuilder(name="test.timing")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .build()
+    )
     recipe = _make_simple_recipe(plugin_names=(plugin.metadata.name,))
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = RecipeExecutorContext(
             gateway=fresh_gateway,
             snapshot=snapshot,
@@ -579,10 +506,16 @@ def test_executor_result_has_unique_run_id(fresh_gateway: StorageGateway, tmp_pa
     """RecipeExecutor generates unique run IDs."""
     snapshot = _make_snapshot(tmp_path)
 
-    plugin = _make_succeeding_plugin()
+    plugin = (
+        GraphPluginBuilder(name="test.runid")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .build()
+    )
     recipe = _make_simple_recipe(plugin_names=(plugin.metadata.name,))
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         context = RecipeExecutorContext(
             gateway=fresh_gateway,
             snapshot=snapshot,
@@ -599,9 +532,27 @@ def test_executor_multiple_plugins_in_stage(fresh_gateway: StorageGateway, tmp_p
     """RecipeExecutor handles multiple plugins in one stage."""
     snapshot = _make_snapshot(tmp_path)
 
-    plugin1 = _make_succeeding_plugin(name="test.multi.1")
-    plugin2 = _make_succeeding_plugin(name="test.multi.2")
-    plugin3 = _make_succeeding_plugin(name="test.multi.3")
+    plugin1 = (
+        GraphPluginBuilder(name="test.multi.1")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .build()
+    )
+    plugin2 = (
+        GraphPluginBuilder(name="test.multi.2")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .build()
+    )
+    plugin3 = (
+        GraphPluginBuilder(name="test.multi.3")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .build()
+    )
 
     recipe = graph_recipe(
         name="multi_plugin_recipe",
@@ -619,7 +570,7 @@ def test_executor_multiple_plugins_in_stage(fresh_gateway: StorageGateway, tmp_p
         ],
     )
 
-    with _PluginRegistrar([plugin1, plugin2, plugin3]):
+    with plugin_registrar([plugin1, plugin2, plugin3]):
         context = RecipeExecutorContext(
             gateway=fresh_gateway,
             snapshot=snapshot,
@@ -644,10 +595,16 @@ def test_execute_graph_recipe_convenience_function(
     """execute_graph_recipe convenience function works."""
     snapshot = _make_snapshot(tmp_path)
 
-    plugin = _make_succeeding_plugin()
+    plugin = (
+        GraphPluginBuilder(name="test.convenience")
+        .with_kind("metric")
+        .with_stage("core")
+        .succeeding()
+        .build()
+    )
     recipe = _make_simple_recipe(plugin_names=(plugin.metadata.name,))
 
-    with _PluginRegistrar([plugin]):
+    with plugin_registrar([plugin]):
         result = execute_graph_recipe(
             recipe,
             gateway=fresh_gateway,
@@ -664,7 +621,7 @@ def test_execute_graph_recipe_convenience_function(
 
 
 def test_graph_stage_creation() -> None:
-    """GraphStage can be created with correct attributes."""
+    """RecipeStage can be created with correct attributes."""
     stage = graph_stage(
         name="test_stage",
         plugins=["plugin1", "plugin2"],
@@ -681,7 +638,7 @@ def test_graph_stage_creation() -> None:
 
 
 def test_graph_stage_defaults() -> None:
-    """GraphStage has correct defaults."""
+    """RecipeStage has correct defaults."""
     stage = graph_stage(
         name="test_stage",
         plugins=["plugin1"],
@@ -693,7 +650,7 @@ def test_graph_stage_defaults() -> None:
 
 
 def test_graph_recipe_creation() -> None:
-    """GraphRecipe can be created with correct attributes."""
+    """Recipe can be created with correct attributes."""
     stage = graph_stage(name="s1", plugins=["p1", "p2"])
     recipe = graph_recipe(
         name="test_recipe",
@@ -709,7 +666,7 @@ def test_graph_recipe_creation() -> None:
 
 
 def test_graph_recipe_all_plugins() -> None:
-    """GraphRecipe.all_plugins returns all unique plugins."""
+    """Recipe.all_plugins returns all unique plugins."""
     stage1 = graph_stage(name="s1", plugins=["p1", "p2"])
     stage2 = graph_stage(name="s2", plugins=["p2", "p3"])
     recipe = graph_recipe(
@@ -722,8 +679,8 @@ def test_graph_recipe_all_plugins() -> None:
 
 
 def test_graph_recipe_options_defaults() -> None:
-    """GraphRecipeOptions has correct defaults."""
-    options = GraphRecipeOptions()
+    """RecipeOptions has correct defaults."""
+    options = RecipeOptions()
 
     assert options.dry_run is False
     assert options.skip_on_unchanged is False
@@ -733,10 +690,10 @@ def test_graph_recipe_options_defaults() -> None:
 
 
 def test_graph_recipe_with_options() -> None:
-    """GraphRecipe can be created with options."""
+    """Recipe can be created with options."""
     max_parallel_value: Final[int] = 8
     timeout_ms_value: Final[int] = 5000
-    options = GraphRecipeOptions(
+    options = RecipeOptions(
         dry_run=True,
         skip_on_unchanged=True,
         max_parallel=max_parallel_value,
@@ -786,8 +743,8 @@ def test_recipe_execution_result_frozen() -> None:
 
 
 def test_graph_stage_frozen() -> None:
-    """GraphStage is frozen."""
-    stage = GraphStage(
+    """RecipeStage is frozen."""
+    stage = RecipeStage(
         name="test",
         plugins=("p1",),
     )
@@ -795,8 +752,8 @@ def test_graph_stage_frozen() -> None:
 
 
 def test_graph_recipe_frozen() -> None:
-    """GraphRecipe is frozen."""
-    recipe = GraphRecipe(
+    """Recipe is frozen."""
+    recipe = Recipe(
         name="test",
         description="Test",
         stages=(),

@@ -3,24 +3,33 @@
 This module defines the port protocol for executing external analysis tools
 like pyright, ruff, coverage, scip-python, and pytest. The protocol abstracts
 tool invocation details to enable testing without real tool installations.
+
+Architecture Note
+-----------------
+This module defines **port interface types** (DiagnosticResult, CoverageResult,
+ScipResult, TestResult) that represent the contract between ingestion steps
+and tool adapters. These are intentionally simpler than the richer "Report"
+types in ``tools/results.py`` which are used internally by tool plugins.
+
+The ``ToolRunnerAdapter`` converts from Report types to these Result types
+at the port boundary, providing a clean interface while preserving rich
+internal representations for tool plugin logic.
+
+See Also
+--------
+codeintel.ingestion.tools.results : Rich domain types for tool plugin internals
+codeintel.ingestion.adapters.tool_runner : Adapter that bridges the layers
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-
-class ToolStatus(Enum):
-    """Status of a tool execution."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    FAILED = "failed"
-    TIMEOUT = "timeout"
+# Import canonical ToolStatus from infrastructure_utilities
+from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
 
 
 @dataclass(frozen=True)

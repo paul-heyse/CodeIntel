@@ -11,7 +11,6 @@ from typing import cast
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -40,6 +39,7 @@ class BehavioralCoveragePlugin:
         return PluginMetadata(
             name="tests.behavioral_coverage",
             description="Assign heuristic behavior tags to tests (unit/integration/etc.).",
+            kind="analytics",
             stage="test",
             version="2.0.0",
             enabled_by_default=True,
@@ -58,11 +58,11 @@ class BehavioralCoveragePlugin:
                     tables=("analytics.behavioral_coverage",),
                 ),
             ),
-            capabilities_provided=(
-                PluginCapability(name="analytics.behavioral_coverage", kind="dataset"),
+            provides=(
+                "analytics.behavioral_coverage",
             ),
-            capabilities_required=(
-                PluginCapability(name="analytics.test_profile", kind="dataset"),
+            requires=(
+                "analytics.test_profile",
             ),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=120_000,

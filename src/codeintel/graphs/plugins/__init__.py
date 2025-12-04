@@ -21,9 +21,6 @@ from codeintel.graphs.plugins.validation import (
     get_graph_validation_plugin,
 )
 
-# Backward-compatible alias
-GraphExecutionContext = GraphPluginExecutionContext
-
 
 def load_builtin_plugins() -> None:
     """Import built-in plugins to ensure registration side effects run once."""
@@ -37,7 +34,6 @@ load_builtin_plugins()
 
 
 __all__ = [
-    "GraphExecutionContext",
     "GraphPluginExecutionContext",
     "GraphPluginMetadata",
     "GraphPluginPlan",

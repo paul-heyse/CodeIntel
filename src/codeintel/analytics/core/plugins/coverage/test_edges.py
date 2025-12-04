@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 
 from codeintel.analytics.core.execution_context import PluginExecutionContext
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
     PluginMetadata,
     PluginOutputSpec,
@@ -42,6 +41,7 @@ class CoverageTestEdgesPlugin:
         return PluginMetadata(
             name="coverage.test_edges",
             description="Build test-to-function coverage edges from coverage contexts.",
+            kind="analytics",
             stage="coverage",
             version="2.0.0",
             enabled_by_default=True,
@@ -60,8 +60,8 @@ class CoverageTestEdgesPlugin:
                     tables=("coverage.test_edges",),
                 ),
             ),
-            capabilities_provided=(PluginCapability(name="coverage.test_edges", kind="dataset"),),
-            capabilities_required=(PluginCapability(name="coverage.lines", kind="dataset"),),
+            provides=("coverage.test_edges",),
+            requires=("coverage.lines",),
             depends_on=("coverage_ingest", "tests_ingest", "goids"),
             resource_hints=PluginResourceHints(
                 max_runtime_ms=60_000,

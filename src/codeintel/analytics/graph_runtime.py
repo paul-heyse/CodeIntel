@@ -15,8 +15,8 @@ from networkx.readwrite import json_graph
 
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.engine import GraphEngine, GraphKind
-from codeintel.graphs.engine_factory import EngineBuildOptions, build_graph_engine
-from codeintel.graphs.nx_backend import BackendEnablement
+from codeintel.graphs.engine.backend import BackendEnablement
+from codeintel.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

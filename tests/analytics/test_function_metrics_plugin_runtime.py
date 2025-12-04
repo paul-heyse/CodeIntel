@@ -17,7 +17,8 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
-from tests._helpers.builders import GoidRow, ModuleRow, insert_goids, insert_modules
+from tests._helpers.builders import GoidRow, ModuleRow
+from tests._helpers.row_protocol import insert_rows
 
 
 def _seed_function(
@@ -31,7 +32,7 @@ def _seed_function(
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text("def foo(x: int) -> int:\n    return x + 1\n", encoding="utf-8")
     # Insert module first (required for AST loading)
-    insert_modules(
+    insert_rows(
         gateway,
         [
             ModuleRow(
@@ -42,7 +43,7 @@ def _seed_function(
             )
         ],
     )
-    insert_goids(
+    insert_rows(
         gateway,
         [
             GoidRow(

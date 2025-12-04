@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
+from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
 
 
 def test_enable_nx_cugraph_backend_missing_module() -> None:

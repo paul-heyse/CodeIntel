@@ -10,9 +10,8 @@ This module provides standard graph recipes for common workflows:
 
 from __future__ import annotations
 
+from codeintel.core.recipes import Recipe, RecipeOptions
 from codeintel.graphs.recipes.dsl import (
-    GraphRecipe,
-    GraphRecipeOptions,
     graph_recipe,
     graph_stage,
 )
@@ -138,7 +137,7 @@ INCREMENTAL_RECIPE = graph_recipe(
             parallel=True,
         ),
     ],
-    options=GraphRecipeOptions(skip_on_unchanged=True),
+    options=RecipeOptions(skip_on_unchanged=True),
 )
 
 # Call graph only: Minimal call graph construction
@@ -171,7 +170,7 @@ IMPORT_GRAPH_ONLY_RECIPE = graph_recipe(
 
 
 # Registry of builtin recipes
-BUILTIN_RECIPES: dict[str, GraphRecipe] = {
+BUILTIN_RECIPES: dict[str, Recipe] = {
     "full": FULL_GRAPH_RECIPE,
     "builders_only": BUILDERS_ONLY_RECIPE,
     "metrics_only": METRICS_ONLY_RECIPE,
@@ -181,7 +180,7 @@ BUILTIN_RECIPES: dict[str, GraphRecipe] = {
 }
 
 
-def get_builtin_recipe(name: str) -> GraphRecipe:
+def get_builtin_recipe(name: str) -> Recipe:
     """Get a builtin recipe by name.
 
     Parameters
@@ -191,7 +190,7 @@ def get_builtin_recipe(name: str) -> GraphRecipe:
 
     Returns
     -------
-    GraphRecipe
+    Recipe
         The builtin recipe.
 
     Raises

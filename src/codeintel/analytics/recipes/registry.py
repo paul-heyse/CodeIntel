@@ -17,7 +17,7 @@ from codeintel.analytics.recipes.builtins import (
     RISK_ANALYSIS,
     TEST_ANALYSIS,
 )
-from codeintel.analytics.recipes.model import AnalyticsRecipe
+from codeintel.analytics.recipes.model import Recipe
 from codeintel.core.singleton import SingletonHolder
 
 log = logging.getLogger(__name__)
@@ -34,10 +34,10 @@ class RecipeRegistry:
 
     def __init__(self) -> None:
         """Initialize an empty registry."""
-        self._recipes: dict[str, AnalyticsRecipe] = {}
+        self._recipes: dict[str, Recipe] = {}
         self._by_tag: dict[str, set[str]] = {}
 
-    def register(self, recipe: AnalyticsRecipe) -> None:
+    def register(self, recipe: Recipe) -> None:
         """Register a recipe.
 
         Parameters
@@ -77,7 +77,7 @@ class RecipeRegistry:
             if tag in self._by_tag:
                 self._by_tag[tag].discard(name)
 
-    def get(self, name: str) -> AnalyticsRecipe:
+    def get(self, name: str) -> Recipe:
         """Return a recipe by name.
 
         Parameters
@@ -87,7 +87,7 @@ class RecipeRegistry:
 
         Returns
         -------
-        AnalyticsRecipe
+        Recipe
             The registered recipe.
 
         Raises
@@ -100,7 +100,7 @@ class RecipeRegistry:
             raise KeyError(message)
         return self._recipes[name]
 
-    def get_optional(self, name: str) -> AnalyticsRecipe | None:
+    def get_optional(self, name: str) -> Recipe | None:
         """Return a recipe by name if it exists.
 
         Parameters
@@ -110,22 +110,22 @@ class RecipeRegistry:
 
         Returns
         -------
-        AnalyticsRecipe | None
+        Recipe | None
             The recipe or None if not found.
         """
         return self._recipes.get(name)
 
-    def list_all(self) -> tuple[AnalyticsRecipe, ...]:
+    def list_all(self) -> tuple[Recipe, ...]:
         """Return all registered recipes.
 
         Returns
         -------
-        tuple[AnalyticsRecipe, ...]
+        tuple[Recipe, ...]
             All registered recipes.
         """
         return tuple(self._recipes.values())
 
-    def list_by_tag(self, tag: str) -> tuple[AnalyticsRecipe, ...]:
+    def list_by_tag(self, tag: str) -> tuple[Recipe, ...]:
         """Return recipes with a specific tag.
 
         Parameters
@@ -135,7 +135,7 @@ class RecipeRegistry:
 
         Returns
         -------
-        tuple[AnalyticsRecipe, ...]
+        tuple[Recipe, ...]
             Recipes with the tag.
         """
         names = self._by_tag.get(tag, set())
@@ -165,8 +165,8 @@ class RecipeRegistry:
         self,
         name: str,
         description: str,
-        recipes: Sequence[str | AnalyticsRecipe],
-    ) -> AnalyticsRecipe:
+        recipes: Sequence[str | Recipe],
+    ) -> Recipe:
         """Create a new recipe by composing existing recipes.
 
         Plugins are deduplicated while preserving order.
@@ -182,7 +182,7 @@ class RecipeRegistry:
 
         Returns
         -------
-        AnalyticsRecipe
+        Recipe
             New composed recipe.
         """
         seen: set[str] = set()
@@ -202,7 +202,7 @@ class RecipeRegistry:
                 configs[plugin_name].update(config)
             tags.update(recipe.tags)
 
-        return AnalyticsRecipe(
+        return Recipe(
             name=name,
             description=description,
             plugins=tuple(plugins),
@@ -248,7 +248,7 @@ def reset_recipe_registry() -> None:
     _RecipeRegistryHolder.reset()
 
 
-def register_recipe(recipe: AnalyticsRecipe) -> None:
+def register_recipe(recipe: Recipe) -> None:
     """Register a recipe with the global registry.
 
     Parameters

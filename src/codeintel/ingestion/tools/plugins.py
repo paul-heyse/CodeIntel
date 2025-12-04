@@ -1,11 +1,32 @@
-"""Base plugin contracts and registry for ingestion tooling."""
+"""Base plugin contracts and registry for ingestion tooling.
+
+This module defines the plugin protocol for external tool execution along with
+the registry for managing tool plugins.
+
+Architecture Note
+-----------------
+Tool plugins wrap external CLI tools (pyright, ruff, coverage, scip, pytest)
+and return ``ToolPluginResult`` objects. These results contain a ``parsed``
+field holding a rich domain object (DiagnosticReport, CoverageReport, etc.)
+from ``tools/results.py``.
+
+The ``ToolService`` facade orchestrates tool plugins and extracts the data
+needed by ingestion steps. The ``ToolRunnerAdapter`` then converts these
+rich results into simpler port interface types for clean architectural
+boundaries.
+
+See Also
+--------
+codeintel.ingestion.tools.results : Rich parsed result types
+codeintel.ingestion.tool_service : Facade for tool orchestration
+codeintel.ingestion.ports.tools : Port interface types
+"""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -17,19 +38,13 @@ from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolRunResult,
 )
 
+# Import canonical ToolStatus from infrastructure_utilities
+from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
+
 if TYPE_CHECKING:
     from codeintel.ingestion.tools.results import ParsedToolResult
 
 log = logging.getLogger(__name__)
-
-
-class ToolStatus(StrEnum):
-    """Normalized status for plugin invocations."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    TIMEOUT = "timeout"
-    ERROR = "error"
 
 
 @dataclass(frozen=True)

@@ -35,7 +35,7 @@ from codeintel.cli.commands._common import (
     setup_logging,
 )
 from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
-from codeintel.graphs.nx_backend import maybe_enable_nx_gpu
+from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import (
     ExportOptions,

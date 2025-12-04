@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/metrics/structural.py
+# hypothesis_version: 6.148.5
+
+[0.0, 'StructuralMetrics', 'compute_constraint', 'compute_core_number', 'compute_triangles', 'dict[Any, float]', 'dict[Any, int]']

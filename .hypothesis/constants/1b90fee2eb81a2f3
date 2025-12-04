@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/tests_profiles/coverage_inputs.py
+# hypothesis_version: 6.148.5
+
+['TestGraphMetrics', 'TestRecord', 'load_test_records']

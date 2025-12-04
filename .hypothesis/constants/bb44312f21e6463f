@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/recipes/executor.py
+# hypothesis_version: 6.148.5
+
+[1000, 'RecipeExecutionPlan', 'RecipeExecutor', 'execute_recipe', 'failed', 'partial', 'skipped', 'succeeded', 'tags']

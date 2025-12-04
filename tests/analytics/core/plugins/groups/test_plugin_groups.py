@@ -45,6 +45,7 @@ class MockPlugin:
         return PluginMetadata(
             name=self.name,
             description=f"Mock plugin {self.name}",
+            kind="analytics",
             stage="function",
             version="1.0.0",
         )
