@@ -29,7 +29,7 @@ from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import DuckDBConnection, DuckDBError, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

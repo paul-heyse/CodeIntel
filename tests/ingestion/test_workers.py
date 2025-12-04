@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
-from codeintel.ingestion.infrastructure_utilities.workers import (
+from codeintel.ingestion.utilities.workers import (
     AST_WORKER_CONFIG,
     CST_WORKER_CONFIG,
     DEFAULT_MAX_WORKERS,

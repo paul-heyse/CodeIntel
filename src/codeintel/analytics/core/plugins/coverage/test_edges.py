@@ -21,7 +21,7 @@ from codeintel.analytics.core.plugin_protocol import (
     PluginResult,
     ValidationResult,
 )
-from codeintel.analytics.tests import compute_test_coverage_edges
+from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.config.steps_analytics import TestCoverageStepConfig
 
 

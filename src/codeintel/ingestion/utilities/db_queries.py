@@ -9,7 +9,7 @@ and provide consistent logging for debugging.
 
 Examples
 --------
->>> from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
+>>> from codeintel.ingestion.utilities.db_queries import safe_count
 >>> count = safe_count(gateway, "core.ast_nodes")
 >>> count  # Returns int or None on error
 42
@@ -21,7 +21,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.infrastructure_utilities.safe_sql import (
+from codeintel.ingestion.utilities.safe_sql import (
     InvalidIdentifierError,
     SafeColumnRef,
     SafeTableRef,

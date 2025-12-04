@@ -12,7 +12,7 @@ from codeintel.graphs.catalog import (
     FunctionCatalogProvider,
     FunctionCatalogService,
 )
-from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
+from codeintel.ingestion.utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

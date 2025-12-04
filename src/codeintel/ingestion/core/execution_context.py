@@ -14,16 +14,16 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.config.models import ToolsConfig
 from codeintel.core.config_registry import ConfigNotFoundError, ConfigRegistry
-from codeintel.ingestion.infrastructure_utilities.db_queries import safe_count
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
 from codeintel.ingestion.resources.registry import ResourceRegistry
+from codeintel.ingestion.utilities.db_queries import safe_count
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.config.primitives import BuildPaths, SnapshotRef
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
     from codeintel.ingestion.resources.protocol import ResourceProvider
+    from codeintel.ingestion.utilities.scanning import ScanProfile
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
 

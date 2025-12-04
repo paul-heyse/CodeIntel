@@ -17,11 +17,6 @@ from codeintel.ingestion import (
     ToolRunnerAdapter,
 )
 from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
-from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-    default_code_profile,
-    default_config_profile,
-)
-from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.plugins import (
     IngestRuntimeScratch,
     get_ingest_registry,
@@ -34,8 +29,13 @@ from codeintel.ingestion.resources import (
     TrackerConfig,
     TrackerProvider,
 )
-from codeintel.ingestion.tool_service import ToolService
+from codeintel.ingestion.tools.infrastructure import ToolRunner
 from codeintel.ingestion.tools.results import CoverageFileSummary, CoverageReport
+from codeintel.ingestion.tools.service import ToolService
+from codeintel.ingestion.utilities.scanning import (
+    default_code_profile,
+    default_config_profile,
+)
 from tests._helpers.gateway import open_ingestion_gateway
 
 

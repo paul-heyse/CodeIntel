@@ -15,7 +15,6 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
     RepoScanStep,
 )
-from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
 from codeintel.ingestion.steps import (
     ast_extract,
     config_ingest,
@@ -24,6 +23,7 @@ from codeintel.ingestion.steps import (
     repo_scan,
     typing_ingest,
 )
+from codeintel.ingestion.utilities.scanning import default_code_profile
 from codeintel.storage.module_index import load_module_map
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
@@ -41,7 +41,7 @@ def _make_snapshot(tmp_path: Path) -> SnapshotRef:
     return SnapshotRef(repo="demo", commit="abc123", repo_root=repo_root)
 
 
-def test_source_scanner_only_used_in_repo_scan_and_config_ingest() -> None:
+def test_scanning_only_used_in_repo_scan_and_config_ingest() -> None:
     """Ensure SourceScanner only appears in repo_scan and config_ingest step modules."""
     allowed = {
         "codeintel.ingestion.steps.repo_scan",

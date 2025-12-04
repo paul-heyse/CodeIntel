@@ -18,8 +18,8 @@ from codeintel.analytics.core.plugin_protocol import (
     PluginResult,
     ValidationResult,
 )
-from codeintel.analytics.tests.profiles import build_behavioral_coverage
-from codeintel.analytics.tests_profiles.types import BehavioralLLMRunner
+from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
+from codeintel.analytics.testing.profiles.types import BehavioralLLMRunner
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig
 
 

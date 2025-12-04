@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.graphs.ports.storage import BatchResult, QueryResult
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

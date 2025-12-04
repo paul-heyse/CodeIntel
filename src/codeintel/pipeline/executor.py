@@ -188,7 +188,7 @@ def _execute_graphs_stage(
     )
 
     if report.fatal_error or report.failure_count > 0:
-        failed_plugins = [r.name for r in report.records if r.status == "failed"]
+        failed_plugins = [r.plugin_name for r in report.records if r.status == "failed"]
         error_msg = f"Graph plugins failed: {', '.join(failed_plugins)}"
         raise RuntimeError(error_msg)
 

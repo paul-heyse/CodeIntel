@@ -12,19 +12,13 @@ adapter from `codeintel.graphs.adapters.duckdb_storage`, including:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 import pytest
 
 from codeintel.graphs.adapters.duckdb_storage import DuckDBStorageAdapter
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.sql_builder import QueryBuilder, SafeTable, render_sql
-from tests._helpers.gateway import open_ingestion_gateway_with_macros
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -48,21 +42,6 @@ TABLE_AGG: Final = SafeTable("test_graphs_adapter_agg")
 # ---------------------------------------------------------------------------
 # Test Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_gateway() -> StorageGateway:
-    """Create a gateway for adapter tests.
-
-    Returns
-    -------
-    StorageGateway
-        Configured gateway.
-    """
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
-    apply_all_schemas(gateway.con)
-    return gateway
 
 
 def _create_table_sql(table: SafeTable, columns: str) -> str:
@@ -162,27 +141,19 @@ def _aggregate_sql(table: SafeTable) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_duckdb_adapter_init_with_gateway() -> None:
+def test_duckdb_adapter_init_with_gateway(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter initializes with gateway."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        assert adapter.gateway is gateway
-    finally:
-        gateway.close()
+    assert adapter.gateway is graph_gateway
 
 
-def test_duckdb_adapter_connection_accessible() -> None:
+def test_duckdb_adapter_connection_accessible(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter connection is accessible."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        # Connection should be accessible via gateway
-        assert adapter.gateway.con is not None
-    finally:
-        gateway.close()
+    # Connection should be accessible via gateway
+    assert adapter.gateway.con is not None
 
 
 # ---------------------------------------------------------------------------
@@ -190,51 +161,39 @@ def test_duckdb_adapter_connection_accessible() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_duckdb_adapter_execute_simple_query() -> None:
+def test_duckdb_adapter_execute_simple_query(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter can execute simple queries."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        result = adapter.execute("SELECT 1 AS value")
+    result = adapter.execute("SELECT 1 AS value")
 
-        assert result is not None
-        row = result.fetchone()
-        assert row is not None
-        assert row[0] == 1
-    finally:
-        gateway.close()
+    assert result is not None
+    row = result.fetchone()
+    assert row is not None
+    assert row[0] == 1
 
 
-def test_duckdb_adapter_execute_with_params() -> None:
+def test_duckdb_adapter_execute_with_params(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter can execute parameterized queries."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        result = adapter.execute("SELECT ? AS value", [PARAM_VALUE])
+    result = adapter.execute("SELECT ? AS value", [PARAM_VALUE])
 
-        row = result.fetchone()
-        assert row is not None
-        assert row[0] == PARAM_VALUE
-    finally:
-        gateway.close()
+    row = result.fetchone()
+    assert row is not None
+    assert row[0] == PARAM_VALUE
 
 
-def test_duckdb_adapter_execute_fetch_all() -> None:
+def test_duckdb_adapter_execute_fetch_all(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter fetch_all returns all rows."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        # Use UNNEST with list literal - safe SQL
-        result = adapter.execute("SELECT unnest([1, 2, 3]) AS value")
-        rows = result.fetchall()
+    # Use UNNEST with list literal - safe SQL
+    result = adapter.execute("SELECT unnest([1, 2, 3]) AS value")
+    rows = result.fetchall()
 
-        assert len(rows) == len(UNNEST_VALUES)
-        assert [r[0] for r in rows] == list(UNNEST_VALUES)
-    finally:
-        gateway.close()
+    assert len(rows) == len(UNNEST_VALUES)
+    assert [r[0] for r in rows] == list(UNNEST_VALUES)
 
 
 # ---------------------------------------------------------------------------
@@ -242,45 +201,37 @@ def test_duckdb_adapter_execute_fetch_all() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_duckdb_adapter_create_temp_table() -> None:
+def test_duckdb_adapter_create_temp_table(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter can create temporary tables."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        adapter.execute(_create_table_sql(TABLE_BASE, "id INTEGER, name VARCHAR"))
+    adapter.execute(_create_table_sql(TABLE_BASE, "id INTEGER, name VARCHAR"))
 
-        # Verify table exists using QueryBuilder
-        count_sql, params = QueryBuilder.count(TABLE_BASE)
-        result = adapter.execute(count_sql, params)
-        count = result.fetchone()
-        assert count is not None
-        assert count[0] == 0
-    finally:
-        gateway.close()
+    # Verify table exists using QueryBuilder
+    count_sql, params = QueryBuilder.count(TABLE_BASE)
+    result = adapter.execute(count_sql, params)
+    count = result.fetchone()
+    assert count is not None
+    assert count[0] == 0
 
 
-def test_duckdb_adapter_insert_and_select() -> None:
+def test_duckdb_adapter_insert_and_select(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter can insert and select data."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        # Create table
-        adapter.execute(_create_table_sql(TABLE_INSERT, "id INTEGER, value VARCHAR"))
+    # Create table
+    adapter.execute(_create_table_sql(TABLE_INSERT, "id INTEGER, value VARCHAR"))
 
-        # Insert data
-        adapter.execute(_insert_values_sql(TABLE_INSERT, "(1, 'test1'), (2, 'test2')"))
+    # Insert data
+    adapter.execute(_insert_values_sql(TABLE_INSERT, "(1, 'test1'), (2, 'test2')"))
 
-        # Select and verify
-        result = adapter.execute(_select_ordered_sql(TABLE_INSERT, "id"))
-        rows = result.fetchall()
+    # Select and verify
+    result = adapter.execute(_select_ordered_sql(TABLE_INSERT, "id"))
+    rows = result.fetchall()
 
-        assert len(rows) == INSERT_ROW_COUNT
-        assert rows[0] == (1, "test1")
-        assert rows[1] == (2, "test2")
-    finally:
-        gateway.close()
+    assert len(rows) == INSERT_ROW_COUNT
+    assert rows[0] == (1, "test1")
+    assert rows[1] == (2, "test2")
 
 
 # ---------------------------------------------------------------------------
@@ -288,28 +239,24 @@ def test_duckdb_adapter_insert_and_select() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_duckdb_adapter_batch_insert() -> None:
+def test_duckdb_adapter_batch_insert(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter can perform batch inserts."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        # Create table
-        adapter.execute(_create_table_sql(TABLE_BATCH, "id INTEGER, name VARCHAR"))
+    # Create table
+    adapter.execute(_create_table_sql(TABLE_BATCH, "id INTEGER, name VARCHAR"))
 
-        # Batch insert using executemany pattern with parameterized query
-        insert_sql = render_sql(["INSERT INTO", str(TABLE_BATCH), "VALUES (?, ?)"])
-        data = [(i, f"item_{i}") for i in range(BATCH_SIZE)]
-        adapter.gateway.con.executemany(insert_sql, data)
+    # Batch insert using executemany pattern with parameterized query
+    insert_sql = render_sql(["INSERT INTO", str(TABLE_BATCH), "VALUES (?, ?)"])
+    data = [(i, f"item_{i}") for i in range(BATCH_SIZE)]
+    adapter.gateway.con.executemany(insert_sql, data)
 
-        # Verify count
-        count_sql, params = QueryBuilder.count(TABLE_BATCH)
-        result = adapter.execute(count_sql, params)
-        count = result.fetchone()
-        assert count is not None
-        assert count[0] == BATCH_SIZE
-    finally:
-        gateway.close()
+    # Verify count
+    count_sql, params = QueryBuilder.count(TABLE_BATCH)
+    result = adapter.execute(count_sql, params)
+    count = result.fetchone()
+    assert count is not None
+    assert count[0] == BATCH_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -317,28 +264,20 @@ def test_duckdb_adapter_batch_insert() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_duckdb_adapter_invalid_query_raises() -> None:
+def test_duckdb_adapter_invalid_query_raises(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter raises on invalid query."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        with pytest.raises(DuckDBError):
-            adapter.execute("INVALID SQL SYNTAX HERE")
-    finally:
-        gateway.close()
+    with pytest.raises(DuckDBError):
+        adapter.execute("INVALID SQL SYNTAX HERE")
 
 
-def test_duckdb_adapter_missing_table_raises() -> None:
+def test_duckdb_adapter_missing_table_raises(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter raises on missing table."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        with pytest.raises(DuckDBError):
-            adapter.execute("SELECT * FROM nonexistent_table_xyz")
-    finally:
-        gateway.close()
+    with pytest.raises(DuckDBError):
+        adapter.execute("SELECT * FROM nonexistent_table_xyz")
 
 
 # ---------------------------------------------------------------------------
@@ -346,44 +285,36 @@ def test_duckdb_adapter_missing_table_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_duckdb_adapter_list_tables() -> None:
+def test_duckdb_adapter_list_tables(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter can list tables in schema."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        # Query information schema
-        result = adapter.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' LIMIT 10"
-        )
+    # Query information schema
+    result = adapter.execute(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' LIMIT 10"
+    )
 
-        rows = result.fetchall()
-        # Should have some tables
-        assert isinstance(rows, list)
-    finally:
-        gateway.close()
+    rows = result.fetchall()
+    # Should have some tables
+    assert isinstance(rows, list)
 
 
-def test_duckdb_adapter_table_columns() -> None:
+def test_duckdb_adapter_table_columns(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter can query table columns."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        # Create a test table
-        adapter.execute(_create_table_sql(TABLE_COLS, "id INTEGER, name VARCHAR, value DOUBLE"))
+    # Create a test table
+    adapter.execute(_create_table_sql(TABLE_COLS, "id INTEGER, name VARCHAR, value DOUBLE"))
 
-        # Query columns using DESCRIBE
-        result = adapter.execute(_describe_sql(TABLE_COLS))
+    # Query columns using DESCRIBE
+    result = adapter.execute(_describe_sql(TABLE_COLS))
 
-        rows = result.fetchall()
-        column_names = [r[0] for r in rows]
+    rows = result.fetchall()
+    column_names = [r[0] for r in rows]
 
-        assert "id" in column_names
-        assert "name" in column_names
-        assert "value" in column_names
-    finally:
-        gateway.close()
+    assert "id" in column_names
+    assert "name" in column_names
+    assert "value" in column_names
 
 
 # ---------------------------------------------------------------------------
@@ -391,26 +322,22 @@ def test_duckdb_adapter_table_columns() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_duckdb_adapter_transaction_commit() -> None:
+def test_duckdb_adapter_transaction_commit(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter can handle transactions."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        # Create table
-        adapter.execute(_create_table_sql(TABLE_TX, "id INTEGER"))
+    # Create table
+    adapter.execute(_create_table_sql(TABLE_TX, "id INTEGER"))
 
-        # Insert in transaction
-        adapter.execute(_insert_values_sql(TABLE_TX, "(1)"))
+    # Insert in transaction
+    adapter.execute(_insert_values_sql(TABLE_TX, "(1)"))
 
-        # Verify data persisted
-        count_sql, params = QueryBuilder.count(TABLE_TX)
-        result = adapter.execute(count_sql, params)
-        count = result.fetchone()
-        assert count is not None
-        assert count[0] == 1
-    finally:
-        gateway.close()
+    # Verify data persisted
+    count_sql, params = QueryBuilder.count(TABLE_TX)
+    result = adapter.execute(count_sql, params)
+    count = result.fetchone()
+    assert count is not None
+    assert count[0] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -418,26 +345,22 @@ def test_duckdb_adapter_transaction_commit() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_duckdb_adapter_aggregate_query() -> None:
+def test_duckdb_adapter_aggregate_query(graph_gateway: StorageGateway) -> None:
     """DuckDBStorageAdapter can execute aggregate queries."""
-    gateway = _make_gateway()
-    try:
-        adapter = DuckDBStorageAdapter(gateway)
+    adapter = DuckDBStorageAdapter(graph_gateway)
 
-        # Create and populate table
-        adapter.execute(_create_table_sql(TABLE_AGG, "category VARCHAR, value INTEGER"))
+    # Create and populate table
+    adapter.execute(_create_table_sql(TABLE_AGG, "category VARCHAR, value INTEGER"))
 
-        # Insert aggregate test data using parameterized insert
-        insert_sql = render_sql(["INSERT INTO", str(TABLE_AGG), "VALUES (?, ?)"])
-        for cat, val in AGG_VALUES:
-            adapter.execute(insert_sql, [cat, val])
+    # Insert aggregate test data using parameterized insert
+    insert_sql = render_sql(["INSERT INTO", str(TABLE_AGG), "VALUES (?, ?)"])
+    for cat, val in AGG_VALUES:
+        adapter.execute(insert_sql, [cat, val])
 
-        # Aggregate query
-        result = adapter.execute(_aggregate_sql(TABLE_AGG))
+    # Aggregate query
+    result = adapter.execute(_aggregate_sql(TABLE_AGG))
 
-        rows = result.fetchall()
-        assert len(rows) == len(AGG_EXPECTED)
-        assert rows[0] == AGG_EXPECTED[0]
-        assert rows[1] == AGG_EXPECTED[1]
-    finally:
-        gateway.close()
+    rows = result.fetchall()
+    assert len(rows) == len(AGG_EXPECTED)
+    assert rows[0] == AGG_EXPECTED[0]
+    assert rows[1] == AGG_EXPECTED[1]

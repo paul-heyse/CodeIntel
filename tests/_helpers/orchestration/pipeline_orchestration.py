@@ -17,7 +17,7 @@ from codeintel.graphs.plugins.builders.callgraph import get_callgraph_builder_pl
 from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.graphs.plugins.runner import GraphPluginRunner
-from codeintel.ingestion.infrastructure_utilities.source_scanner import (
+from codeintel.ingestion.utilities.scanning import (
     default_code_profile,
     default_config_profile,
 )

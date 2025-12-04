@@ -17,7 +17,7 @@ if TYPE_CHECKING:
         CFGEdgeRow,
         DFGEdgeRow,
     )
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+    from codeintel.ingestion.utilities.scanning import ScanProfile
 
 
 @dataclass(frozen=True)

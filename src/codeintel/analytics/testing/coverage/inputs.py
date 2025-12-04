@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.analytics.testing.profiles.types import TestRecord
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
-from codeintel.ingestion.infrastructure_utilities.paths import relpath_to_module
+from codeintel.ingestion.utilities.paths import relpath_to_module
 from codeintel.storage.gateway import DuckDBConnection
 
 if TYPE_CHECKING:

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
 from codeintel.analytics.subsystems import build_subsystems
 from codeintel.config import ConfigBuilder
-from codeintel.storage.gateway import StorageGateway
+from tests._helpers import TestContext
 from tests._helpers.builders import (
     ConfigValueRow,
     FunctionMetricsRow,
@@ -21,47 +20,64 @@ from tests._helpers.builders import (
 )
 from tests._helpers.row_protocol import insert_rows
 
-REPO = "demo/repo"
-COMMIT = "abc123"
+# Test constants
 EXPECTED_SUBSYSTEMS = 2
 EXPECTED_MEMBERSHIPS = 3
 TARGET_CLUSTER_SIZE = 2
 EXPECTED_HIGH_RISK_COUNT = 1
 
+# GOID constants for subsystem test functions
+GOID_API_HANDLER = 10
+GOID_CORE_SERVICE = 11
 
-def _seed_modules(gateway: StorageGateway) -> None:
-    """Insert sample modules, edges, and risk data to drive clustering."""
+
+def _seed_clustering_data(ctx: TestContext) -> None:
+    """Seed modules, edges, and risk data to drive clustering.
+
+    This creates a specific dataset designed to test the clustering algorithm:
+    - Two tightly-coupled modules (pkg.api, pkg.core) that should cluster together
+    - One isolated module (pkg.misc) that should be in its own cluster
+    - Risk factors that result in one high-risk function
+
+    Parameters
+    ----------
+    ctx
+        Test context with gateway.
+    """
+    # Seed modules
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             ModuleRow(
                 module="pkg.api",
                 path="pkg/api.py",
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 tags='["api"]',
             ),
             ModuleRow(
                 module="pkg.core",
                 path="pkg/core.py",
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 tags='["api"]',
             ),
             ModuleRow(
                 module="pkg.misc",
                 path="pkg/misc.py",
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
             ),
         ],
     )
+
+    # Seed bidirectional import edges to create tight coupling
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             ImportGraphEdgeRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 src_module="pkg.api",
                 dst_module="pkg.core",
                 src_fan_out=1,
@@ -69,8 +85,8 @@ def _seed_modules(gateway: StorageGateway) -> None:
                 cycle_group=0,
             ),
             ImportGraphEdgeRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 src_module="pkg.core",
                 dst_module="pkg.api",
                 src_fan_out=1,
@@ -79,8 +95,10 @@ def _seed_modules(gateway: StorageGateway) -> None:
             ),
         ],
     )
+
+    # Seed symbol use edge
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             SymbolUseEdgeRow(
                 symbol="sym_core",
@@ -91,12 +109,14 @@ def _seed_modules(gateway: StorageGateway) -> None:
             )
         ],
     )
+
+    # Seed config value referencing both coupled modules
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             ConfigValueRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 config_path="cfg/app.yaml",
                 format="yaml",
                 key="feature.flag",
@@ -106,15 +126,31 @@ def _seed_modules(gateway: StorageGateway) -> None:
             )
         ],
     )
+
+    # Seed function metrics and risk factors
     now = datetime.now(tz=UTC)
+    _seed_function_metrics(ctx, now)
+    _seed_risk_factors(ctx, now)
+
+
+def _seed_function_metrics(ctx: TestContext, now: datetime) -> None:
+    """Seed function metrics for the test functions.
+
+    Parameters
+    ----------
+    ctx
+        Test context with gateway.
+    now
+        Timestamp for created_at fields.
+    """
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             FunctionMetricsRow(
-                function_goid_h128=10,
-                urn="goid:demo/repo#python:function:pkg.api.handler",
-                repo=REPO,
-                commit=COMMIT,
+                function_goid_h128=GOID_API_HANDLER,
+                urn=f"goid:{ctx.repo}#python:function:pkg.api.handler",
+                repo=ctx.repo,
+                commit=ctx.commit,
                 rel_path="pkg/api.py",
                 language="python",
                 kind="function",
@@ -142,10 +178,10 @@ def _seed_modules(gateway: StorageGateway) -> None:
                 created_at=now,
             ),
             FunctionMetricsRow(
-                function_goid_h128=11,
-                urn="goid:demo/repo#python:function:pkg.core.service",
-                repo=REPO,
-                commit=COMMIT,
+                function_goid_h128=GOID_CORE_SERVICE,
+                urn=f"goid:{ctx.repo}#python:function:pkg.core.service",
+                repo=ctx.repo,
+                commit=ctx.commit,
                 rel_path="pkg/core.py",
                 language="python",
                 kind="function",
@@ -174,14 +210,26 @@ def _seed_modules(gateway: StorageGateway) -> None:
             ),
         ],
     )
+
+
+def _seed_risk_factors(ctx: TestContext, now: datetime) -> None:
+    """Seed risk factors with one high-risk function.
+
+    Parameters
+    ----------
+    ctx
+        Test context with gateway.
+    now
+        Timestamp for created_at fields.
+    """
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             RiskFactorRow(
-                function_goid_h128=10,
-                urn="goid:demo/repo#python:function:pkg.api.handler",
-                repo=REPO,
-                commit=COMMIT,
+                function_goid_h128=GOID_API_HANDLER,
+                urn=f"goid:{ctx.repo}#python:function:pkg.api.handler",
+                repo=ctx.repo,
+                commit=ctx.commit,
                 rel_path="pkg/api.py",
                 language="python",
                 kind="function",
@@ -210,10 +258,10 @@ def _seed_modules(gateway: StorageGateway) -> None:
                 created_at=now,
             ),
             RiskFactorRow(
-                function_goid_h128=11,
-                urn="goid:demo/repo#python:function:pkg.core.service",
-                repo=REPO,
-                commit=COMMIT,
+                function_goid_h128=GOID_CORE_SERVICE,
+                urn=f"goid:{ctx.repo}#python:function:pkg.core.service",
+                repo=ctx.repo,
+                commit=ctx.commit,
                 rel_path="pkg/core.py",
                 language="python",
                 kind="function",
@@ -245,28 +293,45 @@ def _seed_modules(gateway: StorageGateway) -> None:
     )
 
 
-def test_subsystems_cluster_and_risk_aggregation(fresh_gateway: StorageGateway) -> None:
-    """Clusters modules and aggregates risk across subsystems."""
-    gateway = fresh_gateway
-    con = gateway.con
-    _seed_modules(gateway)
+def test_subsystems_cluster_and_risk_aggregation(test_ctx: TestContext) -> None:
+    """Cluster modules and aggregate risk across subsystems.
 
-    cfg = ConfigBuilder.from_snapshot(repo=REPO, commit=COMMIT, repo_root=Path()).subsystems(
+    Verifies that:
+    - Tightly-coupled modules (pkg.api, pkg.core) cluster together
+    - The cluster with high-risk functions is marked as high-risk
+    - All modules are assigned to subsystems
+    """
+    _seed_clustering_data(test_ctx)
+
+    cfg = ConfigBuilder.from_snapshot(
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+        repo_root=test_ctx.repo_root,
+    ).subsystems(
         max_subsystems=2,
         min_modules=1,
     )
-    build_subsystems(gateway, cfg)
+    build_subsystems(test_ctx.gateway, cfg)
 
-    subsystems = con.execute(
+    # Verify subsystem count
+    subsystems = test_ctx.query(
         """
         SELECT subsystem_id, modules_json, risk_level, high_risk_function_count
         FROM analytics.subsystems
         """
-    ).fetchall()
+    )
     if len(subsystems) != EXPECTED_SUBSYSTEMS:
         pytest.fail(f"Expected {EXPECTED_SUBSYSTEMS} subsystems, found {len(subsystems)}")
 
-    by_size = {len(json.loads(mods)): (mods, risk, high) for _, mods, risk, high in subsystems}
+    # Find the larger cluster and verify its properties
+    by_size: dict[int, tuple[str, str, int]] = {}
+    for row in subsystems:
+        modules_json = str(row.modules_json)
+        risk_level = str(row.risk_level)
+        high_risk_count_raw = row.high_risk_function_count
+        high_risk_count = int(str(high_risk_count_raw)) if high_risk_count_raw is not None else 0
+        modules_list: list[str] = json.loads(modules_json)
+        by_size[len(modules_list)] = (modules_json, risk_level, high_risk_count)
     large_modules, large_risk, high_count = by_size[TARGET_CLUSTER_SIZE]
     if "pkg.api" not in large_modules or "pkg.core" not in large_modules:
         pytest.fail(f"Subsystem missing expected modules: {large_modules}")
@@ -275,11 +340,12 @@ def test_subsystems_cluster_and_risk_aggregation(fresh_gateway: StorageGateway) 
     if high_count != EXPECTED_HIGH_RISK_COUNT:
         pytest.fail(f"Expected one high-risk function, got {high_count}")
 
-    memberships = con.execute(
+    # Verify all modules are assigned
+    memberships = test_ctx.query(
         "SELECT subsystem_id, module FROM analytics.subsystem_modules"
-    ).fetchall()
+    )
     if len(memberships) != EXPECTED_MEMBERSHIPS:
         pytest.fail(f"Expected {EXPECTED_MEMBERSHIPS} memberships, got {len(memberships)}")
-    members = {row[1] for row in memberships}
+    members = {str(row.module) for row in memberships}
     if members != {"pkg.api", "pkg.core", "pkg.misc"}:
         pytest.fail(f"Unexpected subsystem membership: {members}")

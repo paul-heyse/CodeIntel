@@ -40,11 +40,6 @@ from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.config_registry import ConfigRegistry
 from codeintel.ingestion.core.base import BaseIngestPlugin, ValidationResult
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
-from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-    ScanProfile,
-    default_code_profile,
-    default_config_profile,
-)
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginResult,
     IngestRuntimeScratch,
@@ -54,6 +49,11 @@ from codeintel.ingestion.resources.protocol import ResourceProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerProvider
+from codeintel.ingestion.utilities.scanning import (
+    ScanProfile,
+    default_code_profile,
+    default_config_profile,
+)
 from codeintel.storage.gateway import StorageGateway
 
 T = TypeVar("T")

@@ -1,7 +1,8 @@
 """Base plugin contracts and registry for ingestion tooling.
 
 This module defines the plugin protocol for external tool execution along with
-the registry for managing tool plugins.
+the registry for managing tool plugins. It is the canonical location for
+tool-related types including ``ToolStatus``.
 
 Architecture Note
 -----------------
@@ -27,24 +28,56 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+from codeintel.ingestion.tools.infrastructure import (
     ToolName,
     ToolRunner,
     ToolRunResult,
 )
 
-# Import canonical ToolStatus from infrastructure_utilities
-from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
-
 if TYPE_CHECKING:
     from codeintel.ingestion.tools.results import ParsedToolResult
 
 log = logging.getLogger(__name__)
+
+
+class ToolStatus(StrEnum):
+    """Normalized status for external tool invocations.
+
+    This enum represents the possible outcomes of running an external tool
+    (pyright, ruff, coverage, scip-python, pytest, etc.) via the tool plugin
+    system.
+
+    Members
+    -------
+    OK
+        Tool executed successfully and produced valid output.
+    NOT_FOUND
+        Tool binary was not found on the system PATH.
+    FAILED
+        Tool execution failed (non-zero exit, parse error, or exception).
+    TIMEOUT
+        Tool execution exceeded the configured timeout.
+
+    Examples
+    --------
+    >>> from codeintel.ingestion.tools import ToolStatus
+    >>> status = ToolStatus.OK
+    >>> status == "ok"
+    True
+    >>> status.value
+    'ok'
+    """
+
+    OK = "ok"
+    NOT_FOUND = "not_found"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
 
 
 @dataclass(frozen=True)

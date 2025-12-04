@@ -15,13 +15,13 @@ from typing import Any
 
 from anyio import to_thread
 
-from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+from codeintel.ingestion.tools.infrastructure import (
     ToolName,
     ToolResult,
     ToolRunner,
 )
-from codeintel.ingestion.tool_service import ToolService
 from codeintel.ingestion.tools.results import CoverageReport, ScipIndexResult
+from codeintel.ingestion.tools.service import ToolService
 
 
 def _mkdir_parents(path: Path) -> None:

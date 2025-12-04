@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.graphs.ports.storage import BatchResult, QueryResult
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import DuckDBConnection
 
 if TYPE_CHECKING:

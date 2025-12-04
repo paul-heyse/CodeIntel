@@ -20,7 +20,7 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
     compute_symbol_graph_metrics_functions,
     compute_symbol_graph_metrics_modules,
 )
-from codeintel.analytics.tests.graph_metrics import compute_test_graph_metrics
+from codeintel.analytics.testing.graph_metrics import compute_test_graph_metrics
 from codeintel.graphs.core import (
     ComputationResult,
     GraphPluginExecutionContext,

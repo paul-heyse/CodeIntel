@@ -14,7 +14,7 @@ from codeintel.analytics.ast_utils import literal_int, literal_value, safe_unpar
 from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.graph_service import normalize_decimal_id
 from codeintel.config import FunctionContractsStepConfig
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

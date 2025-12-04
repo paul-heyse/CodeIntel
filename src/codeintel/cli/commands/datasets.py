@@ -37,7 +37,7 @@ from codeintel.cli.commands._common import (
     open_gateway_from_config,
     setup_logging,
 )
-from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
+from codeintel.ingestion.tools.infrastructure import ToolRunner
 from codeintel.storage.catalog import (
     SamplingConfig,
     build_catalog,

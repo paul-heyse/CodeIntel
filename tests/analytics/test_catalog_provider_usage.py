@@ -10,7 +10,7 @@ from codeintel.analytics.profiles import build_function_profile, build_module_pr
 from codeintel.config import ConfigBuilder
 from codeintel.graphs.catalog import FunctionCatalog
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
-from codeintel.storage.gateway import StorageGateway
+from tests._helpers import TestContext
 from tests._helpers.builders import (
     ModuleRow,
     RiskFactorRow,
@@ -18,63 +18,142 @@ from tests._helpers.builders import (
 )
 from tests._helpers.row_protocol import insert_rows
 
+# Sample SCIP JSON for testing
+SCIP_JSON_TWO_FILES = """
+[
+  {
+    "relative_path": "pkg/a.py",
+    "occurrences": [
+      { "symbol": "sym#def", "symbol_roles": 1 }
+    ]
+  },
+  {
+    "relative_path": "pkg/b.py",
+    "occurrences": [
+      { "symbol": "sym#def", "symbol_roles": 2 }
+    ]
+  }
+]
+""".strip()
+
 
 def _expect(*, condition: bool, detail: str) -> None:
+    """Assert a condition with a detailed message.
+
+    Parameters
+    ----------
+    condition
+        Condition to check.
+    detail
+        Error message if condition is False.
+
+    Raises
+    ------
+    AssertionError
+        If condition is False.
+    """
     if condition:
         return
     raise AssertionError(detail)
 
 
 class _FakeProvider:
+    """Fake catalog provider for testing.
+
+    Provides a minimal catalog with only module_by_path mapping.
+    """
+
     def __init__(self, module_by_path: dict[str, str]) -> None:
+        """Initialize with module path mapping.
+
+        Parameters
+        ----------
+        module_by_path
+            Mapping from file paths to module names.
+        """
         self._catalog = FunctionCatalog(functions=(), module_by_path=module_by_path)
 
     def catalog(self) -> FunctionCatalog:
+        """Return the catalog.
+
+        Returns
+        -------
+        FunctionCatalog
+            The fake catalog instance.
+        """
         return self._catalog
 
     def urn_for_goid(self, goid: int) -> str | None:
+        """Look up URN for a GOID.
+
+        Parameters
+        ----------
+        goid
+            Global object identifier.
+
+        Returns
+        -------
+        str | None
+            URN if found, None otherwise.
+        """
         return self._catalog.urn_for_goid(goid)
 
     def lookup_goid(
         self, rel_path: str, start_line: int, end_line: int | None, qualname: str | None
     ) -> int | None:
+        """Look up GOID for a code location.
+
+        Parameters
+        ----------
+        rel_path
+            Relative file path.
+        start_line
+            Starting line number.
+        end_line
+            Ending line number.
+        qualname
+            Qualified name.
+
+        Returns
+        -------
+        int | None
+            GOID if found, None otherwise.
+        """
         return self._catalog.lookup_goid(rel_path, start_line, end_line, qualname)
 
 
-def test_symbol_uses_respects_catalog_module_map(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
-    """Catalog module map toggles same_module when modules table is empty."""
-    gateway = fresh_gateway
-    con = gateway.con
+def _write_scip_json(tmp_path: Path, content: str) -> Path:
+    """Write SCIP JSON to a temporary file.
 
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory.
+    content
+        JSON content to write.
+
+    Returns
+    -------
+    Path
+        Path to the written file.
+    """
     scip_path = tmp_path / "index.scip.json"
-    scip_path.write_text(
-        """
-        [
-          {
-            "relative_path": "pkg/a.py",
-            "occurrences": [
-              { "symbol": "sym#def", "symbol_roles": 1 }
-            ]
-          },
-          {
-            "relative_path": "pkg/b.py",
-            "occurrences": [
-              { "symbol": "sym#def", "symbol_roles": 2 }
-            ]
-          }
-        ]
-        """.strip(),
-        encoding="utf8",
-    )
+    scip_path.write_text(content, encoding="utf8")
+    return scip_path
+
+
+def test_symbol_uses_respects_catalog_module_map(
+    test_ctx: TestContext, tmp_path: Path
+) -> None:
+    """Verify catalog module map toggles same_module when modules table is empty."""
+    scip_path = _write_scip_json(tmp_path, SCIP_JSON_TWO_FILES)
 
     provider = _FakeProvider({"pkg/a.py": "pkg.mod", "pkg/b.py": "pkg.mod"})
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=tmp_path)
     cfg = builder.symbol_uses(scip_json_path=scip_path)
-    build_symbol_use_edges(gateway, cfg, catalog_provider=provider)
+    build_symbol_use_edges(test_ctx.gateway, cfg, catalog_provider=provider)
 
-    row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
+    row = test_ctx.con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
     _expect(condition=row is not None, detail="symbol_use_edges row missing")
     same_module = bool(row[0]) if row is not None else False
     _expect(
@@ -84,45 +163,24 @@ def test_symbol_uses_respects_catalog_module_map(
 
 
 def test_symbol_uses_falls_back_to_modules_when_catalog_partial(
-    fresh_gateway: StorageGateway, tmp_path: Path
+    test_ctx: TestContext, tmp_path: Path
 ) -> None:
-    """Catalog map may be partial; missing paths should fall back to core.modules."""
-    gateway = fresh_gateway
-    con = gateway.con
+    """Verify catalog map may be partial; missing paths fall back to core.modules."""
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             ModuleRow(module="pkg.use", path="pkg/b.py", repo="r", commit="c"),
         ],
     )
-    scip_path = tmp_path / "index.scip.json"
-    scip_path.write_text(
-        """
-        [
-          {
-            "relative_path": "pkg/a.py",
-            "occurrences": [
-              { "symbol": "sym#def", "symbol_roles": 1 }
-            ]
-          },
-          {
-            "relative_path": "pkg/b.py",
-            "occurrences": [
-              { "symbol": "sym#def", "symbol_roles": 2 }
-            ]
-          }
-        ]
-        """.strip(),
-        encoding="utf8",
-    )
+    scip_path = _write_scip_json(tmp_path, SCIP_JSON_TWO_FILES)
 
     # Provide only the defining module via catalog; use module comes from core.modules.
     provider = _FakeProvider({"pkg/a.py": "pkg.def"})
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=tmp_path)
     cfg = builder.symbol_uses(scip_json_path=scip_path)
-    build_symbol_use_edges(gateway, cfg, catalog_provider=provider)
+    build_symbol_use_edges(test_ctx.gateway, cfg, catalog_provider=provider)
 
-    row = con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
+    row = test_ctx.con.execute("SELECT same_module FROM graph.symbol_use_edges").fetchone()
     _expect(condition=row is not None, detail="symbol_use_edges row missing")
     same_module = bool(row[0]) if row is not None else False
     _expect(
@@ -132,13 +190,11 @@ def test_symbol_uses_falls_back_to_modules_when_catalog_partial(
 
 
 def test_graph_metrics_uses_catalog_for_symbol_modules(
-    fresh_gateway: StorageGateway,
+    test_ctx: TestContext,
 ) -> None:
-    """Graph metrics module rows derive module names from injected catalog."""
-    gateway = fresh_gateway
-    con = gateway.con
+    """Verify graph metrics module rows derive module names from injected catalog."""
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             SymbolUseEdgeRow(
                 symbol="sym#def",
@@ -154,14 +210,14 @@ def test_graph_metrics_uses_catalog_for_symbol_modules(
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path().resolve())
     cfg = builder.graph_metrics()
     compute_graph_metrics(
-        gateway,
+        test_ctx.gateway,
         cfg,
         deps=GraphMetricsDeps(catalog_provider=provider),
     )
 
     modules = {
         row[0]
-        for row in con.execute(
+        for row in test_ctx.con.execute(
             "SELECT module FROM analytics.graph_metrics_modules WHERE repo = 'r' AND commit = 'c'"
         ).fetchall()
     }
@@ -172,14 +228,12 @@ def test_graph_metrics_uses_catalog_for_symbol_modules(
 
 
 def test_profiles_use_catalog_module_map_when_modules_table_empty(
-    fresh_gateway: StorageGateway,
+    test_ctx: TestContext,
 ) -> None:
-    """Profiles builder should backfill modules from catalog when core.modules is empty."""
-    gateway = fresh_gateway
-    con = gateway.con
+    """Verify profiles builder backfills modules from catalog when core.modules is empty."""
     now = datetime.now(tz=UTC)
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             RiskFactorRow(
                 function_goid_h128=1,
@@ -219,10 +273,10 @@ def test_profiles_use_catalog_module_map_when_modules_table_empty(
     provider = _FakeProvider({"pkg/a.py": "pkg.mod"})
     builder = ConfigBuilder.from_snapshot(repo="r", commit="c", repo_root=Path().resolve())
     cfg = builder.profiles_analytics()
-    build_function_profile(gateway, cfg, catalog_provider=provider)
-    build_module_profile(gateway, cfg, catalog_provider=provider)
+    build_function_profile(test_ctx.gateway, cfg, catalog_provider=provider)
+    build_module_profile(test_ctx.gateway, cfg, catalog_provider=provider)
 
-    module_row = con.execute(
+    module_row = test_ctx.con.execute(
         """
         SELECT module FROM analytics.function_profile
         WHERE repo = 'r' AND commit = 'c' AND rel_path = 'pkg/a.py'
@@ -237,7 +291,7 @@ def test_profiles_use_catalog_module_map_when_modules_table_empty(
 
     module_profile_modules = {
         row[0]
-        for row in con.execute(
+        for row in test_ctx.con.execute(
             "SELECT module FROM analytics.module_profile WHERE repo = 'r' AND commit = 'c'"
         ).fetchall()
     }

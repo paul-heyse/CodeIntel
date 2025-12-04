@@ -28,8 +28,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-# Import canonical ToolStatus from infrastructure_utilities
-from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
+# Import canonical ToolStatus from tools.plugins
+from codeintel.ingestion.tools.plugins import ToolStatus
 
 
 @dataclass(frozen=True)

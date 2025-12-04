@@ -23,12 +23,12 @@ from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
 from codeintel.config import EntryPointsStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
-from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
+from codeintel.ingestion.utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+    from codeintel.ingestion.utilities.scanning import ScanProfile
 
 log = logging.getLogger(__name__)
 

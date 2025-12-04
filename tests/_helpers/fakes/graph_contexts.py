@@ -38,7 +38,6 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -398,4 +397,3 @@ __all__ = [
     "create_graph_snapshot",
     "create_graph_telemetry_env",
 ]
-

@@ -20,14 +20,6 @@ from typing import override
 import pytest
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.infrastructure_utilities.tool_runner import (
-    ToolExecutionError,
-    ToolName,
-    ToolNotFoundError,
-    ToolRunner,
-    ToolRunResult,
-)
-from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
 from codeintel.ingestion.ports.tools import (
     CoverageFileData,
     CoverageResult,
@@ -44,8 +36,14 @@ from codeintel.ingestion.ports.tools import (
 from codeintel.ingestion.ports.tools import (
     ScipOccurrence as PortScipOccurrence,
 )
-from codeintel.ingestion.tool_service import ToolService
-from codeintel.ingestion.tools import ToolPluginResult, build_default_registry
+from codeintel.ingestion.tools import ToolPluginResult, ToolStatus, build_default_registry
+from codeintel.ingestion.tools.infrastructure import (
+    ToolExecutionError,
+    ToolName,
+    ToolNotFoundError,
+    ToolRunner,
+    ToolRunResult,
+)
 from codeintel.ingestion.tools.pyright import PyrightPlugin
 from codeintel.ingestion.tools.pytest import PytestPlugin
 from codeintel.ingestion.tools.results import (
@@ -64,6 +62,7 @@ from codeintel.ingestion.tools.results import (
     parse_test_markers,
 )
 from codeintel.ingestion.tools.scip import ScipPlugin
+from codeintel.ingestion.tools.service import ToolService
 from tests._helpers.orchestration.tooling import (
     ToolingOutputs,
     build_tooling_context,

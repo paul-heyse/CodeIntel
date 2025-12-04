@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
 from codeintel.ingestion.resources.protocol import LazyResource
-from codeintel.ingestion.tool_service import ToolService
+from codeintel.ingestion.tools.infrastructure import ToolRunner
+from codeintel.ingestion.tools.service import ToolService
 
 if TYPE_CHECKING:
     from pathlib import Path

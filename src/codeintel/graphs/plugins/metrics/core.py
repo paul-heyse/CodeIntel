@@ -31,7 +31,7 @@ from codeintel.graphs.core import (
 )
 from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.resources import StorageResource
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

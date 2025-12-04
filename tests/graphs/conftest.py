@@ -40,7 +40,6 @@ from tests._helpers.fakes.graph_contexts import (
 )
 from tests._helpers.gateway import gateway_with_macros
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -192,4 +191,3 @@ __all__ = [
     "graph_snapshot",
     "graph_telemetry_env",
 ]
-

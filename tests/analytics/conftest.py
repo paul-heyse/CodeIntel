@@ -1,4 +1,9 @@
-"""Shared fixtures for analytics plugin tests."""
+"""Shared fixtures for analytics tests.
+
+This module provides fixtures for analytics tests that need graph plugin
+infrastructure. For general test fixtures like TestContext, test_ctx,
+graph_ctx, etc., use the fixtures from the main conftest.py.
+"""
 
 from __future__ import annotations
 
@@ -18,10 +23,21 @@ from codeintel.graphs.recipes import RecipeExecutor, RecipeExecutorContext
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
 
 
-class NewPluginTestHarness:
-    """Test harness using the new graphs.core infrastructure.
+class GraphPluginTestHarness:
+    """Test harness for graph plugin tests using RecipeExecutor.
 
-    This harness uses RecipeExecutor instead of GraphServiceRuntime.
+    This harness is specifically for testing graph plugins that use the
+    graphs.core infrastructure. For analytics plugins, use PluginTestHarness
+    from tests._helpers.plugin_harness instead.
+
+    Attributes
+    ----------
+    snapshot : SnapshotRef
+        Repository snapshot reference.
+    gateway : StorageGateway
+        Storage gateway for database access.
+    executor : RecipeExecutor
+        Recipe executor for running graph plugins.
     """
 
     def __init__(self, tmp_path: Path) -> None:
@@ -69,36 +85,63 @@ class NewPluginTestHarness:
             self._registered.discard(name)
 
 
-@pytest.fixture(name="new_plugin_harness")
-def _new_plugin_harness(tmp_path: Path) -> Iterator[NewPluginTestHarness]:
-    """Yield a new plugin test harness with automatic cleanup.
+# Backward compatibility aliases
+NewPluginTestHarness = GraphPluginTestHarness
+PluginTestHarness = GraphPluginTestHarness
+
+
+@pytest.fixture(name="graph_plugin_harness")
+def _graph_plugin_harness(tmp_path: Path) -> Iterator[GraphPluginTestHarness]:
+    """Yield a graph plugin test harness with automatic cleanup.
+
+    This fixture is for testing graph plugins that use RecipeExecutor.
+    For analytics plugins, use the standard test_ctx fixtures instead.
 
     Yields
     ------
-    NewPluginTestHarness
+    GraphPluginTestHarness
         Harness configured with in-memory gateway and RecipeExecutor.
     """
-    harness = NewPluginTestHarness(tmp_path)
+    harness = GraphPluginTestHarness(tmp_path)
     try:
         yield harness
     finally:
         harness.cleanup()
 
 
-# Alias for backward compatibility with older test code
-PluginTestHarness = NewPluginTestHarness
+# Legacy fixture names for backward compatibility
+@pytest.fixture(name="new_plugin_harness")
+def _new_plugin_harness(tmp_path: Path) -> Iterator[GraphPluginTestHarness]:
+    """Yield a graph plugin test harness (legacy name).
 
-
-@pytest.fixture(name="plugin_harness")
-def _plugin_harness(tmp_path: Path) -> Iterator[NewPluginTestHarness]:
-    """Yield a plugin test harness with automatic cleanup.
+    .. deprecated::
+        Use graph_plugin_harness instead.
 
     Yields
     ------
-    NewPluginTestHarness
+    GraphPluginTestHarness
         Harness configured with in-memory gateway and RecipeExecutor.
     """
-    harness = NewPluginTestHarness(tmp_path)
+    harness = GraphPluginTestHarness(tmp_path)
+    try:
+        yield harness
+    finally:
+        harness.cleanup()
+
+
+@pytest.fixture(name="plugin_harness")
+def _plugin_harness(tmp_path: Path) -> Iterator[GraphPluginTestHarness]:
+    """Yield a graph plugin test harness (legacy name).
+
+    .. deprecated::
+        Use graph_plugin_harness instead.
+
+    Yields
+    ------
+    GraphPluginTestHarness
+        Harness configured with in-memory gateway and RecipeExecutor.
+    """
+    harness = GraphPluginTestHarness(tmp_path)
     try:
         yield harness
     finally:

@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.adapters.base import BatchAdapter
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:

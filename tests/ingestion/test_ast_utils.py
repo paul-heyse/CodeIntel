@@ -10,7 +10,7 @@ import ast
 from pathlib import Path
 from textwrap import dedent
 
-from codeintel.ingestion.infrastructure_utilities.ast_utils import (
+from codeintel.ingestion.utilities.ast_utils import (
     AstSpanIndex,
     parse_python_module,
     timed_parse,

@@ -12,7 +12,7 @@ focusing on specific paths not covered by test_runtime.py:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.core.plugins.result import PluginResult
@@ -33,12 +33,8 @@ from codeintel.graphs.runtime.manifest import (
     is_unchanged,
     skip_record,
 )
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import assert_cannot_setattr
-from tests._helpers.gateway import open_ingestion_gateway_with_macros
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16
@@ -73,21 +69,6 @@ def _make_test_plugin(name: str) -> GraphPluginProtocol:
     )
 
     return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
-
-
-def _make_gateway() -> StorageGateway:
-    """Create a gateway for manifest state tests.
-
-    Returns
-    -------
-    StorageGateway
-        Configured gateway.
-    """
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
-    apply_all_schemas(gateway.con)
-    return gateway
 
 
 def test_compute_input_hash_scope_paths_included() -> None:
@@ -241,179 +222,155 @@ def test_compute_options_hash_varies_with_options() -> None:
     assert hash1 != hash2
 
 
-def test_is_unchanged_when_hashes_match() -> None:
+def test_is_unchanged_when_hashes_match(graph_gateway: StorageGateway) -> None:
     """Return True when input and options hashes match."""
-    gateway = _make_gateway()
-    try:
-        prior_manifest = {
-            "test_plugin": {
-                "input_hash": "abc123",
-                "options_hash": "opt456",
-            }
+    prior_manifest = {
+        "test_plugin": {
+            "input_hash": "abc123",
+            "options_hash": "opt456",
         }
+    }
 
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash="abc123",
-            options_hash="opt456",
-        )
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash="abc123",
+        options_hash="opt456",
+    )
 
-        assert is_unchanged(prior_manifest, state)
-    finally:
-        gateway.close()
+    assert is_unchanged(prior_manifest, state)
 
 
-def test_is_unchanged_when_input_hash_differs() -> None:
+def test_is_unchanged_when_input_hash_differs(graph_gateway: StorageGateway) -> None:
     """Return False when input hashes differ."""
-    gateway = _make_gateway()
-    try:
-        prior_manifest = {
-            "test_plugin": {
-                "input_hash": "old_hash",
-                "options_hash": "opt456",
-            }
+    prior_manifest = {
+        "test_plugin": {
+            "input_hash": "old_hash",
+            "options_hash": "opt456",
         }
+    }
 
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash="new_hash",
-            options_hash="opt456",
-        )
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash="new_hash",
+        options_hash="opt456",
+    )
 
-        assert not is_unchanged(prior_manifest, state)
-    finally:
-        gateway.close()
+    assert not is_unchanged(prior_manifest, state)
 
 
-def test_is_unchanged_when_options_hash_differs() -> None:
+def test_is_unchanged_when_options_hash_differs(graph_gateway: StorageGateway) -> None:
     """Return False when options hashes differ."""
-    gateway = _make_gateway()
-    try:
-        prior_manifest = {
-            "test_plugin": {
-                "input_hash": "abc123",
-                "options_hash": "old_opt",
-            }
+    prior_manifest = {
+        "test_plugin": {
+            "input_hash": "abc123",
+            "options_hash": "old_opt",
         }
+    }
 
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash="abc123",
-            options_hash="new_opt",
-        )
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash="abc123",
+        options_hash="new_opt",
+    )
 
-        assert not is_unchanged(prior_manifest, state)
-    finally:
-        gateway.close()
+    assert not is_unchanged(prior_manifest, state)
 
 
-def test_is_unchanged_missing_input_hash_returns_false() -> None:
+def test_is_unchanged_missing_input_hash_returns_false(graph_gateway: StorageGateway) -> None:
     """Return False when current state has None input hash."""
-    gateway = _make_gateway()
-    try:
-        prior_manifest = {
-            "test_plugin": {
-                "input_hash": "abc123",
-                "options_hash": None,
-            }
+    prior_manifest = {
+        "test_plugin": {
+            "input_hash": "abc123",
+            "options_hash": None,
         }
+    }
 
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash=None,
-            options_hash=None,
-        )
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash=None,
+        options_hash=None,
+    )
 
-        assert not is_unchanged(prior_manifest, state)
-    finally:
-        gateway.close()
+    assert not is_unchanged(prior_manifest, state)
 
 
-def test_is_unchanged_missing_prior_input_hash_returns_false() -> None:
+def test_is_unchanged_missing_prior_input_hash_returns_false(
+    graph_gateway: StorageGateway,
+) -> None:
     """Return False when prior manifest has None input hash."""
-    gateway = _make_gateway()
-    try:
-        prior_manifest = {
-            "test_plugin": {
-                "input_hash": None,
-                "options_hash": None,
-            }
+    prior_manifest = {
+        "test_plugin": {
+            "input_hash": None,
+            "options_hash": None,
         }
+    }
 
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash="abc123",
-            options_hash=None,
-        )
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash="abc123",
+        options_hash=None,
+    )
 
-        assert not is_unchanged(prior_manifest, state)
-    finally:
-        gateway.close()
+    assert not is_unchanged(prior_manifest, state)
 
 
-def test_is_unchanged_missing_plugin_in_prior_returns_false() -> None:
+def test_is_unchanged_missing_plugin_in_prior_returns_false(
+    graph_gateway: StorageGateway,
+) -> None:
     """Return False when plugin not in prior manifest."""
-    gateway = _make_gateway()
-    try:
-        prior_manifest = {
-            "other_plugin": {
-                "input_hash": "abc123",
-                "options_hash": None,
-            }
+    prior_manifest = {
+        "other_plugin": {
+            "input_hash": "abc123",
+            "options_hash": None,
         }
+    }
 
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash="abc123",
-            options_hash=None,
-        )
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash="abc123",
+        options_hash=None,
+    )
 
-        assert not is_unchanged(prior_manifest, state)
-    finally:
-        gateway.close()
+    assert not is_unchanged(prior_manifest, state)
 
 
-def test_is_unchanged_no_prior_manifest() -> None:
+def test_is_unchanged_no_prior_manifest(graph_gateway: StorageGateway) -> None:
     """Return False when prior manifest is None."""
-    gateway = _make_gateway()
-    try:
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=(),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="deadbeef",
-            input_hash="abc123",
-            options_hash=None,
-        )
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=(),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="deadbeef",
+        input_hash="abc123",
+        options_hash=None,
+    )
 
-        assert not is_unchanged(None, state)
-    finally:
-        gateway.close()
+    assert not is_unchanged(None, state)
 
 
 def test_dry_run_record_creates_skipped_status() -> None:
@@ -622,20 +579,16 @@ def test_input_hash_payload_equality() -> None:
     assert payload1 == payload2
 
 
-def test_manifest_state_frozen() -> None:
+def test_manifest_state_frozen(graph_gateway: StorageGateway) -> None:
     """ManifestState is frozen (immutable)."""
-    gateway = _make_gateway()
-    try:
-        state = ManifestState(
-            plugin_name="test_plugin",
-            row_count_tables=("table1",),
-            gateway=gateway,
-            repo="demo/repo",
-            commit="abc123",
-            input_hash="inp",
-            options_hash="opt",
-        )
+    state = ManifestState(
+        plugin_name="test_plugin",
+        row_count_tables=("table1",),
+        gateway=graph_gateway,
+        repo="demo/repo",
+        commit="abc123",
+        input_hash="inp",
+        options_hash="opt",
+    )
 
-        assert_cannot_setattr(state, "plugin_name", "other")
-    finally:
-        gateway.close()
+    assert_cannot_setattr(state, "plugin_name", "other")

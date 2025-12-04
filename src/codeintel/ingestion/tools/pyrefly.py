@@ -12,20 +12,20 @@ from typing import Any
 from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path, repo_relpath
-from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+from codeintel.ingestion.tools.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
     ToolRunner,
 )
-from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
 from codeintel.ingestion.tools.plugins import (
     ToolPlugin,
     ToolPluginMetadata,
     ToolPluginResult,
+    ToolStatus,
 )
 from codeintel.ingestion.tools.results import DiagnosticReport
+from codeintel.ingestion.utilities.paths import normalize_rel_path, repo_relpath
 
 log = logging.getLogger(__name__)
 

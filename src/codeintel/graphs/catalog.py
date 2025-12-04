@@ -32,7 +32,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
-from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
+from codeintel.ingestion.utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.module_index import load_module_map
 

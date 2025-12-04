@@ -26,10 +26,6 @@ from codeintel.ingestion.core.base import (
     TableWriterIngestPlugin,
 )
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
-from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-    default_code_profile,
-    default_config_profile,
-)
 from codeintel.ingestion.plugins import (
     DEFAULT_INGEST_PLUGINS,
     IngestRuntimeScratch,
@@ -53,6 +49,10 @@ from codeintel.ingestion.plugins.registry import (
     PlanOptions,
 )
 from codeintel.ingestion.resources.registry import ResourceRegistry
+from codeintel.ingestion.utilities.scanning import (
+    default_code_profile,
+    default_config_profile,
+)
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 # =============================================================================

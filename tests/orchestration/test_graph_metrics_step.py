@@ -11,7 +11,7 @@ from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.catalog import FunctionCatalogService
 from codeintel.graphs.recipes import METRICS_ONLY_RECIPE, RecipeExecutor, RecipeExecutorContext
-from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+from codeintel.ingestion.utilities.scanning import ScanProfile
 from codeintel.pipeline.orchestration.core import ensure_graph_runtime
 from codeintel.pipeline.orchestration.steps import PipelineContext
 from tests._helpers.architecture import open_seeded_architecture_gateway
