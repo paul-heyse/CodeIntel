@@ -17,11 +17,10 @@ ToolNotFoundError, ToolExecutionError
 
 from __future__ import annotations
 
-from codeintel.ingestion.tools.infrastructure.runner import (
+from codeintel.ingestion.engine.infrastructure.runner import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
-    ToolResult,
     ToolRunner,
     ToolRunResult,
 )
@@ -30,7 +29,6 @@ __all__ = [
     "ToolExecutionError",
     "ToolName",
     "ToolNotFoundError",
-    "ToolResult",
     "ToolRunResult",
     "ToolRunner",
 ]

@@ -44,6 +44,18 @@ The ingestion system follows a port-adapter pattern for clean separation of conc
 - `IngestRecipe`: Declarative recipe definition
 - `RecipeExecutor`: Recipe execution with stage orchestration
 
+**Runtime** (execution infrastructure - analogous to graphs/runtime/):
+- `IngestExecutorConfig`: Plugin execution configuration
+- `IngestRuntimeTelemetry`: Telemetry collection and reporting
+- `PluginExecutionPlan`: Execution planning and ordering
+- `execute_plugin_batch`: Batch plugin execution
+
+**Validation** (contract validation - analogous to graphs/validation/):
+- `IngestContractValidator`: Contract validation runner
+- `IngestContractSpec`: Contract specification
+- `ContractValidationResult`: Validation results
+- `run_ingest_validations`: High-level validation entry point
+
 Builtin Plugins
 ---------------
 The following plugins are registered by default:
@@ -188,6 +200,23 @@ from codeintel.ingestion.recipes import (
     get_builtin_recipe,
 )
 
+# Runtime infrastructure exports (analogous to graphs/runtime/)
+from codeintel.ingestion.runtime import (
+    IngestExecutorConfig,
+    IngestPlanContext,
+    IngestPluginSpan,
+    IngestRunReport,
+    IngestRuntimeTelemetry,
+    PluginExecutionPlan,
+    PluginExecutionRecord,
+    PluginExecutionSettings,
+    PluginFatalError,
+    execute_plugin,
+    execute_plugin_batch,
+    get_ingest_telemetry,
+    resolve_plugin_order,
+)
+
 # Tracker domain service exports (renamed from change_tracker for alignment with graphs/catalog)
 from codeintel.ingestion.tracker import (
     ChangeTracker,
@@ -196,6 +225,12 @@ from codeintel.ingestion.tracker import (
     IncrementalIngestPolicy,
     SupportsFullRebuild,
     run_incremental_ingest,
+)
+
+# Validation framework exports (additional exports from validation/)
+from codeintel.ingestion.validation import (
+    IngestValidationOptions,
+    run_ingest_validations,
 )
 
 __all__ = [
@@ -241,23 +276,33 @@ __all__ = [
     "IngestContractSpec",
     "IngestContractValidator",
     "IngestExecutionContext",
+    "IngestExecutorConfig",
     "IngestIsolationKind",
+    "IngestPlanContext",
     "IngestPluginMetadata",
     "IngestPluginPlan",
     "IngestPluginProtocol",
     "IngestPluginRegistry",
     "IngestPluginResult",
     "IngestPluginSkip",
+    "IngestPluginSpan",
     "IngestRecipe",
     "IngestResourceHints",
+    "IngestRunReport",
     "IngestRuntimeScratch",
+    "IngestRuntimeTelemetry",
     "IngestSeverity",
     "IngestStage",
     "IngestStoragePort",
     "IngestToolPort",
+    "IngestValidationOptions",
     "ModuleDiscoveryPort",
     "ModuleRecord",
     "PlanOptions",
+    "PluginExecutionPlan",
+    "PluginExecutionRecord",
+    "PluginExecutionSettings",
+    "PluginFatalError",
     "QueryResult",
     "RecipeExecutionResult",
     "RecipeOptions",
@@ -285,12 +330,15 @@ __all__ = [
     "WorkerConfig",
     "create_executor",
     "ensure_repo_root",
+    "execute_plugin",
+    "execute_plugin_batch",
     "execute_recipe",
     "executor_factory",
     "foreign_key_contract",
     "get_builtin_recipe",
     "get_config_fields",
     "get_ingest_registry",
+    "get_ingest_telemetry",
     "infer_config_mapping",
     "list_ingest_plugins",
     "normalize_rel_path",
@@ -300,8 +348,10 @@ __all__ = [
     "register_ingest_plugin",
     "relpath_to_module",
     "repo_relpath",
+    "resolve_plugin_order",
     "resolve_worker_count",
     "row_count_contract",
     "run_incremental_ingest",
+    "run_ingest_validations",
     "worker_pool",
 ]

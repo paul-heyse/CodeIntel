@@ -15,6 +15,8 @@ import pytest
 from codeintel.config import SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.adapters import IngestStorageService
+from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.ingestion.resources.protocol import (
     LazyResource as LazyResourceBase,
@@ -30,8 +32,6 @@ from codeintel.ingestion.resources.registry import (
 )
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
-from codeintel.ingestion.tools.infrastructure import ToolRunner
-from codeintel.ingestion.tools.service import ToolService
 from codeintel.storage.gateway import StorageGateway
 
 # Test constants
@@ -193,7 +193,7 @@ def test_resource_not_found_error_from_type() -> None:
     error = ResourceNotFoundError(TestProvider)
 
     assert "TestProvider" in str(error)
-    assert error.resource_type_name == "TestProvider"
+    assert error.resource_name == "TestProvider"
 
 
 def test_resource_not_found_error_from_string() -> None:
@@ -201,7 +201,7 @@ def test_resource_not_found_error_from_string() -> None:
     error = ResourceNotFoundError("custom_resource")
 
     assert "custom_resource" in str(error)
-    assert error.resource_type_name == "custom_resource"
+    assert error.resource_name == "custom_resource"
 
 
 def test_resource_not_found_inherits_resource_error() -> None:
@@ -297,10 +297,10 @@ def test_registry_get_by_name() -> None:
 
 
 def test_registry_get_by_name_nonexistent_raises() -> None:
-    """ResourceRegistry.get_by_name should raise for unknown names."""
+    """ResourceRegistry.get_by_name should raise KeyError for unknown names."""
     registry = ResourceRegistry()
 
-    with pytest.raises(ResourceNotFoundError, match="unknown_name"):
+    with pytest.raises(KeyError, match="unknown_name"):
         registry.get_by_name("unknown_name")
 
 
@@ -668,7 +668,8 @@ def test_tracker_provider_initialization(fresh_gateway: StorageGateway, tmp_path
     snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
     provider = TrackerProvider(fresh_gateway, snapshot)
 
-    assert provider.resource_name == "TrackerProvider"
+    # RESOURCE_NAME ClassVar is "tracker" for consistency with core resources
+    assert provider.resource_name == "tracker"
     assert provider.is_loaded is False
 
 
@@ -681,7 +682,8 @@ def test_tracker_provider_with_config(fresh_gateway: StorageGateway, tmp_path: P
     # Verify provider was created successfully - configuration behavior is tested
     # through actual tracker behavior in other tests, not by accessing private state
     assert provider is not None
-    assert provider.resource_name == "TrackerProvider"
+    # RESOURCE_NAME ClassVar is "tracker" for consistency with core resources
+    assert provider.resource_name == "tracker"
 
 
 def test_tracker_provider_get_or_create_alias(

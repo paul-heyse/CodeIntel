@@ -1,4 +1,8 @@
-Here’s a concrete, patch-oriented plan to implement **Epic 1: ingestion step registry**, tailored to your current CodeIntel layout.
+> **Note**: Import paths in this document are historical and may not reflect current structure.
+> The ingestion package has been reorganized: `steps/` is now `compute/`, `utilities/` is now `infrastructure/`,
+> `tools/` is now `engine/`, `change_tracker.py` is now `tracker.py`, and contracts moved to `validation/`.
+
+Here's a concrete, patch-oriented plan to implement **Epic 1: ingestion step registry**, tailored to your current CodeIntel layout.
 
 I’ll walk through:
 

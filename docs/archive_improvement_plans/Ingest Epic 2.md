@@ -1,4 +1,8 @@
-Gotcha, thanks for pasting the thinking — that’s super helpful context.
+> **Note**: Import paths in this document are historical and may not reflect current structure.
+> The ingestion package has been reorganized: `steps/` is now `compute/`, `utilities/` is now `infrastructure/`,
+> `tools/` is now `engine/`, `change_tracker.py` is now `tracker.py`, and contracts moved to `validation/`.
+
+Gotcha, thanks for pasting the thinking — that's super helpful context.
 
 Let’s treat this as **Epic 2, Part 1: fully incremental docstrings + typing**, wired into the new step registry and `ChangeTracker`. I’ll give you **patch-style instructions with concrete code** so you can drop them in with minimal friction.
 

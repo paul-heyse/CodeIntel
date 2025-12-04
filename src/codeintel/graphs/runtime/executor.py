@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING, Literal, cast
 from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.core.plugins.context import PluginScratch
 from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
+from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import GraphPluginProtocol
-from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.graphs.runtime.manifest import (
@@ -465,16 +465,18 @@ def _execute_plugins_in_plan(
             settings = plan.settings_by_plugin[plugin.metadata.name]
             options = plan.options_by_plugin.get(plugin.metadata.name)
 
-            resources = ResourceContainer()
-            resources.register(StorageResource(context.gateway, context.snapshot.repo_root))
+            resources = ResourceRegistry()
+            resources.register_provider(
+                StorageResource(context.gateway, context.snapshot.repo_root)
+            )
             if context.engine is not None:
-                resources.register(GraphResource(cast("NxGraphEngine", context.engine)))
+                resources.register_provider(GraphResource(cast("NxGraphEngine", context.engine)))
 
             plugin_ctx = GraphPluginExecutionContext(
                 gateway=context.gateway,
                 snapshot=context.snapshot,
                 run_id=plan.run_id,
-                graph_resources=resources,
+                resources=resources,
                 scratch=scratch,
                 options=options,
                 plugin_name=plugin.metadata.name,

@@ -29,7 +29,6 @@ import pytest
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.context import PluginScratch
 from codeintel.graphs.core.context import GraphPluginExecutionContext
-from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.factories import make_snapshot
@@ -181,7 +180,6 @@ def graph_plugin_context(
     return GraphPluginExecutionContext(
         gateway=graph_gateway,
         snapshot=graph_snapshot,
-        graph_resources=ResourceContainer(),
         scratch=PluginScratch(),
         plugin_name="test_plugin",
         run_id="test-run-123",

@@ -18,7 +18,7 @@ boundaries.
 
 See Also
 --------
-codeintel.ingestion.tools.results : Rich parsed result types
+codeintel.ingestion.engine.results : Rich parsed result types
 codeintel.ingestion.tool_service : Facade for tool orchestration
 codeintel.ingestion.ports.tools : Port interface types
 """
@@ -34,14 +34,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.tools.infrastructure import (
+from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolRunner,
     ToolRunResult,
 )
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.tools.results import ParsedToolResult
+    from codeintel.ingestion.engine.results import ParsedToolResult
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class ToolStatus(StrEnum):
 
     Examples
     --------
-    >>> from codeintel.ingestion.tools import ToolStatus
+    >>> from codeintel.ingestion.engine import ToolStatus
     >>> status = ToolStatus.OK
     >>> status == "ok"
     True
@@ -251,12 +251,12 @@ def build_default_registry(runner: ToolRunner, tools_config: ToolsConfig) -> Too
     ToolPluginRegistry
         Registry populated with built-in plugins.
     """
-    pyright_plugin = import_module("codeintel.ingestion.tools.pyright").PyrightPlugin
-    pyrefly_plugin = import_module("codeintel.ingestion.tools.pyrefly").PyreflyPlugin
-    ruff_plugin = import_module("codeintel.ingestion.tools.ruff").RuffPlugin
-    coverage_plugin = import_module("codeintel.ingestion.tools.coverage").CoveragePlugin
-    pytest_plugin = import_module("codeintel.ingestion.tools.pytest").PytestPlugin
-    scip_plugin = import_module("codeintel.ingestion.tools.scip").ScipPlugin
+    pyright_plugin = import_module("codeintel.ingestion.engine.pyright").PyrightPlugin
+    pyrefly_plugin = import_module("codeintel.ingestion.engine.pyrefly").PyreflyPlugin
+    ruff_plugin = import_module("codeintel.ingestion.engine.ruff").RuffPlugin
+    coverage_plugin = import_module("codeintel.ingestion.engine.coverage").CoveragePlugin
+    pytest_plugin = import_module("codeintel.ingestion.engine.pytest").PytestPlugin
+    scip_plugin = import_module("codeintel.ingestion.engine.scip").ScipPlugin
 
     registry = ToolPluginRegistry(runner=runner, tools_config=tools_config)
 

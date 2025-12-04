@@ -19,7 +19,7 @@ from codeintel.ingestion.core.runs import (
     MultiSink,
     classify_error,
 )
-from codeintel.ingestion.tools.infrastructure import (
+from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,

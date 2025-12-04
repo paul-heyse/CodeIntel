@@ -12,10 +12,13 @@ from __future__ import annotations
 import importlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, Unpack, cast, runtime_checkable
+from typing import Literal, Protocol, TypedDict, Unpack, cast, runtime_checkable
 
 from pydantic import BaseModel
 
+from codeintel.core.plugins.decorators import make_plugin_instance
+from codeintel.core.plugins.functional import BaseFunctionalPlugin
+from codeintel.core.plugins.meta_options import BasePluginMetaOptions
 from codeintel.core.plugins.protocol import (
     PluginCapability,
     PluginInputSpec,
@@ -29,10 +32,10 @@ from codeintel.core.plugins.protocol import (
     ValidationResult,
 )
 from codeintel.core.plugins.result import PluginResult, PluginStatus
-from codeintel.graphs.engine import GraphKind
 
-if TYPE_CHECKING:
-    from codeintel.graphs.core.context import GraphPluginExecutionContext
+# Import at runtime for use in type alias (FunctionalGraphPlugin)
+from codeintel.graphs.core.context import GraphPluginExecutionContext
+from codeintel.graphs.engine import GraphKind
 
 # Graph-specific plugin kinds and stages
 GraphPluginKind = Literal["builder", "metric", "validation"]
@@ -314,6 +317,9 @@ class GraphPluginMetaOptions:
     def from_kwargs(**kwargs: Unpack[GraphPluginMetaOptionsInput]) -> GraphPluginMetaOptions:
         """Build options from keyword arguments with validation.
 
+        Delegates validation to BasePluginMetaOptions.validate_option_keys,
+        which raises ValueError if unknown keys are provided.
+
         Parameters
         ----------
         **kwargs
@@ -323,17 +329,11 @@ class GraphPluginMetaOptions:
         -------
         GraphPluginMetaOptions
             Options built from the provided keyword arguments.
-
-        Raises
-        ------
-        ValueError
-            If unsupported option keys are provided.
         """
-        allowed_keys = set(GraphPluginMetaOptionsInput.__annotations__)
-        unknown = set(kwargs) - allowed_keys
-        if unknown:
-            message = f"Unsupported graph plugin option keys: {', '.join(sorted(unknown))}"
-            raise ValueError(message)
+        BasePluginMetaOptions.validate_option_keys(
+            set(GraphPluginMetaOptionsInput.__annotations__),
+            kwargs,
+        )
         return GraphPluginMetaOptions(**kwargs)
 
     def to_metadata(
@@ -447,41 +447,13 @@ class GraphPluginPlan:
         return tuple(plugin.metadata.name for plugin in self.plugins)
 
 
-@dataclass
-class FunctionalGraphPlugin:
-    """Plugin implementation wrapping a callable.
+# Type alias for graph functional plugin using the base class
+FunctionalGraphPlugin = BaseFunctionalPlugin[GraphPluginExecutionContext, GraphPluginMetadata]
+"""Graph plugin implementation wrapping a callable.
 
-    Provides a simple way to create graph plugins from functions.
-    """
-
-    _metadata: GraphPluginMetadata
-    _execute_fn: Callable[[GraphPluginExecutionContext], PluginResult]
-
-    @property
-    def metadata(self) -> GraphPluginMetadata:
-        """Return plugin metadata.
-
-        Returns
-        -------
-        GraphPluginMetadata
-            Metadata describing the plugin.
-        """
-        return self._metadata
-
-    def execute(self, ctx: GraphPluginExecutionContext) -> PluginResult:
-        """Execute the wrapped function.
-
-        Parameters
-        ----------
-        ctx
-            Graph plugin execution context.
-
-        Returns
-        -------
-        PluginResult
-            Result produced by the underlying callable.
-        """
-        return self._execute_fn(ctx)
+This type alias provides graph-specific typing for the base functional
+plugin class. Use with the @graph_plugin decorator.
+"""
 
 
 def graph_plugin(
@@ -503,15 +475,28 @@ def graph_plugin(
 
     Returns
     -------
-    Callable
+    Callable[[Callable[[GraphPluginExecutionContext], PluginResult]], FunctionalGraphPlugin]
         Decorator that creates a FunctionalGraphPlugin.
     """
 
-    def _register_plugin(plugin_instance: GraphPluginProtocol) -> None:
-        """Register plugin via registry without importing at decorator scope."""
-        registry = importlib.import_module("codeintel.graphs.core.registry")
-        register_fn = registry.register_graph_plugin
-        register_fn(plugin_instance)
+    def _get_register_fn() -> Callable[[FunctionalGraphPlugin], None] | None:
+        """Get registration function if register is True.
+
+        Returns
+        -------
+        Callable[[FunctionalGraphPlugin], None] | None
+            Registration function or None if register is False.
+        """
+        if not register:
+            return None
+
+        def _register_plugin(plugin_instance: FunctionalGraphPlugin) -> None:
+            """Register plugin via registry without importing at decorator scope."""
+            registry = importlib.import_module("codeintel.graphs.core.registry")
+            register_fn = registry.register_graph_plugin
+            register_fn(cast("GraphPluginProtocol", plugin_instance))
+
+        return _register_plugin
 
     def decorator(
         fn: Callable[[GraphPluginExecutionContext], PluginResult],
@@ -521,17 +506,14 @@ def graph_plugin(
             raise ValueError(message)
 
         options = meta or GraphPluginMetaOptions.from_kwargs(**kwargs)
-        metadata = options.to_metadata(fn)
 
-        plugin_instance = FunctionalGraphPlugin(
-            _metadata=metadata,
-            _execute_fn=fn,
+        return make_plugin_instance(
+            fn=fn,
+            options=options,
+            plugin_factory=lambda m, f: FunctionalGraphPlugin(_metadata=m, _execute_fn=f),
+            to_metadata=lambda opts, f: opts.to_metadata(f),
+            register_fn=_get_register_fn(),
         )
-
-        if register:
-            _register_plugin(cast("GraphPluginProtocol", plugin_instance))
-
-        return plugin_instance
 
     return decorator
 

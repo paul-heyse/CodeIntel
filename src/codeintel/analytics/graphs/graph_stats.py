@@ -12,12 +12,12 @@ from codeintel.analytics.compute.graphs import (
     build_projection_graph,
     global_graph_stats,
 )
-from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,
 )
+from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema

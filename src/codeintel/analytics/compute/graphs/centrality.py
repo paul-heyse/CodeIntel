@@ -24,7 +24,7 @@ from codeintel.graphs.compute.metrics.centrality import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graphs.runtime import GraphContext
+    from codeintel.analytics.runtime.context import GraphContext
 
 log = logging.getLogger(__name__)
 

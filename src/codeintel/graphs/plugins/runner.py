@@ -26,9 +26,9 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.plugins.context import PluginScratch
 from codeintel.core.plugins.result import PluginResult
+from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.resources.catalog import CatalogResource
-from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.storage import StorageResource
 
 if TYPE_CHECKING:
@@ -180,18 +180,18 @@ class GraphPluginRunner:
         GraphPluginExecutionContext
             Ready-to-use execution context with resources registered.
         """
-        container = ResourceContainer()
-        container.register(StorageResource(self.gateway, snapshot.repo_root))
+        resources = ResourceRegistry()
+        resources.register_provider(StorageResource(self.gateway, snapshot.repo_root))
 
         # Register catalog if provided - call .catalog() to get the FunctionCatalog
         if catalog_provider is not None:
-            container.register(CatalogResource(catalog_provider.catalog()))
+            resources.register_provider(CatalogResource(catalog_provider.catalog()))
 
         return GraphPluginExecutionContext(
             gateway=self.gateway,
             snapshot=snapshot,
             run_id=run_id,
-            graph_resources=container,
+            resources=resources,
             scratch=self.scratch or PluginScratch(),
         )
 

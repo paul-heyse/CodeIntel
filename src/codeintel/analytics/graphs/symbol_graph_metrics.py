@@ -17,12 +17,12 @@ from codeintel.analytics.compute.graphs import (
     log_empty_graph,
     structural_metrics,
 )
-from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,
 )
+from codeintel.analytics.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository

@@ -1,4 +1,8 @@
-Let’s turn “change tracker” from a vibe into a concrete little subsystem an AI agent can implement.
+> **Note**: Import paths in this document are historical and may not reflect current structure.
+> The ingestion package has been reorganized: `steps/` is now `compute/`, `utilities/` is now `infrastructure/`,
+> `tools/` is now `engine/`, `change_tracker.py` is now `tracker.py`, and contracts moved to `validation/`.
+
+Let's turn "change tracker" from a vibe into a concrete little subsystem an AI agent can implement.
 
 I’ll structure this like before:
 

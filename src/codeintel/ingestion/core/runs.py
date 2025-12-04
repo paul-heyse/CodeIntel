@@ -14,7 +14,7 @@ from typing import Protocol
 
 from codeintel.config.datasets import ingest_run_to_tuple
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.ingestion.tools.infrastructure import (
+from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolNotFoundError,
 )

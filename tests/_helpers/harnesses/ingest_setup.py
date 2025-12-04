@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Self
 from codeintel.config import BuildPaths, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import (
     ScanProfile,
     default_code_profile,
@@ -35,7 +36,6 @@ from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
-from codeintel.ingestion.tools.service import ToolService
 from tests._helpers.fakes import FakeToolRunner, FakeToolService, FakeToolServiceConfig
 from tests._helpers.orchestration.tooling import make_tools_config
 

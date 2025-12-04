@@ -21,7 +21,7 @@ from codeintel.graphs.compute.metrics.bipartite import (
 from codeintel.graphs.compute.metrics.community import detect_communities_greedy
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graphs.runtime import GraphContext
+    from codeintel.analytics.runtime.context import GraphContext
 
 
 def build_projection_graph(

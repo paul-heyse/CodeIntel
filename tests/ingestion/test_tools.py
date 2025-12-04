@@ -20,6 +20,33 @@ from typing import override
 import pytest
 
 from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.engine import ToolPluginResult, ToolStatus, build_default_registry
+from codeintel.ingestion.engine.infrastructure import (
+    ToolExecutionError,
+    ToolName,
+    ToolNotFoundError,
+    ToolRunner,
+    ToolRunResult,
+)
+from codeintel.ingestion.engine.pyright import PyrightPlugin
+from codeintel.ingestion.engine.pytest import PytestPlugin
+from codeintel.ingestion.engine.results import (
+    CoverageFileSummary,
+    CoverageReport,
+    DiagnosticReport,
+    FileDiagnosticCount,
+    ScipDocument,
+    ScipIndexResult,
+    ScipOccurrence,
+    TestCaseResult,
+    TestReport,
+    parse_scip_occurrence,
+    parse_scip_range,
+    parse_test_duration,
+    parse_test_markers,
+)
+from codeintel.ingestion.engine.scip import ScipPlugin
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.ports.tools import (
     CoverageFileData,
     CoverageResult,
@@ -36,33 +63,6 @@ from codeintel.ingestion.ports.tools import (
 from codeintel.ingestion.ports.tools import (
     ScipOccurrence as PortScipOccurrence,
 )
-from codeintel.ingestion.tools import ToolPluginResult, ToolStatus, build_default_registry
-from codeintel.ingestion.tools.infrastructure import (
-    ToolExecutionError,
-    ToolName,
-    ToolNotFoundError,
-    ToolRunner,
-    ToolRunResult,
-)
-from codeintel.ingestion.tools.pyright import PyrightPlugin
-from codeintel.ingestion.tools.pytest import PytestPlugin
-from codeintel.ingestion.tools.results import (
-    CoverageFileSummary,
-    CoverageReport,
-    DiagnosticReport,
-    FileDiagnosticCount,
-    ScipDocument,
-    ScipIndexResult,
-    ScipOccurrence,
-    TestCaseResult,
-    TestReport,
-    parse_scip_occurrence,
-    parse_scip_range,
-    parse_test_duration,
-    parse_test_markers,
-)
-from codeintel.ingestion.tools.scip import ScipPlugin
-from codeintel.ingestion.tools.service import ToolService
 from tests._helpers.orchestration.tooling import (
     ToolingOutputs,
     build_tooling_context,

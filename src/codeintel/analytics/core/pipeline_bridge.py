@@ -211,11 +211,13 @@ def _build_execution_context(
         if config is not None:
             builder = builder.with_config(type(config), config)
 
-    builder.scope = AnalyticsScope(
-        paths=plan.scope.paths,
-        modules=plan.scope.modules,
-        time_window=plan.scope.time_window,
-        labels={"runtime": "analytics"},
+    builder = builder.with_scope(
+        AnalyticsScope(
+            paths=plan.scope.paths,
+            modules=plan.scope.modules,
+            time_window=plan.scope.time_window,
+            labels={"runtime": "analytics"},
+        )
     )
 
     for key, value in run_context.extra.items():

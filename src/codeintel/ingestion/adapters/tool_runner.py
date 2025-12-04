@@ -23,7 +23,7 @@ This keeps domain logic rich while maintaining clean boundaries.
 See Also
 --------
 codeintel.ingestion.tool_service : Service returning rich Report types
-codeintel.ingestion.tools.results : Rich domain types (input)
+codeintel.ingestion.engine.results : Rich domain types (input)
 codeintel.ingestion.ports.tools : Port interface types (output)
 """
 
@@ -36,6 +36,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.ports.tools import (
     CoverageFileData,
     CoverageResult,
@@ -49,11 +50,10 @@ from codeintel.ingestion.ports.tools import (
     TestResult,
     ToolStatus,
 )
-from codeintel.ingestion.tools.service import ToolService
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
-    from codeintel.ingestion.tools.infrastructure import ToolRunner
+    from codeintel.ingestion.engine.infrastructure import ToolRunner
 
 log = logging.getLogger(__name__)
 

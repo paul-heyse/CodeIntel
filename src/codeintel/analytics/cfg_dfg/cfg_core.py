@@ -18,7 +18,7 @@ from codeintel.analytics.compute.graphs import (
     dfg_component_stats,
     normalize_decimal_id,
 )
-from codeintel.analytics.graphs.runtime import GraphContext
+from codeintel.analytics.runtime.context import GraphContext
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 MAX_SIMPLE_PATHS = 1000

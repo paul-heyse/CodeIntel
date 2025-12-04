@@ -38,6 +38,7 @@ from codeintel.ingestion.resources.protocol import (
     ResourceError,
     ResourceNotLoadedError,
     ResourceProvider,
+    ResourceProviderBase,
 )
 from codeintel.ingestion.resources.registry import (
     ResourceNotFoundError,
@@ -53,6 +54,7 @@ __all__ = [
     "ResourceNotFoundError",
     "ResourceNotLoadedError",
     "ResourceProvider",
+    "ResourceProviderBase",
     "ResourceRegistry",
     "ToolsProvider",
     "TrackerConfig",

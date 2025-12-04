@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Final
 
 import networkx as nx
 
+from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.plugins.metrics import (
@@ -28,7 +29,6 @@ from codeintel.graphs.plugins.metrics import (
     get_module_ext_metrics_plugin,
     module_ext_metrics_plugin,
 )
-from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.schemas import apply_all_schemas
@@ -165,16 +165,16 @@ def _make_execution_context(
         else make_snapshot(repo="test/metrics", commit="metrics123", repo_root=tmp_path)
     )
     scratch = PluginScratch()
-    resources = ResourceContainer()
+    resources = ResourceRegistry()
 
     # Always register storage; optionally graph resource
-    resources.register(StorageResource(gateway, tmp_path))
+    resources.register_provider(StorageResource(gateway, tmp_path))
     if use_resources and effective_engine is not None:
-        resources.register(GraphResource(effective_engine))
+        resources.register_provider(GraphResource(effective_engine))
 
     return GraphPluginExecutionContext(
         snapshot=snapshot,
-        graph_resources=resources,
+        resources=resources,
         gateway=gateway,
         scratch=scratch,
         plugin_name="metrics_test",

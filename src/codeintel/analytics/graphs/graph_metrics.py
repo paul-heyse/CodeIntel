@@ -28,15 +28,15 @@ from codeintel.analytics.compute.graphs import (
     component_metadata,
     neighbor_stats,
 )
-from codeintel.analytics.graphs.runtime import (
-    GraphContext,
-    GraphContextSpec,
-    resolve_graph_context,
-)
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,
+)
+from codeintel.analytics.runtime.context import (
+    GraphContext,
+    GraphContextSpec,
+    resolve_graph_context,
 )
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,

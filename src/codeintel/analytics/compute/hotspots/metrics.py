@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from codeintel.config import HotspotsStepConfig
 from codeintel.config.datasets import HotspotRow, hotspot_row_to_tuple
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.ingestion.tools.infrastructure import ToolRunner
+from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

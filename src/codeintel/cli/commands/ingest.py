@@ -35,6 +35,8 @@ from codeintel.cli.commands._common import (
     setup_logging,
 )
 from codeintel.config.primitives import SnapshotRef
+from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import (
     default_code_profile,
     default_config_profile,
@@ -59,8 +61,6 @@ from codeintel.ingestion.recipes import (
     stage,
 )
 from codeintel.ingestion.recipes.executor import RecipeExecutorContext
-from codeintel.ingestion.tools.infrastructure import ToolRunner
-from codeintel.ingestion.tools.service import ToolService
 from codeintel.runtime import new_run_context
 
 LOG = logging.getLogger(__name__)

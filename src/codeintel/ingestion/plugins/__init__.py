@@ -28,19 +28,6 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
-# Import contracts (no circular dependency issues)
-from codeintel.ingestion.plugins.contracts import (
-    ColumnConstraint,
-    ContractValidationResult,
-    ContractViolation,
-    ForeignKeyConstraint,
-    IngestContractSpec,
-    IngestContractValidator,
-    foreign_key_contract,
-    not_null_contract,
-    row_count_contract,
-)
-
 # Import protocol types first (these have no circular dependency issues)
 from codeintel.ingestion.plugins.protocol import (
     DEFAULT_INGEST_PLUGINS,
@@ -54,6 +41,19 @@ from codeintel.ingestion.plugins.protocol import (
     IngestRuntimeScratch,
     IngestSeverity,
     IngestStage,
+)
+
+# Import contracts from validation/ (canonical location)
+from codeintel.ingestion.validation import (
+    ColumnConstraint,
+    ContractValidationResult,
+    ContractViolation,
+    ForeignKeyConstraint,
+    IngestContractSpec,
+    IngestContractValidator,
+    foreign_key_contract,
+    not_null_contract,
+    row_count_contract,
 )
 
 if TYPE_CHECKING:

@@ -15,13 +15,13 @@ from typing import Any
 
 from anyio import to_thread
 
-from codeintel.ingestion.tools.infrastructure import (
+from codeintel.ingestion.engine.infrastructure import (
     ToolName,
-    ToolResult,
     ToolRunner,
+    ToolRunResult,
 )
-from codeintel.ingestion.tools.results import CoverageReport, ScipIndexResult
-from codeintel.ingestion.tools.service import ToolService
+from codeintel.ingestion.engine.results import CoverageReport, ScipIndexResult
+from codeintel.ingestion.engine.service import ToolService
 
 
 def _mkdir_parents(path: Path) -> None:
@@ -57,7 +57,7 @@ class FakeToolRunner(ToolRunner):
         cwd: Path | None = None,
         output_path: Path | None = None,
         timeout_s: float | None = None,
-    ) -> ToolResult:
+    ) -> ToolRunResult:
         """
         Execute a tool invocation with canned outputs.
 
@@ -76,7 +76,7 @@ class FakeToolRunner(ToolRunner):
 
         Returns
         -------
-        ToolResult
+        ToolRunResult
             Structured result capturing stdout/stderr and codes.
         """
         _ = cwd
@@ -94,7 +94,7 @@ class FakeToolRunner(ToolRunner):
             )
             await to_thread.run_sync(_mkdir_parents, output_path.parent)
             await to_thread.run_sync(_write_text, output_path, json.dumps(json_payload))
-        return ToolResult(
+        return ToolRunResult(
             tool=tool_enum,
             args=tuple(args_list),
             returncode=0,

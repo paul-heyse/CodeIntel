@@ -17,7 +17,7 @@ internal representations for tool plugin logic.
 
 See Also
 --------
-codeintel.ingestion.tools.results : Rich domain types for tool plugin internals
+codeintel.ingestion.engine.results : Rich domain types for tool plugin internals
 codeintel.ingestion.adapters.tool_runner : Adapter that bridges the layers
 """
 
@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 # Import canonical ToolStatus from tools.plugins
-from codeintel.ingestion.tools.plugins import ToolStatus
+from codeintel.ingestion.engine.plugins import ToolStatus
 
 
 @dataclass(frozen=True)

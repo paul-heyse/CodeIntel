@@ -17,7 +17,7 @@ from typing import Final
 
 import pytest
 
-from codeintel.graphs.resources.container import ResourceContainer, ResourceNotFoundError
+from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.gateway import StorageGateway
 
@@ -55,58 +55,57 @@ def test_storage_resource_gateway_access(graph_gateway: StorageGateway, tmp_path
 
 
 # ---------------------------------------------------------------------------
-# Tests: StorageResource with ResourceContainer
+# Tests: StorageResource with ResourceRegistry
 # ---------------------------------------------------------------------------
 
 
 def test_storage_resource_registration(graph_gateway: StorageGateway, tmp_path: Path) -> None:
-    """StorageResource can be registered in container."""
-    container = ResourceContainer()
+    """StorageResource can be registered in registry."""
+    registry = ResourceRegistry()
     resource = StorageResource(graph_gateway, tmp_path)
 
-    container.register(resource)
+    registry.register_provider(resource)
 
-    assert container.has(StorageResource.RESOURCE_NAME)
+    assert registry.has_by_name(StorageResource.RESOURCE_NAME)
 
 
 def test_storage_resource_retrieval(graph_gateway: StorageGateway, tmp_path: Path) -> None:
-    """StorageResource can be retrieved from container."""
-    container = ResourceContainer()
+    """StorageResource can be retrieved from registry."""
+    registry = ResourceRegistry()
     resource = StorageResource(graph_gateway, tmp_path)
-    container.register(resource)
+    registry.register_provider(resource)
 
-    retrieved = typing.cast("StorageResource", container.get(StorageResource.RESOURCE_NAME))
+    retrieved = typing.cast("StorageResource", registry.get_by_name(StorageResource.RESOURCE_NAME))
 
     assert retrieved is resource
     assert retrieved.gateway is graph_gateway
 
 
 def test_storage_resource_require(graph_gateway: StorageGateway, tmp_path: Path) -> None:
-    """StorageResource can be required from container."""
-    container = ResourceContainer()
+    """StorageResource can be required from registry."""
+    registry = ResourceRegistry()
     resource = StorageResource(graph_gateway, tmp_path)
-    container.register(resource)
+    registry.register_provider(resource)
 
-    required = container.require(StorageResource)
+    required = registry.require_by_name(StorageResource.RESOURCE_NAME)
 
     assert required is resource
 
 
 def test_storage_resource_not_registered() -> None:
-    """Container returns None for unregistered storage."""
-    container = ResourceContainer()
+    """Registry raises for unregistered storage."""
+    registry = ResourceRegistry()
 
-    result = container.get(StorageResource.RESOURCE_NAME)
-
-    assert result is None
+    with pytest.raises(KeyError):
+        registry.get_by_name(StorageResource.RESOURCE_NAME)
 
 
 def test_storage_resource_require_missing_raises() -> None:
     """Require raises KeyError for missing storage resource."""
-    container = ResourceContainer()
+    registry = ResourceRegistry()
 
-    with pytest.raises(ResourceNotFoundError):
-        container.require(StorageResource)
+    with pytest.raises(KeyError):
+        registry.require_by_name(StorageResource.RESOURCE_NAME)
 
 
 # ---------------------------------------------------------------------------
