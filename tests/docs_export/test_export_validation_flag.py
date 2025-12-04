@@ -9,8 +9,8 @@ import pytest
 from typer.testing import CliRunner
 
 from codeintel.cli import app
+from tests._helpers import GatewayOptions, provision_gateway_with_repo
 from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_function_types, insert_goids
-from tests._helpers.fixtures import GatewayOptions, provision_gateway_with_repo
 
 runner = CliRunner()
 

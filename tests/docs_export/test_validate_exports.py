@@ -11,7 +11,7 @@ from codeintel.pipeline.export.export_jsonl import ExportCallOptions, export_all
 from codeintel.pipeline.export.export_parquet import export_all_parquet
 from codeintel.pipeline.export.validate_exports import validate_files
 from codeintel.serving.services.errors import ExportError
-from tests._helpers.fixtures import (
+from tests._helpers import (
     GatewayOptions,
     ProvisioningConfig,
     provisioned_gateway,

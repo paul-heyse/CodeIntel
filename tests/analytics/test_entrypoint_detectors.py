@@ -135,7 +135,7 @@ def test_entrypoint_candidate_job_metadata() -> None:
 
 def test_entrypoint_candidate_extra_metadata() -> None:
     """EntryPointCandidate can store extra metadata."""
-    extra = {"custom_field": "value", "count": 42}
+    extra: dict[str, object] = {"custom_field": "value", "count": 42}
     candidate = EntryPointCandidate(
         kind="http_handler",
         framework="custom",
@@ -191,7 +191,7 @@ def test_entrypoint_candidate_optional_fields() -> None:
 
 def test_entrypoint_candidate_evidence_list() -> None:
     """EntryPointCandidate has evidence list."""
-    evidence = [{"type": "decorator", "line": 10}]
+    evidence: list[dict[str, object]] = [{"type": "decorator", "line": 10}]
     candidate = EntryPointCandidate(
         kind="http_handler",
         framework="fastapi",

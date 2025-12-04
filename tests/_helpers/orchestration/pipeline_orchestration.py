@@ -25,8 +25,8 @@ from codeintel.pipeline.orchestration.core import PipelineContext
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow
 from tests._helpers.configs.pipeline_config import COMMIT, REPO, PipelineEnv
+from tests._helpers.orchestration.tooling import generate_coverage_for_function
 from tests._helpers.row_protocol import insert_rows
-from tests._helpers.tooling import generate_coverage_for_function
 
 
 def create_pipeline_env(tmp_path: Path) -> PipelineEnv:

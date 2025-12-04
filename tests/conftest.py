@@ -12,7 +12,6 @@ from coverage import Coverage
 
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
-from tests._helpers.context import TestContext, create_test_context
 from tests._helpers.assertions import assert_single_edge
 from tests._helpers.configs import (
     CoverageEdgeEnv,
@@ -23,7 +22,8 @@ from tests._helpers.configs import (
     ProvisioningConfig,
     SpanTestEnv,
 )
-from tests._helpers.duckdb import memory_con_with_macros
+from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.gateway import memory_con_with_macros
 from tests._helpers.orchestration import (
     compute_coverage_edges,
     create_coverage_edge_env,

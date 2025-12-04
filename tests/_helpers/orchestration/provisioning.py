@@ -54,8 +54,8 @@ from tests._helpers.configs import (
     ProvisionOptions,
     RepoContext,
 )
-from tests._helpers.duckdb import gateway_with_macros
 from tests._helpers.fakes import utcnow
+from tests._helpers.gateway import gateway_with_macros
 from tests._helpers.orchestration.repo_writers import (
     write_callgraph_alias_repo,
     write_coverage_driver,
@@ -64,8 +64,8 @@ from tests._helpers.orchestration.repo_writers import (
 )
 from tests._helpers.orchestration.seeding import seed_callgraph_goids, seed_cfg_dfg_for_metrics
 from tests._helpers.orchestration.seeding_docs import seed_docs_export_minimal
+from tests._helpers.orchestration.tooling import make_tools_config
 from tests._helpers.row_protocol import insert_rows
-from tests._helpers.tooling import make_tools_config
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig

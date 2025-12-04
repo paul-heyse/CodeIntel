@@ -16,6 +16,7 @@ from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
+from tests._helpers import ProvisionedGateway
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -32,7 +33,6 @@ from tests._helpers.builders import (
     insert_symbol_graph_metrics_modules,
     insert_symbol_use_edges,
 )
-from tests._helpers.fixtures import ProvisionedGateway
 
 REPO = "demo/repo"
 COMMIT = "abc123"

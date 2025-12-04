@@ -25,8 +25,8 @@ from tests._helpers.configs.graph_config import (
     SpanSnapshot,
     SpanTestEnv,
 )
+from tests._helpers.orchestration.tooling import CoverageArtifact, generate_coverage_for_function
 from tests._helpers.row_protocol import insert_rows
-from tests._helpers.tooling import CoverageArtifact, generate_coverage_for_function
 
 
 def build_seeded_graph_engine(gateway: StorageGateway, seed: GraphEngineSeed) -> NxGraphEngine:

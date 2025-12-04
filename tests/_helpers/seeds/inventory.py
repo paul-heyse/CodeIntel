@@ -8,7 +8,21 @@ from typing import Final
 
 @dataclass(frozen=True)
 class SeedInventoryEntry:
-    """Describes a seeder/builder and its downstream consumers."""
+    """Describes a seeder/builder and its downstream consumers.
+
+    Attributes
+    ----------
+    name : str
+        Name of the seed helper or builder.
+    kind : str
+        Category of the seed (e.g., "provisioner", "seeder", "builder").
+    tables : list[str]
+        Tables populated by this seed.
+    consumers : list[str]
+        Test files that use this seed.
+    notes : str | None
+        Optional notes about usage.
+    """
 
     name: str
     kind: str
@@ -133,3 +147,6 @@ def inventory() -> list[SeedInventoryEntry]:
         Inventory entries describing seeders/builders and consumers.
     """
     return SEED_INVENTORY
+
+
+__all__ = ["SEED_INVENTORY", "SeedInventoryEntry", "inventory"]

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository
-from tests._helpers.fixtures import ProvisionedGateway
+from tests._helpers import ProvisionedGateway
 
 
 def test_resolve_function_goid_passthrough(fresh_gateway: StorageGateway) -> None:

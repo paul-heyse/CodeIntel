@@ -16,7 +16,7 @@ from tests._helpers.builders import (
     insert_function_metrics,
     insert_modules,
 )
-from tests._helpers.tooling import init_git_repo_with_history
+from tests._helpers.orchestration.tooling import init_git_repo_with_history
 
 EXPECTED_STABILITY_BUCKETS = {"new_hot", "stable", "churning", "legacy_hot"}
 MIN_EXPECTED_LINES_ADDED = 2
@@ -86,7 +86,7 @@ def test_function_history_populates_rows(
     compute_function_history(gateway, cfg, runner=git_ctx.runner)
 
     rows = con.execute("SELECT * FROM analytics.function_history").fetchall()
-    expect_equal(len(rows), 1, "Expected a single function history row.")
+    expect_equal(len(rows), 1, label="Expected a single function history row.")
     contract = get_dataset_contracts_by_table_key()["analytics.function_history"]
     columns = contract.schema.column_names() if contract.schema else []
     result = dict(zip(columns, rows[0], strict=True))
@@ -95,7 +95,7 @@ def test_function_history_populates_rows(
     expect_equal(result["author_count"], 1)
     expect_true(
         result["lines_added"] >= MIN_EXPECTED_LINES_ADDED,
-        "Expected lines_added to reflect git history",
+        message="Expected lines_added to reflect git history",
     )
     expect_in(result["stability_bucket"], EXPECTED_STABILITY_BUCKETS)
     expect_equal(result["function_goid_h128"], 1)

@@ -6,10 +6,7 @@ system used to verify plugin outputs meet data quality requirements.
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 from pathlib import Path
-
-import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.plugins.contracts import (
@@ -26,7 +23,7 @@ from codeintel.ingestion.plugins.contracts import (
     row_count_contract,
 )
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 # Test constants
 TEST_REPO = "test/repo"
@@ -61,8 +58,7 @@ def test_column_constraint_min_value() -> None:
 def test_column_constraint_is_frozen() -> None:
     """ColumnConstraint should be immutable."""
     c = ColumnConstraint(column="x", constraint_type="not_null")
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(c, "column", "y")
+    assert_cannot_setattr(c, "column", "y")
 
 
 def test_foreign_key_constraint_basic() -> None:

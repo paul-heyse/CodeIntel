@@ -6,7 +6,7 @@ import pytest
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.config.primitives import GraphFeatureFlags
-from tests._helpers.config_builders import make_snapshot
+from tests._helpers.factories.config_factories import make_snapshot
 
 
 def _expect(*, condition: bool, detail: str) -> None:

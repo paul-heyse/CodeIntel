@@ -27,7 +27,7 @@ from codeintel.pipeline.spec import (
     list_pipeline_specs,
 )
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fixtures import ProvisionedGateway, provisioned_gateway
+from tests._helpers import ProvisionedGateway, provisioned_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

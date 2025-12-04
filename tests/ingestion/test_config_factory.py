@@ -9,8 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-import pytest
-
 from codeintel.ingestion.core import IngestExecutionContext
 from codeintel.ingestion.plugins.config_factory import (
     DEFAULT_CONTEXT_MAPPINGS,
@@ -20,8 +18,8 @@ from codeintel.ingestion.plugins.config_factory import (
     get_config_fields,
     infer_config_mapping,
 )
+from tests._helpers.assertions import assert_cannot_setattr
 from tests._helpers.fakes import FakeBuildPaths, FakeSnapshotRef
-from tests._helpers.frozen_test import try_setattr
 
 # Test constants
 EXPECTED_FIELD_COUNT = 3
@@ -117,8 +115,7 @@ def test_config_mapping_frozen_dataclass() -> None:
     """Test that ConfigMapping is immutable."""
     mapping = ConfigMapping(config_class=SimpleDataclassConfig)
 
-    with pytest.raises(AttributeError):
-        try_setattr(mapping, "auto_infer", value=False)
+    assert_cannot_setattr(mapping, "auto_infer", value=False)
 
 
 # =============================================================================
@@ -174,8 +171,7 @@ def test_build_options_frozen_dataclass() -> None:
     """Test that BuildOptions is immutable."""
     options = BuildOptions()
 
-    with pytest.raises(AttributeError):
-        try_setattr(options, "mapping", {})
+    assert_cannot_setattr(options, "mapping", {})
 
 
 # =============================================================================

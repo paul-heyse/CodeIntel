@@ -19,7 +19,7 @@ from codeintel.ingestion import (
 from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
-from tests._helpers.tooling import build_tooling_context, run_static_tooling
+from tests._helpers.orchestration.tooling import build_tooling_context, run_static_tooling
 
 
 def _setup_gateway() -> StorageGateway:

@@ -22,7 +22,7 @@ from codeintel.ingestion.plugins.protocol import (
     IngestResourceHints,
     IngestStage,
 )
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -385,8 +385,7 @@ def test_ingest_plugin_metadata_frozen() -> None:
         version_hash="1.0.0",
     )
 
-    with pytest.raises(AttributeError):
-        try_setattr(meta, "name", "new_name")
+    assert_cannot_setattr(meta, "name", "new_name")
 
 
 # =============================================================================

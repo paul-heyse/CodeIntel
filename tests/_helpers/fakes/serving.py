@@ -1,4 +1,8 @@
-"""Reusable serving/MCP scope fixture packs."""
+"""Fake serving/MCP scope fixtures for testing.
+
+This module provides fake implementations for serving layer tests,
+including scope recording stubs for query service testing.
+"""
 
 from __future__ import annotations
 
@@ -39,6 +43,27 @@ class ScopeRecordingQuery:
         qualname: str | None = None,
         scope: GraphRunScope | None = None,
     ) -> dict[str, object]:
+        """
+        Record scope and return a stub function summary.
+
+        Parameters
+        ----------
+        urn
+            Function URN (unused).
+        goid_h128
+            GOID hash (unused).
+        rel_path
+            Relative path (unused).
+        qualname
+            Qualified name (unused).
+        scope
+            Graph run scope to record.
+
+        Returns
+        -------
+        dict[str, object]
+            Stub response with found=True.
+        """
         _ = (urn, goid_h128, rel_path, qualname)
         self.scopes.append(scope)
         return {

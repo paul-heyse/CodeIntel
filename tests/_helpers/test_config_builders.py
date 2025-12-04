@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.analytics.graph_runtime import GraphRuntimeOptions
-from tests._helpers.config_builders import make_graph_runtime_options, make_snapshot
+from tests._helpers.factories.config_factories import make_graph_runtime_options, make_snapshot
 
 
 def test_make_snapshot_respects_overrides(tmp_path: Path) -> None:

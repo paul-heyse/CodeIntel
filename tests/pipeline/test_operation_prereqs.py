@@ -22,7 +22,7 @@ from codeintel.pipeline.op_planner import (
 from codeintel.pipeline.spec import FULL_PIPELINE, NOOP_PIPELINE
 from codeintel.runtime import TriggerKind
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
-from tests._helpers.tooling import make_tools_config
+from tests._helpers.orchestration.tooling import make_tools_config
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

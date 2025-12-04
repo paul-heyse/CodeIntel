@@ -11,11 +11,9 @@ from `codeintel.graphs.compute.metrics.coupling`, including:
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 from typing import Final
 
 import networkx as nx
-import pytest
 
 from codeintel.graphs.compute.metrics.coupling import (
     CouplingMetrics,
@@ -23,7 +21,7 @@ from codeintel.graphs.compute.metrics.coupling import (
     compute_coupling,
     compute_distance_from_main_sequence,
 )
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 INSTABILITY_TOLERANCE: Final = 0.01
 HUB_DEPENDENT_COUNT: Final = 4
@@ -339,5 +337,4 @@ def test_coupling_metrics_frozen() -> None:
     """CouplingMetrics is frozen (immutable)."""
     m = CouplingMetrics(afferent=1, efferent=2, instability=0.5)
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(m, "afferent", 10)
+    assert_cannot_setattr(m, "afferent", 10)

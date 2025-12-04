@@ -10,7 +10,7 @@ import pytest
 from codeintel.config.datasets import GraphValidationRow, graph_validation_row_to_tuple
 from codeintel.pipeline.export.export_jsonl import export_all_jsonl
 from codeintel.pipeline.export.export_parquet import export_all_parquet
-from tests._helpers.fixtures import provision_docs_export_ready
+from tests._helpers import provision_docs_export_ready
 
 
 @pytest.mark.usefixtures("fresh_gateway")

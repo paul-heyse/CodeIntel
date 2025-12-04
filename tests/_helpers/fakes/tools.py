@@ -1,4 +1,8 @@
-"""Typed fakes for ingestion and analytics tests."""
+"""Fake tool runner and service implementations for testing.
+
+This module provides fake implementations of ToolRunner and ToolService
+for tests that need deterministic tool behavior without running real tools.
+"""
 
 from __future__ import annotations
 
@@ -6,101 +10,28 @@ import json
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
-import pandas as pd
 from anyio import to_thread
-from coverage import Coverage
 
-from codeintel.config import TestCoverageStepConfig
-from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.infrastructure_utilities.tool_runner import (
     ToolName,
     ToolResult,
     ToolRunner,
 )
-from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
 from codeintel.ingestion.tools.results import ScipIndexResult
 
 
 def _mkdir_parents(path: Path) -> None:
+    """Create parent directories for a path."""
     path.mkdir(parents=True, exist_ok=True)
 
 
 def _write_text(path: Path, payload: str) -> None:
+    """Write text content to a file."""
     path.write_text(payload, encoding="utf8")
-
-
-class FakeCoverageData:
-    """Lightweight coverage data implementing measured_files/contexts_by_lineno."""
-
-    def __init__(self, contexts_by_file: dict[str, dict[int, set[str]]]) -> None:
-        self._contexts_by_file = contexts_by_file
-
-    def measured_files(self) -> list[str]:
-        """
-        Return measured file paths.
-
-        Returns
-        -------
-        list[str]
-            File paths observed in coverage data.
-        """
-        return list(self._contexts_by_file.keys())
-
-    def contexts_by_lineno(self, filename: str) -> dict[int, set[str]]:
-        """
-        Return contexts keyed by line number for a file.
-
-        Parameters
-        ----------
-        filename
-            File path to resolve contexts for.
-
-        Returns
-        -------
-        dict[int, set[str]]
-            Mapping of line numbers to context identifiers.
-        """
-        return self._contexts_by_file.get(filename, {})
-
-
-class FakeCoverage:
-    """Coverage shim providing deterministic statements/contexts."""
-
-    def __init__(
-        self,
-        statements: dict[str, list[int]],
-        contexts: dict[str, dict[int, set[str]]],
-    ) -> None:
-        self._statements = statements
-        self._contexts = contexts
-
-    def analysis2(self, filename: str) -> tuple[str, list[int], list[int], list[int], list[int]]:
-        stmts = self._statements.get(filename, [])
-        return filename, stmts, [], [], stmts
-
-    def get_data(self) -> FakeCoverageData:
-        """
-        Return deterministic coverage data wrapper.
-
-        Returns
-        -------
-        FakeCoverageData
-            Coverage data exposing measured files and contexts.
-        """
-        return FakeCoverageData(self._contexts)
-
-
-class CoverageLoader(Protocol):
-    """Protocol for injecting coverage loaders."""
-
-    def __call__(self, cfg: TestCoverageStepConfig | object) -> Coverage:
-        """Return a Coverage-compatible object."""
-        raise NotImplementedError
 
 
 class FakeToolRunner(ToolRunner):
@@ -129,6 +60,19 @@ class FakeToolRunner(ToolRunner):
     ) -> ToolResult:
         """
         Execute a tool invocation with canned outputs.
+
+        Parameters
+        ----------
+        tool
+            Tool name or enum.
+        args
+            Arguments to pass to the tool.
+        cwd
+            Working directory (ignored).
+        output_path
+            Optional output path for results.
+        timeout_s
+            Timeout in seconds (ignored).
 
         Returns
         -------
@@ -175,6 +119,13 @@ def write_dummy_scip_files(base_dir: Path, *, index_content: str = "[]") -> tupl
     """
     Create minimal SCIP artifacts for tests.
 
+    Parameters
+    ----------
+    base_dir
+        Base directory for SCIP files.
+    index_content
+        Content for the JSON index file.
+
     Returns
     -------
     tuple[Path, Path]
@@ -187,187 +138,6 @@ def write_dummy_scip_files(base_dir: Path, *, index_content: str = "[]") -> tupl
     index_scip.write_text("scip-binary", encoding="utf8")
     index_json.write_text(index_content, encoding="utf8")
     return index_scip, index_json
-
-
-def utcnow() -> datetime:
-    """
-    Return timezone-aware now for deterministic tests.
-
-    Returns
-    -------
-    datetime
-        Current timezone-aware datetime.
-    """
-    return datetime.now().astimezone()
-
-
-# =============================================================================
-# FakeIngestStorage - Protocol-compliant in-memory storage
-# =============================================================================
-
-
-@dataclass
-class FakeIngestStorage:
-    """Protocol-compliant in-memory storage implementing IngestStoragePort.
-
-    This fake implements the full IngestStoragePort protocol with in-memory
-    data structures, enabling tests to verify storage behavior without a
-    real database while maintaining protocol compliance.
-
-    Attributes
-    ----------
-    data : dict[str, list[Sequence[object]]]
-        In-memory data store keyed by table_key.
-    schemas : set[str]
-        Set of table keys for which schema has been ensured.
-    operations : list[tuple[str, str, object]]
-        Log of operations for verification (operation_type, table_key, details).
-    """
-
-    data: dict[str, list[Sequence[object]]] = field(default_factory=dict)
-    schemas: set[str] = field(default_factory=set)
-    operations: list[tuple[str, str, object]] = field(default_factory=list)
-
-    def ensure_schema(self, table_key: str) -> None:
-        """Ensure the schema exists for a table.
-
-        Parameters
-        ----------
-        table_key
-            Registry table key (e.g., "core.ast_nodes").
-        """
-        self.schemas.add(table_key)
-        if table_key not in self.data:
-            self.data[table_key] = []
-        self.operations.append(("ensure_schema", table_key, None))
-
-    def write_batch(
-        self,
-        table_key: str,
-        rows: Sequence[Sequence[object]],
-        *,
-        scope: str | None = None,
-    ) -> BatchResult:
-        """Write a batch of rows to a table.
-
-        Parameters
-        ----------
-        table_key
-            Registry table key (e.g., "core.ast_nodes").
-        rows
-            Row data matching the table's column order.
-        scope
-            Optional scope identifier for logging.
-
-        Returns
-        -------
-        BatchResult
-            Metadata about the write operation.
-        """
-        if table_key not in self.data:
-            self.data[table_key] = []
-        self.data[table_key].extend(rows)
-        self.operations.append(("write_batch", table_key, {"rows": len(rows), "scope": scope}))
-        return BatchResult(table_key=table_key, rows_written=len(rows), duration_s=0.0)
-
-    def delete_by_params(
-        self,
-        table_key: str,
-        params: Sequence[object],
-    ) -> int:
-        """Delete rows matching the given parameters.
-
-        Parameters
-        ----------
-        table_key
-            Registry table key.
-        params
-            Parameters for the delete statement.
-
-        Returns
-        -------
-        int
-            Number of rows deleted (always 0 in this fake).
-        """
-        self.operations.append(("delete_by_params", table_key, {"params": params}))
-        return 0
-
-    def delete_by_paths(
-        self,
-        table_key: str,
-        paths: Sequence[str],
-        *,
-        path_column: str = "rel_path",
-    ) -> int:
-        """Delete rows where path_column matches any of the provided paths.
-
-        Parameters
-        ----------
-        table_key
-            Registry table key.
-        paths
-            List of path values to delete.
-        path_column
-            Name of the column containing paths.
-
-        Returns
-        -------
-        int
-            Number of rows deleted (always 0 in this fake).
-        """
-        self.operations.append(
-            ("delete_by_paths", table_key, {"paths": paths, "path_column": path_column})
-        )
-        return 0
-
-    def execute_query(
-        self,
-        sql: str,
-        params: Sequence[object] | None = None,
-    ) -> QueryResult:
-        """Execute a query and return results.
-
-        Parameters
-        ----------
-        sql
-            SQL query string.
-        params
-            Optional query parameters.
-
-        Returns
-        -------
-        QueryResult
-            Empty query results (queries not supported in fake).
-        """
-        self.operations.append(("execute_query", sql, {"params": params}))
-        return QueryResult(rows=[], columns=(), row_count=0)
-
-    def fetch_dataframe(
-        self,
-        sql: str,
-        params: Sequence[object] | None = None,
-    ) -> object:
-        """Execute a query and return results as a DataFrame.
-
-        Parameters
-        ----------
-        sql
-            SQL query string.
-        params
-            Optional query parameters.
-
-        Returns
-        -------
-        object
-            Empty DataFrame-like object.
-        """
-        self.operations.append(("fetch_dataframe", sql, {"params": params}))
-        return pd.DataFrame()
-
-
-# =============================================================================
-# FakeToolService - Protocol-compliant ToolService with deterministic results
-# =============================================================================
 
 
 @dataclass
@@ -653,100 +423,10 @@ class FakeToolService(ToolService):
         return self.fake_config.pytest_success
 
 
-# =============================================================================
-# Typed Fake Config Primitives for Config Factory Tests
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class FakeSnapshotRef:
-    """Fake SnapshotRef for config factory and plugin tests.
-
-    Mirrors the real SnapshotRef interface with sensible test defaults.
-
-    Attributes
-    ----------
-    repo : str
-        Repository slug.
-    commit : str
-        Commit identifier.
-    repo_root : Path
-        Path to repository root.
-    branch : str | None
-        Optional branch name.
-    """
-
-    repo: str = "test/repo"
-    commit: str = "testcommit"
-    repo_root: Path = field(default_factory=lambda: Path("/repo"))
-    branch: str | None = None
-
-
-@dataclass(frozen=True)
-class FakeBuildPaths:
-    """Fake BuildPaths for config factory and plugin tests.
-
-    Mirrors the real BuildPaths interface with sensible test defaults.
-
-    Attributes
-    ----------
-    build_dir : Path
-        Root build directory.
-    db_path : Path
-        Path to DuckDB database.
-    document_output_dir : Path
-        Directory for output documents.
-    scip_dir : Path
-        Directory for SCIP artifacts.
-    coverage_json : Path
-        Path for coverage JSON.
-    pytest_report : Path
-        Path for pytest JSON report.
-    tool_cache : Path
-        Cache directory for tools.
-    log_db_path : Path
-        Path to logging database.
-    """
-
-    build_dir: Path = field(default_factory=lambda: Path("/build"))
-    db_path: Path = field(default_factory=lambda: Path("/build/codeintel.duckdb"))
-    document_output_dir: Path = field(default_factory=lambda: Path("/build/docs"))
-    scip_dir: Path = field(default_factory=lambda: Path("/build/scip"))
-    coverage_json: Path = field(default_factory=lambda: Path("/build/coverage.json"))
-    pytest_report: Path = field(default_factory=lambda: Path("/build/pytest.json"))
-    tool_cache: Path = field(default_factory=lambda: Path("/cache"))
-    log_db_path: Path = field(default_factory=lambda: Path("/build/log.duckdb"))
-
-
-@dataclass
-class FakePluginContext:
-    """Fake IngestExecutionContext for config factory tests.
-
-    Mirrors the real IngestExecutionContext interface with typed fields
-    for proper static analysis.
-
-    Attributes
-    ----------
-    snapshot : FakeSnapshotRef
-        Snapshot reference.
-    paths : FakeBuildPaths
-        Build paths.
-    tools : ToolsConfig | None
-        Optional tools configuration.
-    tracker : object | None
-        Optional change tracker (using object to avoid circular imports).
-    tool_service : ToolService | None
-        Optional tool service.
-    code_profile : object | None
-        Optional code scan profile.
-    config_profile : object | None
-        Optional config scan profile.
-    """
-
-    snapshot: FakeSnapshotRef = field(default_factory=FakeSnapshotRef)
-    paths: FakeBuildPaths = field(default_factory=FakeBuildPaths)
-    tools: ToolsConfig | None = None
-    tracker: object | None = None
-    tool_service: ToolService | None = None
-    code_profile: object | None = None
-    config_profile: object | None = None
+__all__ = [
+    "FakeScipResult",
+    "FakeToolRunner",
+    "FakeToolService",
+    "FakeToolServiceConfig",
+    "write_dummy_scip_files",
+]

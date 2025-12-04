@@ -1,8 +1,7 @@
-"""Helpers for history and timeseries testing."""
+"""Orchestration functions for history and timeseries testing."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,24 +10,7 @@ import pandas as pd
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.schemas import apply_all_schemas
-
-
-@dataclass(frozen=True)
-class SnapshotSpec:
-    """Specification for a minimal function snapshot."""
-
-    repo: str
-    commit: str
-    goid: int
-    rel_path: str
-    module: str
-    qualname: str
-    risk_score: float = 0.5
-    coverage_ratio: float = 0.5
-    risk_level: str = "medium"
-    cyclomatic_complexity: int = 1
-    loc: int = 10
-
+from tests._helpers.configs.history_config import SnapshotSpec
 
 _FP_CONTRACT = get_dataset_contracts_by_table_key()["analytics.function_profile"]
 _MP_CONTRACT = get_dataset_contracts_by_table_key()["analytics.module_profile"]
@@ -40,6 +22,13 @@ _FUNCTION_HISTORY_COLUMNS = _FH_CONTRACT.schema.column_names() if _FH_CONTRACT.s
 
 
 def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
+    """Build a function profile row from a snapshot spec.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Row tuple for function_profile table.
+    """
     columns = _FP_COLUMNS
     defaults: dict[str, object | None] = dict.fromkeys(columns, None)
     defaults.update(
@@ -66,6 +55,13 @@ def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
 
 
 def _module_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
+    """Build a module profile row from a snapshot spec.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Row tuple for module_profile table.
+    """
     columns = _MP_COLUMNS
     defaults: dict[str, object | None] = dict.fromkeys(columns, None)
     defaults.update(
@@ -154,3 +150,6 @@ def insert_function_history_row(
     )
     con.register("fh_df", fh_df)
     con.execute("INSERT INTO analytics.function_history BY NAME SELECT * FROM fh_df")
+
+
+__all__ = ["create_snapshot_db", "insert_function_history_row"]

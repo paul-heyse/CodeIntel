@@ -9,8 +9,6 @@ from __future__ import annotations
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
-import pytest
-
 from codeintel.ingestion.infrastructure_utilities.workers import (
     AST_WORKER_CONFIG,
     CST_WORKER_CONFIG,
@@ -22,7 +20,7 @@ from codeintel.ingestion.infrastructure_utilities.workers import (
     resolve_worker_count,
     worker_pool,
 )
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 # Test constants for magic values
 TEST_WORKER_COUNT = 42
@@ -64,8 +62,7 @@ def test_worker_config_frozen_dataclass() -> None:
     """WorkerConfig should be immutable."""
     config = WorkerConfig(env_var="TEST")
 
-    with pytest.raises(AttributeError):
-        try_setattr(config, "env_var", "NEW")
+    assert_cannot_setattr(config, "env_var", "NEW")
 
 
 # --- ResolveWorkerCount Tests ---

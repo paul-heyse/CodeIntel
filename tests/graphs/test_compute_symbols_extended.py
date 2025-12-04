@@ -11,10 +11,7 @@ from `codeintel.graphs.compute.symbols`, including:
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 from typing import Final
-
-import pytest
 
 from codeintel.graphs.compute.symbols import (
     SymbolOccurrence,
@@ -23,7 +20,7 @@ from codeintel.graphs.compute.symbols import (
     build_def_map,
     build_use_edges,
 )
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 # Constants - SCIP Role Bitmasks
 ROLE_DEFINITION: Final = 1
@@ -124,8 +121,7 @@ def test_symbol_occurrence_frozen() -> None:
         roles=1,
     )
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(occ, "symbol", "changed")
+    assert_cannot_setattr(occ, "symbol", "changed")
 
 
 def test_build_def_map_simple() -> None:
@@ -318,8 +314,7 @@ def test_symbol_use_edge_frozen() -> None:
         same_module=False,
     )
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(edge, "symbol", "changed")
+    assert_cannot_setattr(edge, "symbol", "changed")
 
 
 def test_symbol_use_row_attributes() -> None:
@@ -351,5 +346,4 @@ def test_symbol_use_row_frozen() -> None:
         use_goid_h128=None,
     )
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(row, "symbol", "changed")
+    assert_cannot_setattr(row, "symbol", "changed")

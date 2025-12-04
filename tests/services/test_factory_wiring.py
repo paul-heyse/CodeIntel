@@ -21,8 +21,8 @@ from codeintel.serving.mcp.backend import HttpBackend
 from codeintel.serving.services.query_service import HttpQueryService, LocalQueryService
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.views import create_all_views
+from tests._helpers import GatewayOptions, provision_gateway_with_repo
 from tests._helpers.builders import RepoMapRow, insert_repo_map
-from tests._helpers.fixtures import GatewayOptions, provision_gateway_with_repo
 
 
 def _seed_repo_identity(repo_root: Path, db_path: Path, repo: str, commit: str) -> None:

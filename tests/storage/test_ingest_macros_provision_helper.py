@@ -6,7 +6,7 @@ from pathlib import Path
 
 from codeintel.storage.ingest_macros import list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS
-from tests._helpers.fixtures import provision_gateway_with_repo
+from tests._helpers import provision_gateway_with_repo
 
 
 def test_provision_helper_registers_macros(tmp_path: Path) -> None:

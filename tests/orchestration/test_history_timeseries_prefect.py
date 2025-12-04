@@ -12,8 +12,9 @@ from codeintel.pipeline.orchestration.prefect_flow import (
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.views import create_all_views
 from tests._helpers.assertions import expect_equal
-from tests._helpers.history import SnapshotSpec, create_snapshot_db
-from tests._helpers.tooling import init_git_repo_with_history
+from tests._helpers.configs.history_config import SnapshotSpec
+from tests._helpers.orchestration.history import create_snapshot_db
+from tests._helpers.orchestration.tooling import init_git_repo_with_history
 
 
 def test_prefect_history_timeseries_step(tmp_path: Path, prefect_quiet_env: None) -> None:

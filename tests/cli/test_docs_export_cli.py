@@ -11,7 +11,7 @@ from codeintel.cli.commands.docs import GatewayFactory, cmd_docs_export
 from codeintel.config.models import CodeIntelConfig
 from codeintel.pipeline.export.runner import ExportOptions
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fixtures import provision_docs_export_ready
+from tests._helpers import provision_docs_export_ready
 
 
 def _make_args(tmp_path: Path) -> argparse.Namespace:

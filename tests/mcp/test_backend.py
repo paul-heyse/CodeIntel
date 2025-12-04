@@ -7,7 +7,7 @@ import pytest
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.backend import MAX_ROWS_LIMIT, DuckDBBackend
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fixtures import seed_mcp_backend
+from tests._helpers import seed_mcp_backend
 
 
 @pytest.fixture
