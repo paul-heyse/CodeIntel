@@ -2,6 +2,9 @@
 
 This module provides a builder pattern for constructing analytics
 recipes with a clean, chainable API.
+
+The canonical recipe builder now lives in codeintel.core.recipes.dsl.
+This module re-exports it and provides analytics-specific convenience.
 """
 
 from __future__ import annotations
@@ -9,6 +12,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from codeintel.analytics.recipes.model import AnalyticsRecipe
+from codeintel.core.recipes import RecipeBuilder as CoreRecipeBuilder
+from codeintel.core.recipes import recipe as core_recipe
+from codeintel.core.recipes import stage as core_stage
 
 
 class RecipeBuilder:
@@ -286,6 +292,11 @@ def recipe(name: str) -> RecipeBuilder:
 
 
 __all__ = [
+    # Re-export core types for gradual migration
+    "CoreRecipeBuilder",
+    # Analytics-specific types
     "RecipeBuilder",
+    "core_recipe",
+    "core_stage",
     "recipe",
 ]

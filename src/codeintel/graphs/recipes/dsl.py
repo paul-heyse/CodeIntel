@@ -1,101 +1,24 @@
 """Graph recipe DSL for declarative pipeline composition.
 
-This module provides a declarative domain-specific language for composing
-graph construction and analysis pipelines, mirroring the ingestion recipe
-system but specialized for graph workflows.
+This module re-exports unified recipe types from codeintel.core.recipes,
+providing backward compatibility for existing graph recipe code.
+
+The canonical definitions now live in codeintel.core.recipes.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from codeintel.core.recipes import Recipe, RecipeOptions, RecipeStage, recipe, stage
 
+# Backward-compatible aliases for graph-specific naming
+GraphStage = RecipeStage
+"""Alias for RecipeStage for backward compatibility."""
 
-@dataclass(frozen=True)
-class GraphStage:
-    """Stage within a graph recipe.
+GraphRecipeOptions = RecipeOptions
+"""Alias for RecipeOptions for backward compatibility."""
 
-    Attributes
-    ----------
-    name
-        Stage identifier.
-    plugins
-        Plugin names to execute in this stage.
-    parallel
-        Whether plugins can run in parallel.
-    fail_fast
-        Whether to abort on first failure.
-    optional
-        Whether the stage can be skipped.
-    """
-
-    name: str
-    plugins: tuple[str, ...]
-    parallel: bool = False
-    fail_fast: bool = True
-    optional: bool = False
-
-
-@dataclass(frozen=True)
-class GraphRecipeOptions:
-    """Global options for recipe execution.
-
-    Attributes
-    ----------
-    dry_run
-        Whether to simulate execution.
-    skip_on_unchanged
-        Whether to skip unchanged plugins.
-    max_parallel
-        Maximum parallel executions.
-    timeout_ms
-        Default timeout in milliseconds.
-    """
-
-    dry_run: bool = False
-    skip_on_unchanged: bool = False
-    max_parallel: int = 4
-    timeout_ms: int | None = None
-
-
-@dataclass(frozen=True)
-class GraphRecipe:
-    """Declarative graph recipe definition.
-
-    Attributes
-    ----------
-    name
-        Recipe identifier.
-    description
-        Human-readable description.
-    stages
-        Ordered stages to execute.
-    options
-        Global recipe options.
-    version
-        Recipe version string.
-    """
-
-    name: str
-    description: str
-    stages: tuple[GraphStage, ...]
-    options: GraphRecipeOptions = field(default_factory=GraphRecipeOptions)
-    version: str = "1.0"
-
-    @property
-    def all_plugins(self) -> tuple[str, ...]:
-        """Return all plugin names across all stages.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Unique plugin names in stage order.
-        """
-        plugins: list[str] = []
-        for stage in self.stages:
-            for plugin in stage.plugins:
-                if plugin not in plugins:
-                    plugins.append(plugin)
-        return tuple(plugins)
+GraphRecipe = Recipe
+"""Alias for Recipe for backward compatibility."""
 
 
 def graph_stage(
@@ -105,7 +28,7 @@ def graph_stage(
     parallel: bool = False,
     fail_fast: bool = True,
     optional: bool = False,
-) -> GraphStage:
+) -> RecipeStage:
     """Create a graph stage.
 
     Parameters
@@ -123,12 +46,12 @@ def graph_stage(
 
     Returns
     -------
-    GraphStage
+    RecipeStage
         Stage definition.
     """
-    return GraphStage(
+    return stage(
         name=name,
-        plugins=tuple(plugins),
+        plugins=plugins,
         parallel=parallel,
         fail_fast=fail_fast,
         optional=optional,
@@ -139,10 +62,10 @@ def graph_recipe(
     name: str,
     *,
     description: str = "",
-    stages: list[GraphStage],
-    options: GraphRecipeOptions | None = None,
+    stages: list[RecipeStage],
+    options: RecipeOptions | None = None,
     version: str = "1.0",
-) -> GraphRecipe:
+) -> Recipe:
     """Create a graph recipe.
 
     Parameters
@@ -160,22 +83,29 @@ def graph_recipe(
 
     Returns
     -------
-    GraphRecipe
+    Recipe
         Recipe definition.
     """
-    return GraphRecipe(
+    return recipe(
         name=name,
         description=description,
-        stages=tuple(stages),
-        options=options or GraphRecipeOptions(),
+        stages=stages,
+        options=options,
         version=version,
     )
 
 
 __all__ = [
+    # Graph-specific backward-compatible aliases
     "GraphRecipe",
     "GraphRecipeOptions",
     "GraphStage",
+    # Canonical names (from core.recipes)
+    "Recipe",
+    "RecipeOptions",
+    "RecipeStage",
     "graph_recipe",
     "graph_stage",
+    "recipe",
+    "stage",
 ]

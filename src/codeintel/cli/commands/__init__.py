@@ -1,7 +1,6 @@
 """CLI command modules for the unified CodeIntel CLI.
 
-This package contains Typer command groups migrated from the legacy argparse CLI,
-organized by functional area.
+This package contains Typer command groups organized by functional area.
 
 Command Groups
 --------------

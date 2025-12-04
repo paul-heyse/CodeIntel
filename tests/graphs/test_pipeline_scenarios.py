@@ -20,14 +20,14 @@ from typing import TYPE_CHECKING, Final
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.graphs.core.context import GraphExecutionContext
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginMetadata,
     GraphPluginStage,
 )
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
-from codeintel.graphs.core.result import GraphPluginResult
+from codeintel.graphs.core.result import PluginResult
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.recipes.dsl import graph_recipe, graph_stage
 from codeintel.graphs.recipes.executor import (
@@ -165,10 +165,10 @@ def _make_counting_plugin(name: str, stage: GraphPluginStage) -> FunctionalGraph
         Plugin that counts executions.
     """
 
-    def execute(ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute(ctx: GraphPluginExecutionContext) -> PluginResult:
         _CountingPlugin.execution_count += 1
         _CountingPlugin.last_repo = ctx.snapshot.repo
-        return GraphPluginResult.ok(row_counts={f"test.{name}": 1})
+        return PluginResult.ok(row_counts={f"test.{name}": 1})
 
     metadata = GraphPluginMetadata(
         name=name,
@@ -203,8 +203,8 @@ def _make_failing_plugin(
         Plugin that fails.
     """
 
-    def execute(_ctx: GraphExecutionContext) -> GraphPluginResult:
-        return GraphPluginResult.fail(error_msg)
+    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
+        return PluginResult.fail(error_msg)
 
     metadata = GraphPluginMetadata(
         name=name,
@@ -446,7 +446,7 @@ def test_fatal_error_stops_pipeline(
     _CountingPlugin.reset()
 
     # Create a plugin that raises an exception
-    def raise_exception(_ctx: GraphExecutionContext) -> GraphPluginResult:
+    def raise_exception(_ctx: GraphPluginExecutionContext) -> PluginResult:
         msg = "Fatal test error"
         raise RuntimeError(msg)
 

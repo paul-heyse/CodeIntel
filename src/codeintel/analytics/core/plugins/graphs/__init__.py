@@ -1,15 +1,12 @@
-"""Graph analytics plugins using the new protocol.
+"""Graph analytics plugins.
 
-This module provides graph-level analytics plugins migrated
-to the new unified plugin protocol.
+Graph metrics plugins are now provided by the graphs subsystem.
+Use `codeintel.graphs.plugins.metrics` for graph metric plugins.
+
+This module is kept for backward compatibility but no longer exports
+any analytics-specific graph plugins.
 """
 
 from __future__ import annotations
 
-from codeintel.analytics.core.plugins.graphs.core_metrics import (
-    CoreGraphMetricsPlugin,
-)
-
-__all__ = [
-    "CoreGraphMetricsPlugin",
-]
+__all__: list[str] = []

@@ -1,8 +1,8 @@
 """CodeIntel unified CLI entry point.
 
-This module provides the unified Typer-based CLI for CodeIntel, consolidating
-all functionality from both the legacy argparse CLI and the newer Typer-based
-application CLI into a single coherent interface.
+This module provides the Typer-based CLI for CodeIntel, exposing all functional
+areas (pipeline, ingest, graph, docs, datasets, etc.) under a single coherent
+interface.
 
 Command Groups
 --------------

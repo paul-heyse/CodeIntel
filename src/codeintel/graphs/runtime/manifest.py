@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.graphs.core.result import GraphPluginRunRecord
+from codeintel.core.plugins.result import PluginExecutionRecord
 
 if TYPE_CHECKING:
     from codeintel.config.steps_graphs import GraphRunScope
@@ -218,7 +218,7 @@ def dry_run_record(
     *,
     plugin: GraphPluginProtocol,
     params: RecordParams,
-) -> GraphPluginRunRecord:
+) -> PluginExecutionRecord:
     """Create a record for a dry-run execution.
 
     Parameters
@@ -230,12 +230,12 @@ def dry_run_record(
 
     Returns
     -------
-    GraphPluginRunRecord
+    PluginExecutionRecord
         Record marked as skipped due to dry-run.
     """
-    now = datetime.now(tz=UTC).isoformat()
-    return GraphPluginRunRecord(
-        name=plugin.metadata.name,
+    now = datetime.now(tz=UTC)
+    return PluginExecutionRecord(
+        plugin_name=plugin.metadata.name,
         status="skipped",
         started_at=now,
         ended_at=now,
@@ -259,7 +259,7 @@ def skip_record(
     plugin: GraphPluginProtocol,
     params: RecordParams,
     reason: str,
-) -> GraphPluginRunRecord:
+) -> PluginExecutionRecord:
     """Create a record for a skipped execution.
 
     Parameters
@@ -273,12 +273,12 @@ def skip_record(
 
     Returns
     -------
-    GraphPluginRunRecord
+    PluginExecutionRecord
         Record marked as skipped with the specified reason.
     """
-    now = datetime.now(tz=UTC).isoformat()
-    return GraphPluginRunRecord(
-        name=plugin.metadata.name,
+    now = datetime.now(tz=UTC)
+    return PluginExecutionRecord(
+        plugin_name=plugin.metadata.name,
         status="skipped",
         started_at=now,
         ended_at=now,

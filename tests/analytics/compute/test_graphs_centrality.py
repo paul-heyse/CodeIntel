@@ -9,7 +9,7 @@ from __future__ import annotations
 import networkx as nx
 import pytest
 
-from codeintel.analytics.compute.graphs.centrality import (
+from codeintel.graphs.compute.metrics.centrality import (
     CentralityMetrics,
     compute_betweenness,
     compute_pagerank,
@@ -32,6 +32,9 @@ TEST_PAGERANK = 0.25
 TEST_BETWEENNESS = 0.5
 TEST_IN_DEGREE = 3
 TEST_OUT_DEGREE = 2
+TEST_CLOSENESS = 0.75
+TEST_HARMONIC = 0.8
+TEST_EIGENVECTOR = 0.6
 
 # =============================================================================
 # Test Data: Realistic Graph Structures
@@ -179,27 +182,36 @@ def _make_dense_cluster() -> nx.DiGraph:
 def test_metrics_create_all_fields() -> None:
     """Create metrics dataclass with all fields."""
     metrics = CentralityMetrics(
-        node_id="test_node",
         pagerank=TEST_PAGERANK,
         betweenness=TEST_BETWEENNESS,
+        closeness=TEST_CLOSENESS,
+        harmonic=TEST_HARMONIC,
+        eigenvector=TEST_EIGENVECTOR,
         in_degree=TEST_IN_DEGREE,
         out_degree=TEST_OUT_DEGREE,
+        degree=TEST_IN_DEGREE + TEST_OUT_DEGREE,
     )
-    assert metrics.node_id == "test_node"
     assert metrics.pagerank == TEST_PAGERANK
     assert metrics.betweenness == TEST_BETWEENNESS
+    assert metrics.closeness == TEST_CLOSENESS
+    assert metrics.harmonic == TEST_HARMONIC
+    assert metrics.eigenvector == TEST_EIGENVECTOR
     assert metrics.in_degree == TEST_IN_DEGREE
     assert metrics.out_degree == TEST_OUT_DEGREE
+    assert metrics.degree == TEST_IN_DEGREE + TEST_OUT_DEGREE
 
 
 def test_metrics_is_frozen() -> None:
     """Metrics dataclass is immutable (frozen)."""
     metrics = CentralityMetrics(
-        node_id="test",
         pagerank=0.1,
         betweenness=0.2,
+        closeness=0.3,
+        harmonic=0.4,
+        eigenvector=0.5,
         in_degree=1,
         out_degree=1,
+        degree=2,
     )
     with pytest.raises(AttributeError):
         metrics.pagerank = 0.5  # type: ignore[misc]
@@ -322,13 +334,14 @@ def test_pagerank_sums_to_one() -> None:
     assert abs(total - PAGERANK_SUM) < TOLERANCE
 
 
-def test_pagerank_keys_are_strings() -> None:
-    """PageRank result keys are always strings."""
+def test_pagerank_keys_match_nodes() -> None:
+    """PageRank result keys match original node types."""
     graph = nx.DiGraph()
     graph.add_edges_from([(1, 2), (2, 3)])  # Integer node IDs
     result = compute_pagerank(graph)
+    # Keys should be the original node types
     for key in result:
-        assert isinstance(key, str)
+        assert isinstance(key, int)
 
 
 def test_pagerank_values_are_floats() -> None:
@@ -432,13 +445,14 @@ def test_betweenness_realistic_call_graph() -> None:
     assert result["process_request"] > 0
 
 
-def test_betweenness_keys_are_strings() -> None:
-    """Betweenness result keys are always strings."""
+def test_betweenness_keys_match_nodes() -> None:
+    """Betweenness result keys match original node types."""
     graph = nx.DiGraph()
     graph.add_edges_from([(1, 2), (2, 3)])
     result = compute_betweenness(graph)
+    # Keys should be the original node types
     for key in result:
-        assert isinstance(key, str)
+        assert isinstance(key, int)
 
 
 def test_betweenness_values_are_floats() -> None:

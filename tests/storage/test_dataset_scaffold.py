@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from argparse import Namespace
 from dataclasses import replace
 from pathlib import Path
 
@@ -107,24 +106,24 @@ def test_scaffold_registry_conflict_blocks_creation(tmp_path: Path) -> None:
         jsonl_datasets={},
         parquet_datasets={},
     )
-    args = Namespace(
-        name=opts.name,
-        kind="table",
-        table_key=opts.table_key,
-        schema_id=opts.schema_id,
-        stable_id=opts.stable_id,
-        jsonl_filename=opts.jsonl_filename,
-        parquet_filename=opts.parquet_filename,
-        overwrite=False,
-        specs_snapshot=tmp_path / "missing.json",
-        owner=None,
-        freshness_sla=None,
-        retention_policy=None,
-        schema_version=opts.schema_version,
-        validation_profile=opts.validation_profile,
-        output_dir=opts.output_dir,
-        dry_run=False,
-        emit_bootstrap_snippet=False,
-    )
     with pytest.raises(ScaffoldConfigError):
-        build_scaffold_options(args, registry=registry)
+        build_scaffold_options(
+            name=opts.name,
+            kind="table",
+            table_key=opts.table_key,
+            owner=None,
+            freshness_sla=None,
+            retention_policy=None,
+            schema_version=opts.schema_version,
+            validation_profile=opts.validation_profile,
+            schema_id=opts.schema_id,
+            jsonl_filename=opts.jsonl_filename,
+            parquet_filename=opts.parquet_filename,
+            stable_id=opts.stable_id,
+            specs_snapshot=tmp_path / "missing.json",
+            output_dir=opts.output_dir,
+            overwrite=False,
+            dry_run=False,
+            emit_bootstrap_snippet=False,
+            registry=registry,
+        )

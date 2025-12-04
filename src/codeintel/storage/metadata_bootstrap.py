@@ -273,18 +273,6 @@ METADATA_SCHEMA_DDL_REST: tuple[str, ...] = (
     );
     """,
     """
-    ALTER TABLE metadata.datasets ADD COLUMN IF NOT EXISTS family TEXT;
-    """,
-    """
-    ALTER TABLE metadata.datasets ADD COLUMN IF NOT EXISTS description TEXT;
-    """,
-    """
-    ALTER TABLE metadata.datasets ADD COLUMN IF NOT EXISTS schema_version TEXT;
-    """,
-    """
-    ALTER TABLE metadata.datasets ADD COLUMN IF NOT EXISTS deprecated BOOLEAN DEFAULT FALSE;
-    """,
-    """
     CREATE OR REPLACE MACRO metadata.dataset_rows(
         table_key TEXT,
         row_limit BIGINT := 100,
@@ -837,7 +825,6 @@ def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
     """Create metadata schema, datasets catalog, and helper macros."""
     for stmt in METADATA_SCHEMA_DDL:
         con.execute(stmt)
-    con.execute("ALTER TABLE metadata.macro_registry ADD COLUMN IF NOT EXISTS schema_hash TEXT")
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS metadata.dataset_schema_registry (
@@ -1206,9 +1193,6 @@ def bootstrap_metadata_datasets(
         jsonl_filename = jsonl_mapping.get(table_key) or contract.jsonl_filename
         parquet_filename = parquet_mapping.get(table_key) or contract.parquet_filename
 
-        # Check for deprecated field (added in new contracts.py)
-        deprecated = getattr(contract, "deprecated", False)
-
         _upsert_dataset_row(
             con,
             _DatasetUpsert(
@@ -1220,7 +1204,7 @@ def bootstrap_metadata_datasets(
                 family=contract.family or schema_prefix,
                 description=contract.description,
                 schema_version=contract.schema_version,
-                deprecated=deprecated,
+                deprecated=contract.deprecated,
             ),
         )
 

@@ -44,7 +44,7 @@ from codeintel.ingestion.ports.tools import (
     ScipOccurrence as PortScipOccurrence,
 )
 from codeintel.ingestion.ports.tools import ToolStatus as PortToolStatus
-from codeintel.ingestion.tool_service import CoverageFileReport, ToolService
+from codeintel.ingestion.tool_service import ToolService
 from codeintel.ingestion.tools import ToolPluginResult, build_default_registry
 from codeintel.ingestion.tools.plugins import ToolStatus as PluginToolStatus
 from codeintel.ingestion.tools.pyright import PyrightPlugin
@@ -836,38 +836,13 @@ def test_tool_service_run_ruff_not_found(tmp_path: Path) -> None:
 
 
 def test_tool_service_run_coverage_not_found(tmp_path: Path) -> None:
-    """ToolService.run_coverage_json should return empty list when not found."""
+    """ToolService.run_coverage_report should return empty report when not found."""
     tools_cfg = ToolsConfig.default()
     exc = ToolNotFoundError(ToolName.COVERAGE, tools_cfg.coverage_bin)
     runner = PresetRunner(exc)
     service = ToolService(runner, tools_cfg)
-    reports = asyncio.run(service.run_coverage_json(tmp_path))
-    assert reports == []
-
-
-def test_coverage_file_report_from_summary() -> None:
-    """CoverageFileReport.from_summary should convert summary."""
-    summary = CoverageFileSummary(
-        rel_path="module.py",
-        executed_lines=frozenset({1, 2, 3}),
-        missing_lines=frozenset({4, 5}),
-    )
-    report = CoverageFileReport.from_summary(summary)
-    assert report.rel_path == "module.py"
-    assert report.executed_lines == {1, 2, 3}
-    assert report.missing_lines == {4, 5}
-
-
-def test_coverage_file_report_attributes() -> None:
-    """CoverageFileReport should store coverage data."""
-    report = CoverageFileReport(
-        rel_path="test.py",
-        executed_lines={1, 2, 3},
-        missing_lines={4},
-    )
-    assert report.rel_path == "test.py"
-    assert len(report.executed_lines) == EXPECTED_TEST_COUNT
-    assert len(report.missing_lines) == 1
+    report = asyncio.run(service.run_coverage_report(tmp_path))
+    assert report.files == ()
 
 
 def test_tool_service_get_test_report_returns_parsed() -> None:
@@ -1397,8 +1372,8 @@ def test_tool_service_run_pyright_returns_errors_from_parsed_report(tmp_path: Pa
     assert isinstance(errors, dict)
 
 
-def test_tool_service_run_coverage_json_with_data(tmp_path: Path) -> None:
-    """ToolService.run_coverage_json should return file reports from parsed data."""
+def test_tool_service_run_coverage_report_with_data(tmp_path: Path) -> None:
+    """ToolService.run_coverage_report should return report from parsed data."""
     # Coverage plugin requires coverage JSON data
     run = ToolRunResult(
         tool=ToolName.COVERAGE,
@@ -1411,10 +1386,10 @@ def test_tool_service_run_coverage_json_with_data(tmp_path: Path) -> None:
     runner = PresetRunner(run)
     service = ToolService(runner)
 
-    reports = asyncio.run(service.run_coverage_json(tmp_path))
+    report = asyncio.run(service.run_coverage_report(tmp_path))
 
-    # Should return a list (may be empty depending on parsing)
-    assert isinstance(reports, list)
+    # Should return a CoverageReport
+    assert isinstance(report, CoverageReport)
 
 
 def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:

@@ -149,7 +149,7 @@ def _register_graph_plugin_plan_tool(mcp: FastMCP, backend: QueryBackendOrServic
                     resource_hints=(
                         {
                             "max_runtime_ms": plugin.metadata.resource_hints.max_runtime_ms,
-                            "memory_mb_hint": plugin.metadata.resource_hints.memory_mb_hint,
+                            "max_memory_mb": plugin.metadata.resource_hints.max_memory_mb,
                         }
                         if plugin.metadata.resource_hints is not None
                         else None

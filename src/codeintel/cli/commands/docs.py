@@ -50,7 +50,7 @@ LOG = logging.getLogger(__name__)
 
 
 class GatewayFactory(Protocol):
-    """Factory for creating gateways with optional read-only mode (test compatibility)."""
+    """Factory for creating gateways with optional read-only mode."""
 
     def __call__(self, cfg: CodeIntelConfig, *, read_only: bool) -> StorageGateway:
         """Create a gateway."""
@@ -198,7 +198,7 @@ def _resolve_export_config(
     )
 
 
-def _run_docs_export(
+def run_docs_export(
     cfg: CodeIntelConfig,
     validate_exports: bool,
     schemas: list[str] | None,
@@ -315,7 +315,7 @@ def docs_export(
         nx_gpu_strict,
     )
 
-    _run_docs_export(
+    run_docs_export(
         cfg=cfg,
         validate_exports=validate,
         schemas=list(schemas) if schemas else None,
@@ -326,108 +326,7 @@ def docs_export(
     )
 
 
-def cmd_docs_export(
-    args: object,
-    validator: Callable[[StorageGateway], None] = validate_dataset_registry,
-    export_runner: ExportRunner = run_validated_exports,
-    gateway_factory: GatewayFactory | None = None,
-) -> int:
-    """Execute docs export from argparse namespace (test compatibility).
-
-    Parameters
-    ----------
-    args
-        Argparse namespace with export options.
-    validator
-        Dataset validation callback.
-    export_runner
-        Export runner callback.
-    gateway_factory
-        Optional gateway factory override for testing.
-
-    Returns
-    -------
-    int
-        Exit code (0 on success).
-    """
-    from codeintel.cli.commands._common import (
-        build_graph_backend_config,
-        build_graph_feature_flags_from_env,
-    )
-    from codeintel.storage.config import StorageConfig
-    from codeintel.storage.gateway import open_gateway
-
-    db_path = Path(getattr(args, "db_path", ""))
-    paths_cfg = CliPathsInput(
-        repo_root=Path(getattr(args, "repo_root", "")),
-        build_dir=Path(getattr(args, "build_dir", "")),
-        db_path=db_path,
-        document_output_dir=Path(getattr(args, "document_output_dir", "")),
-    )
-    repo_cfg = RepoConfig(
-        repo=str(getattr(args, "repo", "")),
-        commit=str(getattr(args, "commit", "")),
-    )
-    cfg = CodeIntelConfig.from_cli_args(
-        repo_cfg=repo_cfg,
-        paths_cfg=paths_cfg,
-        options=CliConfigOptions(
-            graph_backend=build_graph_backend_config(
-                bool(getattr(args, "nx_gpu", False)),
-                str(getattr(args, "nx_backend", "auto")),
-                bool(getattr(args, "nx_gpu_strict", False)),
-            ),
-            graph_features=build_graph_feature_flags_from_env(),
-        ),
-    )
-
-    maybe_enable_nx_gpu(cfg.graph_backend)
-
-    if gateway_factory is not None:
-        gateway = gateway_factory(cfg, read_only=True)
-    else:
-        gateway = open_gateway(StorageConfig.for_readonly(db_path))
-
-    out_dir = cfg.paths.document_output_dir
-    if out_dir is None:
-        return 1
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    LOG.info("Exporting Parquet + JSONL datasets into %s", out_dir)
-
-    schemas_raw = getattr(args, "schemas", None)
-    datasets_raw = getattr(args, "datasets", None)
-    try:
-        export_runner(
-            gateway=gateway,
-            output_dir=out_dir,
-            options=ExportOptions(
-                export=ExportCallOptions(
-                    validate_exports=bool(getattr(args, "validate_exports", False)),
-                    schemas=list(schemas_raw) if schemas_raw else None,
-                    datasets=list(datasets_raw) if datasets_raw else None,
-                    require_normalized_macros=bool(
-                        getattr(args, "require_normalized_macros", False)
-                    ),
-                ),
-                validator=validator,
-            ),
-        )
-    except ExportError as exc:
-        log_problem(LOG, exc.detail)
-        return 1
-
-    LOG.info("Export complete.")
-    return 0
-
-
 __all__ = [
-    "GatewayFactory",
-    "cmd_docs_export",
     "docs_app",
     "run_docs_export",
 ]
-
-
-# Alias for test compatibility
-run_docs_export = _run_docs_export

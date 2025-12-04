@@ -1,78 +1,35 @@
 """Resource provider protocol definitions.
 
-This module defines the base protocol for resource providers, enabling
-type-safe dependency injection in graph plugins.
+This module re-exports unified resource provider types from codeintel.core.resources,
+providing backward compatibility for existing graph resource code.
+
+The canonical definitions now live in codeintel.core.resources.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, TypeVar, runtime_checkable
+from typing import TypeVar
+
+from codeintel.core.resources import ResourceProvider, ResourceProviderBase
 
 T = TypeVar("T")
-T_co = TypeVar("T_co", covariant=True)
+
+# Re-export core types
+__all__ = [
+    "BaseResourceProvider",
+    "ResourceProvider",
+    "ResourceProviderBase",
+]
 
 
-@runtime_checkable
-class ResourceProvider(Protocol[T_co]):
-    """Protocol for resource providers.
+class BaseResourceProvider[T](ResourceProviderBase[T]):
+    """Backward-compatible base for graph resource providers.
 
-    Resource providers supply access to infrastructure resources
-    (storage, catalog, engine) in a type-safe, injectable manner.
+    This class extends ResourceProviderBase to provide the graph-specific
+    interface expected by existing code (using `_create` instead of `_load`).
 
-    Type Parameters
-    ---------------
-    T_co
-        The type of value this provider supplies (covariant).
+    Subclasses should implement `_create()` to define resource creation logic.
     """
-
-    @property
-    def resource_name(self) -> str:
-        """Unique name identifying this resource type.
-
-        Returns
-        -------
-        str
-            Resource type identifier.
-        """
-        ...
-
-    def get(self) -> T_co:
-        """Get the resource value.
-
-        Returns
-        -------
-        T_co
-            The resource instance.
-        """
-        ...
-
-    def invalidate(self) -> None:
-        """Invalidate any cached resource value.
-
-        After invalidation, the next call to get() will create
-        a fresh resource instance.
-        """
-        ...
-
-
-class BaseResourceProvider[T]:
-    """Base implementation of ResourceProvider.
-
-    Provides common functionality for resource providers including
-    lazy initialization and cache invalidation.
-
-    Attributes
-    ----------
-    _name
-        Resource name.
-    _factory
-        Factory function to create the resource.
-    _cached
-        Cached resource value.
-    """
-
-    _name: str
-    _cached: T | None
 
     def __init__(self, name: str) -> None:
         """Initialize the provider.
@@ -82,8 +39,8 @@ class BaseResourceProvider[T]:
         name
             Unique resource name.
         """
+        super().__init__()
         self._name = name
-        self._cached = None
 
     @property
     def resource_name(self) -> str:
@@ -96,25 +53,15 @@ class BaseResourceProvider[T]:
         """
         return self._name
 
-    def get(self) -> T:
-        """Get the resource value, creating if necessary.
+    def _load(self) -> T:
+        """Load the resource by delegating to _create.
 
         Returns
         -------
         T
-            The resource instance.
-
-        Notes
-        -----
-        May raise `RuntimeError` if resource creation fails.
+            The created resource.
         """
-        if self._cached is None:
-            self._cached = self._create()
-        return self._cached
-
-    def invalidate(self) -> None:
-        """Invalidate the cached resource value."""
-        self._cached = None
+        return self._create()
 
     def _create(self) -> T:
         """Create a new resource instance.
@@ -128,9 +75,3 @@ class BaseResourceProvider[T]:
         """
         message = "Subclasses must implement _create()"
         raise NotImplementedError(message)
-
-
-__all__ = [
-    "BaseResourceProvider",
-    "ResourceProvider",
-]

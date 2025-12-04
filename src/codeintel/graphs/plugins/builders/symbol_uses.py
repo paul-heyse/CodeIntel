@@ -38,7 +38,7 @@ from codeintel.graphs.compute.symbols import (
 )
 from codeintel.graphs.core import (
     ComputationResult,
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginProtocol,
     make_builder_plugin,
 )
@@ -440,7 +440,7 @@ def _merge_module_map(
     return base_map
 
 
-def _build_symbol_uses(ctx: GraphExecutionContext) -> ComputationResult:
+def _build_symbol_uses(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Build symbol definition-to-use edges from SCIP JSON exports.
 
     Uses resource injection to access storage.
@@ -463,7 +463,7 @@ symbol_uses_builder_plugin = make_builder_plugin(
     name="symbol_uses_builder",
     computation=_build_symbol_uses,
     stage="edges",
-    produces_graphs=(),
+    produces_graph_kinds=(),
     depends_on=("goid_builder",),
     provides=("symbol_uses",),
     produces_tables=("graph.symbol_use_edges",),

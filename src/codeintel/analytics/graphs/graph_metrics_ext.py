@@ -9,8 +9,8 @@ from typing import cast
 
 import networkx as nx
 
+from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.datasets import (
-    DeleteScope,
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
@@ -220,6 +220,6 @@ def compute_graph_metrics_functions_ext(
         gateway,
         contract,
         rows,
-        delete_scope=DeleteScope(params=[repo, commit]),
+        delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )

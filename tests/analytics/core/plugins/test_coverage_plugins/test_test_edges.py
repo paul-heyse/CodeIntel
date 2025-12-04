@@ -47,9 +47,7 @@ def _create_config(tmp_path: Path | None = None) -> TestCoverageStepConfig:
         Test configuration.
     """
     repo_root = tmp_path or Path("/test/repo")
-    snapshot = SnapshotRef(
-        repo=TEST_REPO, commit=TEST_COMMIT, repo_root=repo_root
-    )
+    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=repo_root)
     coverage_file = repo_root / "coverage.json" if tmp_path else None
     return TestCoverageStepConfig(snapshot=snapshot, coverage_file=coverage_file)
 
@@ -270,9 +268,7 @@ def test_execute_handles_error_gracefully(
     plugin = CoverageTestEdgesPlugin()
 
     # Create a non-existent coverage file path to trigger error handling
-    snapshot = SnapshotRef(
-        repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path
-    )
+    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
     bad_config = TestCoverageStepConfig(
         snapshot=snapshot,
         coverage_file=tmp_path / "nonexistent" / "coverage.db",

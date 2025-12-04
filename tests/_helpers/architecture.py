@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.datasets import (
-    DeleteScope,
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
@@ -313,7 +313,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 created_at=now,
             )
         ],
-        delete_scope=DeleteScope(params=[repo, commit]),
+        delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
     insert_analytics_rows(
@@ -339,7 +339,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 created_at=now,
             )
         ],
-        delete_scope=DeleteScope(params=[repo, commit]),
+        delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
     insert_analytics_rows(
@@ -370,7 +370,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 created_at=now,
             )
         ],
-        delete_scope=DeleteScope(params=[repo, commit]),
+        delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
     insert_analytics_rows(
@@ -398,7 +398,7 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
                 created_at=now,
             )
         ],
-        delete_scope=DeleteScope(params=[repo, commit]),
+        delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
     gateway.con.execute(

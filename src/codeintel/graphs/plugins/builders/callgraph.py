@@ -47,7 +47,7 @@ from codeintel.graphs.compute.callgraph import (
 )
 from codeintel.graphs.core import (
     ComputationResult,
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginProtocol,
     make_builder_plugin,
 )
@@ -295,7 +295,7 @@ def _load_def_goid_map(gateway: StorageGateway, *, repo: str, commit: str) -> di
     return mapping
 
 
-def _build_call_graph(ctx: GraphExecutionContext) -> ComputationResult:
+def _build_call_graph(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Build call graph nodes and edges from GOIDs.
 
     Orchestrates the full call graph build pipeline:
@@ -361,7 +361,7 @@ callgraph_builder_plugin = make_builder_plugin(
     name="callgraph_builder",
     computation=_build_call_graph,
     stage="edges",
-    produces_graphs=(GraphKind.CALL_GRAPH,),
+    produces_graph_kinds=(GraphKind.CALL_GRAPH,),
     depends_on=("goid_builder",),
     provides=("call_graph",),
     produces_tables=("graph.call_graph_nodes", "graph.call_graph_edges"),

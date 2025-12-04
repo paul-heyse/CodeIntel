@@ -41,9 +41,7 @@ def _create_config() -> FunctionAnalyticsStepConfig:
     FunctionAnalyticsStepConfig
         Test configuration.
     """
-    snapshot = SnapshotRef(
-        repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo")
-    )
+    snapshot = SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=Path("/test/repo"))
     return FunctionAnalyticsStepConfig(snapshot=snapshot)
 
 

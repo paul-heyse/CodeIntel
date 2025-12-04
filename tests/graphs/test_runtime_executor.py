@@ -27,14 +27,14 @@ from codeintel.config.steps_graphs import (
     GraphPluginPolicy,
     GraphPluginRetryPolicy,
 )
-from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
+from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginMetadata,
     GraphPluginProtocol,
 )
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
-from codeintel.graphs.core.result import GraphPluginResult, GraphPluginRunRecord
+from codeintel.graphs.core.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.runtime import executor
 from codeintel.graphs.runtime.executor import (
@@ -169,19 +169,19 @@ def _make_test_plugin(
     """
     plugin_config = _resolve_plugin_config(config, overrides)
 
-    def execute(_ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
         if plugin_config.delay_ms > 0:
             time.sleep(plugin_config.delay_ms / 1000)
         if plugin_config.raise_exception is not None:
             error_msg = f"Test exception from {name}"
             raise plugin_config.raise_exception(error_msg)
         if plugin_config.succeed:
-            return GraphPluginResult.ok(
+            return PluginResult.ok(
                 row_counts=plugin_config.row_counts,
                 input_hash=plugin_config.input_hash,
                 options_hash=plugin_config.options_hash,
             )
-        return GraphPluginResult.fail(f"Plugin {name} failed")
+        return PluginResult.fail(f"Plugin {name} failed")
 
     metadata = GraphPluginMetadata(
         name=name,
@@ -217,7 +217,7 @@ def _make_gateway_and_snapshot(tmp_path: Path) -> tuple[StorageGateway, Snapshot
 def _make_execution_context(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
-) -> GraphExecutionContext:
+) -> GraphPluginExecutionContext:
     """Create a graph execution context.
 
     Parameters
@@ -229,14 +229,14 @@ def _make_execution_context(
 
     Returns
     -------
-    GraphExecutionContext
+    GraphPluginExecutionContext
         Execution context for plugins.
     """
-    scratch = GraphRuntimeScratch()
-    return GraphExecutionContext(
+    scratch = PluginScratch()
+    return GraphPluginExecutionContext(
         snapshot=snapshot,
-        resources=ResourceContainer(),
-        _gateway=gateway,
+        graph_resources=ResourceContainer(),
+        gateway=gateway,
         scratch=scratch,
         plugin_name="test_plugin",
         run_id="test-run-executor",
@@ -403,7 +403,7 @@ def test_execute_plugin_fatal_raises_plugin_fatal_error(tmp_path: Path) -> None:
             )
 
         assert exc_info.value.record.status == "failed"
-        assert exc_info.value.record.name == "fatal_plugin"
+        assert exc_info.value.record.plugin_name == "fatal_plugin"
     finally:
         gateway.close()
 
@@ -476,19 +476,19 @@ def test_execute_plugin_returns_plugin_hashes(tmp_path: Path) -> None:
 
 def test_status_counts_aggregates_correctly() -> None:
     """Status counts correctly aggregate success/failure/skip counts."""
-    now = datetime.now(tz=UTC).isoformat()
+    now = datetime.now(tz=UTC)
     records = [
-        GraphPluginRunRecord(
-            name="p1", status="succeeded", started_at=now, ended_at=now, duration_ms=10
+        PluginExecutionRecord(
+            plugin_name="p1", status="succeeded", started_at=now, ended_at=now, duration_ms=10
         ),
-        GraphPluginRunRecord(
-            name="p2", status="succeeded", started_at=now, ended_at=now, duration_ms=20
+        PluginExecutionRecord(
+            plugin_name="p2", status="succeeded", started_at=now, ended_at=now, duration_ms=20
         ),
-        GraphPluginRunRecord(
-            name="p3", status="failed", started_at=now, ended_at=now, duration_ms=30
+        PluginExecutionRecord(
+            plugin_name="p3", status="failed", started_at=now, ended_at=now, duration_ms=30
         ),
-        GraphPluginRunRecord(
-            name="p4", status="skipped", started_at=now, ended_at=now, duration_ms=0
+        PluginExecutionRecord(
+            plugin_name="p4", status="skipped", started_at=now, ended_at=now, duration_ms=0
         ),
     ]
 
@@ -654,16 +654,16 @@ def test_run_graph_plugins_fatal_stops_remaining(tmp_path: Path) -> None:
             assert report.fatal_error
             # Only the fatal plugin should have a record
             assert len(report.records) == 1
-            assert report.records[0].name == "fatal_first"
+            assert report.records[0].plugin_name == "fatal_first"
     finally:
         gateway.close()
 
 
 def test_graph_run_report_captures_all_fields() -> None:
     """GraphRunReport correctly captures all execution fields."""
-    now = datetime.now(tz=UTC).isoformat()
-    record = GraphPluginRunRecord(
-        name="test_plugin",
+    now = datetime.now(tz=UTC)
+    record = PluginExecutionRecord(
+        plugin_name="test_plugin",
         status="succeeded",
         started_at=now,
         ended_at=now,
@@ -697,9 +697,9 @@ def test_graph_run_report_captures_all_fields() -> None:
 
 def test_plugin_fatal_error_preserves_context() -> None:
     """PluginFatalError preserves record and exception message."""
-    now = datetime.now(tz=UTC).isoformat()
-    record = GraphPluginRunRecord(
-        name="fatal_plugin",
+    now = datetime.now(tz=UTC)
+    record = PluginExecutionRecord(
+        plugin_name="fatal_plugin",
         status="failed",
         started_at=now,
         ended_at=now,
@@ -710,7 +710,7 @@ def test_plugin_fatal_error_preserves_context() -> None:
 
     exc = PluginFatalError(record, original)
 
-    assert exc.record.name == "fatal_plugin"
+    assert exc.record.plugin_name == "fatal_plugin"
     assert exc.record.status == "failed"
     assert "Original exception message" in str(exc)
 

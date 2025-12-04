@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
+
+if TYPE_CHECKING:
+    from codeintel.analytics.adapters.base import DeleteScope
 
 from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
@@ -68,14 +71,6 @@ def _build_delete_sql_by_table() -> dict[str, str]:
 
 
 DELETE_SQL_BY_TABLE: dict[str, str] = _build_delete_sql_by_table()
-
-
-@dataclass(frozen=True)
-class DeleteScope:
-    """Optional delete configuration applied before insert."""
-
-    params: Sequence[object]
-    columns: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -266,15 +261,16 @@ def insert_analytics_rows(
     )
     if delete_scope is not None:
         columns_for_delete = delete_scope.columns
+        delete_params = [delete_scope.repo, delete_scope.commit]
         if (
             columns_for_delete is None
             and contract.primary_key
-            and len(delete_scope.params) == len(contract.primary_key)
+            and len(delete_params) == len(contract.primary_key)
         ):
             columns_for_delete = contract.primary_key
         elif (
             columns_for_delete is None
-            and len(delete_scope.params) == REPO_COMMIT_ARITY
+            and len(delete_params) == REPO_COMMIT_ARITY
             and "repo" in schema_columns
             and "commit" in schema_columns
         ):
@@ -288,7 +284,7 @@ def insert_analytics_rows(
         if delete_sql is None:
             message = f"Unsupported delete target: {contract.table_key}"
             raise ValueError(message)
-        gateway.con.execute(delete_sql, list(delete_scope.params))
+        gateway.con.execute(delete_sql, delete_params)
 
     if rows:
         tuple_rows = [contract.to_tuple(row) for row in rows]

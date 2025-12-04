@@ -1,8 +1,10 @@
 """Unified graph plugin protocol.
 
-This module defines the protocol and metadata types for graph plugins,
-providing a unified interface for both graph builders and graph metric
-plugins without any dependency on the analytics subsystem.
+This module provides graph-specific plugin types that extend the unified
+plugin infrastructure from codeintel.core.plugins.
+
+The core types are imported and re-exported, while graph-specific types
+like `GraphPluginMetadata` extend them with graph-related fields.
 """
 
 from __future__ import annotations
@@ -10,22 +12,36 @@ from __future__ import annotations
 import importlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, TypedDict, Unpack, cast, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, Unpack, cast, runtime_checkable
 
 from pydantic import BaseModel
 
-from codeintel.graphs.core.context import GraphExecutionContext
-from codeintel.graphs.core.result import GraphPluginResult
+from codeintel.core.plugins.protocol import (
+    PluginCapability,
+    PluginInputSpec,
+    PluginIsolation,
+    PluginKind,
+    PluginMetadata,
+    PluginOutputSpec,
+    PluginResourceHints,
+    PluginSeverity,
+    PluginStage,
+    ValidationResult,
+)
+from codeintel.core.plugins.result import PluginResult, PluginStatus
 from codeintel.graphs.engine import GraphKind
 
+if TYPE_CHECKING:
+    from codeintel.graphs.core.context import GraphPluginExecutionContext
+
+# Graph-specific plugin kinds and stages
 GraphPluginKind = Literal["builder", "metric", "validation"]
+"""Plugin kinds specific to graph processing."""
 
 GraphPluginStage = Literal[
-    # Builder stages
     "goid",
     "edges",
     "structure",
-    # Metric stages
     "core",
     "cfg",
     "dfg",
@@ -34,50 +50,98 @@ GraphPluginStage = Literal[
     "subsystem",
     "config",
     "stats",
-    # Validation stage
     "validation",
 ]
-
-GraphPluginSeverity = Literal["fatal", "soft_fail", "skip_on_error"]
-
-GraphPluginIsolation = Literal["process", "thread", "none"]
+"""Plugin stages specific to graph processing."""
 
 
 @dataclass(frozen=True)
-class GraphPluginResourceHints:
-    """Optional resource hints used for planning and observability.
+class GraphPluginMetadata(PluginMetadata):
+    """Metadata for a graph plugin extending unified PluginMetadata.
+
+    This dataclass adds graph-specific fields for graph building and
+    metric computation while inheriting all standard plugin metadata.
 
     Attributes
     ----------
-    max_runtime_ms
-        Maximum expected runtime in milliseconds.
-    memory_mb_hint
-        Expected memory usage in megabytes.
-    cpu_intensive
-        Whether this plugin is CPU-bound.
-    io_intensive
-        Whether this plugin is I/O-bound.
+    produces_graph_kinds
+        Typed GraphKind values this plugin builds (for builders).
+    requires_graph_kinds
+        Typed GraphKind values this plugin needs (for metrics).
+    options_model
+        Optional Pydantic model for plugin options validation.
+    options_default
+        Default options value.
     """
 
-    max_runtime_ms: int | None = None
-    memory_mb_hint: int | None = None
-    cpu_intensive: bool = False
-    io_intensive: bool = False
+    produces_graph_kinds: tuple[GraphKind, ...] = ()
+    requires_graph_kinds: tuple[GraphKind, ...] = ()
+    options_model: type[BaseModel] | None = None
+    options_default: object | None = None
+
+    def __post_init__(self) -> None:
+        """Normalize derived flags and graph fields."""
+        # Call parent's __post_init__ for isolation flag normalization
+        super().__post_init__()
+
+        # Sync produces_graphs string tuple from GraphKind tuple
+        if self.produces_graph_kinds and not self.produces_graphs:
+            object.__setattr__(
+                self,
+                "produces_graphs",
+                tuple(str(g) for g in self.produces_graph_kinds),
+            )
+
+        # Sync requires_graphs string tuple from GraphKind tuple
+        if self.requires_graph_kinds and not self.requires_graphs:
+            object.__setattr__(
+                self,
+                "requires_graphs",
+                tuple(str(g) for g in self.requires_graph_kinds),
+            )
 
 
-@dataclass(frozen=True)
-class GraphPluginMetadata:
-    """Metadata for a graph plugin.
+def create_graph_metadata(
+    *,
+    name: str,
+    description: str,
+    kind: GraphPluginKind,
+    stage: GraphPluginStage,
+    severity: PluginSeverity = "fatal",
+    enabled_by_default: bool = True,
+    depends_on: tuple[str, ...] = (),
+    provides: tuple[str, ...] = (),
+    requires: tuple[str, ...] = (),
+    produces_tables: tuple[str, ...] = (),
+    produces_graph_kinds: tuple[GraphKind, ...] = (),
+    requires_graph_kinds: tuple[GraphKind, ...] = (),
+    resource_hints: PluginResourceHints | None = None,
+    supports_incremental: bool = False,
+    isolation_kind: PluginIsolation = "none",
+    options_model: type[BaseModel] | None = None,
+    options_default: object | None = None,
+    version_hash: str | None = None,
+    config_schema_ref: str | None = None,
+    row_count_tables: tuple[str, ...] = (),
+    cache_populates: tuple[str, ...] = (),
+    cache_consumes: tuple[str, ...] = (),
+    requires_isolation: bool = False,
+    scope_aware: bool = False,
+    supported_scopes: tuple[str, ...] = (),
+    contract_checkers: tuple[str, ...] = (),
+) -> GraphPluginMetadata:
+    """Create graph plugin metadata with sensible defaults.
 
-    Captures all declarative information about a graph plugin for
-    introspection, documentation, dependency resolution, and planning.
+    This factory function provides a convenient way to create metadata
+    with typed GraphKind values that automatically populate the string
+    produces_graphs and requires_graphs fields.
 
-    Attributes
+    Parameters
     ----------
     name
-        Unique plugin identifier (e.g., "callgraph_builder").
+        Unique plugin identifier.
     description
-        Human-readable description of what the plugin does.
+        Human-readable description.
     kind
         Plugin kind: builder, metric, or validation.
     stage
@@ -94,9 +158,9 @@ class GraphPluginMetadata:
         Capabilities required from other plugins.
     produces_tables
         DuckDB table keys populated by this plugin.
-    produces_graphs
+    produces_graph_kinds
         GraphKind values this plugin builds (for builders).
-    requires_graphs
+    requires_graph_kinds
         GraphKind values this plugin needs (for metrics).
     resource_hints
         Runtime resource hints for planning.
@@ -126,43 +190,42 @@ class GraphPluginMetadata:
         Scopes supported when scope-aware.
     contract_checkers
         Contract checker identifiers used by the plugin.
+
+    Returns
+    -------
+    GraphPluginMetadata
+        Graph plugin metadata with all fields populated.
     """
-
-    name: str
-    description: str
-    kind: GraphPluginKind
-    stage: GraphPluginStage
-    severity: GraphPluginSeverity = "fatal"
-    enabled_by_default: bool = True
-    depends_on: tuple[str, ...] = ()
-    provides: tuple[str, ...] = ()
-    requires: tuple[str, ...] = ()
-    produces_tables: tuple[str, ...] = ()
-    produces_graphs: tuple[GraphKind, ...] = ()
-    requires_graphs: tuple[GraphKind, ...] = ()
-    resource_hints: GraphPluginResourceHints | None = None
-    supports_incremental: bool = False
-    isolation_kind: GraphPluginIsolation = "none"
-    options_model: type[BaseModel] | None = None
-    options_default: object | None = None
-    version_hash: str | None = None
-    config_schema_ref: str | None = None
-    row_count_tables: tuple[str, ...] = ()
-    cache_populates: tuple[str, ...] = ()
-    cache_consumes: tuple[str, ...] = ()
-    requires_isolation: bool = False
-    scope_aware: bool = False
-    supported_scopes: tuple[str, ...] = ()
-    contract_checkers: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        """Normalize derived flags."""
-        if self.requires_isolation or self.isolation_kind != "none":
-            object.__setattr__(
-                self,
-                "requires_isolation",
-                self.requires_isolation or self.isolation_kind != "none",
-            )
+    return GraphPluginMetadata(
+        name=name,
+        description=description,
+        kind=kind,
+        stage=stage,
+        severity=severity,
+        enabled_by_default=enabled_by_default,
+        depends_on=depends_on,
+        provides=provides,
+        requires=requires,
+        produces_tables=produces_tables,
+        produces_graphs=tuple(str(g) for g in produces_graph_kinds),
+        requires_graphs=tuple(str(g) for g in requires_graph_kinds),
+        resource_hints=resource_hints,
+        supports_incremental=supports_incremental,
+        isolation_kind=isolation_kind,
+        requires_isolation=requires_isolation,
+        scope_aware=scope_aware,
+        supported_scopes=supported_scopes,
+        version_hash=version_hash,
+        config_schema_ref=config_schema_ref,
+        row_count_tables=row_count_tables,
+        cache_populates=cache_populates,
+        cache_consumes=cache_consumes,
+        contract_checkers=contract_checkers,
+        produces_graph_kinds=produces_graph_kinds,
+        requires_graph_kinds=requires_graph_kinds,
+        options_model=options_model,
+        options_default=options_default,
+    )
 
 
 @runtime_checkable
@@ -170,8 +233,8 @@ class GraphPluginProtocol(Protocol):
     """Protocol for graph plugins.
 
     Graph plugins implement this protocol to be registered and executed
-    by the graph runtime. This unified protocol supports builders, metrics,
-    and validation plugins.
+    by the graph runtime. This protocol uses `GraphPluginExecutionContext`
+    and `GraphPluginMetadata` for graph-specific functionality.
     """
 
     @property
@@ -185,7 +248,7 @@ class GraphPluginProtocol(Protocol):
         """
         ...
 
-    def execute(self, ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute(self, ctx: GraphPluginExecutionContext) -> PluginResult:
         """Execute the plugin.
 
         Parameters
@@ -195,30 +258,30 @@ class GraphPluginProtocol(Protocol):
 
         Returns
         -------
-        GraphPluginResult
+        PluginResult
             Result of plugin execution.
         """
         ...
 
 
 class GraphPluginMetaOptionsInput(TypedDict, total=False):
-    """Typed kwargs for GraphPluginMetaOptions.from_kwargs."""
+    """Typed keyword arguments for GraphPluginMetaOptions.from_kwargs factory."""
 
     name: str
     description: str
     kind: GraphPluginKind
     stage: GraphPluginStage
-    severity: GraphPluginSeverity
+    severity: PluginSeverity
     enabled_by_default: bool
     depends_on: tuple[str, ...]
     provides: tuple[str, ...]
     requires: tuple[str, ...]
     produces_tables: tuple[str, ...]
-    produces_graphs: tuple[GraphKind, ...]
-    requires_graphs: tuple[GraphKind, ...]
-    resource_hints: GraphPluginResourceHints | None
+    produces_graph_kinds: tuple[GraphKind, ...]
+    requires_graph_kinds: tuple[GraphKind, ...]
+    resource_hints: PluginResourceHints | None
     supports_incremental: bool
-    isolation_kind: GraphPluginIsolation
+    isolation_kind: PluginIsolation
     options_model: type[BaseModel] | None
     options_default: object | None
     version_hash: str | None
@@ -240,17 +303,17 @@ class GraphPluginMetaOptions:
     description: str | None = None
     kind: GraphPluginKind | None = None
     stage: GraphPluginStage | None = None
-    severity: GraphPluginSeverity = "fatal"
+    severity: PluginSeverity = "fatal"
     enabled_by_default: bool = True
     depends_on: tuple[str, ...] = ()
     provides: tuple[str, ...] = ()
     requires: tuple[str, ...] = ()
     produces_tables: tuple[str, ...] = ()
-    produces_graphs: tuple[GraphKind, ...] = ()
-    requires_graphs: tuple[GraphKind, ...] = ()
-    resource_hints: GraphPluginResourceHints | None = None
+    produces_graph_kinds: tuple[GraphKind, ...] = ()
+    requires_graph_kinds: tuple[GraphKind, ...] = ()
+    resource_hints: PluginResourceHints | None = None
     supports_incremental: bool = False
-    isolation_kind: GraphPluginIsolation = "none"
+    isolation_kind: PluginIsolation = "none"
     options_model: type[BaseModel] | None = None
     options_default: object | None = None
     version_hash: str | None = None
@@ -265,18 +328,22 @@ class GraphPluginMetaOptions:
 
     @staticmethod
     def from_kwargs(**kwargs: Unpack[GraphPluginMetaOptionsInput]) -> GraphPluginMetaOptions:
-        """
-        Build options from legacy kwargs.
+        """Build options from keyword arguments with validation.
+
+        Parameters
+        ----------
+        **kwargs
+            Keyword arguments matching GraphPluginMetaOptionsInput fields.
+
+        Returns
+        -------
+        GraphPluginMetaOptions
+            Options built from the provided keyword arguments.
 
         Raises
         ------
         ValueError
             If unsupported option keys are provided.
-
-        Returns
-        -------
-        GraphPluginMetaOptions
-            Parsed options object.
         """
         allowed_keys = set(GraphPluginMetaOptionsInput.__annotations__)
         unknown = set(kwargs) - allowed_keys
@@ -287,7 +354,7 @@ class GraphPluginMetaOptions:
 
     def to_metadata(
         self,
-        fn: Callable[[GraphExecutionContext], GraphPluginResult],
+        fn: Callable[[GraphPluginExecutionContext], PluginResult],
     ) -> GraphPluginMetadata:
         """Convert options to GraphPluginMetadata using function defaults.
 
@@ -310,7 +377,7 @@ class GraphPluginMetaOptions:
         if self.kind is None or self.stage is None:
             message = "Graph plugin kind and stage must be specified."
             raise ValueError(message)
-        return GraphPluginMetadata(
+        return create_graph_metadata(
             name=resolved_name,
             description=(self.description or fn.__doc__ or "").strip(),
             kind=self.kind,
@@ -321,8 +388,8 @@ class GraphPluginMetaOptions:
             provides=self.provides,
             requires=self.requires,
             produces_tables=self.produces_tables,
-            produces_graphs=self.produces_graphs,
-            requires_graphs=self.requires_graphs,
+            produces_graph_kinds=self.produces_graph_kinds,
+            requires_graph_kinds=self.requires_graph_kinds,
             resource_hints=self.resource_hints,
             supports_incremental=self.supports_incremental,
             isolation_kind=self.isolation_kind,
@@ -404,7 +471,7 @@ class FunctionalGraphPlugin:
     """
 
     _metadata: GraphPluginMetadata
-    _execute_fn: Callable[[GraphExecutionContext], GraphPluginResult]
+    _execute_fn: Callable[[GraphPluginExecutionContext], PluginResult]
 
     @property
     def metadata(self) -> GraphPluginMetadata:
@@ -417,7 +484,7 @@ class FunctionalGraphPlugin:
         """
         return self._metadata
 
-    def execute(self, ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute(self, ctx: GraphPluginExecutionContext) -> PluginResult:
         """Execute the wrapped function.
 
         Parameters
@@ -427,7 +494,7 @@ class FunctionalGraphPlugin:
 
         Returns
         -------
-        GraphPluginResult
+        PluginResult
             Result produced by the underlying callable.
         """
         return self._execute_fn(ctx)
@@ -438,7 +505,7 @@ def graph_plugin(
     meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
     **kwargs: Unpack[GraphPluginMetaOptionsInput],
-) -> Callable[[Callable[[GraphExecutionContext], GraphPluginResult]], FunctionalGraphPlugin]:
+) -> Callable[[Callable[[GraphPluginExecutionContext], PluginResult]], FunctionalGraphPlugin]:
     """Decorate a function as a graph plugin.
 
     Parameters
@@ -463,7 +530,7 @@ def graph_plugin(
         register_fn(plugin_instance)
 
     def decorator(
-        fn: Callable[[GraphExecutionContext], GraphPluginResult],
+        fn: Callable[[GraphPluginExecutionContext], PluginResult],
     ) -> FunctionalGraphPlugin:
         if meta is not None and kwargs:
             message = "Provide either meta or keyword metadata, not both."
@@ -517,6 +584,13 @@ DEFAULT_GRAPH_PLUGINS: tuple[str, ...] = (
     *DEFAULT_VALIDATION_PLUGINS,
 )
 
+# Re-export types from core.plugins for convenience
+# These are the unified types that graph code should use
+GraphPluginResult = PluginResult
+GraphPluginIsolation = PluginIsolation
+GraphPluginSeverity = PluginSeverity
+GraphPluginResourceHints = PluginResourceHints
+
 
 __all__ = [
     "DEFAULT_BUILDER_PLUGINS",
@@ -527,12 +601,27 @@ __all__ = [
     "GraphPluginIsolation",
     "GraphPluginKind",
     "GraphPluginMetaOptions",
+    "GraphPluginMetaOptionsInput",
     "GraphPluginMetadata",
     "GraphPluginPlan",
     "GraphPluginProtocol",
     "GraphPluginResourceHints",
+    "GraphPluginResult",
     "GraphPluginSeverity",
     "GraphPluginSkip",
     "GraphPluginStage",
+    "PluginCapability",
+    "PluginInputSpec",
+    "PluginIsolation",
+    "PluginKind",
+    "PluginMetadata",
+    "PluginOutputSpec",
+    "PluginResourceHints",
+    "PluginResult",
+    "PluginSeverity",
+    "PluginStage",
+    "PluginStatus",
+    "ValidationResult",
+    "create_graph_metadata",
     "graph_plugin",
 ]

@@ -30,7 +30,7 @@ from codeintel.graphs.catalog import load_function_catalog
 from codeintel.graphs.compute.callgraph import collect_import_edges
 from codeintel.graphs.core import (
     ComputationResult,
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginProtocol,
     make_builder_plugin,
 )
@@ -327,7 +327,7 @@ def build_import_graph(gateway: StorageGateway, cfg: ImportGraphStepConfig) -> N
     )
 
 
-def _build_import_graph(ctx: GraphExecutionContext) -> ComputationResult:
+def _build_import_graph(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Build module-level import graphs from LibCST parsing.
 
     Uses resource injection to access storage.
@@ -349,7 +349,7 @@ import_graph_builder_plugin = make_builder_plugin(
     name="import_graph_builder",
     computation=_build_import_graph,
     stage="structure",
-    produces_graphs=(GraphKind.IMPORT_GRAPH,),
+    produces_graph_kinds=(GraphKind.IMPORT_GRAPH,),
     depends_on=(),
     provides=("import_graph",),
     produces_tables=("graph.import_modules", "graph.import_edges"),

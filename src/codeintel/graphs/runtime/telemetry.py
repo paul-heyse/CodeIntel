@@ -23,9 +23,9 @@ except ImportError:  # pragma: no cover - optional dependency
 
 if TYPE_CHECKING:
     from codeintel.config.steps_graphs import GraphRunScope
-    from codeintel.graphs.core.context import GraphExecutionContext
+    from codeintel.core.plugins.result import PluginExecutionRecord
+    from codeintel.graphs.core.context import GraphPluginExecutionContext
     from codeintel.graphs.core.protocol import GraphPluginProtocol
-    from codeintel.graphs.core.result import GraphPluginRunRecord
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ class GraphRuntimeTelemetry:
         self,
         plugin: GraphPluginProtocol,
         run_id: str,
-        ctx: GraphExecutionContext,
+        ctx: GraphPluginExecutionContext,
     ) -> GraphPluginSpan:
         """Start a telemetry span for plugin execution.
 
@@ -168,7 +168,7 @@ class GraphRuntimeTelemetry:
     @staticmethod
     def finish_plugin(
         span: GraphPluginSpan,
-        record: GraphPluginRunRecord,
+        record: PluginExecutionRecord,
     ) -> None:
         """Finish a telemetry span with execution results.
 
@@ -207,7 +207,7 @@ class GraphRuntimeTelemetry:
 
     def record_metrics(
         self,
-        record: GraphPluginRunRecord,
+        record: PluginExecutionRecord,
         scope: GraphRunScope | None,
     ) -> None:
         """Record execution metrics.
@@ -223,7 +223,7 @@ class GraphRuntimeTelemetry:
             return
 
         labels: dict[str, str | int | float | bool] = {
-            "plugin_name": record.name,
+            "plugin_name": record.plugin_name,
             "status": record.status,
         }
         if scope is not None:
@@ -241,7 +241,7 @@ class GraphRuntimeTelemetry:
             elif record.status == "failed" and self._plugin_failure_counter is not None:
                 self._plugin_failure_counter.add(1, labels)
         except (AttributeError, TypeError):
-            log.debug("graph_telemetry.metrics.record_failed plugin=%s", record.name)
+            log.debug("graph_telemetry.metrics.record_failed plugin=%s", record.plugin_name)
 
     def start_run(
         self,

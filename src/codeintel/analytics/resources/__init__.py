@@ -1,8 +1,7 @@
 """Resource providers for lazy loading analytics resources.
 
-This package provides a lazy-loading resource system that replaces the
-monolithic `AnalyticsContext` with fine-grained, on-demand resource
-loading.
+This package provides a lazy-loading resource system with fine-grained,
+on-demand resource loading for analytics computations.
 
 Key Components
 --------------

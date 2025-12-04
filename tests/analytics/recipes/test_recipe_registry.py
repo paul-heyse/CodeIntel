@@ -80,9 +80,7 @@ def test_registry_empty(empty_registry: RecipeRegistry) -> None:
     assert empty_registry.list_tags() == ()
 
 
-def test_registry_register(
-    empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe
-) -> None:
+def test_registry_register(empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe) -> None:
     """Register a recipe successfully."""
     empty_registry.register(sample_recipe)
 
@@ -100,9 +98,7 @@ def test_registry_register_duplicate_raises(
         empty_registry.register(sample_recipe)
 
 
-def test_registry_get(
-    empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe
-) -> None:
+def test_registry_get(empty_registry: RecipeRegistry, sample_recipe: AnalyticsRecipe) -> None:
     """Get a recipe by name."""
     empty_registry.register(sample_recipe)
 

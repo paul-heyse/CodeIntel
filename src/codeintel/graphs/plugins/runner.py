@@ -24,8 +24,9 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
-from codeintel.graphs.core.result import GraphPluginResult
+from codeintel.core.plugins.context import PluginScratch
+from codeintel.core.plugins.result import PluginResult
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.resources.catalog import CatalogResource
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.storage import StorageResource
@@ -82,15 +83,15 @@ class GraphPluginRunner:
     """
 
     gateway: StorageGateway
-    scratch: GraphRuntimeScratch | None = None
+    scratch: PluginScratch | None = None
 
     def run_plugin(
         self,
         plugin: GraphPluginProtocol,
-        ctx: GraphExecutionContext,
+        ctx: GraphPluginExecutionContext,
         *,
         raise_on_failure: bool = True,
-    ) -> GraphPluginResult:
+    ) -> PluginResult:
         """Execute a single graph plugin.
 
         Parameters
@@ -104,7 +105,7 @@ class GraphPluginRunner:
 
         Returns
         -------
-        GraphPluginResult
+        PluginResult
             Plugin execution result.
 
         Raises
@@ -132,18 +133,18 @@ class GraphPluginRunner:
 
     @staticmethod
     def _with_scratch(
-        ctx: GraphExecutionContext,
-        scratch: GraphRuntimeScratch | None,
-    ) -> GraphExecutionContext:
+        ctx: GraphPluginExecutionContext,
+        scratch: PluginScratch | None,
+    ) -> GraphPluginExecutionContext:
         """Ensure the context has scratch space configured.
 
-        Since GraphExecutionContext.scratch has a default factory, it always
+        Since GraphPluginExecutionContext.scratch has a default factory, it always
         has scratch space. If the runner has shared scratch data, we copy
         entries into the context's scratch.
 
         Returns
         -------
-        GraphExecutionContext
+        GraphPluginExecutionContext
             Context ready for plugin execution.
         """
         if scratch is not None:
@@ -161,7 +162,8 @@ class GraphPluginRunner:
         snapshot: SnapshotRef,
         *,
         catalog_provider: FunctionCatalogProvider | None = None,
-    ) -> GraphExecutionContext:
+        run_id: str = "runner",
+    ) -> GraphPluginExecutionContext:
         """Build a properly configured execution context.
 
         Parameters
@@ -170,10 +172,12 @@ class GraphPluginRunner:
             Snapshot reference with repo, commit, and repo_root.
         catalog_provider
             Optional function catalog for enrichment.
+        run_id
+            Unique run identifier.
 
         Returns
         -------
-        GraphExecutionContext
+        GraphPluginExecutionContext
             Ready-to-use execution context with resources registered.
         """
         container = ResourceContainer()
@@ -183,10 +187,12 @@ class GraphPluginRunner:
         if catalog_provider is not None:
             container.register(CatalogResource(catalog_provider.catalog()))
 
-        return GraphExecutionContext(
+        return GraphPluginExecutionContext(
+            gateway=self.gateway,
             snapshot=snapshot,
-            resources=container,
-            scratch=self.scratch or GraphRuntimeScratch(),
+            run_id=run_id,
+            graph_resources=container,
+            scratch=self.scratch or PluginScratch(),
         )
 
 

@@ -41,7 +41,7 @@ from codeintel.graphs.compute.goid import (
 )
 from codeintel.graphs.core import (
     ComputationResult,
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginProtocol,
     make_builder_plugin,
 )
@@ -199,7 +199,7 @@ def _build_goid_entries(
     )
 
 
-def _build_goids(ctx: GraphExecutionContext) -> ComputationResult:
+def _build_goids(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Build GOIDs and crosswalk entries from AST nodes.
 
     Orchestrates the full GOID build pipeline:
@@ -288,7 +288,7 @@ goid_builder_plugin = make_builder_plugin(
     name="goid_builder",
     computation=_build_goids,
     stage="goid",
-    produces_graphs=(),
+    produces_graph_kinds=(),
     depends_on=(),
     provides=("goids",),
     produces_tables=("core.goids", "core.goid_crosswalk"),
@@ -354,9 +354,11 @@ def build_goids(
     container = ResourceContainer()
     container.register(StorageResource(gateway, cfg.snapshot.repo_root))
 
-    ctx = GraphExecutionContext(
+    ctx = GraphPluginExecutionContext(
+        gateway=gateway,
         snapshot=cfg.snapshot,
-        resources=container,
+        run_id="build_goids_cli",
+        graph_resources=container,
     )
 
     result = _build_goids(ctx)

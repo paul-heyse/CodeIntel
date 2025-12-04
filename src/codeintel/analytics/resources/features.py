@@ -92,7 +92,6 @@ class FeaturesProvider(LazyResource[dict[int, "FunctionAstFeatures"]]):
 
         Example
         -------
-        >>> existing_features = context.function_features_map
         >>> provider = FeaturesProvider.from_features(existing_features)
         >>> registry.register(FeaturesProvider, provider)
         """
@@ -151,19 +150,6 @@ class FeaturesProvider(LazyResource[dict[int, "FunctionAstFeatures"]]):
         )
 
         return features
-
-    @property
-    def function_features(self) -> dict[int, FunctionAstFeatures]:
-        """Return function features map.
-
-        Convenience property matching the legacy AnalyticsContext API.
-
-        Returns
-        -------
-        dict[int, FunctionAstFeatures]
-            Mapping of GOID to feature vector.
-        """
-        return self.get()
 
 
 __all__ = [

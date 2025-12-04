@@ -23,7 +23,7 @@ from codeintel.ingestion.adapters.duckdb_storage import (
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.ports.tools import ToolStatus
-from codeintel.ingestion.tool_service import CoverageFileReport
+from codeintel.ingestion.tools.results import CoverageReport
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.fakes import FakeToolService, FakeToolServiceConfig
 
@@ -482,13 +482,11 @@ def _make_success_service() -> FakeToolService:
             pyright_errors={"mod.py": 2, "other.py": 0},
             pyrefly_errors={"mod.py": 1},
             ruff_errors={"style.py": 3},
-            coverage_reports=[
-                CoverageFileReport(
-                    rel_path="mod.py",
-                    executed_lines={1, 2, 3},
-                    missing_lines={4, 5},
-                ),
-            ],
+            coverage_report=CoverageReport.from_file_reports(
+                [
+                    ("mod.py", {1, 2, 3}, {4, 5}),
+                ]
+            ),
             pytest_success=True,
         )
     )

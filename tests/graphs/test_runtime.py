@@ -23,7 +23,7 @@ from codeintel.config.steps_graphs import (
     GraphPluginRetryPolicy,
     GraphRunScope,
 )
-from codeintel.graphs.core.context import GraphExecutionContext, GraphRuntimeScratch
+from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginMetadata,
@@ -31,7 +31,7 @@ from codeintel.graphs.core.protocol import (
     GraphPluginSeverity,
 )
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
-from codeintel.graphs.core.result import GraphPluginResult, GraphPluginRunRecord
+from codeintel.graphs.core.result import PluginExecutionRecord, PluginResult
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.runtime.executor import (
     GraphExecutorContext,
@@ -134,15 +134,15 @@ def _make_executor_test_plugin(
         Test plugin instance.
     """
 
-    def execute(_ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
         if delay_ms > 0:
             time.sleep(delay_ms / 1000)
         if raise_exception is not None:
             error_msg = f"Test exception from {name}"
             raise raise_exception(error_msg)
         if succeed:
-            return GraphPluginResult.ok(row_counts=row_counts)
-        return GraphPluginResult.fail(f"Plugin {name} failed")
+            return PluginResult.ok(row_counts=row_counts)
+        return PluginResult.fail(f"Plugin {name} failed")
 
     metadata = GraphPluginMetadata(
         name=name,
@@ -180,8 +180,8 @@ def _make_planning_test_plugin(
         Test plugin instance.
     """
 
-    def execute(_ctx: GraphExecutionContext) -> GraphPluginResult:
-        return GraphPluginResult.ok()
+    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
+        return PluginResult.ok()
 
     metadata = GraphPluginMetadata(
         name=name,
@@ -210,8 +210,8 @@ def _make_telemetry_test_plugin(name: str) -> GraphPluginProtocol:
         Test plugin instance.
     """
 
-    def execute(_ctx: GraphExecutionContext) -> GraphPluginResult:
-        return GraphPluginResult.ok()
+    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
+        return PluginResult.ok()
 
     metadata = GraphPluginMetadata(
         name=name,
@@ -244,13 +244,13 @@ def _make_executor_context(tmp_path: Path) -> tuple[StorageGateway, SnapshotRef]
     return gateway, snapshot
 
 
-def _make_telemetry_context() -> tuple[GraphExecutionContext, StorageGateway]:
+def _make_telemetry_context() -> tuple[GraphPluginExecutionContext, StorageGateway]:
     """Create a test execution context for telemetry tests.
 
     Returns
     -------
     tuple
-        A tuple of (GraphExecutionContext, gateway).
+        A tuple of (GraphPluginExecutionContext, gateway).
         Caller is responsible for closing the gateway.
     """
     gateway = open_ingestion_gateway_with_macros(
@@ -258,13 +258,13 @@ def _make_telemetry_context() -> tuple[GraphExecutionContext, StorageGateway]:
     )
     apply_all_schemas(gateway.con)
     snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=Path())
-    scratch = GraphRuntimeScratch()
-    ctx = GraphExecutionContext(
+    scratch = PluginScratch()
+    ctx = GraphPluginExecutionContext(
         snapshot=snapshot,
-        resources=ResourceContainer(),
-        _gateway=gateway,
+        graph_resources=ResourceContainer(),
+        gateway=gateway,
         scratch=scratch,
-        plugin_name="test_plugin",
+        plugin_name="metrics_test",
         run_id="test-run-123",
     )
     return ctx, gateway
@@ -515,22 +515,22 @@ def test_run_graph_plugins_includes_timing(tmp_path: Path) -> None:
             report = run_graph_plugins(plan=plan, context=executor_context)
 
             assert report.duration_ms >= 0
-            assert report.started_at
-            assert report.ended_at
-            # Validate ISO format parses correctly
-            datetime.fromisoformat(report.started_at)
-            datetime.fromisoformat(report.ended_at)
+            assert report.started_at is not None
+            assert report.ended_at is not None
+            # Validate timestamps are proper datetime objects
+            assert isinstance(report.started_at, datetime)
+            assert isinstance(report.ended_at, datetime)
     finally:
         gateway.close()
 
 
 def test_graph_run_report_attributes() -> None:
     """GraphRunReport captures all execution attributes correctly."""
-    record = GraphPluginRunRecord(
-        name="test",
+    record = PluginExecutionRecord(
+        plugin_name="test",
         status="succeeded",
-        started_at=datetime.now(tz=UTC).isoformat(),
-        ended_at=datetime.now(tz=UTC).isoformat(),
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
         duration_ms=100.0,
     )
     report = GraphRunReport(
@@ -542,8 +542,8 @@ def test_graph_run_report_attributes() -> None:
         failure_count=0,
         skip_count=0,
         duration_ms=150.0,
-        started_at=datetime.now(tz=UTC).isoformat(),
-        ended_at=datetime.now(tz=UTC).isoformat(),
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
     )
 
     assert report.run_id == "run-123"
@@ -553,18 +553,18 @@ def test_graph_run_report_attributes() -> None:
 
 def test_plugin_fatal_error_exception() -> None:
     """PluginFatalError preserves execution record and original message."""
-    record = GraphPluginRunRecord(
-        name="fatal_test",
+    record = PluginExecutionRecord(
+        plugin_name="fatal_test",
         status="failed",
-        started_at=datetime.now(tz=UTC).isoformat(),
-        ended_at=datetime.now(tz=UTC).isoformat(),
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
         duration_ms=50.0,
         error="test error",
     )
     original = ValueError("Original error")
     exc = PluginFatalError(record, original)
 
-    assert exc.record.name == "fatal_test"
+    assert exc.record.plugin_name == "fatal_test"
     assert "Original error" in str(exc)
 
 
@@ -955,7 +955,7 @@ def test_dry_run_record() -> None:
 
     assert record.status == "skipped"
     assert record.meta.get("skipped_reason") == "dry_run"
-    assert record.name == "dry_run_plugin"
+    assert record.plugin_name == "dry_run_plugin"
 
 
 def test_skip_record() -> None:
@@ -1065,11 +1065,11 @@ def test_finish_plugin_records_duration() -> None:
         # Simulate some execution time
         time.sleep(0.01)
 
-        record = GraphPluginRunRecord(
-            name="duration_test_plugin",
+        record = PluginExecutionRecord(
+            plugin_name="duration_test_plugin",
             status="succeeded",
-            started_at=datetime.now(tz=UTC).isoformat(),
-            ended_at=datetime.now(tz=UTC).isoformat(),
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
             duration_ms=10.0,
         )
 
@@ -1123,11 +1123,11 @@ def test_record_metrics_without_otel() -> None:
         enable_metrics=False,
     )
 
-    record = GraphPluginRunRecord(
-        name="metrics_test",
+    record = PluginExecutionRecord(
+        plugin_name="metrics_test",
         status="succeeded",
-        started_at=datetime.now(tz=UTC).isoformat(),
-        ended_at=datetime.now(tz=UTC).isoformat(),
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
         duration_ms=100.0,
     )
 
@@ -1170,11 +1170,11 @@ def test_telemetry_handles_failed_plugin() -> None:
     try:
         span = telemetry.start_plugin(plugin, "run-fail", ctx)
 
-        record = GraphPluginRunRecord(
-            name="failed_plugin",
+        record = PluginExecutionRecord(
+            plugin_name="failed_plugin",
             status="failed",
-            started_at=datetime.now(tz=UTC).isoformat(),
-            ended_at=datetime.now(tz=UTC).isoformat(),
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
             duration_ms=50.0,
             error="Test error message",
         )
@@ -1197,11 +1197,11 @@ def test_telemetry_handles_skipped_plugin() -> None:
     try:
         span = telemetry.start_plugin(plugin, "run-skip", ctx)
 
-        record = GraphPluginRunRecord(
-            name="skipped_plugin",
+        record = PluginExecutionRecord(
+            plugin_name="skipped_plugin",
             status="skipped",
-            started_at=datetime.now(tz=UTC).isoformat(),
-            ended_at=datetime.now(tz=UTC).isoformat(),
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
             duration_ms=0.0,
         )
 
@@ -1223,11 +1223,11 @@ def test_telemetry_with_multiple_attempts() -> None:
     try:
         span = telemetry.start_plugin(plugin, "run-retry", ctx)
 
-        record = GraphPluginRunRecord(
-            name="retry_plugin",
+        record = PluginExecutionRecord(
+            plugin_name="retry_plugin",
             status="failed",
-            started_at=datetime.now(tz=UTC).isoformat(),
-            ended_at=datetime.now(tz=UTC).isoformat(),
+            started_at=datetime.now(tz=UTC),
+            ended_at=datetime.now(tz=UTC),
             duration_ms=150.0,
             attempts=3,
             error="Failed after retries",

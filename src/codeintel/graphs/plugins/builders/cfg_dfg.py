@@ -53,7 +53,7 @@ from codeintel.graphs.compute.dfg import (
 )
 from codeintel.graphs.core import (
     ComputationResult,
-    GraphExecutionContext,
+    GraphPluginExecutionContext,
     GraphPluginProtocol,
     make_builder_plugin,
 )
@@ -473,7 +473,7 @@ def build_cfg_and_dfg(
     log.info("CFG/DFG build complete.")
 
 
-def _build_cfg_and_dfg(ctx: GraphExecutionContext) -> ComputationResult:
+def _build_cfg_and_dfg(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """Build control-flow and data-flow graphs for functions.
 
     Uses resource injection to access storage.
@@ -495,7 +495,7 @@ cfg_dfg_builder_plugin = make_builder_plugin(
     name="cfg_dfg_builder",
     computation=_build_cfg_and_dfg,
     stage="edges",
-    produces_graphs=(GraphKind.CFG_GRAPH,),
+    produces_graph_kinds=(GraphKind.CFG_GRAPH,),
     depends_on=("goid_builder",),
     provides=("cfg_graph", "dfg_graph"),
     produces_tables=("graph.cfg_blocks", "graph.cfg_edges", "graph.dfg_edges"),

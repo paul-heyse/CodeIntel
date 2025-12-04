@@ -9,17 +9,15 @@ from __future__ import annotations
 import networkx as nx
 import pytest
 
-from codeintel.analytics.compute.graphs.nx_types import (
+from codeintel.graphs.compute.metrics.statistics import (
+    GraphStatistics,
+    compute_graph_statistics,
     get_degree_values,
     get_degrees,
     get_in_degree_values,
     get_in_degrees,
     get_out_degree_values,
     get_out_degrees,
-)
-from codeintel.analytics.compute.graphs.statistics import (
-    GraphStatistics,
-    compute_graph_statistics,
 )
 
 # =============================================================================

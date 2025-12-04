@@ -13,20 +13,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, Unpack, cast
 
+from codeintel.core.plugins.protocol import PluginIsolation, PluginResourceHints, PluginSeverity
+from codeintel.core.plugins.result import PluginResult
 from codeintel.graphs.core.computation import ComputationFn
-from codeintel.graphs.core.context import GraphExecutionContext
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
-    GraphPluginIsolation,
     GraphPluginKind,
     GraphPluginMetadata,
     GraphPluginMetaOptions,
     GraphPluginMetaOptionsInput,
     GraphPluginProtocol,
-    GraphPluginResourceHints,
-    GraphPluginSeverity,
     GraphPluginStage,
+    create_graph_metadata,
 )
-from codeintel.graphs.core.result import GraphPluginResult
 from codeintel.graphs.engine import GraphKind
 from codeintel.storage.db_helpers import safe_row_counts
 
@@ -39,16 +38,16 @@ class _MetricMetaInput(TypedDict, total=False):
 
     name: str
     description: str
-    severity: GraphPluginSeverity
+    severity: PluginSeverity
     enabled_by_default: bool
     depends_on: tuple[str, ...]
     provides: tuple[str, ...]
     requires: tuple[str, ...]
     produces_tables: tuple[str, ...]
-    requires_graphs: tuple[GraphKind, ...]
-    resource_hints: GraphPluginResourceHints | None
+    requires_graph_kinds: tuple[GraphKind, ...]
+    resource_hints: PluginResourceHints | None
     supports_incremental: bool
-    isolation_kind: GraphPluginIsolation
+    isolation_kind: PluginIsolation
     options_model: type[BaseModel] | None
     options_default: object | None
     version_hash: str | None
@@ -97,9 +96,9 @@ class GraphPluginSpec:
         Capabilities required from other plugins.
     produces_tables
         DuckDB table keys populated by this plugin.
-    produces_graphs
+    produces_graph_kinds
         GraphKind values this plugin builds (for builders).
-    requires_graphs
+    requires_graph_kinds
         GraphKind values this plugin needs (for metrics).
     resource_hints
         Runtime resource hints for planning.
@@ -130,17 +129,17 @@ class GraphPluginSpec:
     kind: GraphPluginKind
     stage: GraphPluginStage
     description: str | None = None
-    severity: GraphPluginSeverity = "fatal"
+    severity: PluginSeverity = "fatal"
     enabled_by_default: bool = True
     depends_on: tuple[str, ...] = ()
     provides: tuple[str, ...] = ()
     requires: tuple[str, ...] = ()
     produces_tables: tuple[str, ...] = ()
-    produces_graphs: tuple[GraphKind, ...] = ()
-    requires_graphs: tuple[GraphKind, ...] = ()
-    resource_hints: GraphPluginResourceHints | None = None
+    produces_graph_kinds: tuple[GraphKind, ...] = ()
+    requires_graph_kinds: tuple[GraphKind, ...] = ()
+    resource_hints: PluginResourceHints | None = None
     supports_incremental: bool = False
-    isolation_kind: GraphPluginIsolation = "none"
+    isolation_kind: PluginIsolation = "none"
     options_model: type[BaseModel] | None = None
     options_default: object | None = None
     version_hash: str | None = None
@@ -181,8 +180,8 @@ class GraphPluginSpec:
             provides=meta.provides,
             requires=meta.requires,
             produces_tables=meta.produces_tables,
-            produces_graphs=meta.produces_graphs,
-            requires_graphs=meta.requires_graphs,
+            produces_graph_kinds=meta.produces_graph_kinds,
+            requires_graph_kinds=meta.requires_graph_kinds,
             resource_hints=meta.resource_hints,
             supports_incremental=meta.supports_incremental,
             isolation_kind=meta.isolation_kind,
@@ -205,7 +204,7 @@ log = logging.getLogger(__name__)
 
 
 def _auto_row_counts(
-    ctx: GraphExecutionContext,
+    ctx: GraphPluginExecutionContext,
     tables: tuple[str, ...],
 ) -> dict[str, int]:
     """Compute row counts for tables scoped by repo/commit.
@@ -255,7 +254,7 @@ class FactoryPlugin:
         """
         return self._metadata
 
-    def execute(self, ctx: GraphExecutionContext) -> GraphPluginResult:
+    def execute(self, ctx: GraphPluginExecutionContext) -> PluginResult:
         """Execute the plugin with automatic logging and error handling.
 
         Parameters
@@ -265,7 +264,7 @@ class FactoryPlugin:
 
         Returns
         -------
-        GraphPluginResult
+        PluginResult
             Result of plugin execution.
         """
         name = self._metadata.name
@@ -289,7 +288,7 @@ class FactoryPlugin:
                     ctx.commit,
                     result.message,
                 )
-                return GraphPluginResult.fail(
+                return PluginResult.fail(
                     result.message or "computation failed",
                     error_kind="compute_error",
                 )
@@ -311,14 +310,14 @@ class FactoryPlugin:
                 key: value for key, value in result.artifacts.items() if isinstance(value, Path)
             }
 
-            return GraphPluginResult.ok(
+            return PluginResult.ok(
                 row_counts=row_counts,
                 artifacts=path_artifacts if path_artifacts else None,
             )
 
         except catchable_errors as exc:
             log.exception("%s.failed repo=%s commit=%s", name, ctx.repo, ctx.commit)
-            return GraphPluginResult.fail(str(exc), error_kind="compute_error")
+            return PluginResult.fail(str(exc), error_kind="compute_error")
 
 
 def make_plugin_from_spec(spec: GraphPluginSpec) -> GraphPluginProtocol:
@@ -351,7 +350,7 @@ def make_plugin_from_spec(spec: GraphPluginSpec) -> GraphPluginProtocol:
         spec.row_count_tables if spec.row_count_tables is not None else spec.produces_tables
     )
 
-    metadata = GraphPluginMetadata(
+    metadata = create_graph_metadata(
         name=spec.name,
         description=resolved_description,
         kind=spec.kind,
@@ -362,8 +361,8 @@ def make_plugin_from_spec(spec: GraphPluginSpec) -> GraphPluginProtocol:
         provides=spec.provides,
         requires=spec.requires,
         produces_tables=spec.produces_tables,
-        produces_graphs=spec.produces_graphs,
-        requires_graphs=spec.requires_graphs,
+        produces_graph_kinds=spec.produces_graph_kinds,
+        requires_graph_kinds=spec.requires_graph_kinds,
         resource_hints=spec.resource_hints,
         supports_incremental=spec.supports_incremental,
         isolation_kind=spec.isolation_kind,
@@ -448,7 +447,7 @@ def make_builder_plugin(
     *,
     computation: ComputationFn,
     stage: GraphPluginStage,
-    produces_graphs: tuple[GraphKind, ...],
+    produces_graph_kinds: tuple[GraphKind, ...],
     meta: GraphPluginMetaOptions | None = None,
     register: bool = True,
     **kwargs: Unpack[_MetricMetaInput],
@@ -466,7 +465,7 @@ def make_builder_plugin(
         {
             "kind": "builder",
             "stage": stage,
-            "produces_graphs": produces_graphs,
+            "produces_graph_kinds": produces_graph_kinds,
             **kwargs,
         },
     )

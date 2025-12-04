@@ -262,7 +262,7 @@ class ToolRunnerAdapter:
         """
         start = time.perf_counter()
         try:
-            reports = await self._service.run_coverage_json(
+            report = await self._service.run_coverage_report(
                 repo_root,
                 coverage_file=coverage_file,
                 output_path=output_path,
@@ -271,11 +271,11 @@ class ToolRunnerAdapter:
 
             files = [
                 CoverageFileData(
-                    rel_path=report.rel_path,
-                    executed_lines=frozenset(report.executed_lines),
-                    missing_lines=frozenset(report.missing_lines),
+                    rel_path=summary.rel_path,
+                    executed_lines=summary.executed_lines,
+                    missing_lines=summary.missing_lines,
                 )
-                for report in reports
+                for summary in report.files
             ]
 
             return CoverageResult(

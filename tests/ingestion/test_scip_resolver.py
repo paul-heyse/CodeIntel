@@ -17,7 +17,6 @@ from codeintel.ingestion.infrastructure_utilities import (
     resolve_scip_inputs,
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions import assert_cannot_setattr
 
 # Test constants for magic values
@@ -44,8 +43,6 @@ def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
         scip_python_bin=None,
         scip_bin=None,
         modules=[],
-        cfg_source="explicit",
-        cfg=None,
     )
 
     assert config.repo == "test-org/test-repo"
@@ -56,8 +53,6 @@ def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
     assert config.scip_python_bin is None
     assert config.scip_bin is None
     assert config.modules == []
-    assert config.cfg_source == "explicit"
-    assert config.cfg is None
 
 
 def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
@@ -82,8 +77,6 @@ def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
         scip_python_bin="/usr/bin/scip-python",
         scip_bin="/usr/bin/scip",
         modules=[module],
-        cfg_source="explicit",
-        cfg=None,
     )
 
     assert len(config.modules) == 1
@@ -103,8 +96,6 @@ def test_resolved_scip_config_frozen_dataclass(tmp_path: Path) -> None:
         scip_python_bin=None,
         scip_bin=None,
         modules=[],
-        cfg_source="explicit",
-        cfg=None,
     )
 
     assert_cannot_setattr(config, "repo", "new-repo")
@@ -117,7 +108,6 @@ def test_scip_resolver_input_create_empty() -> None:
     """Test creating ScipResolverInput with all defaults."""
     inputs = ScipResolverInput()
 
-    assert inputs.cfg is None
     assert inputs.repo is None
     assert inputs.commit is None
     assert inputs.repo_root is None
@@ -187,9 +177,7 @@ def test_scip_resolver_input_frozen_dataclass() -> None:
 # --- resolve_scip_inputs Tests ---
 
 
-def test_resolve_scip_inputs_with_explicit_params(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_resolve_scip_inputs_with_explicit_params(tmp_path: Path) -> None:
     """Test resolving with explicit ScipResolverInput.build()."""
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
@@ -197,9 +185,8 @@ def test_resolve_scip_inputs_with_explicit_params(
     doc_dir = tmp_path / "docs"
 
     result = resolve_scip_inputs(
-        fresh_gateway,
-        modules_or_cfg=[],
-        inputs=ScipResolverInput.build(
+        [],
+        ScipResolverInput.build(
             repo="test-org/test-repo",
             commit="abc123",
             paths=ScipPathConfig.from_strings(
@@ -216,13 +203,9 @@ def test_resolve_scip_inputs_with_explicit_params(
     assert result.repo_root == repo_root
     assert result.build_dir == build_dir
     assert result.document_output_dir == doc_dir
-    assert result.cfg_source == "explicit"
-    assert result.cfg is None
 
 
-def test_resolve_scip_inputs_with_scip_resolver_input(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
     """Test resolving with ScipResolverInput dataclass."""
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
@@ -239,23 +222,16 @@ def test_resolve_scip_inputs_with_scip_resolver_input(
         scip_bin="/usr/bin/scip",
     )
 
-    result = resolve_scip_inputs(
-        fresh_gateway,
-        modules_or_cfg=[],
-        inputs=inputs,
-    )
+    result = resolve_scip_inputs([], inputs)
 
     assert result.repo == "test-org/test-repo"
     assert result.commit == "def456"
     assert result.scip_python_bin == "/usr/bin/scip-python"
     assert result.scip_bin == "/usr/bin/scip"
-    assert result.cfg_source == "explicit"
 
 
-def test_resolve_scip_inputs_with_modules_sequence(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
-    """Test resolving with modules passed as modules_or_cfg sequence."""
+def test_resolve_scip_inputs_with_modules_sequence(tmp_path: Path) -> None:
+    """Test resolving with modules passed as first argument."""
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
@@ -268,9 +244,8 @@ def test_resolve_scip_inputs_with_modules_sequence(
     )
 
     result = resolve_scip_inputs(
-        fresh_gateway,
-        modules_or_cfg=[module],
-        inputs=ScipResolverInput.build(
+        [module],
+        ScipResolverInput.build(
             repo="test-repo",
             commit="abc",
             paths=ScipPathConfig.from_strings(
@@ -285,9 +260,7 @@ def test_resolve_scip_inputs_with_modules_sequence(
     assert result.modules[0].module_name == "main"
 
 
-def test_resolve_scip_inputs_with_modules_in_input(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_resolve_scip_inputs_with_modules_in_input(tmp_path: Path) -> None:
     """Test resolving with modules passed via ScipResolverInput."""
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
@@ -301,9 +274,8 @@ def test_resolve_scip_inputs_with_modules_in_input(
     )
 
     result = resolve_scip_inputs(
-        fresh_gateway,
-        modules_or_cfg=[],  # Empty, modules in input takes precedence
-        inputs=ScipResolverInput.build(
+        [],  # Empty, modules in input takes precedence
+        ScipResolverInput.build(
             repo="test-repo",
             commit="abc",
             paths=ScipPathConfig.from_strings(
@@ -319,15 +291,12 @@ def test_resolve_scip_inputs_with_modules_in_input(
     assert result.modules[0].module_name == "util"
 
 
-def test_resolve_scip_inputs_missing_repo_raises_value_error(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_resolve_scip_inputs_missing_repo_raises_value_error(tmp_path: Path) -> None:
     """Test that missing repo parameter raises ValueError."""
     with pytest.raises(ValueError, match=r"repo.*required"):
         resolve_scip_inputs(
-            fresh_gateway,
-            modules_or_cfg=[],
-            inputs=ScipResolverInput.build(
+            [],
+            ScipResolverInput.build(
                 commit="abc",
                 paths=ScipPathConfig.from_strings(
                     repo_root=tmp_path,
@@ -338,15 +307,12 @@ def test_resolve_scip_inputs_missing_repo_raises_value_error(
         )
 
 
-def test_resolve_scip_inputs_missing_commit_raises_value_error(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_resolve_scip_inputs_missing_commit_raises_value_error(tmp_path: Path) -> None:
     """Test that missing commit parameter raises ValueError."""
     with pytest.raises(ValueError, match=r"commit.*required"):
         resolve_scip_inputs(
-            fresh_gateway,
-            modules_or_cfg=[],
-            inputs=ScipResolverInput.build(
+            [],
+            ScipResolverInput.build(
                 repo="test-repo",
                 paths=ScipPathConfig.from_strings(
                     repo_root=tmp_path,
@@ -357,15 +323,12 @@ def test_resolve_scip_inputs_missing_commit_raises_value_error(
         )
 
 
-def test_resolve_scip_inputs_missing_repo_root_raises_value_error(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_resolve_scip_inputs_missing_repo_root_raises_value_error(tmp_path: Path) -> None:
     """Test that missing repo_root parameter raises ValueError."""
     with pytest.raises(ValueError, match=r"repo_root.*required"):
         resolve_scip_inputs(
-            fresh_gateway,
-            modules_or_cfg=[],
-            inputs=ScipResolverInput.build(
+            [],
+            ScipResolverInput.build(
                 repo="test-repo",
                 commit="abc",
                 paths=ScipPathConfig.from_strings(
@@ -376,15 +339,12 @@ def test_resolve_scip_inputs_missing_repo_root_raises_value_error(
         )
 
 
-def test_resolve_scip_inputs_missing_build_dir_raises_value_error(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_resolve_scip_inputs_missing_build_dir_raises_value_error(tmp_path: Path) -> None:
     """Test that missing build_dir parameter raises ValueError."""
     with pytest.raises(ValueError, match=r"build_dir.*required"):
         resolve_scip_inputs(
-            fresh_gateway,
-            modules_or_cfg=[],
-            inputs=ScipResolverInput.build(
+            [],
+            ScipResolverInput.build(
                 repo="test-repo",
                 commit="abc",
                 paths=ScipPathConfig.from_strings(
@@ -395,15 +355,12 @@ def test_resolve_scip_inputs_missing_build_dir_raises_value_error(
         )
 
 
-def test_resolve_scip_inputs_missing_document_output_dir_raises_value_error(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_resolve_scip_inputs_missing_document_output_dir_raises_value_error(tmp_path: Path) -> None:
     """Test that missing document_output_dir parameter raises ValueError."""
     with pytest.raises(ValueError, match=r"document_output_dir.*required"):
         resolve_scip_inputs(
-            fresh_gateway,
-            modules_or_cfg=[],
-            inputs=ScipResolverInput.build(
+            [],
+            ScipResolverInput.build(
                 repo="test-repo",
                 commit="abc",
                 paths=ScipPathConfig.from_strings(
@@ -414,9 +371,7 @@ def test_resolve_scip_inputs_missing_document_output_dir_raises_value_error(
         )
 
 
-def test_resolve_scip_inputs_uses_inputs_values(
-    fresh_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_resolve_scip_inputs_uses_inputs_values(tmp_path: Path) -> None:
     """Test that ScipResolverInput values are used correctly."""
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
@@ -429,12 +384,7 @@ def test_resolve_scip_inputs_uses_inputs_values(
         document_output_dir=tmp_path / "inputs-docs",
     )
 
-    # When using inputs, don't pass legacy keyword args
-    result = resolve_scip_inputs(
-        fresh_gateway,
-        modules_or_cfg=[],
-        inputs=inputs,
-    )
+    result = resolve_scip_inputs([], inputs)
 
     assert result.repo == "inputs-repo"
     assert result.commit == "inputs-commit"

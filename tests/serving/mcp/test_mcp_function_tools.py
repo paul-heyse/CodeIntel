@@ -196,11 +196,7 @@ def test_function_tool_categories_contains_function() -> None:
 
 def test_iter_operations_yields_function_operations() -> None:
     """Verify iter_operations yields function category operations."""
-    function_ops = [
-        spec
-        for spec in iter_operations()
-        if spec.category in FUNCTION_TOOL_CATEGORIES
-    ]
+    function_ops = [spec for spec in iter_operations() if spec.category in FUNCTION_TOOL_CATEGORIES]
 
     assert len(function_ops) > 0
 
@@ -219,11 +215,7 @@ def test_function_operations_have_tool_name() -> None:
 
 def test_function_operations_have_backend_method() -> None:
     """Verify function operations have backend_method defined."""
-    function_ops = [
-        spec
-        for spec in iter_operations()
-        if spec.category in FUNCTION_TOOL_CATEGORIES
-    ]
+    function_ops = [spec for spec in iter_operations() if spec.category in FUNCTION_TOOL_CATEGORIES]
 
     for spec in function_ops:
         assert spec.backend_method is not None
@@ -231,11 +223,7 @@ def test_function_operations_have_backend_method() -> None:
 
 def test_function_operations_have_output_model() -> None:
     """Verify function operations have output_model_name defined."""
-    function_ops = [
-        spec
-        for spec in iter_operations()
-        if spec.category in FUNCTION_TOOL_CATEGORIES
-    ]
+    function_ops = [spec for spec in iter_operations() if spec.category in FUNCTION_TOOL_CATEGORIES]
 
     for spec in function_ops:
         assert spec.output_model_name is not None

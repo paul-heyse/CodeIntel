@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict
 
+from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.compute.functions import (
     ComplexityMetrics,
     compute_complexity,
@@ -34,7 +35,6 @@ from codeintel.analytics.compute.functions.typedness import (
     compute_typedness_flags,
 )
 from codeintel.analytics.datasets import (
-    DeleteScope,
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
@@ -584,7 +584,7 @@ def persist_function_analytics(
     scope = f"{cfg.repo}@{cfg.commit}"
     metrics_contract = get_analytics_dataset_contract(gateway, "analytics.function_metrics")
     types_contract = get_analytics_dataset_contract(gateway, "analytics.function_types")
-    delete_scope = DeleteScope(params=[cfg.repo, cfg.commit])
+    delete_scope = DeleteScope(repo=cfg.repo, commit=cfg.commit)
     insert_analytics_rows(
         gateway,
         metrics_contract,

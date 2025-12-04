@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
-from codeintel.cli.commands.datasets import run_datasets_catalog
 from codeintel.config.datasets import DatasetContract, get_dataset_contracts_by_table_key
 from codeintel.storage.catalog import (
     SamplingConfig,
@@ -115,47 +113,3 @@ def test_catalog_sampling_strict_raises() -> None:
             )
     finally:
         con.close()
-
-
-def test_catalog_missing_db_writes_empty(tmp_path: Path) -> None:
-    """When DB is missing and non-strict, write empty catalog with warning."""
-    db_path = tmp_path / "missing.duckdb"
-    output_dir = tmp_path / "catalog"
-    args = Namespace(
-        db_path=db_path,
-        sample_rows=1,
-        sample_rows_strict=False,
-        output_dir=output_dir,
-        repo_root=tmp_path,
-        repo="demo/repo",
-        commit="deadbeef",
-        build_dir=tmp_path / "build",
-        document_output_dir=tmp_path / "Document Output",
-    )
-    exit_code = run_datasets_catalog(args)
-    if exit_code != 0:
-        pytest.fail("Catalog should succeed when DB is missing in non-strict mode")
-    if not (output_dir / "catalog.md").exists():
-        pytest.fail("Catalog markdown not written for missing DB")
-    content = (output_dir / "catalog.md").read_text(encoding="utf-8")
-    if "Dataset Catalog" not in content:
-        pytest.fail("Empty catalog header missing")
-
-
-def test_catalog_missing_db_strict_fails(tmp_path: Path) -> None:
-    """When DB is missing and strict, exit non-zero."""
-    db_path = tmp_path / "missing.duckdb"
-    args = Namespace(
-        db_path=db_path,
-        sample_rows=1,
-        sample_rows_strict=True,
-        output_dir=tmp_path / "catalog",
-        repo_root=tmp_path,
-        repo="demo/repo",
-        commit="deadbeef",
-        build_dir=tmp_path / "build",
-        document_output_dir=tmp_path / "Document Output",
-    )
-    exit_code = run_datasets_catalog(args)
-    if exit_code == 0:
-        pytest.fail("Strict mode should fail when DB is missing")

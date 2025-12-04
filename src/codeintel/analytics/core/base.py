@@ -32,12 +32,13 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar, Literal, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.analytics.core.contracts import OutputContractSpec
 from codeintel.analytics.core.plugin_protocol import (
-    PluginCapability,
     PluginInputSpec,
+    PluginIsolation,
+    PluginKind,
     PluginMetadata,
     PluginOutputSpec,
     PluginResourceHints,
@@ -183,6 +184,7 @@ class BasePlugin(ABC):
     # Core identification (subclasses should override)
     plugin_name: ClassVar[str] = ""
     plugin_description: ClassVar[str] = ""
+    plugin_kind: ClassVar[PluginKind] = "analytics"
     plugin_stage: ClassVar[PluginStage] = "other"
     plugin_version: ClassVar[str] = "1.0.0"
 
@@ -203,7 +205,7 @@ class BasePlugin(ABC):
 
     # Isolation
     requires_isolation: ClassVar[bool] = False
-    isolation_kind: ClassVar[Literal["process", "thread"] | None] = None
+    isolation_kind: ClassVar[PluginIsolation] = "none"
 
     @property
     def metadata(self) -> PluginMetadata:
@@ -220,18 +222,19 @@ class BasePlugin(ABC):
         return PluginMetadata(
             name=name,
             description=description.strip(),
+            kind=self.plugin_kind,
             stage=self.plugin_stage,
             version=self.plugin_version,
             enabled_by_default=self.enabled_by_default,
             severity=self.severity,
             inputs=self.build_input_specs(),
             outputs=self._build_output_specs(),
-            capabilities_provided=tuple(PluginCapability(name=cap) for cap in self.provides),
-            capabilities_required=tuple(PluginCapability(name=cap) for cap in self.requires),
             depends_on=self.depends_on,
+            provides=self.provides,
+            requires=self.requires,
             resource_hints=self.resource_hints,
             requires_isolation=self.requires_isolation,
-            isolation_kind=self.isolation_kind if self.requires_isolation else None,
+            isolation_kind=self.isolation_kind,
             tags=self.tags,
         )
 

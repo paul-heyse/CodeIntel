@@ -238,6 +238,12 @@ ban-relative-imports = "all"
 # PLC0415: Deferred imports for project discovery logic (avoid circular imports)
 "src/codeintel/cli/commands/*.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
 "src/codeintel/cli/main.py" = ["FBT001", "FBT002", "PLR0913", "PLR0917", "DOC501", "PLC0415"]
+# Core plugin system uses factory patterns with many configuration options
+"src/codeintel/core/recipes/dsl.py" = ["PLR0913"]
+"src/codeintel/core/recipes/model.py" = ["PLR0913"]
+# Graph plugin system uses factory patterns with many configuration options
+"src/codeintel/graphs/core/context.py" = ["PLR0913"]
+"src/codeintel/graphs/core/protocol.py" = ["PLR0913"]
 
 [tool.vulture]
 # Strict, but still manageable threshold.

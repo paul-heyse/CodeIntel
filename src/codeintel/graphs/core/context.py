@@ -1,250 +1,59 @@
 """Graph plugin execution context.
 
 This module defines the execution context provided to graph plugins,
-providing access to storage, configuration, and shared scratch space
-without any dependency on the analytics subsystem.
+extending the unified `PluginExecutionContext` with graph-specific
+functionality like `require_graphs()` and `GraphRunScope` support.
 """
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, cast
 
+from codeintel.core.plugins.context import (
+    ConfigProvider,
+    PluginExecutionContext,
+    PluginExecutionContextBuilder,
+    PluginScratch,
+    ResourceRegistry,
+)
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.graphs import GraphResource
+from codeintel.graphs.resources.protocol import ResourceProvider
 from codeintel.graphs.resources.storage import StorageResource
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.config.steps_graphs import GraphRunScope
     from codeintel.graphs.catalog import FunctionCatalogProvider
-    from codeintel.graphs.resources.protocol import ResourceProvider
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
 
-T = TypeVar("T")
-
 
 @dataclass
-class GraphRuntimeScratch:
-    """Ephemeral scratch/cache store shared across plugin executions in a run.
-
-    Provides a way for plugins to share intermediate data within a single
-    execution run without persisting to the database.
-    """
-
-    _store: dict[str, object] = field(default_factory=dict)
-    _cleanup: list[Callable[[], None]] = field(default_factory=list)
-
-    def declare(self, key: str, value: object) -> None:
-        """Record a value for later consumption by other plugins.
-
-        Parameters
-        ----------
-        key
-            Identifier for the stored value.
-        value
-            Value to store.
-        """
-        self._store[key] = value
-
-    def consume(self, key: str, default: object | None = None) -> object | None:
-        """Retrieve a value populated by another plugin.
-
-        Parameters
-        ----------
-        key
-            Identifier of the value to retrieve.
-        default
-            Value to return if key is not found.
-
-        Returns
-        -------
-        object | None
-            Cached value or provided default.
-        """
-        return self._store.get(key, default)
-
-    def has(self, key: str) -> bool:
-        """Check if a key exists in the scratch store.
-
-        Parameters
-        ----------
-        key
-            Identifier to check.
-
-        Returns
-        -------
-        bool
-            True if key exists.
-        """
-        return key in self._store
-
-    def register_cleanup(self, callback: Callable[[], None]) -> None:
-        """Register a cleanup callback executed after the run completes.
-
-        Parameters
-        ----------
-        callback
-            Function to call during cleanup.
-        """
-        self._cleanup.append(callback)
-
-    def cleanup(self) -> None:
-        """Execute cleanup callbacks and clear stored values."""
-        log = logging.getLogger(__name__)
-        for callback in reversed(self._cleanup):
-            try:
-                callback()
-            except (RuntimeError, OSError, ValueError):
-                log.exception("scratch.cleanup_failed")
-        self._store.clear()
-        self._cleanup.clear()
-
-    def __len__(self) -> int:
-        """Return the number of declared cache entries.
-
-        Returns
-        -------
-        int
-            Count of cached entries.
-        """
-        return len(self._store)
-
-    def keys(self) -> tuple[str, ...]:
-        """Return declared cache keys.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Cache key names.
-        """
-        return tuple(self._store.keys())
-
-
-@dataclass
-class GraphExecutionContext:
+class GraphPluginExecutionContext(PluginExecutionContext):
     """Execution context for graph plugins.
 
-    Provides access to storage, resource providers, and shared scratch space
-    without any dependency on the analytics subsystem.
+    Extends `PluginExecutionContext` with graph-specific functionality:
+    - `require_graphs()` method for accessing graph data
+    - `scope` field for incremental execution
+    - `catalog_provider` property for function catalog access
+    - Dual-mode resource access via both `ResourceRegistry` and `ResourceContainer`
 
     All I/O access should go through the resource container via `require()`.
     Use `require_graphs()` to access graph data via `GraphResource`.
-    The private attributes `_gateway` and `_catalog_provider` are only for
-    internal initialization and should not be accessed directly.
 
     Attributes
     ----------
-    snapshot
-        Repository snapshot reference.
-    resources
-        Resource container for dependency injection (required).
-    paths
-        Build paths configuration.
-    scratch
-        Shared scratch space for inter-plugin data.
-    options
-        Plugin-specific options.
-    plugin_name
-        Name of the executing plugin.
-    run_id
-        Unique identifier for this execution run.
     scope
-        Optional scoping for incremental execution.
-    run_context
-        Optional unified run context for cross-engine correlation.
+        Optional scoping for incremental graph execution.
+    graph_resources
+        Graph-specific resource container for legacy compatibility.
     """
 
-    snapshot: SnapshotRef
-    resources: ResourceContainer = field(default_factory=ResourceContainer)
-    _gateway: StorageGateway | None = field(default=None, repr=False)
-    _catalog_provider: FunctionCatalogProvider | None = field(default=None, repr=False)
-    paths: BuildPaths | None = None
-    scratch: GraphRuntimeScratch = field(default_factory=GraphRuntimeScratch)
-    options: object | None = None
-    plugin_name: str | None = None
-    run_id: str | None = None
     scope: GraphRunScope | None = None
-    run_context: RunContext | None = None
-
-    def __post_init__(self) -> None:
-        """Ensure resources are initialized (default_factory already provides)."""
-        # No-op: resources is provided by default_factory.
-
-    @property
-    def repo(self) -> str:
-        """Repository slug for the current snapshot.
-
-        Returns
-        -------
-        str
-            Repository identifier.
-        """
-        return self.snapshot.repo
-
-    @property
-    def commit(self) -> str:
-        """Commit identifier for the current snapshot.
-
-        Returns
-        -------
-        str
-            Commit hash or identifier.
-        """
-        return self.snapshot.commit
-
-    @property
-    def repo_root(self) -> Path:
-        """Repository root for the current snapshot.
-
-        Returns
-        -------
-        Path
-            Absolute path to the repository root.
-        """
-        return self.snapshot.repo_root
-
-    @property
-    def effective_run_id(self) -> str | None:
-        """Get run ID preferring unified RunContext if present.
-
-        Returns
-        -------
-        str | None
-            Run ID from run_context if set, otherwise falls back to run_id.
-        """
-        if self.run_context is not None:
-            return self.run_context.run_id
-        return self.run_id
-
-    @property
-    def gateway(self) -> StorageGateway:
-        """Get the storage gateway.
-
-        Tries resource injection first, falls back to private attribute.
-
-        Returns
-        -------
-        StorageGateway
-            Storage gateway for database access.
-
-        Raises
-        ------
-        RuntimeError
-            If no gateway is available.
-        """
-        if self.resources.has(StorageResource.RESOURCE_NAME):
-            storage = self.resources.require(StorageResource)
-            return storage.gateway
-        # Fall back to private attribute
-        if self._gateway is not None:
-            return self._gateway
-        msg = "No gateway available in context"
-        raise RuntimeError(msg)
+    graph_resources: ResourceContainer = field(default_factory=ResourceContainer)
+    _catalog_provider: FunctionCatalogProvider | None = field(default=None, repr=False)
 
     @property
     def catalog_provider(self) -> FunctionCatalogProvider | None:
@@ -257,64 +66,41 @@ class GraphExecutionContext:
         """
         return self._catalog_provider
 
-    def require(self, provider_type: type[ResourceProvider[T]]) -> T:
-        """Get a resource from the container.
+    def require[T](self, resource_type: type[T]) -> T:
+        """Get a resource, checking graph_resources first.
+
+        Overrides the base method to check the graph-specific
+        ResourceContainer first, then fall back to the unified
+        ResourceRegistry.
 
         Parameters
         ----------
-        provider_type
-            The resource provider type to look up.
+        resource_type
+            Type of resource to retrieve.
 
         Returns
         -------
         T
-            The resource value.
-
-        Notes
-        -----
-        May raise ``ResourceNotFoundError`` if the resource is not registered.
+            The resource instance.
         """
-        return self.resources.require(provider_type)
+        # Get resource name from type
+        resource_name = getattr(resource_type, "RESOURCE_NAME", resource_type.__name__)
 
-    def require_by_name(self, name: str) -> object:
-        """Get a resource by name from the container.
+        # Check graph_resources container first
+        if self.graph_resources.has(resource_name):
+            return cast("T", self.graph_resources.require_by_name(resource_name))
 
-        Parameters
-        ----------
-        name
-            Resource name to look up.
-
-        Returns
-        -------
-        object
-            The resource value.
-
-        Notes
-        -----
-        May raise ``ResourceNotFoundError`` if the resource is not registered.
-        """
-        return self.resources.require_by_name(name)
-
-    def has_resource(self, name: str) -> bool:
-        """Check if a resource is available.
-
-        Parameters
-        ----------
-        name
-            Resource name to check.
-
-        Returns
-        -------
-        bool
-            True if the resource is registered.
-        """
-        return self.resources.has(name)
+        # Fall back to unified resources registry
+        return super().require(resource_type)
 
     def require_graphs(self) -> GraphResource:
         """Get the graph resource, raising if unavailable.
 
         This method provides access to graph data through resource injection.
         Use this instead of accessing ctx.engine directly.
+
+        Checks both the graph_resources container (preferred) and the
+        unified resources registry for compatibility.
 
         Returns
         -------
@@ -326,13 +112,270 @@ class GraphExecutionContext:
         RuntimeError
             If no GraphResource is registered in the context.
         """
-        if not self.resources.has(GraphResource.RESOURCE_NAME):
-            message = "No GraphResource registered in context"
-            raise RuntimeError(message)
-        return self.require(GraphResource)
+        # Try graph-specific container first
+        if self.graph_resources.has(GraphResource.RESOURCE_NAME):
+            return cast("GraphResource", self.graph_resources.require_by_name(GraphResource.RESOURCE_NAME))
+
+        # Fall back to unified resources registry
+        if self.has_resource(GraphResource):
+            return self.require(GraphResource)
+
+        message = "No GraphResource registered in context"
+        raise RuntimeError(message)
+
+    def has_graph_resource(self, name: str) -> bool:
+        """Check if a resource is available in graph resources.
+
+        Parameters
+        ----------
+        name
+            Resource name to check.
+
+        Returns
+        -------
+        bool
+            True if the resource is registered.
+        """
+        return self.graph_resources.has(name)
+
+    def require_graph_resource_by_name(self, name: str) -> object:
+        """Get a resource by name from the graph resource container.
+
+        Parameters
+        ----------
+        name
+            Resource name to look up.
+
+        Returns
+        -------
+        object
+            The resource value.
+        """
+        return self.graph_resources.require_by_name(name)
+
+
+@dataclass
+class GraphPluginExecutionContextBuilder(PluginExecutionContextBuilder):
+    """Builder for constructing GraphPluginExecutionContext instances.
+
+    Extends the base builder with graph-specific configuration options.
+
+    Example
+    -------
+    >>> builder = GraphPluginExecutionContextBuilder(gateway, snapshot, run_id)
+    >>> builder = builder.with_scope(scope).with_catalog_provider(catalog)
+    >>> ctx = builder.build_graph_context()
+    """
+
+    _scope: GraphRunScope | None = None
+    _graph_resources: ResourceContainer = field(default_factory=ResourceContainer)
+    _catalog_provider: FunctionCatalogProvider | None = None
+
+    def with_scope(self, scope: GraphRunScope) -> GraphPluginExecutionContextBuilder:
+        """Set the graph run scope.
+
+        Parameters
+        ----------
+        scope
+            Graph run scope for incremental execution.
+
+        Returns
+        -------
+        GraphPluginExecutionContextBuilder
+            Self for chaining.
+        """
+        self._scope = scope
+        return self
+
+    def with_catalog_provider(
+        self,
+        catalog_provider: FunctionCatalogProvider,
+    ) -> GraphPluginExecutionContextBuilder:
+        """Set the function catalog provider.
+
+        Parameters
+        ----------
+        catalog_provider
+            Function catalog provider instance.
+
+        Returns
+        -------
+        GraphPluginExecutionContextBuilder
+            Self for chaining.
+        """
+        self._catalog_provider = catalog_provider
+        return self
+
+    def with_graph_resources(
+        self,
+        graph_resources: ResourceContainer,
+    ) -> GraphPluginExecutionContextBuilder:
+        """Set the graph-specific resource container.
+
+        Parameters
+        ----------
+        graph_resources
+            Graph resource container.
+
+        Returns
+        -------
+        GraphPluginExecutionContextBuilder
+            Self for chaining.
+        """
+        self._graph_resources = graph_resources
+        return self
+
+    def register_graph_resource(
+        self,
+        provider: object,
+    ) -> GraphPluginExecutionContextBuilder:
+        """Register a resource provider in the graph container.
+
+        Parameters
+        ----------
+        provider
+            Resource provider with a `resource_name` attribute.
+
+        Returns
+        -------
+        GraphPluginExecutionContextBuilder
+            Self for chaining.
+        """
+        if isinstance(provider, ResourceProvider):
+            self._graph_resources.register(provider)
+        return self
+
+    def build_graph_context(
+        self,
+        *,
+        scratch: PluginScratch | None = None,
+    ) -> GraphPluginExecutionContext:
+        """Build the graph execution context.
+
+        Parameters
+        ----------
+        scratch
+            Optional shared scratch store.
+
+        Returns
+        -------
+        GraphPluginExecutionContext
+            Configured graph execution context.
+        """
+        return GraphPluginExecutionContext(
+            gateway=self.gateway,
+            snapshot=self.snapshot,
+            run_id=self.run_id,
+            resources=self._resources,
+            configs=ConfigProvider(self._configs),
+            scratch=scratch or PluginScratch(),
+            paths=self._paths,
+            options=self._options,
+            plugin_name=self._plugin_name,
+            extra=dict(self._extra),
+            run_context=self._run_context,
+            scope=self._scope,
+            graph_resources=self._graph_resources,
+            _catalog_provider=self._catalog_provider,
+        )
+
+
+# Backward-compatible aliases (will be removed in future versions)
+GraphExecutionContext = GraphPluginExecutionContext
+GraphRuntimeScratch = PluginScratch
+
+
+def create_graph_context_from_legacy(
+    snapshot: SnapshotRef,
+    *,
+    gateway: StorageGateway | None = None,
+    catalog_provider: FunctionCatalogProvider | None = None,
+    paths: BuildPaths | None = None,
+    scratch: PluginScratch | None = None,
+    options: object | None = None,
+    plugin_name: str | None = None,
+    run_id: str | None = None,
+    scope: GraphRunScope | None = None,
+    run_context: RunContext | None = None,
+    resources: ResourceContainer | None = None,
+) -> GraphPluginExecutionContext:
+    """Create a graph context from legacy-style arguments.
+
+    This factory function provides backward compatibility for code
+    that creates GraphExecutionContext with the old constructor signature.
+
+    Parameters
+    ----------
+    snapshot
+        Repository snapshot reference.
+    gateway
+        Optional storage gateway.
+    catalog_provider
+        Optional function catalog provider.
+    paths
+        Optional build paths configuration.
+    scratch
+        Optional shared scratch space.
+    options
+        Optional plugin-specific options.
+    plugin_name
+        Optional name of the executing plugin.
+    run_id
+        Optional unique identifier for this execution run.
+    scope
+        Optional scoping for incremental execution.
+    run_context
+        Optional unified run context for cross-engine correlation.
+    resources
+        Optional graph resource container.
+
+    Returns
+    -------
+    GraphPluginExecutionContext
+        Configured graph execution context.
+
+    Raises
+    ------
+    ValueError
+        If gateway is required but not provided and cannot be resolved.
+    """
+    # Create a minimal gateway if not provided
+    # This maintains backward compatibility but may raise errors
+    # when gateway is actually needed
+    actual_run_id = run_id or (run_context.run_id if run_context else "unknown")
+
+    # Handle case where gateway is required
+    if gateway is None:
+        # Try to get it from resources if provided
+        if resources is not None and resources.has(StorageResource.RESOURCE_NAME):
+            storage = cast("StorageResource", resources.require_by_name(StorageResource.RESOURCE_NAME))
+            gateway = storage.gateway
+        else:
+            msg = "Gateway is required but not provided"
+            raise ValueError(msg)
+
+    return GraphPluginExecutionContext(
+        gateway=gateway,
+        snapshot=snapshot,
+        run_id=actual_run_id,
+        resources=ResourceRegistry(),
+        configs=ConfigProvider(),
+        scratch=scratch or PluginScratch(),
+        paths=paths,
+        options=options,
+        plugin_name=plugin_name,
+        extra={},
+        run_context=run_context,
+        scope=scope,
+        graph_resources=resources or ResourceContainer(),
+        _catalog_provider=catalog_provider,
+    )
 
 
 __all__ = [
     "GraphExecutionContext",
+    "GraphPluginExecutionContext",
+    "GraphPluginExecutionContextBuilder",
     "GraphRuntimeScratch",
+    "create_graph_context_from_legacy",
 ]

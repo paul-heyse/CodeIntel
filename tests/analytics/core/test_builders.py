@@ -106,11 +106,7 @@ def test_builder_init() -> None:
 
 def test_builder_description() -> None:
     """Builder sets description."""
-    metadata = (
-        PluginSpecBuilder("test.plugin")
-        .description("A test plugin description")
-        .build()
-    )
+    metadata = PluginSpecBuilder("test.plugin").description("A test plugin description").build()
 
     assert metadata.description == "A test plugin description"
 
@@ -131,9 +127,7 @@ def test_builder_version() -> None:
 
 def test_builder_enabled_by_default() -> None:
     """Builder sets enabled_by_default."""
-    metadata = (
-        PluginSpecBuilder("test.plugin").enabled_by_default(enabled=False).build()
-    )
+    metadata = PluginSpecBuilder("test.plugin").enabled_by_default(enabled=False).build()
 
     assert metadata.enabled_by_default is False
 
@@ -152,9 +146,7 @@ def test_builder_input_from_type() -> None:
         """Test configuration class."""
 
     metadata = (
-        PluginSpecBuilder("test.plugin")
-        .input(MyConfig, required=True, source="config")
-        .build()
+        PluginSpecBuilder("test.plugin").input(MyConfig, required=True, source="config").build()
     )
 
     assert len(metadata.inputs) == 1
@@ -209,11 +201,7 @@ def test_builder_output_from_spec() -> None:
 
 def test_builder_provides_from_strings() -> None:
     """Builder creates capabilities from strings."""
-    metadata = (
-        PluginSpecBuilder("test.plugin")
-        .provides("capability.one", "capability.two")
-        .build()
-    )
+    metadata = PluginSpecBuilder("test.plugin").provides("capability.one", "capability.two").build()
 
     assert len(metadata.capabilities_provided) == EXPECTED_TWO_ITEMS
     cap_names = {cap.name for cap in metadata.capabilities_provided}
@@ -233,11 +221,7 @@ def test_builder_provides_from_capability() -> None:
 
 def test_builder_requires_from_strings() -> None:
     """Builder creates required capabilities from strings."""
-    metadata = (
-        PluginSpecBuilder("test.plugin")
-        .requires("required.one", "required.two")
-        .build()
-    )
+    metadata = PluginSpecBuilder("test.plugin").requires("required.one", "required.two").build()
 
     assert len(metadata.capabilities_required) == EXPECTED_TWO_ITEMS
     cap_names = {cap.name for cap in metadata.capabilities_required}
@@ -257,11 +241,7 @@ def test_builder_requires_from_capability() -> None:
 
 def test_builder_depends_on() -> None:
     """Builder adds plugin dependencies."""
-    metadata = (
-        PluginSpecBuilder("test.plugin")
-        .depends_on("plugin.one", "plugin.two")
-        .build()
-    )
+    metadata = PluginSpecBuilder("test.plugin").depends_on("plugin.one", "plugin.two").build()
 
     assert metadata.depends_on == ("plugin.one", "plugin.two")
 
@@ -305,9 +285,7 @@ def test_builder_isolate_thread() -> None:
 
 def test_builder_tag() -> None:
     """Builder adds tags."""
-    metadata = (
-        PluginSpecBuilder("test.plugin").tag("function", "metrics", "core").build()
-    )
+    metadata = PluginSpecBuilder("test.plugin").tag("function", "metrics", "core").build()
 
     assert "function" in metadata.tags
     assert "metrics" in metadata.tags
@@ -401,9 +379,7 @@ def test_builder_multiple_outputs() -> None:
 def test_builder_output_with_custom_name() -> None:
     """Builder output can have custom logical name."""
     metadata = (
-        PluginSpecBuilder("named.output")
-        .output("analytics.long_table_name", name="short")
-        .build()
+        PluginSpecBuilder("named.output").output("analytics.long_table_name", name="short").build()
     )
 
     assert len(metadata.outputs) == 1

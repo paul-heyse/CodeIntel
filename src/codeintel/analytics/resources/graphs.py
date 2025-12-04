@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import networkx as nx
 
@@ -69,6 +69,8 @@ class GraphProvider(LazyResource[GraphResources]):
     >>> resources = provider.get()
     >>> call_graph = resources.call_graph
     """
+
+    RESOURCE_NAME: ClassVar[str] = "GraphResources"
 
     def __init__(
         self,

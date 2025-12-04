@@ -84,16 +84,16 @@ def test_core_graph_metrics_plugin_requires_graphs() -> None:
     Raises
     ------
     AssertionError
-        If requires_graphs is incorrect.
+        If requires_graph_kinds is incorrect.
     """
     plugin = core_graph_metrics_plugin
     meta = plugin.metadata
 
-    if GraphKind.CALL_GRAPH not in meta.requires_graphs:
-        msg = "Expected CALL_GRAPH in requires_graphs"
+    if GraphKind.CALL_GRAPH not in meta.requires_graph_kinds:
+        msg = "Expected CALL_GRAPH in requires_graph_kinds"
         raise AssertionError(msg)
-    if GraphKind.IMPORT_GRAPH not in meta.requires_graphs:
-        msg = "Expected IMPORT_GRAPH in requires_graphs"
+    if GraphKind.IMPORT_GRAPH not in meta.requires_graph_kinds:
+        msg = "Expected IMPORT_GRAPH in requires_graph_kinds"
         raise AssertionError(msg)
 
 
@@ -179,13 +179,13 @@ def test_module_ext_metrics_plugin_requires_graphs() -> None:
     Raises
     ------
     AssertionError
-        If requires_graphs is incorrect.
+        If requires_graph_kinds is incorrect.
     """
     plugin = module_ext_metrics_plugin
     meta = plugin.metadata
 
-    if GraphKind.IMPORT_GRAPH not in meta.requires_graphs:
-        msg = "Expected IMPORT_GRAPH in requires_graphs"
+    if GraphKind.IMPORT_GRAPH not in meta.requires_graph_kinds:
+        msg = "Expected IMPORT_GRAPH in requires_graph_kinds"
         raise AssertionError(msg)
 
 

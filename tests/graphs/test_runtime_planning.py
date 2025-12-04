@@ -26,7 +26,7 @@ from codeintel.config.steps_graphs import (
     GraphPluginRetryPolicy,
     GraphRunScope,
 )
-from codeintel.graphs.core.context import GraphExecutionContext
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginMetadata,
@@ -35,7 +35,7 @@ from codeintel.graphs.core.protocol import (
     GraphPluginSeverity,
 )
 from codeintel.graphs.core.registry import get_graph_registry, register_graph_plugin
-from codeintel.graphs.core.result import GraphPluginResult
+from codeintel.graphs.core.result import PluginResult
 from codeintel.graphs.runtime import planning
 from codeintel.graphs.runtime.planning import (
     GraphPlanContext,
@@ -153,8 +153,8 @@ def _make_test_plugin(
     """
     plugin_config = _resolve_plugin_config(config, overrides)
 
-    def execute(_ctx: GraphExecutionContext) -> GraphPluginResult:
-        return GraphPluginResult.ok()
+    def execute(_ctx: GraphPluginExecutionContext) -> PluginResult:
+        return PluginResult.ok()
 
     metadata = GraphPluginMetadata(
         name=name,

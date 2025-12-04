@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 import pytest
 from duckdb import DuckDBPyConnection
 
+from codeintel.analytics.adapters.base import DeleteScope
 from codeintel.analytics.datasets import (
-    DeleteScope,
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
@@ -104,7 +104,7 @@ def test_function_metrics_insertion_is_idempotent() -> None:
         gateway,
         contract,
         [row],
-        delete_scope=DeleteScope(params=[repo, commit]),
+        delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
     first = _count_rows(gateway.con, contract.table_key, repo, commit)
@@ -112,7 +112,7 @@ def test_function_metrics_insertion_is_idempotent() -> None:
         gateway,
         contract,
         [row],
-        delete_scope=DeleteScope(params=[repo, commit]),
+        delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
     second = _count_rows(gateway.con, contract.table_key, repo, commit)
@@ -164,7 +164,7 @@ def test_graph_metrics_functions_idempotent_and_fk_clean() -> None:
         gateway,
         contract,
         [row],
-        delete_scope=DeleteScope(params=[repo, commit]),
+        delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
     first = _count_rows(gateway.con, contract.table_key, repo, commit)
@@ -172,7 +172,7 @@ def test_graph_metrics_functions_idempotent_and_fk_clean() -> None:
         gateway,
         contract,
         [row],
-        delete_scope=DeleteScope(params=[repo, commit]),
+        delete_scope=DeleteScope(repo=repo, commit=commit),
         scope=f"{repo}@{commit}",
     )
     second = _count_rows(gateway.con, contract.table_key, repo, commit)

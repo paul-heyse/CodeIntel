@@ -25,7 +25,6 @@ from codeintel.analytics.core.plugins.functions import (
     FunctionHistoryPlugin,
     FunctionMetricsPlugin,
 )
-from codeintel.analytics.core.plugins.graphs import CoreGraphMetricsPlugin
 from codeintel.analytics.core.plugins.history import HistoryTimeseriesPlugin
 from codeintel.analytics.core.plugins.hotspots import HotspotsPlugin
 from codeintel.analytics.core.plugins.profiles import ProfilesPlugin
@@ -59,9 +58,10 @@ PROFILES_PLUGIN = ProfilesPlugin()
 HISTORY_TIMESERIES_PLUGIN = HistoryTimeseriesPlugin()
 RISK_FACTORS_PLUGIN = RiskFactorsPlugin()
 CONFIG_DATA_FLOW_PLUGIN = ConfigDataFlowPlugin()
-CORE_GRAPH_METRICS_PLUGIN = CoreGraphMetricsPlugin()
 
 # All plugins in registration order
+# Note: Graph metrics plugins are now in graphs.plugins.metrics and
+# are registered separately via the graph plugin system.
 ALL_PLUGINS = (
     FUNCTION_METRICS_PLUGIN,
     FUNCTION_AST_FEATURES_PLUGIN,
@@ -83,7 +83,6 @@ ALL_PLUGINS = (
     HISTORY_TIMESERIES_PLUGIN,
     RISK_FACTORS_PLUGIN,
     CONFIG_DATA_FLOW_PLUGIN,
-    CORE_GRAPH_METRICS_PLUGIN,
 )
 
 
@@ -130,7 +129,6 @@ __all__ = [
     "ALL_PLUGINS",
     "BEHAVIORAL_COVERAGE_PLUGIN",
     "CONFIG_DATA_FLOW_PLUGIN",
-    "CORE_GRAPH_METRICS_PLUGIN",
     "COVERAGE_FUNCTIONS_PLUGIN",
     "COVERAGE_TEST_EDGES_PLUGIN",
     "DATA_MODELS_PLUGIN",
