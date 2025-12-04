@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import logging
 import time
+import warnings
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Protocol, cast
 
 import anyio
 import httpx
 
-from codeintel.config.serving_models import ServingConfig
 from codeintel.graphs.engine import GraphEngine
 from codeintel.serving import domain_models as dm
 from codeintel.serving.backend import (
@@ -21,11 +21,6 @@ from codeintel.serving.backend import (
     GraphEngineProvider,
 )
 from codeintel.serving.backend.query_api import DuckDBQueryApi
-from codeintel.serving.bootstrap import (
-    ServiceBuildOptions,
-    build_service_from_config,
-    get_observability_from_config,
-)
 from codeintel.serving.mcp import errors
 from codeintel.serving.mcp.models import (
     CallGraphNeighborsResponse,
@@ -431,6 +426,10 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
         """
         Initialize the query service and dataset registry.
 
+        When ``service_override`` is provided (recommended), the backend uses
+        that service directly. Otherwise, it falls back to internal construction
+        which is deprecated.
+
         Raises
         ------
         ValueError
@@ -441,6 +440,15 @@ class DuckDBBackend(DatasetBackendMixin, QueryBackend):
             if isinstance(self.service, LocalQueryService):
                 self.query = self.service.query
             return
+
+        # Deprecated path: internal service construction
+        # Use build_backend_resource() from codeintel.serving.bootstrap instead
+        warnings.warn(
+            "DuckDBBackend without service_override is deprecated. "
+            "Use build_backend_resource() from codeintel.serving.bootstrap instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
         gateway_repo = self.gateway.config.repo
         gateway_commit = self.gateway.config.commit
@@ -1395,65 +1403,3 @@ class HttpBackend(DatasetBackendMixin, QueryBackend):
         if isinstance(result, SubsystemModulesResponse):
             return result
         return SubsystemModulesResponse.from_domain(result)
-
-
-def create_backend(
-    cfg: ServingConfig,
-    *,
-    gateway: StorageGateway,
-    observability: ServiceObservability | None = None,
-) -> QueryBackend:
-    """
-    Create a QueryBackend using a StorageGateway or remote HTTP.
-
-    Parameters
-    ----------
-    cfg:
-        Server configuration loaded from env or caller.
-    gateway:
-        StorageGateway supplying the DuckDB connection and dataset registry in local_db mode.
-    observability:
-        Optional observability configuration for structured logging.
-
-    Returns
-    -------
-    QueryBackend
-        Backend bound to the selected transport.
-
-    Raises
-    ------
-    ValueError
-        If required configuration is missing or the mode is unsupported.
-    """
-    limits = BackendLimits.from_config(cfg)
-    resolved_observability = observability or get_observability_from_config(cfg)
-    if cfg.mode == "local_db":
-        service = build_service_from_config(
-            cfg,
-            gateway=gateway,
-            options=ServiceBuildOptions(
-                observability=resolved_observability,
-            ),
-        )
-        return DuckDBBackend(
-            gateway=gateway,
-            repo=cfg.repo,
-            commit=cfg.commit,
-            limits=limits,
-            observability=resolved_observability,
-            service_override=service if isinstance(service, LocalQueryService) else None,
-        )
-    if cfg.mode == "remote_api":
-        if not cfg.api_base_url:
-            message = "api_base_url is required for remote_api backend"
-            raise ValueError(message)
-        return HttpBackend(
-            base_url=cfg.api_base_url,
-            repo=cfg.repo,
-            commit=cfg.commit,
-            timeout=cfg.timeout_seconds,
-            limits=limits,
-            observability=resolved_observability,
-        )
-    message = f"Unsupported MCP mode: {cfg.mode}"
-    raise ValueError(message)

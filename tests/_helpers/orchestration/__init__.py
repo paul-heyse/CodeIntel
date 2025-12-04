@@ -21,7 +21,7 @@ from tests._helpers.orchestration.entrypoints_orchestration import (
 from tests._helpers.orchestration.gateway import (
     MACROS_EXPECTED,
     DuckDBConnection,
-    ScopeCapturingQuery,
+    ScopeRecordingQuery,
     build_duckdb_backend,
     build_duckdb_query_service,
     build_scope_parsing_service,
@@ -99,7 +99,7 @@ __all__ = [
     "CoverageArtifact",
     "DuckDBConnection",
     "GitRepoContext",
-    "ScopeCapturingQuery",
+    "ScopeRecordingQuery",
     "ToolingContext",
     "ToolingOutputs",
     "build_callgraph_fixture_repo",

@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion.core import IngestExecutionContext
 from codeintel.ingestion.plugins.config_factory import (
     DEFAULT_CONTEXT_MAPPINGS,
@@ -19,7 +20,7 @@ from codeintel.ingestion.plugins.config_factory import (
     infer_config_mapping,
 )
 from tests._helpers.assertions import assert_cannot_setattr
-from tests._helpers.fakes import FakeBuildPaths, FakeSnapshotRef
+from tests._helpers.fakes import create_test_build_paths, create_test_snapshot
 
 # Test constants
 EXPECTED_FIELD_COUNT = 3
@@ -30,8 +31,8 @@ EXPECTED_FIELD_COUNT = 3
 class SimpleDataclassConfig:
     """Simple dataclass config for testing."""
 
-    snapshot: FakeSnapshotRef
-    paths: FakeBuildPaths
+    snapshot: SnapshotRef
+    paths: BuildPaths
     extra_value: str = "default"
 
 
@@ -39,8 +40,8 @@ class SimpleDataclassConfig:
 class ConfigWithTools:
     """Config with tool-related fields."""
 
-    snapshot: FakeSnapshotRef
-    paths: FakeBuildPaths
+    snapshot: SnapshotRef
+    paths: BuildPaths
     tools: dict[str, str] | None = None
     tracker: dict[str, str] | None = None
     tool_service: dict[str, str] | None = None
@@ -51,8 +52,8 @@ class NonDataclassConfig:
 
     def __init__(
         self,
-        snapshot: FakeSnapshotRef,
-        paths: FakeBuildPaths,
+        snapshot: SnapshotRef,
+        paths: BuildPaths,
         *,
         optional_value: str = "default",
     ) -> None:
@@ -66,8 +67,8 @@ class NonDataclassConfig:
 class MockContext:
     """Mock execution context for testing with typed fields."""
 
-    snapshot: FakeSnapshotRef = field(default_factory=FakeSnapshotRef)
-    paths: FakeBuildPaths = field(default_factory=FakeBuildPaths)
+    snapshot: SnapshotRef = field(default_factory=create_test_snapshot)
+    paths: BuildPaths = field(default_factory=create_test_build_paths)
     tools: Any | None = None
     code_profile: Any | None = None
     config_profile: Any | None = None
@@ -311,8 +312,8 @@ def test_config_factory_build_with_custom_mapping() -> None:
     class CustomContext:
         """Context with custom attribute names."""
 
-        my_snapshot: FakeSnapshotRef = field(default_factory=FakeSnapshotRef)
-        my_paths: FakeBuildPaths = field(default_factory=FakeBuildPaths)
+        my_snapshot: SnapshotRef = field(default_factory=create_test_snapshot)
+        my_paths: BuildPaths = field(default_factory=create_test_build_paths)
 
     ctx = CustomContext()
     options = BuildOptions(
@@ -416,11 +417,11 @@ def test_config_factory_custom_mapping_overrides_default() -> None:
     class ContextWithBoth:
         """Context with both snapshot and alt_snapshot."""
 
-        snapshot: FakeSnapshotRef = field(default_factory=FakeSnapshotRef)
-        alt_snapshot: FakeSnapshotRef = field(
-            default_factory=lambda: FakeSnapshotRef(repo="alt/repo", commit="altcommit")
+        snapshot: SnapshotRef = field(default_factory=create_test_snapshot)
+        alt_snapshot: SnapshotRef = field(
+            default_factory=lambda: create_test_snapshot(repo="alt/repo", commit="altcommit")
         )
-        paths: FakeBuildPaths = field(default_factory=FakeBuildPaths)
+        paths: BuildPaths = field(default_factory=create_test_build_paths)
 
     ctx = ContextWithBoth()
     options = BuildOptions(mapping={"snapshot": "alt_snapshot"})
@@ -440,7 +441,7 @@ def test_config_factory_custom_mapping_overrides_default() -> None:
 def test_get_context_value_existing_attribute() -> None:
     """Test getting an existing attribute from context."""
     factory = ConfigFactory()
-    custom_snapshot = FakeSnapshotRef(repo="test-repo", commit="abc")
+    custom_snapshot = create_test_snapshot(repo="test-repo", commit="abc")
     ctx = MockContext(snapshot=custom_snapshot)
 
     config = factory.build(SimpleDataclassConfig, cast("IngestExecutionContext", ctx))
@@ -469,8 +470,8 @@ def test_tracker_from_options_takes_precedence() -> None:
     class ContextWithTracker:
         """Context with tracker attribute."""
 
-        snapshot: FakeSnapshotRef = field(default_factory=FakeSnapshotRef)
-        paths: FakeBuildPaths = field(default_factory=FakeBuildPaths)
+        snapshot: SnapshotRef = field(default_factory=create_test_snapshot)
+        paths: BuildPaths = field(default_factory=create_test_build_paths)
         tracker: Any = field(default_factory=lambda: {"from": "context"})
 
     ctx = ContextWithTracker()

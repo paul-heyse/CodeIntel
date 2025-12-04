@@ -14,7 +14,7 @@ from codeintel.serving.mcp.function_tools import register_function_tools
 from codeintel.serving.mcp.meta_tools import register_meta_tools
 from codeintel.serving.mcp.profile_tools import register_profile_tools
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
-from codeintel.serving.registry import iter_registry_operations
+from codeintel.serving.operations.catalog import iter_registry_operations
 
 if TYPE_CHECKING:
     from codeintel.config.serving_models import ServingConfig

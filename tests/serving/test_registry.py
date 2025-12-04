@@ -10,7 +10,7 @@ import dataclasses
 
 from codeintel.config.datasets import DATASET_CONTRACTS_BY_TABLE_KEY
 from codeintel.config.datasets.dataflow import DataflowEdge, DataflowNode
-from codeintel.serving.registry import (
+from codeintel.serving.operations.catalog import (
     DatasetMeta,
     build_serving_dataflow_graph,
     get_registry_operation,

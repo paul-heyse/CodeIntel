@@ -34,13 +34,8 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
 
-# =============================================================================
-# Constants
-# =============================================================================
-
-DEFAULT_REPO: str = "demo/repo"
-DEFAULT_COMMIT: str = "deadbeef"
-
+# Import constants from central module
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 # =============================================================================
 # Seed Pack Protocol

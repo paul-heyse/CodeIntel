@@ -20,9 +20,8 @@ if TYPE_CHECKING:
     from codeintel.ingestion.engine.service import ToolService
     from codeintel.storage.gateway import StorageGateway
 
-# Default constants for provisioning
-DEFAULT_REPO = "demo/repo"
-DEFAULT_COMMIT = "deadbeef"
+# Import constants from central module
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 
 @dataclass(frozen=True)

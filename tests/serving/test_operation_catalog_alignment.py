@@ -12,7 +12,7 @@ from codeintel.serving.operations import (
     get_operation,
     iter_operations,
 )
-from codeintel.serving.registry import (
+from codeintel.serving.operations.catalog import (
     get_registry_operation,
     iter_registry_operations,
 )

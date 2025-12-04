@@ -221,6 +221,7 @@ def test_resource_provider_protocol_requires_invalidate() -> None:
 
     class MissingInvalidate:
         RESOURCE_NAME: ClassVar[str] = "missing"
+        called: bool = False
 
         def get(self) -> str:
             self.called = True

@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "HttpQueryService": ("codeintel.serving.services.query_service", "HttpQueryService"),
     "LocalQueryService": ("codeintel.serving.services.query_service", "LocalQueryService"),
-    "BackendResource": ("codeintel.serving.services.wiring", "BackendResource"),
-    "build_backend_resource": ("codeintel.serving.services.wiring", "build_backend_resource"),
+    "BackendResource": ("codeintel.serving.bootstrap", "BackendResource"),
+    "build_backend_resource": ("codeintel.serving.bootstrap", "build_backend_resource"),
 }
 
 

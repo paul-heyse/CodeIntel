@@ -102,36 +102,6 @@ def load_api_config() -> ServingConfig:
     return config
 
 
-def create_backend_resource(
-    cfg: ServingConfig, *, gateway: StorageGateway | None = None
-) -> BackendResource:
-    """
-    Instantiate the DuckDB backend for the API.
-
-    Parameters
-    ----------
-    cfg
-        Application configuration containing repo metadata and paths.
-    gateway
-        StorageGateway supplying the connection and dataset registry (required for local_db).
-
-    Returns
-    -------
-    BackendResource
-        Backend instance plus shutdown hook.
-
-    Raises
-    ------
-    McpError
-        If the query service cannot be constructed for the selected mode.
-    """
-    try:
-        return build_backend_resource(cfg, gateway=gateway)
-    except (ProblemError, ValueError, OSError, RuntimeError) as exc:
-        problem_detail = mcp_errors.backend_failure(str(exc)).detail
-        raise mcp_errors.McpError(problem_detail) from exc
-
-
 def problem_response(detail: DomainProblemDetail) -> JSONResponse:
     """
     Convert a domain ProblemDetail payload into a JSON HTTP response.
@@ -249,93 +219,59 @@ def register_routes(app: FastAPI, options: RouterOptions | None = None) -> None:
     app.include_router(build_health_router())
 
 
-def create_app(
-    *,
-    config_loader: Callable[[], ServingConfig] = load_api_config,
-    backend_factory: Callable[..., BackendResource] = create_backend_resource,
-    gateway: StorageGateway | None = None,
-    auto_pipeline: bool | None = None,
-) -> FastAPI:
-    """Build the FastAPI application with configured lifecycle and routes.
-
-    Parameters
-    ----------
-    config_loader
-        Factory for loading application configuration.
-    backend_factory
-        Factory that yields a backend resource for the given configuration.
-    gateway
-        Optional StorageGateway to supply the connection/registry to the backend factory.
-    auto_pipeline
-        When True, attach auto-pipeline dependencies to routes so that
-        prerequisites are automatically run before operations execute.
+def _resolve_gateway_for_config(
+    config: ServingConfig,
+    gateway: StorageGateway | None,
+) -> StorageGateway | None:
+    """
+    Resolve or create a StorageGateway for the given configuration.
 
     Returns
     -------
-    FastAPI
-        Configured FastAPI instance.
+    StorageGateway | None
+        The provided gateway, a newly created gateway, or None for remote modes.
     """
-    options = RouterOptions(auto_pipeline=bool(auto_pipeline)) if auto_pipeline else None
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        config = config_loader()
-        gw = gateway
-        if gw is None and config.mode == "local_db":
-            db_path = config.db_path or Path(":memory:")
-            base_cfg = (
-                StorageConfig.for_readonly(db_path)
-                if config.read_only
-                else StorageConfig.for_ingest(db_path)
-            )
-            gw_cfg = replace(
-                base_cfg,
-                repo=config.repo,
-                commit=config.commit,
-            )
-            gw = open_gateway(gw_cfg)
-        if gw is None and config.mode == "local_db":
-            message = "StorageGateway is required for local_db FastAPI app"
-            raise mcp_errors.backend_failure(message)
-        backend_kwargs: dict[str, object] = {}
-        params = inspect.signature(backend_factory).parameters
-        if "gateway" in params:
-            backend_kwargs["gateway"] = gw
-        elif "_gateway" in params:
-            backend_kwargs["_gateway"] = gw
-        backend_resource = backend_factory(config, **backend_kwargs)
-        app.state.config = config
-        app.state.backend = backend_resource.backend
-        app.state.service = backend_resource.service
-        try:
-            await asyncio.sleep(0)
-            yield
-        finally:
-            backend_resource.close()
-
-    app = FastAPI(
-        title="CodeIntel Metadata API",
-        description="Thin API over DuckDB views for AI agents and MCP clients.",
-        version="0.1.0",
-        lifespan=lifespan,
+    if gateway is not None:
+        return gateway
+    if config.mode != "local_db":
+        return None
+    db_path = config.db_path or Path(":memory:")
+    base_cfg = (
+        StorageConfig.for_readonly(db_path) if config.read_only else StorageConfig.for_ingest(db_path)
     )
+    gw_cfg = replace(base_cfg, repo=config.repo, commit=config.commit)
+    return open_gateway(gw_cfg)
+
+
+def _build_backend_kwargs(
+    backend_factory: Callable[..., BackendResource],
+    gateway: StorageGateway | None,
+) -> dict[str, object]:
+    """
+    Build keyword arguments for the backend factory.
+
+    Returns
+    -------
+    dict[str, object]
+        Keyword arguments including gateway if the factory accepts it.
+    """
+    backend_kwargs: dict[str, object] = {}
+    params = inspect.signature(backend_factory).parameters
+    if "gateway" in params:
+        backend_kwargs["gateway"] = gateway
+    elif "_gateway" in params:
+        backend_kwargs["_gateway"] = gateway
+    return backend_kwargs
+
+
+def _install_request_context_middleware(app: FastAPI) -> None:
+    """Install middleware to attach RequestContext for each HTTP request."""
 
     @app.middleware("http")
     async def _inject_request_context(
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        """
-        Attach a RequestContext for each incoming HTTP request.
-
-        Correlation ID is taken from X-Request-ID / X-Correlation-ID if provided,
-        otherwise generated via generate_correlation_id().
-
-        Returns
-        -------
-        Response
-            Downstream response with correlation id echoed in headers.
-        """
         correlation_id = (
             request.headers.get("X-Request-ID")
             or request.headers.get("X-Correlation-ID")
@@ -365,6 +301,64 @@ def create_app(
             response.headers.setdefault("X-Request-ID", correlation_id)
         return response
 
+
+def create_app(
+    *,
+    config_loader: Callable[[], ServingConfig] = load_api_config,
+    backend_factory: Callable[..., BackendResource] = build_backend_resource,
+    gateway: StorageGateway | None = None,
+    auto_pipeline: bool | None = None,
+) -> FastAPI:
+    """Build the FastAPI application with configured lifecycle and routes.
+
+    Parameters
+    ----------
+    config_loader
+        Factory for loading application configuration.
+    backend_factory
+        Factory that yields a backend resource for the given configuration.
+    gateway
+        Optional StorageGateway to supply the connection/registry to the backend factory.
+    auto_pipeline
+        When True, attach auto-pipeline dependencies to routes so that
+        prerequisites are automatically run before operations execute.
+
+    Returns
+    -------
+    FastAPI
+        Configured FastAPI instance.
+    """
+    options = RouterOptions(auto_pipeline=bool(auto_pipeline)) if auto_pipeline else None
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        config = config_loader()
+        gw = _resolve_gateway_for_config(config, gateway)
+        if gw is None and config.mode == "local_db":
+            message = "StorageGateway is required for local_db FastAPI app"
+            raise mcp_errors.backend_failure(message)
+        backend_kwargs = _build_backend_kwargs(backend_factory, gw)
+        try:
+            backend_resource = backend_factory(config, **backend_kwargs)
+        except (ProblemError, ValueError, OSError, RuntimeError) as exc:
+            problem_detail = mcp_errors.backend_failure(str(exc)).detail
+            raise mcp_errors.McpError(problem_detail) from exc
+        app.state.config = config
+        app.state.backend = backend_resource.backend
+        app.state.service = backend_resource.service
+        try:
+            await asyncio.sleep(0)
+            yield
+        finally:
+            backend_resource.close()
+
+    app = FastAPI(
+        title="CodeIntel Metadata API",
+        description="Thin API over DuckDB views for AI agents and MCP clients.",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+    _install_request_context_middleware(app)
     install_exception_handlers(app)
     install_logging_middleware(app)
     register_routes(app, options)

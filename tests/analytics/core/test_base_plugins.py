@@ -50,7 +50,7 @@ DEFAULT_COMMIT = "abc123"
 
 
 @pytest.fixture
-def test_gateway() -> Generator[StorageGateway, None, None]:
+def test_gateway() -> Generator[StorageGateway]:
     """Provide a test gateway that auto-closes.
 
     Yields

@@ -12,7 +12,7 @@ from mcp.server.fastmcp import FastMCP
 from codeintel.serving.backend import BackendLimits
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.meta_tools import register_meta_tools
-from codeintel.serving.registry import (
+from codeintel.serving.operations.catalog import (
     build_dataset_meta,
     build_serving_dataflow_graph,
     iter_registry_operations,

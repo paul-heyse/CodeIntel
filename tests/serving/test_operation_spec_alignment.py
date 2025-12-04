@@ -21,7 +21,7 @@ from codeintel.serving.http.routes.subsystems import build_subsystem_router
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService
 from codeintel.serving.mcp.tools_base import register_tools
 from codeintel.serving.operations import Operation, get_operation
-from codeintel.serving.registry import iter_registry_operations
+from codeintel.serving.operations.catalog import iter_registry_operations
 
 
 class _DummyModel:
