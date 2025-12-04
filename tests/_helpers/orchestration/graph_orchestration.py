@@ -1,15 +1,13 @@
-"""Shared helpers for graph span alignment and coverage integration tests."""
+"""Graph test environment orchestration functions."""
 
 from __future__ import annotations
 
 import importlib.util
 import sys
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
-import networkx as nx
 
 from codeintel.config import ConfigBuilder
 from codeintel.config.primitives import SnapshotRef
@@ -19,41 +17,16 @@ from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.graphs.plugins.runner import GraphPluginRunner
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow
+from tests._helpers.configs.graph_config import (
+    COMMIT,
+    REPO,
+    GraphEngineSeed,
+    SpanSnapshot,
+    SpanTestEnv,
+)
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.tooling import CoverageArtifact, generate_coverage_for_function
-
-REPO = "demo/repo"
-COMMIT = "deadbeef"
-
-
-@dataclass(frozen=True)
-class SpanSnapshot:
-    """Collected GOID/symbol-use state for alignment assertions."""
-
-    cfg_goids: set[int]
-    callgraph_goids: set[int]
-    coverage_goids: set[int]
-    symbol_use_paths: set[str]
-
-
-@dataclass
-class SpanTestEnv:
-    """Reusable environment for span alignment checks."""
-
-    repo_root: Path
-    builder: ConfigBuilder
-    gateway: StorageGateway
-    expected_goid: int
-
-
-@dataclass(frozen=True)
-class GraphEngineSeed:
-    """Configuration for seeding an NxGraphEngine in tests."""
-
-    repo: str = "test/metrics"
-    commit: str = "metrics123"
-    repo_root: Path | None = None
-    call_graph: nx.DiGraph | None = None
-    import_graph: nx.DiGraph | None = None
 
 
 def build_seeded_graph_engine(gateway: StorageGateway, seed: GraphEngineSeed) -> NxGraphEngine:
@@ -87,6 +60,13 @@ def build_seeded_graph_engine(gateway: StorageGateway, seed: GraphEngineSeed) ->
 def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv:
     """Create a reusable environment for span alignment checks.
 
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory for test artifacts.
+    gateway
+        Storage gateway for database operations.
+
     Returns
     -------
     SpanTestEnv
@@ -94,8 +74,8 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
     """
     repo_root = tmp_path / "repo"
     caller_start, caller_end = _write_repo(repo_root)
-    expected_goid = _seed_modules_and_goids(gateway.con, caller_start, caller_end)
-    _seed_test_catalog(gateway.con)
+    expected_goid = _seed_modules_and_goids(gateway, caller_start, caller_end)
+    _seed_test_catalog(gateway)
     builder = ConfigBuilder.from_snapshot(repo=REPO, commit=COMMIT, repo_root=repo_root)
     return SpanTestEnv(
         repo_root=repo_root,
@@ -106,7 +86,13 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
 
 
 def build_span_graph_components(env: SpanTestEnv) -> None:
-    """Run call graph, CFG/DFG, and symbol-use builders for the span test."""
+    """Run call graph, CFG/DFG, and symbol-use builders for the span test.
+
+    Parameters
+    ----------
+    env
+        Span test environment.
+    """
     call_graph_cfg = env.builder.call_graph()
     runner = GraphPluginRunner(gateway=env.gateway)
     plugin = get_callgraph_builder_plugin()
@@ -143,6 +129,11 @@ def build_span_graph_components(env: SpanTestEnv) -> None:
 def generate_span_coverage(repo_root: Path) -> CoverageArtifact:
     """Generate coverage artifact for the test caller function.
 
+    Parameters
+    ----------
+    repo_root
+        Path to the repository root.
+
     Returns
     -------
     CoverageArtifact
@@ -159,6 +150,11 @@ def generate_span_coverage(repo_root: Path) -> CoverageArtifact:
 
 def collect_span_snapshot(con: object) -> SpanSnapshot:
     """Collect span-related GOIDs and symbol uses from the gateway.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection object.
 
     Returns
     -------
@@ -211,51 +207,51 @@ def _write_repo(repo_root: Path) -> tuple[int, int]:
     return 3, 4
 
 
-def _seed_modules_and_goids(con: object, caller_start: int, caller_end: int) -> int:
-    con = _as_duckdb(con)
+def _seed_modules_and_goids(gateway: StorageGateway, caller_start: int, caller_end: int) -> int:
     now = datetime.now(UTC)
-    con.executemany(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, 'python', '[]', '[]')
-        """,
+    insert_rows(
+        gateway,
         [
-            ("pkg.a", "pkg/a.py", REPO, COMMIT),
-            ("pkg.b", "pkg/b.py", REPO, COMMIT),
+            ModuleRow(module="pkg.a", path="pkg/a.py", repo=REPO, commit=COMMIT),
+            ModuleRow(module="pkg.b", path="pkg/b.py", repo=REPO, commit=COMMIT),
         ],
     )
     expected_goid = 200
-    con.execute(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            expected_goid,
-            "urn:pkg.b.caller",
-            REPO,
-            COMMIT,
-            "pkg/b.py",
-            "python",
-            "function",
-            "pkg.b.caller",
-            caller_start,
-            caller_end,
-            now,
-        ),
+    insert_rows(
+        gateway,
+        [
+            GoidRow(
+                goid_h128=expected_goid,
+                urn="urn:pkg.b.caller",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path="pkg/b.py",
+                kind="function",
+                qualname="pkg.b.caller",
+                start_line=caller_start,
+                end_line=caller_end,
+                created_at=now,
+            )
+        ],
     )
     return expected_goid
 
 
-def _seed_test_catalog(con: object) -> None:
-    con = _as_duckdb(con)
-    con.execute(
-        """
-        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status)
-        VALUES ('tests/test_sample.py::test_caller', 'pkg/b.py', 'pkg.b.caller', ?, ?, 'passed')
-        """,
-        [REPO, COMMIT],
+def _seed_test_catalog(gateway: StorageGateway) -> None:
+    now = datetime.now(UTC)
+    insert_rows(
+        gateway,
+        [
+            TestCatalogRow(
+                test_id="tests/test_sample.py::test_caller",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path="pkg/b.py",
+                qualname="pkg.b.caller",
+                status="passed",
+                created_at=now,
+            )
+        ],
     )
 
 
@@ -278,8 +274,7 @@ def _as_duckdb(con: object) -> duckdb.DuckDBPyConnection:
 
 
 __all__ = [
-    "SpanSnapshot",
-    "SpanTestEnv",
+    "build_seeded_graph_engine",
     "build_span_graph_components",
     "collect_span_snapshot",
     "create_span_test_env",

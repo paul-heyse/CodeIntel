@@ -20,8 +20,9 @@ from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gatewa
 from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS
 from codeintel.storage.schemas import apply_all_schemas
-from tests._helpers.coverage_env import CoverageSeedConfig, seed_coverage_rows
+from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.duckdb import gateway_with_macros
+from tests._helpers.orchestration import seed_coverage_rows
 
 
 def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str) -> None:

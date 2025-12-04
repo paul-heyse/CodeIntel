@@ -6,6 +6,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import ClassVar
 
 from codeintel.storage.gateway import StorageGateway
 
@@ -26,6 +27,15 @@ def _iso(dt: datetime | None = None) -> str:
 class RepoMapRow:
     """Row for core.repo_map."""
 
+    __table__: ClassVar[str] = "core.repo_map"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "modules",
+        "overlays",
+        "generated_at",
+    )
+
     repo: str
     commit: str
     modules: dict[str, str]
@@ -45,6 +55,17 @@ class RepoMapRow:
 @dataclass(frozen=True)
 class ModuleRow:
     """Row for core.modules."""
+
+    __table__: ClassVar[str] = "core.modules"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "module",
+        "path",
+        "repo",
+        "commit",
+        "language",
+        "tags",
+        "owners",
+    )
 
     module: str
     path: str
@@ -68,6 +89,21 @@ class ModuleRow:
 @dataclass(frozen=True)
 class GoidRow:
     """Row for core.goids."""
+
+    __table__: ClassVar[str] = "core.goids"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "start_line",
+        "end_line",
+        "created_at",
+    )
 
     goid_h128: int
     urn: str
@@ -100,6 +136,24 @@ class GoidRow:
 @dataclass(frozen=True)
 class GoidCrosswalkRow:
     """Row for core.goid_crosswalk."""
+
+    __table__: ClassVar[str] = "core.goid_crosswalk"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "goid",
+        "lang",
+        "module_path",
+        "file_path",
+        "start_line",
+        "end_line",
+        "scip_symbol",
+        "ast_qualname",
+        "cst_node_id",
+        "chunk_id",
+        "symbol_id",
+        "updated_at",
+    )
 
     repo: str
     commit: str
@@ -156,6 +210,16 @@ class GoidCrosswalkRow:
 class CallGraphNodeRow:
     """Row for graph.call_graph_nodes."""
 
+    __table__: ClassVar[str] = "graph.call_graph_nodes"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "goid_h128",
+        "language",
+        "kind",
+        "arity",
+        "is_public",
+        "rel_path",
+    )
+
     goid_h128: int
     language: str
     kind: str
@@ -177,6 +241,22 @@ class CallGraphNodeRow:
 @dataclass(frozen=True)
 class CallGraphEdgeRow:
     """Row for graph.call_graph_edges."""
+
+    __table__: ClassVar[str] = "graph.call_graph_edges"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "caller_goid_h128",
+        "callee_goid_h128",
+        "callsite_path",
+        "callsite_line",
+        "callsite_col",
+        "language",
+        "kind",
+        "resolved_via",
+        "confidence",
+        "evidence_json",
+    )
 
     repo: str
     commit: str
@@ -221,6 +301,17 @@ class CallGraphEdgeRow:
 class ImportGraphEdgeRow:
     """Row for graph.import_graph_edges."""
 
+    __table__: ClassVar[str] = "graph.import_graph_edges"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "src_module",
+        "dst_module",
+        "src_fan_out",
+        "dst_fan_in",
+        "cycle_group",
+    )
+
     repo: str
     commit: str
     src_module: str
@@ -246,6 +337,15 @@ class ImportGraphEdgeRow:
 class SymbolUseEdgeRow:
     """Row for graph.symbol_use_edges with GOID detail."""
 
+    __table__: ClassVar[str] = "graph.symbol_use_edges"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "symbol",
+        "def_path",
+        "use_path",
+        "same_file",
+        "same_module",
+    )
+
     symbol: str
     def_path: str
     use_path: str
@@ -253,6 +353,22 @@ class SymbolUseEdgeRow:
     same_module: bool
     def_goid_h128: int | None = None
     use_goid_h128: int | None = None
+
+    def to_tuple(self) -> tuple[str, str, str, bool, bool]:
+        """Return standard tuple for basic insertion.
+
+        Returns
+        -------
+        tuple[str, str, str, bool, bool]
+            Row values in column order.
+        """
+        return (
+            self.symbol,
+            self.def_path,
+            self.use_path,
+            self.same_file,
+            self.same_module,
+        )
 
     def to_basic_tuple(self) -> tuple[str, str, str, bool, bool]:
         return (
@@ -280,6 +396,21 @@ class SymbolUseEdgeRow:
 @dataclass(frozen=True)
 class CFGBlockRow:
     """Row for graph.cfg_blocks."""
+
+    __table__: ClassVar[str] = "graph.cfg_blocks"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "function_goid_h128",
+        "block_idx",
+        "block_id",
+        "label",
+        "file_path",
+        "start_line",
+        "end_line",
+        "kind",
+        "stmts_json",
+        "in_degree",
+        "out_degree",
+    )
 
     function_goid_h128: int
     block_idx: int
@@ -315,6 +446,14 @@ class CFGBlockRow:
 class CFGEdgeRow:
     """Row for graph.cfg_edges."""
 
+    __table__: ClassVar[str] = "graph.cfg_edges"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "function_goid_h128",
+        "src_block_id",
+        "dst_block_id",
+        "edge_kind",
+    )
+
     function_goid_h128: int
     src_block_id: str
     dst_block_id: str
@@ -332,6 +471,18 @@ class CFGEdgeRow:
 @dataclass(frozen=True)
 class DFGEdgeRow:
     """Row for graph.dfg_edges."""
+
+    __table__: ClassVar[str] = "graph.dfg_edges"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "function_goid_h128",
+        "src_block_id",
+        "dst_block_id",
+        "src_var",
+        "dst_var",
+        "edge_kind",
+        "via_phi",
+        "use_kind",
+    )
 
     function_goid_h128: int
     src_block_id: str
@@ -674,6 +825,40 @@ class CoverageFunctionRow:
 class RiskFactorRow:
     """Row for analytics.goid_risk_factors."""
 
+    __table__: ClassVar[str] = "analytics.goid_risk_factors"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "function_goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "loc",
+        "logical_loc",
+        "cyclomatic_complexity",
+        "complexity_bucket",
+        "typedness_bucket",
+        "typedness_source",
+        "hotspot_score",
+        "file_typed_ratio",
+        "static_error_count",
+        "has_static_errors",
+        "executable_lines",
+        "covered_lines",
+        "coverage_ratio",
+        "tested",
+        "test_count",
+        "failing_test_count",
+        "last_test_status",
+        "risk_score",
+        "risk_level",
+        "tags",
+        "owners",
+        "created_at",
+    )
+
     function_goid_h128: int
     urn: str
     repo: str
@@ -778,6 +963,24 @@ class TestCatalogRow:
     """Row for analytics.test_catalog."""
 
     __test__ = False
+    __table__: ClassVar[str] = "analytics.test_catalog"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "test_id",
+        "test_goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "qualname",
+        "kind",
+        "status",
+        "duration_ms",
+        "markers",
+        "parametrized",
+        "flaky",
+        "created_at",
+    )
+
     test_id: str
     repo: str
     commit: str
@@ -1013,6 +1216,18 @@ class FunctionValidationRow:
 @dataclass(frozen=True)
 class ConfigValueRow:
     """Row for analytics.config_values."""
+
+    __table__: ClassVar[str] = "analytics.config_values"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "config_path",
+        "format",
+        "key",
+        "reference_paths",
+        "reference_modules",
+        "reference_count",
+    )
 
     repo: str
     commit: str

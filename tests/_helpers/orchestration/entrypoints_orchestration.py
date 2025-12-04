@@ -1,4 +1,4 @@
-"""Helpers for entrypoint/dependency analytics tests."""
+"""Entrypoints test orchestration functions."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.coverage_env import CoverageSeedConfig
+from tests._helpers.builders import GoidRow, ModuleRow
+from tests._helpers.configs.coverage_config import CoverageSeedConfig
+from tests._helpers.row_protocol import insert_rows
 
 
 @dataclass(frozen=True)
@@ -31,48 +33,55 @@ def seed_app_modules_and_goids(
 ) -> AppSeeds:
     """Insert modules and GOIDs for pkg.app entrypoints.
 
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database operations.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    hello_goid
+        GOID for the hello function.
+    cli_goid
+        GOID for the cli function.
+
     Returns
     -------
     AppSeeds
         Seed metadata including GOIDs/URNs for hello and cli.
     """
     now = datetime.now(UTC)
-    gateway.con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES ('pkg.app', 'pkg/app.py', ?, ?, 'python', '[]', '[]')
-        """,
-        [repo, commit],
+    insert_rows(
+        gateway,
+        [ModuleRow(module="pkg.app", path="pkg/app.py", repo=repo, commit=commit)],
     )
-    gateway.con.executemany(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line,
-            created_at
-        ) VALUES (?, ?, ?, ?, ?, 'python', 'function', ?, ?, ?, ?)
-        """,
+    insert_rows(
+        gateway,
         [
-            (
-                hello_goid,
-                f"goid:{repo}#python:function:pkg.app.hello",
-                repo,
-                commit,
-                "pkg/app.py",
-                "pkg.app.hello",
-                9,
-                15,
-                now,
+            GoidRow(
+                goid_h128=hello_goid,
+                urn=f"goid:{repo}#python:function:pkg.app.hello",
+                repo=repo,
+                commit=commit,
+                rel_path="pkg/app.py",
+                kind="function",
+                qualname="pkg.app.hello",
+                start_line=9,
+                end_line=15,
+                created_at=now,
             ),
-            (
-                cli_goid,
-                f"goid:{repo}#python:function:pkg.app.cli",
-                repo,
-                commit,
-                "pkg/app.py",
-                "pkg.app.cli",
-                17,
-                23,
-                now,
+            GoidRow(
+                goid_h128=cli_goid,
+                urn=f"goid:{repo}#python:function:pkg.app.cli",
+                repo=repo,
+                commit=commit,
+                rel_path="pkg/app.py",
+                kind="function",
+                qualname="pkg.app.cli",
+                start_line=17,
+                end_line=23,
+                created_at=now,
             ),
         ],
     )
@@ -112,7 +121,6 @@ def make_coverage_seed_from_app(seeds: AppSeeds) -> CoverageSeedConfig:
 
 __all__ = [
     "AppSeeds",
-    "CoverageSeedConfig",
     "make_coverage_seed_from_app",
     "seed_app_modules_and_goids",
 ]

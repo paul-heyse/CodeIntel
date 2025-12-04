@@ -31,7 +31,7 @@ from codeintel.config.datasets import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.row_factories import blank_test_profile_row
+from tests._helpers.factories import blank_test_profile_row
 
 
 @contextmanager
