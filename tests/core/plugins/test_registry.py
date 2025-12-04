@@ -423,7 +423,7 @@ def test_resolve_selection_with_enabled(registry: TestRegistry) -> None:
     registry.register(make_plugin("b"))
     registry.register(make_plugin("c"))
 
-    selected, skipped = registry._resolve_selection(
+    selected, _skipped = registry._resolve_selection(
         plugin_names=None,
         enabled=["a", "b"],
         disabled=None,

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
-from codeintel.storage.repositories import fetch_models_normalized
 from codeintel.storage.repositories import (
     DatasetReadRepository,
     FunctionRepository,
@@ -13,6 +12,7 @@ from codeintel.storage.repositories import (
     ModuleRepository,
     SubsystemRepository,
     TestRepository,
+    fetch_models_normalized,
 )
 from tests._helpers import ProvisionedGateway
 

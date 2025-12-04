@@ -197,9 +197,7 @@ def test_to_base_metadata_strips_whitespace() -> None:
     options = BasePluginMetaOptions()
 
     def func(ctx: object) -> PluginResult:
-        """
-        Description with whitespace.
-        """
+        """Description with whitespace."""
         return PluginResult.ok()
 
     metadata = options.to_base_metadata(func)

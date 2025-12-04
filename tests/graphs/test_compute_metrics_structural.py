@@ -6,6 +6,7 @@ clustering coefficient, triangles, k-core, constraint, and effective size.
 
 from __future__ import annotations
 
+import math
 from typing import Final
 
 import networkx as nx
@@ -330,12 +331,16 @@ def test_effective_size_empty_graph() -> None:
 
 
 def test_effective_size_single_node() -> None:
-    """Single node has effective size 0 (no neighbors)."""
+    """Single node has effective size nan (no neighbors).
+
+    NetworkX returns nan for nodes with no neighbors because effective
+    size is undefined without neighbors to be redundant with.
+    """
     graph = nx.Graph()
     graph.add_node("A")
     result = compute_effective_size(graph)
 
-    assert result["A"] == 0.0
+    assert math.isnan(result["A"])
 
 
 def test_effective_size_star_graph() -> None:

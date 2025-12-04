@@ -8,13 +8,13 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.helpers.profiling import (
     DOCS_VIEWS,
     explain,
     run_profile,
     write_text,
 )
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.views import create_all_views

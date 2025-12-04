@@ -53,12 +53,14 @@ def count_simple_paths(
                 return count
             try:
                 paths = nx.all_simple_paths(graph, source=source, target=target, cutoff=cutoff)
-            except nx.NetworkXError:
+                for _ in paths:
+                    count += 1
+                    if count >= max_paths:
+                        return count
+            except nx.NetworkXException:
+                # Covers NetworkXError, NodeNotFound, and other NetworkX exceptions
+                # Exception can be raised during iteration, not just creation
                 continue
-            for _ in paths:
-                count += 1
-                if count >= max_paths:
-                    return count
     return count
 
 
@@ -90,7 +92,8 @@ def compute_avg_shortest_path_from_source(
     try:
         lengths = nx.single_source_shortest_path_length(graph, source)
         return sum(lengths.values()) / len(lengths) if lengths else 0.0
-    except nx.NetworkXError:
+    except nx.NetworkXException:
+        # Covers NetworkXError, NodeNotFound, and other NetworkX exceptions
         return 0.0
 
 
@@ -121,7 +124,8 @@ def compute_reachable_nodes(
     """
     try:
         nodes = nx.descendants(graph, source)
-    except nx.NetworkXError:
+    except nx.NetworkXException:
+        # Covers NetworkXError, NodeNotFound, and other NetworkX exceptions
         nodes = set()
     nodes.add(source)
     return nodes

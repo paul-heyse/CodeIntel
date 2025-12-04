@@ -25,7 +25,7 @@ from codeintel.graphs.plugins.builders.goid import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.storage.snapshot import SnapshotRef
+    from codeintel.config.primitives import SnapshotRef
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -233,16 +233,16 @@ def test_build_goid_entries_basic(
     )
 
     # GOID row assertions
-    assert goid_row.rel_path == TEST_PATH
-    assert goid_row.qualname == TEST_QUALNAME
-    assert goid_row.start_line == EXPECTED_START_LINE
-    assert goid_row.end_line == EXPECTED_END_LINE
-    assert goid_row.kind == "method"  # FunctionDef with parent_qualname
+    assert goid_row["rel_path"] == TEST_PATH
+    assert goid_row["qualname"] == TEST_QUALNAME
+    assert goid_row["start_line"] == EXPECTED_START_LINE
+    assert goid_row["end_line"] == EXPECTED_END_LINE
+    assert goid_row["kind"] == "method"  # FunctionDef with parent_qualname
 
     # Crosswalk row assertions
-    assert xwalk_row.file_path == TEST_PATH
-    assert xwalk_row.module_path == TEST_MODULE
-    assert xwalk_row.start_line == EXPECTED_START_LINE
+    assert xwalk_row["file_path"] == TEST_PATH
+    assert xwalk_row["module_path"] == TEST_MODULE
+    assert xwalk_row["start_line"] == EXPECTED_START_LINE
 
 
 def test_build_goid_entries_with_decorator(
@@ -258,8 +258,8 @@ def test_build_goid_entries_with_decorator(
     )
 
     # Start line should use decorator start line (earlier)
-    assert goid_row.start_line == DECORATOR_START_LINE
-    assert xwalk_row.start_line == DECORATOR_START_LINE
+    assert goid_row["start_line"] == DECORATOR_START_LINE
+    assert xwalk_row["start_line"] == DECORATOR_START_LINE
 
 
 def test_build_goid_entries_module(
@@ -274,8 +274,8 @@ def test_build_goid_entries_module(
         module_ast_row, goid_config, now, module_by_path
     )
 
-    assert goid_row.kind == "module"
-    assert goid_row.start_line == 1
+    assert goid_row["kind"] == "module"
+    assert goid_row["start_line"] == 1
 
 
 def test_build_goid_entries_class(
@@ -290,8 +290,8 @@ def test_build_goid_entries_class(
         class_ast_row, goid_config, now, module_by_path
     )
 
-    assert goid_row.kind == "class"
-    assert goid_row.qualname == "MyClass"
+    assert goid_row["kind"] == "class"
+    assert goid_row["qualname"] == "MyClass"
 
 
 def test_build_goid_entries_async_function(
@@ -307,8 +307,8 @@ def test_build_goid_entries_async_function(
     )
 
     # AsyncFunctionDef with parent is a method
-    assert goid_row.kind == "method"
-    assert goid_row.qualname == "MyClass.async_method"
+    assert goid_row["kind"] == "method"
+    assert goid_row["qualname"] == "MyClass.async_method"
 
 
 def test_build_goid_entries_missing_module_in_map(
@@ -324,9 +324,9 @@ def test_build_goid_entries_missing_module_in_map(
     )
 
     # Should still work, deriving module from path
-    assert goid_row.rel_path == TEST_PATH
+    assert goid_row["rel_path"] == TEST_PATH
     # Module path derived from file path
-    assert xwalk_row.module_path is not None
+    assert xwalk_row["module_path"] is not None
 
 
 def test_build_goid_entries_windows_path_normalized(
@@ -352,8 +352,8 @@ def test_build_goid_entries_windows_path_normalized(
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
     # Path should be normalized to forward slashes
-    assert "/" in goid_row.rel_path
-    assert "\\" not in goid_row.rel_path
+    assert "/" in goid_row["rel_path"]
+    assert "\\" not in goid_row["rel_path"]
 
 
 # ===========================================================================
@@ -383,7 +383,7 @@ def test_build_goid_entries_none_end_line(
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
     # Should not raise, end_line should be None
-    assert goid_row.end_line is None
+    assert goid_row["end_line"] is None
 
 
 def test_build_goid_entries_nan_values(
@@ -408,7 +408,7 @@ def test_build_goid_entries_nan_values(
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
     # Should handle NaN/NA gracefully
-    assert goid_row.start_line is not None  # Falls back to default
+    assert goid_row["start_line"] is not None  # Falls back to default
 
 
 def test_build_goid_entries_top_level_function(
@@ -433,7 +433,7 @@ def test_build_goid_entries_top_level_function(
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
     # Top-level function (no parent class)
-    assert goid_row.kind == "function"
+    assert goid_row["kind"] == "function"
 
 
 def test_build_goid_entries_init_file(
@@ -459,8 +459,8 @@ def test_build_goid_entries_init_file(
         row, goid_config, now, module_by_path
     )
 
-    assert goid_row.kind == "module"
-    assert xwalk_row.module_path == "src.pkg"
+    assert goid_row["kind"] == "module"
+    assert xwalk_row["module_path"] == "src.pkg"
 
 
 # ===========================================================================
@@ -484,8 +484,8 @@ def test_build_goid_entries_consistent_hash(
     )
 
     # Same input should produce same GOID hash
-    assert goid_row1.goid_h128 == goid_row2.goid_h128
-    assert goid_row1.urn == goid_row2.urn
+    assert goid_row1["goid_h128"] == goid_row2["goid_h128"]
+    assert goid_row1["urn"] == goid_row2["urn"]
 
 
 def test_build_goid_entries_different_hash_for_different_input(
@@ -505,7 +505,7 @@ def test_build_goid_entries_different_hash_for_different_input(
     )
 
     # Different input should produce different GOID hash
-    assert goid_row1.goid_h128 != goid_row2.goid_h128
+    assert goid_row1["goid_h128"] != goid_row2["goid_h128"]
 
 
 # ===========================================================================
@@ -526,10 +526,10 @@ def test_build_goid_entries_urn_format(
     )
 
     # URN should be well-formed
-    assert goid_row.urn is not None
-    assert len(goid_row.urn) > 0
+    assert goid_row["urn"] is not None
+    assert len(goid_row["urn"]) > 0
     # URN typically contains repo, path, qualname info
-    assert ":" in goid_row.urn or "/" in goid_row.urn
+    assert ":" in goid_row["urn"] or "/" in goid_row["urn"]
 
 
 # ===========================================================================
@@ -549,8 +549,8 @@ def test_build_goid_entries_uses_provided_timestamp(
         sample_ast_row, goid_config, specific_time, module_by_path
     )
 
-    assert goid_row.created_at == specific_time
-    assert xwalk_row.updated_at == specific_time
+    assert goid_row["created_at"] == specific_time
+    assert xwalk_row["updated_at"] == specific_time
 
 
 # ===========================================================================
@@ -593,7 +593,7 @@ def test_goid_kind_determination(
 
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
-    assert goid_row.kind == expected_kind
+    assert goid_row["kind"] == expected_kind
 
 
 @pytest.mark.parametrize(
@@ -631,4 +631,4 @@ def test_start_line_computation(
 
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
-    assert goid_row.start_line == expected_start
+    assert goid_row["start_line"] == expected_start

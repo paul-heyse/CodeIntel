@@ -138,7 +138,8 @@ def test_create_retrying_respects_max_attempts() -> None:
         for attempt in policy.create_retrying():
             with attempt:
                 call_count += 1
-                raise ValueError("Always fails")
+                msg = "Always fails"
+                raise ValueError(msg)
 
     assert call_count == 3
 
@@ -171,8 +172,8 @@ def test_create_retrying_success_after_retry() -> None:
         with attempt:
             call_count += 1
             if call_count < 2:
-                raise ValueError("Transient failure")
-            result = "success"
+                msg = "Transient failure"
+                raise ValueError(msg)
 
     assert call_count == 2
 
@@ -222,7 +223,8 @@ def test_as_decorator_application() -> None:
         nonlocal call_count
         call_count += 1
         if call_count < 2:
-            raise ValueError("Transient")
+            msg = "Transient"
+            raise ValueError(msg)
         return "decorated_success"
 
     result = flaky_function()
@@ -333,7 +335,8 @@ def test_with_retry_retries_on_exception() -> None:
         nonlocal call_count
         call_count += 1
         if call_count < 2:
-            raise ValueError("Transient")
+            msg = "Transient"
+            raise ValueError(msg)
         return "success"
 
     policy = RetryPolicy(
@@ -353,7 +356,8 @@ def test_with_retry_raises_after_exhaustion() -> None:
     """Verify with_retry raises after retry exhaustion."""
 
     def always_fails() -> str:
-        raise ValueError("Always fails")
+        msg = "Always fails"
+        raise ValueError(msg)
 
     policy = RetryPolicy(
         max_attempts=2,

@@ -56,7 +56,8 @@ def test_plugin_catchable_errors_can_catch() -> None:
     """Verify PLUGIN_CATCHABLE_ERRORS can be used in try/except."""
     caught = False
     try:
-        raise ValueError("test")
+        msg = "test"
+        raise ValueError(msg)
     except PLUGIN_CATCHABLE_ERRORS:
         caught = True
 
@@ -191,7 +192,8 @@ def test_plugin_timeout_error_inherits_from_exception() -> None:
 def test_plugin_timeout_error_can_be_raised() -> None:
     """Verify PluginTimeoutError can be raised and caught."""
     with pytest.raises(PluginTimeoutError) as exc_info:
-        raise PluginTimeoutError("slow.plugin", 10000, elapsed_ms=15000.0)
+        msg = "slow.plugin"
+        raise PluginTimeoutError(msg, 10000, elapsed_ms=15000.0)
 
     assert exc_info.value.plugin_name == "slow.plugin"
     assert exc_info.value.timeout_ms == 10000
@@ -226,7 +228,8 @@ def test_plugin_skipped_error_inherits_from_exception() -> None:
 def test_plugin_skipped_error_can_be_raised() -> None:
     """Verify PluginSkippedError can be raised and caught."""
     with pytest.raises(PluginSkippedError) as exc_info:
-        raise PluginSkippedError("disabled.plugin", "explicitly disabled")
+        msg = "disabled.plugin"
+        raise PluginSkippedError(msg, "explicitly disabled")
 
     assert exc_info.value.plugin_name == "disabled.plugin"
     assert exc_info.value.reason == "explicitly disabled"

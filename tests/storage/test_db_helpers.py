@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.helpers import (
     row_counts_for_tables,
     safe_row_counts,
 )
-from codeintel.storage.gateway import StorageGateway
 
 
 def test_row_counts_for_tables_returns_dict(

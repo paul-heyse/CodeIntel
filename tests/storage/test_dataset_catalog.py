@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.datasets import DatasetContract, get_dataset_contracts_by_table_key
+from codeintel.storage.datasets import DatasetRegistry
 from codeintel.storage.datasets.catalog import (
     SamplingConfig,
     build_catalog,
     write_html_catalog,
     write_markdown_catalog,
 )
-from codeintel.storage.datasets import DatasetRegistry
 from tests._helpers.gateway import memory_con_with_macros
 
 

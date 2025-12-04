@@ -57,32 +57,43 @@ def test_dominator_tree_entry_not_in_graph_returns_empty() -> None:
 
 
 def test_dominator_tree_single_node() -> None:
-    """Single node graph returns single entry with None dominator."""
+    """Single node graph with no edges returns empty dict.
+
+    NetworkX immediate_dominators returns empty dict for isolated node.
+    """
     graph = nx.DiGraph()
     graph.add_node("A")
     result = compute_dominator_tree(graph, entry="A")
-    assert result == {"A": None}
+    assert result == {}
 
 
 def test_dominator_tree_chain_graph() -> None:
-    """Chain graph has linear dominator tree."""
+    """Chain graph has linear dominator tree.
+
+    Entry node is not included in result (only dominated nodes).
+    """
     graph = chain_graph(4)  # A -> B -> C -> D
     result = compute_dominator_tree(graph, entry="A")
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
-    assert result["A"] is None  # Entry dominates itself
+    # Entry node 'A' is not in the result - only dominated nodes
+    assert len(result) == EXPECTED_NODE_COUNT_THREE
+    assert "A" not in result
     assert result["B"] == "A"
     assert result["C"] == "B"
     assert result["D"] == "C"
 
 
 def test_dominator_tree_diamond_graph() -> None:
-    """Diamond graph has correct dominators."""
+    """Diamond graph has correct dominators.
+
+    Entry node is not included in result (only dominated nodes).
+    """
     graph = diamond_graph()  # A -> B, A -> C, B -> D, C -> D
     result = compute_dominator_tree(graph, entry="A")
 
-    assert len(result) == EXPECTED_NODE_COUNT_FOUR
-    assert result["A"] is None
+    # Entry node 'A' is not in the result - only dominated nodes
+    assert len(result) == EXPECTED_NODE_COUNT_THREE
+    assert "A" not in result
     assert result["B"] == "A"
     assert result["C"] == "A"
     # D is dominated by A (the only common dominator of B and C)
@@ -90,7 +101,10 @@ def test_dominator_tree_diamond_graph() -> None:
 
 
 def test_dominator_tree_multiple_paths() -> None:
-    """Graph with multiple paths computes correct immediate dominators."""
+    """Graph with multiple paths computes correct immediate dominators.
+
+    Entry node is not included in result (only dominated nodes).
+    """
     graph = nx.DiGraph()
     # A -> B -> D
     # A -> C -> D
@@ -98,7 +112,7 @@ def test_dominator_tree_multiple_paths() -> None:
     graph.add_edges_from([("A", "B"), ("A", "C"), ("B", "D"), ("C", "D")])
     result = compute_dominator_tree(graph, entry="A")
 
-    assert result["A"] is None
+    assert "A" not in result  # Entry node not in result
     assert result["B"] == "A"
     assert result["C"] == "A"
     assert result["D"] == "A"  # A is the immediate dominator of D
