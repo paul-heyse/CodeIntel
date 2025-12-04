@@ -14,11 +14,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
-from codeintel.analytics.core.execution_context import (
+from codeintel.analytics.core.context import (
     PluginExecutionContextBuilder,
     PluginScratch,
 )
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     AnalyticsPluginProtocol,
     PluginResult,
 )
@@ -35,12 +35,12 @@ from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
-from codeintel.analytics.runtime_manifest import AnalyticsScope
+from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graph_runtime import GraphRuntime
+    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.graphs.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)

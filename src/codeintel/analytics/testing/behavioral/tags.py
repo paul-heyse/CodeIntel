@@ -12,7 +12,6 @@ from typing import cast
 from codeintel.analytics.ast_features.extract import build_import_map, io_flags_from_call
 from codeintel.analytics.ast_features.model import IoFlags
 from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
-from codeintel.analytics.ast_utils import resolve_call_target
 from codeintel.analytics.testing.coverage.inputs import load_test_records
 from codeintel.analytics.testing.profiles.types import (
     BehavioralContext,
@@ -21,8 +20,9 @@ from codeintel.analytics.testing.profiles.types import (
     TestAstInfo,
     TestRecord,
 )
+from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.config import BehavioralCoverageStepConfig
-from codeintel.ingestion.utilities.ast_utils import parse_python_module
+from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

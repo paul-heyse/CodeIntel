@@ -20,8 +20,8 @@ from tests._helpers.builders import (
     SubsystemModuleRow,
     SubsystemRow,
     SymbolUseEdgeRow,
+    insert_rows,
 )
-from tests._helpers.row_protocol import insert_rows
 
 # Test constants
 EXPECTED_SYMBOL_ROW_COUNT = 2

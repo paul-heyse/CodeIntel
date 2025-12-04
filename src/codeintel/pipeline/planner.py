@@ -17,7 +17,7 @@ from codeintel.analytics.core.pipeline_bridge import (
     AnalyticsRunContext,
     plan_analytics_plugin_run,
 )
-from codeintel.analytics.core.plugins import (
+from codeintel.analytics.plugins import (
     BEHAVIORAL_COVERAGE_PLUGIN,
     CONFIG_DATA_FLOW_PLUGIN,
     COVERAGE_FUNCTIONS_PLUGIN,
@@ -42,6 +42,10 @@ from codeintel.analytics.core.plugins import (
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from codeintel.graphs.runtime.executor import GraphExecutorContext
 from codeintel.graphs.runtime.planning import GraphPlanContext, plan_graph_plugin_run
+from codeintel.ingestion.infrastructure.scanning import (
+    default_code_profile,
+    default_config_profile,
+)
 from codeintel.ingestion.recipes.builtin import (
     FULL_PYTHON_RECIPE,
     INCREMENTAL_RECIPE,
@@ -49,10 +53,6 @@ from codeintel.ingestion.recipes.builtin import (
 )
 from codeintel.ingestion.recipes.dsl import RecipeOptions
 from codeintel.ingestion.recipes.executor import RecipeExecutorContext
-from codeintel.ingestion.utilities.scanning import (
-    default_code_profile,
-    default_config_profile,
-)
 from codeintel.pipeline.spec import PipelineSpec, PipelineStage
 from codeintel.runtime import RunKind, TriggerKind, new_run_context
 

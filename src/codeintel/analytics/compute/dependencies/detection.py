@@ -23,12 +23,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.analytics.ast_utils import resolve_call_target, safe_unparse, snippet_from_lines
 from codeintel.analytics.compute.dependencies.classification import (
     LibraryPattern,
     classify_modes,
     risk_score,
 )
+from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse, snippet_from_lines
 
 
 @dataclass(frozen=True)

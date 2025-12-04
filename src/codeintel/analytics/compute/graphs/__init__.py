@@ -1,0 +1,142 @@
+"""Graph metric primitives for analytics orchestration.
+
+This package provides primitive graph computation helpers used by analytics
+plugins. It wraps pure computation functions from codeintel.graphs.compute
+and provides analytics-specific data structures and orchestration.
+
+Submodules
+----------
+types
+    Data classes for metric results.
+conversions
+    ID conversion and normalization utilities.
+centrality
+    Centrality computation for directed and undirected graphs.
+components
+    Component analysis and global graph statistics.
+projections
+    Bipartite graph projection and metrics.
+structural
+    Structural graph metrics (clustering, cores, etc.).
+cfg
+    Control flow graph metrics.
+dfg
+    Data flow graph metrics.
+"""
+
+from __future__ import annotations
+
+# Re-export centrality
+from codeintel.analytics.compute.graphs.centrality import (
+    centrality_directed,
+    centrality_undirected,
+    neighbor_stats,
+)
+
+# Re-export cfg
+from codeintel.analytics.compute.graphs.cfg import (
+    build_cfg_graph,
+    cfg_avg_shortest_path_length,
+    cfg_centralities,
+    cfg_dominance_metrics,
+    cfg_longest_path_length,
+    cfg_reachable_nodes,
+)
+
+# Re-export components
+from codeintel.analytics.compute.graphs.components import (
+    component_ids_undirected,
+    component_metadata,
+    global_graph_stats,
+)
+
+# Re-export conversions
+from codeintel.analytics.compute.graphs.conversions import (
+    log_empty_graph,
+    log_projection_skipped,
+    normalize_decimal_id,
+    normalize_node_id,
+    safe_float,
+    to_decimal_id,
+)
+
+# Re-export dfg
+from codeintel.analytics.compute.graphs.dfg import (
+    build_dfg_graph,
+    dfg_centralities,
+    dfg_component_stats,
+    dfg_path_lengths,
+)
+
+# Re-export projections
+from codeintel.analytics.compute.graphs.projections import (
+    bipartite_degrees,
+    build_projection_graph,
+    community_ids,
+    projection_metrics,
+)
+
+# Re-export structural
+from codeintel.analytics.compute.graphs.structural import (
+    bounded_simple_path_count,
+    structural_metrics,
+)
+
+# Re-export types
+from codeintel.analytics.compute.graphs.types import (
+    BipartiteDegrees,
+    CentralityBundle,
+    ComponentBundle,
+    DominanceMetrics,
+    GlobalGraphStats,
+    NeighborStats,
+    ProjectionMetrics,
+    StructuralMetrics,
+)
+
+__all__ = [
+    # Types
+    "BipartiteDegrees",
+    "CentralityBundle",
+    "ComponentBundle",
+    "DominanceMetrics",
+    "GlobalGraphStats",
+    "NeighborStats",
+    "ProjectionMetrics",
+    "StructuralMetrics",
+    # Projections
+    "bipartite_degrees",
+    # Structural
+    "bounded_simple_path_count",
+    # CFG
+    "build_cfg_graph",
+    # DFG
+    "build_dfg_graph",
+    "build_projection_graph",
+    # Centrality
+    "centrality_directed",
+    "centrality_undirected",
+    "cfg_avg_shortest_path_length",
+    "cfg_centralities",
+    "cfg_dominance_metrics",
+    "cfg_longest_path_length",
+    "cfg_reachable_nodes",
+    "community_ids",
+    # Components
+    "component_ids_undirected",
+    "component_metadata",
+    "dfg_centralities",
+    "dfg_component_stats",
+    "dfg_path_lengths",
+    "global_graph_stats",
+    # Conversions
+    "log_empty_graph",
+    "log_projection_skipped",
+    "neighbor_stats",
+    "normalize_decimal_id",
+    "normalize_node_id",
+    "projection_metrics",
+    "safe_float",
+    "structural_metrics",
+    "to_decimal_id",
+]

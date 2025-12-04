@@ -12,7 +12,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.factory import (
@@ -23,6 +22,7 @@ from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
+from codeintel.analytics.runtime import GraphRuntimeOptions
 
 # Test constants
 MAX_FUNCTIONS_TEST_VALUE = 50

@@ -9,9 +9,9 @@ from pathlib import Path
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
-from codeintel.analytics.ast_utils import CallTarget, resolve_call_target, safe_unparse
-from codeintel.analytics.function_ast_cache import FunctionAst
-from codeintel.ingestion.utilities.ast_utils import parse_python_module
+from codeintel.analytics.parsing.ast_cache import FunctionAst
+from codeintel.analytics.utilities.ast import CallTarget, resolve_call_target, safe_unparse
+from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 
 def build_import_map(tree: ast.AST) -> dict[str, str]:

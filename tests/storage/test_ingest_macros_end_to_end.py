@@ -9,7 +9,7 @@ import pytest
 from codeintel.storage.ingest_macros import list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS
 from tests._helpers import provision_gateway_with_repo
-from tests._helpers.architecture import open_seeded_architecture_gateway
+from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
 @pytest.mark.parametrize("strict_schema", [True, False])

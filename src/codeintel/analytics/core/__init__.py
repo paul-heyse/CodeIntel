@@ -43,6 +43,12 @@ from codeintel.analytics.core.config_registry import (
     get_config_registry,
     register_config,
 )
+from codeintel.analytics.core.context import (
+    ConfigProvider,
+    PluginExecutionContext,
+    PluginExecutionContextBuilder,
+    PluginScratch,
+)
 from codeintel.analytics.core.contracts import (
     ColumnConstraint,
     ContractCheckerFn,
@@ -55,19 +61,13 @@ from codeintel.analytics.core.contracts import (
     create_contract_checker,
     validate_plugin_outputs,
 )
-from codeintel.analytics.core.execution_context import (
-    ConfigProvider,
-    PluginExecutionContext,
-    PluginExecutionContextBuilder,
-    PluginScratch,
-)
 from codeintel.analytics.core.executor import (
     ExecutionPolicy,
     ExecutionReport,
     PluginExecutor,
     execute_plugin_plan,
 )
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     AnalyticsPluginProtocol,
     CapabilityKind,
     InputSource,

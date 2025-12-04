@@ -11,7 +11,7 @@ from typing import Any
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import (
+from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,

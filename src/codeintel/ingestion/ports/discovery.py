@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.ingestion.utilities.scanning import ScanProfile
+    from codeintel.ingestion.infrastructure.scanning import ScanProfile
 
 
 @dataclass(frozen=True)

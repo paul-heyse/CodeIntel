@@ -37,6 +37,7 @@ from tests._helpers.builders.core import (
     ModuleRow,
     RepoMapRow,
 )
+from tests._helpers.builders.function_context import FunctionContextBuilder
 from tests._helpers.builders.graph import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -46,6 +47,7 @@ from tests._helpers.builders.graph import (
     ImportGraphEdgeRow,
     SymbolUseEdgeRow,
 )
+from tests._helpers.builders.row_protocol import InsertableRow, insert_rows
 
 __all__ = [
     "AstMetricsRow",
@@ -58,6 +60,7 @@ __all__ = [
     "CoverageLineRow",
     "DFGEdgeRow",
     "DocstringRow",
+    "FunctionContextBuilder",
     "FunctionMetricsRow",
     "FunctionTypesRow",
     "FunctionValidationRow",
@@ -66,6 +69,7 @@ __all__ = [
     "GraphMetricsModulesExtRow",
     "HotspotRow",
     "ImportGraphEdgeRow",
+    "InsertableRow",
     "ModuleRow",
     "RepoMapRow",
     "RiskFactorRow",
@@ -77,4 +81,5 @@ __all__ = [
     "TestCatalogRow",
     "TestCoverageEdgeRow",
     "TypednessRow",
+    "insert_rows",
 ]

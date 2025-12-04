@@ -39,8 +39,8 @@ from codeintel.serving.services.query_service import (
     ServiceObservability,
 )
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.architecture import open_seeded_architecture_gateway
 from tests._helpers.gateway import build_duckdb_query_service
+from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
 @runtime_checkable

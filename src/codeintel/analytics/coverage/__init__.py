@@ -1,1 +1,0 @@
-"""Coverage analytics plugins package."""

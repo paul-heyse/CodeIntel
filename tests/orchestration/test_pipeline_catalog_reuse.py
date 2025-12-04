@@ -6,7 +6,7 @@ from pathlib import Path
 
 from codeintel.config import BuildPaths, ScanProfiles, SnapshotRef
 from codeintel.config.models import GraphBackendConfig, ToolsConfig
-from codeintel.ingestion.utilities.scanning import (
+from codeintel.ingestion.infrastructure.scanning import (
     default_code_profile,
     default_config_profile,
 )

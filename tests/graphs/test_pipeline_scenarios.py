@@ -13,11 +13,7 @@ Scenarios tested:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
-
-import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.result import PluginResult
@@ -35,13 +31,10 @@ from codeintel.graphs.recipes.executor import (
     RecipeExecutorContext,
     execute_graph_recipe,
 )
-from codeintel.storage.schemas import apply_all_schemas
-from tests._helpers.gateway import open_ingestion_gateway_with_macros
 from tests._helpers.seeds.golden_graphs import (
     GOLDEN_COMMIT,
     GOLDEN_MODULE_COUNT,
     GOLDEN_REPO,
-    seed_golden_graphs,
 )
 
 if TYPE_CHECKING:
@@ -61,45 +54,8 @@ METRIC_STAGE: Final[GraphPluginStage] = "stats"
 
 
 # ---------------------------------------------------------------------------
-# Test Fixtures
+# Test Helpers
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def golden_gateway() -> Iterator[StorageGateway]:
-    """Provide a gateway seeded with golden graph data.
-
-    Yields
-    ------
-    StorageGateway
-        Gateway with golden dataset seeded.
-    """
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
-    apply_all_schemas(gateway.con)
-    seed_golden_graphs(gateway, repo=GOLDEN_REPO, commit=GOLDEN_COMMIT)
-    try:
-        yield gateway
-    finally:
-        gateway.close()
-
-
-@pytest.fixture
-def golden_snapshot(tmp_path: Path) -> SnapshotRef:
-    """Provide a snapshot reference for the golden dataset.
-
-    Parameters
-    ----------
-    tmp_path
-        Pytest temporary path.
-
-    Returns
-    -------
-    SnapshotRef
-        Snapshot reference.
-    """
-    return SnapshotRef(repo=GOLDEN_REPO, commit=GOLDEN_COMMIT, repo_root=tmp_path)
 
 
 def _make_context(

@@ -36,6 +36,10 @@ FUNCTION_TYPES_PACK
 
 from __future__ import annotations
 
+from tests._helpers.seeds.architecture import (
+    open_seeded_architecture_gateway,
+    seed_architecture,
+)
 from tests._helpers.seeds.config import CONFIG_PACK, ConfigPack
 from tests._helpers.seeds.core import CORE_PACK, CorePack
 from tests._helpers.seeds.coverage import COVERAGE_PACK, CoveragePack
@@ -74,4 +78,6 @@ __all__ = [
     "SubsystemAnalyticsPack",
     "SubsystemPack",
     "SymbolPack",
+    "open_seeded_architecture_gateway",
+    "seed_architecture",
 ]

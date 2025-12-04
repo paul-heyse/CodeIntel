@@ -11,10 +11,9 @@ from coverage import Coverage
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
-from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow
+from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageEdgeEnv, CoverageSeedConfig
 from tests._helpers.orchestration.tooling import CoverageArtifact, generate_coverage_for_function
-from tests._helpers.row_protocol import insert_rows
 
 
 def create_coverage_edge_env(

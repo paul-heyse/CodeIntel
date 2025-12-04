@@ -15,7 +15,7 @@ from codeintel.analytics.core.builders import (
     PluginSpec,
     PluginSpecBuilder,
 )
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     PluginInputSpec,
     PluginOutputSpec,
 )

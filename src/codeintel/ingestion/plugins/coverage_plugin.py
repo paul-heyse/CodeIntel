@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
+from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.core.base import (
     TableWriterIngestPlugin,
     ToolDependentIngestPlugin,
@@ -26,7 +27,6 @@ from codeintel.ingestion.plugins.protocol import (
     IngestStage,
 )
 from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
-from codeintel.ingestion.steps.coverage_ingest import CoverageIngestStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext

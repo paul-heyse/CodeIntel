@@ -13,6 +13,7 @@ import logging
 from collections.abc import Sequence
 from uuid import uuid4
 
+from codeintel.core.singleton import SingletonHolder
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
     GraphPluginMetadata,
@@ -24,38 +25,22 @@ from codeintel.graphs.core.protocol import (
 log = logging.getLogger(__name__)
 
 
+class _GraphPluginRegistryHolder(SingletonHolder["GraphPluginRegistry"]):
+    """Singleton holder for GraphPluginRegistry.
+
+    Uses the thread-safe SingletonHolder pattern from core.
+    """
+
+
 class GraphPluginRegistry:
     """Central registry for graph plugins.
 
     Provides plugin registration, lookup, dependency resolution,
     and topological ordering for execution planning.
 
-    This class implements the singleton pattern - use `instance()` to
-    get the global registry, or create new instances for testing.
+    For singleton access, use :func:`get_graph_registry` rather than
+    instantiating directly. Direct instantiation is useful for testing.
     """
-
-    _instance: GraphPluginRegistry | None = None
-
-    @classmethod
-    def instance(cls) -> GraphPluginRegistry:
-        """Return the singleton registry instance.
-
-        Returns
-        -------
-        GraphPluginRegistry
-            The global registry instance.
-        """
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-
-    @classmethod
-    def reset_instance(cls) -> None:
-        """Reset the singleton instance for testing.
-
-        This clears the global registry, allowing tests to start fresh.
-        """
-        cls._instance = None
 
     def __init__(self) -> None:
         """Initialize an empty registry."""
@@ -587,7 +572,15 @@ def get_graph_registry() -> GraphPluginRegistry:
     GraphPluginRegistry
         The singleton registry instance.
     """
-    return GraphPluginRegistry.instance()
+    return _GraphPluginRegistryHolder.get(GraphPluginRegistry)
+
+
+def reset_graph_registry() -> None:
+    """Reset the global registry for testing.
+
+    This clears the global registry, allowing tests to start fresh.
+    """
+    _GraphPluginRegistryHolder.reset()
 
 
 def register_graph_plugin(plugin: GraphPluginProtocol) -> None:
@@ -662,5 +655,6 @@ __all__ = [
     "list_graph_plugins",
     "plan_graph_plugins",
     "register_graph_plugin",
+    "reset_graph_registry",
     "unregister_graph_plugin",
 ]

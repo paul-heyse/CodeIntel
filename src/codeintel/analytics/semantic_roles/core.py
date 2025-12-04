@@ -11,12 +11,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
-from codeintel.analytics.ast_utils import safe_unparse
-from codeintel.analytics.function_ast_cache import FunctionAst
-from codeintel.analytics.graph_service import normalize_decimal_id
+from codeintel.analytics.compute.graphs import normalize_decimal_id
+from codeintel.analytics.parsing.ast_cache import FunctionAst
+from codeintel.analytics.utilities.ast import safe_unparse
 from codeintel.config import SemanticRolesStepConfig
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.ingestion.utilities.paths import normalize_rel_path
+from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

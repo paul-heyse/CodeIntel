@@ -6,11 +6,11 @@ from typing import Any, cast
 
 import pytest
 
-from codeintel.analytics.core.plugins.registration import ensure_plugins_registered
-from codeintel.analytics.graphs.catalog import (
+from codeintel.analytics.graphs.plugin_catalog import (
     build_plugin_catalog,
     render_plugin_catalog_markdown,
 )
+from codeintel.analytics.plugins.registration import ensure_plugins_registered
 
 
 def test_build_plugin_catalog_includes_expected_fields() -> None:

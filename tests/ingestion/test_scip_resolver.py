@@ -10,13 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.ingestion.utilities import (
+from codeintel.ingestion.infrastructure import (
     ResolvedScipConfig,
     ScipPathConfig,
     ScipResolverInput,
     resolve_scip_inputs,
 )
+from codeintel.ingestion.ports.discovery import ModuleRecord
 from tests._helpers.assertions import assert_cannot_setattr
 
 # Test constants for magic values

@@ -10,9 +10,9 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers.builders import (
     FunctionValidationRow,
     RepoMapRow,
+    insert_rows,
 )
 from tests._helpers.gateway import build_duckdb_backend
-from tests._helpers.row_protocol import insert_rows
 
 
 @pytest.fixture

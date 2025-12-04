@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
-from codeintel.analytics.entrypoint_detectors import (
+from codeintel.analytics.compute.entrypoints.detection import (
     DetectorSettings,
     EntryPointCandidate,
     detect_entrypoints,
@@ -23,12 +23,12 @@ from codeintel.analytics.profiles import SLOW_TEST_THRESHOLD_MS
 from codeintel.config import EntryPointsStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
-from codeintel.ingestion.utilities.paths import normalize_rel_path
+from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.utilities.scanning import ScanProfile
+    from codeintel.ingestion.infrastructure.scanning import ScanProfile
 
 log = logging.getLogger(__name__)
 

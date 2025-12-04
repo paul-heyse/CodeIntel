@@ -6,7 +6,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
+from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.engine import GraphEngine
 from codeintel.graphs.validation import apply_severity_overrides, resolve_validation_options

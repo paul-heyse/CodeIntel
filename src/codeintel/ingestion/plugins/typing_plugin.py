@@ -17,6 +17,7 @@ from codeintel.ingestion.adapters import (
     FilesystemDiscoveryAdapter,
     ToolRunnerAdapter,
 )
+from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 from codeintel.ingestion.core.base import (
     TableWriterIngestPlugin,
     ToolDependentIngestPlugin,
@@ -28,7 +29,6 @@ from codeintel.ingestion.plugins.protocol import (
     IngestStage,
 )
 from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
-from codeintel.ingestion.steps.typing_ingest import TypingIngestStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext

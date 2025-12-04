@@ -71,8 +71,8 @@ if TYPE_CHECKING:
         DFGEdgeRow,
     )
     from codeintel.config.parser_types import FunctionParserKind
-    from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
-    from codeintel.ingestion.utilities.scanning import ScanProfile
+    from codeintel.ingestion.compute.scip_ingest import ScipIngestResult
+    from codeintel.ingestion.infrastructure.scanning import ScanProfile
 
 
 @dataclass

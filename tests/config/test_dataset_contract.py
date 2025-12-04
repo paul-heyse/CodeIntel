@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.datasets import DELETE_SQL_BY_TABLE
+from codeintel.analytics.utilities.datasets import DELETE_SQL_BY_TABLE
 from codeintel.config.datasets import (
     BEHAVIORAL_COVERAGE_COLUMNS,
     FILE_PROFILE_COLUMNS,

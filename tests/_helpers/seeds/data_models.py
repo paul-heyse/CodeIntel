@@ -21,8 +21,8 @@ from tests._helpers.builders import (
     FunctionTypesRow,
     GoidRow,
     ModuleRow,
+    insert_rows,
 )
-from tests._helpers.row_protocol import insert_rows
 from tests._helpers.seeds.core import CORE_PACK
 
 if TYPE_CHECKING:
@@ -290,7 +290,9 @@ class DataModelsPack:
             Test context with gateway.
         """
         rows = [
-            ModuleRow(module=MOD_MODELS_FQN, path=MOD_MODELS_PATH, repo=ctx.repo, commit=ctx.commit),
+            ModuleRow(
+                module=MOD_MODELS_FQN, path=MOD_MODELS_PATH, repo=ctx.repo, commit=ctx.commit
+            ),
             ModuleRow(module=MOD_DB_FQN, path=MOD_DB_PATH, repo=ctx.repo, commit=ctx.commit),
             ModuleRow(
                 module=MOD_API_HANDLERS_FQN,
@@ -298,7 +300,9 @@ class DataModelsPack:
                 repo=ctx.repo,
                 commit=ctx.commit,
             ),
-            ModuleRow(module=MOD_CONFIG_FQN, path=MOD_CONFIG_PATH, repo=ctx.repo, commit=ctx.commit),
+            ModuleRow(
+                module=MOD_CONFIG_FQN, path=MOD_CONFIG_PATH, repo=ctx.repo, commit=ctx.commit
+            ),
         ]
         insert_rows(ctx.gateway, rows)
 

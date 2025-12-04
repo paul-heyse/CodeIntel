@@ -8,7 +8,7 @@ import pytest
 
 from codeintel.storage.ingest_macros import list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS
-from tests._helpers.architecture import open_seeded_architecture_gateway
+from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
 def test_seed_helper_registers_ingest_macros(tmp_path: Path) -> None:

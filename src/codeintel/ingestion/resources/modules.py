@@ -17,9 +17,9 @@ from codeintel.storage.module_index import load_module_map
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.ingestion.change_tracker import ChangeTracker
+    from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.ingestion.utilities.scanning import ScanProfile
+    from codeintel.ingestion.tracker import ChangeTracker
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

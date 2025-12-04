@@ -14,11 +14,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.ast_utils import safe_unparse
+from codeintel.analytics.utilities.ast import safe_unparse
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
-    from codeintel.analytics.function_ast_cache import FunctionAst
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
 
 ROLE_THRESHOLD = 0.35
 SERVICE_FAN_IN_THRESHOLD = 5

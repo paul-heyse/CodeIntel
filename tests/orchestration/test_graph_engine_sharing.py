@@ -10,7 +10,7 @@ import pytest
 from codeintel.config import BuildPaths, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
-from codeintel.ingestion.utilities.scanning import ScanProfile
+from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.pipeline.orchestration import steps as orchestration_steps
 from codeintel.pipeline.orchestration.steps import SemanticRolesStep
 from codeintel.storage.gateway import StorageGateway

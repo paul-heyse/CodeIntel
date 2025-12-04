@@ -11,13 +11,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.ingestion.ports.change_detection import (
     ChangeRequest,
     ChangeSet,
     FileDigest,
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.ingestion.utilities.paths import normalize_rel_path
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

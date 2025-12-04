@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.entrypoint_detectors import (
+from codeintel.analytics.compute.entrypoints.detection import (
     DetectorSettings,
     EntryPointCandidate,
     ImportContext,

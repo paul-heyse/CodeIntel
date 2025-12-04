@@ -17,7 +17,7 @@ from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.graphs.plugins.runner import GraphPluginRunner
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow
+from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.graph_config import (
     COMMIT,
     REPO,
@@ -26,7 +26,6 @@ from tests._helpers.configs.graph_config import (
     SpanTestEnv,
 )
 from tests._helpers.orchestration.tooling import CoverageArtifact, generate_coverage_for_function
-from tests._helpers.row_protocol import insert_rows
 
 
 def build_seeded_graph_engine(gateway: StorageGateway, seed: GraphEngineSeed) -> NxGraphEngine:

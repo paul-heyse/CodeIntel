@@ -264,9 +264,7 @@ def test_list_by_table() -> None:
     """
     registry = GraphPluginRegistry()
     plugin = (
-        GraphPluginBuilder(name="table_producer")
-        .with_produces_tables("graph.test_table")
-        .build()
+        GraphPluginBuilder(name="table_producer").with_produces_tables("graph.test_table").build()
     )
     registry.register(plugin)
 
@@ -524,12 +522,7 @@ def test_metadata_for() -> None:
         If metadata is wrong.
     """
     registry = GraphPluginRegistry()
-    plugin = (
-        GraphPluginBuilder(name="metadata_test")
-        .with_kind("metric")
-        .with_stage("core")
-        .build()
-    )
+    plugin = GraphPluginBuilder(name="metadata_test").with_kind("metric").with_stage("core").build()
     registry.register(plugin)
 
     meta = registry.metadata_for("metadata_test")

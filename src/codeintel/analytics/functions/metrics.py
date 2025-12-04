@@ -34,10 +34,6 @@ from codeintel.analytics.compute.functions.typedness import (
     compute_param_stats,
     compute_typedness_flags,
 )
-from codeintel.analytics.datasets import (
-    get_analytics_dataset_contract,
-    insert_analytics_rows,
-)
 from codeintel.analytics.functions.config import (
     FunctionAnalyticsOptions,
     ProcessContext,
@@ -47,6 +43,10 @@ from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.parsing.validation import FunctionValidationReporter
+from codeintel.analytics.utilities.datasets import (
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+)
 from codeintel.config import FunctionAnalyticsStepConfig
 from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow
 from codeintel.storage.gateway import StorageGateway

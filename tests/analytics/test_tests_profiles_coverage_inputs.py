@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from codeintel.analytics.tests_profiles import coverage_inputs
+from codeintel.analytics.testing.coverage import inputs as coverage_inputs
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.config.primitives import SnapshotRef
 

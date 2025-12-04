@@ -10,16 +10,16 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
+from codeintel.analytics.runtime import GraphRuntimeOptions
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graph_runtime import GraphRuntime
+    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway

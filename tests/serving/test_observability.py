@@ -15,7 +15,7 @@ from codeintel.serving.services.observability import (
     ServiceCallMetrics,
     ServiceObservability,
 )
-from tests._helpers.logging import CAPTURE_HANDLER_LEVEL, CapturingHandler
+from tests._helpers.fakes.logging import CAPTURE_HANDLER_LEVEL, CapturingHandler
 
 # Constants for test values
 DURATION_MS = 15.5

@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.analytics.core.contracts import OutputContractSpec
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     PluginInputSpec,
     PluginIsolation,
     PluginKind,
@@ -50,10 +50,10 @@ from codeintel.analytics.core.plugin_protocol import (
 from codeintel.storage.db_helpers import safe_row_counts
 
 if TYPE_CHECKING:
-    from codeintel.analytics.core.execution_context import PluginExecutionContext
-    from codeintel.analytics.graph_runtime import GraphRuntime
+    from codeintel.analytics.core.context import PluginExecutionContext
     from codeintel.analytics.resources.catalog import CatalogProvider
     from codeintel.analytics.resources.graphs import GraphProvider
+    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.graphs.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)

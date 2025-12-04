@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
-from codeintel.config.primitives import SnapshotRef
+from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.graphs.catalog import FunctionCatalog
 from codeintel.graphs.validation import run_graph_validations
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers import seed_graph_validation_gaps
+from tests._helpers.factories import make_snapshot
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -44,7 +42,7 @@ def test_graph_validation_orphan_uses_catalog_map(fresh_gateway: StorageGateway)
     repo = "r"
     commit = "c"
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    snapshot = make_snapshot(repo=repo, commit=commit)
     run_graph_validations(
         gateway,
         snapshot=snapshot,

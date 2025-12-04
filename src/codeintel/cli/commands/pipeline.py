@@ -47,7 +47,7 @@ from codeintel.cli.commands._common import (
 from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
 from codeintel.config.parser_types import FunctionParserKind
 from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
-from codeintel.ingestion.utilities.scanning import (
+from codeintel.ingestion.infrastructure.scanning import (
     default_code_profile,
     default_config_profile,
     profile_from_env,

@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.ast_utils import literal_int, literal_value, safe_unparse
-from codeintel.analytics.function_ast_cache import FunctionAst
-from codeintel.analytics.graph_service import normalize_decimal_id
+from codeintel.analytics.compute.graphs import normalize_decimal_id
+from codeintel.analytics.parsing.ast_cache import FunctionAst
+from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway

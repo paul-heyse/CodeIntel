@@ -16,7 +16,7 @@ from codeintel.analytics.dependencies.core import (
     build_external_dependency_calls,
 )
 from codeintel.analytics.entrypoints import build_entrypoints
-from codeintel.analytics.function_ast_cache import FunctionAst
+from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
@@ -31,12 +31,11 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
     RepoScanStep,
 )
-from codeintel.ingestion.utilities.scanning import default_code_profile
+from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from tests._helpers.builders import CoverageFunctionRow
+from tests._helpers.builders import CoverageFunctionRow, insert_rows
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.orchestration import provision_gateway_with_repo
-from tests._helpers.row_protocol import insert_rows
 
 HTTP_CREATED = 201
 COVERAGE_TOLERANCE = 1e-6

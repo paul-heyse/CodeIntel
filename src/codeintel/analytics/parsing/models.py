@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from codeintel.ingestion.utilities.ast_utils import AstSpanIndex
+from codeintel.ingestion.infrastructure.ast_utils import AstSpanIndex
 
 
 @dataclass(frozen=True)

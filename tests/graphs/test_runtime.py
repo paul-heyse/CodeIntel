@@ -17,7 +17,6 @@ from typing import Final
 
 import pytest
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import (
     GraphPluginPolicy,
     GraphPluginRetryPolicy,
@@ -53,6 +52,7 @@ from codeintel.graphs.runtime.telemetry import (
     get_graph_telemetry,
 )
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.graph_contexts import (
     GraphExecutorTestEnv,
     GraphTelemetryTestEnv,
@@ -132,9 +132,7 @@ def test_run_graph_plugins_with_failure(graph_executor_env: GraphExecutorTestEnv
 def test_run_graph_plugins_timeout(graph_executor_env: GraphExecutorTestEnv) -> None:
     """Timeout handling produces failed record with timeout error."""
     # Use a plugin that delays long enough to trigger timeout
-    plugin = (
-        GraphPluginBuilder(name="slow_plugin").succeeding().with_delay(2000).build()
-    )
+    plugin = GraphPluginBuilder(name="slow_plugin").succeeding().with_delay(2000).build()
 
     with plugin_registrar([plugin]):
         context = GraphPlanContext(
@@ -248,10 +246,7 @@ def test_run_graph_plugins_multiple_success(
     graph_executor_env: GraphExecutorTestEnv,
 ) -> None:
     """Multiple successful plugins all complete and are recorded."""
-    plugins = [
-        GraphPluginBuilder(name=f"multi_plugin_{i}").succeeding().build()
-        for i in range(3)
-    ]
+    plugins = [GraphPluginBuilder(name=f"multi_plugin_{i}").succeeding().build() for i in range(3)]
 
     with plugin_registrar(plugins):
         context = GraphPlanContext(
@@ -414,7 +409,7 @@ def test_run_graph_plugins_skip_on_error_severity(
 def test_plan_graph_plugin_run_basic(tmp_path: Path) -> None:
     """Basic plan generation produces valid execution plan."""
     plugin = GraphPluginBuilder(name="basic_plan_plugin").build()
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
+    snapshot = make_snapshot(repo_root=tmp_path)
 
     with plugin_registrar([plugin]):
         context = GraphPlanContext(
@@ -436,15 +431,11 @@ def test_plan_graph_plugin_run_basic(tmp_path: Path) -> None:
 def test_plan_with_dependencies() -> None:
     """Dependency resolution orders plugins correctly."""
     # Plugin B depends on Plugin A
-    plugin_a = (
-        GraphPluginBuilder(name="dep_a").with_provides("capability_a").build()
-    )
-    plugin_b = (
-        GraphPluginBuilder(name="dep_b").with_dependencies("dep_a").build()
-    )
+    plugin_a = GraphPluginBuilder(name="dep_a").with_provides("capability_a").build()
+    plugin_b = GraphPluginBuilder(name="dep_b").with_dependencies("dep_a").build()
 
     with plugin_registrar([plugin_a, plugin_b]):
-        snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=Path())
+        snapshot = make_snapshot(commit="abc123")
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(),
@@ -466,7 +457,7 @@ def test_plan_with_custom_policy() -> None:
     plugin = GraphPluginBuilder(name="policy_plugin").build()
 
     with plugin_registrar([plugin]):
-        snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=Path())
+        snapshot = make_snapshot(commit="abc123")
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(
@@ -493,7 +484,7 @@ def test_plugin_execution_settings_hashes() -> None:
     plugin = GraphPluginBuilder(name="hash_plugin").build()
 
     with plugin_registrar([plugin]):
-        snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=Path())
+        snapshot = make_snapshot(commit="abc123")
         context = GraphPlanContext(
             runtime_snapshot=snapshot,
             policy=GraphPluginPolicy(),
@@ -546,7 +537,7 @@ def test_plan_with_run_options() -> None:
     plugin = GraphPluginBuilder(name="options_plugin").build()
 
     with plugin_registrar([plugin]):
-        snapshot = SnapshotRef(repo="demo/repo", commit="abc123", repo_root=Path())
+        snapshot = make_snapshot(commit="abc123")
         run_options = GraphPluginRunOptions(
             scope=GraphRunScope(paths=("src/",), modules=("mymodule",)),
         )

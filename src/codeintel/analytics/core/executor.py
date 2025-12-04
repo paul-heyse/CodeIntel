@@ -18,27 +18,27 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, cast
 
+from codeintel.analytics.core.context import (
+    PluginExecutionContext,
+    PluginScratch,
+)
 from codeintel.analytics.core.contracts import (
     ContractValidationResult,
     PluginOutputContract,
     build_plugin_output_contracts,
     validate_plugin_outputs,
 )
-from codeintel.analytics.core.execution_context import (
-    PluginExecutionContext,
-    PluginScratch,
-)
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     AnalyticsPluginProtocol,
     PluginExecutionRecord,
     PluginResult,
 )
-from codeintel.analytics.core.plugins.middleware.protocol import MiddlewareChain
 from codeintel.analytics.core.registry import PluginPlan, PluginRegistry, get_registry
 from codeintel.analytics.core.traits import is_contract_validated
+from codeintel.analytics.plugins.middleware.protocol import MiddlewareChain
 
 if TYPE_CHECKING:
-    from codeintel.analytics.core.plugins.middleware.protocol import PluginMiddleware
+    from codeintel.analytics.plugins.middleware.protocol import PluginMiddleware
 
 ExecutionStatus = Literal["succeeded", "failed", "partial"]
 

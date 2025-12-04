@@ -6,7 +6,7 @@ import textwrap
 
 import pytest
 
-from codeintel.analytics.entrypoint_detectors import DetectorSettings, detect_entrypoints
+from codeintel.analytics.compute.entrypoints.detection import DetectorSettings, detect_entrypoints
 
 
 def test_detect_entrypoints_emits_snippet_evidence() -> None:

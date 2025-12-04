@@ -21,9 +21,9 @@ from tests._helpers.builders import (
     ModuleRow,
     RiskFactorRow,
     SymbolUseEdgeRow,
+    insert_rows,
 )
 from tests._helpers.fakes import utcnow
-from tests._helpers.row_protocol import insert_rows
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

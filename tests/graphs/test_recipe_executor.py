@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.result import PluginExecutionRecord
 from codeintel.core.recipes import Recipe, RecipeOptions, RecipeStage
 from codeintel.graphs.recipes.dsl import (
@@ -26,6 +25,7 @@ from codeintel.graphs.recipes.executor import (
     execute_graph_recipe,
 )
 from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.graph_plugins import GraphPluginBuilder, plugin_registrar
 
 if TYPE_CHECKING:
@@ -49,26 +49,6 @@ TEST_TIMESTAMP_T2: Final[datetime] = datetime(2024, 1, 1, 0, 0, 2, tzinfo=UTC)
 # ---------------------------------------------------------------------------
 # Fixtures and Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_snapshot(tmp_path: Path) -> SnapshotRef:
-    """Create a snapshot for testing.
-
-    Parameters
-    ----------
-    tmp_path
-        Temporary directory.
-
-    Returns
-    -------
-    SnapshotRef
-        Snapshot reference.
-    """
-    return SnapshotRef(
-        repo="test-repo",
-        commit="abc123",
-        repo_root=tmp_path,
-    )
 
 
 def _make_simple_recipe(
@@ -303,7 +283,7 @@ def test_recipe_execution_result_counts_mixed_statuses() -> None:
 
 def test_executor_basic_success(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """RecipeExecutor executes a simple recipe successfully."""
-    snapshot = _make_snapshot(tmp_path)
+    snapshot = make_snapshot(repo="test-repo", commit="abc123", repo_root=tmp_path)
 
     plugin = (
         GraphPluginBuilder(name="test.succeeding")
@@ -333,7 +313,7 @@ def test_executor_basic_success(fresh_gateway: StorageGateway, tmp_path: Path) -
 
 def test_executor_plugin_failure_handling(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """RecipeExecutor handles plugin failures."""
-    snapshot = _make_snapshot(tmp_path)
+    snapshot = make_snapshot(repo="test-repo", commit="abc123", repo_root=tmp_path)
 
     plugin = (
         GraphPluginBuilder(name="test.failing")
@@ -363,7 +343,7 @@ def test_executor_plugin_failure_handling(fresh_gateway: StorageGateway, tmp_pat
 
 def test_executor_multi_stage_sequential(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """RecipeExecutor executes multiple stages in order."""
-    snapshot = _make_snapshot(tmp_path)
+    snapshot = make_snapshot(repo="test-repo", commit="abc123", repo_root=tmp_path)
 
     plugin1 = (
         GraphPluginBuilder(name="test.succeeding.1")
@@ -405,7 +385,7 @@ def test_executor_multi_stage_sequential(fresh_gateway: StorageGateway, tmp_path
 
 def test_executor_fail_fast_stops_on_failure(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """RecipeExecutor stops on failure when fail_fast is True."""
-    snapshot = _make_snapshot(tmp_path)
+    snapshot = make_snapshot(repo="test-repo", commit="abc123", repo_root=tmp_path)
 
     failing_plugin = (
         GraphPluginBuilder(name="test.failing.early")
@@ -446,7 +426,7 @@ def test_executor_fail_fast_stops_on_failure(fresh_gateway: StorageGateway, tmp_
 
 def test_executor_missing_plugin_handled(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """RecipeExecutor handles missing plugins gracefully."""
-    snapshot = _make_snapshot(tmp_path)
+    snapshot = make_snapshot(repo="test-repo", commit="abc123", repo_root=tmp_path)
 
     # Create recipe with non-existent plugin
     recipe = graph_recipe(
@@ -476,7 +456,7 @@ def test_executor_missing_plugin_handled(fresh_gateway: StorageGateway, tmp_path
 
 def test_executor_result_has_timing_info(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """RecipeExecutor result includes timing information."""
-    snapshot = _make_snapshot(tmp_path)
+    snapshot = make_snapshot(repo="test-repo", commit="abc123", repo_root=tmp_path)
 
     plugin = (
         GraphPluginBuilder(name="test.timing")
@@ -504,7 +484,7 @@ def test_executor_result_has_timing_info(fresh_gateway: StorageGateway, tmp_path
 
 def test_executor_result_has_unique_run_id(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """RecipeExecutor generates unique run IDs."""
-    snapshot = _make_snapshot(tmp_path)
+    snapshot = make_snapshot(repo="test-repo", commit="abc123", repo_root=tmp_path)
 
     plugin = (
         GraphPluginBuilder(name="test.runid")
@@ -530,7 +510,7 @@ def test_executor_result_has_unique_run_id(fresh_gateway: StorageGateway, tmp_pa
 
 def test_executor_multiple_plugins_in_stage(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
     """RecipeExecutor handles multiple plugins in one stage."""
-    snapshot = _make_snapshot(tmp_path)
+    snapshot = make_snapshot(repo="test-repo", commit="abc123", repo_root=tmp_path)
 
     plugin1 = (
         GraphPluginBuilder(name="test.multi.1")
@@ -593,7 +573,7 @@ def test_execute_graph_recipe_convenience_function(
     fresh_gateway: StorageGateway, tmp_path: Path
 ) -> None:
     """execute_graph_recipe convenience function works."""
-    snapshot = _make_snapshot(tmp_path)
+    snapshot = make_snapshot(repo="test-repo", commit="abc123", repo_root=tmp_path)
 
     plugin = (
         GraphPluginBuilder(name="test.convenience")

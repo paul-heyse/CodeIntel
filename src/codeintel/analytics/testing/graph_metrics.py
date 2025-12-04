@@ -10,18 +10,21 @@ from typing import cast
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import (
+from codeintel.analytics.compute.graphs import (
+    BipartiteDegrees,
+    bipartite_degrees,
+    projection_metrics,
+)
+from codeintel.analytics.graphs.runtime import (
+    GraphContext,
+    GraphContextSpec,
+    resolve_graph_context,
+)
+from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,
 )
-from codeintel.analytics.graph_service import (
-    BipartiteDegrees,
-    GraphContext,
-    bipartite_degrees,
-    projection_metrics,
-)
-from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema

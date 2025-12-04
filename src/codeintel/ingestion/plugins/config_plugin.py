@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
+from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
 from codeintel.ingestion.core.base import TableWriterIngestPlugin, TrackerRequiringPlugin
 from codeintel.ingestion.core.traits import WithDependencyData
 from codeintel.ingestion.plugins.protocol import (
@@ -19,7 +20,6 @@ from codeintel.ingestion.plugins.protocol import (
     IngestStage,
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.ingestion.steps.config_ingest import ConfigIngestStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext

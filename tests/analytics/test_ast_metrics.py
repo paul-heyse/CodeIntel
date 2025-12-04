@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.ast_metrics import FileChurn, build_hotspots
+from codeintel.analytics.compute.hotspots.metrics import FileChurn, build_hotspots
 from codeintel.config import HotspotsStepConfig
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway

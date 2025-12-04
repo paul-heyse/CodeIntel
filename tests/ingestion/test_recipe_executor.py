@@ -12,7 +12,8 @@ Enhanced with realistic runtime scenarios using:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -20,6 +21,7 @@ from typing import ClassVar
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion.core.base import BaseIngestPlugin
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
+from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.ingestion.plugins import (
     AstExtractPlugin,
     RepoScanPlugin,
@@ -45,12 +47,68 @@ from codeintel.ingestion.recipes.executor import (
     RecipeExecutor,
     RecipeExecutorContext,
 )
-from codeintel.ingestion.utilities.scanning import ScanProfile
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.configs.provisioning_config import ProvisionedGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
-from tests._helpers.ingest_setup import IngestTestSetup
+from tests._helpers.harnesses import IngestTestSetup
 from tests._helpers.orchestration.tooling import make_tools_config
+
+# =============================================================================
+# Helper Context Manager
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class ExecutorTestEnv:
+    """Bundled environment for recipe executor tests.
+
+    Attributes
+    ----------
+    gateway : StorageGateway
+        Active storage gateway.
+    setup : IngestTestSetup
+        Bundled test setup with paths and profiles.
+    context : RecipeExecutorContext
+        Executor context ready for use.
+    """
+
+    gateway: StorageGateway
+    setup: IngestTestSetup
+    context: RecipeExecutorContext
+
+
+@contextmanager
+def executor_test_env(repo_root: Path) -> Iterator[ExecutorTestEnv]:
+    """Create an executor test environment from a repo root.
+
+    This context manager handles gateway lifecycle and creates the
+    standard test setup and executor context.
+
+    Parameters
+    ----------
+    repo_root
+        Path to the repository root (should exist and contain test files).
+
+    Yields
+    ------
+    ExecutorTestEnv
+        Bundled environment ready for recipe execution tests.
+    """
+    gateway = open_ingestion_gateway()
+    try:
+        setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
+        context = RecipeExecutorContext(
+            gateway=gateway,
+            snapshot=setup.snapshot,
+            paths=setup.paths,
+            tools=setup.tools,
+            code_profile=setup.code_profile,
+            config_profile=setup.config_profile,
+        )
+        yield ExecutorTestEnv(gateway=gateway, setup=setup, context=context)
+    finally:
+        gateway.close()
+
 
 # Test constants
 EXPECTED_TIMEOUT_60 = 60
@@ -467,73 +525,6 @@ def test_recipe_execution_result_with_error() -> None:
 
 
 # =============================================================================
-# IngestRuntimeScratch Tests
-# =============================================================================
-
-
-def test_runtime_scratch_declare_and_consume() -> None:
-    """IngestRuntimeScratch should store and retrieve values."""
-    scratch = IngestRuntimeScratch()
-
-    scratch.declare("key1", "value1")
-    scratch.declare("key2", {"nested": "data"})
-
-    assert scratch.consume("key1") == "value1"
-    assert scratch.consume("key2") == {"nested": "data"}
-
-
-def test_runtime_scratch_consume_missing_key() -> None:
-    """IngestRuntimeScratch should return default for missing keys."""
-    scratch = IngestRuntimeScratch()
-
-    assert scratch.consume("missing") is None
-    assert scratch.consume("missing", "default") == "default"
-
-
-def test_runtime_scratch_has_key() -> None:
-    """IngestRuntimeScratch.has should check key existence."""
-    scratch = IngestRuntimeScratch()
-
-    assert scratch.has("key") is False
-    scratch.declare("key", "value")
-    assert scratch.has("key") is True
-
-
-def test_runtime_scratch_cleanup() -> None:
-    """IngestRuntimeScratch.cleanup should clear values and run callbacks."""
-    scratch = IngestRuntimeScratch()
-    cleanup_called = [False]
-
-    def cleanup_callback() -> None:
-        cleanup_called[0] = True
-
-    scratch.declare("key", "value")
-    scratch.register_cleanup(cleanup_callback)
-
-    scratch.cleanup()
-
-    assert cleanup_called[0] is True
-    assert scratch.has("key") is False
-
-
-def test_runtime_scratch_len_and_keys() -> None:
-    """IngestRuntimeScratch should report length and keys."""
-    scratch = IngestRuntimeScratch()
-
-    assert len(scratch) == 0
-    assert scratch.keys() == ()
-
-    scratch.declare("key1", "value1")
-    scratch.declare("key2", "value2")
-
-    expected_length = 2
-    assert len(scratch) == expected_length
-    keys = scratch.keys()
-    assert "key1" in keys
-    assert "key2" in keys
-
-
-# =============================================================================
 # IngestPluginPlan Tests
 # =============================================================================
 
@@ -664,19 +655,7 @@ def test_recipe_executor_with_real_repo_scan(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     _create_test_repo(repo_root)
 
-    gateway = open_ingestion_gateway()
-    try:
-        setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
-
-        exec_context = RecipeExecutorContext(
-            gateway=gateway,
-            snapshot=setup.snapshot,
-            paths=setup.paths,
-            tools=setup.tools,
-            code_profile=setup.code_profile,
-            config_profile=setup.config_profile,
-        )
-
+    with executor_test_env(repo_root) as env:
         registry = IngestPluginRegistry()
         registry.register(RepoScanPlugin())
 
@@ -686,7 +665,7 @@ def test_recipe_executor_with_real_repo_scan(tmp_path: Path) -> None:
             enable_parallel=False,
         )
 
-        executor = RecipeExecutor(exec_context, config)
+        executor = RecipeExecutor(env.context, config)
 
         recipe = IngestRecipe(
             name="repo_scan_test",
@@ -707,11 +686,9 @@ def test_recipe_executor_with_real_repo_scan(tmp_path: Path) -> None:
         assert result.stage_results[0].success
 
         # Verify modules were discovered in database
-        row = gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
+        row = env.gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         assert row is not None, "Query returned None"
         assert row[0] >= 1, "Expected at least 1 module"
-    finally:
-        gateway.close()
 
 
 def test_recipe_executor_multi_stage_with_dependencies(tmp_path: Path) -> None:
@@ -719,19 +696,7 @@ def test_recipe_executor_multi_stage_with_dependencies(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     _create_test_repo(repo_root)
 
-    gateway = open_ingestion_gateway()
-    try:
-        setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
-
-        exec_context = RecipeExecutorContext(
-            gateway=gateway,
-            snapshot=setup.snapshot,
-            paths=setup.paths,
-            tools=setup.tools,
-            code_profile=setup.code_profile,
-            config_profile=setup.config_profile,
-        )
-
+    with executor_test_env(repo_root) as env:
         registry = IngestPluginRegistry()
         registry.register(RepoScanPlugin())
         registry.register(AstExtractPlugin())
@@ -742,7 +707,7 @@ def test_recipe_executor_multi_stage_with_dependencies(tmp_path: Path) -> None:
             enable_parallel=False,
         )
 
-        executor = RecipeExecutor(exec_context, config)
+        executor = RecipeExecutor(env.context, config)
 
         recipe = IngestRecipe(
             name="multi_stage",
@@ -763,8 +728,6 @@ def test_recipe_executor_multi_stage_with_dependencies(tmp_path: Path) -> None:
         )
         assert scan_result is not None, "Scan stage not found"
         assert scan_result.success, "Scan stage failed"
-    finally:
-        gateway.close()
 
 
 def test_recipe_executor_fail_fast_stops_on_error(tmp_path: Path) -> None:
@@ -773,19 +736,7 @@ def test_recipe_executor_fail_fast_stops_on_error(tmp_path: Path) -> None:
     # Don't create any files - repo_scan should still succeed but find nothing
     repo_root.mkdir(parents=True, exist_ok=True)
 
-    gateway = open_ingestion_gateway()
-    try:
-        setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
-
-        exec_context = RecipeExecutorContext(
-            gateway=gateway,
-            snapshot=setup.snapshot,
-            paths=setup.paths,
-            tools=setup.tools,
-            code_profile=setup.code_profile,
-            config_profile=setup.config_profile,
-        )
-
+    with executor_test_env(repo_root) as env:
         registry = IngestPluginRegistry()
         registry.register(RepoScanPlugin())
         registry.register(AstExtractPlugin())
@@ -796,7 +747,7 @@ def test_recipe_executor_fail_fast_stops_on_error(tmp_path: Path) -> None:
             enable_parallel=False,
         )
 
-        executor = RecipeExecutor(exec_context, config)
+        executor = RecipeExecutor(env.context, config)
 
         recipe = IngestRecipe(
             name="fail_fast_test",
@@ -812,8 +763,6 @@ def test_recipe_executor_fail_fast_stops_on_error(tmp_path: Path) -> None:
         # With empty repo, first stage may succeed but produce no data
         # The result should complete without exception
         assert result is not None
-    finally:
-        gateway.close()
 
 
 def test_recipe_executor_continue_on_soft_fail(tmp_path: Path) -> None:
@@ -821,19 +770,7 @@ def test_recipe_executor_continue_on_soft_fail(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     _create_test_repo(repo_root)
 
-    gateway = open_ingestion_gateway()
-    try:
-        setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
-
-        exec_context = RecipeExecutorContext(
-            gateway=gateway,
-            snapshot=setup.snapshot,
-            paths=setup.paths,
-            tools=setup.tools,
-            code_profile=setup.code_profile,
-            config_profile=setup.config_profile,
-        )
-
+    with executor_test_env(repo_root) as env:
         registry = IngestPluginRegistry()
         registry.register(RepoScanPlugin())
 
@@ -843,7 +780,7 @@ def test_recipe_executor_continue_on_soft_fail(tmp_path: Path) -> None:
             enable_parallel=False,
         )
 
-        executor = RecipeExecutor(exec_context, config)
+        executor = RecipeExecutor(env.context, config)
 
         recipe = IngestRecipe(
             name="soft_fail_test",
@@ -862,8 +799,6 @@ def test_recipe_executor_continue_on_soft_fail(tmp_path: Path) -> None:
 
         # Should complete even if stage reports issues
         assert result is not None
-    finally:
-        gateway.close()
 
 
 def test_recipe_executor_empty_stage_skipped(tmp_path: Path) -> None:
@@ -871,19 +806,7 @@ def test_recipe_executor_empty_stage_skipped(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     _create_test_repo(repo_root)
 
-    gateway = open_ingestion_gateway()
-    try:
-        setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
-
-        exec_context = RecipeExecutorContext(
-            gateway=gateway,
-            snapshot=setup.snapshot,
-            paths=setup.paths,
-            tools=setup.tools,
-            code_profile=setup.code_profile,
-            config_profile=setup.config_profile,
-        )
-
+    with executor_test_env(repo_root) as env:
         registry = IngestPluginRegistry()
         registry.register(RepoScanPlugin())
 
@@ -893,7 +816,7 @@ def test_recipe_executor_empty_stage_skipped(tmp_path: Path) -> None:
             enable_parallel=False,
         )
 
-        executor = RecipeExecutor(exec_context, config)
+        executor = RecipeExecutor(env.context, config)
 
         recipe = IngestRecipe(
             name="empty_stage_test",
@@ -908,8 +831,6 @@ def test_recipe_executor_empty_stage_skipped(tmp_path: Path) -> None:
 
         # Should complete successfully, skipping empty stage
         assert result.success, f"Recipe failed: {result.error}"
-    finally:
-        gateway.close()
 
 
 def test_recipe_executor_with_provisioned_gateway(
@@ -960,19 +881,7 @@ def test_recipe_executor_duration_tracking(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     _create_test_repo(repo_root)
 
-    gateway = open_ingestion_gateway()
-    try:
-        setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
-
-        exec_context = RecipeExecutorContext(
-            gateway=gateway,
-            snapshot=setup.snapshot,
-            paths=setup.paths,
-            tools=setup.tools,
-            code_profile=setup.code_profile,
-            config_profile=setup.config_profile,
-        )
-
+    with executor_test_env(repo_root) as env:
         registry = IngestPluginRegistry()
         registry.register(RepoScanPlugin())
 
@@ -982,7 +891,7 @@ def test_recipe_executor_duration_tracking(tmp_path: Path) -> None:
             enable_parallel=False,
         )
 
-        executor = RecipeExecutor(exec_context, config)
+        executor = RecipeExecutor(env.context, config)
 
         recipe = IngestRecipe(
             name="duration_test",
@@ -996,8 +905,6 @@ def test_recipe_executor_duration_tracking(tmp_path: Path) -> None:
         if result.stage_results:
             for stage_result in result.stage_results:
                 assert stage_result.duration_s >= 0, "Stage duration should be non-negative"
-    finally:
-        gateway.close()
 
 
 def test_recipe_executor_parallel_disabled(tmp_path: Path) -> None:
@@ -1005,19 +912,7 @@ def test_recipe_executor_parallel_disabled(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     _create_test_repo(repo_root)
 
-    gateway = open_ingestion_gateway()
-    try:
-        setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
-
-        exec_context = RecipeExecutorContext(
-            gateway=gateway,
-            snapshot=setup.snapshot,
-            paths=setup.paths,
-            tools=setup.tools,
-            code_profile=setup.code_profile,
-            config_profile=setup.config_profile,
-        )
-
+    with executor_test_env(repo_root) as env:
         registry = IngestPluginRegistry()
         registry.register(RepoScanPlugin())
 
@@ -1028,7 +923,7 @@ def test_recipe_executor_parallel_disabled(tmp_path: Path) -> None:
             max_workers=1,
         )
 
-        executor = RecipeExecutor(exec_context, config)
+        executor = RecipeExecutor(env.context, config)
 
         recipe = IngestRecipe(
             name="sequential_test",
@@ -1045,5 +940,3 @@ def test_recipe_executor_parallel_disabled(tmp_path: Path) -> None:
         result = executor.execute(recipe)
 
         assert result.success, f"Recipe failed: {result.error}"
-    finally:
-        gateway.close()

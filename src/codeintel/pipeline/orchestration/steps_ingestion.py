@@ -11,9 +11,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
-from codeintel.ingestion.change_tracker import ChangeTracker
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
 from codeintel.ingestion.plugins.registry import get_ingest_registry
+from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,

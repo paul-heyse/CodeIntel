@@ -38,6 +38,7 @@ from tests._helpers.fakes.graph_plugins import (
     make_functional_plugin,
     plugin_registrar,
 )
+from tests._helpers.fakes.logging import CAPTURE_HANDLER_LEVEL, CapturingHandler
 from tests._helpers.fakes.networkx_graphs import (
     bipartite_graph,
     chain_graph,
@@ -73,6 +74,8 @@ from tests._helpers.fakes.tools import (
 from tests._helpers.fakes.utilities import utcnow
 
 __all__ = [
+    "CAPTURE_HANDLER_LEVEL",
+    "CapturingHandler",
     "CoverageLoader",
     "FakeBuildPaths",
     "FakeCoverage",

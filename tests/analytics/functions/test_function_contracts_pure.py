@@ -12,11 +12,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.function_ast_cache import FunctionAst
 from codeintel.analytics.functions.function_contracts import (
     ConditionContext,
     compute_function_contracts,
 )
+from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config import FunctionContractsStepConfig
 from codeintel.config.primitives import SnapshotRef
 

@@ -17,11 +17,11 @@ from pathlib import Path
 from typing import Final
 
 from codeintel.config import ImportGraphStepConfig
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.plugins.builders.import_graph import build_import_graph
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_builder import QueryBuilder, SafeTable
+from tests._helpers.factories import make_snapshot
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -122,7 +122,7 @@ def _make_import_graph_config(
     ImportGraphStepConfig
         Configured step config.
     """
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
+    snapshot = make_snapshot(repo=repo, commit=commit, repo_root=repo_root)
     return ImportGraphStepConfig(snapshot=snapshot)
 
 
@@ -245,9 +245,7 @@ def _get_module_scc_ids(
 # ---------------------------------------------------------------------------
 
 
-def test_build_import_graph_empty_catalog(
-    graph_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_build_import_graph_empty_catalog(graph_gateway: StorageGateway, tmp_path: Path) -> None:
     """Empty module catalog produces no rows."""
     # Don't seed any modules
     cfg = _make_import_graph_config(REPO, COMMIT, tmp_path)
@@ -288,9 +286,7 @@ def hello() -> str:
     assert _count_import_edges(graph_gateway, REPO, COMMIT) == EXPECTED_ZERO
 
 
-def test_build_import_graph_simple_chain(
-    graph_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_build_import_graph_simple_chain(graph_gateway: StorageGateway, tmp_path: Path) -> None:
     """Linear A->B->C chain produces correct edges and layers."""
     # Create chain: module_a imports module_b imports module_c
     # Using `import pkg.module_b` style to get direct edges
@@ -347,9 +343,7 @@ def leaf() -> int:
 # ---------------------------------------------------------------------------
 
 
-def test_build_import_graph_cycle_detection(
-    graph_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_build_import_graph_cycle_detection(graph_gateway: StorageGateway, tmp_path: Path) -> None:
     """Cycle A->B->C->A produces single SCC for all cycle members."""
     # Create cycle: A -> B -> C -> A
     # Using `import pkg.module` style for direct edges
@@ -399,9 +393,7 @@ import pkg.cycle_a
     assert layers["pkg.cycle_b"] == layers["pkg.cycle_c"]
 
 
-def test_build_import_graph_diamond_pattern(
-    graph_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_build_import_graph_diamond_pattern(graph_gateway: StorageGateway, tmp_path: Path) -> None:
     """Diamond pattern A->{B,C}->D produces correct layers."""
     # Create diamond: A imports B and C, both import D
     # Using `import pkg.module` style for direct edges
@@ -467,9 +459,7 @@ def leaf() -> int:
     assert layers["pkg.diamond_d"] == LAYER_TWO
 
 
-def test_build_import_graph_mixed_imports(
-    graph_gateway: StorageGateway, tmp_path: Path
-) -> None:
+def test_build_import_graph_mixed_imports(graph_gateway: StorageGateway, tmp_path: Path) -> None:
     """Handle relative, absolute, and from imports correctly."""
     # Create modules with various import styles
     _create_python_file(

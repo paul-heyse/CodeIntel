@@ -11,7 +11,7 @@ from __future__ import annotations
 
 # We test internal functions to verify git log parsing behavior.
 # ruff: noqa: PLC2701
-from codeintel.analytics.ast_metrics import FileChurn, _parse_git_log_lines
+from codeintel.analytics.compute.hotspots.metrics import FileChurn, _parse_git_log_lines
 
 # =============================================================================
 # Test Constants

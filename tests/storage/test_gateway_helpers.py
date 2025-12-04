@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.analytics.datasets import (
+from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )

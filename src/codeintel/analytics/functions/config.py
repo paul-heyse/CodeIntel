@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.analytics.function_ast_cache import FunctionAst
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.analytics.parsing.models import ParsedModule, SourceSpan
     from codeintel.analytics.parsing.validation import FunctionValidationReporter
     from codeintel.config import FunctionAnalyticsStepConfig

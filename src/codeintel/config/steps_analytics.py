@@ -13,7 +13,7 @@ from codeintel.config.primitives import ScanProfiles, SnapshotRef
 if TYPE_CHECKING:
     from coverage import Coverage
 
-    from codeintel.ingestion.utilities.scanning import ScanProfile
+    from codeintel.ingestion.infrastructure.scanning import ScanProfile
 
 
 @dataclass(frozen=True)

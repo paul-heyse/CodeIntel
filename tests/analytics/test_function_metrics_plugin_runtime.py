@@ -13,12 +13,11 @@ from codeintel.analytics.core.pipeline_bridge import (
     plan_analytics_plugin_run,
     run_analytics_plugins,
 )
-from codeintel.analytics.core.plugins import FUNCTION_METRICS_PLUGIN
+from codeintel.analytics.plugins import FUNCTION_METRICS_PLUGIN
 from codeintel.config.steps_analytics import FunctionAnalyticsStepConfig
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from tests._helpers import TestContext, TestScenario
-from tests._helpers.builders import GoidRow, ModuleRow
-from tests._helpers.row_protocol import insert_rows
+from tests._helpers.builders import GoidRow, ModuleRow, insert_rows
 
 # Constants
 SAMPLE_MOD_PATH = "mod.py"

@@ -8,8 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
-from codeintel.analytics.graph_service import (
-    GraphContext,
+from codeintel.analytics.compute.graphs import (
     bounded_simple_path_count,
     build_cfg_graph,
     cfg_avg_shortest_path_length,
@@ -19,6 +18,7 @@ from codeintel.analytics.graph_service import (
     dfg_component_stats,
     normalize_decimal_id,
 )
+from codeintel.analytics.graphs.runtime import GraphContext
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 MAX_SIMPLE_PATHS = 1000

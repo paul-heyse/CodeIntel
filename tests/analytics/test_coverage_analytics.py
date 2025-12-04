@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.coverage_analytics import compute_coverage_functions
+from codeintel.analytics.compute.coverage.functions import compute_coverage_functions
 from codeintel.config import ConfigBuilder
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway

@@ -113,9 +113,7 @@ def test_registry_get_not_found(empty_registry: RecipeRegistry) -> None:
         empty_registry.get("nonexistent")
 
 
-def test_registry_get_optional(
-    empty_registry: RecipeRegistry, sample_recipe: Recipe
-) -> None:
+def test_registry_get_optional(empty_registry: RecipeRegistry, sample_recipe: Recipe) -> None:
     """Get optional returns recipe when found."""
     empty_registry.register(sample_recipe)
 
@@ -131,9 +129,7 @@ def test_registry_get_optional_not_found(empty_registry: RecipeRegistry) -> None
     assert result is None
 
 
-def test_registry_unregister(
-    empty_registry: RecipeRegistry, sample_recipe: Recipe
-) -> None:
+def test_registry_unregister(empty_registry: RecipeRegistry, sample_recipe: Recipe) -> None:
     """Unregister removes recipe from registry."""
     empty_registry.register(sample_recipe)
     assert sample_recipe.name in empty_registry.list_names()

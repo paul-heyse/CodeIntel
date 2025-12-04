@@ -5,24 +5,24 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.analytics.graph_rows import (
+from codeintel.analytics.adapters.graphs import (
     SymbolFunctionMetricInputs,
     SymbolModuleMetricInputs,
     build_symbol_function_rows,
     build_symbol_module_rows,
 )
-from codeintel.analytics.graph_runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
-from codeintel.analytics.graph_service import (
+from codeintel.analytics.compute.graphs import (
     centrality_undirected,
     component_ids_undirected,
     log_empty_graph,
     structural_metrics,
 )
 from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.repositories.functions import FunctionRepository
