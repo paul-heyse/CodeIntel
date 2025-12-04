@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
-from codeintel.analytics.tests import compute_test_coverage_edges
+from codeintel.analytics.testing import compute_test_coverage_edges
 from tests._helpers.configs import SpanTestEnv
 from tests._helpers.orchestration import build_span_graph_components, collect_span_snapshot
 

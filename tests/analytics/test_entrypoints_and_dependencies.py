@@ -31,7 +31,7 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
     RepoScanStep,
 )
-from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
+from codeintel.ingestion.utilities.scanning import default_code_profile
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from tests._helpers.builders import CoverageFunctionRow
 from tests._helpers.configs import CoverageSeedConfig

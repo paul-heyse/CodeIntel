@@ -40,6 +40,12 @@ from codeintel.ingestion.core.execution_context import (
     IngestExecutionContext,
     ResourceNotFoundError,
 )
+from codeintel.ingestion.core.runs import (
+    IngestRun,
+    IngestRunMode,
+    IngestRunSink,
+    IngestRunStatus,
+)
 from codeintel.ingestion.core.traits import (
     IncrementalIngestPlugin,
     IsolatedPlugin,
@@ -64,6 +70,10 @@ __all__ = [
     "ConfiguredTableWriterPlugin",
     "IncrementalIngestPlugin",
     "IngestExecutionContext",
+    "IngestRun",
+    "IngestRunMode",
+    "IngestRunSink",
+    "IngestRunStatus",
     "IsolatedPlugin",
     "ProgressReportingPlugin",
     "ResolvedConfig",

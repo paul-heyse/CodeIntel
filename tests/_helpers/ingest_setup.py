@@ -25,17 +25,17 @@ from typing import TYPE_CHECKING, Self
 from codeintel.config import BuildPaths, SnapshotRef
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
-from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-    ScanProfile,
-    default_code_profile,
-    default_config_profile,
-)
 from codeintel.ingestion.plugins import IngestRuntimeScratch
 from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
-from codeintel.ingestion.tool_service import ToolService
+from codeintel.ingestion.tools.service import ToolService
+from codeintel.ingestion.utilities.scanning import (
+    ScanProfile,
+    default_code_profile,
+    default_config_profile,
+)
 from tests._helpers.fakes import FakeToolRunner, FakeToolService, FakeToolServiceConfig
 from tests._helpers.orchestration.tooling import make_tools_config
 

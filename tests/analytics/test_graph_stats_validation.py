@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
@@ -11,12 +10,10 @@ from codeintel.analytics.graphs import (
     compute_graph_stats,
     compute_subsystem_agreement,
 )
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
-from tests._helpers import ProvisionedGateway
+from tests._helpers import ProvisionedGateway, TestContext
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -28,37 +25,38 @@ from tests._helpers.builders import (
 )
 from tests._helpers.row_protocol import insert_rows
 
-REPO = "demo/repo"
-COMMIT = "abc123"
 
+def _seed_test_modules(ctx: TestContext) -> None:
+    """Seed basic modules for graph tests.
 
-def _seed_modules(gateway: StorageGateway) -> None:
+    Parameters
+    ----------
+    ctx
+        Test context with gateway.
+    """
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
-            ModuleRow(module="pkg.a", path="pkg/a.py", repo=REPO, commit=COMMIT),
-            ModuleRow(module="pkg.b", path="pkg/b.py", repo=REPO, commit=COMMIT),
-            ModuleRow(module="pkg.c", path="pkg/c.py", repo=REPO, commit=COMMIT),
+            ModuleRow(module="pkg.a", path="pkg/a.py", repo=ctx.repo, commit=ctx.commit),
+            ModuleRow(module="pkg.b", path="pkg/b.py", repo=ctx.repo, commit=ctx.commit),
+            ModuleRow(module="pkg.c", path="pkg/c.py", repo=ctx.repo, commit=ctx.commit),
         ],
     )
 
 
 def test_graph_views_exist(graph_ready_gateway: ProvisionedGateway) -> None:
-    """Strict graph-ready provisioning should expose graph metric views."""
+    """Verify graph-ready provisioning exposes graph metric views."""
     graph_ready_gateway.gateway.con.execute(
         "SELECT * FROM analytics.config_graph_metrics_keys LIMIT 0"
     )
 
 
-def test_graph_stats_include_symbol_and_config_graphs(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Ensure graph_stats covers symbol, function, and config projections."""
-    gateway = fresh_gateway
-    con = gateway.con
-    _seed_modules(gateway)
+def test_graph_stats_include_symbol_and_config_graphs(test_ctx: TestContext) -> None:
+    """Verify graph_stats covers symbol, function, and config projections."""
+    _seed_test_modules(test_ctx)
+
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             SymbolUseEdgeRow(
                 symbol="sym1",
@@ -72,11 +70,11 @@ def test_graph_stats_include_symbol_and_config_graphs(
         ],
     )
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             ConfigValueRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=test_ctx.repo,
+                commit=test_ctx.commit,
                 config_path="cfg/app.yaml",
                 format="yaml",
                 key="feature.flag",
@@ -87,12 +85,13 @@ def test_graph_stats_include_symbol_and_config_graphs(
         ],
     )
 
-    compute_graph_stats(gateway, repo=REPO, commit=COMMIT)
-    rows = con.execute(
+    compute_graph_stats(test_ctx.gateway, repo=test_ctx.repo, commit=test_ctx.commit)
+
+    rows = test_ctx.query(
         "SELECT graph_name FROM analytics.graph_stats WHERE repo = ? AND commit = ?",
-        [REPO, COMMIT],
-    ).fetchall()
-    names = {row[0] for row in rows}
+        [test_ctx.repo, test_ctx.commit],
+    )
+    names = {str(row.graph_name) for row in rows}
     expected = {
         "symbol_module_graph",
         "symbol_function_graph",
@@ -103,19 +102,16 @@ def test_graph_stats_include_symbol_and_config_graphs(
         pytest.fail(f"Missing expected graphs: {expected - names}")
 
 
-def test_subsystem_agreement_summary_aggregates(
-    fresh_gateway: StorageGateway,
-) -> None:
+def test_subsystem_agreement_summary_aggregates(test_ctx: TestContext) -> None:
     """Validate subsystem agreement summary aggregates disagreement counts."""
-    gateway = fresh_gateway
-    con = gateway.con
     now = datetime.now(UTC)
+
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             SubsystemModuleRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=test_ctx.repo,
+                commit=test_ctx.commit,
                 subsystem_id="sub1",
                 module="pkg.a",
                 role="core",
@@ -123,11 +119,11 @@ def test_subsystem_agreement_summary_aggregates(
         ],
     )
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             GraphMetricsModulesExtRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=test_ctx.repo,
+                commit=test_ctx.commit,
                 module="pkg.a",
                 import_betweenness=0.0,
                 import_closeness=0.0,
@@ -146,11 +142,11 @@ def test_subsystem_agreement_summary_aggregates(
         ],
     )
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             SubsystemRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=test_ctx.repo,
+                commit=test_ctx.commit,
                 subsystem_id="sub1",
                 name="sub1",
                 description="desc",
@@ -171,9 +167,14 @@ def test_subsystem_agreement_summary_aggregates(
         ],
     )
 
-    compute_subsystem_agreement(gateway, repo=REPO, commit=COMMIT)
-    create_all_views(con)
-    disagree_row = con.execute(
+    compute_subsystem_agreement(
+        test_ctx.gateway,
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+    )
+    create_all_views(test_ctx.con)
+
+    disagree_row = test_ctx.con.execute(
         """
         SELECT subsystem_disagree_count, subsystem_agreement_ratio
         FROM docs.v_subsystem_summary
@@ -190,18 +191,19 @@ def test_subsystem_agreement_summary_aggregates(
 
 
 def test_validation_flags_large_symbol_community_and_config_hubs(
-    fresh_gateway: StorageGateway,
+    test_ctx: TestContext,
 ) -> None:
     """Surface validation warnings for oversized symbol communities and config hubs."""
-    gateway = fresh_gateway
-    _seed_modules(gateway)
-    # Seed symbol metrics table with a large community id
+    _seed_test_modules(test_ctx)
+    now = datetime.now(UTC)
+
+    # Seed symbol metrics table with a large community id (all same community)
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             SymbolGraphMetricsModulesRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=test_ctx.repo,
+                commit=test_ctx.commit,
                 module="pkg.a",
                 symbol_betweenness=0.0,
                 symbol_closeness=0.0,
@@ -213,11 +215,11 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
                 symbol_community_id=99,
                 symbol_component_id=0,
                 symbol_component_size=1,
-                created_at=datetime.now(UTC),
+                created_at=now,
             ),
             SymbolGraphMetricsModulesRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=test_ctx.repo,
+                commit=test_ctx.commit,
                 module="pkg.b",
                 symbol_betweenness=0.0,
                 symbol_closeness=0.0,
@@ -229,11 +231,11 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
                 symbol_community_id=99,
                 symbol_component_id=0,
                 symbol_component_size=1,
-                created_at=datetime.now(UTC),
+                created_at=now,
             ),
             SymbolGraphMetricsModulesRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=test_ctx.repo,
+                commit=test_ctx.commit,
                 module="pkg.c",
                 symbol_betweenness=0.0,
                 symbol_closeness=0.0,
@@ -245,16 +247,16 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
                 symbol_community_id=99,
                 symbol_component_id=0,
                 symbol_component_size=1,
-                created_at=datetime.now(UTC),
+                created_at=now,
             ),
         ],
     )
     insert_rows(
-        gateway,
+        test_ctx.gateway,
         [
             ConfigValueRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=test_ctx.repo,
+                commit=test_ctx.commit,
                 config_path="cfg/app.yaml",
                 format="yaml",
                 key="wide.key",
@@ -266,10 +268,10 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
     )
 
     engine = NxGraphEngine(
-        gateway=gateway,
-        snapshot=SnapshotRef(repo=REPO, commit=COMMIT, repo_root=Path()),
+        gateway=test_ctx.gateway,
+        snapshot=test_ctx.to_snapshot_ref(),
     )
-    findings = warn_graph_structure(engine, REPO, COMMIT, log=None)
+    findings = warn_graph_structure(engine, test_ctx.repo, test_ctx.commit, log=None)
     check_names = {f["check_name"] for f in findings}
     if "symbol_graph_large_community" not in check_names:
         pytest.fail("Expected symbol_graph_large_community finding")

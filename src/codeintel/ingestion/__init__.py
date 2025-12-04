@@ -89,23 +89,6 @@ from codeintel.ingestion.core import (
     TrackerRequiringPlugin,
     ValidationResult,
 )
-from codeintel.ingestion.infrastructure_utilities.paths import (
-    ensure_repo_root,
-    normalize_rel_path,
-    relpath_to_module,
-    repo_relpath,
-)
-
-# Worker infrastructure exports
-from codeintel.ingestion.infrastructure_utilities.workers import (
-    AST_WORKER_CONFIG,
-    CST_WORKER_CONFIG,
-    WorkerConfig,
-    create_executor,
-    executor_factory,
-    resolve_worker_count,
-    worker_pool,
-)
 
 # Plugin architecture exports
 from codeintel.ingestion.plugins import (
@@ -194,6 +177,23 @@ from codeintel.ingestion.steps import (
     StepResult,
     TestsIngestStep,
     TypingIngestStep,
+)
+from codeintel.ingestion.utilities.paths import (
+    ensure_repo_root,
+    normalize_rel_path,
+    relpath_to_module,
+    repo_relpath,
+)
+
+# Worker infrastructure exports
+from codeintel.ingestion.utilities.workers import (
+    AST_WORKER_CONFIG,
+    CST_WORKER_CONFIG,
+    WorkerConfig,
+    create_executor,
+    executor_factory,
+    resolve_worker_count,
+    worker_pool,
 )
 
 __all__ = [

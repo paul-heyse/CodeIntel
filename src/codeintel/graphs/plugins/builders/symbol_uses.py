@@ -43,7 +43,7 @@ from codeintel.graphs.core import (
     make_builder_plugin,
 )
 from codeintel.graphs.resources import StorageResource
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

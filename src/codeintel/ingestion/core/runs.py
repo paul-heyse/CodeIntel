@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Protocol
 
 from codeintel.config.datasets import ingest_run_to_tuple
-from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+from codeintel.ingestion.adapters import IngestStorageService
+from codeintel.ingestion.tools.infrastructure import (
     ToolExecutionError,
     ToolNotFoundError,
 )
-from codeintel.ingestion.services.storage import IngestStorageService
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 log = logging.getLogger(__name__)

@@ -6,12 +6,14 @@ computation from the analytics subsystem.
 
 Modules
 -------
+- bipartite: Bipartite graph metrics (degree centrality, weighted projection)
 - centrality: PageRank, betweenness, closeness, harmonic, eigenvector centrality
 - cfg: Control flow graph metrics (dominator tree, dominance frontier)
 - community: Community detection (greedy modularity, Louvain, label propagation)
 - components: SCC, connected components, bridges, articulation points
 - coupling: Coupling metrics
 - dfg: Data flow graph metrics (path lengths, def-use chains)
+- paths: Path-related metrics (simple path counting, reachability)
 - structural: Structural metrics (clustering, triangles, core number, structural holes)
 
 Example
@@ -32,23 +34,27 @@ clustering = structural.compute_clustering_coefficient(graph)
 from __future__ import annotations
 
 from codeintel.graphs.compute.metrics import (
+    bipartite,
     centrality,
     cfg,
     community,
     components,
     coupling,
     dfg,
+    paths,
     statistics,
     structural,
 )
 
 __all__ = [
+    "bipartite",
     "centrality",
     "cfg",
     "community",
     "components",
     "coupling",
     "dfg",
+    "paths",
     "statistics",
     "structural",
 ]

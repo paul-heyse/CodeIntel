@@ -7,7 +7,7 @@ from typing import Final
 
 from coverage import Coverage
 
-from codeintel.analytics.tests import compute_test_coverage_edges
+from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.config import TestCoverageStepConfig
 from codeintel.graphs.catalog import load_function_catalog
 from tests._helpers.configs import PipelineEnv

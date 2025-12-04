@@ -10,11 +10,7 @@ import pytest
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion import IngestExecutionContext
-from codeintel.ingestion.infrastructure_utilities.source_scanner import (
-    default_code_profile,
-    default_config_profile,
-)
-from codeintel.ingestion.ingest_runs import IngestRun, IngestRunSink
+from codeintel.ingestion.core.runs import IngestRun, IngestRunSink
 from codeintel.ingestion.plugins import (
     IngestPluginResult,
     IngestRuntimeScratch,
@@ -26,6 +22,10 @@ from codeintel.ingestion.resources import (
     ToolsProvider,
     TrackerConfig,
     TrackerProvider,
+)
+from codeintel.ingestion.utilities.scanning import (
+    default_code_profile,
+    default_config_profile,
 )
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 

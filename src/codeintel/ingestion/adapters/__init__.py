@@ -11,7 +11,10 @@ connecting the pure domain logic to real infrastructure:
 
 from __future__ import annotations
 
-from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
+from codeintel.ingestion.adapters.duckdb_storage import (
+    DuckDBStorageAdapter,
+    IngestStorageService,
+)
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
@@ -20,5 +23,6 @@ __all__ = [
     "DuckDBStorageAdapter",
     "FilesystemDiscoveryAdapter",
     "HashChangeDetectionAdapter",
+    "IngestStorageService",
     "ToolRunnerAdapter",
 ]

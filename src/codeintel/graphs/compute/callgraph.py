@@ -29,7 +29,7 @@ from codeintel.graphs.adapters.callgraph_persistence import (
     dedupe_edge_rows,
     default_edge_key,
 )
-from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
+from codeintel.ingestion.utilities.paths import normalize_rel_path
 
 if TYPE_CHECKING:
     from codeintel.graphs.catalog import FunctionSpanIndex

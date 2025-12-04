@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from codeintel.ingestion.change_tracker import ChangeTracker
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
-    from codeintel.ingestion.tool_service import ToolService
+    from codeintel.ingestion.tools.service import ToolService
 
 log = logging.getLogger(__name__)
 

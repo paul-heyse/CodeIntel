@@ -52,6 +52,7 @@ from codeintel.graphs.runtime.telemetry import (
     GraphRuntimeTelemetry,
     get_graph_telemetry,
 )
+from codeintel.storage.gateway import StorageGateway
 from tests._helpers.fakes.graph_contexts import (
     GraphExecutorTestEnv,
     GraphTelemetryTestEnv,
@@ -630,7 +631,7 @@ def test_compute_options_hash_none_returns_none() -> None:
     assert hash_val is None
 
 
-def test_is_unchanged_when_hashes_match(graph_gateway) -> None:
+def test_is_unchanged_when_hashes_match(graph_gateway: StorageGateway) -> None:
     """Skip detection returns True when hashes match."""
     prior_manifest = {
         "test_plugin": {
@@ -654,7 +655,7 @@ def test_is_unchanged_when_hashes_match(graph_gateway) -> None:
     assert result
 
 
-def test_is_unchanged_when_hashes_differ(graph_gateway) -> None:
+def test_is_unchanged_when_hashes_differ(graph_gateway: StorageGateway) -> None:
     """Skip detection returns False when hashes differ."""
     prior_manifest = {
         "test_plugin": {
@@ -678,7 +679,7 @@ def test_is_unchanged_when_hashes_differ(graph_gateway) -> None:
     assert not result
 
 
-def test_is_unchanged_no_prior_manifest(graph_gateway) -> None:
+def test_is_unchanged_no_prior_manifest(graph_gateway: StorageGateway) -> None:
     """Skip detection returns False when no prior manifest."""
     state = ManifestState(
         plugin_name="test_plugin",

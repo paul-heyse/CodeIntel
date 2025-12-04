@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Self
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+    from codeintel.ingestion.utilities.scanning import ScanProfile
 
 
 @dataclass(frozen=True)

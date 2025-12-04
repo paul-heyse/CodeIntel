@@ -14,13 +14,11 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.core.plugins.result import PluginExecutionRecord, PluginResult
-from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
+from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.protocol import (
     FunctionalGraphPlugin,
     GraphPluginKind,
@@ -28,17 +26,12 @@ from codeintel.graphs.core.protocol import (
     GraphPluginProtocol,
     GraphPluginStage,
 )
-from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.runtime.telemetry import (
     GraphPluginSpan,
     GraphRuntimeTelemetry,
     get_graph_telemetry,
 )
-from codeintel.storage.schemas import apply_all_schemas
-from tests._helpers.gateway import open_ingestion_gateway_with_macros
-
-if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
+from tests._helpers.fakes.graph_contexts import GraphTelemetryTestEnv
 
 # Constants
 PLUGIN_COUNT: Final = 5
@@ -83,34 +76,6 @@ def _make_test_plugin(
     )
 
     return FunctionalGraphPlugin(_metadata=metadata, _execute_fn=execute)
-
-
-def _make_gateway_and_context() -> tuple[StorageGateway, GraphPluginExecutionContext]:
-    """Create a gateway and execution context for telemetry tests.
-
-    Returns
-    -------
-    tuple
-        Gateway and execution context.
-    """
-    gateway = open_ingestion_gateway_with_macros(
-        apply_schema=True, ensure_views=True, validate_schema=True
-    )
-    apply_all_schemas(gateway.con)
-
-    snapshot = SnapshotRef(repo="test/telemetry", commit="tel123", repo_root=Path())
-    scratch = PluginScratch()
-
-    ctx = GraphPluginExecutionContext(
-        snapshot=snapshot,
-        graph_resources=ResourceContainer(),
-        gateway=gateway,
-        scratch=scratch,
-        plugin_name="telemetry_test",
-        run_id="telemetry-run-001",
-    )
-
-    return gateway, ctx
 
 
 def test_telemetry_init_with_defaults() -> None:
@@ -164,139 +129,127 @@ def test_telemetry_init_with_metrics_disabled() -> None:
     assert state["_metrics_enabled"] is False
 
 
-def test_start_plugin_captures_all_attributes() -> None:
+def test_start_plugin_captures_all_attributes(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Start plugin creates span with all required attributes."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
     plugin = _make_test_plugin("attr_plugin", kind="metric", stage="core")
-    gateway, ctx = _make_gateway_and_context()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-attr-001", ctx)
+    span = telemetry.start_plugin(plugin, "run-attr-001", graph_telemetry_env.context)
 
-        assert span.plugin_name == "attr_plugin"
-        assert span.run_id == "run-attr-001"
-        assert span.start_time_ns > 0
-        assert span.attributes["plugin.name"] == "attr_plugin"
-        assert span.attributes["plugin.kind"] == "metric"
-        assert span.attributes["plugin.stage"] == "core"
-        assert span.attributes["repo"] == "test/telemetry"
-        assert span.attributes["commit"] == "tel123"
-        assert span.attributes["run_id"] == "run-attr-001"
-    finally:
-        gateway.close()
+    assert span.plugin_name == "attr_plugin"
+    assert span.run_id == "run-attr-001"
+    assert span.start_time_ns > 0
+    assert span.attributes["plugin.name"] == "attr_plugin"
+    assert span.attributes["plugin.kind"] == "metric"
+    assert span.attributes["plugin.stage"] == "core"
+    assert span.attributes["repo"] == "demo/repo"
+    assert span.attributes["commit"] == "deadbeef"
+    assert span.attributes["run_id"] == "run-attr-001"
 
 
-def test_start_plugin_creates_unique_spans() -> None:
+def test_start_plugin_creates_unique_spans(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Each start_plugin call creates a unique span."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
     plugin = _make_test_plugin("unique_plugin")
-    gateway, ctx = _make_gateway_and_context()
 
-    try:
-        span1 = telemetry.start_plugin(plugin, "run-1", ctx)
-        span2 = telemetry.start_plugin(plugin, "run-2", ctx)
+    span1 = telemetry.start_plugin(plugin, "run-1", graph_telemetry_env.context)
+    span2 = telemetry.start_plugin(plugin, "run-2", graph_telemetry_env.context)
 
-        assert span1.run_id != span2.run_id
-        assert span1.start_time_ns != span2.start_time_ns or span1 is not span2
-    finally:
-        gateway.close()
+    assert span1.run_id != span2.run_id
+    assert span1.start_time_ns != span2.start_time_ns or span1 is not span2
 
 
-def test_finish_plugin_computes_duration() -> None:
+def test_finish_plugin_computes_duration(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Finish plugin logs completion without raising."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
     plugin = _make_test_plugin("duration_plugin")
-    gateway, ctx = _make_gateway_and_context()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-dur", ctx)
+    span = telemetry.start_plugin(plugin, "run-dur", graph_telemetry_env.context)
 
-        # Simulate some execution time
-        time.sleep(SLEEP_MS / 1000)
+    # Simulate some execution time
+    time.sleep(SLEEP_MS / 1000)
 
-        record = PluginExecutionRecord(
-            plugin_name="duration_plugin",
-            status="succeeded",
-            started_at=datetime.now(tz=UTC),
-            ended_at=datetime.now(tz=UTC),
-            duration_ms=float(SLEEP_MS),
-        )
+    record = PluginExecutionRecord(
+        plugin_name="duration_plugin",
+        status="succeeded",
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
+        duration_ms=float(SLEEP_MS),
+    )
 
-        # Should not raise
-        GraphRuntimeTelemetry.finish_plugin(span, record)
-    finally:
-        gateway.close()
+    # Should not raise
+    GraphRuntimeTelemetry.finish_plugin(span, record)
 
 
-def test_finish_plugin_with_failed_status() -> None:
+def test_finish_plugin_with_failed_status(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Finish plugin handles failed status correctly."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
     plugin = _make_test_plugin("failed_plugin")
-    gateway, ctx = _make_gateway_and_context()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-fail", ctx)
+    span = telemetry.start_plugin(plugin, "run-fail", graph_telemetry_env.context)
 
-        record = PluginExecutionRecord(
-            plugin_name="failed_plugin",
-            status="failed",
-            started_at=datetime.now(tz=UTC),
-            ended_at=datetime.now(tz=UTC),
-            duration_ms=100.0,
-            error="Test error message",
-        )
+    record = PluginExecutionRecord(
+        plugin_name="failed_plugin",
+        status="failed",
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
+        duration_ms=100.0,
+        error="Test error message",
+    )
 
-        # Should not raise
-        GraphRuntimeTelemetry.finish_plugin(span, record)
-    finally:
-        gateway.close()
+    # Should not raise
+    GraphRuntimeTelemetry.finish_plugin(span, record)
 
 
-def test_finish_plugin_with_skipped_status() -> None:
+def test_finish_plugin_with_skipped_status(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Finish plugin handles skipped status correctly."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
     plugin = _make_test_plugin("skipped_plugin")
-    gateway, ctx = _make_gateway_and_context()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-skip", ctx)
+    span = telemetry.start_plugin(plugin, "run-skip", graph_telemetry_env.context)
 
-        record = PluginExecutionRecord(
-            plugin_name="skipped_plugin",
-            status="skipped",
-            started_at=datetime.now(tz=UTC),
-            ended_at=datetime.now(tz=UTC),
-            duration_ms=0.0,
-        )
+    record = PluginExecutionRecord(
+        plugin_name="skipped_plugin",
+        status="skipped",
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
+        duration_ms=0.0,
+    )
 
-        # Should not raise
-        GraphRuntimeTelemetry.finish_plugin(span, record)
-    finally:
-        gateway.close()
+    # Should not raise
+    GraphRuntimeTelemetry.finish_plugin(span, record)
 
 
-def test_finish_plugin_with_multiple_attempts() -> None:
+def test_finish_plugin_with_multiple_attempts(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Finish plugin handles records with multiple attempts."""
     telemetry = GraphRuntimeTelemetry(enable_tracing=False, enable_metrics=False)
     plugin = _make_test_plugin("retry_plugin")
-    gateway, ctx = _make_gateway_and_context()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-retry", ctx)
+    span = telemetry.start_plugin(plugin, "run-retry", graph_telemetry_env.context)
 
-        record = PluginExecutionRecord(
-            plugin_name="retry_plugin",
-            status="succeeded",
-            started_at=datetime.now(tz=UTC),
-            ended_at=datetime.now(tz=UTC),
-            duration_ms=200.0,
-            attempts=3,
-        )
+    record = PluginExecutionRecord(
+        plugin_name="retry_plugin",
+        status="succeeded",
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
+        duration_ms=200.0,
+        attempts=3,
+    )
 
-        # Should not raise
-        GraphRuntimeTelemetry.finish_plugin(span, record)
-    finally:
-        gateway.close()
+    # Should not raise
+    GraphRuntimeTelemetry.finish_plugin(span, record)
 
 
 def test_record_metrics_without_metrics_enabled() -> None:
@@ -504,7 +457,9 @@ def test_graph_plugin_span_mutable_attributes() -> None:
     assert "otel_span" in span.context_data
 
 
-def test_telemetry_handles_otel_not_available() -> None:
+def test_telemetry_handles_otel_not_available(
+    graph_telemetry_env: GraphTelemetryTestEnv,
+) -> None:
     """Telemetry gracefully handles when OpenTelemetry is not available."""
     # This test verifies the telemetry works even without OTEL
     telemetry = GraphRuntimeTelemetry(
@@ -514,21 +469,17 @@ def test_telemetry_handles_otel_not_available() -> None:
 
     # Operations should not raise even if OTEL setup failed
     plugin = _make_test_plugin("otel_test")
-    gateway, ctx = _make_gateway_and_context()
 
-    try:
-        span = telemetry.start_plugin(plugin, "run-otel", ctx)
-        record = PluginExecutionRecord(
-            plugin_name="otel_test",
-            status="succeeded",
-            started_at=datetime.now(tz=UTC),
-            ended_at=datetime.now(tz=UTC),
-            duration_ms=10.0,
-        )
-        GraphRuntimeTelemetry.finish_plugin(span, record)
-        telemetry.record_metrics(record, None)
-    finally:
-        gateway.close()
+    span = telemetry.start_plugin(plugin, "run-otel", graph_telemetry_env.context)
+    record = PluginExecutionRecord(
+        plugin_name="otel_test",
+        status="succeeded",
+        started_at=datetime.now(tz=UTC),
+        ended_at=datetime.now(tz=UTC),
+        duration_ms=10.0,
+    )
+    GraphRuntimeTelemetry.finish_plugin(span, record)
+    telemetry.record_metrics(record, None)
 
 
 def test_telemetry_start_run_without_otel() -> None:

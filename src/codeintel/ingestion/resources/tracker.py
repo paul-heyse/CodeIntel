@@ -16,16 +16,16 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.change_tracker import ChangeTracker
-from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 from codeintel.ingestion.resources.protocol import LazyResource
 from codeintel.ingestion.steps.repo_scan import RepoScanStep
+from codeintel.ingestion.utilities.scanning import default_code_profile
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.change_tracker import IncrementalIngestPolicy
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
     from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
+    from codeintel.ingestion.utilities.scanning import ScanProfile
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)

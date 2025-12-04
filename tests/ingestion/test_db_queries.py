@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.ingestion.infrastructure_utilities.db_queries import (
+from codeintel.ingestion.utilities.db_queries import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
     ForeignKeyRef,

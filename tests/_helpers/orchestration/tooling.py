@@ -17,13 +17,13 @@ from types import ModuleType
 from coverage import Coverage
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+from codeintel.ingestion.tools.infrastructure import (
     ToolName,
     ToolRunner,
     ToolRunResult,
 )
-from codeintel.ingestion.tool_service import ToolService
 from codeintel.ingestion.tools.results import CoverageFileSummary
+from codeintel.ingestion.tools.service import ToolService
 
 
 def _ensure_ok(result: ToolRunResult, *, action: str) -> None:

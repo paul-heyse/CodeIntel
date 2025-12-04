@@ -89,17 +89,23 @@ from tests._helpers.scenarios import (
 from tests._helpers.seeds import (
     CORE_PACK,
     COVERAGE_PACK,
+    DATA_MODELS_PACK,
+    FUNCTION_TYPES_PACK,
     GRAPH_PACK,
     METRICS_PACK,
+    SUBSYSTEM_ANALYTICS_PACK,
 )
 
 __all__ = [
     "CORE_PACK",
     "COVERAGE_PACK",
+    "DATA_MODELS_PACK",
     "DEFAULT_COMMIT",
     "DEFAULT_REPO",
+    "FUNCTION_TYPES_PACK",
     "GRAPH_PACK",
     "METRICS_PACK",
+    "SUBSYSTEM_ANALYTICS_PACK",
     "CallgraphFixtureOptions",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",

@@ -182,6 +182,110 @@ def get_degree_values(graph: nx.Graph) -> list[int]:
     return [degree for _, degree in degrees]
 
 
+def compute_diameter_estimate(graph: nx.Graph) -> float | None:
+    """Compute approximate diameter of the largest connected component.
+
+    Parameters
+    ----------
+    graph
+        Graph to analyze (directed or undirected).
+
+    Returns
+    -------
+    float | None
+        Approximate diameter of largest component, or None if empty.
+
+    Examples
+    --------
+    >>> g = nx.path_graph(5)
+    >>> compute_diameter_estimate(g)
+    4.0
+    """
+    if graph.number_of_nodes() == 0:
+        return None
+    undirected = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
+    components = list(nx.connected_components(undirected))
+    if not components:
+        return None
+    largest = undirected.subgraph(max(components, key=len)).copy()
+    try:
+        return float(nx.approximation.diameter(largest))
+    except nx.NetworkXError:
+        return None
+
+
+def compute_avg_shortest_path_length(graph: nx.Graph) -> float | None:
+    """Compute average shortest path length of the largest connected component.
+
+    Parameters
+    ----------
+    graph
+        Graph to analyze (directed or undirected).
+
+    Returns
+    -------
+    float | None
+        Average shortest path length, or None if empty.
+
+    Examples
+    --------
+    >>> g = nx.path_graph(4)
+    >>> round(compute_avg_shortest_path_length(g), 2)
+    1.33
+    """
+    if graph.number_of_nodes() == 0:
+        return None
+    undirected = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
+    components = list(nx.connected_components(undirected))
+    if not components:
+        return None
+    largest = undirected.subgraph(max(components, key=len)).copy()
+    try:
+        return float(nx.average_shortest_path_length(largest))
+    except nx.NetworkXError:
+        return None
+
+
+def compute_condensation_layer_count(graph: nx.DiGraph) -> int | None:
+    """Compute the number of layers in the SCC condensation DAG.
+
+    The condensation DAG collapses each strongly connected component
+    into a single node. This function returns the number of topological
+    layers (the longest path length + 1) in that condensation DAG.
+
+    Parameters
+    ----------
+    graph
+        Directed graph to analyze.
+
+    Returns
+    -------
+    int | None
+        Number of layers, or None if the graph is empty or undirected.
+
+    Examples
+    --------
+    >>> g = nx.DiGraph()
+    >>> g.add_edges_from([(1, 2), (2, 3), (3, 4)])
+    >>> compute_condensation_layer_count(g)
+    4
+    """
+    if graph.number_of_nodes() == 0:
+        return None
+    condensation = nx.condensation(graph)
+    if condensation.number_of_nodes() == 0:
+        return 0
+    # Compute topological layers for the condensation DAG
+    layers: dict[int, int] = {
+        node: 0 for node in condensation.nodes if condensation.in_degree(node) == 0
+    }
+    for node in nx.topological_sort(condensation):
+        base = layers.get(node, 0)
+        for succ in condensation.successors(node):
+            layers[succ] = max(layers.get(succ, 0), base + 1)
+    return max(layers.values(), default=0) + 1
+
+
 def compute_graph_statistics(graph: nx.DiGraph) -> GraphStatistics:
     """Compute summary statistics for a directed graph.
 
@@ -254,6 +358,9 @@ def compute_graph_statistics(graph: nx.DiGraph) -> GraphStatistics:
 __all__ = [
     "DegreeViewT",
     "GraphStatistics",
+    "compute_avg_shortest_path_length",
+    "compute_condensation_layer_count",
+    "compute_diameter_estimate",
     "compute_graph_statistics",
     "get_degree_values",
     "get_degrees",

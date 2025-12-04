@@ -49,11 +49,11 @@ from codeintel.ingestion.ports.tools import (
     TestResult,
     ToolStatus,
 )
-from codeintel.ingestion.tool_service import ToolService
+from codeintel.ingestion.tools.service import ToolService
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
-    from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
+    from codeintel.ingestion.tools.infrastructure import ToolRunner
 
 log = logging.getLogger(__name__)
 

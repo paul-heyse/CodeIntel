@@ -2,77 +2,33 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config import ConfigBuilder
-from tests._helpers.builders import (
-    CallGraphEdgeRow,
-    CallGraphNodeRow,
-    ImportGraphEdgeRow,
-)
-from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
-from tests._helpers.row_protocol import insert_rows
+from tests._helpers import TestContext
+
+# Expected row count constant
+EXPECTED_GRAPH_METRICS_ROWS = 4
 
 
-def test_compute_graph_metrics_with_small_graph() -> None:
-    """Verify graph metrics populate basic call/import rows."""
-    gateway = open_ingestion_gateway(apply_schema=True, ensure_views=True, validate_schema=True)
-    con = gateway.con
-    con.execute(
-        "DELETE FROM graph.call_graph_edges WHERE repo = ? AND commit = ?",
-        ["demo/repo", "deadbeef"],
-    )
-    insert_rows(
-        gateway,
-        [
-            CallGraphNodeRow(1, "python", "function", 0, is_public=True, rel_path="pkg/a.py"),
-            CallGraphNodeRow(2, "python", "function", 0, is_public=True, rel_path="pkg/b.py"),
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            CallGraphEdgeRow(
-                repo="demo/repo",
-                commit="deadbeef",
-                caller_goid_h128=1,
-                callee_goid_h128=2,
-                callsite_path="pkg/a.py",
-                callsite_line=1,
-                callsite_col=0,
-                language="python",
-                kind="direct",
-                resolved_via="local_name",
-                confidence=1.0,
-            )
-        ],
-    )
-    insert_rows(
-        gateway,
-        [
-            ImportGraphEdgeRow(
-                repo="demo/repo",
-                commit="deadbeef",
-                src_module="pkg.a",
-                dst_module="pkg.b",
-                src_fan_out=1,
-                dst_fan_in=1,
-                cycle_group=0,
-            )
-        ],
-    )
+def test_compute_graph_metrics_with_seeded_data(graph_ctx: TestContext) -> None:
+    """Verify graph metrics populate with pre-seeded graph data.
+
+    Uses GRAPH_PACK which seeds call graph nodes and edges for 4 GOIDs.
+    The compute_graph_metrics function should produce metrics for each.
+    """
     cfg = ConfigBuilder.from_snapshot(
-        repo="demo/repo", commit="deadbeef", repo_root=Path()
+        repo=graph_ctx.repo,
+        commit=graph_ctx.commit,
+        repo_root=graph_ctx.repo_root,
     ).graph_metrics()
-    compute_graph_metrics(gateway, cfg)
-    rows = con.execute(
-        "SELECT COUNT(*) FROM analytics.graph_metrics_functions WHERE repo = ? AND commit = ?",
-        ["demo/repo", "deadbeef"],
-    ).fetchone()
-    expected_rows = 2
-    if rows is None or rows[0] != expected_rows:
-        pytest.fail(f"Expected {expected_rows} function metric rows, got {rows}")
-    gateway.close()
+
+    compute_graph_metrics(graph_ctx.gateway, cfg)
+
+    row_count = graph_ctx.query_count(
+        "analytics.graph_metrics_functions",
+        f"repo = '{graph_ctx.repo}' AND commit = '{graph_ctx.commit}'",
+    )
+
+    assert row_count == EXPECTED_GRAPH_METRICS_ROWS, (
+        f"Expected {EXPECTED_GRAPH_METRICS_ROWS} function metric rows, got {row_count}"
+    )

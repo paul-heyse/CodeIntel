@@ -1,8 +1,11 @@
 """Shared fixtures for analytics adapter tests.
 
-This module provides common fixtures for adapter tests to reduce duplication
-across the adapter test suite. All fixtures use production-grade components
-following the Testing Charter principles.
+This module provides adapter-specific fixtures. For general test fixtures like
+TestContext, test_ctx, graph_ctx, etc., use the fixtures from the main conftest.py.
+
+Most adapter tests should use the standard test_ctx fixture from conftest.py.
+The adapter_gateway and adapter_snapshot fixtures are provided for backward
+compatibility with existing tests.
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ ADAPTER_TEST_COMMIT = "abc123"
 
 
 # =============================================================================
-# Gateway Fixtures
+# Legacy Gateway Fixtures (prefer test_ctx from main conftest)
 # =============================================================================
 
 
@@ -34,8 +37,9 @@ ADAPTER_TEST_COMMIT = "abc123"
 def adapter_gateway() -> Iterator[StorageGateway]:
     """Provide in-memory gateway with full schema for adapter tests.
 
-    This fixture creates a production-parity gateway with all schemas
-    and macros applied, suitable for testing adapter behavior.
+    .. note::
+        Prefer using the test_ctx fixture from main conftest.py instead.
+        This fixture is provided for backward compatibility.
 
     Yields
     ------
@@ -56,13 +60,17 @@ def adapter_gateway() -> Iterator[StorageGateway]:
 
 
 # =============================================================================
-# Snapshot Fixtures
+# Legacy Snapshot Fixtures (prefer test_ctx.to_snapshot_ref() instead)
 # =============================================================================
 
 
 @pytest.fixture
 def adapter_snapshot() -> SnapshotRef:
     """Provide standard snapshot reference for adapter tests.
+
+    .. note::
+        Prefer using test_ctx.to_snapshot_ref() instead.
+        This fixture is provided for backward compatibility.
 
     Returns
     -------

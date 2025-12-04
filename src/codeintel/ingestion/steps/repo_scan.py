@@ -17,10 +17,10 @@ from codeintel.ingestion.steps.base import StepResult
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
     from codeintel.ingestion.ports.change_detection import ChangeDetectionPort, ChangeSet
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
     from codeintel.ingestion.ports.storage import IngestStoragePort
+    from codeintel.ingestion.utilities.scanning import ScanProfile
 
 log = logging.getLogger(__name__)
 

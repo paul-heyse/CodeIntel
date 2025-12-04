@@ -10,6 +10,7 @@ import logging
 import re
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -19,7 +20,7 @@ from codeintel.config.datasets import (
     DATASET_CONTRACTS_BY_TABLE_KEY,
     load_columns_by_table,
 )
-from codeintel.ingestion.ports.storage import BatchResult, QueryResult
+from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
 from codeintel.storage.ingest_macros import (
     assert_ingest_macros_present,
     ensure_ingest_macros,
@@ -551,8 +552,80 @@ class DuckDBStorageAdapter:
         return len(rows)
 
 
+@dataclass
+class IngestStorageService:
+    """High-level storage operations for ingestion.
+
+    Wraps IngestStoragePort to provide convenient batch operations
+    with automatic schema management and logging.
+
+    Attributes
+    ----------
+    storage
+        The underlying storage port for database operations.
+    """
+
+    storage: IngestStoragePort
+
+    def run_batch(
+        self,
+        table_key: str,
+        rows: Sequence[Sequence[object]],
+        *,
+        delete_params: Sequence[object] | None = None,
+        scope: str | None = None,
+    ) -> BatchResult:
+        """Write batch with optional pre-delete.
+
+        Ensures schema exists, optionally deletes prior rows, and inserts
+        the batch with structured logging.
+
+        Parameters
+        ----------
+        table_key
+            Registry table key (e.g., "core.ast_nodes").
+        rows
+            Row payload matching the prepared insert statement.
+        delete_params
+            Optional parameters for the delete statement when defined.
+        scope
+            Optional repo@commit string for structured logging.
+
+        Returns
+        -------
+        BatchResult
+            Summary of rows inserted and elapsed time.
+        """
+        self.storage.ensure_schema(table_key)
+
+        if delete_params is not None:
+            self.storage.delete_by_params(table_key, delete_params)
+
+        return self.storage.write_batch(table_key, rows, scope=scope)
+
+    @classmethod
+    def from_gateway(cls, gateway: StorageGateway) -> IngestStorageService:
+        """Create a service instance from a StorageGateway.
+
+        This factory method creates the appropriate DuckDB storage adapter
+        for the given gateway.
+
+        Parameters
+        ----------
+        gateway
+            StorageGateway providing DuckDB access.
+
+        Returns
+        -------
+        IngestStorageService
+            Service instance wrapping the storage adapter.
+        """
+        return cls(storage=DuckDBStorageAdapter(gateway))
+
+
 __all__ = [
     "DuckDBStorageAdapter",
+    "IngestStorageService",
     "build_delete_in_query",
     "quote_identifier",
     "quote_macro_name",

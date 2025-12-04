@@ -34,7 +34,7 @@ from codeintel.config.datasets import (
     graph_metrics_modules_row_to_tuple,
     serialize_test_profile_row,
 )
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_builder import QueryBuilder, SafeTable

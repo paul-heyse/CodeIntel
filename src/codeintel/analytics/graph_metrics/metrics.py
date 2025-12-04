@@ -9,13 +9,17 @@ from decimal import Decimal
 from typing import Any
 
 import networkx as nx
-from networkx.algorithms import approximation, bipartite, structuralholes
+from networkx.algorithms import structuralholes
 from networkx.exception import (
     NetworkXAlgorithmError,
     NetworkXError,
 )
 
 from codeintel.analytics.graphs.runtime import GraphContext
+from codeintel.graphs.compute.metrics.bipartite import (
+    compute_bipartite_degrees,
+    compute_weighted_projection,
+)
 from codeintel.graphs.compute.metrics.centrality import (
     compute_betweenness,
     compute_closeness,
@@ -37,6 +41,16 @@ from codeintel.graphs.compute.metrics.components import (
     topological_layers,
 )
 from codeintel.graphs.compute.metrics.dfg import compute_dfg_components
+from codeintel.graphs.compute.metrics.paths import (
+    compute_avg_shortest_path_from_source,
+    compute_reachable_nodes,
+    count_simple_paths,
+)
+from codeintel.graphs.compute.metrics.statistics import (
+    compute_avg_shortest_path_length,
+    compute_condensation_layer_count,
+    compute_diameter_estimate,
+)
 from codeintel.graphs.compute.metrics.structural import (
     compute_clustering_coefficient,
     compute_constraint,
@@ -504,49 +518,43 @@ def component_ids_undirected(graph: nx.Graph) -> tuple[dict[Any, int], dict[Any,
     return component_id, component_size
 
 
-def _dag_layers(graph: nx.DiGraph) -> dict[int, int]:
-    layers: dict[int, int] = {node: 0 for node in graph.nodes if graph.in_degree(node) == 0}
-    for node in nx.topological_sort(graph):
-        base = layers.get(node, 0)
-        for succ in graph.successors(node):
-            layers[succ] = max(layers.get(succ, 0), base + 1)
-    return layers
-
-
 def _component_layers(graph: nx.Graph | nx.DiGraph) -> int | None:
-    """
-    Return the number of condensation layers for directed graphs.
+    """Return the number of condensation layers for directed graphs.
+
+    Delegates to graphs.compute.metrics.statistics.compute_condensation_layer_count.
+
+    Parameters
+    ----------
+    graph
+        Graph to analyze.
 
     Returns
     -------
     int | None
         Layer count for directed graphs; otherwise ``None``.
     """
-    if graph.number_of_nodes() == 0 or not isinstance(graph, nx.DiGraph):
+    if not isinstance(graph, nx.DiGraph):
         return None
-    condensation = nx.condensation(graph)
-    if condensation.number_of_nodes() == 0:
-        return 0
-    layers = _dag_layers(condensation)
-    return max(layers.values(), default=0) + 1
+    return compute_condensation_layer_count(graph)
 
 
 def _diameter_and_spl(graph: nx.Graph | nx.DiGraph) -> tuple[float | None, float | None]:
-    if graph.number_of_nodes() == 0:
-        return None, None
-    undirected = graph.to_undirected()
-    components = list(nx.connected_components(undirected))
-    if not components:
-        return None, None
-    largest = undirected.subgraph(max(components, key=len)).copy()
-    try:
-        diameter = float(approximation.diameter(largest))
-    except (NetworkXAlgorithmError, NetworkXError):
-        diameter = None
-    try:
-        avg_spl = float(nx.average_shortest_path_length(largest))
-    except (NetworkXAlgorithmError, NetworkXError):
-        avg_spl = None
+    """Compute diameter and average shortest path length for a graph.
+
+    Delegates to graphs.compute.metrics.statistics functions.
+
+    Parameters
+    ----------
+    graph
+        Graph to analyze.
+
+    Returns
+    -------
+    tuple[float | None, float | None]
+        Diameter and average shortest path length of largest connected component.
+    """
+    diameter = compute_diameter_estimate(graph)
+    avg_spl = compute_avg_shortest_path_length(graph)
     return diameter, avg_spl
 
 
@@ -601,8 +609,19 @@ def build_projection_graph(
     *,
     label: str,
 ) -> nx.Graph:
-    """
-    Build a weighted projection graph from a bipartite partition.
+    """Build a weighted projection graph from a bipartite partition.
+
+    Delegates pure computation to graphs.compute.metrics.bipartite.compute_weighted_projection
+    and handles logging/error reporting at the analytics layer.
+
+    Parameters
+    ----------
+    bipartite_graph
+        Bipartite graph to project.
+    nodes
+        Iterable of nodes in the partition to project onto.
+    label
+        Label for logging messages.
 
     Returns
     -------
@@ -611,41 +630,26 @@ def build_projection_graph(
     """
     nodes_set = set(nodes)
     graph_nodes = bipartite_graph.number_of_nodes()
-    if not nodes_set:
+
+    result = compute_weighted_projection(bipartite_graph, nodes_set)
+    if result is None:
+        # Determine reason for logging
+        if not nodes_set:
+            reason = "empty partition"
+        elif not nodes_set.issubset(set(bipartite_graph)):
+            reason = "nodes not in graph"
+        elif len(nodes_set) >= graph_nodes:
+            reason = "partition too large"
+        else:
+            reason = "projection failure"
         log_projection_skipped(
             label,
-            "empty partition",
+            reason,
             nodes=len(nodes_set),
             graph_nodes=graph_nodes,
         )
         return nx.Graph()
-    graph_node_set = set(bipartite_graph)
-    if not nodes_set.issubset(graph_node_set):
-        log_projection_skipped(
-            label,
-            "nodes not in graph",
-            nodes=len(nodes_set),
-            graph_nodes=graph_nodes,
-        )
-        return nx.Graph()
-    if len(nodes_set) >= graph_nodes:
-        log_projection_skipped(
-            label,
-            "partition too large",
-            nodes=len(nodes_set),
-            graph_nodes=graph_nodes,
-        )
-        return nx.Graph()
-    try:
-        return bipartite.weighted_projected_graph(bipartite_graph, nodes_set)
-    except NetworkXAlgorithmError:
-        log_projection_skipped(
-            label,
-            "projection failure",
-            nodes=len(nodes_set),
-            graph_nodes=graph_nodes,
-        )
-        return nx.Graph()
+    return result
 
 
 def projection_metrics(
@@ -712,15 +716,17 @@ def bipartite_degrees(
 ) -> BipartiteDegrees:
     """Compute degree metrics for bipartite graphs and their projection.
 
+    Delegates pure computation to graphs.compute.metrics.bipartite.compute_bipartite_degrees.
+
     Parameters
     ----------
-    graph :
+    graph
         Bipartite graph.
-    primary :
+    primary
         Set of primary nodes.
-    secondary :
+    secondary
         Set of secondary nodes.
-    weight :
+    weight
         Edge attribute storing weight; defaults to "weight".
 
     Returns
@@ -728,35 +734,12 @@ def bipartite_degrees(
     BipartiteDegrees
         Degree metrics for both partitions.
     """
-    degree: dict[Any, int] = {}
-    weighted_degree: dict[Any, float] = {}
-    unweighted_view = nx.degree(graph, weight=None)
-    weighted_view = nx.degree(graph, weight=weight)
-    for node, deg in unweighted_view:
-        degree[node] = int(deg)
-    for node, deg in weighted_view:
-        weighted_degree[node] = float(deg)
-
-    # Handle empty partitions to avoid division by zero in bipartite.degree_centrality
-    if not primary or not secondary:
-        return BipartiteDegrees(
-            degree=degree,
-            weighted_degree=weighted_degree,
-            primary_degree_centrality={},
-            secondary_degree_centrality={},
-        )
-
-    primary_degree_centrality = bipartite.degree_centrality(graph, secondary)
-    secondary_degree_centrality = bipartite.degree_centrality(graph, primary)
+    result = compute_bipartite_degrees(graph, primary, secondary, weight=weight)
     return BipartiteDegrees(
-        degree=degree,
-        weighted_degree=weighted_degree,
-        primary_degree_centrality={
-            node: float(val) for node, val in primary_degree_centrality.items()
-        },
-        secondary_degree_centrality={
-            node: float(val) for node, val in secondary_degree_centrality.items()
-        },
+        degree=result.degree,
+        weighted_degree=result.weighted_degree,
+        primary_degree_centrality=result.primary_degree_centrality,
+        secondary_degree_centrality=result.secondary_degree_centrality,
     )
 
 
@@ -841,28 +824,29 @@ def bounded_simple_path_count(
     max_paths: int,
     cutoff: int,
 ) -> int:
-    """
-    Count simple paths between sources and targets with hard limits.
+    """Count simple paths between sources and targets with hard limits.
+
+    Delegates to graphs.compute.metrics.paths.count_simple_paths.
+
+    Parameters
+    ----------
+    graph
+        Directed graph to analyze.
+    sources
+        Iterable of source nodes.
+    targets
+        Iterable of target nodes.
+    max_paths
+        Maximum number of paths to count before stopping.
+    cutoff
+        Maximum path length to consider.
 
     Returns
     -------
     int
         Number of simple paths discovered up to the configured limit.
     """
-    count = 0
-    for source in sources:
-        for target in targets:
-            if count >= max_paths:
-                return count
-            try:
-                paths = nx.all_simple_paths(graph, source=source, target=target, cutoff=cutoff)
-            except NetworkXError:
-                continue
-            for _ in paths:
-                count += 1
-                if count >= max_paths:
-                    return count
-    return count
+    return count_simple_paths(graph, sources, targets, max_paths=max_paths, cutoff=cutoff)
 
 
 def cfg_dominance_metrics(graph: nx.DiGraph, entry_idx: int) -> DominanceMetrics:
@@ -958,36 +942,43 @@ def cfg_longest_path_length(
 
 
 def cfg_avg_shortest_path_length(graph: nx.DiGraph, entry_idx: int) -> float:
-    """
-    Return the average shortest path length from the entry block.
+    """Return the average shortest path length from the entry block.
+
+    Delegates to graphs.compute.metrics.paths.compute_avg_shortest_path_from_source.
+
+    Parameters
+    ----------
+    graph
+        Control flow graph (directed).
+    entry_idx
+        Entry block index.
 
     Returns
     -------
     float
         Average shortest path length.
     """
-    try:
-        lengths = nx.single_source_shortest_path_length(graph, entry_idx)
-        return sum(lengths.values()) / len(lengths) if lengths else 0.0
-    except NetworkXError:
-        return 0.0
+    return compute_avg_shortest_path_from_source(graph, entry_idx)
 
 
 def cfg_reachable_nodes(graph: nx.DiGraph, entry_idx: int) -> set[Any]:
-    """
-    Return the set of nodes reachable from the entry node.
+    """Return the set of nodes reachable from the entry node.
+
+    Delegates to graphs.compute.metrics.paths.compute_reachable_nodes.
+
+    Parameters
+    ----------
+    graph
+        Control flow graph (directed).
+    entry_idx
+        Entry block index.
 
     Returns
     -------
     set[Any]
         Reachable node identifiers including the entry.
     """
-    try:
-        nodes = nx.descendants(graph, entry_idx)
-    except NetworkXError:
-        nodes = set()
-    nodes.add(entry_idx)
-    return nodes
+    return compute_reachable_nodes(graph, entry_idx)
 
 
 def build_cfg_graph(

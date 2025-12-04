@@ -14,8 +14,7 @@ import pytest
 
 from codeintel.config import SnapshotRef
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
-from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
+from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.resources.protocol import (
     LazyResource as LazyResourceBase,
 )
@@ -30,8 +29,9 @@ from codeintel.ingestion.resources.registry import (
 )
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
-from codeintel.ingestion.services.storage import IngestStorageService
-from codeintel.ingestion.tool_service import ToolService
+from codeintel.ingestion.tools.infrastructure import ToolRunner
+from codeintel.ingestion.tools.service import ToolService
+from codeintel.ingestion.utilities.scanning import ScanProfile
 from codeintel.storage.gateway import StorageGateway
 
 # Test constants

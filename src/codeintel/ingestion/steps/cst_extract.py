@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING
 import libcst as cst
 from libcst import metadata
 
-from codeintel.ingestion.infrastructure_utilities.cst_utils import (
+from codeintel.ingestion.steps.base import StepResult
+from codeintel.ingestion.utilities.cst_utils import (
     CstCaptureConfig,
     CstCaptureVisitor,
 )
-from codeintel.ingestion.steps.base import StepResult
 
 if TYPE_CHECKING:
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord

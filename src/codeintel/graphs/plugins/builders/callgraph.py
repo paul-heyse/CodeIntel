@@ -54,8 +54,8 @@ from codeintel.graphs.core import (
 from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.plugins.builders import symbol_uses
 from codeintel.graphs.resources import StorageResource
-from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path, relpath_to_module
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
+from codeintel.ingestion.utilities.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:

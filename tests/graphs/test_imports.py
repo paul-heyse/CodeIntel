@@ -26,7 +26,7 @@ from codeintel.graphs.plugins.builders.import_graph import (
     get_import_graph_builder_plugin,
     import_graph_builder_plugin,
 )
-from codeintel.ingestion.services.storage import IngestStorageService
+from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
 
 # ---------------------------------------------------------------------------

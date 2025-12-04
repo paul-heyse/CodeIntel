@@ -17,7 +17,7 @@ from codeintel.analytics.core.plugin_protocol import (
     PluginResult,
     ValidationResult,
 )
-from codeintel.analytics.tests.profiles import build_test_profile
+from codeintel.analytics.testing.profiles.builder import build_test_profile
 from codeintel.config.steps_analytics import TestProfileStepConfig
 
 

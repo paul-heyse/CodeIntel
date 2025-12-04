@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, TypedDict
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.ingest_runs import IngestRunMode, IngestRunStatus
+    from codeintel.ingestion.core.runs import IngestRunMode, IngestRunStatus
 
 
 @dataclass(frozen=True)

@@ -20,7 +20,6 @@ from typing import ClassVar
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion.core.base import BaseIngestPlugin
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
-from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
 from codeintel.ingestion.plugins import (
     AstExtractPlugin,
     RepoScanPlugin,
@@ -46,6 +45,7 @@ from codeintel.ingestion.recipes.executor import (
     RecipeExecutor,
     RecipeExecutorContext,
 )
+from codeintel.ingestion.utilities.scanning import ScanProfile
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.configs.provisioning_config import ProvisionedGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway

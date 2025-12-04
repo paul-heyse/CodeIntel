@@ -11,8 +11,8 @@ from codeintel.analytics.graphs import (
     compute_subsystem_agreement,
     compute_symbol_graph_metrics_modules,
 )
-from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.views import create_all_views
+from tests._helpers import TestContext
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -23,26 +23,27 @@ from tests._helpers.builders import (
 )
 from tests._helpers.row_protocol import insert_rows
 
-REPO = "demo/repo"
-COMMIT = "abc123"
+# Test constants
 EXPECTED_SYMBOL_ROW_COUNT = 2
 
 
-def test_symbol_and_config_metrics_populate_and_views_create(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Compute symbol/config metrics and verify derived views materialize."""
-    gateway = fresh_gateway
-    con = gateway.con
+def _seed_symbol_config_data(ctx: TestContext) -> None:
+    """Seed modules, symbol edges, and config values.
+
+    Parameters
+    ----------
+    ctx
+        Test context with gateway.
+    """
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
-            ModuleRow(module="pkg.a", path="pkg/a.py", repo=REPO, commit=COMMIT),
-            ModuleRow(module="pkg.b", path="pkg/b.py", repo=REPO, commit=COMMIT),
+            ModuleRow(module="pkg.a", path="pkg/a.py", repo=ctx.repo, commit=ctx.commit),
+            ModuleRow(module="pkg.b", path="pkg/b.py", repo=ctx.repo, commit=ctx.commit),
         ],
     )
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             SymbolUseEdgeRow(
                 symbol="sym",
@@ -54,11 +55,11 @@ def test_symbol_and_config_metrics_populate_and_views_create(
         ],
     )
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             ConfigValueRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 config_path="cfg/app.yaml",
                 format="yaml",
                 key="feature.flag",
@@ -69,46 +70,25 @@ def test_symbol_and_config_metrics_populate_and_views_create(
         ],
     )
 
-    compute_symbol_graph_metrics_modules(gateway, repo=REPO, commit=COMMIT)
-    compute_config_graph_metrics(gateway, repo=REPO, commit=COMMIT)
-    create_all_views(con)
 
-    sym_rows = con.execute(
-        "SELECT module, symbol_community_id FROM analytics.symbol_graph_metrics_modules"
-    ).fetchall()
-    cfg_keys = con.execute("SELECT config_key FROM analytics.config_graph_metrics_keys").fetchall()
-    cfg_modules = con.execute(
-        "SELECT module FROM analytics.config_graph_metrics_modules"
-    ).fetchall()
+def _seed_subsystem_agreement_data(ctx: TestContext) -> None:
+    """Seed data for subsystem agreement testing.
 
-    if len(sym_rows) != EXPECTED_SYMBOL_ROW_COUNT:
-        pytest.fail(f"Expected {EXPECTED_SYMBOL_ROW_COUNT} symbol rows, got {len(sym_rows)}")
-    if not any(row[1] is not None for row in sym_rows):
-        pytest.fail("Expected at least one non-null symbol_community_id")
-    if cfg_keys != [("feature.flag",)]:
-        pytest.fail(f"Unexpected config keys: {cfg_keys}")
-    modules = {row[0] for row in cfg_modules}
-    if modules != {"pkg.a", "pkg.b"}:
-        pytest.fail(f"Unexpected config modules: {modules}")
-    # Views created
-    con.execute("SELECT * FROM docs.v_symbol_module_graph")
-    con.execute("SELECT * FROM analytics.config_graph_metrics_keys")
-    con.execute("SELECT * FROM analytics.config_projection_module_edges")
+    Creates a subsystem with one module that has a different community ID
+    in graph metrics, resulting in disagreement.
 
-
-def test_subsystem_agreement_exposed_in_views(
-    fresh_gateway: StorageGateway,
-) -> None:
-    """Expose subsystem agreement results through docs views."""
-    gateway = fresh_gateway
-    con = gateway.con
+    Parameters
+    ----------
+    ctx
+        Test context with gateway.
+    """
     now = datetime.now(UTC)
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             SubsystemModuleRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 subsystem_id="sub1",
                 module="pkg.a",
                 role="core",
@@ -116,11 +96,11 @@ def test_subsystem_agreement_exposed_in_views(
         ],
     )
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             GraphMetricsModulesExtRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 module="pkg.a",
                 import_betweenness=0.0,
                 import_closeness=0.0,
@@ -139,11 +119,11 @@ def test_subsystem_agreement_exposed_in_views(
         ],
     )
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             SubsystemRow(
-                repo=REPO,
-                commit=COMMIT,
+                repo=ctx.repo,
+                commit=ctx.commit,
                 subsystem_id="sub1",
                 name="sub1",
                 description="desc",
@@ -164,11 +144,68 @@ def test_subsystem_agreement_exposed_in_views(
         ],
     )
 
-    compute_subsystem_agreement(gateway, repo=REPO, commit=COMMIT)
-    create_all_views(con)
 
-    agree_rows = con.execute("SELECT module, agrees FROM docs.v_subsystem_agreement").fetchall()
-    summary = con.execute(
+def test_symbol_and_config_metrics_populate_and_views_create(
+    test_ctx: TestContext,
+) -> None:
+    """Verify symbol/config metrics compute and derived views materialize."""
+    _seed_symbol_config_data(test_ctx)
+
+    compute_symbol_graph_metrics_modules(
+        test_ctx.gateway,
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+    )
+    compute_config_graph_metrics(
+        test_ctx.gateway,
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+    )
+    create_all_views(test_ctx.con)
+
+    sym_rows = test_ctx.con.execute(
+        "SELECT module, symbol_community_id FROM analytics.symbol_graph_metrics_modules"
+    ).fetchall()
+    cfg_keys = test_ctx.con.execute(
+        "SELECT config_key FROM analytics.config_graph_metrics_keys"
+    ).fetchall()
+    cfg_modules = test_ctx.con.execute(
+        "SELECT module FROM analytics.config_graph_metrics_modules"
+    ).fetchall()
+
+    if len(sym_rows) != EXPECTED_SYMBOL_ROW_COUNT:
+        pytest.fail(f"Expected {EXPECTED_SYMBOL_ROW_COUNT} symbol rows, got {len(sym_rows)}")
+    if not any(row[1] is not None for row in sym_rows):
+        pytest.fail("Expected at least one non-null symbol_community_id")
+    if cfg_keys != [("feature.flag",)]:
+        pytest.fail(f"Unexpected config keys: {cfg_keys}")
+    modules = {row[0] for row in cfg_modules}
+    if modules != {"pkg.a", "pkg.b"}:
+        pytest.fail(f"Unexpected config modules: {modules}")
+
+    # Verify views are created successfully
+    test_ctx.con.execute("SELECT * FROM docs.v_symbol_module_graph")
+    test_ctx.con.execute("SELECT * FROM analytics.config_graph_metrics_keys")
+    test_ctx.con.execute("SELECT * FROM analytics.config_projection_module_edges")
+
+
+def test_subsystem_agreement_exposed_in_views(
+    test_ctx: TestContext,
+) -> None:
+    """Verify subsystem agreement results exposed through docs views."""
+    _seed_subsystem_agreement_data(test_ctx)
+
+    compute_subsystem_agreement(
+        test_ctx.gateway,
+        repo=test_ctx.repo,
+        commit=test_ctx.commit,
+    )
+    create_all_views(test_ctx.con)
+
+    agree_rows = test_ctx.con.execute(
+        "SELECT module, agrees FROM docs.v_subsystem_agreement"
+    ).fetchall()
+    summary = test_ctx.con.execute(
         """
         SELECT subsystem_disagree_count, subsystem_agreement_ratio
         FROM docs.v_subsystem_summary

@@ -3,43 +3,52 @@
 This package provides foundational utilities used across the ingestion system:
 
 - `paths`: Repository-relative path normalization and module name conversion
-- `source_scanner`: File discovery with glob patterns and ignore lists
+- `scanning`: File discovery with glob patterns and ignore lists
 - `tool_runner`: Structured execution of external tools (pyright, ruff, etc.)
 - `workers`: Worker pool infrastructure for parallel processing
 - `cst_utils`: CST visitor helpers for LibCST-based parsing
 - `ast_utils`: AST parsing and span lookup utilities
 - `_scip_resolver`: SCIP ingestion input resolution
 - `safe_sql`: Validated SQL identifiers preventing injection vulnerabilities
-- `types`: Canonical type definitions (ToolStatus) shared across ingestion
 - `macros`: DuckDB ingestion macro utilities and table registry
 """
 
 from __future__ import annotations
 
-# SCIP resolver utilities (imported last to avoid circular imports)
-from codeintel.ingestion.infrastructure_utilities._scip_resolver import (
+# SCIP resolver utilities (re-exported from tools for backwards compat)
+from codeintel.ingestion.tools._scip_resolver import (
     ResolvedScipConfig,
     ScipPathConfig,
     ScipResolverInput,
     resolve_scip_inputs,
 )
 
+# Tool runner utilities (re-exported from tools.infrastructure for backwards compat)
+from codeintel.ingestion.tools.infrastructure import (
+    ToolExecutionError,
+    ToolName,
+    ToolNotFoundError,
+    ToolResult,
+    ToolRunner,
+    ToolRunResult,
+)
+
 # AST utilities
-from codeintel.ingestion.infrastructure_utilities.ast_utils import (
+from codeintel.ingestion.utilities.ast_utils import (
     AstSpanIndex,
     parse_python_module,
     timed_parse,
 )
 
 # CST utilities
-from codeintel.ingestion.infrastructure_utilities.cst_utils import (
+from codeintel.ingestion.utilities.cst_utils import (
     CstCaptureConfig,
     CstCaptureVisitor,
     LineIndexedSource,
 )
 
 # Database query helpers
-from codeintel.ingestion.infrastructure_utilities.db_queries import (
+from codeintel.ingestion.utilities.db_queries import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
     QueryError,
@@ -59,13 +68,13 @@ from codeintel.ingestion.infrastructure_utilities.db_queries import (
 )
 
 # Macro utilities
-from codeintel.ingestion.infrastructure_utilities.macros import (
+from codeintel.ingestion.utilities.macros import (
     INGEST_MACRO_TABLES,
     macro_exists,
 )
 
 # Path utilities
-from codeintel.ingestion.infrastructure_utilities.paths import (
+from codeintel.ingestion.utilities.paths import (
     ensure_repo_root,
     normalize_rel_path,
     relpath_to_module,
@@ -73,7 +82,7 @@ from codeintel.ingestion.infrastructure_utilities.paths import (
 )
 
 # Safe SQL utilities
-from codeintel.ingestion.infrastructure_utilities.safe_sql import (
+from codeintel.ingestion.utilities.safe_sql import (
     InvalidIdentifierError,
     SafeColumnRef,
     SafeTableRef,
@@ -82,7 +91,7 @@ from codeintel.ingestion.infrastructure_utilities.safe_sql import (
 )
 
 # Source scanning utilities
-from codeintel.ingestion.infrastructure_utilities.source_scanner import (
+from codeintel.ingestion.utilities.scanning import (
     DEFAULT_IGNORE_DIRS,
     IGNORES,
     ScanProfile,
@@ -92,21 +101,8 @@ from codeintel.ingestion.infrastructure_utilities.source_scanner import (
     profile_from_env,
 )
 
-# Tool runner utilities
-from codeintel.ingestion.infrastructure_utilities.tool_runner import (
-    ToolExecutionError,
-    ToolName,
-    ToolNotFoundError,
-    ToolResult,
-    ToolRunner,
-    ToolRunResult,
-)
-
-# Canonical types
-from codeintel.ingestion.infrastructure_utilities.types import ToolStatus
-
 # Worker pool utilities
-from codeintel.ingestion.infrastructure_utilities.workers import (
+from codeintel.ingestion.utilities.workers import (
     AST_WORKER_CONFIG,
     CST_WORKER_CONFIG,
     DEFAULT_MAX_WORKERS,
@@ -148,7 +144,6 @@ __all__ = [
     "ToolResult",
     "ToolRunResult",
     "ToolRunner",
-    "ToolStatus",
     "WorkerConfig",
     "create_executor",
     "default_code_profile",

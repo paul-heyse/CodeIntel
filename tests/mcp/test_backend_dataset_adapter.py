@@ -11,8 +11,8 @@ from tests._helpers.builders import (
     FunctionValidationRow,
     RepoMapRow,
 )
-from tests._helpers.row_protocol import insert_rows
 from tests._helpers.gateway import build_duckdb_backend
+from tests._helpers.row_protocol import insert_rows
 
 
 @pytest.fixture

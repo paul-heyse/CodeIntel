@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Final
 
-from codeintel.ingestion.infrastructure_utilities.paths import normalize_rel_path
+from codeintel.ingestion.utilities.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
 
 LOG: Final = logging.getLogger(__name__)

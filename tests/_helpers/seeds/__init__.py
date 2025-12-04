@@ -22,10 +22,16 @@ DOCSTRING_PACK
     Documentation data: parsed docstrings.
 SUBSYSTEM_PACK
     Architecture data: subsystems and subsystem_modules.
+SUBSYSTEM_ANALYTICS_PACK
+    Extended subsystem data with risk factors for analytics tests.
 SYMBOL_PACK
     Symbol data: symbol use edges.
 CONFIG_PACK
     Configuration data: config file references.
+DATA_MODELS_PACK
+    Data models and config data flow for model heuristics tests.
+FUNCTION_TYPES_PACK
+    Function type annotations for typing analytics tests.
 """
 
 from __future__ import annotations
@@ -33,27 +39,39 @@ from __future__ import annotations
 from tests._helpers.seeds.config import CONFIG_PACK, ConfigPack
 from tests._helpers.seeds.core import CORE_PACK, CorePack
 from tests._helpers.seeds.coverage import COVERAGE_PACK, CoveragePack
+from tests._helpers.seeds.data_models import DATA_MODELS_PACK, DataModelsPack
 from tests._helpers.seeds.docstrings import DOCSTRING_PACK, DocstringPack
+from tests._helpers.seeds.function_types import FUNCTION_TYPES_PACK, FunctionTypesPack
 from tests._helpers.seeds.graph import GRAPH_PACK, GraphPack
 from tests._helpers.seeds.metrics import METRICS_PACK, MetricsPack
 from tests._helpers.seeds.subsystems import SUBSYSTEM_PACK, SubsystemPack
+from tests._helpers.seeds.subsystems_analytics import (
+    SUBSYSTEM_ANALYTICS_PACK,
+    SubsystemAnalyticsPack,
+)
 from tests._helpers.seeds.symbols import SYMBOL_PACK, SymbolPack
 
 __all__ = [
     "CONFIG_PACK",
     "CORE_PACK",
     "COVERAGE_PACK",
+    "DATA_MODELS_PACK",
     "DOCSTRING_PACK",
+    "FUNCTION_TYPES_PACK",
     "GRAPH_PACK",
     "METRICS_PACK",
+    "SUBSYSTEM_ANALYTICS_PACK",
     "SUBSYSTEM_PACK",
     "SYMBOL_PACK",
     "ConfigPack",
     "CorePack",
     "CoveragePack",
+    "DataModelsPack",
     "DocstringPack",
+    "FunctionTypesPack",
     "GraphPack",
     "MetricsPack",
+    "SubsystemAnalyticsPack",
     "SubsystemPack",
     "SymbolPack",
 ]

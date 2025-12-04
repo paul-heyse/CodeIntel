@@ -16,8 +16,8 @@ if TYPE_CHECKING:
         HashChangeDetectionAdapter,
         ToolRunnerAdapter,
     )
-    from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-    from codeintel.ingestion.tool_service import ToolService
+    from codeintel.ingestion.tools.infrastructure import ToolRunner
+    from codeintel.ingestion.tools.service import ToolService
     from codeintel.storage.gateway import StorageGateway
 
 # Default constants for provisioning

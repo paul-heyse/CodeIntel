@@ -45,10 +45,10 @@ from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord, S
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
-    from codeintel.ingestion.infrastructure_utilities.tool_runner import ToolRunner
-    from codeintel.ingestion.ingest_runs import IngestRunSink
-    from codeintel.ingestion.tool_service import ToolService
+    from codeintel.ingestion.core.runs import IngestRunSink
+    from codeintel.ingestion.tools.infrastructure import ToolRunner
+    from codeintel.ingestion.tools.service import ToolService
+    from codeintel.ingestion.utilities.scanning import ScanProfile
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.run_tracking import PipelineRunTracking

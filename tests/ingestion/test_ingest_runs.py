@@ -9,13 +9,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.ingestion.infrastructure_utilities.tool_runner import (
-    ToolExecutionError,
-    ToolName,
-    ToolNotFoundError,
-    ToolRunResult,
-)
-from codeintel.ingestion.ingest_runs import (
+from codeintel.ingestion.core.runs import (
     DuckDBIngestRunSink,
     IngestRun,
     IngestRunMode,
@@ -24,6 +18,12 @@ from codeintel.ingestion.ingest_runs import (
     JsonlIngestRunSink,
     MultiSink,
     classify_error,
+)
+from codeintel.ingestion.tools.infrastructure import (
+    ToolExecutionError,
+    ToolName,
+    ToolNotFoundError,
+    ToolRunResult,
 )
 from codeintel.storage.gateway import DuckDBError, StorageGateway
 

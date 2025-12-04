@@ -14,13 +14,13 @@ from pathlib import Path
 from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.infrastructure_utilities.tool_runner import (
+from codeintel.ingestion.tools.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
     ToolRunner,
 )
-from codeintel.ingestion.tools import (
+from codeintel.ingestion.tools.plugins import (
     ToolPlugin,
     ToolPluginRegistry,
     ToolPluginResult,

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.tool_service import ToolService
+from codeintel.ingestion.tools.service import ToolService
 
 
 @dataclass(frozen=True)

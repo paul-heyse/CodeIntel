@@ -8,7 +8,7 @@ from pathlib import Path
 
 from coverage import Coverage
 
-from codeintel.analytics.tests import compute_test_coverage_edges
+from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow

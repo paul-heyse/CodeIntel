@@ -13,14 +13,14 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.infrastructure_utilities.paths import relpath_to_module, repo_relpath
-from codeintel.ingestion.infrastructure_utilities.source_scanner import SourceScanner
 from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.ingestion.utilities.paths import relpath_to_module, repo_relpath
+from codeintel.ingestion.utilities.scanning import SourceScanner
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.ingestion.infrastructure_utilities.source_scanner import ScanProfile
+    from codeintel.ingestion.utilities.scanning import ScanProfile
 
 log = logging.getLogger(__name__)
 

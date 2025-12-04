@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.ingestion.infrastructure_utilities.db_queries import (
+from codeintel.ingestion.utilities.db_queries import (
     ForeignKeyRef,
     safe_count,
     safe_count_duplicates,
