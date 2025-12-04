@@ -510,4 +510,3 @@ def test_plugin_provides_capabilities(plugin_name: str, plugin: GraphPluginProto
     """Each plugin provides at least one capability."""
     _ = plugin_name
     assert len(plugin.metadata.provides) >= 1
-

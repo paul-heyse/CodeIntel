@@ -24,7 +24,7 @@ from codeintel.ingestion.compute import (
     typing_ingest,
 )
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
-from codeintel.storage.module_index import load_module_map
+from codeintel.storage.helpers.module_index import load_module_map
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 

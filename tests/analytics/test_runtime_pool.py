@@ -7,7 +7,7 @@ from pathlib import Path
 from codeintel.analytics.runtime import GraphRuntimeOptions, GraphRuntimePool
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schema import apply_all_schemas
 
 
 def test_pool_reuses_runtime_within_ttl(fresh_gateway: StorageGateway) -> None:

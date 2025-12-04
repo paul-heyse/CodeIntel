@@ -8,7 +8,7 @@ import pytest
 
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_builder import safe_macro_call
+from codeintel.storage.sql import safe_macro_call
 
 pytestmark = pytest.mark.smoke
 

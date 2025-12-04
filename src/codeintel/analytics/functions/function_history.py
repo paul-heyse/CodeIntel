@@ -10,7 +10,7 @@ from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_h
 from codeintel.config import FunctionHistoryStepConfig
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql_builder import ensure_schema
+from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

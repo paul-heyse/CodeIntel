@@ -28,15 +28,16 @@ from codeintel.pipeline.export.manifest import (
 from codeintel.pipeline.export.validate_exports import validate_files
 from codeintel.serving.http.datasets import validate_dataset_registry
 from codeintel.serving.services.errors import ExportError, ProblemDetails, log_problem, problem
-from codeintel.storage.contract_validation import _schema_path
 from codeintel.storage.gateway import (
     DuckDBConnection,
     DuckDBError,
     DuckDBRelation,
     StorageGateway,
 )
-from codeintel.storage.metadata_bootstrap import NORMALIZED_MACROS as BOOTSTRAP_MACROS
-from codeintel.storage.sql_builder import macro_select_sql, prepared_statements_dynamic
+from codeintel.storage.metadata import NORMALIZED_MACROS as BOOTSTRAP_MACROS
+from codeintel.storage.sql import macro_select_sql
+from codeintel.storage.sql.builder import prepared_statements_dynamic
+from codeintel.storage.validation import _schema_path
 
 log = logging.getLogger(__name__)
 

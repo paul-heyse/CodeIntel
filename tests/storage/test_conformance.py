@@ -6,15 +6,15 @@ import json
 import shutil
 from pathlib import Path
 
-from codeintel.storage.conformance import (
+from codeintel.storage.validation.conformance import (
     ConformanceIssue,
     ConformanceReport,
     run_conformance,
 )
 from codeintel.storage.datasets import load_dataset_registry
-from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
-from codeintel.storage.schema_generation import generate_export_schemas
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.metadata import bootstrap_metadata_datasets
+from codeintel.storage.schema.json_schema import generate_export_schemas
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.gateway import memory_con_with_macros
 
 

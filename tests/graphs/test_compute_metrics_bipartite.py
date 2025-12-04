@@ -477,4 +477,3 @@ def test_projection_with_varying_shared_neighbors(shared_count: int) -> None:
 
     assert result is not None
     assert result.has_edge(1, 2)
-

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.config.datasets import DatasetContract
-from codeintel.storage.catalog import describe_dataset_for_catalog
+from codeintel.storage.datasets.catalog import describe_dataset_for_catalog
 
 
 def test_describe_dataset_warns_on_missing_schema() -> None:

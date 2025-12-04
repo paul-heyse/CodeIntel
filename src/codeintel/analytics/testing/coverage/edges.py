@@ -26,7 +26,7 @@ from codeintel.graphs.catalog import (
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_builder import ensure_schema
+from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

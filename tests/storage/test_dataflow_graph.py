@@ -11,7 +11,7 @@ from codeintel.config.datasets import (
     get_dataset_contracts_by_table_key,
 )
 from codeintel.storage.gateway import open_memory_gateway
-from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
+from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.views import ALIAS_DOCS_VIEWS
 
 

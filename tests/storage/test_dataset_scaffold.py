@@ -11,7 +11,7 @@ import pytest
 from codeintel.cli.commands.datasets import ScaffoldConfigError, build_scaffold_options
 from codeintel.config.datasets import DatasetContract
 from codeintel.storage.datasets import DatasetRegistry
-from codeintel.storage.scaffold import ScaffoldOptions, scaffold_dataset
+from codeintel.storage.datasets.scaffold import ScaffoldOptions, scaffold_dataset
 
 
 def _base_opts(tmp_path: Path) -> ScaffoldOptions:

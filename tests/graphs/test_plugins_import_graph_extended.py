@@ -20,7 +20,7 @@ from codeintel.config import ImportGraphStepConfig
 from codeintel.graphs.plugins.builders.import_graph import build_import_graph
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_builder import QueryBuilder, SafeTable
+from codeintel.storage.sql import QueryBuilder, SafeTable
 from tests._helpers.factories import make_snapshot
 
 # ---------------------------------------------------------------------------

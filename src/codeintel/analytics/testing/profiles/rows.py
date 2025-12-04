@@ -40,7 +40,7 @@ from codeintel.config.datasets import (
     serialize_test_profile_row,
 )
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_builder import ensure_schema, prepared_statements_dynamic
+from codeintel.storage.sql.builder import ensure_schema, prepared_statements_dynamic
 
 
 def build_test_profile_context(

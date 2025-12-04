@@ -33,7 +33,7 @@ from codeintel.storage.gateway import (
     DuckDBError,
     DuckDBInvalidInputException,
 )
-from codeintel.storage.sql_builder import render_sql
+from codeintel.storage.sql import render_sql
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef

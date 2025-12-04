@@ -25,7 +25,6 @@ from codeintel.graphs.plugins.builders.goid import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.snapshot import SnapshotRef
 
 # ---------------------------------------------------------------------------
@@ -48,7 +47,13 @@ TEST_QUALNAME: Final[str] = "MyClass.my_method"
 
 @pytest.fixture
 def sample_ast_row() -> pd.Series:
-    """Create a sample AST node row for testing."""
+    """Create a sample AST node row for testing.
+
+    Returns
+    -------
+    pd.Series
+        Sample AST node row.
+    """
     return pd.Series({
         "path": TEST_PATH,
         "node_type": "FunctionDef",
@@ -64,7 +69,13 @@ def sample_ast_row() -> pd.Series:
 
 @pytest.fixture
 def decorated_ast_row() -> pd.Series:
-    """Create an AST node row with decorator for testing."""
+    """Create an AST node row with decorator for testing.
+
+    Returns
+    -------
+    pd.Series
+        Decorated AST node row.
+    """
     return pd.Series({
         "path": TEST_PATH,
         "node_type": "FunctionDef",
@@ -80,7 +91,13 @@ def decorated_ast_row() -> pd.Series:
 
 @pytest.fixture
 def module_ast_row() -> pd.Series:
-    """Create a module-level AST node row."""
+    """Create a module-level AST node row.
+
+    Returns
+    -------
+    pd.Series
+        Module-level AST node row.
+    """
     return pd.Series({
         "path": TEST_PATH,
         "node_type": "Module",
@@ -96,7 +113,13 @@ def module_ast_row() -> pd.Series:
 
 @pytest.fixture
 def class_ast_row() -> pd.Series:
-    """Create a class definition AST node row."""
+    """Create a class definition AST node row.
+
+    Returns
+    -------
+    pd.Series
+        Class definition AST node row.
+    """
     return pd.Series({
         "path": TEST_PATH,
         "node_type": "ClassDef",
@@ -112,7 +135,13 @@ def class_ast_row() -> pd.Series:
 
 @pytest.fixture
 def async_function_ast_row() -> pd.Series:
-    """Create an async function AST node row."""
+    """Create an async function AST node row.
+
+    Returns
+    -------
+    pd.Series
+        Async function AST node row.
+    """
     return pd.Series({
         "path": TEST_PATH,
         "node_type": "AsyncFunctionDef",
@@ -128,7 +157,13 @@ def async_function_ast_row() -> pd.Series:
 
 @pytest.fixture
 def goid_config(graph_snapshot: SnapshotRef) -> GoidBuilderStepConfig:
-    """Create a GOID builder config for testing."""
+    """Create a GOID builder config for testing.
+
+    Returns
+    -------
+    GoidBuilderStepConfig
+        GOID builder configuration.
+    """
     return GoidBuilderStepConfig(snapshot=graph_snapshot)
 
 
@@ -235,7 +270,7 @@ def test_build_goid_entries_module(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {TEST_PATH: TEST_MODULE}
 
-    goid_row, xwalk_row = build_goid_entries_for_testing(
+    goid_row, _ = build_goid_entries_for_testing(
         module_ast_row, goid_config, now, module_by_path
     )
 
@@ -251,7 +286,7 @@ def test_build_goid_entries_class(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {TEST_PATH: TEST_MODULE}
 
-    goid_row, xwalk_row = build_goid_entries_for_testing(
+    goid_row, _ = build_goid_entries_for_testing(
         class_ast_row, goid_config, now, module_by_path
     )
 
@@ -267,7 +302,7 @@ def test_build_goid_entries_async_function(
     now = datetime.now(UTC)
     module_by_path: dict[str, str] = {TEST_PATH: TEST_MODULE}
 
-    goid_row, xwalk_row = build_goid_entries_for_testing(
+    goid_row, _ = build_goid_entries_for_testing(
         async_function_ast_row, goid_config, now, module_by_path
     )
 
@@ -597,4 +632,3 @@ def test_start_line_computation(
     goid_row, _ = build_goid_entries_for_testing(row, goid_config, now, module_by_path)
 
     assert goid_row.start_line == expected_start
-

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from codeintel.analytics.core.contracts import ContractValidator, OutputContractSpec
 from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.db_helpers import safe_row_counts
 from codeintel.storage.gateway import StorageGateway
+from codeintel.storage.helpers import safe_row_counts
 
 
 class DefaultAnalyticsSupportProvider:

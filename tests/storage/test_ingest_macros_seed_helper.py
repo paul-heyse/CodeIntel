@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.storage.ingest_macros import list_ingest_macros
-from codeintel.storage.metadata_bootstrap import INGEST_MACROS
+from codeintel.storage.macros import list_ingest_macros
+from codeintel.storage.metadata import INGEST_MACROS
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 

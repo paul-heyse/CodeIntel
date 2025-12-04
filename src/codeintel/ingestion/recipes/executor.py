@@ -40,7 +40,7 @@ from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
 from codeintel.ingestion.tracker import ChangeTracker
-from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord, StepStatus
+from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.run_tracking import PipelineRunTracking
+    from codeintel.storage.tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
 

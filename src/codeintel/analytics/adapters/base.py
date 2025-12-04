@@ -33,7 +33,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.storage.sql_builder import QueryBuilder
+from codeintel.storage.sql import QueryBuilder
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef

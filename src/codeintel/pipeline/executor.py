@@ -24,10 +24,10 @@ from codeintel.pipeline.planner import (
     build_pipeline_plan,
 )
 from codeintel.pipeline.spec import PipelineSpec, PipelineStage
-from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord
+from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord
 
 if TYPE_CHECKING:
-    from codeintel.storage.run_tracking import (
+    from codeintel.storage.tracking import (
         PipelineRunRecord,
         PipelineRunTracking,
         StepStatus,

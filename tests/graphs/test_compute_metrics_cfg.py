@@ -500,17 +500,12 @@ def test_chain_graph_depths_parametrized(node_count: int, expected_max_depth: in
 
 
 @pytest.mark.parametrize(
-    ("cycle_size", "has_loop_header"),
-    [
-        (2, True),
-        (3, True),
-        (5, True),
-        (10, True),
-    ],
+    "cycle_size",
+    [2, 3, 5, 10],
 )
-def test_cycle_graphs_have_loop_headers(cycle_size: int, has_loop_header: bool) -> None:
+def test_cycle_graphs_have_loop_headers(cycle_size: int) -> None:
     """Cycle graphs of various sizes have loop headers."""
     graph = cyclic_graph(cycle_size)
     result = find_natural_loop_headers(graph, entry="A")
 
-    assert (len(result) > 0) == has_loop_header
+    assert len(result) > 0

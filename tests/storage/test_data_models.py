@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from codeintel.storage.data_models import (
+from codeintel.storage.repositories import (
     DataModelFieldRow,
     DataModelRelationshipRow,
     DataModelRow,

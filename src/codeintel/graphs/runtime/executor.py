@@ -40,7 +40,7 @@ from codeintel.graphs.runtime.planning import (
     PluginExecutionSettings,
     plan_graph_plugin_run,
 )
-from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord, StepStatus
+from codeintel.storage.tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from codeintel.graphs.engine import GraphEngine, NxGraphEngine
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.run_tracking import PipelineRunTracking
+    from codeintel.storage.tracking import PipelineRunTracking
 
 log = logging.getLogger(__name__)
 

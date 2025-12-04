@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.resources.protocol import LazyResource
-from codeintel.storage.module_index import load_module_map
+from codeintel.storage.helpers.module_index import load_module_map
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef

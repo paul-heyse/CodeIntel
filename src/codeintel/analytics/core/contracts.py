@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_builder import QueryBuilder, SafeColumn, SafeTable, render_sql
+from codeintel.storage.sql import QueryBuilder, SafeColumn, SafeTable, render_sql
 
 if TYPE_CHECKING:
     from codeintel.analytics.core.protocol import (

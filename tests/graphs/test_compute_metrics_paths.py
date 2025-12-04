@@ -189,8 +189,7 @@ def test_avg_shortest_path_chain_graph() -> None:
     graph = chain_graph(4)  # A -> B -> C -> D
     result = compute_avg_shortest_path_from_source(graph, "A")
 
-    # Distances: A=0, B=1, C=2, D=3
-    # Average: (0 + 1 + 2 + 3) / 4 = 1.5
+    # Sum of distances 0,1,2,3 divided by 4 gives 1.5
     expected_avg: float = 1.5
     assert abs(result - expected_avg) < AVG_PATH_TOLERANCE
 
@@ -200,8 +199,7 @@ def test_avg_shortest_path_star_graph() -> None:
     graph = star_graph(3)  # hub -> spoke1, spoke2, spoke3
     result = compute_avg_shortest_path_from_source(graph, "hub")
 
-    # Distances: hub=0, spoke1=1, spoke2=1, spoke3=1
-    # Average: (0 + 1 + 1 + 1) / 4 = 0.75
+    # Sum of distances 0,1,1,1 divided by 4 gives 0.75
     expected_avg: float = 0.75
     assert abs(result - expected_avg) < AVG_PATH_TOLERANCE
 
@@ -237,8 +235,7 @@ def test_avg_shortest_path_diamond_graph() -> None:
     graph = diamond_graph()  # A -> B -> D and A -> C -> D
     result = compute_avg_shortest_path_from_source(graph, "A")
 
-    # Distances: A=0, B=1, C=1, D=2
-    # Average: (0 + 1 + 1 + 2) / 4 = 1.0
+    # Sum of distances 0,1,1,2 divided by 4 gives 1.0
     expected_avg: float = 1.0
     assert abs(result - expected_avg) < AVG_PATH_TOLERANCE
 

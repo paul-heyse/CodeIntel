@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from codeintel.storage.gateway import open_memory_gateway
-from codeintel.storage.ingest_macros import list_ingest_macros
-from codeintel.storage.metadata_bootstrap import INGEST_MACROS
+from codeintel.storage.macros import list_ingest_macros
+from codeintel.storage.metadata import INGEST_MACROS
 
 
 def test_ingest_macros_registered_on_gateway() -> None:

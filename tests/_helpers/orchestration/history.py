@@ -9,7 +9,7 @@ import pandas as pd
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.configs.history_config import SnapshotSpec
 
 _FP_CONTRACT = get_dataset_contracts_by_table_key()["analytics.function_profile"]

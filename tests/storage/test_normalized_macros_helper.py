@@ -9,13 +9,13 @@ import pytest
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.pipeline.export.export_jsonl import NORMALIZED_MACROS
 from codeintel.storage.gateway import DuckDBError, StorageGateway
-from codeintel.storage.metadata_bootstrap import (
+from codeintel.storage.metadata import (
     METADATA_SCHEMA_DDL,
     dataset_rows_only_entries,
     validate_normalized_macro_schemas,
 )
-from codeintel.storage.metadata_bootstrap import NORMALIZED_MACROS as BOOTSTRAP_MACROS
-from codeintel.storage.sql_builder import safe_macro_call
+from codeintel.storage.metadata import NORMALIZED_MACROS as BOOTSTRAP_MACROS
+from codeintel.storage.sql import safe_macro_call
 
 pytestmark = pytest.mark.smoke
 

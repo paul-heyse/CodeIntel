@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
-from codeintel.storage.data_models import fetch_models_normalized
+from codeintel.storage.repositories import fetch_models_normalized
 from codeintel.storage.repositories import (
     DatasetReadRepository,
     FunctionRepository,

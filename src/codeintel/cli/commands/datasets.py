@@ -38,18 +38,18 @@ from codeintel.cli.commands._common import (
     setup_logging,
 )
 from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.storage.catalog import (
+from codeintel.storage.datasets import DatasetRegistry, list_dataset_specs, load_dataset_registry
+from codeintel.storage.datasets.catalog import (
     SamplingConfig,
     build_catalog,
     write_html_catalog,
     write_markdown_catalog,
 )
-from codeintel.storage.conformance import run_conformance
-from codeintel.storage.contract_validation import collect_contract_issues
-from codeintel.storage.datasets import DatasetRegistry, list_dataset_specs, load_dataset_registry
+from codeintel.storage.datasets.scaffold import ScaffoldOptions, scaffold_dataset
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.scaffold import ScaffoldOptions, scaffold_dataset
-from codeintel.storage.schema_generation import generate_export_schemas
+from codeintel.storage.schema.json_schema import generate_export_schemas
+from codeintel.storage.validation import collect_contract_issues
+from codeintel.storage.validation.conformance import run_conformance
 
 LOG = logging.getLogger(__name__)
 

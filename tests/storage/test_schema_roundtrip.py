@@ -22,13 +22,13 @@ from codeintel.config.datasets import (
     symbol_use_to_tuple,
 )
 from codeintel.storage.datasets import load_dataset_registry
-from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
-from codeintel.storage.schema_generation import (
+from codeintel.storage.metadata import bootstrap_metadata_datasets
+from codeintel.storage.schema.json_schema import (
     generate_export_schemas,
     json_schema_from_typeddict,
     validate_row_with_schema,
 )
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.gateway import memory_con_with_macros
 
 

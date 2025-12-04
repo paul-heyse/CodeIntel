@@ -28,8 +28,8 @@ from codeintel.serving.mcp.models import FunctionSummaryResponse
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
-from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
-from codeintel.storage.metadata_bootstrap import INGEST_MACROS
+from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
+from codeintel.storage.metadata import INGEST_MACROS
 
 # Type alias for DuckDB connections (originally from duckdb.py)
 DuckDBConnection = duckdb.DuckDBPyConnection

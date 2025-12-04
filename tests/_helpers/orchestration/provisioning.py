@@ -32,9 +32,9 @@ from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
-from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
-from codeintel.storage.metadata_bootstrap import INGEST_MACROS
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
+from codeintel.storage.metadata import INGEST_MACROS
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,

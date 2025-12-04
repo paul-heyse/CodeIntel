@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.storage.ingest_macros import list_ingest_macros
-from codeintel.storage.metadata_bootstrap import INGEST_MACROS
+from codeintel.storage.macros import list_ingest_macros
+from codeintel.storage.metadata import INGEST_MACROS
 from tests._helpers import provision_gateway_with_repo
 
 

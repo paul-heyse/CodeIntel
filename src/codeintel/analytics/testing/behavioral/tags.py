@@ -24,7 +24,7 @@ from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.config import BehavioralCoverageStepConfig
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql_builder import ensure_schema
+from codeintel.storage.sql.builder import ensure_schema
 
 
 @dataclass(frozen=True)

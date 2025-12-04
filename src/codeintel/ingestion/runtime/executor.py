@@ -30,7 +30,7 @@ from codeintel.ingestion.runtime.telemetry import (
     IngestRuntimeTelemetry,
     get_ingest_telemetry,
 )
-from codeintel.storage.run_tracking import PipelineStatus, StepStatus
+from codeintel.storage.tracking import PipelineStatus, StepStatus
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext

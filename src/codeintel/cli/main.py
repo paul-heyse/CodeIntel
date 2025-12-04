@@ -58,7 +58,7 @@ from codeintel.serving.operations.catalog import (
     get_operation,
     iter_operations,
 )
-from codeintel.storage.contract_validation import collect_contract_issues
+from codeintel.storage.validation import collect_contract_issues
 
 LOG = logging.getLogger(__name__)
 

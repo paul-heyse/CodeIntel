@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal
 
 from codeintel.analytics.parsing.validation import GraphValidationReporter
 from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
-from codeintel.storage.sql_builder import ensure_schema
+from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
