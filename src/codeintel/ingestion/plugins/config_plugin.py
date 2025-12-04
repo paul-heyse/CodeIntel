@@ -104,7 +104,7 @@ class ConfigIngestPlugin(
 
         # Find config files using config_profile
         config_files: list[ModuleRecord] = list(
-            FilesystemDiscoveryAdapter.discover_modules(ctx.repo_root, ctx.config_profile)
+            FilesystemDiscoveryAdapter.discover_modules(ctx.repo_root, ctx.validated_config_profile)
         )
 
         if not config_files:

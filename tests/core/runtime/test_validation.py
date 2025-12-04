@@ -40,17 +40,35 @@ class TestFinding:
 
 
 def get_rule(finding: TestFinding) -> str:
-    """Extract rule from finding."""
+    """Extract rule from finding.
+
+    Returns
+    -------
+    str
+        Rule identifier.
+    """
     return finding.rule
 
 
 def get_severity(finding: TestFinding) -> str:
-    """Extract severity from finding."""
+    """Extract severity from finding.
+
+    Returns
+    -------
+    str
+        Severity level.
+    """
     return finding.severity
 
 
 def set_severity(finding: TestFinding, severity: SeverityLevel) -> TestFinding:
-    """Create new finding with updated severity."""
+    """Create new finding with updated severity.
+
+    Returns
+    -------
+    TestFinding
+        Finding with updated severity.
+    """
     return replace(finding, severity=severity)
 
 
@@ -202,10 +220,7 @@ def test_apply_severity_overrides_preserves_message() -> None:
 
 def test_cap_findings_no_limit() -> None:
     """Verify cap_findings returns all when no limit set."""
-    findings = [
-        TestFinding(rule="A", message=f"msg{i}")
-        for i in range(10)
-    ]
+    findings = [TestFinding(rule="A", message=f"msg{i}") for i in range(10)]
 
     result = cap_findings(findings, max_per_rule=None, get_key=get_rule)
 
@@ -214,10 +229,7 @@ def test_cap_findings_no_limit() -> None:
 
 def test_cap_findings_zero_limit() -> None:
     """Verify cap_findings returns all when limit is zero."""
-    findings = [
-        TestFinding(rule="A", message=f"msg{i}")
-        for i in range(5)
-    ]
+    findings = [TestFinding(rule="A", message=f"msg{i}") for i in range(5)]
 
     result = cap_findings(findings, max_per_rule=0, get_key=get_rule)
 
@@ -226,10 +238,7 @@ def test_cap_findings_zero_limit() -> None:
 
 def test_cap_findings_negative_limit() -> None:
     """Verify cap_findings returns all when limit is negative."""
-    findings = [
-        TestFinding(rule="A", message=f"msg{i}")
-        for i in range(5)
-    ]
+    findings = [TestFinding(rule="A", message=f"msg{i}") for i in range(5)]
 
     result = cap_findings(findings, max_per_rule=-1, get_key=get_rule)
 
@@ -238,10 +247,7 @@ def test_cap_findings_negative_limit() -> None:
 
 def test_cap_findings_caps_single_rule() -> None:
     """Verify cap_findings limits findings for a single rule."""
-    findings = [
-        TestFinding(rule="A", message=f"msg{i}")
-        for i in range(10)
-    ]
+    findings = [TestFinding(rule="A", message=f"msg{i}") for i in range(10)]
 
     result = cap_findings(findings, max_per_rule=3, get_key=get_rule)
 
@@ -494,12 +500,8 @@ def test_combined_override_and_filter() -> None:
 
 def test_combined_cap_and_group() -> None:
     """Verify capping and grouping work together."""
-    findings = [
-        TestFinding(rule="A", message=f"a{i}")
-        for i in range(5)
-    ] + [
-        TestFinding(rule="B", message=f"b{i}")
-        for i in range(5)
+    findings = [TestFinding(rule="A", message=f"a{i}") for i in range(5)] + [
+        TestFinding(rule="B", message=f"b{i}") for i in range(5)
     ]
 
     # First cap findings

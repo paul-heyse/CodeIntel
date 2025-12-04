@@ -11,10 +11,16 @@ This module tests:
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock
+from collections.abc import Generator, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
+from codeintel.analytics.core.base import BasePlugin
+from codeintel.analytics.core.context import PluginExecutionContext
+from codeintel.analytics.core.protocol import PluginResult, PluginStage, ValidationResult
 from codeintel.analytics.plugins.middleware.tracing import (
     InMemoryExporter,
     Span,
@@ -22,6 +28,9 @@ from codeintel.analytics.plugins.middleware.tracing import (
     SpanExporter,
     TracingMiddleware,
 )
+from codeintel.config.primitives import SnapshotRef
+from codeintel.storage.gateway import StorageGateway
+from tests._helpers.fakes.graph_contexts import create_graph_gateway
 
 # Test constants
 TEST_TRACE_ID = "trace123"
@@ -29,12 +38,156 @@ TEST_SPAN_ID = "span456"
 TEST_PARENT_SPAN_ID = "parent789"
 TEST_PLUGIN_NAME = "test.plugin"
 TEST_PLUGIN_VERSION = "1.0.0"
-TEST_PLUGIN_STAGE = "test"
+TEST_PLUGIN_STAGE: PluginStage = "function"
 TEST_RUN_ID = "run123"
 TEST_REPO = "test/repo"
 TEST_COMMIT = "abc123"
 MINIMUM_DURATION_MS = 0.0
 MULTIPLE_SPANS_COUNT = 3
+
+
+# =============================================================================
+# Test Plugin Implementation
+# =============================================================================
+
+
+@dataclass
+class TracingTestPlugin(BasePlugin):
+    """Minimal plugin implementation for tracing middleware tests.
+
+    Attributes
+    ----------
+    _should_succeed
+        Whether execute should succeed.
+    """
+
+    plugin_name: ClassVar[str] = TEST_PLUGIN_NAME
+    plugin_description: ClassVar[str] = "Test plugin for tracing"
+    plugin_stage: ClassVar[PluginStage] = TEST_PLUGIN_STAGE
+    plugin_version: ClassVar[str] = TEST_PLUGIN_VERSION
+
+    _should_succeed: bool = True
+
+    def compute(  # noqa: PLR6301
+        self,
+        ctx: PluginExecutionContext,
+    ) -> Mapping[str, int] | None:
+        """Execute the plugin.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+
+        Returns
+        -------
+        Mapping[str, int] | None
+            Empty row counts.
+        """
+        _ = ctx  # Required by interface
+        return {}
+
+    def validate_inputs(  # noqa: PLR6301
+        self,
+        ctx: PluginExecutionContext,
+    ) -> ValidationResult:
+        """Validate inputs.
+
+        Parameters
+        ----------
+        ctx
+            Execution context.
+
+        Returns
+        -------
+        ValidationResult
+            Always valid.
+        """
+        _ = ctx  # Required by interface
+        return ValidationResult.success()
+
+
+# =============================================================================
+# Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def test_gateway() -> Generator[StorageGateway]:
+    """Provide a test gateway that auto-closes.
+
+    Yields
+    ------
+    StorageGateway
+        In-memory gateway with schema applied.
+    """
+    gateway = create_graph_gateway()
+    yield gateway
+    gateway.close()
+
+
+@pytest.fixture
+def test_snapshot(tmp_path: Path) -> SnapshotRef:
+    """Provide a test snapshot.
+
+    Parameters
+    ----------
+    tmp_path
+        Pytest temporary path fixture.
+
+    Returns
+    -------
+    SnapshotRef
+        Test snapshot reference.
+    """
+    return SnapshotRef(repo=TEST_REPO, commit=TEST_COMMIT, repo_root=tmp_path)
+
+
+def make_context(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    run_id: str | None = TEST_RUN_ID,
+) -> PluginExecutionContext:
+    """Create a plugin execution context for testing.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway.
+    snapshot
+        Snapshot reference.
+    run_id
+        Run identifier.
+
+    Returns
+    -------
+    PluginExecutionContext
+        Test execution context.
+    """
+    return PluginExecutionContext(
+        gateway=gateway,
+        snapshot=snapshot,
+        run_id=run_id,
+    )
+
+
+def make_result(*, success: bool = True) -> PluginResult:
+    """Create a plugin result for testing.
+
+    Parameters
+    ----------
+    success
+        Whether the result indicates success.
+
+    Returns
+    -------
+    PluginResult
+        Test plugin result.
+    """
+    if success:
+        return PluginResult.ok()
+    return PluginResult.fail(error="Test failure")
 
 
 class TestSpanContext:
@@ -235,78 +388,38 @@ class TestTracingMiddleware:
     """Tests for TracingMiddleware."""
 
     @staticmethod
-    def _create_mock_plugin() -> MagicMock:
-        """Create a mock plugin.
-
-        Returns
-        -------
-        MagicMock
-            A mock plugin with name, version, and stage set.
-        """
-        plugin = MagicMock()
-        plugin.metadata.name = TEST_PLUGIN_NAME
-        plugin.metadata.version = TEST_PLUGIN_VERSION
-        plugin.metadata.stage = TEST_PLUGIN_STAGE
-        return plugin
-
-    @staticmethod
-    def _create_mock_context(
-        *,
-        run_id: str | None = TEST_RUN_ID,
-        repo: str = TEST_REPO,
-        commit: str = TEST_COMMIT,
-    ) -> MagicMock:
-        """Create a mock execution context.
-
-        Returns
-        -------
-        MagicMock
-            A mock execution context with run_id, repo, and commit.
-        """
-        ctx = MagicMock()
-        ctx.run_id = run_id
-        ctx.repo = repo
-        ctx.commit = commit
-        return ctx
-
-    @staticmethod
-    def _create_mock_result(*, success: bool = True) -> MagicMock:
-        """Create a mock plugin result.
-
-        Returns
-        -------
-        MagicMock
-            A mock result with success status.
-        """
-        result = MagicMock()
-        result.success = success
-        return result
-
-    @staticmethod
     def test_middleware_name() -> None:
         """Verify middleware name property."""
         middleware = TracingMiddleware()
         assert middleware.name == "tracing"
 
-    def test_before_execute_does_not_export_immediately(self) -> None:
+    @staticmethod
+    def test_before_execute_does_not_export_immediately(
+        test_gateway: StorageGateway,
+        test_snapshot: SnapshotRef,
+    ) -> None:
         """Verify before_execute does not export immediately."""
         exporter = InMemoryExporter()
         middleware = TracingMiddleware(exporter=exporter)
-        plugin = self._create_mock_plugin()
-        ctx = self._create_mock_context()
+        plugin = TracingTestPlugin()
+        ctx = make_context(test_gateway, test_snapshot)
 
         middleware.before_execute(ctx, plugin)
 
         # Before after_execute, no spans should be exported yet
         assert len(exporter.spans) == 0
 
-    def test_uses_explicit_trace_id(self) -> None:
+    @staticmethod
+    def test_uses_explicit_trace_id(
+        test_gateway: StorageGateway,
+        test_snapshot: SnapshotRef,
+    ) -> None:
         """Verify middleware uses explicit trace_id when set."""
         exporter = InMemoryExporter()
         middleware = TracingMiddleware(exporter=exporter, trace_id="explicit_trace")
-        plugin = self._create_mock_plugin()
-        ctx = self._create_mock_context()
-        result = self._create_mock_result(success=True)
+        plugin = TracingTestPlugin()
+        ctx = make_context(test_gateway, test_snapshot)
+        result = make_result(success=True)
 
         # Execute full lifecycle to get exported span
         middleware.before_execute(ctx, plugin)
@@ -317,13 +430,17 @@ class TestTracingMiddleware:
         span = exporter.spans[0]
         assert span.context.trace_id == "explicit_trace"
 
-    def test_uses_run_id_as_trace_id_when_not_set(self) -> None:
+    @staticmethod
+    def test_uses_run_id_as_trace_id_when_not_set(
+        test_gateway: StorageGateway,
+        test_snapshot: SnapshotRef,
+    ) -> None:
         """Verify middleware uses run_id as trace_id when trace_id not set."""
         exporter = InMemoryExporter()
         middleware = TracingMiddleware(exporter=exporter)
-        plugin = self._create_mock_plugin()
-        ctx = self._create_mock_context(run_id="custom_run_id")
-        result = self._create_mock_result(success=True)
+        plugin = TracingTestPlugin()
+        ctx = make_context(test_gateway, test_snapshot, run_id="custom_run_id")
+        result = make_result(success=True)
 
         middleware.before_execute(ctx, plugin)
         middleware.after_execute(ctx, plugin, result)
@@ -332,13 +449,17 @@ class TestTracingMiddleware:
         span = exporter.spans[0]
         assert span.context.trace_id == "custom_run_id"
 
-    def test_uses_fallback_when_no_run_id(self) -> None:
+    @staticmethod
+    def test_uses_fallback_when_no_run_id(
+        test_gateway: StorageGateway,
+        test_snapshot: SnapshotRef,
+    ) -> None:
         """Verify middleware uses fallback trace_id when run_id is None."""
         exporter = InMemoryExporter()
         middleware = TracingMiddleware(exporter=exporter)
-        plugin = self._create_mock_plugin()
-        ctx = self._create_mock_context(run_id=None)
-        result = self._create_mock_result(success=True)
+        plugin = TracingTestPlugin()
+        ctx = make_context(test_gateway, test_snapshot, run_id=None)
+        result = make_result(success=True)
 
         middleware.before_execute(ctx, plugin)
         middleware.after_execute(ctx, plugin, result)
@@ -347,13 +468,17 @@ class TestTracingMiddleware:
         span = exporter.spans[0]
         assert span.context.trace_id == "no-run-id"
 
-    def test_span_has_correct_name(self) -> None:
+    @staticmethod
+    def test_span_has_correct_name(
+        test_gateway: StorageGateway,
+        test_snapshot: SnapshotRef,
+    ) -> None:
         """Verify exported span has correct name."""
         exporter = InMemoryExporter()
         middleware = TracingMiddleware(exporter=exporter)
-        plugin = self._create_mock_plugin()
-        ctx = self._create_mock_context()
-        result = self._create_mock_result(success=True)
+        plugin = TracingTestPlugin()
+        ctx = make_context(test_gateway, test_snapshot)
+        result = make_result(success=True)
 
         middleware.before_execute(ctx, plugin)
         middleware.after_execute(ctx, plugin, result)
@@ -362,13 +487,17 @@ class TestTracingMiddleware:
         span = exporter.spans[0]
         assert span.name == f"plugin.{TEST_PLUGIN_NAME}"
 
-    def test_span_has_correct_attributes(self) -> None:
+    @staticmethod
+    def test_span_has_correct_attributes(
+        test_gateway: StorageGateway,
+        test_snapshot: SnapshotRef,
+    ) -> None:
         """Verify exported span has correct attributes."""
         exporter = InMemoryExporter()
         middleware = TracingMiddleware(exporter=exporter)
-        plugin = self._create_mock_plugin()
-        ctx = self._create_mock_context()
-        result = self._create_mock_result(success=True)
+        plugin = TracingTestPlugin()
+        ctx = make_context(test_gateway, test_snapshot)
+        result = make_result(success=True)
 
         middleware.before_execute(ctx, plugin)
         middleware.after_execute(ctx, plugin, result)
@@ -382,13 +511,17 @@ class TestTracingMiddleware:
         assert span.attributes["repo"] == TEST_REPO
         assert span.attributes["commit"] == TEST_COMMIT
 
-    def test_successful_execution_marks_span_ok(self) -> None:
+    @staticmethod
+    def test_successful_execution_marks_span_ok(
+        test_gateway: StorageGateway,
+        test_snapshot: SnapshotRef,
+    ) -> None:
         """Verify successful execution sets span status to ok."""
         exporter = InMemoryExporter()
         middleware = TracingMiddleware(exporter=exporter)
-        plugin = self._create_mock_plugin()
-        ctx = self._create_mock_context()
-        result = self._create_mock_result(success=True)
+        plugin = TracingTestPlugin()
+        ctx = make_context(test_gateway, test_snapshot)
+        result = make_result(success=True)
 
         middleware.before_execute(ctx, plugin)
         middleware.after_execute(ctx, plugin, result)
@@ -397,13 +530,17 @@ class TestTracingMiddleware:
         span = exporter.spans[0]
         assert span.status == "ok"
 
-    def test_failed_execution_marks_span_error(self) -> None:
+    @staticmethod
+    def test_failed_execution_marks_span_error(
+        test_gateway: StorageGateway,
+        test_snapshot: SnapshotRef,
+    ) -> None:
         """Verify failed execution sets span status to error."""
         exporter = InMemoryExporter()
         middleware = TracingMiddleware(exporter=exporter)
-        plugin = self._create_mock_plugin()
-        ctx = self._create_mock_context()
-        result = self._create_mock_result(success=False)
+        plugin = TracingTestPlugin()
+        ctx = make_context(test_gateway, test_snapshot)
+        result = make_result(success=False)
 
         middleware.before_execute(ctx, plugin)
         middleware.after_execute(ctx, plugin, result)
@@ -412,13 +549,17 @@ class TestTracingMiddleware:
         span = exporter.spans[0]
         assert span.status == "error"
 
-    def test_span_has_positive_duration(self) -> None:
+    @staticmethod
+    def test_span_has_positive_duration(
+        test_gateway: StorageGateway,
+        test_snapshot: SnapshotRef,
+    ) -> None:
         """Verify finished span has positive duration."""
         exporter = InMemoryExporter()
         middleware = TracingMiddleware(exporter=exporter)
-        plugin = self._create_mock_plugin()
-        ctx = self._create_mock_context()
-        result = self._create_mock_result(success=True)
+        plugin = TracingTestPlugin()
+        ctx = make_context(test_gateway, test_snapshot)
+        result = make_result(success=True)
 
         middleware.before_execute(ctx, plugin)
         time.sleep(0.001)  # Sleep 1ms to ensure measurable duration

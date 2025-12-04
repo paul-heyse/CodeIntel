@@ -278,6 +278,7 @@ def test_execute_returns_row_counts(fresh_gateway: StorageGateway) -> None:
     result = plugin.execute(ctx)
 
     assert result.success is True
+    assert result.row_counts is not None
     assert "analytics.function_ast_features" in result.row_counts
 
 

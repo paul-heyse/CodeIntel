@@ -139,24 +139,31 @@ def test_bipartite_degrees_degree_centrality() -> None:
     """Degree centrality for bipartite graph."""
     graph = nx.Graph()
     # Complete bipartite K_{2,3}
-    graph.add_edges_from([
-        (1, "a"),
-        (1, "b"),
-        (1, "c"),
-        (2, "a"),
-        (2, "b"),
-        (2, "c"),
-    ])
+    graph.add_edges_from(
+        [
+            (1, "a"),
+            (1, "b"),
+            (1, "c"),
+            (2, "a"),
+            (2, "b"),
+            (2, "c"),
+        ]
+    )
     primary = {1, 2}
     secondary = {"a", "b", "c"}
 
     result = compute_bipartite_degrees(graph, primary, secondary)
 
     # In complete bipartite, all primary nodes have same centrality
-    assert abs(result.primary_degree_centrality[1] - result.primary_degree_centrality[2]) < TOLERANCE
+    assert (
+        abs(result.primary_degree_centrality[1] - result.primary_degree_centrality[2]) < TOLERANCE
+    )
 
     # All secondary nodes have same centrality
-    assert abs(result.secondary_degree_centrality["a"] - result.secondary_degree_centrality["b"]) < TOLERANCE
+    assert (
+        abs(result.secondary_degree_centrality["a"] - result.secondary_degree_centrality["b"])
+        < TOLERANCE
+    )
 
 
 def test_bipartite_degrees_returns_dataclass() -> None:
@@ -247,14 +254,16 @@ def test_weighted_projection_complete_bipartite() -> None:
     """Complete bipartite projects to complete graph."""
     graph = nx.Graph()
     # K_{3,2}: 3 primary nodes, 2 secondary nodes, all connected
-    graph.add_edges_from([
-        (1, "a"),
-        (1, "b"),
-        (2, "a"),
-        (2, "b"),
-        (3, "a"),
-        (3, "b"),
-    ])
+    graph.add_edges_from(
+        [
+            (1, "a"),
+            (1, "b"),
+            (2, "a"),
+            (2, "b"),
+            (3, "a"),
+            (3, "b"),
+        ]
+    )
     primary = {1, 2, 3}
 
     result = compute_weighted_projection(graph, primary)
@@ -269,12 +278,14 @@ def test_weighted_projection_weights() -> None:
     """Projection has weights based on shared neighbors."""
     graph = nx.Graph()
     # 1 and 2 share both 'a' and 'b'
-    graph.add_edges_from([
-        (1, "a"),
-        (1, "b"),
-        (2, "a"),
-        (2, "b"),
-    ])
+    graph.add_edges_from(
+        [
+            (1, "a"),
+            (1, "b"),
+            (2, "a"),
+            (2, "b"),
+        ]
+    )
     primary = {1, 2}
 
     result = compute_weighted_projection(graph, primary)
@@ -293,17 +304,19 @@ def test_weighted_projection_partial_overlap() -> None:
     # 1 connects to a, b, c
     # 2 connects to b, c, d
     # 3 connects to c, d, e
-    graph.add_edges_from([
-        (1, "a"),
-        (1, "b"),
-        (1, "c"),
-        (2, "b"),
-        (2, "c"),
-        (2, "d"),
-        (3, "c"),
-        (3, "d"),
-        (3, "e"),
-    ])
+    graph.add_edges_from(
+        [
+            (1, "a"),
+            (1, "b"),
+            (1, "c"),
+            (2, "b"),
+            (2, "c"),
+            (2, "d"),
+            (3, "c"),
+            (3, "d"),
+            (3, "e"),
+        ]
+    )
     primary = {1, 2, 3}
 
     result = compute_weighted_projection(graph, primary)
@@ -319,12 +332,14 @@ def test_weighted_projection_partial_overlap() -> None:
 def test_weighted_projection_secondary_partition() -> None:
     """Project onto secondary partition."""
     graph = nx.Graph()
-    graph.add_edges_from([
-        (1, "a"),
-        (1, "b"),
-        (2, "b"),
-        (2, "c"),
-    ])
+    graph.add_edges_from(
+        [
+            (1, "a"),
+            (1, "b"),
+            (2, "b"),
+            (2, "c"),
+        ]
+    )
     secondary = {"a", "b", "c"}
 
     result = compute_weighted_projection(graph, secondary)
@@ -373,14 +388,16 @@ def test_projection_matches_shared_neighbors_count() -> None:
     """Projection edge weights match shared neighbor counts."""
     graph = nx.Graph()
     # Node 1 and 2 share exactly 2 neighbors (a, b)
-    graph.add_edges_from([
-        (1, "a"),
-        (1, "b"),
-        (1, "c"),  # Not shared
-        (2, "a"),
-        (2, "b"),
-        (2, "d"),  # Not shared
-    ])
+    graph.add_edges_from(
+        [
+            (1, "a"),
+            (1, "b"),
+            (1, "c"),  # Not shared
+            (2, "a"),
+            (2, "b"),
+            (2, "d"),  # Not shared
+        ]
+    )
     primary = {1, 2}
 
     result = compute_weighted_projection(graph, primary)

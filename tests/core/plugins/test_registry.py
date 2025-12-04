@@ -14,17 +14,34 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, TypedDict, Unpack
 
 import pytest
 
-from codeintel.core.plugins.protocol import PluginMetadata
+from codeintel.core.plugins.protocol import PluginKind, PluginMetadata, PluginStage
 from codeintel.core.plugins.registry import (
     BasePluginRegistry,
     PluginPlan,
     PluginSkip,
     RegistrablePlugin,
 )
+
+# Test constants
+EXPECTED_PLUGIN_COUNT = 2
+EXPECTED_PLAN_PLUGINS = 3
+EXPECTED_INDEPENDENT_COUNT = 3
+
+
+class PluginMetadataOverrides(TypedDict, total=False):
+    """Overrides for building plugin metadata."""
+
+    kind: PluginKind
+    stage: PluginStage
+    provides: tuple[str, ...]
+    requires: tuple[str, ...]
+    depends_on: tuple[str, ...]
+    produces_tables: tuple[str, ...]
+
 
 # =============================================================================
 # Test Plugin Implementation
@@ -45,25 +62,32 @@ class MockPlugin:
 
 def make_plugin(
     name: str,
-    *,
-    kind: str = "analytics",
-    stage: str = "function",
-    provides: tuple[str, ...] = (),
-    requires: tuple[str, ...] = (),
-    depends_on: tuple[str, ...] = (),
-    produces_tables: tuple[str, ...] = (),
+    **overrides: Unpack[PluginMetadataOverrides],
 ) -> MockPlugin:
-    """Create a mock plugin with the given configuration."""
+    """Create a mock plugin with the given configuration.
+
+    Parameters
+    ----------
+    name
+        Name of the plugin.
+    overrides
+        Keyword overrides for plugin metadata fields.
+
+    Returns
+    -------
+    MockPlugin
+        The mock plugin instance.
+    """
     return MockPlugin(
         _metadata=PluginMetadata(
             name=name,
             description=f"Mock plugin {name}",
-            kind=kind,
-            stage=stage,
-            provides=provides,
-            requires=requires,
-            depends_on=depends_on,
-            produces_tables=produces_tables,
+            kind=overrides.get("kind", "analytics"),
+            stage=overrides.get("stage", "function"),
+            provides=overrides.get("provides", ()),
+            requires=overrides.get("requires", ()),
+            depends_on=overrides.get("depends_on", ()),
+            produces_tables=overrides.get("produces_tables", ()),
         ),
     )
 
@@ -80,7 +104,13 @@ class TestRegistry(BasePluginRegistry[MockPlugin]):
 
     @staticmethod
     def _get_default_plugins() -> Sequence[str]:
-        """Return default plugin names."""
+        """Return default plugin names.
+
+        Returns
+        -------
+        Sequence[str]
+            Default plugin names for testing.
+        """
         return TestRegistry.DEFAULT_PLUGINS
 
     def _ensure_builtins_loaded(self) -> None:
@@ -94,7 +124,13 @@ class TestRegistry(BasePluginRegistry[MockPlugin]):
 
 @pytest.fixture
 def registry() -> TestRegistry:
-    """Create a fresh test registry."""
+    """Create a fresh test registry.
+
+    Returns
+    -------
+    TestRegistry
+        Empty registry for testing.
+    """
     return TestRegistry()
 
 
@@ -149,7 +185,7 @@ def test_plugin_plan_with_plugins() -> None:
 
     plan: PluginPlan[MockPlugin] = PluginPlan(plugins=(plugin1, plugin2))
 
-    assert len(plan.plugins) == 2
+    assert len(plan.plugins) == EXPECTED_PLUGIN_COUNT
     assert plan.plugins[0] is plugin1
     assert plan.plugins[1] is plugin2
 
@@ -350,7 +386,7 @@ def test_list_all(registry: TestRegistry) -> None:
 
     result = registry.list_all()
 
-    assert len(result) == 3
+    assert len(result) == EXPECTED_PLAN_PLUGINS
     names = {p.metadata.name for p in result}
     assert names == {"p1", "p2", "p3"}
 
@@ -423,7 +459,7 @@ def test_resolve_selection_with_enabled(registry: TestRegistry) -> None:
     registry.register(make_plugin("b"))
     registry.register(make_plugin("c"))
 
-    selected, _skipped = registry._resolve_selection(
+    selected, _skipped = registry._resolve_selection(  # noqa: SLF001
         plugin_names=None,
         enabled=["a", "b"],
         disabled=None,
@@ -439,7 +475,7 @@ def test_resolve_selection_with_disabled(registry: TestRegistry) -> None:
     registry.register(make_plugin("b"))
     registry.register(make_plugin("c"))
 
-    selected, skipped = registry._resolve_selection(
+    selected, skipped = registry._resolve_selection(  # noqa: SLF001
         plugin_names=["a", "b", "c"],
         enabled=None,
         disabled=["b"],
@@ -457,7 +493,7 @@ def test_resolve_selection_uses_defaults(registry: TestRegistry) -> None:
     registry.register(make_plugin("default1"))
     registry.register(make_plugin("default2"))
 
-    selected, _ = registry._resolve_selection(
+    selected, _ = registry._resolve_selection(  # noqa: SLF001
         plugin_names=None,
         enabled=None,
         disabled=None,
@@ -471,7 +507,7 @@ def test_resolve_selection_missing_plugin(registry: TestRegistry) -> None:
     """Verify _resolve_selection skips missing plugins."""
     registry.register(make_plugin("exists"))
 
-    selected, skipped = registry._resolve_selection(
+    selected, skipped = registry._resolve_selection(  # noqa: SLF001
         plugin_names=["exists", "missing"],
         enabled=None,
         disabled=None,
@@ -495,7 +531,7 @@ def test_resolve_dependencies_explicit(registry: TestRegistry) -> None:
     b = make_plugin("b", depends_on=())
 
     selected = {"a": a, "b": b}
-    deps = registry._resolve_dependencies(selected)
+    deps = registry._resolve_dependencies(selected)  # noqa: SLF001
 
     assert deps["a"] == {"b"}
     assert deps["b"] == set()
@@ -507,7 +543,7 @@ def test_resolve_dependencies_capability_based(registry: TestRegistry) -> None:
     provider = make_plugin("provider", provides=("data.source",))
 
     selected = {"consumer": consumer, "provider": provider}
-    deps = registry._resolve_dependencies(selected)
+    deps = registry._resolve_dependencies(selected)  # noqa: SLF001
 
     assert "provider" in deps["consumer"]
 
@@ -517,7 +553,7 @@ def test_resolve_dependencies_missing_capability(registry: TestRegistry) -> None
     consumer = make_plugin("consumer", requires=("missing.capability",))
 
     selected = {"consumer": consumer}
-    deps = registry._resolve_dependencies(selected)
+    deps = registry._resolve_dependencies(selected)  # noqa: SLF001
 
     # Should not raise, just logs warning
     assert deps["consumer"] == set()
@@ -532,7 +568,7 @@ def test_resolve_dependencies_self_provide(registry: TestRegistry) -> None:
     )
 
     selected = {"self_sufficient": plugin}
-    deps = registry._resolve_dependencies(selected)
+    deps = registry._resolve_dependencies(selected)  # noqa: SLF001
 
     assert "self_sufficient" not in deps["self_sufficient"]
 
@@ -551,7 +587,7 @@ def test_topological_sort_linear(registry: TestRegistry) -> None:
     selected = {"a": a, "b": b, "c": c}
     deps = {"a": {"b"}, "b": {"c"}, "c": set()}
 
-    result = registry._topological_sort(selected, deps)
+    result = registry._topological_sort(selected, deps)  # noqa: SLF001
     names = [p.metadata.name for p in result]
 
     # c must come before b, b before a
@@ -570,7 +606,7 @@ def test_topological_sort_diamond(registry: TestRegistry) -> None:
     selected = {"a": a, "b": b, "c": c, "d": d}
     deps = {"a": set(), "b": {"a"}, "c": {"a"}, "d": {"b", "c"}}
 
-    result = registry._topological_sort(selected, deps)
+    result = registry._topological_sort(selected, deps)  # noqa: SLF001
     names = [p.metadata.name for p in result]
 
     # a must come first, d must come last
@@ -586,8 +622,8 @@ def test_topological_sort_cycle_detection(registry: TestRegistry) -> None:
     selected = {"a": a, "b": b}
     deps = {"a": {"b"}, "b": {"a"}}  # Cycle!
 
-    with pytest.raises(ValueError, match="[Cc]ycle"):
-        registry._topological_sort(selected, deps)
+    with pytest.raises(ValueError, match=r"[Cc]ycle"):
+        registry._topological_sort(selected, deps)  # noqa: SLF001
 
 
 def test_topological_sort_independent(registry: TestRegistry) -> None:
@@ -599,10 +635,10 @@ def test_topological_sort_independent(registry: TestRegistry) -> None:
     selected = {"a": a, "b": b, "c": c}
     deps = {"a": set(), "b": set(), "c": set()}
 
-    result = registry._topological_sort(selected, deps)
+    result = registry._topological_sort(selected, deps)  # noqa: SLF001
 
     # All plugins should be in result
-    assert len(result) == 3
+    assert len(result) == EXPECTED_INDEPENDENT_COUNT
 
 
 # =============================================================================

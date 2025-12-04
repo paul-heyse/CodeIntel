@@ -47,7 +47,7 @@ from codeintel.analytics.core.protocol import (
     PluginStage,
     ValidationResult,
 )
-from codeintel.storage.helpers import safe_row_counts
+from codeintel.storage.validation import safe_count_rows
 
 if TYPE_CHECKING:
     from codeintel.analytics.core.context import PluginExecutionContext
@@ -482,7 +482,7 @@ class TableWriterPlugin(BasePlugin, ABC):
         connection = getattr(ctx.gateway, "con", None)
         if connection is None:
             return {}
-        counts = safe_row_counts(
+        counts = safe_count_rows(
             connection,
             repo=ctx.repo,
             commit=ctx.commit,

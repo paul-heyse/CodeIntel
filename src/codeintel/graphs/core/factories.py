@@ -31,7 +31,7 @@ from codeintel.graphs.core.protocol import (
     create_graph_metadata,
 )
 from codeintel.graphs.engine import GraphKind
-from codeintel.storage.helpers import safe_row_counts
+from codeintel.storage.validation import safe_count_rows
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -315,7 +315,7 @@ def _auto_row_counts(
     if not tables:
         return {}
     connection = getattr(ctx.gateway, "con", None)
-    counts = safe_row_counts(connection, repo=ctx.repo, commit=ctx.commit, tables=tables)
+    counts = safe_count_rows(connection, repo=ctx.repo, commit=ctx.commit, tables=tables)
     if counts is None:
         log.debug("row_count.failed repo=%s commit=%s tables=%s", ctx.repo, ctx.commit, tables)
         return {}

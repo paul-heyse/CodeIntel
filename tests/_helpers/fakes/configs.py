@@ -8,9 +8,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion.engine.service import ToolService
+from codeintel.runtime import RunContext
+
+if TYPE_CHECKING:
+    from codeintel.runtime.context import RunKind, TriggerKind
+
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+DEFAULT_TEST_REPO = "test/repo"
+DEFAULT_TEST_COMMIT = "abc123def"
+DEFAULT_TEST_RUN_ID = "test-run-001"
+
+
+# =============================================================================
+# Fake Implementations
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -107,8 +127,93 @@ class FakePluginContext:
     config_profile: object | None = None
 
 
+def create_test_snapshot(
+    tmp_path: Path | None = None,
+    *,
+    repo: str = DEFAULT_TEST_REPO,
+    commit: str = DEFAULT_TEST_COMMIT,
+) -> SnapshotRef:
+    """Create a real SnapshotRef for testing.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary path for repo_root. If None, uses a default mock path.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+
+    Returns
+    -------
+    SnapshotRef
+        Configured snapshot reference.
+    """
+    repo_root = tmp_path if tmp_path is not None else Path("/mock/test-repo")
+    return SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
+
+
+def create_test_build_paths(
+    tmp_path: Path | None = None,
+) -> BuildPaths:
+    """Create a real BuildPaths for testing.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary path for build directory. If None, uses a default mock path.
+
+    Returns
+    -------
+    BuildPaths
+        Configured build paths.
+    """
+    build_dir = tmp_path if tmp_path is not None else Path("/mock/build")
+    repo_root = build_dir.parent if tmp_path is not None else Path("/mock/repo")
+    return BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
+
+
+def create_test_run_context(
+    snapshot: SnapshotRef,
+    *,
+    run_id: str = DEFAULT_TEST_RUN_ID,
+    kind: RunKind = "full",
+    trigger: TriggerKind = "cli",
+) -> RunContext:
+    """Create a real RunContext for testing.
+
+    Parameters
+    ----------
+    snapshot
+        Snapshot reference.
+    run_id
+        Run identifier.
+    kind
+        Run kind.
+    trigger
+        Trigger kind.
+
+    Returns
+    -------
+    RunContext
+        Configured run context.
+    """
+    return RunContext(
+        run_id=run_id,
+        kind=kind,
+        snapshot=snapshot,
+        trigger=trigger,
+    )
+
+
 __all__ = [
+    "DEFAULT_TEST_COMMIT",
+    "DEFAULT_TEST_REPO",
+    "DEFAULT_TEST_RUN_ID",
     "FakeBuildPaths",
     "FakePluginContext",
     "FakeSnapshotRef",
+    "create_test_build_paths",
+    "create_test_run_context",
+    "create_test_snapshot",
 ]

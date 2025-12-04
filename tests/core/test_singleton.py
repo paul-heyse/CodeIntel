@@ -32,7 +32,13 @@ class SampleRegistry:
 
     @classmethod
     def create_default(cls) -> SampleRegistry:
-        """Create a default registry instance."""
+        """Create a default registry instance.
+
+        Returns
+        -------
+        SampleRegistry
+            Registry with default values.
+        """
         return cls(name="default", items=[])
 
 
@@ -139,13 +145,9 @@ def test_singleton_reset_clears_instance() -> None:
 
 def test_singleton_reset_allows_new_instance() -> None:
     """Verify that reset() allows a new instance to be created."""
-    registry1 = SampleRegistryHolder.get(
-        lambda: SampleRegistry(name="first", items=["a"])
-    )
+    registry1 = SampleRegistryHolder.get(lambda: SampleRegistry(name="first", items=["a"]))
     SampleRegistryHolder.reset()
-    registry2 = SampleRegistryHolder.get(
-        lambda: SampleRegistry(name="second", items=["b"])
-    )
+    registry2 = SampleRegistryHolder.get(lambda: SampleRegistry(name="second", items=["b"]))
 
     assert registry1 is not registry2
     assert registry1.name == "first"

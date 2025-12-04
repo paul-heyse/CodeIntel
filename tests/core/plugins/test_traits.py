@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from codeintel.core.plugins.context import PluginScratch
 from codeintel.core.plugins.traits import (
     CacheAwareMixin,
     CacheAwarePlugin,
@@ -30,6 +31,17 @@ from codeintel.core.plugins.traits import (
     is_retryable,
 )
 from codeintel.core.runtime.retry import PLUGIN_RETRY_POLICY, RetryPolicy
+
+_default_retryable = RetryableMixin()
+DEFAULT_MAX_RETRIES = _default_retryable.max_retries
+DEFAULT_RETRY_BACKOFF_MS = _default_retryable.retry_backoff_ms
+CUSTOM_MAX_RETRIES = 10
+CUSTOM_RETRY_BACKOFF_MS = 5000
+POLICY_MAX_ATTEMPTS = 7
+POLICY_BACKOFF_MS = 3000
+MIXIN_POLICY_ATTEMPTS = 8
+RETRYABLE_PLUGIN_ATTEMPTS = 5
+PROGRESS_EVENTS_EXPECTED = 2
 
 # =============================================================================
 # Protocol Implementation Classes for Testing
@@ -70,7 +82,7 @@ class TestRetryablePlugin:
     @property
     def max_retries(self) -> int:
         """Return max retries."""
-        return 5
+        return RETRYABLE_PLUGIN_ATTEMPTS
 
     @property
     def retry_backoff_ms(self) -> int:
@@ -96,13 +108,32 @@ class TestProgressReportingPlugin:
 class TestIncrementalPlugin:
     """Test implementation of IncrementalPlugin."""
 
+    def __init__(self) -> None:
+        """Initialize incremental plugin."""
+        self._hash_value = "abc123"
+        self.last_context: object | None = None
+
     def compute_input_hash(self, ctx: object) -> str:
-        """Compute hash."""
-        return "abc123"
+        """Compute hash.
+
+        Returns
+        -------
+        str
+            Fixed hash value.
+        """
+        self.last_context = ctx
+        return self._hash_value
 
     def is_unchanged(self, ctx: object, prior_hash: str | None) -> bool:
-        """Check if unchanged."""
-        return prior_hash == "abc123"
+        """Check if unchanged.
+
+        Returns
+        -------
+        bool
+            True if prior hash matches expected.
+        """
+        self.last_context = ctx
+        return prior_hash == self._hash_value
 
 
 class PlainPlugin:
@@ -218,8 +249,8 @@ def test_retryable_mixin_defaults() -> None:
     """Verify RetryableMixin has sensible defaults."""
     mixin = RetryableMixin()
     assert mixin.retryable_exceptions == (RuntimeError, ValueError, OSError)
-    assert mixin.max_retries == 3
-    assert mixin.retry_backoff_ms == 1000
+    assert mixin.max_retries == DEFAULT_MAX_RETRIES
+    assert mixin.retry_backoff_ms == DEFAULT_RETRY_BACKOFF_MS
 
 
 def test_retryable_mixin_custom_values() -> None:
@@ -227,28 +258,28 @@ def test_retryable_mixin_custom_values() -> None:
 
     class CustomRetryMixin(RetryableMixin):
         _retryable_exceptions = (TimeoutError,)
-        _max_retries = 10
-        _retry_backoff_ms = 5000
+        _max_retries = CUSTOM_MAX_RETRIES
+        _retry_backoff_ms = CUSTOM_RETRY_BACKOFF_MS
 
     mixin = CustomRetryMixin()
     assert mixin.retryable_exceptions == (TimeoutError,)
-    assert mixin.max_retries == 10
-    assert mixin.retry_backoff_ms == 5000
+    assert mixin.max_retries == CUSTOM_MAX_RETRIES
+    assert mixin.retry_backoff_ms == CUSTOM_RETRY_BACKOFF_MS
 
 
 def test_retryable_mixin_get_retry_policy() -> None:
     """Verify RetryableMixin.get_retry_policy returns configured policy."""
 
     class RetryPlugin(RetryableMixin):
-        _max_retries = 7
-        _retry_backoff_ms = 3000
+        _max_retries = POLICY_MAX_ATTEMPTS
+        _retry_backoff_ms = POLICY_BACKOFF_MS
         _retryable_exceptions = (ValueError,)
 
     mixin = RetryPlugin()
     policy = mixin.get_retry_policy()
 
     assert isinstance(policy, RetryPolicy)
-    assert policy.max_attempts == 7
+    assert policy.max_attempts == POLICY_MAX_ATTEMPTS
     assert policy.retryable_exceptions == (ValueError,)
 
 
@@ -282,7 +313,7 @@ def test_progress_reporting_mixin_with_callback() -> None:
     mixin.report_progress(0.5, "Halfway")
     mixin.report_progress(1.0, "Done")
 
-    assert len(received) == 2
+    assert len(received) == PROGRESS_EVENTS_EXPECTED
     assert received[0] == (0.5, "Halfway")
     assert received[1] == (1.0, "Done")
 
@@ -298,31 +329,15 @@ def test_progress_reporting_mixin_is_protocol_compliant() -> None:
 # =============================================================================
 
 
-class MockScratch:
-    """Mock scratch store for testing."""
-
-    def __init__(self) -> None:
-        """Initialize mock scratch."""
-        self._data: dict[str, object] = {}
-
-    def declare(self, key: str, value: object) -> None:
-        """Declare data."""
-        self._data[key] = value
-
-    def consume(self, key: str, default: object = None) -> object:
-        """Consume data."""
-        return self._data.get(key, default)
-
-
 class MockContext:
-    """Mock context with scratch store."""
+    """Mock context with scratch store that satisfies ScratchContext protocol."""
 
     def __init__(self) -> None:
         """Initialize mock context."""
-        self._scratch = MockScratch()
+        self._scratch = PluginScratch()
 
     @property
-    def scratch(self) -> MockScratch:
+    def scratch(self) -> PluginScratch:
         """Return scratch store."""
         return self._scratch
 
@@ -364,13 +379,13 @@ def test_get_retry_policy_with_mixin() -> None:
     """Verify get_retry_policy uses mixin's get_retry_policy method."""
 
     class MixinPlugin(RetryableMixin):
-        _max_retries = 8
+        _max_retries = MIXIN_POLICY_ATTEMPTS
 
     plugin = MixinPlugin()
     policy = get_retry_policy(plugin)
 
     assert isinstance(policy, RetryPolicy)
-    assert policy.max_attempts == 8
+    assert policy.max_attempts == MIXIN_POLICY_ATTEMPTS
 
 
 def test_get_retry_policy_with_protocol() -> None:
@@ -379,7 +394,7 @@ def test_get_retry_policy_with_protocol() -> None:
     policy = get_retry_policy(plugin)
 
     assert isinstance(policy, RetryPolicy)
-    assert policy.max_attempts == 5
+    assert policy.max_attempts == RETRYABLE_PLUGIN_ATTEMPTS
     assert policy.retryable_exceptions == (TimeoutError, ConnectionError)
 
 
@@ -396,7 +411,7 @@ def test_get_retry_policy_method_returns_non_policy() -> None:
 
     class BadPolicyPlugin(RetryableMixin):
         def get_retry_policy(self) -> str:  # type: ignore[override]
-            return "not a policy"
+            return f"{self.__class__.__name__} policy"
 
     plugin = BadPolicyPlugin()
     policy = get_retry_policy(plugin)

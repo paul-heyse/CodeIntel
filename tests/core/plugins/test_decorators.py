@@ -57,7 +57,7 @@ def test_make_plugin_instance_creates_plugin() -> None:
     def execute_fn(_ctx: MockContext) -> PluginResult:
         return PluginResult.ok()
 
-    def to_metadata(opts: MockOptions, fn: Callable) -> PluginMetadata:
+    def to_metadata(opts: MockOptions, _fn: Callable) -> PluginMetadata:
         return PluginMetadata(
             name=opts.name,
             description="test",
@@ -93,7 +93,7 @@ def test_make_plugin_instance_calls_register() -> None:
     def execute_fn(_ctx: MockContext) -> PluginResult:
         return PluginResult.ok()
 
-    def to_metadata(opts: MockOptions, fn: Callable) -> PluginMetadata:
+    def to_metadata(opts: MockOptions, _fn: Callable) -> PluginMetadata:
         return PluginMetadata(
             name=opts.name,
             description="test",
@@ -130,7 +130,7 @@ def test_make_plugin_instance_no_register() -> None:
     def execute_fn(_ctx: MockContext) -> PluginResult:
         return PluginResult.ok()
 
-    def to_metadata(opts: MockOptions, fn: Callable) -> PluginMetadata:
+    def to_metadata(opts: MockOptions, _fn: Callable) -> PluginMetadata:
         return PluginMetadata(
             name=opts.name,
             description="test",
@@ -166,7 +166,7 @@ def test_make_plugin_instance_preserves_execute_fn() -> None:
         call_log.append(ctx.value)
         return PluginResult.ok()
 
-    def to_metadata(opts: MockOptions, fn: Callable) -> PluginMetadata:
+    def to_metadata(opts: MockOptions, _fn: Callable) -> PluginMetadata:
         return PluginMetadata(
             name=opts.name,
             description="test",
@@ -203,7 +203,7 @@ def test_make_plugin_instance_passes_fn_to_to_metadata() -> None:
     def execute_fn(_ctx: MockContext) -> PluginResult:
         return PluginResult.ok()
 
-    def to_metadata(opts: MockOptions, fn: Callable) -> PluginMetadata:
+    def to_metadata(_opts: MockOptions, fn: Callable) -> PluginMetadata:
         received_fns.append(fn)
         return PluginMetadata(
             name=fn.__name__,  # Use function name as plugin name
@@ -252,7 +252,7 @@ def test_make_plugin_instance_uses_custom_types() -> None:
     def execute_fn(ctx: CustomContext) -> PluginResult:
         return PluginResult.ok(meta={"total": sum(ctx.data.values())})
 
-    def to_metadata(opts: CustomOptions, fn: Callable) -> PluginMetadata:
+    def to_metadata(opts: CustomOptions, _fn: Callable) -> PluginMetadata:
         return PluginMetadata(
             name=opts.plugin_name,
             description="custom",

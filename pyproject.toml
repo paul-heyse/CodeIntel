@@ -226,6 +226,8 @@ ban-relative-imports = "all"
 "src/codeintel/config/builder.py" = ["PLR0904", "PLR0913"]
 # ResourceRegistry is a central DI container with many required public methods
 "src/codeintel/core/resources/registry.py" = ["PLR0904"]
+# Generated insert methods mixin classes have many methods (one per table)
+"src/codeintel/storage/gateway/_generated_inserts.py" = ["PLR0904"]
 # Primitives has complex constructors
 "src/codeintel/config/primitives.py" = ["PLR0913", "DOC201"]
 # Test files use assert statements which is standard practice

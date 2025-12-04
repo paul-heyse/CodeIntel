@@ -142,10 +142,12 @@ def test_config_provider_initialized_with_configs() -> None:
     config = TestConfig(value="initial")
     another = AnotherConfig(number=42)
 
-    provider = ConfigProvider({
-        TestConfig: config,
-        AnotherConfig: another,
-    })
+    provider = ConfigProvider(
+        {
+            TestConfig: config,
+            AnotherConfig: another,
+        }
+    )
 
     assert provider.get(TestConfig) is config
     assert provider.get(AnotherConfig) is another

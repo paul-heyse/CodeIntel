@@ -346,4 +346,5 @@ def test_decorated_plugin_executes() -> None:
 
     assert executed is True
     assert result.success is True
+    assert result.row_counts is not None
     assert result.row_counts.get("test") == EXPECTED_ROW_COUNT

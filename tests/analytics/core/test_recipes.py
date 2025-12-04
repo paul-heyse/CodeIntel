@@ -9,6 +9,7 @@ import pytest
 from codeintel.analytics.recipes.dsl import RecipeBuilder, recipe
 from codeintel.analytics.recipes.model import Recipe, RecipeOptions, RecipeScope
 from codeintel.analytics.recipes.registry import RecipeRegistry
+from codeintel.core.recipes import RecipeBuilder as CoreRecipeBuilder
 
 FAST_RECIPES_COUNT = 2
 MAX_DURATION_MS = 60_000
@@ -225,7 +226,7 @@ def test_compose_recipes_deduplicates_plugins_and_merges_tags(
 class RecipeBuilderCase:
     """Case for verifying builder output."""
 
-    builder: RecipeBuilder
+    builder: CoreRecipeBuilder
     name: str
     plugins: tuple[str, ...]
     tags: tuple[str, ...]

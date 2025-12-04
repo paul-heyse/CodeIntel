@@ -134,7 +134,7 @@ class ScipIngestPlugin(
         tool = ToolRunnerAdapter(service)
 
         # Create config
-        scip_dir = ctx.paths.scip_dir
+        scip_dir = ctx.validated_paths.scip_dir
         config = ScipIngestConfig(
             repo=ctx.snapshot.repo,
             commit=ctx.snapshot.commit,

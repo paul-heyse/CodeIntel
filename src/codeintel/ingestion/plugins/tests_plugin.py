@@ -116,7 +116,7 @@ class TestsIngestPlugin(
         storage = DuckDBStorageAdapter(ctx.gateway)
 
         # Get report path
-        report_path = ctx.paths.pytest_report
+        report_path = ctx.validated_paths.pytest_report
 
         # Execute step
         step = TestsIngestStep(storage=storage)

@@ -235,7 +235,7 @@ def test_config_registry_validate_all_raises() -> None:
     registry = ConfigRegistry()
     call_count = [0]
 
-    def validator(config: TestConfig) -> None:
+    def validator(_config: TestConfig) -> None:
         call_count[0] += 1
         if call_count[0] > 1:
             msg = "Validation failed on re-check"

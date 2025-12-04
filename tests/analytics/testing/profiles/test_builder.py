@@ -214,9 +214,7 @@ class TestInferBehaviorTags:
             (["database"], "db_interaction"),
         ],
     )
-    def test_infers_tags_from_markers(
-        self, markers: list[str], expected_tag: str
-    ) -> None:
+    def test_infers_tags_from_markers(self, markers: list[str], expected_tag: str) -> None:
         """Verify tags are inferred from marker strings."""
         result = infer_behavior_tags(
             name="test_generic",

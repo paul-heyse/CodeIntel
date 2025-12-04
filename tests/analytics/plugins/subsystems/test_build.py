@@ -172,6 +172,7 @@ class TestSubsystemsPluginMetadata:
     def test_metadata_resource_hints() -> None:
         """Verify plugin resource hints are set."""
         plugin = SubsystemsPlugin()
+        assert plugin.metadata.resource_hints is not None
         assert plugin.metadata.resource_hints.max_runtime_ms == MAX_RUNTIME_MS
         assert plugin.metadata.resource_hints.priority == PRIORITY_VALUE
 

@@ -5,14 +5,14 @@ from __future__ import annotations
 from codeintel.analytics.core.contracts import ContractValidator, OutputContractSpec
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.helpers import safe_row_counts
+from codeintel.storage.validation import safe_count_rows
 
 
 class DefaultAnalyticsSupportProvider:
     """Use storage helpers to implement analytics runtime conveniences."""
 
     def __init__(self) -> None:
-        self._row_count_fn = safe_row_counts
+        self._row_count_fn = safe_count_rows
         self._validator_factory = ContractValidator
 
     def compute_row_counts(

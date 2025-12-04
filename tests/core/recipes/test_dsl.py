@@ -71,7 +71,7 @@ def test_recipe_minimal() -> None:
 
     assert isinstance(result, Recipe)
     assert result.name == "test_recipe"
-    assert result.description == ""
+    assert not result.description
     assert result.stages == ()
     assert result.plugins == ()
 
@@ -92,7 +92,7 @@ def test_recipe_with_stages() -> None:
 
     result = recipe("staged", stages=stages)
 
-    assert len(result.stages) == 2
+    assert len(result.stages) == len(stages)
     assert result.stages[0].name == "build"
     assert result.stages[1].name == "analyze"
 
@@ -106,12 +106,13 @@ def test_recipe_with_plugins() -> None:
 
 def test_recipe_with_options() -> None:
     """Verify recipe() accepts RecipeOptions."""
-    options = RecipeOptions(dry_run=True, max_parallel=8)
+    max_parallel = 8
+    options = RecipeOptions(dry_run=True, max_parallel=max_parallel)
 
     result = recipe("with_options", options=options)
 
     assert result.options.dry_run is True
-    assert result.options.max_parallel == 8
+    assert result.options.max_parallel == max_parallel
 
 
 def test_recipe_with_default_configs() -> None:
@@ -211,16 +212,17 @@ def test_builder_add_all() -> None:
 
 def test_builder_add_stage() -> None:
     """Verify RecipeBuilder.add_stage() adds a stage."""
+    stage_names = ("build", "analyze")
     result = (
         RecipeBuilder("test")
-        .add_stage("build", ["builder"])
-        .add_stage("analyze", ["analyzer"])
+        .add_stage(stage_names[0], ["builder"])
+        .add_stage(stage_names[1], ["analyzer"])
         .build()
     )
 
-    assert len(result.stages) == 2
-    assert result.stages[0].name == "build"
-    assert result.stages[1].name == "analyze"
+    assert len(result.stages) == len(stage_names)
+    assert result.stages[0].name == stage_names[0]
+    assert result.stages[1].name == stage_names[1]
 
 
 def test_builder_add_stage_with_options() -> None:
@@ -245,12 +247,7 @@ def test_builder_add_stage_with_options() -> None:
 
 def test_builder_remove_plugin() -> None:
     """Verify RecipeBuilder.remove() removes a plugin."""
-    result = (
-        RecipeBuilder("test")
-        .add_all("p1", "p2", "p3")
-        .remove("p2")
-        .build()
-    )
+    result = RecipeBuilder("test").add_all("p1", "p2", "p3").remove("p2").build()
 
     assert result.plugins == ("p1", "p3")
 
@@ -269,24 +266,14 @@ def test_builder_remove_nonexistent() -> None:
 
 def test_builder_with_config() -> None:
     """Verify RecipeBuilder.with_config() sets plugin config."""
-    result = (
-        RecipeBuilder("test")
-        .add("plugin1")
-        .with_config("plugin1", {"key": "value"})
-        .build()
-    )
+    result = RecipeBuilder("test").add("plugin1").with_config("plugin1", {"key": "value"}).build()
 
     assert result.default_configs["plugin1"] == {"key": "value"}
 
 
 def test_builder_with_config_merges() -> None:
     """Verify RecipeBuilder.with_config() merges configs."""
-    result = (
-        RecipeBuilder("test")
-        .with_config("p1", {"a": 1})
-        .with_config("p1", {"b": 2})
-        .build()
-    )
+    result = RecipeBuilder("test").with_config("p1", {"a": 1}).with_config("p1", {"b": 2}).build()
 
     assert result.default_configs["p1"] == {"a": 1, "b": 2}
 
@@ -339,23 +326,26 @@ def test_builder_parallel_stages() -> None:
 
 def test_builder_max_parallel() -> None:
     """Verify RecipeBuilder.max_parallel() sets option."""
-    result = RecipeBuilder("test").max_parallel(16).build()
+    max_parallel = 16
+    result = RecipeBuilder("test").max_parallel(max_parallel).build()
 
-    assert result.options.max_parallel == 16
+    assert result.options.max_parallel == max_parallel
 
 
 def test_builder_max_duration() -> None:
     """Verify RecipeBuilder.max_duration() sets option."""
-    result = RecipeBuilder("test").max_duration(60000).build()
+    max_duration_ms = 60000
+    result = RecipeBuilder("test").max_duration(max_duration_ms).build()
 
-    assert result.options.max_duration_ms == 60000
+    assert result.options.max_duration_ms == max_duration_ms
 
 
 def test_builder_timeout() -> None:
     """Verify RecipeBuilder.timeout() sets option."""
-    result = RecipeBuilder("test").timeout(5000).build()
+    timeout_ms = 5000
+    result = RecipeBuilder("test").timeout(timeout_ms).build()
 
-    assert result.options.timeout_ms == 5000
+    assert result.options.timeout_ms == timeout_ms
 
 
 def test_builder_dry_run() -> None:
@@ -379,6 +369,9 @@ def test_builder_skip_on_unchanged() -> None:
 
 def test_builder_chaining() -> None:
     """Verify RecipeBuilder methods return self for chaining."""
+    max_parallel = 8
+    timeout_ms = 10000
+    max_duration_ms = 120000
     result = (
         RecipeBuilder("complex")
         .description("Complex recipe")
@@ -388,9 +381,9 @@ def test_builder_chaining() -> None:
         .with_config("p1", {"x": 1})
         .tag("tag1", "tag2")
         .fail_fast(value=False)
-        .max_parallel(8)
-        .timeout(10000)
-        .max_duration(120000)
+        .max_parallel(max_parallel)
+        .timeout(timeout_ms)
+        .max_duration(max_duration_ms)
         .dry_run(value=False)
         .skip_on_unchanged()
         .version("3.0")
@@ -404,9 +397,9 @@ def test_builder_chaining() -> None:
     assert result.default_configs["p1"] == {"x": 1}
     assert result.tags == ("tag1", "tag2")
     assert result.options.fail_fast is False
-    assert result.options.max_parallel == 8
-    assert result.options.timeout_ms == 10000
-    assert result.options.max_duration_ms == 120000
+    assert result.options.max_parallel == max_parallel
+    assert result.options.timeout_ms == timeout_ms
+    assert result.options.max_duration_ms == max_duration_ms
     assert result.options.dry_run is False
     assert result.options.skip_on_unchanged is True
     assert result.version == "3.0"
@@ -470,11 +463,12 @@ def test_stage_and_recipe_integration() -> None:
 
 def test_builder_produces_valid_recipe() -> None:
     """Verify RecipeBuilder produces a valid Recipe."""
+    stage_names = ("first", "second")
     result = (
         RecipeBuilder("valid")
         .description("Valid recipe")
-        .add_stage("first", ["p1"], parallel=False)
-        .add_stage("second", ["p2"], parallel=True)
+        .add_stage(stage_names[0], ["p1"], parallel=False)
+        .add_stage(stage_names[1], ["p2"], parallel=True)
         .tag("production")
         .fail_fast()
         .build()
@@ -483,7 +477,7 @@ def test_builder_produces_valid_recipe() -> None:
     # Verify it's a proper Recipe with expected properties
     assert isinstance(result, Recipe)
     assert result.is_staged is True
-    assert len(result.stages) == 2
+    assert len(result.stages) == len(stage_names)
     assert result.all_plugins == ("p1", "p2")
     assert "production" in result.tags
     assert result.options.fail_fast is True

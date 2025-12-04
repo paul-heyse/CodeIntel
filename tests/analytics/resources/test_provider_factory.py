@@ -8,7 +8,8 @@ This module tests:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 
@@ -23,38 +24,43 @@ from codeintel.analytics.resources.graphs import GraphProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.resources.registry import ResourceRegistry
 from codeintel.analytics.runtime import GraphRuntimeOptions
+from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.storage.gateway import StorageGateway, open_memory_gateway
+from tests._helpers.fakes.configs import create_test_snapshot
 
 # Test constants
 MAX_FUNCTIONS_TEST_VALUE = 50
 
 
 @pytest.fixture
-def mock_gateway() -> MagicMock:
-    """Create a mock StorageGateway.
+def test_gateway() -> Generator[StorageGateway]:
+    """Create an in-memory StorageGateway for testing.
 
-    Returns
-    -------
-    MagicMock
-        A mock gateway object.
+    Yields
+    ------
+    StorageGateway
+        An in-memory gateway with schema applied.
     """
-    gateway = MagicMock(spec=["query", "execute", "connection"])
-    gateway.connection = MagicMock()
-    return gateway
+    gateway = open_memory_gateway(validate_schema=False)
+    yield gateway
+    gateway.close()
 
 
 @pytest.fixture
-def mock_snapshot() -> MagicMock:
-    """Create a mock SnapshotRef.
+def test_snapshot(tmp_path: Path) -> SnapshotRef:
+    """Create a real SnapshotRef for testing.
+
+    Parameters
+    ----------
+    tmp_path
+        Pytest temporary path fixture.
 
     Returns
     -------
-    MagicMock
-        A mock snapshot object.
+    SnapshotRef
+        A configured snapshot reference.
     """
-    snapshot = MagicMock()
-    snapshot.version = "v1.0.0"
-    snapshot.repo_id = "test-repo"
-    return snapshot
+    return create_test_snapshot(tmp_path)
 
 
 def test_provider_factory_options_defaults() -> None:
@@ -69,45 +75,51 @@ def test_provider_factory_options_defaults() -> None:
 
 def test_provider_factory_options_custom() -> None:
     """ProviderFactoryOptions accepts custom values."""
-    mock_backend = MagicMock()
-    mock_graph_opts = MagicMock()
+    backend_config = GraphBackendConfig(use_gpu=False, backend="cpu")
+    graph_opts = GraphRuntimeOptions(eager=True, validate=True)
     max_funcs = 100
     lang = "python"
 
     options = ProviderFactoryOptions(
-        graph_backend=mock_backend,
-        graph_options=mock_graph_opts,
+        graph_backend=backend_config,
+        graph_options=graph_opts,
         max_functions=max_funcs,
         language=lang,
     )
 
-    assert options.graph_backend is mock_backend
-    assert options.graph_options is mock_graph_opts
+    assert options.graph_backend is backend_config
+    assert options.graph_options is graph_opts
     assert options.max_functions == max_funcs
     assert options.language == lang
 
 
-def test_provider_factory_init(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_provider_factory_init(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """ProviderFactory initializes with gateway and snapshot."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
-    assert factory.gateway is mock_gateway
-    assert factory.snapshot is mock_snapshot
+    assert factory.gateway is test_gateway
+    assert factory.snapshot is test_snapshot
 
 
-def test_provider_factory_with_options(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_provider_factory_with_options(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """ProviderFactory accepts custom options."""
     options = ProviderFactoryOptions(max_functions=MAX_FUNCTIONS_TEST_VALUE, language="python")
 
-    factory = ProviderFactory(mock_gateway, mock_snapshot, options=options)
+    factory = ProviderFactory(test_gateway, test_snapshot, options=options)
 
     assert factory._options.max_functions == MAX_FUNCTIONS_TEST_VALUE  # noqa: SLF001
     assert factory._options.language == "python"  # noqa: SLF001
 
 
-def test_create_registry_default(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_create_registry_default(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Create registry with default providers (graphs and catalog)."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     registry = factory.create_registry()
 
@@ -120,9 +132,11 @@ def test_create_registry_default(mock_gateway: MagicMock, mock_snapshot: MagicMo
     assert not registry.has(ModuleMapProvider)
 
 
-def test_create_registry_no_graphs(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_create_registry_no_graphs(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Create registry without graphs."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     registry = factory.create_registry(include_graphs=False)
 
@@ -130,9 +144,11 @@ def test_create_registry_no_graphs(mock_gateway: MagicMock, mock_snapshot: Magic
     assert registry.has(CatalogProvider)
 
 
-def test_create_registry_no_catalog(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_create_registry_no_catalog(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Create registry without catalog."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     registry = factory.create_registry(include_catalog=False)
 
@@ -140,36 +156,44 @@ def test_create_registry_no_catalog(mock_gateway: MagicMock, mock_snapshot: Magi
     assert not registry.has(CatalogProvider)
 
 
-def test_create_registry_with_asts(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_create_registry_with_asts(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Create registry including AST provider."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     registry = factory.create_registry(include_asts=True)
 
     assert registry.has(AstProvider)
 
 
-def test_create_registry_with_features(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_create_registry_with_features(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Create registry including features provider."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     registry = factory.create_registry(include_features=True)
 
     assert registry.has(FeaturesProvider)
 
 
-def test_create_registry_with_module_map(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_create_registry_with_module_map(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Create registry including module map provider."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     registry = factory.create_registry(include_module_map=True)
 
     assert registry.has(ModuleMapProvider)
 
 
-def test_create_registry_all_providers(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_create_registry_all_providers(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Create registry with all providers enabled."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     registry = factory.create_registry(
         include_graphs=True,
@@ -186,18 +210,22 @@ def test_create_registry_all_providers(mock_gateway: MagicMock, mock_snapshot: M
     assert registry.has(ModuleMapProvider)
 
 
-def test_make_catalog_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_make_catalog_provider(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Make catalog provider returns CatalogProvider instance."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_catalog_provider()
 
     assert isinstance(provider, CatalogProvider)
 
 
-def test_make_catalog_provider_caches(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_make_catalog_provider_caches(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Make catalog provider caches the provider instance."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider1 = factory.make_catalog_provider()
     provider2 = factory.make_catalog_provider()
@@ -206,30 +234,34 @@ def test_make_catalog_provider_caches(mock_gateway: MagicMock, mock_snapshot: Ma
 
 
 def test_make_catalog_provider_with_catalog(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make catalog provider with pre-loaded catalog."""
-    mock_catalog = MagicMock()
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    catalog_obj = object()  # Use plain object as placeholder
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
-    provider = factory.make_catalog_provider(catalog=mock_catalog)
+    provider = factory.make_catalog_provider(catalog=catalog_obj)  # type: ignore[arg-type]
 
     # Provider wraps the provided catalog
     assert isinstance(provider, CatalogProvider)
 
 
-def test_make_graph_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_make_graph_provider(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Make graph provider returns GraphProvider instance."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_graph_provider()
 
     assert isinstance(provider, GraphProvider)
 
 
-def test_make_graph_provider_caches(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_make_graph_provider_caches(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Make graph provider caches the provider instance."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider1 = factory.make_graph_provider()
     provider2 = factory.make_graph_provider()
@@ -238,13 +270,13 @@ def test_make_graph_provider_caches(mock_gateway: MagicMock, mock_snapshot: Magi
 
 
 def test_make_graph_provider_with_runtime(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider with pre-built runtime."""
-    mock_runtime = MagicMock()
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    runtime_obj = object()  # Use plain object as placeholder
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
-    provider = factory.make_graph_provider(runtime=mock_runtime)
+    provider = factory.make_graph_provider(runtime=runtime_obj)  # type: ignore[arg-type]
 
     # Provider wraps the provided runtime
     assert isinstance(provider, GraphProvider)
@@ -254,11 +286,11 @@ def test_make_graph_provider_with_runtime(
 
 
 def test_make_graph_provider_with_options(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider with custom options."""
-    custom_options = GraphRuntimeOptions(snapshot=mock_snapshot)
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    custom_options = GraphRuntimeOptions(snapshot=test_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_graph_provider(options=custom_options)
 
@@ -266,21 +298,23 @@ def test_make_graph_provider_with_options(
 
 
 def test_make_graph_provider_with_backend(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make graph provider respects factory backend option."""
-    mock_backend = MagicMock()
-    options = ProviderFactoryOptions(graph_backend=mock_backend)
-    factory = ProviderFactory(mock_gateway, mock_snapshot, options=options)
+    backend_config = GraphBackendConfig(use_gpu=False, backend="cpu")
+    options = ProviderFactoryOptions(graph_backend=backend_config)
+    factory = ProviderFactory(test_gateway, test_snapshot, options=options)
 
     provider = factory.make_graph_provider()
 
     assert isinstance(provider, GraphProvider)
 
 
-def test_make_ast_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_make_ast_provider(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Make AST provider returns AstProvider instance."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_ast_provider()
 
@@ -288,10 +322,10 @@ def test_make_ast_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) ->
 
 
 def test_make_ast_provider_with_max_functions(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make AST provider with custom max_functions."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_ast_provider(max_functions=50)
 
@@ -299,20 +333,22 @@ def test_make_ast_provider_with_max_functions(
 
 
 def test_make_ast_provider_uses_factory_option(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make AST provider uses factory max_functions option."""
     options = ProviderFactoryOptions(max_functions=100)
-    factory = ProviderFactory(mock_gateway, mock_snapshot, options=options)
+    factory = ProviderFactory(test_gateway, test_snapshot, options=options)
 
     provider = factory.make_ast_provider()
 
     assert isinstance(provider, AstProvider)
 
 
-def test_make_features_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_make_features_provider(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Make features provider returns FeaturesProvider instance."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_features_provider()
 
@@ -320,19 +356,21 @@ def test_make_features_provider(mock_gateway: MagicMock, mock_snapshot: MagicMoc
 
 
 def test_make_features_provider_with_max_functions(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make features provider with custom max_functions."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_features_provider(max_functions=75)
 
     assert isinstance(provider, FeaturesProvider)
 
 
-def test_make_module_map_provider(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_make_module_map_provider(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Make module map provider returns ModuleMapProvider instance."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_module_map_provider()
 
@@ -340,10 +378,10 @@ def test_make_module_map_provider(mock_gateway: MagicMock, mock_snapshot: MagicM
 
 
 def test_make_module_map_provider_with_language(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make module map provider with language filter."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     provider = factory.make_module_map_provider(language="python")
 
@@ -351,20 +389,22 @@ def test_make_module_map_provider_with_language(
 
 
 def test_make_module_map_provider_uses_factory_option(
-    mock_gateway: MagicMock, mock_snapshot: MagicMock
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
 ) -> None:
     """Make module map provider uses factory language option."""
     options = ProviderFactoryOptions(language="typescript")
-    factory = ProviderFactory(mock_gateway, mock_snapshot, options=options)
+    factory = ProviderFactory(test_gateway, test_snapshot, options=options)
 
     provider = factory.make_module_map_provider()
 
     assert isinstance(provider, ModuleMapProvider)
 
 
-def test_clear_cache(mock_gateway: MagicMock, mock_snapshot: MagicMock) -> None:
+def test_clear_cache(
+    test_gateway: StorageGateway, test_snapshot: SnapshotRef
+) -> None:
     """Clear cache resets cached providers."""
-    factory = ProviderFactory(mock_gateway, mock_snapshot)
+    factory = ProviderFactory(test_gateway, test_snapshot)
 
     # Create cached providers
     catalog1 = factory.make_catalog_provider()

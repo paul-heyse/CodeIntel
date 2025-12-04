@@ -80,9 +80,11 @@ def test_normalize_occurrence_valid() -> None:
     result = _normalize_occurrence(raw)
 
     assert result is not None
-    assert result["symbol"] == "test#symbol"
-    assert result["symbol_roles"] == 1
-    assert result["range"]["start_line"] == 10
+    assert result.get("symbol") == "test#symbol"
+    assert result.get("symbol_roles") == 1
+    result_range = result.get("range")
+    assert result_range is not None
+    assert result_range.get("start_line") == 10
 
 
 def test_normalize_occurrence_missing_symbol() -> None:
@@ -110,7 +112,7 @@ def test_normalize_occurrence_invalid_symbol_roles() -> None:
     result = _normalize_occurrence(raw)
 
     assert result is not None
-    assert result["symbol_roles"] is None
+    assert result.get("symbol_roles") is None
 
 
 def test_normalize_occurrence_non_mapping() -> None:
@@ -129,7 +131,7 @@ def test_normalize_occurrence_without_range() -> None:
     result = _normalize_occurrence(raw)
 
     assert result is not None
-    assert result["symbol"] == "test#sym"
+    assert result.get("symbol") == "test#sym"
     assert "range" not in result
 
 
@@ -148,8 +150,10 @@ def test_normalize_scip_document_valid() -> None:
     result = normalize_scip_document(raw)
 
     assert result is not None
-    assert result["relative_path"] == "src/file.py"
-    assert len(result["occurrences"]) == 1
+    assert result.get("relative_path") == "src/file.py"
+    result_occurrences = result.get("occurrences")
+    assert result_occurrences is not None
+    assert len(result_occurrences) == 1
 
 
 def test_normalize_scip_document_missing_path() -> None:
@@ -184,7 +188,9 @@ def test_normalize_scip_document_filters_invalid_occurrences() -> None:
     result = normalize_scip_document(raw)
 
     assert result is not None
-    assert len(result["occurrences"]) == 2
+    result_occurrences = result.get("occurrences")
+    assert result_occurrences is not None
+    assert len(result_occurrences) == 2
 
 
 def test_normalize_scip_document_normalizes_path() -> None:
@@ -197,7 +203,7 @@ def test_normalize_scip_document_normalizes_path() -> None:
     result = normalize_scip_document(raw)
 
     assert result is not None
-    assert result["relative_path"] == "src/file.py"
+    assert result.get("relative_path") == "src/file.py"
 
 
 # =============================================================================
@@ -261,11 +267,13 @@ def test_normalize_pytest_entry_valid() -> None:
     result = normalize_pytest_entry(raw)
 
     assert result is not None
-    assert result["nodeid"] == "tests/test_sample.py::test_func"
-    assert result["outcome"] == "passed"
-    assert result["keywords"] == ["slow"]  # Only truthy values, sorted
-    assert result["duration"] == 1.5
-    assert result["call"]["duration"] == 1.0
+    assert result.get("nodeid") == "tests/test_sample.py::test_func"
+    assert result.get("outcome") == "passed"
+    assert result.get("keywords") == ["slow"]  # Only truthy values, sorted
+    assert result.get("duration") == 1.5
+    result_call = result.get("call")
+    assert result_call is not None
+    assert result_call.get("duration") == 1.0
 
 
 def test_normalize_pytest_entry_missing_nodeid() -> None:
@@ -296,7 +304,7 @@ def test_normalize_pytest_entry_keywords_as_list() -> None:
     result = normalize_pytest_entry(raw)
 
     assert result is not None
-    assert result["keywords"] == ["alpha", "beta", "gamma"]
+    assert result.get("keywords") == ["alpha", "beta", "gamma"]
 
 
 def test_normalize_pytest_entry_duration_as_string() -> None:
@@ -306,7 +314,7 @@ def test_normalize_pytest_entry_duration_as_string() -> None:
     result = normalize_pytest_entry(raw)
 
     assert result is not None
-    assert result["duration"] == 1.5
+    assert result.get("duration") == 1.5
 
 
 def test_normalize_pytest_entry_invalid_duration() -> None:
@@ -316,7 +324,7 @@ def test_normalize_pytest_entry_invalid_duration() -> None:
     result = normalize_pytest_entry(raw)
 
     assert result is not None
-    assert result["duration"] is None
+    assert result.get("duration") is None
 
 
 def test_normalize_pytest_entry_defaults() -> None:
@@ -326,9 +334,9 @@ def test_normalize_pytest_entry_defaults() -> None:
     result = normalize_pytest_entry(raw)
 
     assert result is not None
-    assert result["outcome"] == "unknown"
-    assert result["status"] == "unknown"
-    assert result["keywords"] == []
+    assert result.get("outcome") == "unknown"
+    assert result.get("status") == "unknown"
+    assert result.get("keywords") == []
 
 
 def test_normalize_pytest_entry_call_without_duration() -> None:
@@ -338,7 +346,7 @@ def test_normalize_pytest_entry_call_without_duration() -> None:
     result = normalize_pytest_entry(raw)
 
     assert result is not None
-    assert result["call"] is not None
+    assert result.get("call") is not None
 
 
 # =============================================================================

@@ -165,13 +165,15 @@ def test_dominance_frontier_if_then_else() -> None:
     graph = nx.DiGraph()
     # Entry -> If -> Then -> Join
     #       -> If -> Else -> Join
-    graph.add_edges_from([
-        ("entry", "if"),
-        ("if", "then"),
-        ("if", "else"),
-        ("then", "join"),
-        ("else", "join"),
-    ])
+    graph.add_edges_from(
+        [
+            ("entry", "if"),
+            ("if", "then"),
+            ("if", "else"),
+            ("then", "join"),
+            ("else", "join"),
+        ]
+    )
     result = compute_dominance_frontier(graph, entry="entry")
 
     # Then and else have join in their frontier
@@ -292,13 +294,15 @@ def test_loop_headers_nested_loops() -> None:
     graph = nx.DiGraph()
     # Outer loop: A -> B -> C -> A
     # Inner loop: B -> D -> B
-    graph.add_edges_from([
-        ("A", "B"),
-        ("B", "C"),
-        ("C", "A"),
-        ("B", "D"),
-        ("D", "B"),
-    ])
+    graph.add_edges_from(
+        [
+            ("A", "B"),
+            ("B", "C"),
+            ("C", "A"),
+            ("B", "D"),
+            ("D", "B"),
+        ]
+    )
     result = find_natural_loop_headers(graph, entry="A")
 
     # A is outer loop header, B is inner loop header
@@ -311,12 +315,14 @@ def test_loop_headers_while_loop_pattern() -> None:
     graph = nx.DiGraph()
     # entry -> condition -> body -> condition (back edge)
     #                    -> exit
-    graph.add_edges_from([
-        ("entry", "condition"),
-        ("condition", "body"),
-        ("condition", "exit"),
-        ("body", "condition"),
-    ])
+    graph.add_edges_from(
+        [
+            ("entry", "condition"),
+            ("condition", "body"),
+            ("condition", "exit"),
+            ("body", "condition"),
+        ]
+    )
     result = find_natural_loop_headers(graph, entry="entry")
 
     assert "condition" in result
@@ -370,13 +376,15 @@ def test_longest_path_mixed_dag_and_cycle() -> None:
     graph = nx.DiGraph()
     # entry -> A -> B -> C -> A (cycle)
     #       -> exit
-    graph.add_edges_from([
-        ("entry", "A"),
-        ("A", "B"),
-        ("B", "C"),
-        ("C", "A"),  # Back edge creating cycle
-        ("C", "exit"),
-    ])
+    graph.add_edges_from(
+        [
+            ("entry", "A"),
+            ("A", "B"),
+            ("B", "C"),
+            ("C", "A"),  # Back edge creating cycle
+            ("C", "exit"),
+        ]
+    )
     result = compute_cfg_longest_path(graph)
 
     # Condensation has: entry -> SCC(A,B,C) -> exit
@@ -454,17 +462,19 @@ def test_all_dominance_complex_cfg() -> None:
     #            -> else -> join
     #       -> loop -> body -> loop (back edge)
     #               -> exit
-    graph.add_edges_from([
-        ("entry", "if"),
-        ("if", "then"),
-        ("if", "else"),
-        ("then", "join"),
-        ("else", "join"),
-        ("join", "loop"),
-        ("loop", "body"),
-        ("body", "loop"),  # Back edge
-        ("loop", "exit"),
-    ])
+    graph.add_edges_from(
+        [
+            ("entry", "if"),
+            ("if", "then"),
+            ("if", "else"),
+            ("then", "join"),
+            ("else", "join"),
+            ("join", "loop"),
+            ("loop", "body"),
+            ("body", "loop"),  # Back edge
+            ("loop", "exit"),
+        ]
+    )
     result = compute_all_dominance(graph, entry="entry")
 
     # Loop is a loop header due to back edge from body
