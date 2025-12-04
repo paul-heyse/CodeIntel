@@ -1,4 +1,9 @@
-"""Shared helpers for isolated gateway/DuckDB test setup."""
+"""Shared helpers for isolated gateway/DuckDB test setup.
+
+This module provides gateway and DuckDB connection helpers for tests,
+including functions for creating fresh gateways, ensuring macros are
+registered, and building backend services.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,8 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
+
+import duckdb
 
 from codeintel.graphs.engine import GraphEngine
 from codeintel.serving.backend import (
@@ -21,12 +28,93 @@ from codeintel.serving.mcp.models import FunctionSummaryResponse
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
-from codeintel.storage.ingest_macros import ensure_ingest_macros
+from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
+from codeintel.storage.metadata_bootstrap import INGEST_MACROS
+
+# Type alias for DuckDB connections (originally from duckdb.py)
+DuckDBConnection = duckdb.DuckDBPyConnection
+
+# Expected macros that must be registered for tests (originally from duckdb.py)
+MACROS_EXPECTED = {m.lower() for m in INGEST_MACROS.values()}
+
+
+def memory_con_with_macros() -> DuckDBConnection:
+    """
+    Create an in-memory DuckDB connection with ingest macros registered.
+
+    Returns
+    -------
+    DuckDBConnection
+        Connection to an in-memory DuckDB instance with macros ensured.
+    """
+    con = duckdb.connect(database=":memory:")
+    ensure_ingest_macros(con)
+    return con
+
+
+def gateway_with_macros(
+    *,
+    apply_schema: bool = True,
+    ensure_views: bool = True,
+    validate_schema: bool = True,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> StorageGateway:
+    """
+    Create an in-memory StorageGateway with schemas/views/macros ensured.
+
+    Parameters
+    ----------
+    apply_schema
+        Whether to apply database schema on creation.
+    ensure_views
+        Whether to ensure views are created.
+    validate_schema
+        Whether to validate the schema after creation.
+    repo
+        Optional repository identifier.
+    commit
+        Optional commit hash.
+
+    Returns
+    -------
+    StorageGateway
+        Gateway backed by an in-memory DuckDB connection with ingest macros present.
+
+    Raises
+    ------
+    RuntimeError
+        If ingest macros could not be registered.
+    """
+    gateway = _open_memory_gateway(
+        apply_schema=apply_schema,
+        ensure_views=ensure_views,
+        validate_schema=validate_schema,
+        repo=repo,
+        commit=commit,
+    )
+    ensure_ingest_macros(gateway.con)
+    registered = list_ingest_macros(gateway.con)
+    missing = MACROS_EXPECTED - registered
+    if missing:
+        ensure_ingest_macros(gateway.con)
+        registered = list_ingest_macros(gateway.con)
+        missing = MACROS_EXPECTED - registered
+    if missing:
+        gateway.close()
+        message = f"Missing ingest macros on gateway: {sorted(missing)}"
+        raise RuntimeError(message)
+    return gateway
 
 
 def open_fresh_duckdb(db_path: Path) -> StorageGateway:
     """
     Return a fresh DuckDB connection for tests.
+
+    Parameters
+    ----------
+    db_path
+        Path to the database file.
 
     Returns
     -------
@@ -63,6 +151,17 @@ def open_ingestion_gateway(
     Parameters mirror `open_memory_gateway`; schema application is enabled by default so
     ingestion steps can write tables without extra setup.
 
+    Parameters
+    ----------
+    apply_schema
+        Whether to apply database schema.
+    ensure_views
+        Whether to ensure views are created.
+    validate_schema
+        Whether to validate schema.
+    strict_schema
+        Whether to enforce strict schema mode.
+
     Returns
     -------
     StorageGateway
@@ -91,6 +190,17 @@ def open_ingestion_gateway_with_macros(
 
     This helper always registers ingest macros and ensures views to avoid missing
     metadata.* table-function errors in graph and analytics tests.
+
+    Parameters
+    ----------
+    apply_schema
+        Whether to apply database schema.
+    ensure_views
+        Whether to ensure views are created.
+    validate_schema
+        Whether to validate schema.
+    strict_schema
+        Whether to enforce strict schema mode.
 
     Returns
     -------
@@ -167,6 +277,27 @@ class ScopeCapturingQuery:
         qualname: str | None = None,
         scope: object | None = None,
     ) -> FunctionSummaryResponse:
+        """
+        Get function summary via delegate.
+
+        Parameters
+        ----------
+        urn
+            Function URN.
+        goid_h128
+            GOID hash.
+        rel_path
+            Relative path.
+        qualname
+            Qualified name.
+        scope
+            Query scope.
+
+        Returns
+        -------
+        FunctionSummaryResponse
+            Response from delegate.
+        """
         result = self._delegate(
             urn=urn,
             goid_h128=goid_h128,
@@ -241,3 +372,19 @@ def build_duckdb_query_service(
     return DuckDBQueryService(
         context=context, repositories=repositories, engine_provider=engine_provider
     )
+
+
+__all__ = [
+    "MACROS_EXPECTED",
+    "DuckDBConnection",
+    "ScopeCapturingQuery",
+    "build_duckdb_backend",
+    "build_duckdb_query_service",
+    "build_scope_parsing_service",
+    "gateway_with_macros",
+    "memory_con_with_macros",
+    "open_fresh_duckdb",
+    "open_ingestion_gateway",
+    "open_ingestion_gateway_with_macros",
+    "seed_tables",
+]

@@ -47,10 +47,10 @@ from codeintel.ingestion.recipes.executor import (
     RecipeExecutorContext,
 )
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.fixtures import ProvisionedGateway
+from tests._helpers.configs.provisioning_config import ProvisionedGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 from tests._helpers.ingest_setup import IngestTestSetup
-from tests._helpers.tooling import make_tools_config
+from tests._helpers.orchestration.tooling import make_tools_config
 
 # Test constants
 EXPECTED_TIMEOUT_60 = 60

@@ -1,7 +1,7 @@
-"""Reusable plugin packs for graph plugin tests using new infrastructure.
+"""Fake graph plugin implementations for testing.
 
-This module provides test plugins using the new graphs.core infrastructure,
-replacing the legacy analytics.graphs.plugins test helpers.
+This module provides fake implementations of graph plugins for tests
+that need deterministic plugin behavior.
 """
 
 from __future__ import annotations
@@ -245,6 +245,7 @@ def build_graph_plugin_pack(settings: GraphPluginPackSettings | None = None) -> 
 
 
 __all__ = [
+    "ExecuteFn",
     "GraphPluginPack",
     "GraphPluginPackCounters",
     "GraphPluginPackSettings",

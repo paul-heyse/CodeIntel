@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-03T14:05:00.616840+00:00",
-  "overall_status": "passed",
-  "duration_seconds": 9.194765,
+  "generated_at": "2025-12-04T04:37:55.936292+00:00",
+  "overall_status": "failed",
+  "duration_seconds": 10.673521,
   "results": [
     {
       "name": "ruff_check",
@@ -13,13 +13,16 @@
         "check",
         "--fix"
       ],
-      "status": "passed",
-      "return_code": 0,
-      "started_at": "2025-12-03T14:04:51.421927+00:00",
-      "ended_at": "2025-12-03T14:04:51.447408+00:00",
-      "duration_seconds": 0.025481,
+      "status": "failed",
+      "return_code": 1,
+      "started_at": "2025-12-04T04:37:45.262609+00:00",
+      "ended_at": "2025-12-04T04:37:45.289699+00:00",
+      "duration_seconds": 0.02709,
       "stdout": [
-        "All checks passed!"
+        "\u001b[4mtests/analytics/subsystems/test_affinity.py\u001b[0m:",
+        "  240\u001b[36m:\u001b[0m5 \u001b[1;31mPLC0415\u001b[0m `import` should be at the top-level of a file",
+        "",
+        "Found 1 error."
       ],
       "stderr": []
     },
@@ -34,9 +37,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-03T14:04:51.447425+00:00",
-      "ended_at": "2025-12-03T14:05:00.139440+00:00",
-      "duration_seconds": 8.692015,
+      "started_at": "2025-12-04T04:37:45.289717+00:00",
+      "ended_at": "2025-12-04T04:37:55.382755+00:00",
+      "duration_seconds": 10.093038,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -52,13 +55,14 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-03T14:05:00.139460+00:00",
-      "ended_at": "2025-12-03T14:05:00.616692+00:00",
-      "duration_seconds": 0.477232,
+      "started_at": "2025-12-04T04:37:55.382774+00:00",
+      "ended_at": "2025-12-04T04:37:55.936130+00:00",
+      "duration_seconds": 0.553356,
       "stdout": [],
       "stderr": [
+        " WARN PYTHONPATH environment variable is set to `/home/paul/CodeIntel/src:`. Checks in other environments may not include these paths.",
         " INFO Checking project configured at `/home/paul/CodeIntel/pyrefly.toml`",
-        " INFO 0 errors (2 suppressed)"
+        " INFO 0 errors (55 suppressed)"
       ]
     }
   ],

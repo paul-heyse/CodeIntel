@@ -9,7 +9,8 @@ from typer.testing import CliRunner
 from codeintel.cli import app
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.history import SnapshotSpec, create_snapshot_db
+from tests._helpers.configs.history_config import SnapshotSpec
+from tests._helpers.orchestration.history import create_snapshot_db
 
 EXPECTED_HISTORY_ROW_COUNT = 2
 

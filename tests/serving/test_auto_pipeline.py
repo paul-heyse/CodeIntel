@@ -40,8 +40,7 @@ from codeintel.serving.mcp.backend import DuckDBBackend, QueryBackend
 from codeintel.serving.operations.catalog import get_operation
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.run_tracking import PipelineRunTracking, PipelineStatus
-from tests._helpers.duckdb import gateway_with_macros
-from tests._helpers.gateway import build_duckdb_backend
+from tests._helpers.gateway import build_duckdb_backend, gateway_with_macros
 
 # -----------------------------------------------------------------------------
 # is_auto_pipeline_enabled Tests

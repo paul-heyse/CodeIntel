@@ -18,7 +18,7 @@ from codeintel.analytics.core.plugin_protocol import (
     PluginResult,
     ValidationResult,
 )
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 
 @pytest.mark.parametrize(
@@ -42,8 +42,7 @@ def test_plugin_capability_is_frozen() -> None:
     """Capabilities should be immutable after creation."""
     cap = PluginCapability(name="test")
 
-    with pytest.raises(AttributeError):
-        try_setattr(cap, "name", "other")
+    assert_cannot_setattr(cap, "name", "other")
 
 
 @dataclass(frozen=True)

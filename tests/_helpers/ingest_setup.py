@@ -37,7 +37,7 @@ from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
 from codeintel.ingestion.tool_service import ToolService
 from tests._helpers.fakes import FakeToolRunner, FakeToolService, FakeToolServiceConfig
-from tests._helpers.tooling import make_tools_config
+from tests._helpers.orchestration.tooling import make_tools_config
 
 if TYPE_CHECKING:
     from typing import Any

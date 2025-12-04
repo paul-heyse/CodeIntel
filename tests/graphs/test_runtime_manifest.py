@@ -12,10 +12,7 @@ focusing on specific paths not covered by test_runtime.py:
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 from typing import TYPE_CHECKING, Final
-
-import pytest
 
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.graphs.core.context import GraphExecutionContext
@@ -37,7 +34,7 @@ from codeintel.graphs.runtime.manifest import (
     skip_record,
 )
 from codeintel.storage.schemas import apply_all_schemas
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
 
 if TYPE_CHECKING:
@@ -599,8 +596,7 @@ def test_input_hash_payload_frozen() -> None:
         options_hash=None,
     )
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(payload, "repo", "other/repo")
+    assert_cannot_setattr(payload, "repo", "other/repo")
 
 
 def test_input_hash_payload_equality() -> None:
@@ -640,7 +636,6 @@ def test_manifest_state_frozen() -> None:
             options_hash="opt",
         )
 
-        with pytest.raises(FrozenInstanceError):
-            try_setattr(state, "plugin_name", "other")
+        assert_cannot_setattr(state, "plugin_name", "other")
     finally:
         gateway.close()

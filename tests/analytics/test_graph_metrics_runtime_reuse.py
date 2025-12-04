@@ -6,7 +6,7 @@ from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_r
 from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_graph_metrics
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
-from tests._helpers.fixtures import ProvisionedGateway
+from tests._helpers import ProvisionedGateway
 
 
 def test_compute_graph_metrics_reuses_runtime_engine(provisioned_repo: ProvisionedGateway) -> None:

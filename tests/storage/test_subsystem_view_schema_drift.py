@@ -7,7 +7,7 @@ import pytest
 
 from codeintel.storage.schemas import apply_all_schemas
 from codeintel.storage.views import create_all_views
-from tests._helpers.duckdb import memory_con_with_macros
+from tests._helpers.gateway import memory_con_with_macros
 
 EXPECTED_SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "docs.v_subsystem_profile": [

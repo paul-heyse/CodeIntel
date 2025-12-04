@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING
 from tests._helpers.builders import (
     GoidRow,
     ModuleRow,
-    insert_rows,
 )
+from tests._helpers.row_protocol import insert_rows
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext

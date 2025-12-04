@@ -18,7 +18,7 @@ from codeintel.ingestion.infrastructure_utilities import (
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 # Test constants for magic values
 EXPECTED_START_LINE = 5
@@ -107,8 +107,7 @@ def test_resolved_scip_config_frozen_dataclass(tmp_path: Path) -> None:
         cfg=None,
     )
 
-    with pytest.raises(AttributeError):
-        try_setattr(config, "repo", "new-repo")
+    assert_cannot_setattr(config, "repo", "new-repo")
 
 
 # --- ScipResolverInput Tests ---
@@ -182,8 +181,7 @@ def test_scip_resolver_input_frozen_dataclass() -> None:
     """Test that ScipResolverInput is immutable."""
     inputs = ScipResolverInput(repo="test-repo")
 
-    with pytest.raises(AttributeError):
-        try_setattr(inputs, "repo", "new-repo")
+    assert_cannot_setattr(inputs, "repo", "new-repo")
 
 
 # --- resolve_scip_inputs Tests ---
@@ -474,5 +472,4 @@ def test_module_record_frozen(tmp_path: Path) -> None:
         total=1,
     )
 
-    with pytest.raises(AttributeError):
-        try_setattr(record, "module_name", "new_name")
+    assert_cannot_setattr(record, "module_name", "new_name")

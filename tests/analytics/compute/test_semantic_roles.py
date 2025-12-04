@@ -90,9 +90,67 @@ class ContextBuilder:
         )
 
 
+def _coerce_str(value: object) -> str:
+    return str(value)
+
+
+def _coerce_optional_str(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def _coerce_optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float, str)):
+        return int(value)
+    msg = f"Expected int-convertible value, got {type(value)}"
+    raise TypeError(msg)
+
+
+def _coerce_tuple_str(value: object) -> tuple[str, ...]:
+    if isinstance(value, (tuple, list)):
+        return tuple(str(v) for v in value if v is not None)
+    msg = f"Expected sequence of strings, got {type(value)}"
+    raise TypeError(msg)
+
+
+def _coerce_pairs(value: object) -> tuple[tuple[str, object], ...]:
+    if isinstance(value, dict):
+        return tuple((str(k), v) for k, v in value.items())
+    if isinstance(value, (list, tuple)):
+        return tuple((str(k), v) for k, v in value)  # type: ignore[arg-type]
+    msg = f"Expected mapping or pair sequence, got {type(value)}"
+    raise TypeError(msg)
+
+
+def _coerce_graph(value: object) -> tuple[tuple[str, int], ...]:
+    if isinstance(value, dict):
+        return tuple((str(k), int(v)) for k, v in value.items())
+    if isinstance(value, (list, tuple)):
+        return tuple((str(k), int(v)) for k, v in value)  # type: ignore[arg-type]
+    msg = f"Expected mapping or pair sequence, got {type(value)}"
+    raise TypeError(msg)
+
+
+# Mapping of override keys to their coercion functions
+_OVERRIDE_COERCERS: dict[str, object] = {
+    "goid": _coerce_optional_int,
+    "loc": _coerce_optional_int,
+    "rel_path": _coerce_str,
+    "qualname": _coerce_str,
+    "decorators": _coerce_tuple_str,
+    "module_tags": _coerce_tuple_str,
+    "effects": _coerce_pairs,
+    "contracts": _coerce_pairs,
+    "module_name": _coerce_optional_str,
+    "graph": _coerce_graph,
+}
+
+
 def _make_context(builder: ContextBuilder | None = None, **overrides: object) -> FunctionContext:
-    """
-    Create a FunctionContext with default values.
+    """Create a FunctionContext with default values.
 
     Parameters
     ----------
@@ -105,62 +163,21 @@ def _make_context(builder: ContextBuilder | None = None, **overrides: object) ->
     -------
     FunctionContext
         The constructed function context.
+
+    Raises
+    ------
+    KeyError
+        If an unsupported override key is provided.
     """
     base = builder or ContextBuilder()
-
-    def _coerce_str(value: object) -> str:
-        return str(value)
-
-    def _coerce_optional_str(value: object) -> str | None:
-        return None if value is None else str(value)
-
-    def _coerce_optional_int(value: object) -> int | None:
-        if value is None:
-            return None
-        if isinstance(value, bool):
-            return int(value)
-        if isinstance(value, (int, float, str)):
-            return int(value)
-        raise TypeError(f"Expected int-convertible value, got {type(value)}")
-
-    def _coerce_tuple_str(value: object) -> tuple[str, ...]:
-        if isinstance(value, tuple):
-            return tuple(str(v) for v in value if v is not None)
-        if isinstance(value, list):
-            return tuple(str(v) for v in value if v is not None)
-        raise TypeError(f"Expected sequence of strings, got {type(value)}")
-
-    def _coerce_pairs(value: object) -> tuple[tuple[str, object], ...]:
-        if isinstance(value, dict):
-            return tuple((str(k), v) for k, v in value.items())
-        if isinstance(value, (list, tuple)):
-            return tuple((str(k), v) for k, v in value)  # type: ignore[arg-type]
-        raise TypeError(f"Expected mapping or pair sequence, got {type(value)}")
-
-    def _coerce_graph(value: object) -> tuple[tuple[str, int], ...]:
-        if isinstance(value, dict):
-            return tuple((str(k), int(v)) for k, v in value.items())
-        if isinstance(value, (list, tuple)):
-            return tuple((str(k), int(v)) for k, v in value)  # type: ignore[arg-type]
-        raise TypeError(f"Expected mapping or pair sequence, got {type(value)}")
-
     typed_overrides: dict[str, object] = {}
+
     for key, value in overrides.items():
-        match key:
-            case "goid" | "loc":
-                typed_overrides[key] = _coerce_optional_int(value)
-            case "rel_path" | "qualname":
-                typed_overrides[key] = _coerce_str(value)
-            case "decorators" | "module_tags":
-                typed_overrides[key] = _coerce_tuple_str(value)
-            case "effects" | "contracts":
-                typed_overrides[key] = _coerce_pairs(value)
-            case "module_name":
-                typed_overrides[key] = _coerce_optional_str(value)
-            case "graph":
-                typed_overrides[key] = _coerce_graph(value)
-            case _:
-                raise KeyError(f"Unsupported override key: {key}")
+        coercer = _OVERRIDE_COERCERS.get(key)
+        if coercer is None:
+            msg = f"Unsupported override key: {key}"
+            raise KeyError(msg)
+        typed_overrides[key] = coercer(value)  # type: ignore[operator]
 
     updated = replace(base, **typed_overrides)
     return updated.build()

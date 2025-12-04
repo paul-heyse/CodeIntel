@@ -15,7 +15,7 @@ from codeintel.analytics.core.pipeline_bridge import (
 from codeintel.analytics.core.plugins import TEST_PROFILE_PLUGIN
 from codeintel.config import ConfigBuilder
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
-from tests._helpers.fixtures import provisioned_gateway
+from tests._helpers import provisioned_gateway
 
 
 def test_tests_profile_plugin_runtime(tmp_path: Path) -> None:

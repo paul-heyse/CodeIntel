@@ -512,6 +512,27 @@ class DFGEdgeRow:
 class DocstringRow:
     """Row for core.docstrings."""
 
+    __table__: ClassVar[str] = "core.docstrings"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "rel_path",
+        "module",
+        "qualname",
+        "kind",
+        "lineno",
+        "end_lineno",
+        "raw_docstring",
+        "style",
+        "short_desc",
+        "long_desc",
+        "params",
+        "returns",
+        "raises",
+        "examples",
+        "created_at",
+    )
+
     repo: str
     commit: str
     rel_path: str
@@ -575,6 +596,39 @@ class DocstringRow:
 @dataclass(frozen=True)
 class FunctionMetricsRow:
     """Row for analytics.function_metrics."""
+
+    __table__: ClassVar[str] = "analytics.function_metrics"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "function_goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "start_line",
+        "end_line",
+        "loc",
+        "logical_loc",
+        "param_count",
+        "positional_params",
+        "keyword_only_params",
+        "has_varargs",
+        "has_varkw",
+        "is_async",
+        "is_generator",
+        "return_count",
+        "yield_count",
+        "raise_count",
+        "cyclomatic_complexity",
+        "max_nesting_depth",
+        "stmt_count",
+        "decorator_count",
+        "has_docstring",
+        "complexity_bucket",
+        "created_at",
+    )
 
     function_goid_h128: int
     urn: str
@@ -676,6 +730,35 @@ class FunctionMetricsRow:
 class FunctionTypesRow:
     """Row for analytics.function_types."""
 
+    __table__: ClassVar[str] = "analytics.function_types"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "function_goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "start_line",
+        "end_line",
+        "total_params",
+        "annotated_params",
+        "unannotated_params",
+        "param_typed_ratio",
+        "has_return_annotation",
+        "return_type",
+        "return_type_source",
+        "type_comment",
+        "param_types",
+        "fully_typed",
+        "partial_typed",
+        "untyped",
+        "typedness_bucket",
+        "typedness_source",
+        "created_at",
+    )
+
     function_goid_h128: int
     urn: str
     repo: str
@@ -764,6 +847,26 @@ class FunctionTypesRow:
 class CoverageFunctionRow:
     """Row for analytics.coverage_functions."""
 
+    __table__: ClassVar[str] = "analytics.coverage_functions"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "function_goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "start_line",
+        "end_line",
+        "executable_lines",
+        "covered_lines",
+        "coverage_ratio",
+        "tested",
+        "untested_reason",
+        "created_at",
+    )
+
     function_goid_h128: int
     urn: str
     repo: str
@@ -817,6 +920,56 @@ class CoverageFunctionRow:
             self.coverage_ratio,
             self.tested,
             self.untested_reason,
+            _iso(self.created_at),
+        )
+
+
+@dataclass(frozen=True)
+class CoverageLineRow:
+    """Row for analytics.coverage_lines."""
+
+    __table__: ClassVar[str] = "analytics.coverage_lines"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "rel_path",
+        "line",
+        "is_executable",
+        "is_covered",
+        "hits",
+        "context_count",
+        "created_at",
+    )
+
+    repo: str
+    commit: str
+    rel_path: str
+    line: int
+    is_executable: bool
+    is_covered: bool
+    hits: int
+    context_count: int
+    created_at: datetime | None = None
+
+    def to_tuple(
+        self,
+    ) -> tuple[str, str, str, int, bool, bool, int, int, str]:
+        """Serialize row to database insert order.
+
+        Returns
+        -------
+        tuple
+            Values in column order for INSERT.
+        """
+        return (
+            self.repo,
+            self.commit,
+            self.rel_path,
+            self.line,
+            self.is_executable,
+            self.is_covered,
+            self.hits,
+            self.context_count,
             _iso(self.created_at),
         )
 
@@ -1037,6 +1190,23 @@ class TestCoverageEdgeRow:
     """Row for analytics.test_coverage_edges."""
 
     __test__ = False
+    __table__: ClassVar[str] = "analytics.test_coverage_edges"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "test_id",
+        "test_goid_h128",
+        "function_goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "qualname",
+        "covered_lines",
+        "executable_lines",
+        "coverage_ratio",
+        "last_status",
+        "created_at",
+    )
+
     test_id: str
     function_goid_h128: int
     urn: str
@@ -1089,6 +1259,17 @@ class TestCoverageEdgeRow:
 class TypednessRow:
     """Row for analytics.typedness."""
 
+    __table__: ClassVar[str] = "analytics.typedness"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "path",
+        "type_error_count",
+        "annotation_ratio",
+        "untyped_defs",
+        "overlay_needed",
+    )
+
     repo: str
     commit: str
     path: str
@@ -1112,6 +1293,18 @@ class TypednessRow:
 @dataclass(frozen=True)
 class StaticDiagnosticsRow:
     """Row for analytics.static_diagnostics."""
+
+    __table__: ClassVar[str] = "analytics.static_diagnostics"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "rel_path",
+        "pyrefly_errors",
+        "pyright_errors",
+        "ruff_errors",
+        "total_errors",
+        "has_errors",
+    )
 
     repo: str
     commit: str
@@ -1139,6 +1332,17 @@ class StaticDiagnosticsRow:
 class HotspotRow:
     """Row for analytics.hotspots."""
 
+    __table__: ClassVar[str] = "analytics.hotspots"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "rel_path",
+        "commit_count",
+        "author_count",
+        "lines_added",
+        "lines_deleted",
+        "complexity",
+        "score",
+    )
+
     rel_path: str
     commit_count: int
     author_count: int
@@ -1162,6 +1366,18 @@ class HotspotRow:
 @dataclass(frozen=True)
 class AstMetricsRow:
     """Row for core.ast_metrics."""
+
+    __table__: ClassVar[str] = "core.ast_metrics"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "rel_path",
+        "node_count",
+        "function_count",
+        "class_count",
+        "avg_depth",
+        "max_depth",
+        "complexity",
+        "generated_at",
+    )
 
     rel_path: str
     node_count: int
@@ -1190,6 +1406,18 @@ class AstMetricsRow:
 @dataclass(frozen=True)
 class FunctionValidationRow:
     """Row for analytics.function_validation."""
+
+    __table__: ClassVar[str] = "analytics.function_validation"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "function_goid_h128",
+        "rel_path",
+        "qualname",
+        "issue",
+        "detail",
+        "created_at",
+    )
 
     repo: str
     commit: str
@@ -1255,6 +1483,26 @@ class ConfigValueRow:
 class GraphMetricsModulesExtRow:
     """Row for analytics.graph_metrics_modules_ext."""
 
+    __table__: ClassVar[str] = "analytics.graph_metrics_modules_ext"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "module",
+        "import_betweenness",
+        "import_closeness",
+        "import_eigenvector",
+        "import_harmonic",
+        "import_k_core",
+        "import_constraint",
+        "import_effective_size",
+        "import_community_id",
+        "import_component_id",
+        "import_component_size",
+        "import_scc_id",
+        "import_scc_size",
+        "created_at",
+    )
+
     repo: str
     commit: str
     module: str
@@ -1316,6 +1564,24 @@ class GraphMetricsModulesExtRow:
 class SymbolGraphMetricsModulesRow:
     """Row for analytics.symbol_graph_metrics_modules."""
 
+    __table__: ClassVar[str] = "analytics.symbol_graph_metrics_modules"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "module",
+        "symbol_betweenness",
+        "symbol_closeness",
+        "symbol_eigenvector",
+        "symbol_harmonic",
+        "symbol_k_core",
+        "symbol_constraint",
+        "symbol_effective_size",
+        "symbol_community_id",
+        "symbol_component_id",
+        "symbol_component_size",
+        "created_at",
+    )
+
     repo: str
     commit: str
     module: str
@@ -1371,6 +1637,15 @@ class SymbolGraphMetricsModulesRow:
 class SubsystemModuleRow:
     """Row for analytics.subsystem_modules."""
 
+    __table__: ClassVar[str] = "analytics.subsystem_modules"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "subsystem_id",
+        "module",
+        "role",
+    )
+
     repo: str
     commit: str
     subsystem_id: str
@@ -1384,6 +1659,28 @@ class SubsystemModuleRow:
 @dataclass(frozen=True)
 class SubsystemRow:
     """Row for analytics.subsystems."""
+
+    __table__: ClassVar[str] = "analytics.subsystems"
+    __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "subsystem_id",
+        "name",
+        "description",
+        "module_count",
+        "modules_json",
+        "entrypoints_json",
+        "internal_edge_count",
+        "external_edge_count",
+        "fan_in",
+        "fan_out",
+        "function_count",
+        "avg_risk_score",
+        "max_risk_score",
+        "high_risk_function_count",
+        "risk_level",
+        "created_at",
+    )
 
     repo: str
     commit: str

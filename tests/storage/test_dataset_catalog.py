@@ -16,7 +16,7 @@ from codeintel.storage.catalog import (
     write_markdown_catalog,
 )
 from codeintel.storage.datasets import DatasetRegistry
-from tests._helpers.duckdb import memory_con_with_macros
+from tests._helpers.gateway import memory_con_with_macros
 
 
 def _sample_registry() -> DatasetRegistry:

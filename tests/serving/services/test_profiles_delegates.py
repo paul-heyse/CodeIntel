@@ -16,7 +16,7 @@ from codeintel.serving.services.query_service import LocalQueryService
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
-    from tests._helpers.fixtures import ProvisionedGateway
+    from tests._helpers import ProvisionedGateway
 
 # Test constants
 DEFAULT_LIMIT: Final = 10

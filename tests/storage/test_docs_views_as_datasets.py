@@ -11,7 +11,7 @@ from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
 from codeintel.storage.repositories.datasets import DatasetReadRepository
 from codeintel.storage.schemas import apply_all_schemas
 from codeintel.storage.views import DERIVED_DOCS_VIEWS, create_all_views
-from tests._helpers.duckdb import memory_con_with_macros
+from tests._helpers.gateway import memory_con_with_macros
 
 
 def _fresh_connection() -> duckdb.DuckDBPyConnection:

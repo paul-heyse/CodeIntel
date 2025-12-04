@@ -205,7 +205,7 @@ def test_effect_analysis_immutable() -> None:
 
 def test_effect_analysis_evidence_structure() -> None:
     """EffectAnalysis can store complex evidence."""
-    evidence = {
+    evidence: dict[str, list[dict[str, object]]] = {
         "io": [
             {"path": "module.py", "lineno": 10, "snippet": "print(x)"},
             {"path": "module.py", "lineno": 20, "snippet": "open(f)"},

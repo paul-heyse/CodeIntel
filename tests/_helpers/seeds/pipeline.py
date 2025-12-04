@@ -18,8 +18,8 @@ from tests._helpers.builders import (
     GoidRow,
     ModuleRow,
     TestCatalogRow,
-    insert_rows,
 )
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.seeds.span import (
     SPAN_CALLER_END,
     SPAN_CALLER_GOID,

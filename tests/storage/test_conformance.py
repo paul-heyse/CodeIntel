@@ -15,7 +15,7 @@ from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
 from codeintel.storage.schema_generation import generate_export_schemas
 from codeintel.storage.schemas import apply_all_schemas
-from tests._helpers.duckdb import memory_con_with_macros
+from tests._helpers.gateway import memory_con_with_macros
 
 
 def test_conformance_report_ok_when_no_issues() -> None:

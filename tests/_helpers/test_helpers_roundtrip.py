@@ -8,6 +8,13 @@ from pathlib import Path
 import pytest
 
 from codeintel.storage.gateway import StorageGateway
+from tests._helpers import (
+    GatewayOptions,
+    ProvisionedGateway,
+    ProvisioningConfig,
+    provision_docs_export_ready,
+    provisioned_gateway,
+)
 from tests._helpers.assertions import assert_columns_not_null, assert_table_has_rows
 from tests._helpers.builders import (
     CallGraphEdgeRow,
@@ -24,13 +31,6 @@ from tests._helpers.builders import (
     insert_goids,
     insert_graph_metrics_modules_ext,
     insert_symbol_graph_metrics_modules,
-)
-from tests._helpers.fixtures import (
-    GatewayOptions,
-    ProvisionedGateway,
-    ProvisioningConfig,
-    provision_docs_export_ready,
-    provisioned_gateway,
 )
 
 

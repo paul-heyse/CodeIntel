@@ -8,8 +8,8 @@ import pytest
 
 from codeintel.config.steps_graphs import GraphRunScope
 from codeintel.serving.mcp.models import GraphScopePayload
+from tests._helpers.fakes.serving import build_serving_scope_pack
 from tests._helpers.gateway import build_scope_parsing_service
-from tests._helpers.serving_plugin_packs import build_serving_scope_pack
 
 
 def test_local_query_service_parses_graph_scope() -> None:

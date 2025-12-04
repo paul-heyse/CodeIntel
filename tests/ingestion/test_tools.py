@@ -65,7 +65,11 @@ from codeintel.ingestion.tools.results import (
     parse_test_markers,
 )
 from codeintel.ingestion.tools.scip import ScipPlugin
-from tests._helpers.tooling import ToolingOutputs, build_tooling_context, run_static_tooling
+from tests._helpers.orchestration.tooling import (
+    ToolingOutputs,
+    build_tooling_context,
+    run_static_tooling,
+)
 
 # =============================================================================
 # Test Constants

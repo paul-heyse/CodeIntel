@@ -25,7 +25,7 @@ from codeintel.graphs.validation.checks import (
 )
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
-from tests._helpers.fixtures import seed_graph_validation_gaps
+from tests._helpers import seed_graph_validation_gaps
 
 # ---------------------------------------------------------------------------
 # Constants

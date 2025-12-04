@@ -12,8 +12,9 @@ from codeintel.storage.gateway import (
     open_gateway,
 )
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.history import SnapshotSpec, create_snapshot_db
-from tests._helpers.tooling import init_git_repo_with_history
+from tests._helpers.configs.history_config import SnapshotSpec
+from tests._helpers.orchestration.history import create_snapshot_db
+from tests._helpers.orchestration.tooling import init_git_repo_with_history
 
 
 def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
@@ -90,4 +91,4 @@ def test_history_timeseries_aggregates_functions(tmp_path: Path) -> None:
     expect_equal(kinds, {"function"})
     expect_equal(commits, {commit_new, commit_old})
     stable_ids = {row[3] for row in rows}
-    expect_true(len(stable_ids) == 1, "Stable ID should be consistent across commits.")
+    expect_true(len(stable_ids) == 1, message="Stable ID should be consistent across commits.")

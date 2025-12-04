@@ -1,4 +1,8 @@
-"""Helpers that exercise the real tooling stack for tests."""
+"""Helpers that exercise the real tooling stack for tests.
+
+This module provides utilities for testing the real tooling stack,
+including ToolRunner, ToolService, coverage generation, and git history.
+"""
 
 from __future__ import annotations
 
@@ -328,3 +332,16 @@ def generate_coverage_for_function(
         coverage.stop()
         coverage.save()
     return CoverageArtifact(repo_root=repo_root, coverage_file=target_cov)
+
+
+__all__ = [
+    "CoverageArtifact",
+    "GitRepoContext",
+    "ToolingContext",
+    "ToolingOutputs",
+    "build_tooling_context",
+    "generate_coverage_for_function",
+    "init_git_repo_with_history",
+    "make_tools_config",
+    "run_static_tooling",
+]

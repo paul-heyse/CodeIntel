@@ -9,7 +9,7 @@ import pytest
 
 from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
 from codeintel.analytics.profiles.types import FunctionProfileInputs
-from tests._helpers.duckdb import memory_con_with_macros
+from tests._helpers.gateway import memory_con_with_macros
 
 FAN_OUT_TWO = 2
 FAN_IN_ZERO = 0

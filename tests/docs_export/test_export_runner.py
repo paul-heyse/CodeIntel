@@ -9,7 +9,7 @@ from typing import Protocol, cast
 from codeintel.pipeline.export.export_jsonl import ExportCallOptions
 from codeintel.pipeline.export.runner import ExportOptions, run_validated_exports
 from codeintel.storage.gateway import StorageConfig, StorageGateway
-from tests._helpers.fixtures import provision_docs_export_ready
+from tests._helpers import provision_docs_export_ready
 
 
 class _StubGateway(Protocol):

@@ -14,7 +14,7 @@ from codeintel.storage.repositories import (
     TestRepository,
 )
 from codeintel.storage.repositories.data_models import DataModelRepository
-from tests._helpers.fixtures import ProvisionedGateway
+from tests._helpers import ProvisionedGateway
 
 
 def _expect_true(condition: object, message: str) -> None:

@@ -9,7 +9,7 @@ import pytest
 
 from codeintel.analytics.dependencies import load_config_key_map
 from codeintel.storage.sql_helpers import ensure_schema
-from tests._helpers.fixtures import provision_gateway_with_repo
+from tests._helpers import provision_gateway_with_repo
 
 
 def test_load_config_keys_filters_repo(tmp_path: Path) -> None:

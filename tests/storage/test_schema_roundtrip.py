@@ -29,7 +29,7 @@ from codeintel.storage.schema_generation import (
     validate_row_with_schema,
 )
 from codeintel.storage.schemas import apply_all_schemas
-from tests._helpers.duckdb import memory_con_with_macros
+from tests._helpers.gateway import memory_con_with_macros
 
 
 def _json_safe(value: object) -> object:

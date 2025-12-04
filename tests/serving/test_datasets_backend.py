@@ -21,7 +21,7 @@ from codeintel.serving.backend.datasets import (
     validate_dataset_registry,
 )
 from codeintel.serving.backend.pagination import BackendLimits
-from tests._helpers.duckdb import gateway_with_macros
+from tests._helpers.gateway import gateway_with_macros
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

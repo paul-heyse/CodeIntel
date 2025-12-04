@@ -12,7 +12,7 @@ from codeintel.analytics.profiles import (
 )
 from codeintel.config import ConfigBuilder
 from codeintel.storage.gateway import DuckDBConnection
-from tests._helpers.fixtures import ProvisionedGateway, seed_profile_data
+from tests._helpers import ProvisionedGateway, seed_profile_data
 
 EPSILON = 1e-6
 REL_PATH = "pkg/mod.py"

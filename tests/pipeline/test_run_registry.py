@@ -20,7 +20,7 @@ from codeintel.storage.run_tracking import (
     PipelineStepRecord,
     StepCompletionParams,
 )
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 
 @pytest.fixture
@@ -404,8 +404,7 @@ class TestDataclasses:
             started_at=now,
         )
 
-        with pytest.raises(AttributeError):
-            try_setattr(record, "status", "succeeded")
+        assert_cannot_setattr(record, "status", "succeeded")
 
     @staticmethod
     def test_pipeline_step_record_frozen() -> None:
@@ -420,5 +419,4 @@ class TestDataclasses:
             started_at=now,
         )
 
-        with pytest.raises(AttributeError):
-            try_setattr(record, "status", "succeeded")
+        assert_cannot_setattr(record, "status", "succeeded")

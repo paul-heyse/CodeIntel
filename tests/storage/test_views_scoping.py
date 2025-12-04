@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests._helpers.fixtures import docs_views_ready_gateway, seed_call_graph_scoping
+from tests._helpers import docs_views_ready_gateway, seed_call_graph_scoping
 
 
 def test_call_graph_view_scopes_edges_to_repo_commit(tmp_path: Path) -> None:

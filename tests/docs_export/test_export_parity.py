@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests._helpers.fixtures import ProvisionedGateway
+from tests._helpers import ProvisionedGateway
 
 
 def test_export_mappings_cover_required_tables(

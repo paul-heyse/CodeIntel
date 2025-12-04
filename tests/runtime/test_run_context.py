@@ -13,7 +13,7 @@ import pytest
 from codeintel.config.primitives import SnapshotRef
 from codeintel.runtime import RunContext, new_run_context, new_run_id
 from codeintel.runtime.context import RunKind, TriggerKind
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 # Constants for test assertions
 UNIQUENESS_SAMPLE_SIZE = 100
@@ -148,8 +148,7 @@ class TestRunContext:
             snapshot=snapshot,
             trigger="cli",
         )
-        with pytest.raises(AttributeError):
-            try_setattr(ctx, "run_id", "different")
+        assert_cannot_setattr(ctx, "run_id", "different")
 
 
 class TestNewRunContext:

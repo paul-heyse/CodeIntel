@@ -39,7 +39,7 @@ from codeintel.serving.services.query_service import HttpQueryService, LocalQuer
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
-    from tests._helpers.fixtures import ProvisionedGateway
+    from tests._helpers import ProvisionedGateway
 
 # Constants for test values
 DEFAULT_LIMIT = 100

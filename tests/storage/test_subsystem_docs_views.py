@@ -7,7 +7,7 @@ import pytest
 
 from codeintel.storage.schemas import apply_all_schemas
 from codeintel.storage.views import create_all_views
-from tests._helpers.duckdb import memory_con_with_macros
+from tests._helpers.gateway import memory_con_with_macros
 
 
 def _require(*, condition: bool, message: str) -> None:

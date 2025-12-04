@@ -43,7 +43,7 @@ from codeintel.ingestion.recipes.executor import (
     RecipeExecutor,
     RecipeExecutorContext,
 )
-from tests._helpers.fixtures import ProvisionedGateway
+from tests._helpers import ProvisionedGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 from tests._helpers.ingest_setup import IngestTestSetup
 

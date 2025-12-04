@@ -19,7 +19,7 @@ from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import build_duckdb_query_service
 
 if TYPE_CHECKING:
-    from tests._helpers.fixtures import ProvisionedGateway
+    from tests._helpers import ProvisionedGateway
 
 # Test constants
 CUSTOM_DEFAULT_LIMIT = 25

@@ -33,8 +33,8 @@ from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.schemas import apply_all_schemas
-from tests._helpers.gateway import open_ingestion_gateway_with_macros
 from tests._helpers.configs import GraphEngineSeed
+from tests._helpers.gateway import open_ingestion_gateway_with_macros
 from tests._helpers.orchestration import build_seeded_graph_engine
 
 if TYPE_CHECKING:

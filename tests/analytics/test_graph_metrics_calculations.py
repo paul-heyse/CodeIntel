@@ -8,7 +8,7 @@ import pytest
 
 from codeintel.analytics.graphs import compute_graph_metrics
 from codeintel.config import ConfigBuilder
-from tests._helpers.fixtures import (
+from tests._helpers import (
     GraphMetricsGatewayOptions,
     graph_metrics_ready_gateway,
     seed_function_graph_cycle,

@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from codeintel.cli import app
 from codeintel.pipeline.orchestration.prefect_flow import ExportArgs, export_docs_flow
-from tests._helpers.fixtures import seed_docs_export_minimal
+from tests._helpers import seed_docs_export_minimal
 from tests._helpers.gateway import open_fresh_duckdb
 
 runner = CliRunner()

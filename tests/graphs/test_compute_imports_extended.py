@@ -11,10 +11,7 @@ from `codeintel.graphs.compute.imports`, including:
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 from typing import Final
-
-import pytest
 
 from codeintel.graphs.compute.imports import (
     ImportAnalysisResult,
@@ -26,7 +23,7 @@ from codeintel.graphs.compute.imports import (
     compute_layers,
     compute_scc,
 )
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 # Constants
 EXPECTED_SIMPLE_EDGE_COUNT: Final = 2
@@ -56,8 +53,7 @@ def test_import_edge_frozen() -> None:
     """ImportEdge is frozen (immutable)."""
     edge = ImportEdge(src_module="a", dst_module="b")
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(edge, "src_module", "changed")
+    assert_cannot_setattr(edge, "src_module", "changed")
 
 
 def test_import_edge_equality() -> None:
@@ -320,8 +316,7 @@ def test_import_module_row_frozen() -> None:
         cycle_group=0,
     )
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(row, "module", "changed")
+    assert_cannot_setattr(row, "module", "changed")
 
 
 # Tests: ImportEdgeRow dataclass
@@ -360,8 +355,7 @@ def test_import_edge_row_frozen() -> None:
         module_layer=0,
     )
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(row, "src_module", "changed")
+    assert_cannot_setattr(row, "src_module", "changed")
 
 
 # Tests: ImportAnalysisResult dataclass
@@ -391,5 +385,4 @@ def test_import_analysis_result_frozen() -> None:
         layer_map={},
     )
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(result, "edges", (ImportEdge("a", "b"),))
+    assert_cannot_setattr(result, "edges", (ImportEdge("a", "b"),))

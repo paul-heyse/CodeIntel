@@ -15,7 +15,7 @@ from codeintel.pipeline.export.export_jsonl import (
 )
 from codeintel.pipeline.export.export_parquet import export_all_parquet, export_dataset_to_parquet
 from codeintel.storage.gateway import DatasetRegistry
-from tests._helpers.fixtures import ProvisionedGateway, provision_docs_export_ready
+from tests._helpers import ProvisionedGateway, provision_docs_export_ready
 
 
 @pytest.fixture

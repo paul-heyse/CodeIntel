@@ -13,7 +13,7 @@ focusing on specific paths not covered by test_runtime.py:
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError, dataclass, fields, replace
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Final
 
@@ -43,7 +43,7 @@ from codeintel.graphs.runtime.planning import (
     PlanCoordinates,
     plan_graph_plugin_run,
 )
-from tests._helpers.frozen_test import try_setattr
+from tests._helpers.assertions import assert_cannot_setattr
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16
@@ -618,8 +618,7 @@ def test_plan_coordinates_frozen() -> None:
         scope=GraphRunScope(),
     )
 
-    with pytest.raises(FrozenInstanceError):
-        try_setattr(coords, "repo", "other/repo")
+    assert_cannot_setattr(coords, "repo", "other/repo")
 
 
 def test_plan_coordinates_equality() -> None:

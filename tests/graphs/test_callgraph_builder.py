@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import cast
 
-from tests._helpers.fixtures import CallgraphFixtureOptions, build_callgraph_fixture_repo
+from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
 
 
 def _normalize_callee(value: object) -> int | None:
