@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/recipes/executor.py
+# hypothesis_version: 6.148.6
+
+[0.0, 'Executing plugin: %s', 'ExecutorConfig', 'RecipeExecutor', 'change_tracker', 'duration_s', 'error', 'execute_recipe', 'failed', 'ingestion', 'partial', 'repo_scan', 'skipped', 'succeeded', 'success']

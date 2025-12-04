@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/datasets/__init__.py
+# hypothesis_version: 6.148.6
+
+['DatasetRegistry', 'dataset_for_name', 'dataset_for_table', 'describe_dataset', 'list_dataset_specs']

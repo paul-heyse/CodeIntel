@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/schema/__init__.py
+# hypothesis_version: 6.148.6
+
+['INDEX_DDL', 'SCHEMAS', 'TABLE_DDL', 'apply_all_schemas', 'build_validator', 'create_schemas']

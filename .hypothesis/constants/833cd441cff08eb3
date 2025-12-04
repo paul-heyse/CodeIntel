@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/macros/registration.py
+# hypothesis_version: 6.148.6
+
+['.', 'ensure_ingest_macros', 'list_ingest_macros']

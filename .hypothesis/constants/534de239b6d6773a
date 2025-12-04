@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/ingestion/runtime/executor.py
+# hypothesis_version: 6.148.6
+
+[0.0, 'IngestExecutorConfig', 'IngestRunReport', 'PluginFatalError', 'PluginSeverity', 'execute_plugin', 'execute_plugin_batch', 'failed', 'fatal', 'running', 'skip_on_error', 'skipped', 'soft_fail', 'succeeded', 'timeout']

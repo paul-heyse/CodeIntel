@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/testing/profiles/builder.py
+# hypothesis_version: 6.148.6
+
+[-1.0, 0.0, 0.4, '.', 'BehavioralProfile', 'EMPTY_TEST_METRICS', 'SpanConfig', 'SpanState', 'TestGraphMetrics', 'api', 'assert_count', 'async', 'boundary', 'build_test_ast_index', 'build_test_profile', 'cls', 'concurrency', 'concurrent', 'corner', 'coverage_ratio', 'coverage_share', 'database', 'db', 'db_interaction', 'e2e', 'edge', 'edge_cases', 'error', 'error_paths', 'exception', 'fail', 'funcs', 'function_goid_h128', 'functions_covered', 'happy', 'happy_path', 'http', 'infer_behavior_tags', 'integration', 'integration_scenario', 'invalid', 'io_heavy', 'known_bug', 'libs', 'lineno', 'markers', 'module', 'name', 'network', 'network_interaction', 'ok', 'parallel', 'process_interaction', 'pytest', 'qualname', 'race', 'raise_count', 'raises', 'rel_path', 'self', 'slow', 'status', 'subsystem_id', 'subsystems_covered', 'success', 'thread', 'urn', 'xfail']

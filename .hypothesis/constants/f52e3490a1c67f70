@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/resources/module_map.py
+# hypothesis_version: 6.148.6
+
+['ModuleMap', 'ModuleMapProvider']

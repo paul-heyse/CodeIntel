@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/helpers/db.py
+# hypothesis_version: 6.148.6
+
+["'", "''", '*', '.', 'DUCKDB_ERRORS', 'macro_insert_rows', 'safe_row_counts']

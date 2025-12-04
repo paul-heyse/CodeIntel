@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/macros/__init__.py
+# hypothesis_version: 6.148.6
+
+['DEFAULT_LIMIT', 'RenderedMacro', 'ensure_ingest_macros', 'list_ingest_macros', 'render_macro']

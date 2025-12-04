@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/analytics/recipes/dsl.py
+# hypothesis_version: 6.148.6
+
+['CoreRecipeBuilder', 'RecipeBuilder', 'core_recipe', 'core_stage', 'recipe']
