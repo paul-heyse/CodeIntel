@@ -4,12 +4,14 @@ This module provides a registry for managing resource providers that
 works with both graph and analytics plugins.
 
 The registry supports both type-based and string-based lookup, enabling
-TYPE_CHECKING imports without runtime circular dependencies.
+TYPE_CHECKING imports without runtime circular dependencies. It also
+supports factory registration for lazy provider instantiation.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
 from codeintel.core.resources.protocol import ResourceError
@@ -64,6 +66,7 @@ class ResourceRegistry:
         """Initialize an empty registry."""
         self._providers: dict[type[Any], object] = {}
         self._by_name: dict[str, object] = {}
+        self._factories: dict[str, Callable[[], object]] = {}
 
     def register(
         self,
@@ -167,6 +170,74 @@ class ResourceRegistry:
             log.debug("Registered resource provider: %s", resource_type.__name__)
         return previous
 
+    def register_provider(self, provider: object) -> None:
+        """Register a resource provider using its RESOURCE_NAME attribute.
+
+        Convenience method for providers that define a RESOURCE_NAME class attribute.
+        The provider is registered by name only (not by type).
+
+        Parameters
+        ----------
+        provider
+            Resource provider instance with a RESOURCE_NAME attribute.
+
+        Raises
+        ------
+        ValueError
+            If the provider does not have a RESOURCE_NAME attribute.
+        """
+        name = getattr(type(provider), "RESOURCE_NAME", None)
+        if name is None:
+            message = f"Provider {type(provider).__name__} has no RESOURCE_NAME attribute"
+            raise ValueError(message)
+        if self.has_by_name(name):
+            log.warning("Overwriting resource provider: %s", name)
+        self.register_by_name(name, provider)
+        log.debug("Registered resource provider: %s", name)
+
+    def register_factory(
+        self,
+        name: str,
+        factory: Callable[[], object],
+    ) -> None:
+        """Register a factory for lazy provider creation.
+
+        Factories are called lazily when the resource is first requested.
+        Once instantiated, the provider is cached and the factory is not
+        called again.
+
+        Parameters
+        ----------
+        name
+            Resource name for lookup.
+        factory
+            Factory function that creates the provider.
+        """
+        self._factories[name] = factory
+        log.debug("Registered resource factory: %s", name)
+
+    def _resolve_factory(self, name: str) -> bool:
+        """Resolve a factory if the resource is not yet instantiated.
+
+        Parameters
+        ----------
+        name
+            Resource name to check.
+
+        Returns
+        -------
+        bool
+            True if a factory was resolved, False otherwise.
+        """
+        # Check if provider is already instantiated (in _by_name)
+        # If not, but a factory exists, instantiate it
+        if name not in self._by_name and name in self._factories:
+            factory = self._factories[name]
+            provider = factory()
+            self.register_by_name(name, provider)
+            return True
+        return False
+
     def get(self, resource_type: type[K]) -> object:
         """Get a resource provider by type key.
 
@@ -214,6 +285,8 @@ class ResourceRegistry:
         """Get a resource provider by string name.
 
         Use this for TYPE_CHECKING imports to avoid circular dependencies.
+        If the resource is not yet instantiated but a factory exists,
+        the factory is called first.
 
         Parameters
         ----------
@@ -230,6 +303,7 @@ class ResourceRegistry:
         KeyError
             If no provider is registered with that name.
         """
+        self._resolve_factory(name)
         provider = self._by_name.get(name)
         if provider is None:
             message = f"Resource not found by name: {name}"
@@ -328,7 +402,7 @@ class ResourceRegistry:
         return resource_type in self._providers
 
     def has_by_name(self, name: str) -> bool:
-        """Check if a resource is registered by string name.
+        """Check if a resource is registered or has a factory by string name.
 
         Parameters
         ----------
@@ -338,9 +412,9 @@ class ResourceRegistry:
         Returns
         -------
         bool
-            True if a resource with that name is available.
+            True if a resource with that name is available or can be created.
         """
-        return name in self._by_name
+        return name in self._by_name or name in self._factories
 
     def invalidate(self, resource_type: type | None = None) -> None:
         """Invalidate cached resources.
@@ -351,7 +425,7 @@ class ResourceRegistry:
         ----------
         resource_type
             If provided, invalidate only this resource type.
-            If None, invalidate all resources.
+            If None, invalidate all resources (both type-keyed and name-keyed).
         """
         if resource_type is not None:
             provider = self._providers.get(resource_type)
@@ -359,16 +433,43 @@ class ResourceRegistry:
                 provider.invalidate()  # type: ignore[union-attr]
                 log.debug("Invalidated resource: %s", resource_type.__name__)
         else:
-            for provider in self._providers.values():
-                if hasattr(provider, "invalidate"):
-                    provider.invalidate()  # type: ignore[union-attr]
+            # Collect all unique providers from both dicts (using id() for uniqueness)
+            seen_ids: set[int] = set()
+            for provider in list(self._providers.values()) + list(self._by_name.values()):
+                provider_id = id(provider)
+                if provider_id not in seen_ids:
+                    seen_ids.add(provider_id)
+                    if hasattr(provider, "invalidate"):
+                        provider.invalidate()  # type: ignore[union-attr]
             log.debug("Invalidated all resources")
 
     def clear(self) -> None:
-        """Clear all registered providers."""
+        """Clear all registered providers and factories."""
         self._providers.clear()
         self._by_name.clear()
+        self._factories.clear()
         log.debug("Cleared resource registry")
+
+    def cleanup(self) -> None:
+        """Invalidate all resources and clear the registry.
+
+        Combines `invalidate()` and `clear()` for complete cleanup.
+        Useful for test teardown or resource lifecycle management.
+        """
+        self.invalidate()
+        self.clear()
+        log.debug("Cleaned up resource registry")
+
+    @property
+    def registered_names(self) -> tuple[str, ...]:
+        """Return all registered resource names including pending factories.
+
+        Returns
+        -------
+        tuple[str, ...]
+            All registered names and factory names.
+        """
+        return tuple(sorted(set(self._by_name.keys()) | set(self._factories.keys())))
 
     @property
     def registered_types(self) -> frozenset[type]:

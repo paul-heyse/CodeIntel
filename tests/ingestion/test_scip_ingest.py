@@ -16,8 +16,8 @@ from codeintel.ingestion import (
     ToolRunnerAdapter,
 )
 from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestResult
-from codeintel.ingestion.tools.infrastructure import ToolRunner
-from codeintel.ingestion.tools.service import ToolService
+from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 

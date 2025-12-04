@@ -21,9 +21,9 @@ from codeintel.ingestion.adapters.duckdb_storage import (
     quote_table_key,
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
+from codeintel.ingestion.engine.results import CoverageReport
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from codeintel.ingestion.ports.tools import ToolStatus
-from codeintel.ingestion.tools.results import CoverageReport
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.fakes import FakeToolService, FakeToolServiceConfig
 

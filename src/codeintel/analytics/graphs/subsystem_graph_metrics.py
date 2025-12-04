@@ -15,15 +15,15 @@ from codeintel.analytics.adapters.graphs import (
 )
 from codeintel.analytics.compute.graphs import centrality_directed
 from codeintel.analytics.graphs.graph_metrics import GraphMetricFilters, build_graph_metric_filters
-from codeintel.analytics.graphs.runtime import (
-    GraphContext,
-    GraphContextSpec,
-    resolve_graph_context,
-)
 from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,
+)
+from codeintel.analytics.runtime.context import (
+    GraphContext,
+    GraphContextSpec,
+    resolve_graph_context,
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig

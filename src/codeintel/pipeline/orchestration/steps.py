@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from codeintel.analytics.graphs.runtime import build_graph_context
+from codeintel.analytics.runtime.context import build_graph_context
 from codeintel.pipeline.orchestration.core import (
     PipelineContext,
     PipelineStep,

@@ -15,13 +15,13 @@ from codeintel.ingestion import (
     IngestExecutionContext,
     ToolRunnerAdapter,
 )
+from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.results import CoverageFileSummary, CoverageReport
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.plugins import (
     get_ingest_registry,
 )
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
-from codeintel.ingestion.tools.infrastructure import ToolRunner
-from codeintel.ingestion.tools.results import CoverageFileSummary, CoverageReport
-from codeintel.ingestion.tools.service import ToolService
 from codeintel.ingestion.tracker import ChangeTracker, IncrementalIngestPolicy
 from tests._helpers.gateway import open_ingestion_gateway
 from tests._helpers.harnesses import IngestTestSetup

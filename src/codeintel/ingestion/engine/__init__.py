@@ -1,7 +1,23 @@
-"""Plugins and registry for ingestion tool executions.
+"""Tool execution engine for ingestion pipelines.
 
-This package provides the tool plugin system for external tool execution,
-including plugins for pyright, pyrefly, ruff, coverage, scip, and pytest.
+This package provides the tool execution engine for external CLI tools,
+analogous to graphs/engine/ which provides graph construction abstractions.
+
+Key Components
+--------------
+- ToolService: High-level façade for tool execution
+- ToolRunner: Low-level command execution
+- ToolPlugin: Plugin protocol for tool integrations
+- ToolPluginRegistry: Registry for tool plugins
+
+Supported Tools
+---------------
+- pyright: Type checking and diagnostics
+- pyrefly: Additional type checking
+- ruff: Linting and formatting
+- coverage: Code coverage analysis
+- scip: Symbol indexing
+- pytest: Test execution
 
 Subpackages
 -----------
@@ -11,15 +27,14 @@ infrastructure
 
 from __future__ import annotations
 
-from codeintel.ingestion.tools.infrastructure import (
+from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
-    ToolResult,
     ToolRunner,
     ToolRunResult,
 )
-from codeintel.ingestion.tools.plugins import (
+from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
     ToolPluginMetadata,
     ToolPluginRegistry,
@@ -27,7 +42,7 @@ from codeintel.ingestion.tools.plugins import (
     ToolStatus,
     build_default_registry,
 )
-from codeintel.ingestion.tools.results import (
+from codeintel.ingestion.engine.results import (
     CoverageFileSummary,
     CoverageReport,
     DiagnosticReport,
@@ -39,7 +54,7 @@ from codeintel.ingestion.tools.results import (
     TestCaseResult,
     TestReport,
 )
-from codeintel.ingestion.tools.service import ToolService
+from codeintel.ingestion.engine.service import ToolService
 
 __all__ = [
     "CoverageFileSummary",
@@ -59,7 +74,6 @@ __all__ = [
     "ToolPluginMetadata",
     "ToolPluginRegistry",
     "ToolPluginResult",
-    "ToolResult",
     "ToolRunResult",
     "ToolRunner",
     "ToolService",

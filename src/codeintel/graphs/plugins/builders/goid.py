@@ -30,6 +30,7 @@ from codeintel.config.datasets import GoidCrosswalkRow as DatasetGoidCrosswalkRo
 from codeintel.config.datasets import GoidRow as DatasetGoidRow
 from codeintel.config.datasets import goid_crosswalk_to_tuple, goid_to_tuple
 from codeintel.config.steps_graphs import GoidBuilderStepConfig
+from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.catalog import load_function_catalog
 from codeintel.graphs.compute.goid import (
     GoidDescriptor,
@@ -46,7 +47,6 @@ from codeintel.graphs.core import (
     make_builder_plugin,
 )
 from codeintel.graphs.resources import StorageResource
-from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.ingestion.infrastructure.paths import relpath_to_module
 
@@ -351,14 +351,14 @@ def build_goids(
         GOID builder configuration.
     """
     # Create context with resources
-    container = ResourceContainer()
-    container.register(StorageResource(gateway, cfg.snapshot.repo_root))
+    resources = ResourceRegistry()
+    resources.register_provider(StorageResource(gateway, cfg.snapshot.repo_root))
 
     ctx = GraphPluginExecutionContext(
         gateway=gateway,
         snapshot=cfg.snapshot,
         run_id="build_goids_cli",
-        graph_resources=container,
+        resources=resources,
     )
 
     result = _build_goids(ctx)

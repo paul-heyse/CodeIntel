@@ -1,4 +1,8 @@
-Nice, this is the fun one: making the *pipeline* live in your code, with Prefect as “just” an execution harness.
+> **Note**: Import paths in this document are historical and may not reflect current structure.
+> The ingestion package has been reorganized: `steps/` is now `compute/`, `utilities/` is now `infrastructure/`,
+> `tools/` is now `engine/`, `change_tracker.py` is now `tracker.py`, and contracts moved to `validation/`.
+
+Nice, this is the fun one: making the *pipeline* live in your code, with Prefect as "just" an execution harness.
 
 I’ll structure this as a concrete refactor you can hand to an AI agent:
 

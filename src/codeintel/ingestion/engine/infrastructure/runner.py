@@ -244,7 +244,3 @@ class ToolRunner:
         if not path.is_file() or path.stat().st_size == 0:
             return None
         return json.loads(path.read_text(encoding="utf8"))
-
-
-# Backwards compatibility alias for older tests/imports.
-ToolResult = ToolRunResult

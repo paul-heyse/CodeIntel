@@ -28,9 +28,9 @@ from codeintel.ingestion import (
     ToolRunnerAdapter,
     TypingIngestStep,
 )
+from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
-from codeintel.ingestion.tools.infrastructure import ToolName, ToolRunner
-from codeintel.ingestion.tools.service import ToolService
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS

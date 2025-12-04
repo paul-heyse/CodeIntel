@@ -17,6 +17,14 @@ with the graphs package structure (compute/ vs infrastructure concerns).
 
 from __future__ import annotations
 
+# SCIP resolver utilities (re-exported from tools for backwards compat)
+from codeintel.ingestion.engine._scip_resolver import (
+    ResolvedScipConfig,
+    ScipPathConfig,
+    ScipResolverInput,
+    resolve_scip_inputs,
+)
+
 # AST utilities
 from codeintel.ingestion.infrastructure.ast_utils import (
     AstSpanIndex,
@@ -98,24 +106,6 @@ from codeintel.ingestion.infrastructure.workers import (
     worker_pool,
 )
 
-# SCIP resolver utilities (re-exported from tools for backwards compat)
-from codeintel.ingestion.tools._scip_resolver import (
-    ResolvedScipConfig,
-    ScipPathConfig,
-    ScipResolverInput,
-    resolve_scip_inputs,
-)
-
-# Tool runner utilities (re-exported from tools.infrastructure for backwards compat)
-from codeintel.ingestion.tools.infrastructure import (
-    ToolExecutionError,
-    ToolName,
-    ToolNotFoundError,
-    ToolResult,
-    ToolRunner,
-    ToolRunResult,
-)
-
 __all__ = [
     "AST_WORKER_CONFIG",
     "CST_WORKER_CONFIG",
@@ -140,12 +130,6 @@ __all__ = [
     "ScipResolverInput",
     "SourceScanner",
     "TableNotFoundError",
-    "ToolExecutionError",
-    "ToolName",
-    "ToolNotFoundError",
-    "ToolResult",
-    "ToolRunResult",
-    "ToolRunner",
     "WorkerConfig",
     "create_executor",
     "default_code_profile",

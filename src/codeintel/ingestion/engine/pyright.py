@@ -9,21 +9,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.infrastructure.paths import normalize_rel_path, repo_relpath
-from codeintel.ingestion.tools.infrastructure import (
+from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
     ToolRunner,
     ToolRunResult,
 )
-from codeintel.ingestion.tools.plugins import (
+from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
     ToolPluginMetadata,
     ToolPluginResult,
     ToolStatus,
 )
-from codeintel.ingestion.tools.results import DiagnosticReport
+from codeintel.ingestion.engine.results import DiagnosticReport
+from codeintel.ingestion.infrastructure.paths import normalize_rel_path, repo_relpath
 
 log = logging.getLogger(__name__)
 

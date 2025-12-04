@@ -57,11 +57,12 @@ result = execute_graph_recipe(
 plan = plan_graph_plugins(["goid_builder", "callgraph_builder"])
 
 # Using hexagonal architecture
-from codeintel.graphs.resources import ResourceContainer, StorageResource
+from codeintel.core.resources import ResourceRegistry
+from codeintel.graphs.resources import StorageResource
 from codeintel.graphs.compute.metrics import centrality
 
-container = ResourceContainer()
-container.register(StorageResource(gateway, repo_root))
+resources = ResourceRegistry()
+resources.register_provider(StorageResource(gateway, repo_root))
 
 # Pure computation with no I/O
 pagerank = centrality.compute_pagerank(call_graph)
@@ -82,6 +83,9 @@ logic is in adapters/.
 """
 
 from __future__ import annotations
+
+# Hexagonal architecture exports
+from codeintel.core.resources import ResourceRegistry
 
 # Subpackage re-exports for convenient access
 from codeintel.graphs import adapters, compute, ports, resources
@@ -105,9 +109,7 @@ from codeintel.graphs.recipes import (
     RecipeExecutionResult,
     execute_graph_recipe,
 )
-
-# Hexagonal architecture exports
-from codeintel.graphs.resources import ResourceContainer, ResourceProvider
+from codeintel.graphs.resources import ResourceProvider
 
 __all__ = [
     "BUILDERS_ONLY_RECIPE",
@@ -122,8 +124,8 @@ __all__ = [
     "PluginResult",
     "Recipe",
     "RecipeExecutionResult",
-    "ResourceContainer",
     "ResourceProvider",
+    "ResourceRegistry",
     "adapters",
     "compute",
     "execute_graph_recipe",

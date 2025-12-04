@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
@@ -74,6 +74,8 @@ class TrackerProvider(LazyResource["ChangeTracker"]):
     config
         Optional tracker configuration with scratch, profile, policy settings.
     """
+
+    RESOURCE_NAME: ClassVar[str] = "tracker"
 
     def __init__(
         self,

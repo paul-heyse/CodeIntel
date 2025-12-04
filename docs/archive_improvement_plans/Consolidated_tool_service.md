@@ -1,4 +1,8 @@
-Nice, I’m really glad this is all getting wired in cleanly. Let’s turn the “ToolRunner-based tool service” into a concrete, implementable plan.
+> **Note**: Import paths in this document are historical and may not reflect current structure.
+> The ingestion package has been reorganized: `steps/` is now `compute/`, `utilities/` is now `infrastructure/`,
+> `tools/` is now `engine/`, `change_tracker.py` is now `tracker.py`, and contracts moved to `validation/`.
+
+Nice, I'm really glad this is all getting wired in cleanly. Let's turn the "ToolRunner-based tool service" into a concrete, implementable plan.
 
 I’ll structure this as:
 

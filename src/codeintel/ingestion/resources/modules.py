@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.resources.protocol import LazyResource
@@ -42,6 +42,8 @@ class ModuleProvider(LazyResource[Sequence["ModuleRecord"]]):
     profile
         Optional scan profile for filtering.
     """
+
+    RESOURCE_NAME: ClassVar[str] = "modules"
 
     def __init__(
         self,

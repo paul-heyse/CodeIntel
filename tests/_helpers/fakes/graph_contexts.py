@@ -33,7 +33,6 @@ from typing import Self
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.context import PluginScratch
 from codeintel.graphs.core.context import GraphPluginExecutionContext
-from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
@@ -310,7 +309,6 @@ def create_graph_telemetry_env(
     scratch = PluginScratch()
     context = GraphPluginExecutionContext(
         snapshot=snapshot,
-        graph_resources=ResourceContainer(),
         gateway=gateway,
         scratch=scratch,
         plugin_name=plugin_name,
@@ -375,7 +373,6 @@ def create_graph_plugin_context(
     return GraphPluginExecutionContext(
         gateway=gateway,
         snapshot=snapshot,
-        graph_resources=ResourceContainer(),
         scratch=PluginScratch(),
         plugin_name=plugin_name,
         run_id=run_id,

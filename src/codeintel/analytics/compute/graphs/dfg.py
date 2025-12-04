@@ -15,7 +15,7 @@ from codeintel.analytics.compute.graphs.centrality import centrality_directed
 from codeintel.graphs.compute.metrics.dfg import compute_dfg_components
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graphs.runtime import GraphContext
+    from codeintel.analytics.runtime.context import GraphContext
 
 
 def dfg_component_stats(graph: nx.DiGraph) -> tuple[int, list[set[int]], bool]:

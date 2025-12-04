@@ -1,6 +1,6 @@
 """Tests for graph resources and dependency injection.
 
-This module tests the resource container, protocols, and storage resource.
+This module tests the resource registry, protocols, and storage resource.
 """
 
 from __future__ import annotations
@@ -11,9 +11,8 @@ from typing import TYPE_CHECKING, ClassVar, Final
 
 import pytest
 
-from codeintel.core.resources import ResourceProviderBase
+from codeintel.core.resources import ResourceNotFoundError, ResourceProviderBase, ResourceRegistry
 from codeintel.graphs.resources import ResourceProvider
-from codeintel.graphs.resources.container import ResourceContainer, ResourceNotFoundError
 from codeintel.graphs.resources.storage import StorageResource
 
 if TYPE_CHECKING:
@@ -183,75 +182,73 @@ class _ConcreteBaseProvider(ResourceProviderBase[str]):
 
 
 # ===========================================================================
-# ResourceContainer Tests
+# ResourceRegistry Tests
 # ===========================================================================
 
 
-def test_container_register_and_require() -> None:
-    """Container registers and retrieves providers."""
-    container = ResourceContainer()
+def test_registry_register_and_require() -> None:
+    """Registry registers and retrieves providers."""
+    registry = ResourceRegistry()
     provider = _TestResourceProvider()
 
-    container.register(provider)
-    result = container.require(_TestResourceProvider)
+    registry.register_provider(provider)
+    result = registry.require_by_name(TEST_RESOURCE_NAME)
 
     assert result == TEST_VALUE
 
 
-def test_container_require_by_name() -> None:
-    """Container retrieves resource by name."""
-    container = ResourceContainer()
+def test_registry_require_by_name() -> None:
+    """Registry retrieves resource by name."""
+    registry = ResourceRegistry()
     provider = _TestResourceProvider()
 
-    container.register(provider)
-    result = container.require_by_name(TEST_RESOURCE_NAME)
+    registry.register_provider(provider)
+    result = registry.require_by_name(TEST_RESOURCE_NAME)
 
     assert result == TEST_VALUE
 
 
-def test_container_has_registered() -> None:
-    """Container reports registered resource."""
-    container = ResourceContainer()
+def test_registry_has_registered() -> None:
+    """Registry reports registered resource."""
+    registry = ResourceRegistry()
     provider = _TestResourceProvider()
 
-    assert container.has(TEST_RESOURCE_NAME) is False
-    container.register(provider)
-    assert container.has(TEST_RESOURCE_NAME) is True
+    assert registry.has_by_name(TEST_RESOURCE_NAME) is False
+    registry.register_provider(provider)
+    assert registry.has_by_name(TEST_RESOURCE_NAME) is True
 
 
-def test_container_has_factory() -> None:
-    """Container reports factory-registered resource."""
-    container = ResourceContainer()
+def test_registry_has_factory() -> None:
+    """Registry reports factory-registered resource."""
+    registry = ResourceRegistry()
 
     def factory() -> _FactoryResourceProvider:
         return _FactoryResourceProvider()
 
-    assert container.has(FACTORY_RESOURCE_NAME) is False
-    container.register_factory(FACTORY_RESOURCE_NAME, factory)
-    assert container.has(FACTORY_RESOURCE_NAME) is True
+    assert registry.has_by_name(FACTORY_RESOURCE_NAME) is False
+    registry.register_factory(FACTORY_RESOURCE_NAME, factory)
+    assert registry.has_by_name(FACTORY_RESOURCE_NAME) is True
 
 
-def test_container_require_not_found() -> None:
-    """Container raises error for missing resource."""
-    container = ResourceContainer()
+def test_registry_require_not_found() -> None:
+    """Registry raises error for missing resource."""
+    registry = ResourceRegistry()
 
-    with pytest.raises(ResourceNotFoundError) as exc_info:
-        container.require(_TestResourceProvider)
-
-    assert exc_info.value.resource_name is not None
+    with pytest.raises(KeyError):
+        registry.require_by_name(TEST_RESOURCE_NAME)
 
 
-def test_container_require_by_name_not_found() -> None:
-    """Container raises error for missing named resource."""
-    container = ResourceContainer()
+def test_registry_require_by_name_not_found() -> None:
+    """Registry raises error for missing named resource."""
+    registry = ResourceRegistry()
 
-    with pytest.raises(ResourceNotFoundError):
-        container.require_by_name("nonexistent")
+    with pytest.raises(KeyError):
+        registry.require_by_name("nonexistent")
 
 
-def test_container_factory_lazy_creation() -> None:
-    """Container creates resource from factory on first access."""
-    container = ResourceContainer()
+def test_registry_factory_lazy_creation() -> None:
+    """Registry creates resource from factory on first access."""
+    registry = ResourceRegistry()
     creation_count = 0
 
     def factory() -> _FactoryResourceProvider:
@@ -259,88 +256,77 @@ def test_container_factory_lazy_creation() -> None:
         creation_count += 1
         return _FactoryResourceProvider()
 
-    container.register_factory(FACTORY_RESOURCE_NAME, factory)
+    registry.register_factory(FACTORY_RESOURCE_NAME, factory)
 
     # Factory not called yet
     assert creation_count == 0
 
     # First access creates resource
-    container.require_by_name(FACTORY_RESOURCE_NAME)
+    registry.require_by_name(FACTORY_RESOURCE_NAME)
     assert creation_count == EXPECTED_ONE
 
     # Second access uses cached
-    container.require_by_name(FACTORY_RESOURCE_NAME)
+    registry.require_by_name(FACTORY_RESOURCE_NAME)
     assert creation_count == EXPECTED_ONE
 
 
-def test_container_invalidate_resource() -> None:
-    """Container invalidates specific resource."""
-    container = ResourceContainer()
-    provider = _TestResourceProvider()
-
-    container.register(provider)
-    container.invalidate(TEST_RESOURCE_NAME)
-
-    assert provider.invalidate_count == EXPECTED_ONE
-
-
-def test_container_invalidate_all() -> None:
-    """Container invalidates all resources."""
-    container = ResourceContainer()
+def test_registry_invalidate_all() -> None:
+    """Registry invalidates all resources."""
+    registry = ResourceRegistry()
     provider1 = _TestResourceProvider()
     provider2 = _SecondTestResourceProvider()
 
-    container.register(provider1)
-    container.register(provider2)
+    registry.register_provider(provider1)
+    registry.register_provider(provider2)
 
-    container.invalidate_all()
+    registry.invalidate()
 
     assert provider1.invalidate_count == EXPECTED_ONE
     assert provider2.invalidate_count == EXPECTED_ONE
 
 
-def test_container_cleanup() -> None:
-    """Container cleanup invalidates and clears."""
-    container = ResourceContainer()
+def test_registry_cleanup() -> None:
+    """Registry cleanup invalidates and clears."""
+    registry = ResourceRegistry()
     provider = _TestResourceProvider()
 
-    container.register(provider)
-    container.cleanup()
+    registry.register_provider(provider)
+    registry.cleanup()
 
-    assert container.has(TEST_RESOURCE_NAME) is False
+    assert registry.has_by_name(TEST_RESOURCE_NAME) is False
     assert provider.invalidate_count == EXPECTED_ONE
 
 
-def test_container_registered_names() -> None:
-    """Container returns all registered names."""
-    container = ResourceContainer()
+def test_registry_registered_names() -> None:
+    """Registry returns all registered names."""
+    registry = ResourceRegistry()
     provider = _TestResourceProvider()
 
     def factory() -> _FactoryResourceProvider:
         return _FactoryResourceProvider()
 
-    container.register(provider)
-    container.register_factory(FACTORY_RESOURCE_NAME, factory)
+    registry.register_provider(provider)
+    registry.register_factory(FACTORY_RESOURCE_NAME, factory)
 
-    names = container.registered_names
+    names = registry.registered_names
 
     assert TEST_RESOURCE_NAME in names
     assert FACTORY_RESOURCE_NAME in names
     assert len(names) == EXPECTED_TWO
 
 
-def test_container_overwrite_allows_new_value() -> None:
-    """Container allows overwriting provider with new value."""
-    container = ResourceContainer()
+def test_registry_overwrite_allows_new_value() -> None:
+    """Registry allows overwriting provider with new value."""
+    registry = ResourceRegistry()
     provider1 = _TestResourceProvider()
     provider2 = _TestResourceProvider(value="new_value")
 
-    container.register(provider1)
-    # Second registration overwrites
-    container.register(provider2)
+    registry.register_provider(provider1)
+    # Second registration overwrites (with warning)
+    registry.register_provider(provider2)
 
     # The new value should be stored
-    result = container.require(_TestResourceProvider)
+    result = registry.require_by_name(TEST_RESOURCE_NAME)
     assert result == "new_value"
 
 

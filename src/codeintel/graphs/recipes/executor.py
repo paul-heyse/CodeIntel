@@ -19,10 +19,10 @@ from codeintel.config.steps_graphs import GraphPluginPolicy
 from codeintel.core.plugins.context import PluginScratch
 from codeintel.core.plugins.result import PluginExecutionRecord
 from codeintel.core.recipes import Recipe, RecipeStage
+from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.core.registry import get_graph_registry
 from codeintel.graphs.engine import NxGraphEngine
-from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
 
@@ -547,16 +547,18 @@ class RecipeExecutor:
         )
 
         # Build resources from executor context
-        container = ResourceContainer()
-        container.register(StorageResource(self._context.gateway, self._context.snapshot.repo_root))
+        resources = ResourceRegistry()
+        resources.register_provider(
+            StorageResource(self._context.gateway, self._context.snapshot.repo_root)
+        )
         if self._context.engine is not None:
-            container.register(GraphResource(cast("NxGraphEngine", self._context.engine)))
+            resources.register_provider(GraphResource(cast("NxGraphEngine", self._context.engine)))
 
         ctx = GraphPluginExecutionContext(
             gateway=self._context.gateway,
             snapshot=self._context.snapshot,
             run_id=run_id,
-            graph_resources=container,
+            resources=resources,
             scratch=self._scratch,
             plugin_name=plugin.metadata.name,
             _catalog_provider=self._context.catalog_provider,

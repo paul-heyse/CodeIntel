@@ -92,7 +92,7 @@ def resolve_analytics_runtime(
     """
     # Get gateway via resource injection or fallback
     if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
-        storage = ctx.graph_resources.require(StorageResource)
+        storage = ctx.require(StorageResource)
         gateway = storage.gateway
     else:
         gateway = ctx.gateway
@@ -234,7 +234,7 @@ def _persist_function_metrics(
     """
     # Get gateway via resource injection or fallback
     if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
-        storage = ctx.graph_resources.require(StorageResource)
+        storage = ctx.require(StorageResource)
         gateway = storage.gateway
     else:
         gateway = ctx.gateway
@@ -258,7 +258,7 @@ def _persist_module_metrics(
     """
     # Get gateway via resource injection or fallback
     if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
-        storage = ctx.graph_resources.require(StorageResource)
+        storage = ctx.require(StorageResource)
         gateway = storage.gateway
     else:
         gateway = ctx.gateway
@@ -345,7 +345,7 @@ def _compute_function_ext_metrics(ctx: GraphPluginExecutionContext) -> Computati
     if rows:
         # Get gateway via resource injection or fallback
         if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
-            storage = ctx.graph_resources.require(StorageResource)
+            storage = ctx.require(StorageResource)
             gateway = storage.gateway
         else:
             gateway = ctx.gateway
@@ -424,7 +424,7 @@ def _compute_module_ext_metrics(ctx: GraphPluginExecutionContext) -> Computation
     if rows:
         # Get gateway via resource injection or fallback
         if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
-            storage = ctx.graph_resources.require(StorageResource)
+            storage = ctx.require(StorageResource)
             gateway = storage.gateway
         else:
             gateway = ctx.gateway

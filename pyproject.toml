@@ -223,6 +223,8 @@ ban-relative-imports = "all"
 # PLR0904: Too many public methods
 # PLR0913: Too many arguments (entrypoints toggles)
 "src/codeintel/config/builder.py" = ["PLR0904", "PLR0913"]
+# ResourceRegistry is a central DI container with many required public methods
+"src/codeintel/core/resources/registry.py" = ["PLR0904"]
 # Primitives has complex constructors
 "src/codeintel/config/primitives.py" = ["PLR0913", "DOC201"]
 # Test files use assert statements which is standard practice

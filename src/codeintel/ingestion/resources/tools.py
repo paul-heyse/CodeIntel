@@ -8,11 +8,11 @@ like pyright, scip, coverage, etc.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.resources.protocol import LazyResource
-from codeintel.ingestion.tools.infrastructure import ToolRunner
-from codeintel.ingestion.tools.service import ToolService
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -39,6 +39,8 @@ class ToolsProvider(LazyResource["ToolService"]):
     service
         Optional pre-configured tool service.
     """
+
+    RESOURCE_NAME: ClassVar[str] = "tools"
 
     def __init__(
         self,

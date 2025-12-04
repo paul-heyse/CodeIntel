@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from codeintel.config.primitives import BuildPaths, GraphBackendConfig, GraphFeatureFlags
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.tools.infrastructure import ToolName
+    from codeintel.ingestion.engine.infrastructure import ToolName
 
 
 DEFAULT_TOOL_TIMEOUT_S = 300.0

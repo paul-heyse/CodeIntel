@@ -19,7 +19,7 @@ from codeintel.analytics.compute.graphs import (
     projection_metrics,
     structural_metrics,
 )
-from codeintel.analytics.graphs.runtime import GraphContext
+from codeintel.analytics.runtime.context import GraphContext
 
 
 def test_centrality_directed_weighted_and_seeded() -> None:

@@ -9,8 +9,24 @@ Modules
 - plugins: Unified plugin protocol, result types, and registry
 - recipes: Unified recipe DSL and executor
 - resources: Unified resource provider protocol and registry
+- config_registry: Type-safe configuration registry
+- singleton: Thread-safe singleton holder pattern
 """
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from codeintel.core.config_registry import (
+    ConfigNotFoundError,
+    ConfigRegistry,
+    ConfigTypeError,
+    ConfigValidationError,
+)
+from codeintel.core.singleton import SingletonHolder
+
+__all__ = [
+    "ConfigNotFoundError",
+    "ConfigRegistry",
+    "ConfigTypeError",
+    "ConfigValidationError",
+    "SingletonHolder",
+]

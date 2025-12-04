@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from codeintel.analytics.compute.graphs import to_decimal_id
-from codeintel.analytics.graphs.runtime import GraphContext
+from codeintel.analytics.runtime.context import GraphContext
 from codeintel.config.datasets import (
     GraphMetricsFunctionsExtRow,
     GraphMetricsModulesExtRow,

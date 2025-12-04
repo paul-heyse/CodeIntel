@@ -26,7 +26,7 @@ if TYPE_CHECKING:
         FunctionHistoryStepConfig,
     )
     from codeintel.graphs.catalog import FunctionCatalogProvider
-    from codeintel.ingestion.tools.infrastructure import ToolRunner
+    from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [

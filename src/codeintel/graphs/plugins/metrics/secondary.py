@@ -48,7 +48,7 @@ def _compute_cfg_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """
     # CFG/DFG metrics don't need runtime - use simple gateway access
     if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
-        gateway = ctx.graph_resources.require(StorageResource).gateway
+        gateway = ctx.require(StorageResource).gateway
     else:
         gateway = ctx.gateway
     compute_cfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
@@ -67,7 +67,7 @@ def _compute_dfg_metrics(ctx: GraphPluginExecutionContext) -> ComputationResult:
     """
     # CFG/DFG metrics don't need runtime - use simple gateway access
     if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
-        gateway = ctx.graph_resources.require(StorageResource).gateway
+        gateway = ctx.require(StorageResource).gateway
     else:
         gateway = ctx.gateway
     compute_dfg_metrics(gateway, repo=ctx.repo, commit=ctx.commit)
@@ -155,7 +155,7 @@ def _compute_subsystem_agreement(ctx: GraphPluginExecutionContext) -> Computatio
     """
     # Subsystem agreement doesn't need runtime - use simple gateway access
     if ctx.has_graph_resource(StorageResource.RESOURCE_NAME):
-        gateway = ctx.graph_resources.require(StorageResource).gateway
+        gateway = ctx.require(StorageResource).gateway
     else:
         gateway = ctx.gateway
     compute_subsystem_agreement(gateway, repo=ctx.repo, commit=ctx.commit)

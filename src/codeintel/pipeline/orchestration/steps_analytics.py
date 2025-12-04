@@ -15,7 +15,6 @@ from codeintel.analytics.core.pipeline_bridge import (
     plan_analytics_plugin_run,
     run_analytics_plugins,
 )
-from codeintel.analytics.graphs.runtime import load_prior_manifest
 from codeintel.analytics.plugins import (
     BEHAVIORAL_COVERAGE_PLUGIN,
     CONFIG_DATA_FLOW_PLUGIN,
@@ -39,6 +38,7 @@ from codeintel.analytics.plugins import (
     TEST_PROFILE_PLUGIN,
     ensure_plugins_registered,
 )
+from codeintel.analytics.runtime.context import load_prior_manifest
 from codeintel.analytics.runtime.manifest import encode_manifest
 from codeintel.analytics.subsystems import refresh_subsystem_caches
 from codeintel.config import GraphMetricsStepConfig

@@ -9,13 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.ingestion.plugins.contracts import (
+from codeintel.ingestion.validation import (
     CONSTRAINT_CHECKERS,
     ColumnConstraint,
     ContractValidationResult,
     ContractViolation,
     ForeignKeyConstraint,
-    ForeignKeyContractSpec,
+    ForeignKeyContractOptions,
     IngestContractSpec,
     IngestContractValidator,
     foreign_key_contract,
@@ -369,9 +369,11 @@ def test_foreign_key_contract_builder() -> None:
     assert c.foreign_keys[0].column == "parent_id"
 
 
-def test_foreign_key_contract_with_spec() -> None:
-    """foreign_key_contract should accept ForeignKeyContractSpec."""
-    spec = ForeignKeyContractSpec(allow_null=False, plugin_name="fk_plugin", severity="warning")
-    c = foreign_key_contract("core.child", "pid", "core.parent", "id", spec=spec)
+def test_foreign_key_contract_with_options() -> None:
+    """foreign_key_contract should accept ForeignKeyContractOptions."""
+    options = ForeignKeyContractOptions(
+        allow_null=False, plugin_name="fk_plugin", severity="warning"
+    )
+    c = foreign_key_contract("core.child", "pid", "core.parent", "id", options=options)
     assert c.plugin_name == "fk_plugin"
     assert c.foreign_keys[0].allow_null is False

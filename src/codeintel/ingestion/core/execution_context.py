@@ -16,7 +16,7 @@ from codeintel.config.models import ToolsConfig
 from codeintel.core.config_registry import ConfigNotFoundError, ConfigRegistry
 from codeintel.ingestion.infrastructure.db_queries import safe_count
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
-from codeintel.ingestion.resources.registry import ResourceRegistry
+from codeintel.ingestion.resources.registry import ResourceNotFoundError, ResourceRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -26,21 +26,6 @@ if TYPE_CHECKING:
     from codeintel.ingestion.resources.protocol import ResourceProvider
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
-
-
-class ResourceNotFoundError(Exception):
-    """Raised when a required resource is not available."""
-
-    def __init__(self, resource_name: str) -> None:
-        """Initialize with resource name.
-
-        Parameters
-        ----------
-        resource_name
-            Name of the resource that was not found.
-        """
-        self.resource_name = resource_name
-        super().__init__(f"Resource not found: {resource_name}")
 
 
 def _empty_registry() -> ResourceRegistry:

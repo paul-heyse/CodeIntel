@@ -1,4 +1,8 @@
-Yes, let’s tame the Context Hydra 🐍🐍🐍.
+> **Note**: Import paths in this document are historical and may not reflect current structure.
+> The ingestion package has been reorganized: `steps/` is now `compute/`, `utilities/` is now `infrastructure/`,
+> `tools/` is now `engine/`, `change_tracker.py` is now `tracker.py`, and contracts moved to `validation/`.
+
+Yes, let's tame the Context Hydra 🐍🐍🐍.
 
 We’ll turn the three overlapping context types into a small, composable core, in a way that fits cleanly with the other refactors you’re doing (StorageGateway, ScanProfile, ToolService, ChangeTracker).
 

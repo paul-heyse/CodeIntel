@@ -46,9 +46,9 @@ if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.ingestion.core.runs import IngestRunSink
+    from codeintel.ingestion.engine.infrastructure import ToolRunner
+    from codeintel.ingestion.engine.service import ToolService
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
-    from codeintel.ingestion.tools.infrastructure import ToolRunner
-    from codeintel.ingestion.tools.service import ToolService
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.run_tracking import PipelineRunTracking

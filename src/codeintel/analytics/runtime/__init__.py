@@ -29,6 +29,14 @@ call_graph = runtime.ensure_call_graph()
 
 from __future__ import annotations
 
+from codeintel.analytics.runtime.context import (
+    GraphContext,
+    GraphContextCaps,
+    GraphContextSpec,
+    build_graph_context,
+    load_prior_manifest,
+    resolve_graph_context,
+)
 from codeintel.analytics.runtime.graph import (
     GraphRuntime,
     GraphRuntimeOptions,
@@ -55,12 +63,18 @@ __all__ = [
     "AnalyticsScope",
     "AnalyticsSkippedStep",
     "AnalyticsStatus",
+    "GraphContext",
+    "GraphContextCaps",
+    "GraphContextSpec",
     "GraphKind",
     "GraphRuntime",
     "GraphRuntimeOptions",
     "GraphRuntimePool",
     "PooledRuntime",
+    "build_graph_context",
     "build_graph_runtime",
     "encode_manifest",
+    "load_prior_manifest",
+    "resolve_graph_context",
     "resolve_graph_runtime",
 ]

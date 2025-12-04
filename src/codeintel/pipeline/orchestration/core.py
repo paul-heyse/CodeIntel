@@ -32,13 +32,13 @@ from codeintel.graphs.catalog import (
 from codeintel.graphs.engine import GraphEngine
 from codeintel.ingestion.compute.scip_ingest import ScipIngestResult
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
+from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
 from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
-from codeintel.ingestion.tools.infrastructure import ToolRunner
-from codeintel.ingestion.tools.service import ToolService
 from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.storage.gateway import StorageGateway
 

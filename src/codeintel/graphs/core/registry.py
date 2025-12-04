@@ -1,6 +1,7 @@
 """Graph plugin registry with dependency resolution.
 
-This module provides the registry for graph plugins, supporting
+This module provides the registry for graph plugins, extending the base
+registry infrastructure from codeintel.core.plugins. It supports
 decorator-based registration, dependency resolution, topological ordering,
 and discovery via Python entry points.
 """
@@ -13,10 +14,10 @@ import logging
 from collections.abc import Sequence
 from uuid import uuid4
 
+from codeintel.core.plugins.registry import BasePluginRegistry
 from codeintel.core.singleton import SingletonHolder
 from codeintel.graphs.core.protocol import (
     DEFAULT_GRAPH_PLUGINS,
-    GraphPluginMetadata,
     GraphPluginPlan,
     GraphPluginProtocol,
     GraphPluginSkip,
@@ -32,272 +33,42 @@ class _GraphPluginRegistryHolder(SingletonHolder["GraphPluginRegistry"]):
     """
 
 
-class GraphPluginRegistry:
+class GraphPluginRegistry(BasePluginRegistry[GraphPluginProtocol]):
     """Central registry for graph plugins.
 
-    Provides plugin registration, lookup, dependency resolution,
-    and topological ordering for execution planning.
+    Extends BasePluginRegistry with graph-specific functionality
+    including GraphPluginPlan and GraphPluginSkip types.
 
     For singleton access, use :func:`get_graph_registry` rather than
     instantiating directly. Direct instantiation is useful for testing.
     """
 
-    def __init__(self) -> None:
-        """Initialize an empty registry."""
-        self._plugins: dict[str, GraphPluginProtocol] = {}
-        self._by_capability: dict[str, set[str]] = {}
-        self._by_kind: dict[str, set[str]] = {}
-        self._by_stage: dict[str, set[str]] = {}
-        self._by_table: dict[str, set[str]] = {}
-        self._entrypoints_loaded: bool = False
-        self._builtins_loaded: bool = False
+    @staticmethod
+    def _get_default_plugins() -> Sequence[str]:
+        """Return the default graph plugin names.
 
-    def register(self, plugin: GraphPluginProtocol) -> None:
-        """Register a graph plugin.
-
-        Parameters
-        ----------
-        plugin
-            Plugin instance implementing GraphPluginProtocol.
-
-        Raises
-        ------
-        ValueError
-            If a plugin with the same name is already registered.
+        Returns
+        -------
+        Sequence[str]
+            Default graph plugin names.
         """
-        meta = plugin.metadata
-        if meta.name in self._plugins:
-            message = f"Duplicate graph plugin name: {meta.name}"
-            raise ValueError(message)
+        return DEFAULT_GRAPH_PLUGINS
 
-        self._plugins[meta.name] = plugin
-
-        # Index by capabilities
-        for cap in meta.provides:
-            self._by_capability.setdefault(cap, set()).add(meta.name)
-
-        # Index by kind
-        self._by_kind.setdefault(meta.kind, set()).add(meta.name)
-
-        # Index by stage
-        self._by_stage.setdefault(meta.stage, set()).add(meta.name)
-
-        # Index by produced tables
-        for table in meta.produces_tables:
-            self._by_table.setdefault(table, set()).add(meta.name)
-
-        log.debug(
-            "Registered graph plugin %s (kind=%s, stage=%s)",
-            meta.name,
-            meta.kind,
-            meta.stage,
-        )
-
-    def unregister(self, name: str) -> None:
-        """Remove a plugin from the registry.
-
-        Parameters
-        ----------
-        name
-            Plugin name to remove.
-        """
-        plugin = self._plugins.pop(name, None)
-        if plugin is None:
+    def _ensure_builtins_loaded(self) -> None:
+        """Import built-in graph plugins to guarantee registration."""
+        if self._builtins_loaded:
             return
+        try:
+            importlib.import_module("codeintel.graphs.plugins")
+        except ImportError as exc:
+            log.warning("Failed to import built-in graph plugins: %s", exc)
+        self._builtins_loaded = True
 
-        meta = plugin.metadata
-        for cap in meta.provides:
-            if cap in self._by_capability:
-                self._by_capability[cap].discard(name)
-
-        if meta.kind in self._by_kind:
-            self._by_kind[meta.kind].discard(name)
-
-        if meta.stage in self._by_stage:
-            self._by_stage[meta.stage].discard(name)
-
-        for table in meta.produces_tables:
-            if table in self._by_table:
-                self._by_table[table].discard(name)
-
-    def get(self, name: str) -> GraphPluginProtocol:
-        """Return a plugin by name.
-
-        Parameters
-        ----------
-        name
-            Plugin name to look up.
-
-        Returns
-        -------
-        GraphPluginProtocol
-            The registered plugin.
-
-        Raises
-        ------
-        KeyError
-            If no plugin is registered with the given name.
-        """
-        self._ensure_entrypoints_loaded()
-        if name not in self._plugins:
-            message = f"Unknown graph plugin: {name}"
-            raise KeyError(message)
-        return self._plugins[name]
-
-    def contains(self, name: str) -> bool:
-        """Check if a plugin is registered.
-
-        Parameters
-        ----------
-        name
-            Plugin name to check.
-
-        Returns
-        -------
-        bool
-            True if registered.
-        """
-        self._ensure_entrypoints_loaded()
-        return name in self._plugins
-
-    def list_all(self) -> tuple[GraphPluginProtocol, ...]:
-        """Return all registered plugins.
-
-        Returns
-        -------
-        tuple[GraphPluginProtocol, ...]
-            All registered plugins in registration order.
-        """
-        self._ensure_entrypoints_loaded()
-        return tuple(self._plugins.values())
-
-    def list_names(self) -> tuple[str, ...]:
-        """Return names of all registered plugins.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Plugin names in registration order.
-        """
-        self._ensure_entrypoints_loaded()
-        return tuple(self._plugins.keys())
-
-    def list_providing(self, capability: str) -> tuple[GraphPluginProtocol, ...]:
-        """Return plugins that provide a specific capability.
-
-        Parameters
-        ----------
-        capability
-            Capability name to search for.
-
-        Returns
-        -------
-        tuple[GraphPluginProtocol, ...]
-            Plugins providing the capability.
-        """
-        self._ensure_entrypoints_loaded()
-        names = self._by_capability.get(capability, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
-
-    def list_by_kind(self, kind: str) -> tuple[GraphPluginProtocol, ...]:
-        """Return plugins of a specific kind.
-
-        Parameters
-        ----------
-        kind
-            Plugin kind to filter by.
-
-        Returns
-        -------
-        tuple[GraphPluginProtocol, ...]
-            Plugins of the specified kind.
-        """
-        self._ensure_entrypoints_loaded()
-        names = self._by_kind.get(kind, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
-
-    def list_by_stage(self, stage: str) -> tuple[GraphPluginProtocol, ...]:
-        """Return plugins belonging to a specific stage.
-
-        Parameters
-        ----------
-        stage
-            Stage name to filter by.
-
-        Returns
-        -------
-        tuple[GraphPluginProtocol, ...]
-            Plugins in the specified stage.
-        """
-        self._ensure_entrypoints_loaded()
-        names = self._by_stage.get(stage, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
-
-    def list_by_table(self, table_key: str) -> tuple[GraphPluginProtocol, ...]:
-        """Return plugins that produce a specific table.
-
-        Parameters
-        ----------
-        table_key
-            Table key (e.g., "graph.call_graph_nodes").
-
-        Returns
-        -------
-        tuple[GraphPluginProtocol, ...]
-            Plugins producing the table.
-        """
-        self._ensure_entrypoints_loaded()
-        names = self._by_table.get(table_key, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
-
-    def plan(
-        self,
-        plugin_names: Sequence[str] | None = None,
-        *,
-        enabled: Sequence[str] | None = None,
-        disabled: Sequence[str] | None = None,
-        defaults: Sequence[str] | None = None,
-    ) -> GraphPluginPlan:
-        """Build an execution plan with dependency resolution.
-
-        Parameters
-        ----------
-        plugin_names
-            Explicit plugin names to include.
-        enabled
-            Override list of enabled plugins.
-        disabled
-            Plugins to exclude from the plan.
-        defaults
-            Default plugins if no explicit list provided.
-
-        Returns
-        -------
-        GraphPluginPlan
-            Ordered execution plan.
-        """
-        self._ensure_entrypoints_loaded()
-
-        # Resolve which plugins to include
-        selected, skipped = self._resolve_selection(
-            plugin_names=plugin_names,
-            enabled=enabled,
-            disabled=disabled,
-            defaults=defaults or DEFAULT_GRAPH_PLUGINS,
-        )
-
-        # Build dependency graph
-        dependencies = self._resolve_dependencies(selected)
-
-        # Topological sort
-        ordered = self._topological_sort(selected, dependencies)
-
-        return GraphPluginPlan(
-            plugins=tuple(ordered),
-            plan_id=uuid4().hex,
-            skipped_plugins=skipped,
-            dep_graph={name: tuple(sorted(deps)) for name, deps in dependencies.items()},
-        )
+    def _ensure_entrypoints_loaded(self) -> None:
+        """Load plugins from entry points if not already done."""
+        if self._entrypoints_loaded:
+            return
+        self.load_from_entrypoints()
 
     def load_from_entrypoints(
         self,
@@ -359,23 +130,61 @@ class GraphPluginRegistry:
         self._entrypoints_loaded = True
         return tuple(discovered)
 
-    def _ensure_entrypoints_loaded(self) -> None:
-        """Load entry points if not already done."""
-        self._ensure_builtins_loaded()
-        if not self._entrypoints_loaded:
-            self.load_from_entrypoints()
+    def plan(
+        self,
+        plugin_names: Sequence[str] | None = None,
+        *,
+        enabled: Sequence[str] | None = None,
+        disabled: Sequence[str] | None = None,
+        defaults: Sequence[str] | None = None,
+    ) -> GraphPluginPlan:
+        """Build an execution plan with dependency resolution.
 
-    def _ensure_builtins_loaded(self) -> None:
-        """Import built-in plugins to guarantee registration."""
-        if self._builtins_loaded:
-            return
-        try:
-            importlib.import_module("codeintel.graphs.plugins")
-        except ImportError as exc:
-            log.warning("Failed to import built-in graph plugins: %s", exc)
-        self._builtins_loaded = True
+        Override base implementation to return GraphPluginPlan with
+        graph-specific skip reasons. May raise ValueError from helper
+        methods if plugins are listed more than once or dependencies
+        are missing/cyclic.
 
-    def _resolve_selection(
+        Parameters
+        ----------
+        plugin_names
+            Explicit plugin names to include.
+        enabled
+            Override list of enabled plugins.
+        disabled
+            Plugins to exclude from the plan.
+        defaults
+            Default plugins if no explicit list provided.
+
+        Returns
+        -------
+        GraphPluginPlan
+            Ordered execution plan with graph-specific metadata.
+        """
+        self._ensure_loaded()
+
+        # Resolve which plugins to include
+        selected, skipped = self._resolve_graph_selection(
+            plugin_names=plugin_names,
+            enabled=enabled,
+            disabled=disabled,
+            defaults=defaults or self._get_default_plugins(),
+        )
+
+        # Build dependency graph
+        dependencies = self._resolve_graph_dependencies(selected)
+
+        # Topological sort (reuse base class static method)
+        ordered = self._topological_sort(selected, dependencies)
+
+        return GraphPluginPlan(
+            plugins=tuple(ordered),
+            plan_id=uuid4().hex,
+            skipped_plugins=skipped,
+            dep_graph={name: tuple(sorted(deps)) for name, deps in dependencies.items()},
+        )
+
+    def _resolve_graph_selection(
         self,
         *,
         plugin_names: Sequence[str] | None,
@@ -427,7 +236,7 @@ class GraphPluginRegistry:
 
         return selected, tuple(skipped)
 
-    def _resolve_dependencies(
+    def _resolve_graph_dependencies(
         self,
         selected: dict[str, GraphPluginProtocol],
     ) -> dict[str, set[str]]:
@@ -484,84 +293,6 @@ class GraphPluginRegistry:
                 dependencies[name].add(next(iter(providers)))
 
         return dependencies
-
-    @staticmethod
-    def _build_provider_index(
-        selected: dict[str, GraphPluginProtocol],
-    ) -> dict[str, set[str]]:
-        """Build index of capability -> provider plugins.
-
-        Returns
-        -------
-        dict[str, set[str]]
-            Mapping of capability name to provider plugin names.
-        """
-        index: dict[str, set[str]] = {}
-        for name, plugin in selected.items():
-            for cap in plugin.metadata.provides:
-                index.setdefault(cap, set()).add(name)
-        return index
-
-    @staticmethod
-    def _topological_sort(
-        selected: dict[str, GraphPluginProtocol],
-        dependencies: dict[str, set[str]],
-    ) -> list[GraphPluginProtocol]:
-        """Perform topological sort with cycle detection.
-
-        Returns
-        -------
-        list[GraphPluginProtocol]
-            Plugins ordered based on dependencies.
-        """
-        ordered: list[GraphPluginProtocol] = []
-        temporary: set[str] = set()
-        permanent: set[str] = set()
-
-        def visit(name: str) -> None:
-            if name in permanent:
-                return
-            if name in temporary:
-                message = f"Dependency cycle detected involving graph plugin: {name}"
-                raise ValueError(message)
-            temporary.add(name)
-            for dep in dependencies.get(name, set()):
-                visit(dep)
-            temporary.remove(name)
-            permanent.add(name)
-            ordered.append(selected[name])
-
-        for name in selected:
-            visit(name)
-
-        return ordered
-
-    def dependency_graph(self) -> dict[str, tuple[str, ...]]:
-        """Return mapping of plugin name to direct dependencies.
-
-        Returns
-        -------
-        dict[str, tuple[str, ...]]
-            Direct dependency map keyed by plugin name.
-        """
-        self._ensure_entrypoints_loaded()
-        return {name: plugin.metadata.depends_on for name, plugin in self._plugins.items()}
-
-    def metadata_for(self, name: str) -> GraphPluginMetadata:
-        """Return metadata for a plugin.
-
-        Parameters
-        ----------
-        name
-            Plugin name.
-
-        Returns
-        -------
-        GraphPluginMetadata
-            Plugin metadata.
-        """
-        plugin = self.get(name)
-        return plugin.metadata
 
 
 def get_graph_registry() -> GraphPluginRegistry:

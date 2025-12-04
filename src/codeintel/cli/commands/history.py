@@ -19,7 +19,7 @@ import typer
 from codeintel.analytics.history import compute_history_timeseries_gateways
 from codeintel.cli.commands._common import VerboseOpt, setup_logging
 from codeintel.config import ConfigBuilder
-from codeintel.ingestion.tools.infrastructure import ToolRunner
+from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.storage.config import StorageConfig
 from codeintel.storage.gateway import DuckDBError, build_snapshot_gateway_resolver, open_gateway
 

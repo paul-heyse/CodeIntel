@@ -1,6 +1,7 @@
 """Unified plugin registry for analytics plugins.
 
-This module provides a single, centralized registry for all analytics plugins.
+This module provides a single, centralized registry for all analytics plugins,
+extending the base registry infrastructure from codeintel.core.plugins.
 It supports both decorator-based registration and explicit registration,
 as well as entry point discovery.
 """
@@ -11,35 +12,44 @@ import importlib.metadata
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, Unpack
+from typing import Literal, Unpack
 from uuid import uuid4
 
+# Import at runtime for use in type alias (FunctionalPlugin)
+from codeintel.analytics.core.context import PluginExecutionContext
 from codeintel.analytics.core.protocol import (
     AnalyticsPluginProtocol,
-    PluginInputSpec,
-    PluginIsolation,
-    PluginKind,
     PluginMetadata,
-    PluginOutputSpec,
-    PluginResourceHints,
     PluginResult,
-    PluginSeverity,
-    PluginStage,
-    ValidationResult,
 )
+from codeintel.core.plugins.decorators import make_plugin_instance
+from codeintel.core.plugins.functional import BaseFunctionalPlugin
+from codeintel.core.plugins.meta_options import (
+    BasePluginMetaOptions,
+    BasePluginMetaOptionsInput,
+)
+from codeintel.core.plugins.registry import BasePluginRegistry
 from codeintel.core.singleton import SingletonHolder
-
-if TYPE_CHECKING:
-    from codeintel.analytics.core.context import PluginExecutionContext
 
 log = logging.getLogger(__name__)
 
-T = TypeVar("T")
+
+# =============================================================================
+# Analytics-specific Plan and Skip types
+# =============================================================================
 
 
 @dataclass(frozen=True)
 class PluginSkip:
-    """Skip metadata for plugins excluded from execution."""
+    """Skip metadata for plugins excluded from execution.
+
+    Attributes
+    ----------
+    name
+        Plugin name.
+    reason
+        Reason for skipping.
+    """
 
     name: str
     reason: Literal["disabled", "missing_dependency", "config_error"]
@@ -47,7 +57,7 @@ class PluginSkip:
 
 @dataclass(frozen=True)
 class PluginPlan:
-    """Resolved execution plan for a set of plugins.
+    """Resolved execution plan for a set of analytics plugins.
 
     Attributes
     ----------
@@ -68,191 +78,53 @@ class PluginPlan:
 
     @property
     def ordered_names(self) -> tuple[str, ...]:
-        """Return plugin names in execution order."""
+        """Return plugin names in execution order.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Plugin names in execution order.
+        """
         return tuple(p.metadata.name for p in self.plugins)
 
 
-class PluginRegistry:
+# =============================================================================
+# Analytics Plugin Registry
+# =============================================================================
+
+
+class PluginRegistry(BasePluginRegistry[AnalyticsPluginProtocol]):
     """Central registry for analytics plugins.
 
-    The registry provides:
-    - Plugin registration (decorator, explicit, entry point)
-    - Plugin lookup by name
-    - Dependency resolution and topological ordering
-    - Capability-based discovery
+    Extends BasePluginRegistry with analytics-specific functionality.
+    Provides plugin registration (decorator, explicit, entry point),
+    plugin lookup by name, dependency resolution and topological ordering,
+    and capability-based discovery.
     """
 
-    def __init__(self) -> None:
-        """Initialize an empty registry."""
-        self._plugins: dict[str, AnalyticsPluginProtocol] = {}
-        self._by_capability: dict[str, set[str]] = {}
-        self._by_stage: dict[PluginStage, set[str]] = {}
-        self._entrypoints_loaded: bool = False
+    @staticmethod
+    def _get_default_plugins() -> Sequence[str]:
+        """Return the default analytics plugin names.
 
-    def register(self, plugin: AnalyticsPluginProtocol) -> None:
-        """Register a plugin instance.
+        Analytics uses enabled_by_default from each plugin's metadata
+        rather than a static list.
 
-        Parameters
-        ----------
-        plugin
-            Plugin instance implementing AnalyticsPluginProtocol.
-
-        Raises
-        ------
-        ValueError
-            If a plugin with the same name is already registered.
+        Returns
+        -------
+        Sequence[str]
+            Empty sequence (analytics uses enabled_by_default instead).
         """
-        meta = plugin.metadata
-        if meta.name in self._plugins:
-            message = f"Duplicate plugin name: {meta.name}"
-            raise ValueError(message)
+        return ()
 
-        self._plugins[meta.name] = plugin
+    def _ensure_builtins_loaded(self) -> None:
+        """Load built-in analytics plugins (currently not used)."""
+        self._builtins_loaded = True
 
-        # Index by capabilities (provides is now tuple[str, ...])
-        for cap_name in meta.provides:
-            self._by_capability.setdefault(cap_name, set()).add(meta.name)
-
-        # Index by stage
-        self._by_stage.setdefault(meta.stage, set()).add(meta.name)
-
-        log.debug("Registered plugin %s (stage=%s)", meta.name, meta.stage)
-
-    def unregister(self, name: str) -> None:
-        """Remove a plugin from the registry.
-
-        Parameters
-        ----------
-        name
-            Plugin name to remove.
-        """
-        plugin = self._plugins.pop(name, None)
-        if plugin is None:
+    def _ensure_entrypoints_loaded(self) -> None:
+        """Load plugins from entry points if not already done."""
+        if self._entrypoints_loaded:
             return
-
-        meta = plugin.metadata
-        for cap_name in meta.provides:
-            if cap_name in self._by_capability:
-                self._by_capability[cap_name].discard(name)
-
-        if meta.stage in self._by_stage:
-            self._by_stage[meta.stage].discard(name)
-
-    def get(self, name: str) -> AnalyticsPluginProtocol:
-        """Return a plugin by name.
-
-        Parameters
-        ----------
-        name
-            Plugin name to look up.
-
-        Returns
-        -------
-        AnalyticsPluginProtocol
-            The registered plugin.
-
-        Raises
-        ------
-        KeyError
-            If no plugin is registered with the given name.
-        """
-        self._ensure_entrypoints_loaded()
-        if name not in self._plugins:
-            message = f"Unknown plugin: {name}"
-            raise KeyError(message)
-        return self._plugins[name]
-
-    def list_all(self) -> tuple[AnalyticsPluginProtocol, ...]:
-        """Return all registered plugins.
-
-        Returns
-        -------
-        tuple[AnalyticsPluginProtocol, ...]
-            All registered plugins in registration order.
-        """
-        self._ensure_entrypoints_loaded()
-        return tuple(self._plugins.values())
-
-    def list_by_stage(self, stage: PluginStage) -> tuple[AnalyticsPluginProtocol, ...]:
-        """Return plugins for a specific stage.
-
-        Parameters
-        ----------
-        stage
-            Stage to filter by.
-
-        Returns
-        -------
-        tuple[AnalyticsPluginProtocol, ...]
-            Plugins in the requested stage.
-        """
-        self._ensure_entrypoints_loaded()
-        names = self._by_stage.get(stage, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
-
-    def list_providing(self, capability: str) -> tuple[AnalyticsPluginProtocol, ...]:
-        """Return plugins that provide a specific capability.
-
-        Parameters
-        ----------
-        capability
-            Capability name to search for.
-
-        Returns
-        -------
-        tuple[AnalyticsPluginProtocol, ...]
-            Plugins providing the capability.
-        """
-        self._ensure_entrypoints_loaded()
-        names = self._by_capability.get(capability, set())
-        return tuple(self._plugins[name] for name in names if name in self._plugins)
-
-    def plan(
-        self,
-        plugin_names: Sequence[str] | None = None,
-        *,
-        enabled: Sequence[str] | None = None,
-        disabled: Sequence[str] | None = None,
-    ) -> PluginPlan:
-        """Build an execution plan with dependency resolution.
-
-        Dependency resolution will fail with a ValueError if cycles or missing
-        dependencies are detected.
-
-        Parameters
-        ----------
-        plugin_names
-            Explicit plugin names to include.
-        enabled
-            Override list of enabled plugins.
-        disabled
-            Plugins to exclude from the plan.
-
-        Returns
-        -------
-        PluginPlan
-            Ordered execution plan.
-        """
-        self._ensure_entrypoints_loaded()
-
-        # Resolve which plugins to include
-        selected, skipped = self._resolve_selection(
-            plugin_names=plugin_names,
-            enabled=enabled,
-            disabled=disabled,
-        )
-
-        # Build dependency graph
-        dependencies = PluginRegistry._resolve_dependencies(selected)
-
-        # Topological sort
-        ordered = self._topological_sort(selected, dependencies)
-
-        return PluginPlan(
-            plugins=tuple(ordered),
-            skipped=skipped,
-            dep_graph={name: tuple(sorted(deps)) for name, deps in dependencies.items()},
-        )
+        self.load_from_entrypoints()
 
     def load_from_entrypoints(
         self,
@@ -295,12 +167,54 @@ class PluginRegistry:
         self._entrypoints_loaded = True
         return tuple(discovered)
 
-    def _ensure_entrypoints_loaded(self) -> None:
-        """Load entry points if not already done."""
-        if not self._entrypoints_loaded:
-            self.load_from_entrypoints()
+    def plan(
+        self,
+        plugin_names: Sequence[str] | None = None,
+        *,
+        enabled: Sequence[str] | None = None,
+        disabled: Sequence[str] | None = None,
+    ) -> PluginPlan:
+        """Build an execution plan with dependency resolution.
 
-    def _resolve_selection(
+        Dependency resolution raises ValueError if cycles or missing
+        dependencies are detected.
+
+        Parameters
+        ----------
+        plugin_names
+            Explicit plugin names to include.
+        enabled
+            Override list of enabled plugins.
+        disabled
+            Plugins to exclude from the plan.
+
+        Returns
+        -------
+        PluginPlan
+            Ordered execution plan.
+        """
+        self._ensure_loaded()
+
+        # Resolve which plugins to include
+        selected, skipped = self._resolve_analytics_selection(
+            plugin_names=plugin_names,
+            enabled=enabled,
+            disabled=disabled,
+        )
+
+        # Build dependency graph
+        dependencies = self._resolve_analytics_dependencies(selected)
+
+        # Topological sort (reuse base class static method)
+        ordered = self._topological_sort(selected, dependencies)
+
+        return PluginPlan(
+            plugins=tuple(ordered),
+            skipped=skipped,
+            dep_graph={name: tuple(sorted(deps)) for name, deps in dependencies.items()},
+        )
+
+    def _resolve_analytics_selection(
         self,
         *,
         plugin_names: Sequence[str] | None,
@@ -333,12 +247,16 @@ class PluginRegistry:
                 continue
             if name in selected:
                 continue
-            selected[name] = self.get(name)
+            try:
+                selected[name] = self.get(name)
+            except KeyError:
+                skipped.append(PluginSkip(name=name, reason="missing_dependency"))
+                log.warning("Skipping unknown plugin: %s", name)
 
         return selected, tuple(skipped)
 
-    @staticmethod
-    def _resolve_dependencies(
+    def _resolve_analytics_dependencies(
+        self,
         selected: dict[str, AnalyticsPluginProtocol],
     ) -> dict[str, set[str]]:
         """Build dependency graph for selected plugins.
@@ -356,14 +274,10 @@ class PluginRegistry:
                 if dep in selected:
                     dependencies[name].add(dep)
                 else:
-                    log.debug(
-                        "Skipping unmet dependency %s for plugin %s",
-                        dep,
-                        name,
-                    )
+                    log.debug("Skipping unmet dependency %s for plugin %s", dep, name)
 
-        # Capability-based dependencies (requires is now tuple[str, ...])
-        capability_providers = PluginRegistry._build_capability_index(selected)
+        # Capability-based dependencies
+        capability_providers = self._build_capability_index(selected)
         for name, plugin in selected.items():
             for cap_name in plugin.metadata.requires:
                 providers = capability_providers.get(cap_name, set())
@@ -388,6 +302,11 @@ class PluginRegistry:
     ) -> dict[str, set[str]]:
         """Build index of capability -> provider plugins.
 
+        Parameters
+        ----------
+        selected
+            Selected plugins to index.
+
         Returns
         -------
         dict[str, set[str]]
@@ -399,42 +318,12 @@ class PluginRegistry:
                 index.setdefault(cap_name, set()).add(name)
         return index
 
-    @staticmethod
-    def _topological_sort(
-        selected: dict[str, AnalyticsPluginProtocol],
-        dependencies: dict[str, set[str]],
-    ) -> list[AnalyticsPluginProtocol]:
-        """Perform topological sort with cycle detection.
 
-        Returns
-        -------
-        list[AnalyticsPluginProtocol]
-            Plugins ordered based on dependencies.
-        """
-        ordered: list[AnalyticsPluginProtocol] = []
-        temporary: set[str] = set()
-        permanent: set[str] = set()
-
-        def visit(name: str) -> None:
-            if name in permanent:
-                return
-            if name in temporary:
-                message = f"Dependency cycle detected involving plugin: {name}"
-                raise ValueError(message)
-            temporary.add(name)
-            for dep in dependencies.get(name, set()):
-                visit(dep)
-            temporary.remove(name)
-            permanent.add(name)
-            ordered.append(selected[name])
-
-        for name in selected:
-            visit(name)
-
-        return ordered
+# =============================================================================
+# Singleton Access
+# =============================================================================
 
 
-# Singleton holder for plugin registry
 class _PluginRegistryHolder(SingletonHolder["PluginRegistry"]):
     """Thread-safe singleton holder for PluginRegistry."""
 
@@ -469,35 +358,34 @@ def register_plugin(plugin: AnalyticsPluginProtocol) -> None:
     get_registry().register(plugin)
 
 
-@dataclass
-class PluginMetaOptions:
-    """Options container for plugin metadata.
+# =============================================================================
+# Decorator Support
+# =============================================================================
 
-    Grouping metadata in a single object keeps decorator signatures small and
-    makes future evolution easier (new fields are added here without touching
-    call sites).
+
+class PluginMetaOptionsInput(BasePluginMetaOptionsInput, total=False):
+    """Typed keyword arguments for PluginMetaOptions.from_kwargs factory.
+
+    Extends BasePluginMetaOptionsInput with any analytics-specific fields.
+    Currently identical to base, but can be extended as needed.
     """
 
-    name: str | None = None
-    description: str | None = None
-    kind: PluginKind = "analytics"
-    stage: PluginStage = "other"
-    version: str = "1.0.0"
-    enabled_by_default: bool = True
-    severity: PluginSeverity = "fatal"
-    inputs: Sequence[PluginInputSpec] = ()
-    outputs: Sequence[PluginOutputSpec] = ()
-    provides: Sequence[str] = ()
-    requires: Sequence[str] = ()
-    depends_on: Sequence[str] = ()
-    resource_hints: PluginResourceHints | None = None
-    requires_isolation: bool = False
-    isolation_kind: PluginIsolation = "none"
-    tags: Sequence[str] = ()
+
+@dataclass
+class PluginMetaOptions(BasePluginMetaOptions):
+    """Options container for analytics plugin metadata.
+
+    Extends BasePluginMetaOptions with analytics-specific defaults.
+    Grouping metadata in a single object keeps decorator signatures small
+    and makes future evolution easier.
+    """
 
     @staticmethod
     def from_kwargs(**kwargs: Unpack[PluginMetaOptionsInput]) -> PluginMetaOptions:
         """Build options from keyword arguments with validation.
+
+        Delegates validation to BasePluginMetaOptions.validate_option_keys,
+        which raises ValueError if unknown keys are provided.
 
         Parameters
         ----------
@@ -508,17 +396,11 @@ class PluginMetaOptions:
         -------
         PluginMetaOptions
             Options built from the provided keyword arguments.
-
-        Raises
-        ------
-        ValueError
-            If unsupported option keys are supplied.
         """
-        allowed_keys = set(PluginMetaOptionsInput.__annotations__)
-        unknown = set(kwargs) - allowed_keys
-        if unknown:
-            message = f"Unsupported plugin option keys: {', '.join(sorted(unknown))}"
-            raise ValueError(message)
+        BasePluginMetaOptions.validate_option_keys(
+            set(PluginMetaOptionsInput.__annotations__),
+            kwargs,
+        )
         return PluginMetaOptions(**kwargs)
 
     def to_metadata(
@@ -535,96 +417,18 @@ class PluginMetaOptions:
         Returns
         -------
         PluginMetadata
-            Metadata populated from the options and function defaults.
+            Metadata populated from options with analytics defaults.
         """
-        resolved_name = self.name or fn.__name__.replace("_", ".")
-        resolved_description = self.description or fn.__doc__ or ""
-
-        return PluginMetadata(
-            name=resolved_name,
-            description=resolved_description.strip(),
-            kind=self.kind,
-            stage=self.stage,
-            version=self.version,
-            enabled_by_default=self.enabled_by_default,
-            severity=self.severity,
-            inputs=tuple(self.inputs),
-            outputs=tuple(self.outputs),
-            provides=tuple(self.provides),
-            requires=tuple(self.requires),
-            depends_on=tuple(self.depends_on),
-            resource_hints=self.resource_hints,
-            requires_isolation=self.requires_isolation,
-            isolation_kind=self.isolation_kind,
-            tags=tuple(self.tags),
-        )
+        return self.to_base_metadata(fn, default_kind="analytics", default_stage="other")
 
 
-class PluginMetaOptionsInput(TypedDict, total=False):
-    """Typed keyword arguments for PluginMetaOptions.from_kwargs factory."""
+# Type alias for analytics functional plugin using the base class
+FunctionalPlugin = BaseFunctionalPlugin[PluginExecutionContext, PluginMetadata]
+"""Analytics plugin implementation wrapping a callable.
 
-    name: str
-    description: str
-    kind: PluginKind
-    stage: PluginStage
-    version: str
-    enabled_by_default: bool
-    severity: PluginSeverity
-    inputs: Sequence[PluginInputSpec]
-    outputs: Sequence[PluginOutputSpec]
-    provides: Sequence[str]
-    requires: Sequence[str]
-    depends_on: Sequence[str]
-    resource_hints: PluginResourceHints | None
-    requires_isolation: bool
-    isolation_kind: PluginIsolation
-    tags: Sequence[str]
-
-
-@dataclass
-class FunctionalPlugin:
-    """Plugin implementation wrapping a callable.
-
-    This class provides a simple way to create plugins from functions
-    using the @plugin decorator.
-    """
-
-    _metadata: PluginMetadata
-    _execute_fn: Callable[[PluginExecutionContext], PluginResult]
-    _validate_fn: Callable[[PluginExecutionContext], ValidationResult] | None = None
-
-    @property
-    def metadata(self) -> PluginMetadata:
-        """Return plugin metadata.
-
-        Returns
-        -------
-        PluginMetadata
-            Metadata for the wrapped plugin.
-        """
-        return self._metadata
-
-    def execute(self, ctx: PluginExecutionContext) -> PluginResult:
-        """Execute the wrapped function.
-
-        Returns
-        -------
-        PluginResult
-            Result produced by the underlying callable.
-        """
-        return self._execute_fn(ctx)
-
-    def validate_inputs(self, ctx: PluginExecutionContext) -> ValidationResult:
-        """Validate inputs using the custom validator or default.
-
-        Returns
-        -------
-        ValidationResult
-            Validation result from the custom validator or a default success.
-        """
-        if self._validate_fn is not None:
-            return self._validate_fn(ctx)
-        return ValidationResult.success()
+This type alias provides analytics-specific typing for the base functional
+plugin class. Use with the @plugin decorator.
+"""
 
 
 def plugin(
@@ -637,7 +441,7 @@ def plugin(
     FunctionalPlugin
     | Callable[[Callable[[PluginExecutionContext], PluginResult]], FunctionalPlugin]
 ):
-    """Create and register plugins.
+    """Create and register analytics plugins.
 
     Can be used in two ways:
 
@@ -674,14 +478,15 @@ def plugin(
             raise ValueError(message)
 
         options = meta or PluginMetaOptions.from_kwargs(**kwargs)
-        metadata = options.to_metadata(fn)
+        register_fn = get_registry().register if register else None
 
-        plugin_instance = FunctionalPlugin(_metadata=metadata, _execute_fn=fn)
-
-        if register:
-            get_registry().register(plugin_instance)
-
-        return plugin_instance
+        return make_plugin_instance(
+            fn=fn,
+            options=options,
+            plugin_factory=lambda m, f: FunctionalPlugin(_metadata=m, _execute_fn=f),
+            to_metadata=lambda opts, f: opts.to_metadata(f),
+            register_fn=register_fn,
+        )
 
     if func is not None:
         # Used as @plugin without arguments
@@ -700,4 +505,5 @@ __all__ = [
     "get_registry",
     "plugin",
     "register_plugin",
+    "reset_registry",
 ]

@@ -12,20 +12,20 @@ from typing import Any
 from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
-from codeintel.ingestion.tools.infrastructure import (
+from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
     ToolRunner,
     ToolRunResult,
 )
-from codeintel.ingestion.tools.plugins import (
+from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
     ToolPluginMetadata,
     ToolPluginResult,
     ToolStatus,
 )
-from codeintel.ingestion.tools.results import ScipIndexResult
+from codeintel.ingestion.engine.results import ScipIndexResult
 
 log = logging.getLogger(__name__)
 
