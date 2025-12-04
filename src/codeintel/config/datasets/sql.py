@@ -14,7 +14,7 @@ from functools import lru_cache
 from typing import Final, TypeVar
 
 from codeintel.config.datasets.contracts import get_table_schemas
-from codeintel.storage.sql_primitives import QueryBuilder, SafeColumn, SafeTable
+from codeintel.storage.sql.primitives import QueryBuilder, SafeColumn, SafeTable
 
 _Column = TypeVar("_Column", bound=str)
 

@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/sql/builder.py
+# hypothesis_version: 6.148.6
+
+['.', 'SELECT * FROM', 'ensure_schema']

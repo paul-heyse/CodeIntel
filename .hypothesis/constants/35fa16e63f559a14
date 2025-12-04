@@ -1,0 +1,4 @@
+# file: /home/paul/CodeIntel/src/codeintel/storage/schema/json_schema.py
+# hypothesis_version: 6.148.6
+
+['$id', '$schema', 'additionalProperties', 'anyOf', 'array', 'boolean', 'build_validator', 'by_name', 'enum', 'integer', 'items', 'null', 'number', 'object', 'properties', 'required', 'row_binding', 'string', 'title', 'type', 'utf-8']

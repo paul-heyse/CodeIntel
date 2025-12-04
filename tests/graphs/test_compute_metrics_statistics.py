@@ -1,0 +1,591 @@
+"""Tests for graph statistics computation functions.
+
+This module tests the stateless graph statistics functions including
+degree computations, diameter estimation, and summary statistics.
+"""
+
+from __future__ import annotations
+
+from typing import Final
+
+import networkx as nx
+import pytest
+
+from codeintel.graphs.compute.metrics.statistics import (
+    GraphStatistics,
+    compute_avg_shortest_path_length,
+    compute_condensation_layer_count,
+    compute_diameter_estimate,
+    compute_graph_statistics,
+    get_degree_values,
+    get_degrees,
+    get_in_degree_values,
+    get_in_degrees,
+    get_out_degree_values,
+    get_out_degrees,
+)
+from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.fakes.networkx_graphs import (
+    chain_graph,
+    cyclic_graph,
+    diamond_graph,
+    disconnected_graph,
+    star_graph,
+)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+EXPECTED_NODE_COUNT_THREE: Final[int] = 3
+EXPECTED_NODE_COUNT_FOUR: Final[int] = 4
+EXPECTED_NODE_COUNT_FIVE: Final[int] = 5
+EXPECTED_NODE_COUNT_SIX: Final[int] = 6
+EXPECTED_EDGE_COUNT_THREE: Final[int] = 3
+EXPECTED_EDGE_COUNT_FOUR: Final[int] = 4
+EXPECTED_LAYER_COUNT_ONE: Final[int] = 1
+EXPECTED_LAYER_COUNT_FOUR: Final[int] = 4
+EXPECTED_SCC_ONE: Final[int] = 1
+EXPECTED_WCC_ONE: Final[int] = 1
+EXPECTED_WCC_TWO: Final[int] = 2
+TOLERANCE: Final[float] = 0.01
+DENSITY_COMPLETE_FOUR: Final[float] = 1.0
+DENSITY_CHAIN_FOUR: Final[float] = 3 / 12  # 3 edges, max 12
+
+
+# ===========================================================================
+# get_in_degrees Tests
+# ===========================================================================
+
+
+def test_in_degrees_empty_graph() -> None:
+    """Empty graph returns empty list."""
+    graph = nx.DiGraph()
+    result = get_in_degrees(graph)
+    assert result == []
+
+
+def test_in_degrees_single_node() -> None:
+    """Single node has in-degree 0."""
+    graph = nx.DiGraph()
+    graph.add_node(1)
+    result = get_in_degrees(graph)
+
+    assert len(result) == 1
+    assert result[0] == (1, 0)
+
+
+def test_in_degrees_chain_graph() -> None:
+    """Chain graph has correct in-degrees."""
+    graph = chain_graph(4)  # A -> B -> C -> D
+    result = get_in_degrees(graph)
+
+    in_degree_dict = dict(result)
+    assert in_degree_dict["A"] == 0  # Source
+    assert in_degree_dict["B"] == 1
+    assert in_degree_dict["C"] == 1
+    assert in_degree_dict["D"] == 1
+
+
+def test_in_degrees_star_graph() -> None:
+    """Star graph hub has in-degree 0, spokes have 1."""
+    graph = star_graph(3)
+    result = get_in_degrees(graph)
+
+    in_degree_dict = dict(result)
+    assert in_degree_dict["hub"] == 0
+    for i in range(1, 4):
+        assert in_degree_dict[f"spoke{i}"] == 1
+
+
+def test_in_degrees_diamond_graph() -> None:
+    """Diamond graph D has in-degree 2."""
+    graph = diamond_graph()
+    result = get_in_degrees(graph)
+
+    in_degree_dict = dict(result)
+    assert in_degree_dict["A"] == 0
+    assert in_degree_dict["B"] == 1
+    assert in_degree_dict["C"] == 1
+    assert in_degree_dict["D"] == 2
+
+
+# ===========================================================================
+# get_out_degrees Tests
+# ===========================================================================
+
+
+def test_out_degrees_empty_graph() -> None:
+    """Empty graph returns empty list."""
+    graph = nx.DiGraph()
+    result = get_out_degrees(graph)
+    assert result == []
+
+
+def test_out_degrees_chain_graph() -> None:
+    """Chain graph has correct out-degrees."""
+    graph = chain_graph(4)
+    result = get_out_degrees(graph)
+
+    out_degree_dict = dict(result)
+    assert out_degree_dict["A"] == 1
+    assert out_degree_dict["B"] == 1
+    assert out_degree_dict["C"] == 1
+    assert out_degree_dict["D"] == 0  # Sink
+
+
+def test_out_degrees_star_graph() -> None:
+    """Star graph hub has out-degree equal to spoke count."""
+    graph = star_graph(3)
+    result = get_out_degrees(graph)
+
+    out_degree_dict = dict(result)
+    assert out_degree_dict["hub"] == 3
+    for i in range(1, 4):
+        assert out_degree_dict[f"spoke{i}"] == 0
+
+
+def test_out_degrees_diamond_graph() -> None:
+    """Diamond graph A has out-degree 2."""
+    graph = diamond_graph()
+    result = get_out_degrees(graph)
+
+    out_degree_dict = dict(result)
+    assert out_degree_dict["A"] == 2
+    assert out_degree_dict["B"] == 1
+    assert out_degree_dict["C"] == 1
+    assert out_degree_dict["D"] == 0
+
+
+# ===========================================================================
+# get_degrees Tests (Undirected)
+# ===========================================================================
+
+
+def test_degrees_empty_graph() -> None:
+    """Empty graph returns empty list."""
+    graph = nx.Graph()
+    result = get_degrees(graph)
+    assert result == []
+
+
+def test_degrees_chain_undirected() -> None:
+    """Undirected chain has correct degrees."""
+    graph = chain_graph(4).to_undirected()
+    result = get_degrees(graph)
+
+    degree_dict = dict(result)
+    assert degree_dict["A"] == 1  # End node
+    assert degree_dict["B"] == 2  # Middle node
+    assert degree_dict["C"] == 2  # Middle node
+    assert degree_dict["D"] == 1  # End node
+
+
+def test_degrees_complete_graph() -> None:
+    """Complete graph has uniform degrees."""
+    graph = nx.complete_graph(5)
+    result = get_degrees(graph)
+
+    for _, degree in result:
+        assert degree == 4  # n-1 for complete graph
+
+
+# ===========================================================================
+# get_in_degree_values / get_out_degree_values / get_degree_values Tests
+# ===========================================================================
+
+
+def test_in_degree_values() -> None:
+    """Get just the in-degree values."""
+    graph = chain_graph(3)
+    result = get_in_degree_values(graph)
+
+    assert len(result) == EXPECTED_NODE_COUNT_THREE
+    assert 0 in result  # A has in-degree 0
+    assert result.count(1) >= 2  # B, C have in-degree 1
+
+
+def test_out_degree_values() -> None:
+    """Get just the out-degree values."""
+    graph = chain_graph(3)
+    result = get_out_degree_values(graph)
+
+    assert len(result) == EXPECTED_NODE_COUNT_THREE
+    assert 0 in result  # C has out-degree 0
+
+
+def test_degree_values() -> None:
+    """Get just the degree values (undirected)."""
+    graph = chain_graph(3).to_undirected()
+    result = get_degree_values(graph)
+
+    assert len(result) == EXPECTED_NODE_COUNT_THREE
+    assert 1 in result  # End nodes have degree 1
+    assert 2 in result  # Middle node has degree 2
+
+
+# ===========================================================================
+# compute_diameter_estimate Tests
+# ===========================================================================
+
+
+def test_diameter_empty_graph() -> None:
+    """Empty graph returns None."""
+    graph = nx.DiGraph()
+    result = compute_diameter_estimate(graph)
+    assert result is None
+
+
+def test_diameter_single_node() -> None:
+    """Single node has diameter 0."""
+    graph = nx.DiGraph()
+    graph.add_node("A")
+    result = compute_diameter_estimate(graph)
+    assert result == 0.0
+
+
+def test_diameter_chain_graph() -> None:
+    """Chain graph diameter equals length."""
+    graph = chain_graph(5)
+    result = compute_diameter_estimate(graph)
+
+    # Diameter of path with 5 nodes is 4
+    assert result == 4.0
+
+
+def test_diameter_complete_graph() -> None:
+    """Complete graph has diameter 1."""
+    graph = nx.complete_graph(5, create_using=nx.DiGraph())
+    result = compute_diameter_estimate(graph)
+
+    assert result == 1.0
+
+
+def test_diameter_disconnected_uses_largest_component() -> None:
+    """Disconnected graph uses largest component."""
+    graph = disconnected_graph()
+    result = compute_diameter_estimate(graph)
+
+    # Both components are chains of length 3 (diameter 2)
+    assert result == 2.0
+
+
+def test_diameter_star_graph() -> None:
+    """Star graph has diameter 2."""
+    graph = star_graph(5)
+    result = compute_diameter_estimate(graph)
+
+    # Undirected: spoke -> hub -> spoke = 2
+    assert result == 2.0
+
+
+# ===========================================================================
+# compute_avg_shortest_path_length Tests
+# ===========================================================================
+
+
+def test_avg_path_length_empty_graph() -> None:
+    """Empty graph returns None."""
+    graph = nx.DiGraph()
+    result = compute_avg_shortest_path_length(graph)
+    assert result is None
+
+
+def test_avg_path_length_single_node() -> None:
+    """Single node has avg path length 0."""
+    graph = nx.DiGraph()
+    graph.add_node("A")
+    result = compute_avg_shortest_path_length(graph)
+    assert result == 0.0
+
+
+def test_avg_path_length_chain_graph() -> None:
+    """Chain graph has predictable avg path length."""
+    graph = chain_graph(4)
+    result = compute_avg_shortest_path_length(graph)
+
+    # For undirected path of 4 nodes, avg path length is 4/3 ≈ 1.33
+    assert result is not None
+    assert abs(result - 4 / 3) < TOLERANCE
+
+
+def test_avg_path_length_complete_graph() -> None:
+    """Complete graph has avg path length 1."""
+    graph = nx.complete_graph(5, create_using=nx.DiGraph())
+    result = compute_avg_shortest_path_length(graph)
+
+    assert result is not None
+    assert abs(result - 1.0) < TOLERANCE
+
+
+def test_avg_path_length_disconnected_uses_largest() -> None:
+    """Disconnected graph uses largest component."""
+    graph = disconnected_graph()
+    result = compute_avg_shortest_path_length(graph)
+
+    assert result is not None
+
+
+# ===========================================================================
+# compute_condensation_layer_count Tests
+# ===========================================================================
+
+
+def test_condensation_layers_empty_graph() -> None:
+    """Empty graph returns None."""
+    graph = nx.DiGraph()
+    result = compute_condensation_layer_count(graph)
+    assert result is None
+
+
+def test_condensation_layers_single_node() -> None:
+    """Single node has 1 layer."""
+    graph = nx.DiGraph()
+    graph.add_node("A")
+    result = compute_condensation_layer_count(graph)
+    assert result == EXPECTED_LAYER_COUNT_ONE
+
+
+def test_condensation_layers_chain_graph() -> None:
+    """Chain graph has N layers (each node is own SCC)."""
+    graph = chain_graph(4)
+    result = compute_condensation_layer_count(graph)
+    assert result == EXPECTED_LAYER_COUNT_FOUR
+
+
+def test_condensation_layers_cycle_graph() -> None:
+    """Cycle graph has 1 layer (all nodes in one SCC)."""
+    graph = cyclic_graph(4)
+    result = compute_condensation_layer_count(graph)
+    assert result == EXPECTED_LAYER_COUNT_ONE
+
+
+def test_condensation_layers_diamond_graph() -> None:
+    """Diamond graph has 3 layers."""
+    graph = diamond_graph()
+    result = compute_condensation_layer_count(graph)
+
+    # A -> {B, C} -> D = 3 layers
+    assert result == 3
+
+
+def test_condensation_layers_mixed_graph() -> None:
+    """Graph with SCC and DAG parts."""
+    graph = nx.DiGraph()
+    # Cycle: A -> B -> C -> A (one SCC)
+    graph.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
+    # DAG extending: C -> D -> E
+    graph.add_edges_from([("C", "D"), ("D", "E")])
+
+    result = compute_condensation_layer_count(graph)
+
+    # SCC {A,B,C} -> D -> E = 3 layers
+    assert result == 3
+
+
+# ===========================================================================
+# compute_graph_statistics Tests
+# ===========================================================================
+
+
+def test_statistics_empty_graph() -> None:
+    """Empty graph returns zero statistics."""
+    graph = nx.DiGraph()
+    result = compute_graph_statistics(graph)
+
+    assert result.node_count == 0
+    assert result.edge_count == 0
+    assert result.density == 0.0
+    assert result.avg_in_degree == 0.0
+    assert result.avg_out_degree == 0.0
+    assert result.strongly_connected_components == 0
+    assert result.weakly_connected_components == 0
+    assert result.is_dag is True
+
+
+def test_statistics_single_node() -> None:
+    """Single node graph statistics."""
+    graph = nx.DiGraph()
+    graph.add_node("A")
+    result = compute_graph_statistics(graph)
+
+    assert result.node_count == 1
+    assert result.edge_count == 0
+    assert result.density == 0.0
+    assert result.strongly_connected_components == 1
+    assert result.weakly_connected_components == 1
+    assert result.is_dag is True
+
+
+def test_statistics_chain_graph() -> None:
+    """Chain graph statistics."""
+    graph = chain_graph(4)
+    result = compute_graph_statistics(graph)
+
+    assert result.node_count == EXPECTED_NODE_COUNT_FOUR
+    assert result.edge_count == EXPECTED_EDGE_COUNT_THREE
+    assert abs(result.density - DENSITY_CHAIN_FOUR) < TOLERANCE
+    assert result.strongly_connected_components == EXPECTED_NODE_COUNT_FOUR  # Each node is SCC
+    assert result.weakly_connected_components == EXPECTED_WCC_ONE
+    assert result.is_dag is True
+
+
+def test_statistics_cyclic_graph() -> None:
+    """Cyclic graph statistics."""
+    graph = cyclic_graph(4)
+    result = compute_graph_statistics(graph)
+
+    assert result.node_count == EXPECTED_NODE_COUNT_FOUR
+    assert result.edge_count == EXPECTED_EDGE_COUNT_FOUR
+    assert result.strongly_connected_components == EXPECTED_SCC_ONE  # All in one SCC
+    assert result.weakly_connected_components == EXPECTED_WCC_ONE
+    assert result.is_dag is False
+
+
+def test_statistics_complete_graph() -> None:
+    """Complete directed graph statistics."""
+    graph = nx.complete_graph(4, create_using=nx.DiGraph())
+    result = compute_graph_statistics(graph)
+
+    assert result.node_count == EXPECTED_NODE_COUNT_FOUR
+    assert result.edge_count == 12  # n*(n-1)
+    assert abs(result.density - DENSITY_COMPLETE_FOUR) < TOLERANCE
+    assert result.strongly_connected_components == EXPECTED_SCC_ONE
+    assert result.is_dag is False
+
+
+def test_statistics_disconnected_graph() -> None:
+    """Disconnected graph statistics."""
+    graph = disconnected_graph()
+    result = compute_graph_statistics(graph)
+
+    assert result.node_count == EXPECTED_NODE_COUNT_SIX
+    assert result.weakly_connected_components == EXPECTED_WCC_TWO
+    assert result.is_dag is True
+
+
+def test_statistics_star_graph() -> None:
+    """Star graph statistics."""
+    graph = star_graph(3)
+    result = compute_graph_statistics(graph)
+
+    assert result.node_count == EXPECTED_NODE_COUNT_FOUR
+    assert result.edge_count == EXPECTED_EDGE_COUNT_THREE
+    assert result.is_dag is True
+
+
+def test_statistics_returns_dataclass() -> None:
+    """Returns GraphStatistics dataclass."""
+    graph = chain_graph(3)
+    result = compute_graph_statistics(graph)
+
+    assert isinstance(result, GraphStatistics)
+    assert hasattr(result, "node_count")
+    assert hasattr(result, "edge_count")
+    assert hasattr(result, "density")
+    assert hasattr(result, "avg_in_degree")
+    assert hasattr(result, "avg_out_degree")
+    assert hasattr(result, "strongly_connected_components")
+    assert hasattr(result, "weakly_connected_components")
+    assert hasattr(result, "is_dag")
+
+
+def test_statistics_avg_degrees() -> None:
+    """Average degree calculations."""
+    graph = star_graph(4)  # hub with 4 spokes
+    result = compute_graph_statistics(graph)
+
+    # Hub has out-degree 4, spokes have 0 each
+    # Avg out-degree: 4 / 5 = 0.8
+    assert abs(result.avg_out_degree - 0.8) < TOLERANCE
+
+    # Hub has in-degree 0, spokes have 1 each
+    # Avg in-degree: 4 / 5 = 0.8
+    assert abs(result.avg_in_degree - 0.8) < TOLERANCE
+
+
+# ===========================================================================
+# Dataclass Frozen Tests
+# ===========================================================================
+
+
+def test_graph_statistics_frozen() -> None:
+    """GraphStatistics is frozen."""
+    stats = GraphStatistics(
+        node_count=10,
+        edge_count=20,
+        density=0.5,
+        avg_in_degree=2.0,
+        avg_out_degree=2.0,
+        strongly_connected_components=5,
+        weakly_connected_components=1,
+        is_dag=True,
+    )
+    assert_cannot_setattr(stats, "node_count", 100)
+
+
+# ===========================================================================
+# Parametrized Tests
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    ("node_count", "expected_scc_count"),
+    [
+        (2, 2),  # Chain: each node is SCC
+        (5, 5),
+        (10, 10),
+    ],
+)
+def test_chain_scc_counts(node_count: int, expected_scc_count: int) -> None:
+    """Chain graphs have one SCC per node."""
+    graph = chain_graph(node_count)
+    result = compute_graph_statistics(graph)
+
+    assert result.strongly_connected_components == expected_scc_count
+
+
+@pytest.mark.parametrize(
+    "cycle_size",
+    [
+        3,
+        5,
+        10,
+    ],
+)
+def test_cycle_single_scc(cycle_size: int) -> None:
+    """Cycle graphs have exactly one SCC."""
+    graph = cyclic_graph(cycle_size)
+    result = compute_graph_statistics(graph)
+
+    assert result.strongly_connected_components == 1
+
+
+@pytest.mark.parametrize(
+    ("node_count", "expected_is_dag"),
+    [
+        (3, True),  # Chain is DAG
+        (5, True),
+    ],
+)
+def test_chain_is_dag(node_count: int, expected_is_dag: bool) -> None:
+    """Chain graphs are DAGs."""
+    graph = chain_graph(node_count)
+    result = compute_graph_statistics(graph)
+
+    assert result.is_dag == expected_is_dag
+
+
+@pytest.mark.parametrize(
+    ("n", "expected_edge_count"),
+    [
+        (3, 6),  # 3*2
+        (4, 12),  # 4*3
+        (5, 20),  # 5*4
+    ],
+)
+def test_complete_edge_counts(n: int, expected_edge_count: int) -> None:
+    """Complete directed graphs have n*(n-1) edges."""
+    graph = nx.complete_graph(n, create_using=nx.DiGraph())
+    result = compute_graph_statistics(graph)
+
+    assert result.edge_count == expected_edge_count

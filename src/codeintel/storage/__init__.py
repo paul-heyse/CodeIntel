@@ -10,15 +10,14 @@ This module provides the primary abstractions for database access:
 Due to module initialization order constraints, imports should be done
 from specific submodules:
 
-    from codeintel.storage.config import StorageConfig
-    from codeintel.storage.gateway import StorageGateway, open_gateway, DuckDBConnection
+    from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
     from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
+    from codeintel.storage.repositories import fetch_models, DataModelRow
 """
 
 from __future__ import annotations
 
-from codeintel.storage.config import StorageConfig
+# Note: We avoid importing from gateway here to prevent circular imports.
+# Users should import StorageConfig from codeintel.storage.gateway instead.
 
-__all__ = [
-    "StorageConfig",
-]
+__all__: list[str] = []
