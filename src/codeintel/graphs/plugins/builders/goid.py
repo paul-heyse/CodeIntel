@@ -350,9 +350,9 @@ def build_goids(
     cfg
         GOID builder configuration.
     """
-    # Create context with resources
+    # Create context with resources - register by type for require() lookup
     resources = ResourceRegistry()
-    resources.register_provider(StorageResource(gateway, cfg.snapshot.repo_root))
+    resources.register(StorageResource, StorageResource(gateway, cfg.snapshot.repo_root))
 
     ctx = GraphPluginExecutionContext(
         gateway=gateway,

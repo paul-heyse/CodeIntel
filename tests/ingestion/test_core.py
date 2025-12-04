@@ -399,7 +399,7 @@ def test_ingest_resource_hints_defaults() -> None:
 
     assert hints.cpu_intensive is False
     assert hints.io_intensive is False
-    assert hints.memory_mb_hint is None
+    assert hints.max_memory_mb is None
     assert hints.max_runtime_ms is None
 
 
@@ -408,11 +408,11 @@ def test_ingest_resource_hints_custom_values() -> None:
     hints = IngestResourceHints(
         cpu_intensive=True,
         io_intensive=True,
-        memory_mb_hint=TEST_MEMORY_MB,
+        max_memory_mb=TEST_MEMORY_MB,
         max_runtime_ms=TEST_TIMEOUT_MS,
     )
 
     assert hints.cpu_intensive is True
     assert hints.io_intensive is True
-    assert hints.memory_mb_hint == TEST_MEMORY_MB
+    assert hints.max_memory_mb == TEST_MEMORY_MB
     assert hints.max_runtime_ms == TEST_TIMEOUT_MS

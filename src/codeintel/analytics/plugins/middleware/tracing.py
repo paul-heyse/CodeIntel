@@ -176,8 +176,8 @@ class TracingMiddleware:
         """
         if self.trace_id is not None:
             return self.trace_id
-        # Use run_id as trace_id for correlation
-        return ctx.run_id
+        # Use run_id as trace_id for correlation, or generate a default
+        return ctx.run_id or "no-run-id"
 
     def before_execute(
         self,

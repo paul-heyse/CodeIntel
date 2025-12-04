@@ -19,6 +19,7 @@ from codeintel.analytics.core.registry import (
     PluginRegistry,
     plugin,
 )
+from codeintel.core.plugins.functional import BaseFunctionalPlugin
 from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.gateway import open_ingestion_gateway
@@ -273,7 +274,8 @@ def test_plugin_decorator_simple() -> None:
         ),
     )
 
-    assert isinstance(my_plugin, FunctionalPlugin)
+    # Use BaseFunctionalPlugin for isinstance check (subscripted generics can't be used)
+    assert isinstance(my_plugin, BaseFunctionalPlugin)
     assert my_plugin.metadata.name == "decorated.plugin"
     assert my_plugin.metadata.description == "A decorated plugin"
     assert my_plugin.metadata.stage == "function"

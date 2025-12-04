@@ -1,7 +1,8 @@
 """Unified recipe model definitions.
 
 This module defines the core dataclasses for recipes that work with both
-graph and analytics plugins.
+graph, analytics, and ingestion plugins. Base classes provide common
+structure that can be extended by domain-specific implementations.
 """
 
 from __future__ import annotations
@@ -11,9 +12,90 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
+# =============================================================================
+# Base Classes (for domain extension)
+# =============================================================================
+
 
 @dataclass(frozen=True)
-class RecipeStage:
+class BaseRecipeStage:
+    """Base stage definition with common fields.
+
+    This class provides the foundational structure for recipe stages
+    that can be extended by domain-specific implementations.
+
+    Attributes
+    ----------
+    name
+        Stage identifier.
+    plugins
+        Plugin names to execute in this stage.
+    parallel
+        Whether plugins within the stage can run in parallel.
+    fail_fast
+        Whether to abort stage on first plugin failure.
+    """
+
+    name: str
+    plugins: tuple[str, ...]
+    parallel: bool = False
+    fail_fast: bool = True
+
+
+@dataclass(frozen=True)
+class BaseRecipeOptions:
+    """Base options with common execution parameters.
+
+    This class provides the foundational structure for recipe options
+    that can be extended by domain-specific implementations.
+
+    Attributes
+    ----------
+    dry_run
+        Whether to simulate execution without side effects.
+    max_parallel
+        Maximum concurrent plugin executions.
+    fail_fast
+        Whether to stop on first plugin failure.
+    """
+
+    dry_run: bool = False
+    max_parallel: int = 4
+    fail_fast: bool = True
+
+
+@dataclass(frozen=True)
+class BaseRecipe:
+    """Base recipe with common structure.
+
+    This class provides the foundational structure for recipes
+    that can be extended by domain-specific implementations.
+
+    Attributes
+    ----------
+    name
+        Unique identifier for this recipe.
+    description
+        Human-readable description.
+    version
+        Recipe version for cache invalidation.
+    tags
+        Free-form tags for categorization.
+    """
+
+    name: str
+    description: str = ""
+    version: str = "1.0"
+    tags: tuple[str, ...] = ()
+
+
+# =============================================================================
+# Core Recipe Types (extend base classes)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class RecipeStage(BaseRecipeStage):
     """Stage within a recipe.
 
     Stages allow grouping plugins for ordered execution with
@@ -33,15 +115,11 @@ class RecipeStage:
         Whether the stage can be skipped.
     """
 
-    name: str
-    plugins: tuple[str, ...]
-    parallel: bool = False
-    fail_fast: bool = True
     optional: bool = False
 
 
 @dataclass(frozen=True)
-class RecipeOptions:
+class RecipeOptions(BaseRecipeOptions):
     """Global options for recipe execution.
 
     Attributes
@@ -60,11 +138,8 @@ class RecipeOptions:
         Maximum total recipe execution time.
     """
 
-    dry_run: bool = False
     skip_on_unchanged: bool = False
-    max_parallel: int = 4
     timeout_ms: int | None = None
-    fail_fast: bool = True
     max_duration_ms: int | None = None
 
 
@@ -91,7 +166,7 @@ class RecipeScope:
 
 
 @dataclass(frozen=True)
-class Recipe:
+class Recipe(BaseRecipe):
     """Unified recipe definition for composable workflows.
 
     A recipe defines an ordered collection of plugins (optionally grouped
@@ -118,14 +193,10 @@ class Recipe:
         Recipe version for cache invalidation.
     """
 
-    name: str
-    description: str
     stages: tuple[RecipeStage, ...] = ()
     plugins: tuple[str, ...] = ()
     options: RecipeOptions = field(default_factory=RecipeOptions)
     default_configs: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
-    tags: tuple[str, ...] = ()
-    version: str = "1.0"
 
     @property
     def all_plugins(self) -> tuple[str, ...]:
@@ -402,6 +473,11 @@ class RecipeExecutionReport:
 
 
 __all__ = [
+    # Base classes (for domain extension)
+    "BaseRecipe",
+    "BaseRecipeOptions",
+    "BaseRecipeStage",
+    # Core types
     "Recipe",
     "RecipeExecutionReport",
     "RecipeOptions",

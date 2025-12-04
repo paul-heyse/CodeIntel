@@ -54,7 +54,7 @@ FULL_PYTHON_RECIPE = recipe(
         options=RecipeOptions(
             enable_incremental=True,
             enable_contracts=True,
-            max_parallel_plugins=4,
+            max_parallel=4,
             fail_fast=True,
         ),
         tags=("python", "full", "default"),
@@ -89,7 +89,7 @@ INCREMENTAL_RECIPE = recipe(
         options=RecipeOptions(
             enable_incremental=True,
             enable_contracts=False,
-            max_parallel_plugins=4,
+            max_parallel=4,
             fail_fast=False,
         ),
         tags=("python", "incremental", "fast"),
@@ -117,7 +117,7 @@ MINIMAL_RECIPE = recipe(
         options=RecipeOptions(
             enable_incremental=False,
             enable_contracts=False,
-            max_parallel_plugins=2,
+            max_parallel=2,
             fail_fast=True,
         ),
         tags=("python", "minimal", "quick"),
@@ -150,7 +150,7 @@ CORE_ONLY_RECIPE = recipe(
         options=RecipeOptions(
             enable_incremental=True,
             enable_contracts=True,
-            max_parallel_plugins=4,
+            max_parallel=4,
             fail_fast=True,
         ),
         disabled_plugins=("typing_ingest", "coverage_ingest", "tests_ingest", "scip_ingest"),
@@ -187,7 +187,7 @@ ANALYSIS_RECIPE = recipe(
         options=RecipeOptions(
             enable_incremental=True,
             enable_contracts=True,
-            max_parallel_plugins=4,
+            max_parallel=4,
             fail_fast=True,
         ),
         disabled_plugins=("scip_ingest",),

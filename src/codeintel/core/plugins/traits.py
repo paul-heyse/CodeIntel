@@ -17,12 +17,44 @@ RetryablePlugin / RetryableMixin
     For plugins with custom retry behavior.
 ProgressReportingPlugin / ProgressReportingMixin
     For plugins that report execution progress.
+IncrementalPlugin
+    For plugins that support incremental execution.
+WithDependencyData
+    For plugins that share data via scratch store.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from codeintel.core.plugins.context import PluginScratch
+
+
+# =============================================================================
+# Context Protocol for Scratch Access
+# =============================================================================
+
+
+class ScratchContext(Protocol):
+    """Protocol for contexts that provide scratch store access.
+
+    This protocol enables type-safe access to the scratch store
+    without depending on a specific context implementation.
+    """
+
+    @property
+    def scratch(self) -> PluginScratch:
+        """Return the scratch store.
+
+        Returns
+        -------
+        PluginScratch
+            Scratch store for inter-plugin communication.
+        """
+        ...
+
 
 # =============================================================================
 # Protocol Definitions
@@ -41,22 +73,25 @@ class IsolatedPlugin(Protocol):
     - Need memory isolation
     - Risk crashing the process
 
+    The "none" option is available for plugins that declare isolation
+    capability but don't require it in certain configurations.
+
     Example
     -------
     >>> class UnsafePlugin(BasePlugin, IsolatedPlugin):
     ...     @property
-    ...     def isolation_kind(self) -> Literal["process", "thread"]:
+    ...     def isolation_kind(self) -> Literal["process", "thread", "none"]:
     ...         return "process"  # Run in separate process
     """
 
     @property
-    def isolation_kind(self) -> Literal["process", "thread"]:
+    def isolation_kind(self) -> Literal["process", "thread", "none"]:
         """Return the isolation type required.
 
         Returns
         -------
-        Literal["process", "thread"]
-            Type of isolation needed.
+        Literal["process", "thread", "none"]
+            Type of isolation needed. "none" means no isolation required.
         """
         ...
 
@@ -189,6 +224,60 @@ class ProgressReportingPlugin(Protocol):
         ----------
         callback
             Callback receiving progress (0-1) and status message.
+        """
+        ...
+
+
+@runtime_checkable
+class IncrementalPlugin(Protocol):
+    """Trait for plugins that support incremental execution.
+
+    Plugins implementing this trait can determine if they need to
+    run based on input changes and can produce partial results.
+
+    This trait uses `object` for context type to allow domain-specific
+    context types (PluginExecutionContext, IngestExecutionContext, etc.)
+    to be used in implementations.
+
+    Example
+    -------
+    >>> class MyIncrementalPlugin(BasePlugin):
+    ...     def compute_input_hash(self, ctx: PluginExecutionContext) -> str:
+    ...         return hashlib.md5(ctx.repo.encode()).hexdigest()
+    ...
+    ...     def is_unchanged(self, ctx: PluginExecutionContext, prior_hash: str | None) -> bool:
+    ...         return prior_hash == self.compute_input_hash(ctx)
+    """
+
+    def compute_input_hash(self, ctx: object) -> str:
+        """Compute a hash of the plugin's inputs.
+
+        Parameters
+        ----------
+        ctx
+            Execution context (domain-specific type).
+
+        Returns
+        -------
+        str
+            Hash of inputs for change detection.
+        """
+        ...
+
+    def is_unchanged(self, ctx: object, prior_hash: str | None) -> bool:
+        """Check if inputs have changed since last run.
+
+        Parameters
+        ----------
+        ctx
+            Execution context (domain-specific type).
+        prior_hash
+            Hash from prior execution.
+
+        Returns
+        -------
+        bool
+            True if inputs are unchanged.
         """
         ...
 
@@ -353,6 +442,68 @@ class ProgressReportingMixin:
             self._progress_callback(progress, message)
 
 
+class WithDependencyData:
+    """Mixin for plugins that consume data from dependent plugins.
+
+    Enable type-safe access to data populated by upstream plugins
+    via the scratch store. This mixin provides a consistent interface
+    across all plugin domains (analytics, graphs, ingestion).
+
+    Example
+    -------
+    >>> class ConsumerPlugin(BasePlugin, WithDependencyData):
+    ...     def compute(self, ctx):
+    ...         # Get data from upstream plugin
+    ...         metrics = self.get_dependency_data(ctx, "function_metrics")
+    ...         if metrics is None:
+    ...             return PluginResult.fail("Missing function metrics")
+    ...         # Use metrics...
+    """
+
+    @staticmethod
+    def get_dependency_data[T](
+        ctx: ScratchContext,
+        key: str,
+        default: T | None = None,
+    ) -> T | None:
+        """Retrieve data populated by a dependent plugin.
+
+        Parameters
+        ----------
+        ctx
+            Execution context with scratch store.
+        key
+            Key used by the upstream plugin.
+        default
+            Default value if not found.
+
+        Returns
+        -------
+        T | None
+            Data from upstream plugin or default.
+        """
+        return ctx.scratch.consume(key, default)
+
+    @staticmethod
+    def set_dependency_data(
+        ctx: ScratchContext,
+        key: str,
+        value: object,
+    ) -> None:
+        """Store data for downstream plugins.
+
+        Parameters
+        ----------
+        ctx
+            Execution context with scratch store.
+        key
+            Key for downstream access.
+        value
+            Data to store.
+        """
+        ctx.scratch.declare(key, value)
+
+
 # =============================================================================
 # Trait Detection Utilities
 # =============================================================================
@@ -422,18 +573,35 @@ def is_progress_reporting(plugin: object) -> bool:
     return isinstance(plugin, ProgressReportingPlugin)
 
 
+def is_incremental(plugin: object) -> bool:
+    """Check if a plugin implements IncrementalPlugin.
+
+    Parameters
+    ----------
+    plugin
+        Plugin to check.
+
+    Returns
+    -------
+    bool
+        True if plugin supports incremental execution.
+    """
+    return isinstance(plugin, IncrementalPlugin)
+
+
 __all__ = [
-    # Mixins
     "CacheAwareMixin",
-    # Protocols
     "CacheAwarePlugin",
+    "IncrementalPlugin",
     "IsolatedPlugin",
     "ProgressReportingMixin",
     "ProgressReportingPlugin",
     "RetryableMixin",
     "RetryablePlugin",
-    # Utilities
+    "ScratchContext",
+    "WithDependencyData",
     "is_cache_aware",
+    "is_incremental",
     "is_isolated",
     "is_progress_reporting",
     "is_retryable",

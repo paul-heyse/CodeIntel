@@ -234,12 +234,12 @@ class PluginExecutionContext:
 
     gateway: StorageGateway
     snapshot: SnapshotRef
-    run_id: str
+    run_id: str | None = None
 
     # Resource registry for typed resource access
     resources: ResourceRegistry = field(default_factory=ResourceRegistry)
 
-    # Typed config accessor
+    # Typed config accessor - uses ConfigAccessor protocol for flexibility
     configs: ConfigProvider = field(default_factory=ConfigProvider)
 
     # Scratch for inter-plugin communication
@@ -294,12 +294,12 @@ class PluginExecutionContext:
         return self.snapshot.repo_root
 
     @property
-    def effective_run_id(self) -> str:
+    def effective_run_id(self) -> str | None:
         """Get run ID preferring unified RunContext if present.
 
         Returns
         -------
-        str
+        str | None
             Run ID from run_context if set, otherwise falls back to run_id.
         """
         if self.run_context is not None:

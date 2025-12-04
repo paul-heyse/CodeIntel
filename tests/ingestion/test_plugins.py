@@ -291,7 +291,7 @@ def test_resource_hints_defaults() -> None:
     hints = IngestResourceHints()
 
     assert hints.max_runtime_ms is None
-    assert hints.memory_mb_hint is None
+    assert hints.max_memory_mb is None
     assert hints.cpu_intensive is False
     assert hints.io_intensive is False
 
@@ -300,13 +300,13 @@ def test_resource_hints_custom_values() -> None:
     """IngestResourceHints should accept custom values."""
     hints = IngestResourceHints(
         max_runtime_ms=RUNTIME_MS_5000,
-        memory_mb_hint=MEMORY_MB_512,
+        max_memory_mb=MEMORY_MB_512,
         cpu_intensive=True,
         io_intensive=False,
     )
 
     assert hints.max_runtime_ms == RUNTIME_MS_5000
-    assert hints.memory_mb_hint == MEMORY_MB_512
+    assert hints.max_memory_mb == MEMORY_MB_512
     assert hints.cpu_intensive is True
     assert hints.io_intensive is False
 

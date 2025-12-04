@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, cast
+from uuid import uuid4
 
 from codeintel.analytics.core.context import (
     PluginExecutionContext,
@@ -183,7 +184,7 @@ class PluginExecutor:
         ExecutionReport
             Complete execution report.
         """
-        run_id = ctx.run_id
+        run_id = ctx.run_id or uuid4().hex
         started_at = datetime.now(tz=UTC)
         records: list[PluginExecutionRecord] = []
         contract_results: dict[str, ContractValidationResult] = {}

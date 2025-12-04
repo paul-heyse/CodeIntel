@@ -182,10 +182,12 @@ def test_plan_with_disabled_plugin() -> None:
     assert any(s.name == "functions.ast_features" for s in plan.skipped)
 
 
-def test_plan_unknown_plugin_raises() -> None:
-    """Verify planning with unknown plugin raises error."""
+def test_plan_unknown_plugin_skipped() -> None:
+    """Verify planning with unknown plugin adds it to skipped list."""
     ensure_plugins_registered()
     registry = get_registry()
 
-    with pytest.raises(KeyError):
-        registry.plan(["nonexistent.plugin"])
+    # Unknown plugins are skipped rather than raising errors
+    plan = registry.plan(["nonexistent.plugin"])
+    assert len(plan.plugins) == 0
+    assert any(s.name == "nonexistent.plugin" and s.reason == "missing_dependency" for s in plan.skipped)

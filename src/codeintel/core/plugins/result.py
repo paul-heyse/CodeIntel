@@ -2,6 +2,12 @@
 
 This module defines the result types returned by plugin execution,
 providing consistent success/failure/skip semantics across all plugins.
+
+Architecture
+------------
+- BasePluginResult: Common fields shared across all domains
+- PluginResult: Full-featured result for graphs/analytics
+- IngestPluginResult (in ingestion): Extends base with ingestion-specific fields
 """
 
 from __future__ import annotations
@@ -10,14 +16,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 PluginStatus = Literal["succeeded", "failed", "skipped"]
 
 
 @dataclass(frozen=True)
-class PluginResult:
-    """Result returned by plugin execution.
+class BasePluginResult:
+    """Base result type for all plugin executions.
+
+    Provide the common fields shared across all plugin result types.
+    Domain-specific result types (PluginResult, IngestPluginResult)
+    extend this base with additional fields.
 
     Attributes
     ----------
@@ -25,12 +35,6 @@ class PluginResult:
         Whether execution completed successfully.
     row_counts
         Mapping of table names to row counts written.
-    artifacts
-        Mapping of artifact names to artifact data or paths.
-    input_hash
-        Hash of inputs for caching.
-    options_hash
-        Hash of options for caching.
     error
         Error message if execution failed.
     error_kind
@@ -39,26 +43,130 @@ class PluginResult:
         Whether the plugin was skipped.
     skip_reason
         Reason for skipping if applicable.
+    input_hash
+        Hash of inputs for caching.
+    options_hash
+        Hash of options for caching.
+    """
+
+    success: bool = True
+    row_counts: Mapping[str, int] | None = None
+    error: str | None = None
+    error_kind: str | None = None
+    skipped: bool = False
+    skip_reason: str | None = None
+    input_hash: str | None = None
+    options_hash: str | None = None
+
+    @classmethod
+    def ok(
+        cls,
+        *,
+        row_counts: Mapping[str, int] | None = None,
+        input_hash: str | None = None,
+        options_hash: str | None = None,
+    ) -> Self:
+        """Create a successful result.
+
+        Parameters
+        ----------
+        row_counts
+            Optional mapping of table names to row counts written.
+        input_hash
+            Optional hash of inputs.
+        options_hash
+            Optional hash of options.
+
+        Returns
+        -------
+        Self
+            Result object marked as successful.
+        """
+        return cls(
+            success=True,
+            row_counts=row_counts,
+            input_hash=input_hash,
+            options_hash=options_hash,
+        )
+
+    @classmethod
+    def fail(
+        cls,
+        error: str,
+        *,
+        error_kind: str | None = None,
+    ) -> Self:
+        """Create a failed result.
+
+        Parameters
+        ----------
+        error
+            Error message describing the failure.
+        error_kind
+            Optional classification of the error type.
+
+        Returns
+        -------
+        Self
+            Result object marked as failed.
+        """
+        return cls(success=False, error=error, error_kind=error_kind)
+
+    @classmethod
+    def skip(cls, reason: str) -> Self:
+        """Create a skipped result.
+
+        Parameters
+        ----------
+        reason
+            Reason for skipping execution.
+
+        Returns
+        -------
+        Self
+            Result object marked as skipped.
+        """
+        return cls(success=True, skipped=True, skip_reason=reason)
+
+    @property
+    def status(self) -> PluginStatus:
+        """Derive the execution status from result fields.
+
+        Returns
+        -------
+        PluginStatus
+            The status of the plugin execution.
+        """
+        if self.skipped:
+            return "skipped"
+        return "succeeded" if self.success else "failed"
+
+
+@dataclass(frozen=True)
+class PluginResult(BasePluginResult):
+    """Full-featured result for graph and analytics plugin execution.
+
+    Extend BasePluginResult with additional fields for artifacts, warnings,
+    and metadata commonly used in graph and analytics plugins.
+
+    Attributes
+    ----------
+    artifacts
+        Mapping of artifact names to artifact data or paths.
     warnings
         Non-fatal warnings from execution.
     meta
         Additional metadata about the execution.
     """
 
-    success: bool = True
-    row_counts: Mapping[str, int] = field(default_factory=dict)
+    # Additional fields beyond BasePluginResult
     artifacts: Mapping[str, object] = field(default_factory=dict)
-    input_hash: str | None = None
-    options_hash: str | None = None
-    error: str | None = None
-    error_kind: str | None = None
-    skipped: bool = False
-    skip_reason: str | None = None
     warnings: tuple[str, ...] = ()
     meta: Mapping[str, Any] = field(default_factory=dict)
 
-    @staticmethod
+    @classmethod
     def ok(
+        cls,
         *,
         row_counts: Mapping[str, int] | None = None,
         artifacts: Mapping[str, object] | None = None,
@@ -86,17 +194,18 @@ class PluginResult:
         PluginResult
             Result object marked as successful.
         """
-        return PluginResult(
+        return cls(
             success=True,
-            row_counts=row_counts or {},
+            row_counts=row_counts,
             artifacts=artifacts or {},
             input_hash=input_hash,
             options_hash=options_hash,
             meta=meta or {},
         )
 
-    @staticmethod
+    @classmethod
     def fail(
+        cls,
         error: str,
         *,
         error_kind: str | None = None,
@@ -118,41 +227,12 @@ class PluginResult:
         PluginResult
             Result object marked as failed.
         """
-        return PluginResult(
+        return cls(
             success=False,
             error=error,
             error_kind=error_kind,
             warnings=warnings,
         )
-
-    @staticmethod
-    def skip(reason: str) -> PluginResult:
-        """Create a skipped result.
-
-        Parameters
-        ----------
-        reason
-            Reason for skipping execution.
-
-        Returns
-        -------
-        PluginResult
-            Result object marked as skipped.
-        """
-        return PluginResult(success=True, skipped=True, skip_reason=reason)
-
-    @property
-    def status(self) -> PluginStatus:
-        """Derive the execution status from result fields.
-
-        Returns
-        -------
-        PluginStatus
-            The status of the plugin execution.
-        """
-        if self.skipped:
-            return "skipped"
-        return "succeeded" if self.success else "failed"
 
 
 @dataclass(frozen=True)
@@ -218,6 +298,7 @@ class PluginArtifact:
 
 
 __all__ = [
+    "BasePluginResult",
     "PluginArtifact",
     "PluginExecutionRecord",
     "PluginResult",

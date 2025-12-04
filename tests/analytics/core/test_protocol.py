@@ -183,21 +183,23 @@ def test_plugin_result_fail(
 ) -> None:
     """PluginResult.fail should capture errors, warnings, and optional data."""
     result = PluginResult.fail(error, warnings=warnings)
-    result = (
-        result
-        if artifacts == {} and row_counts == {}
-        else PluginResult(
+    # When using fail() directly, row_counts is None (not applicable for failures)
+    # If we need specific artifacts or row_counts, construct a new result
+    use_default_result = artifacts == {} and row_counts == {}
+    if not use_default_result:
+        result = PluginResult(
             success=False,
             error=error,
             warnings=warnings,
             artifacts=artifacts,
             row_counts=row_counts,
         )
-    )
 
     assert result.success is False
     assert result.error == error
-    assert result.row_counts == row_counts
+    # fail() returns None for row_counts; only non-default cases have the expected value
+    expected_row_counts = None if use_default_result else row_counts
+    assert result.row_counts == expected_row_counts
     assert result.warnings == warnings
 
 
