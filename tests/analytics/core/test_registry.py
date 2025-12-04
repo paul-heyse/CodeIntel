@@ -9,17 +9,17 @@ from typing import cast
 
 import pytest
 
-from codeintel.analytics.core.execution_context import (
+from codeintel.analytics.core.context import (
     PluginExecutionContext,
     PluginScratch,
 )
-from codeintel.analytics.core.plugin_protocol import PluginResult, PluginStage
+from codeintel.analytics.core.protocol import PluginResult, PluginStage
 from codeintel.analytics.core.registry import (
     FunctionalPlugin,
     PluginRegistry,
     plugin,
 )
-from codeintel.analytics.runtime_manifest import AnalyticsScope
+from codeintel.analytics.runtime.manifest import AnalyticsScope
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.gateway import open_ingestion_gateway
 

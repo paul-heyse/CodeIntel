@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal  # Keep for input() method source parameter
 
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     PluginInputSpec,
     PluginIsolation,
     PluginKind,

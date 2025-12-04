@@ -15,8 +15,8 @@ from tests._helpers.builders import (
     ModuleRow,
     RiskFactorRow,
     SymbolUseEdgeRow,
+    insert_rows,
 )
-from tests._helpers.row_protocol import insert_rows
 
 # Sample SCIP JSON for testing
 SCIP_JSON_TWO_FILES = """
@@ -142,9 +142,7 @@ def _write_scip_json(tmp_path: Path, content: str) -> Path:
     return scip_path
 
 
-def test_symbol_uses_respects_catalog_module_map(
-    test_ctx: TestContext, tmp_path: Path
-) -> None:
+def test_symbol_uses_respects_catalog_module_map(test_ctx: TestContext, tmp_path: Path) -> None:
     """Verify catalog module map toggles same_module when modules table is empty."""
     scip_path = _write_scip_json(tmp_path, SCIP_JSON_TWO_FILES)
 

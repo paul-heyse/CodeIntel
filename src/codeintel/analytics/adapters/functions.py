@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 from codeintel.analytics.adapters.base import BatchAdapter, DeleteScope
-from codeintel.analytics.datasets import (
+from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )

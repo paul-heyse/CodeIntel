@@ -13,9 +13,9 @@ from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.builders import (
     FunctionMetricsRow,
     ModuleRow,
+    insert_rows,
 )
 from tests._helpers.orchestration.tooling import init_git_repo_with_history
-from tests._helpers.row_protocol import insert_rows
 
 # Test constants
 EXPECTED_STABILITY_BUCKETS = {"new_hot", "stable", "churning", "legacy_hot"}

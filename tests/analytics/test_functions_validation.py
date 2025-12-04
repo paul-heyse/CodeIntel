@@ -10,8 +10,7 @@ import pytest
 from codeintel.analytics.functions import compute_function_metrics_and_types
 from codeintel.config import ConfigBuilder
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.builders import GoidRow
-from tests._helpers.row_protocol import insert_rows
+from tests._helpers.builders import GoidRow, insert_rows
 
 
 def _insert_goid(

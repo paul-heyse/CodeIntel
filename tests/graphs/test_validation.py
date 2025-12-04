@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Final
 
 import networkx as nx
 import pytest
 from _pytest.logging import LogCaptureFixture
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions
-from codeintel.config.primitives import SnapshotRef
+from codeintel.analytics.runtime import GraphRuntimeOptions
 from codeintel.graphs.validation import GraphValidationOptions, run_graph_validations
 from codeintel.graphs.validation.checks import (
     call_graph_findings,
@@ -26,6 +24,7 @@ from codeintel.graphs.validation.checks import (
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers import seed_graph_validation_gaps
+from tests._helpers.factories import make_snapshot
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -52,7 +51,7 @@ def test_run_graph_validations_emits_warnings(
     commit: Final = "deadbeef"
     apply_all_schemas(gateway.con)
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    snapshot = make_snapshot(repo=repo, commit=commit)
 
     with caplog.at_level("WARNING"):
         run_graph_validations(
@@ -75,9 +74,9 @@ def test_run_graph_validations_snapshot_mismatch_raises(
     """Graph runtime snapshot must align with validation snapshot."""
     gateway = fresh_gateway
     apply_all_schemas(gateway.con)
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=Path())
+    snapshot = make_snapshot()
     mismatched_runtime = GraphRuntimeOptions(
-        snapshot=SnapshotRef(repo="other/repo", commit="cafebabe", repo_root=Path())
+        snapshot=make_snapshot(repo="other/repo", commit="cafebabe")
     )
 
     with pytest.raises(ValueError, match="GraphRuntime snapshot mismatch"):
@@ -96,7 +95,7 @@ def test_run_graph_validations_hard_fail_on_error(
     apply_all_schemas(gateway.con)
     repo = "demo/repo"
     commit = "deadbeef"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    snapshot = make_snapshot(repo=repo, commit=commit)
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
     runtime = GraphRuntimeOptions(snapshot=snapshot)
 
@@ -130,7 +129,7 @@ def test_run_graph_validations_caps_findings(
     apply_all_schemas(gateway.con)
     repo = "demo/repo"
     commit = "deadbeef"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=Path())
+    snapshot = make_snapshot(repo=repo, commit=commit)
     seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
     runtime = GraphRuntimeOptions(snapshot=snapshot)
 

@@ -6,17 +6,17 @@ from pathlib import Path
 
 import duckdb
 
-from codeintel.analytics.tests_profiles.behavioral_tags import infer_behavior_tags
-from codeintel.analytics.tests_profiles.coverage_inputs import (
+from codeintel.analytics.testing.behavioral.importance import (
+    compute_flakiness_score,
+    compute_importance_score,
+)
+from codeintel.analytics.testing.behavioral.tags import infer_behavior_tags
+from codeintel.analytics.testing.coverage.inputs import (
     aggregate_test_coverage_by_function,
     aggregate_test_coverage_by_subsystem,
     load_test_graph_metrics,
 )
-from codeintel.analytics.tests_profiles.importance import (
-    compute_flakiness_score,
-    compute_importance_score,
-)
-from codeintel.analytics.tests_profiles.types import ImportanceInputs, IoFlags, TestAstInfo
+from codeintel.analytics.testing.profiles.types import ImportanceInputs, IoFlags, TestAstInfo
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_analytics import BehavioralCoverageStepConfig, TestProfileStepConfig
 

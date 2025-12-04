@@ -11,14 +11,14 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.analytics.function_ast_cache import (
+from codeintel.analytics.parsing.ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )
 from codeintel.analytics.resources.protocol import LazyResource, ResourceNotLoadedError
 
 if TYPE_CHECKING:
-    from codeintel.analytics.function_ast_cache import FunctionAst
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway

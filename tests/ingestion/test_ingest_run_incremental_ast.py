@@ -8,7 +8,7 @@ import pytest
 
 from codeintel.ingestion.plugins import IngestPluginResult, get_ingest_registry
 from tests._helpers.gateway import open_ingestion_gateway
-from tests._helpers.ingest_setup import IngestTestSetup
+from tests._helpers.harnesses import IngestTestSetup
 
 
 def test_ast_extract_plugin_succeeds_with_tracker(tmp_path: Path) -> None:

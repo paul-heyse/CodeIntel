@@ -29,8 +29,8 @@ from tests._helpers.builders import (
     ImportGraphEdgeRow,
     ModuleRow,
     SymbolUseEdgeRow,
+    insert_rows,
 )
-from tests._helpers.row_protocol import insert_rows
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

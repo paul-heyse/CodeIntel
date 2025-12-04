@@ -10,7 +10,7 @@ import logging
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.analytics.ast_features.extract import compute_function_features
-from codeintel.analytics.function_ast_cache import (
+from codeintel.analytics.parsing.ast_cache import (
     FunctionAstLoadRequest,
     load_function_asts,
 )

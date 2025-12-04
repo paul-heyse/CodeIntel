@@ -32,13 +32,19 @@ from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
+from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.graph_contexts import (
     GraphExecutorTestEnv,
     GraphTelemetryTestEnv,
     create_graph_executor_env,
     create_graph_telemetry_env,
 )
-from tests._helpers.gateway import gateway_with_macros
+from tests._helpers.gateway import gateway_with_macros, open_ingestion_gateway_with_macros
+from tests._helpers.seeds.golden_graphs import (
+    GOLDEN_COMMIT,
+    GOLDEN_REPO,
+    seed_golden_graphs,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -182,9 +188,56 @@ def graph_plugin_context(
     )
 
 
+# ---------------------------------------------------------------------------
+# Golden Dataset Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def golden_gateway() -> Iterator[StorageGateway]:
+    """Provide a gateway seeded with golden graph data.
+
+    This fixture creates a gateway pre-populated with the golden dataset,
+    useful for end-to-end pipeline scenario tests.
+
+    Yields
+    ------
+    StorageGateway
+        Gateway with golden dataset seeded; automatically closed.
+    """
+    gateway = open_ingestion_gateway_with_macros(
+        apply_schema=True, ensure_views=True, validate_schema=True
+    )
+    apply_all_schemas(gateway.con)
+    seed_golden_graphs(gateway, repo=GOLDEN_REPO, commit=GOLDEN_COMMIT)
+    try:
+        yield gateway
+    finally:
+        gateway.close()
+
+
+@pytest.fixture
+def golden_snapshot(tmp_path: Path) -> SnapshotRef:
+    """Provide a snapshot reference for the golden dataset.
+
+    Parameters
+    ----------
+    tmp_path
+        Pytest temporary path.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot reference for the golden repo and commit.
+    """
+    return make_snapshot(repo=GOLDEN_REPO, commit=GOLDEN_COMMIT, repo_root=tmp_path)
+
+
 __all__ = [
     "DEFAULT_COMMIT",
     "DEFAULT_REPO",
+    "golden_gateway",
+    "golden_snapshot",
     "graph_executor_env",
     "graph_gateway",
     "graph_plugin_context",

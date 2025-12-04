@@ -22,8 +22,8 @@ from tests._helpers.builders import (
     SubsystemRow,
     SymbolGraphMetricsModulesRow,
     SymbolUseEdgeRow,
+    insert_rows,
 )
-from tests._helpers.row_protocol import insert_rows
 
 
 def _seed_test_modules(ctx: TestContext) -> None:

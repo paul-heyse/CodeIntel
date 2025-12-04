@@ -18,7 +18,7 @@ The ingestion system follows a port-adapter pattern for clean separation of conc
 - `FilesystemDiscoveryAdapter`: File system module discovery
 - `HashChangeDetectionAdapter`: Blake2b hash-based change detection
 
-**Steps** (pure domain logic):
+**Compute** (pure domain logic - analogous to graphs/compute/):
 - `AstExtractStep`: Python AST extraction
 - `CstExtractStep`: LibCST concrete syntax tree extraction
 - `DocstringsExtractStep`: Docstring parsing and persistence
@@ -27,7 +27,7 @@ The ingestion system follows a port-adapter pattern for clean separation of conc
 - `TestsIngestStep`: Test results ingestion
 - `ScipIngestStep`: SCIP symbol indexing
 - `ConfigIngestStep`: Configuration file flattening
-- `RepoScanStep`: Repository scanning and change detection
+- `RepoScanStep`: Repository scanning and module discovery
 
 **Core** (plugin infrastructure):
 - `BaseIngestPlugin`: Abstract base for all plugins
@@ -67,14 +67,19 @@ from codeintel.ingestion.adapters import (
     ToolRunnerAdapter,
 )
 
-# Change tracker exports
-from codeintel.ingestion.change_tracker import (
-    ChangeTracker,
-    ChangeTrackerDatasetView,
-    IncrementalIngestOps,
-    IncrementalIngestPolicy,
-    SupportsFullRebuild,
-    run_incremental_ingest,
+# Compute layer exports (pure domain logic - renamed from steps for alignment with graphs/compute)
+from codeintel.ingestion.compute import (
+    AstExtractStep,
+    ConfigIngestStep,
+    CoverageIngestStep,
+    CstExtractStep,
+    DocstringsExtractStep,
+    RepoScanStep,
+    ScipIngestResult,
+    ScipIngestStep,
+    StepResult,
+    TestsIngestStep,
+    TypingIngestStep,
 )
 
 # Core plugin infrastructure exports
@@ -88,6 +93,23 @@ from codeintel.ingestion.core import (
     ToolDependentIngestPlugin,
     TrackerRequiringPlugin,
     ValidationResult,
+)
+from codeintel.ingestion.infrastructure.paths import (
+    ensure_repo_root,
+    normalize_rel_path,
+    relpath_to_module,
+    repo_relpath,
+)
+
+# Worker infrastructure exports
+from codeintel.ingestion.infrastructure.workers import (
+    AST_WORKER_CONFIG,
+    CST_WORKER_CONFIG,
+    WorkerConfig,
+    create_executor,
+    executor_factory,
+    resolve_worker_count,
+    worker_pool,
 )
 
 # Plugin architecture exports
@@ -165,35 +187,15 @@ from codeintel.ingestion.recipes import (
     execute_recipe,
     get_builtin_recipe,
 )
-from codeintel.ingestion.steps import (
-    AstExtractStep,
-    ConfigIngestStep,
-    CoverageIngestStep,
-    CstExtractStep,
-    DocstringsExtractStep,
-    RepoScanStep,
-    ScipIngestResult,
-    ScipIngestStep,
-    StepResult,
-    TestsIngestStep,
-    TypingIngestStep,
-)
-from codeintel.ingestion.utilities.paths import (
-    ensure_repo_root,
-    normalize_rel_path,
-    relpath_to_module,
-    repo_relpath,
-)
 
-# Worker infrastructure exports
-from codeintel.ingestion.utilities.workers import (
-    AST_WORKER_CONFIG,
-    CST_WORKER_CONFIG,
-    WorkerConfig,
-    create_executor,
-    executor_factory,
-    resolve_worker_count,
-    worker_pool,
+# Tracker domain service exports (renamed from change_tracker for alignment with graphs/catalog)
+from codeintel.ingestion.tracker import (
+    ChangeTracker,
+    ChangeTrackerDatasetView,
+    IncrementalIngestOps,
+    IncrementalIngestPolicy,
+    SupportsFullRebuild,
+    run_incremental_ingest,
 )
 
 __all__ = [

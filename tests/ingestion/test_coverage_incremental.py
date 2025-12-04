@@ -9,34 +9,22 @@ import pytest
 
 from codeintel.config import ConfigBuilder
 from codeintel.config.models import ToolsConfig
-from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion import (
     CoverageIngestStep,
     DuckDBStorageAdapter,
     IngestExecutionContext,
     ToolRunnerAdapter,
 )
-from codeintel.ingestion.change_tracker import ChangeTracker, IncrementalIngestPolicy
 from codeintel.ingestion.plugins import (
-    IngestRuntimeScratch,
     get_ingest_registry,
 )
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
-from codeintel.ingestion.resources import (
-    ModuleProvider,
-    ResourceRegistry,
-    ToolsProvider,
-    TrackerConfig,
-    TrackerProvider,
-)
 from codeintel.ingestion.tools.infrastructure import ToolRunner
 from codeintel.ingestion.tools.results import CoverageFileSummary, CoverageReport
 from codeintel.ingestion.tools.service import ToolService
-from codeintel.ingestion.utilities.scanning import (
-    default_code_profile,
-    default_config_profile,
-)
+from codeintel.ingestion.tracker import ChangeTracker, IncrementalIngestPolicy
 from tests._helpers.gateway import open_ingestion_gateway
+from tests._helpers.harnesses import IngestTestSetup
 
 
 class _FakeCoverageService(ToolService):
@@ -59,57 +47,23 @@ class _FakeCoverageService(ToolService):
         return CoverageReport(files=(self._report,))
 
 
-def _build_plugin_context(
-    repo_root: Path,
-    *,
-    tools: ToolsConfig | None = None,
-    scratch: IngestRuntimeScratch | None = None,
-    change_tracker: ChangeTracker | None = None,
-) -> IngestExecutionContext:
+def _build_plugin_context(repo_root: Path) -> tuple[IngestExecutionContext, IngestTestSetup]:
     """Construct a minimal plugin context for coverage tests.
 
     Parameters
     ----------
     repo_root
         Repository root path.
-    tools
-        Optional tools configuration.
-    scratch
-        Optional shared scratch space.
-    change_tracker
-        Optional change tracker for incremental ingestion.
 
     Returns
     -------
-    IngestExecutionContext
-        Context populated with snapshot, paths, gateway, and profiles.
+    tuple[IngestExecutionContext, IngestTestSetup]
+        Context and setup bundle.
     """
-    snapshot = SnapshotRef.from_args(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
-    paths = BuildPaths.from_repo_root(repo_root)
     gateway = open_ingestion_gateway()
-    effective_tools = tools or ToolsConfig.default()
-    code_profile = default_code_profile(repo_root)
-    effective_scratch = scratch if scratch is not None else IngestRuntimeScratch()
-    if change_tracker is not None:
-        effective_scratch.declare("change_tracker", change_tracker)
-
-    # Build resource registry
-    registry = ResourceRegistry()
-    tracker_config = TrackerConfig(scratch=effective_scratch, profile=code_profile)
-    registry.register(TrackerProvider, TrackerProvider(gateway, snapshot, tracker_config))
-    registry.register(ToolsProvider, ToolsProvider(effective_tools, paths.tool_cache))
-    registry.register(ModuleProvider, ModuleProvider(gateway, snapshot, profile=code_profile))
-
-    return IngestExecutionContext(
-        gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        tools=effective_tools,
-        code_profile=code_profile,
-        config_profile=default_config_profile(repo_root),
-        scratch=effective_scratch,
-        resources=registry,
-    )
+    setup = IngestTestSetup.from_repo(repo_root, gateway=gateway)
+    ctx = setup.build_context("coverage_test")
+    return ctx, setup
 
 
 def test_coverage_ingest_runs_full_rebuild_with_tracker(tmp_path: Path) -> None:
@@ -178,20 +132,14 @@ def test_coverage_plugin_executes_with_tracker(tmp_path: Path) -> None:
     coverage_file = repo_root / ".coverage"
     coverage_file.touch()
 
-    gateway = open_ingestion_gateway()
+    ctx, setup = _build_plugin_context(repo_root)
     try:
-        snapshot = SnapshotRef.from_args(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
-        paths = BuildPaths.from_repo_root(repo_root)
-        tools = ToolsConfig.default()
-        code_profile = default_code_profile(repo_root)
-        scratch = IngestRuntimeScratch()
-
         # Create a tracker and store in scratch
         tracker = ChangeTracker(
-            gateway=gateway,
+            gateway=setup.gateway,
             change_request=ChangeRequest(
-                repo=snapshot.repo,
-                commit=snapshot.commit,
+                repo=setup.snapshot.repo,
+                commit=setup.snapshot.commit,
                 repo_root=repo_root,
                 modules=(),
             ),
@@ -199,25 +147,7 @@ def test_coverage_plugin_executes_with_tracker(tmp_path: Path) -> None:
             change_set=ChangeSet(added=[], modified=[], deleted=[]),
             policy=IncrementalIngestPolicy(),
         )
-        scratch.declare("change_tracker", tracker)
-
-        # Build resource registry
-        registry = ResourceRegistry()
-        tracker_config = TrackerConfig(scratch=scratch, profile=code_profile)
-        registry.register(TrackerProvider, TrackerProvider(gateway, snapshot, tracker_config))
-        registry.register(ToolsProvider, ToolsProvider(tools, paths.tool_cache))
-        registry.register(ModuleProvider, ModuleProvider(gateway, snapshot, profile=code_profile))
-
-        ctx = IngestExecutionContext(
-            gateway=gateway,
-            snapshot=snapshot,
-            paths=paths,
-            tools=tools,
-            code_profile=code_profile,
-            config_profile=default_config_profile(repo_root),
-            scratch=scratch,
-            resources=registry,
-        )
+        setup.scratch.declare("change_tracker", tracker)
 
         plugin_registry = get_ingest_registry()
         coverage_plugin = plugin_registry.get("coverage_ingest")
@@ -227,7 +157,7 @@ def test_coverage_plugin_executes_with_tracker(tmp_path: Path) -> None:
         if not result.success and not result.skipped:
             pytest.fail(f"coverage_ingest failed unexpectedly: {result.error}")
     finally:
-        gateway.close()
+        ctx.gateway.close()
 
 
 def test_coverage_plugin_without_coverage_file_skips(tmp_path: Path) -> None:
@@ -235,7 +165,7 @@ def test_coverage_plugin_without_coverage_file_skips(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
-    ctx = _build_plugin_context(repo_root)
+    ctx, _setup = _build_plugin_context(repo_root)
     try:
         registry = get_ingest_registry()
         coverage_plugin = registry.get("coverage_ingest")

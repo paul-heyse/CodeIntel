@@ -24,7 +24,7 @@ from codeintel.graphs.catalog import (
     FunctionCatalogService,
 )
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.ingestion.utilities.paths import normalize_rel_path
+from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

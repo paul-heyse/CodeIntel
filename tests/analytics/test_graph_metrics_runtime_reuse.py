@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_graph_metrics
+from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
 from tests._helpers import ProvisionedGateway

@@ -1,0 +1,66 @@
+"""Analytics runtime infrastructure.
+
+This package provides shared runtime infrastructure for analytics modules,
+including graph runtime management and manifest encoding.
+
+Modules
+-------
+- graph: GraphRuntime, GraphRuntimeOptions, and related graph caching infrastructure
+- manifest: AnalyticsRunReport and manifest encoding utilities
+
+Example
+-------
+```python
+from codeintel.analytics.runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    build_graph_runtime,
+    encode_manifest,
+)
+
+# Build a graph runtime
+options = GraphRuntimeOptions(snapshot=snapshot, backend=backend)
+runtime = build_graph_runtime(gateway, options)
+
+# Access graphs
+call_graph = runtime.ensure_call_graph()
+```
+"""
+
+from __future__ import annotations
+
+from codeintel.analytics.runtime.graph import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    GraphRuntimePool,
+    PooledRuntime,
+    build_graph_runtime,
+    resolve_graph_runtime,
+)
+from codeintel.analytics.runtime.manifest import (
+    AnalyticsPlanInfo,
+    AnalyticsRunRecord,
+    AnalyticsRunReport,
+    AnalyticsScope,
+    AnalyticsSkippedStep,
+    AnalyticsStatus,
+    encode_manifest,
+)
+from codeintel.graphs.engine import GraphKind
+
+__all__ = [
+    "AnalyticsPlanInfo",
+    "AnalyticsRunRecord",
+    "AnalyticsRunReport",
+    "AnalyticsScope",
+    "AnalyticsSkippedStep",
+    "AnalyticsStatus",
+    "GraphKind",
+    "GraphRuntime",
+    "GraphRuntimeOptions",
+    "GraphRuntimePool",
+    "PooledRuntime",
+    "build_graph_runtime",
+    "encode_manifest",
+    "resolve_graph_runtime",
+]

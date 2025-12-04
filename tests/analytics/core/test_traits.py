@@ -9,7 +9,7 @@ from typing import Literal
 import pytest
 
 from codeintel.analytics.core.traits import ScopeAwareMixin
-from codeintel.analytics.runtime_manifest import AnalyticsScope
+from codeintel.analytics.runtime.manifest import AnalyticsScope
 
 
 class _ScopeAwarePlugin(ScopeAwareMixin):

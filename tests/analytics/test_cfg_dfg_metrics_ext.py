@@ -14,8 +14,8 @@ from tests._helpers.builders import (
     DFGEdgeRow,
     GoidRow,
     ModuleRow,
+    insert_rows,
 )
-from tests._helpers.row_protocol import insert_rows
 
 # Test constants
 REL_PATH = "pkg/mod.py"
@@ -79,7 +79,9 @@ def _seed_cfg(ctx: TestContext) -> None:
     insert_rows(
         ctx.gateway,
         [
-            CFGBlockRow(GOID_TEST_FUNC, 0, "1:block0", "entry", REL_PATH, 1, 1, "entry", "[]", 0, 1),
+            CFGBlockRow(
+                GOID_TEST_FUNC, 0, "1:block0", "entry", REL_PATH, 1, 1, "entry", "[]", 0, 1
+            ),
             CFGBlockRow(GOID_TEST_FUNC, 1, "1:block1", "body", REL_PATH, 2, 3, "body", "[]", 1, 1),
             CFGBlockRow(
                 GOID_TEST_FUNC, 2, "1:block2", "loop_head", REL_PATH, 4, 4, "loop_head", "[]", 1, 2
@@ -87,7 +89,9 @@ def _seed_cfg(ctx: TestContext) -> None:
             CFGBlockRow(
                 GOID_TEST_FUNC, 3, "1:block3", "unreachable", REL_PATH, 10, 10, "body", "[]", 0, 0
             ),
-            CFGBlockRow(GOID_TEST_FUNC, 4, "1:block4", "exit", REL_PATH, 11, 11, "exit", "[]", 1, 0),
+            CFGBlockRow(
+                GOID_TEST_FUNC, 4, "1:block4", "exit", REL_PATH, 11, 11, "exit", "[]", 1, 0
+            ),
         ],
     )
 

@@ -12,11 +12,16 @@ from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codeintel.analytics.ast_utils import call_name, literal_value, safe_unparse, snippet_from_lines
-from codeintel.analytics.evidence import EvidenceCollector
+from codeintel.analytics.compute.evidence.collection import EvidenceCollector
+from codeintel.analytics.utilities.ast import (
+    call_name,
+    literal_value,
+    safe_unparse,
+    snippet_from_lines,
+)
 from codeintel.config import DataModelsStepConfig
-from codeintel.ingestion.utilities.ast_utils import parse_python_module
-from codeintel.ingestion.utilities.paths import normalize_rel_path, relpath_to_module
+from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
+from codeintel.ingestion.infrastructure.paths import normalize_rel_path, relpath_to_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

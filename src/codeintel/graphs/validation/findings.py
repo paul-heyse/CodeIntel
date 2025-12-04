@@ -10,8 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.analytics.parsing.validation import GraphValidationReporter
+from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.storage.sql_helpers import ensure_schema
 
 if TYPE_CHECKING:

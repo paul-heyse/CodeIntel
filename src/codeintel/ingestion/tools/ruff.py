@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.infrastructure.paths import normalize_rel_path, repo_relpath
 from codeintel.ingestion.tools.infrastructure import (
     ToolExecutionError,
     ToolName,
@@ -22,7 +23,6 @@ from codeintel.ingestion.tools.plugins import (
     ToolStatus,
 )
 from codeintel.ingestion.tools.results import DiagnosticReport
-from codeintel.ingestion.utilities.paths import normalize_rel_path, repo_relpath
 
 log = logging.getLogger(__name__)
 

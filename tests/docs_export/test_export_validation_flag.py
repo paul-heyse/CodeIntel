@@ -10,8 +10,7 @@ from typer.testing import CliRunner
 
 from codeintel.cli import app
 from tests._helpers import GatewayOptions, provision_gateway_with_repo
-from tests._helpers.builders import FunctionTypesRow, GoidRow
-from tests._helpers.row_protocol import insert_rows
+from tests._helpers.builders import FunctionTypesRow, GoidRow, insert_rows
 
 runner = CliRunner()
 

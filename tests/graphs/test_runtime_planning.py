@@ -19,7 +19,6 @@ from typing import Final
 
 import pytest
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import (
     GraphMetricsStepConfig,
     GraphPluginPolicy,
@@ -43,6 +42,7 @@ from codeintel.graphs.runtime.planning import (
     plan_graph_plugin_run,
 )
 from tests._helpers.assertions import assert_cannot_setattr
+from tests._helpers.factories import make_snapshot
 
 # Constants
 EXPECTED_HASH_LENGTH: Final = 16
@@ -332,7 +332,7 @@ def test_resolve_target_from_explicit_tuple() -> None:
 
 def test_resolve_target_from_runtime_snapshot() -> None:
     """Target resolved from runtime snapshot when no explicit target."""
-    snapshot = SnapshotRef(repo="snapshot/repo", commit="snap_commit", repo_root=Path())
+    snapshot = make_snapshot(repo="snapshot/repo", commit="snap_commit")
 
     repo, commit = RESOLVE_TARGET(
         cfg=None,
@@ -415,7 +415,7 @@ def test_build_plugin_settings_includes_version_hash() -> None:
 def test_plan_graph_plugin_run_basic(tmp_path: Path) -> None:
     """Basic plan generation produces valid execution plan."""
     plugin = _make_test_plugin("basic_plan")
-    snapshot = SnapshotRef(repo="plan/repo", commit="plan_commit", repo_root=tmp_path)
+    snapshot = make_snapshot(repo="plan/repo", commit="plan_commit", repo_root=tmp_path)
 
     with _PluginRegistrar([plugin]):
         context = GraphPlanContext(
@@ -439,7 +439,7 @@ def test_plan_graph_plugin_run_basic(tmp_path: Path) -> None:
 def test_plan_graph_plugin_run_with_scope_override() -> None:
     """Run options scope overrides config scope."""
     plugin = _make_test_plugin("scope_plan")
-    snapshot = SnapshotRef(repo="plan/repo", commit="abc", repo_root=Path())
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with _PluginRegistrar([plugin]):
         run_options = GraphPluginRunOptions(
@@ -463,7 +463,7 @@ def test_plan_graph_plugin_run_with_scope_override() -> None:
 def test_plan_graph_plugin_run_with_plugin_options() -> None:
     """Plugin options included in plan."""
     plugin = _make_test_plugin("options_plan", options_default={"default": True})
-    snapshot = SnapshotRef(repo="plan/repo", commit="abc", repo_root=Path())
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with _PluginRegistrar([plugin]):
         run_options = GraphPluginRunOptions(
@@ -486,7 +486,7 @@ def test_plan_graph_plugin_run_with_plugin_options() -> None:
 def test_plan_graph_plugin_run_with_prior_manifest() -> None:
     """Prior manifest included in plan for skip detection."""
     plugin = _make_test_plugin("manifest_plan")
-    snapshot = SnapshotRef(repo="plan/repo", commit="abc", repo_root=Path())
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with _PluginRegistrar([plugin]):
         prior = {"manifest_plan": {"input_hash": "prior_hash"}}
@@ -508,7 +508,7 @@ def test_plan_graph_plugin_run_with_prior_manifest() -> None:
 def test_plan_graph_plugin_run_includes_settings() -> None:
     """Plan includes settings for each plugin."""
     plugin = _make_test_plugin("settings_plan")
-    snapshot = SnapshotRef(repo="plan/repo", commit="abc", repo_root=Path())
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with _PluginRegistrar([plugin]):
         context = GraphPlanContext(
@@ -530,7 +530,7 @@ def test_plan_graph_plugin_run_with_dependencies() -> None:
     """Plan orders plugins by dependencies."""
     plugin_a = _make_test_plugin("dep_a", provides=("capability_a",))
     plugin_b = _make_test_plugin("dep_b", depends_on=("dep_a",))
-    snapshot = SnapshotRef(repo="plan/repo", commit="abc", repo_root=Path())
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with _PluginRegistrar([plugin_a, plugin_b]):
         context = GraphPlanContext(
@@ -551,7 +551,7 @@ def test_plan_graph_plugin_run_with_dependencies() -> None:
 def test_plan_graph_plugin_run_with_telemetry() -> None:
     """Plan includes telemetry manager."""
     plugin = _make_test_plugin("telemetry_plan")
-    snapshot = SnapshotRef(repo="plan/repo", commit="abc", repo_root=Path())
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with _PluginRegistrar([plugin]):
         context = GraphPlanContext(
@@ -571,7 +571,7 @@ def test_graph_plugin_execution_plan_dep_graph() -> None:
     """Plan includes dependency graph mapping."""
     plugin_a = _make_test_plugin("graph_a", provides=("cap_a",))
     plugin_b = _make_test_plugin("graph_b", depends_on=("graph_a",))
-    snapshot = SnapshotRef(repo="plan/repo", commit="abc", repo_root=Path())
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with _PluginRegistrar([plugin_a, plugin_b]):
         context = GraphPlanContext(
@@ -591,7 +591,7 @@ def test_graph_plugin_execution_plan_dep_graph() -> None:
 def test_graph_plugin_execution_plan_skipped_plugins() -> None:
     """Plan records skipped plugins."""
     plugin = _make_test_plugin("skip_test")
-    snapshot = SnapshotRef(repo="plan/repo", commit="abc", repo_root=Path())
+    snapshot = make_snapshot(repo="plan/repo", commit="abc")
 
     with _PluginRegistrar([plugin]):
         context = GraphPlanContext(

@@ -11,8 +11,7 @@ import pytest
 from codeintel.pipeline.export.export_jsonl import export_all_jsonl
 from codeintel.pipeline.export.export_parquet import export_all_parquet
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.builders import FunctionValidationRow
-from tests._helpers.row_protocol import insert_rows
+from tests._helpers.builders import FunctionValidationRow, insert_rows
 
 
 def test_function_validation_export(fresh_gateway: StorageGateway, tmp_path: Path) -> None:

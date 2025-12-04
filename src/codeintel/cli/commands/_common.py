@@ -33,7 +33,7 @@ from codeintel.storage.config import StorageConfig
 from codeintel.storage.gateway import StorageGateway, open_gateway
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graph_runtime import GraphRuntime
+    from codeintel.analytics.runtime import GraphRuntime
 
 LOG = logging.getLogger(__name__)
 
@@ -619,10 +619,10 @@ def build_graph_runtime(cfg: CodeIntelConfig, gateway: StorageGateway) -> GraphR
     GraphRuntime
         Runtime bound to the CLI snapshot and backend settings.
     """
-    from codeintel.analytics.graph_runtime import (
+    from codeintel.analytics.runtime import (
         GraphRuntimeOptions,
     )
-    from codeintel.analytics.graph_runtime import (
+    from codeintel.analytics.runtime import (
         build_graph_runtime as _build_graph_runtime,
     )
 

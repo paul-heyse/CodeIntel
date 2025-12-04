@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from codeintel.analytics.core.context import PluginExecutionContext
 from codeintel.analytics.core.contracts import (
     OutputContractSpec,
     build_plugin_output_contracts,
 )
-from codeintel.analytics.core.execution_context import PluginExecutionContext
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     PluginMetadata,
     PluginOutputSpec,
     PluginResult,

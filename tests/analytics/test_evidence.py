@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.evidence import (
+from codeintel.analytics.compute.evidence.collection import (
     EvidenceCollector,
     EvidenceSample,
     validate_evidence_samples,

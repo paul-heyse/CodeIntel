@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.graph_runtime import (
+from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     GraphRuntimePool,

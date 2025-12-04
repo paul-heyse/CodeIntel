@@ -7,9 +7,8 @@ from datetime import UTC, datetime
 import networkx as nx
 import pytest
 
-from codeintel.analytics.graph_service import (
+from codeintel.analytics.compute.graphs import (
     BipartiteDegrees,
-    GraphContext,
     bipartite_degrees,
     bounded_simple_path_count,
     centrality_directed,
@@ -20,6 +19,7 @@ from codeintel.analytics.graph_service import (
     projection_metrics,
     structural_metrics,
 )
+from codeintel.analytics.graphs.runtime import GraphContext
 
 
 def test_centrality_directed_weighted_and_seeded() -> None:

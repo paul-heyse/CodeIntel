@@ -18,8 +18,8 @@ from codeintel.analytics.functions.config import FunctionAnalyticsOptions
 from codeintel.config import FunctionAnalyticsStepConfig
 
 if TYPE_CHECKING:
-    from codeintel.analytics.function_ast_cache import FunctionAst
     from codeintel.analytics.functions.function_effects import FunctionEffectsInputs
+    from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config import (
         FunctionContractsStepConfig,
         FunctionEffectsStepConfig,

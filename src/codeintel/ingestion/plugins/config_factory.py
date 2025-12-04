@@ -17,9 +17,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.change_tracker import ChangeTracker
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
     from codeintel.ingestion.tools.service import ToolService
+    from codeintel.ingestion.tracker import ChangeTracker
 
 log = logging.getLogger(__name__)
 

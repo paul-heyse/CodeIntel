@@ -12,8 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import SymbolUseEdgeRow
-from tests._helpers.row_protocol import insert_rows
+from tests._helpers.builders import SymbolUseEdgeRow, insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     GOID_FUNC_A,

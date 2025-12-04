@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.analytics.core.contracts import OutputContractSpec
-from codeintel.analytics.core.execution_context import (
+from codeintel.analytics.core.context import (
     PluginExecutionContext,
     PluginExecutionContextBuilder,
 )
+from codeintel.analytics.core.contracts import OutputContractSpec
 from codeintel.analytics.core.executor import PluginExecutor
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     PluginMetadata,
     PluginOutputSpec,
     PluginResult,

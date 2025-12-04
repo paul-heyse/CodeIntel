@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_runtime
-from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
+from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
 from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.schemas import apply_all_schemas
+from tests._helpers.factories import make_snapshot
 
 
 def _expect(*, condition: bool, detail: str) -> None:
@@ -68,7 +67,7 @@ def test_build_graph_runtime_captures_backend_info(
 ) -> None:
     """Runtime should expose backend metadata recorded during engine construction."""
     apply_all_schemas(fresh_gateway.con)
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=Path())
+    snapshot = make_snapshot(repo="r", commit="c")
     cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=False)
 
     runtime = build_graph_runtime(

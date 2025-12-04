@@ -12,7 +12,7 @@ from codeintel.analytics.core.pipeline_bridge import (
     plan_analytics_plugin_run,
     run_analytics_plugins,
 )
-from codeintel.analytics.core.plugins import TEST_PROFILE_PLUGIN
+from codeintel.analytics.plugins import TEST_PROFILE_PLUGIN
 from codeintel.config import ConfigBuilder
 from codeintel.config.steps_graphs import GraphPluginPolicy, GraphRunScope
 from tests._helpers import provisioned_gateway

@@ -19,8 +19,8 @@ from tests._helpers.builders import (
     RiskFactorRow,
     TestCatalogRow,
     TestCoverageEdgeRow,
+    insert_rows,
 )
-from tests._helpers.row_protocol import insert_rows
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext

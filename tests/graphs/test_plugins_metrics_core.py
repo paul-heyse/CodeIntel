@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Final
 
 import networkx as nx
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.core.context import GraphPluginExecutionContext, PluginScratch
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.plugins.metrics import (
@@ -34,6 +33,7 @@ from codeintel.graphs.resources.graphs import GraphResource
 from codeintel.graphs.resources.storage import StorageResource
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.configs import GraphEngineSeed
+from tests._helpers.factories import make_snapshot
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
 from tests._helpers.orchestration import build_seeded_graph_engine
 
@@ -162,7 +162,7 @@ def _make_execution_context(
     snapshot = (
         effective_engine.snapshot
         if effective_engine is not None
-        else SnapshotRef(repo="test/metrics", commit="metrics123", repo_root=tmp_path)
+        else make_snapshot(repo="test/metrics", commit="metrics123", repo_root=tmp_path)
     )
     scratch = PluginScratch()
     resources = ResourceContainer()

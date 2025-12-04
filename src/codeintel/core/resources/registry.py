@@ -12,18 +12,12 @@ from __future__ import annotations
 import logging
 from typing import Any, TypeVar, cast
 
+from codeintel.core.resources.protocol import ResourceError
+
 log = logging.getLogger(__name__)
 
 T = TypeVar("T")
 K = TypeVar("K")
-
-
-class ResourceError(Exception):
-    """Base exception for resource-related errors.
-
-    All resource-specific exceptions should inherit from this class
-    to enable unified exception handling across subsystems.
-    """
 
 
 class ResourceNotFoundError(ResourceError):
@@ -414,7 +408,6 @@ class ResourceRegistry:
 
 
 __all__ = [
-    "ResourceError",
     "ResourceNotFoundError",
     "ResourceRegistry",
 ]

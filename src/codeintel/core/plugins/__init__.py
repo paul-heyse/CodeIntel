@@ -8,8 +8,7 @@ Modules
 - protocol: Unified plugin protocol and metadata types
 - result: Unified plugin result types
 - context: Unified plugin execution context
-- registry: Unified plugin registry with dependency resolution
-- executor: Unified plugin executor with retry, timeout, telemetry
+- traits: Domain-agnostic plugin traits and mixins
 """
 
 from __future__ import annotations
@@ -42,11 +41,27 @@ from codeintel.core.plugins.result import (
     PluginResult,
     PluginStatus,
 )
+from codeintel.core.plugins.traits import (
+    CacheAwareMixin,
+    CacheAwarePlugin,
+    IsolatedPlugin,
+    ProgressReportingMixin,
+    ProgressReportingPlugin,
+    RetryableMixin,
+    RetryablePlugin,
+    is_cache_aware,
+    is_isolated,
+    is_progress_reporting,
+    is_retryable,
+)
 
 __all__ = [
+    "CacheAwareMixin",
+    "CacheAwarePlugin",
     "CapabilityKind",
     "ConfigProvider",
     "InputSource",
+    "IsolatedPlugin",
     "PluginCapability",
     "PluginExecutionContext",
     "PluginExecutionContextBuilder",
@@ -63,7 +78,15 @@ __all__ = [
     "PluginSeverity",
     "PluginStage",
     "PluginStatus",
+    "ProgressReportingMixin",
+    "ProgressReportingPlugin",
     "ResourceNotFoundError",
     "ResourceRegistry",
+    "RetryableMixin",
+    "RetryablePlugin",
     "ValidationResult",
+    "is_cache_aware",
+    "is_isolated",
+    "is_progress_reporting",
+    "is_retryable",
 ]

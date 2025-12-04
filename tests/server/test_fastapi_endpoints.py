@@ -16,7 +16,7 @@ from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.http.fastapi import create_app
 from codeintel.serving.mcp.backend import BackendLimits, DuckDBBackend, HttpBackend
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.architecture import open_seeded_architecture_gateway
+from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
 def _seed_db(db_path: Path, *, repo: str, commit: str) -> StorageGateway:

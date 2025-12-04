@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.analytics.graphs.graph_metrics import (
     GraphMetricFilters,
     GraphMetricsDeps,
@@ -13,9 +12,10 @@ from codeintel.analytics.graphs.graph_metrics import (
 from codeintel.analytics.graphs.graph_metrics_ext import compute_graph_metrics_functions_ext
 from codeintel.analytics.graphs.module_graph_metrics_ext import compute_graph_metrics_modules_ext
 from codeintel.analytics.graphs.subsystem_graph_metrics import compute_subsystem_graph_metrics
+from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import SnapshotRef
 from codeintel.config.steps_graphs import GraphMetricsStepConfig
-from tests._helpers.architecture import open_seeded_architecture_gateway
+from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
 def _expect(*, condition: bool, detail: str) -> None:

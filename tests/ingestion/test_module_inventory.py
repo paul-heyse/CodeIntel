@@ -15,7 +15,7 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
     RepoScanStep,
 )
-from codeintel.ingestion.steps import (
+from codeintel.ingestion.compute import (
     ast_extract,
     config_ingest,
     cst_extract,
@@ -23,7 +23,7 @@ from codeintel.ingestion.steps import (
     repo_scan,
     typing_ingest,
 )
-from codeintel.ingestion.utilities.scanning import default_code_profile
+from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.module_index import load_module_map
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
@@ -42,18 +42,18 @@ def _make_snapshot(tmp_path: Path) -> SnapshotRef:
 
 
 def test_scanning_only_used_in_repo_scan_and_config_ingest() -> None:
-    """Ensure SourceScanner only appears in repo_scan and config_ingest step modules."""
+    """Ensure SourceScanner only appears in repo_scan and config_ingest compute modules."""
     allowed = {
-        "codeintel.ingestion.steps.repo_scan",
-        "codeintel.ingestion.steps.config_ingest",
+        "codeintel.ingestion.compute.repo_scan",
+        "codeintel.ingestion.compute.config_ingest",
     }
     modules = {
-        "codeintel.ingestion.steps.repo_scan": repo_scan,
-        "codeintel.ingestion.steps.config_ingest": config_ingest,
-        "codeintel.ingestion.steps.docstrings_extract": docstrings_extract,
-        "codeintel.ingestion.steps.typing_ingest": typing_ingest,
-        "codeintel.ingestion.steps.ast_extract": ast_extract,
-        "codeintel.ingestion.steps.cst_extract": cst_extract,
+        "codeintel.ingestion.compute.repo_scan": repo_scan,
+        "codeintel.ingestion.compute.config_ingest": config_ingest,
+        "codeintel.ingestion.compute.docstrings_extract": docstrings_extract,
+        "codeintel.ingestion.compute.typing_ingest": typing_ingest,
+        "codeintel.ingestion.compute.ast_extract": ast_extract,
+        "codeintel.ingestion.compute.cst_extract": cst_extract,
     }
 
     offenders: list[str] = []

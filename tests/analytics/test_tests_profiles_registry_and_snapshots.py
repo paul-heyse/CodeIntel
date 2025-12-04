@@ -12,8 +12,9 @@ from typing import cast
 import pytest
 
 from codeintel.analytics.profiles import writer_guard
-from codeintel.analytics.tests_profiles import coverage_inputs, rows
-from codeintel.analytics.tests_profiles.types import (
+from codeintel.analytics.testing.coverage import inputs as coverage_inputs
+from codeintel.analytics.testing.profiles import rows
+from codeintel.analytics.testing.profiles.types import (
     IoFlags,
     TestAstInfo,
     TestProfileContext,

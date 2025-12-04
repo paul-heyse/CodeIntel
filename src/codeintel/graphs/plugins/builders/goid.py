@@ -48,7 +48,7 @@ from codeintel.graphs.core import (
 from codeintel.graphs.resources import StorageResource
 from codeintel.graphs.resources.container import ResourceContainer
 from codeintel.ingestion.adapters import IngestStorageService
-from codeintel.ingestion.utilities.paths import relpath_to_module
+from codeintel.ingestion.infrastructure.paths import relpath_to_module
 
 log = logging.getLogger(__name__)
 

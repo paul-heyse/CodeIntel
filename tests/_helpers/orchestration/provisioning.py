@@ -28,9 +28,9 @@ from codeintel.ingestion import (
     ToolRunnerAdapter,
     TypingIngestStep,
 )
+from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.ingestion.tools.infrastructure import ToolName, ToolRunner
 from codeintel.ingestion.tools.service import ToolService
-from codeintel.ingestion.utilities.scanning import default_code_profile
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata_bootstrap import INGEST_MACROS
@@ -41,6 +41,7 @@ from tests._helpers.builders import (
     GoidRow,
     RepoMapRow,
     SymbolUseEdgeRow,
+    insert_rows,
 )
 from tests._helpers.configs import (
     DEFAULT_COMMIT,
@@ -65,7 +66,6 @@ from tests._helpers.orchestration.repo_writers import (
 from tests._helpers.orchestration.seeding import seed_callgraph_goids, seed_cfg_dfg_for_metrics
 from tests._helpers.orchestration.seeding_docs import seed_docs_export_minimal
 from tests._helpers.orchestration.tooling import make_tools_config
-from tests._helpers.row_protocol import insert_rows
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig

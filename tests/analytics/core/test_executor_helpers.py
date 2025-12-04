@@ -5,8 +5,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from codeintel.analytics.core.execution_context import PluginExecutionContext, PluginScratch
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.context import PluginExecutionContext, PluginScratch
+from codeintel.analytics.core.protocol import (
     AnalyticsPluginProtocol,
     PluginMetadata,
     PluginResult,

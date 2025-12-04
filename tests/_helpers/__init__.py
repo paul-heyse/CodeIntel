@@ -45,10 +45,15 @@ from tests._helpers.fakes.networkx_graphs import (
     disconnected_graph,
     star_graph,
 )
-from tests._helpers.ingest_plugin_harness import (
+from tests._helpers.harnesses import (
     IngestPluginResultAssertions,
     IngestPluginTestHarness,
+    PluginResultAssertions,
+    PluginTestHarness,
+    ValidationResultAssertions,
     assert_ingest_result,
+    assert_result,
+    assert_validation,
 )
 from tests._helpers.orchestration.provisioning import (
     build_callgraph_fixture_repo,
@@ -70,13 +75,6 @@ from tests._helpers.orchestration.seeding_docs import (
     seed_docs_export_minimal,
     seed_mcp_backend,
     seed_profile_data,
-)
-from tests._helpers.plugin_harness import (
-    PluginResultAssertions,
-    PluginTestHarness,
-    ValidationResultAssertions,
-    assert_result,
-    assert_validation,
 )
 from tests._helpers.scenarios import (
     ScenarioConfig,

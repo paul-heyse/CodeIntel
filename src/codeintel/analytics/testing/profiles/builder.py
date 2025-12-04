@@ -10,7 +10,6 @@ from pathlib import Path
 
 from codeintel.analytics.ast_features.extract import build_import_map, io_flags_from_call
 from codeintel.analytics.ast_features.patterns import DEFAULT_PATTERNS, AstFeaturePatterns
-from codeintel.analytics.ast_utils import resolve_call_target
 from codeintel.analytics.testing.behavioral.importance import (
     compute_flakiness_score,
     compute_importance_score,
@@ -34,9 +33,10 @@ from codeintel.analytics.testing.profiles.types import (
     TestAstInfo,
     TestRecord,
 )
+from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
-from codeintel.ingestion.utilities.ast_utils import parse_python_module
-from codeintel.ingestion.utilities.paths import relpath_to_module
+from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
+from codeintel.ingestion.infrastructure.paths import relpath_to_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

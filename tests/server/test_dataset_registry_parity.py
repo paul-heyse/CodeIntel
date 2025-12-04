@@ -18,8 +18,7 @@ from codeintel.serving.http.datasets import build_dataset_registry
 from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.builders import RepoMapRow
-from tests._helpers.row_protocol import insert_rows
+from tests._helpers.builders import RepoMapRow, insert_rows
 
 
 def _seed_repo_identity(gateway: StorageGateway, repo: str, commit: str) -> None:

@@ -8,8 +8,7 @@ from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.mcp.server import create_mcp_server
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.builders import RepoMapRow
-from tests._helpers.row_protocol import insert_rows
+from tests._helpers.builders import RepoMapRow, insert_rows
 
 
 def test_mcp_wiring_smoke(fresh_gateway: StorageGateway) -> None:

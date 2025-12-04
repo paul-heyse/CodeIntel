@@ -6,8 +6,8 @@ from pathlib import Path
 
 import networkx as nx
 
-from codeintel.analytics.graph_metrics.metrics import structural_metrics
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.analytics.compute.graphs.structural import structural_metrics
+from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.engine import GraphEngine, GraphKind
 from codeintel.storage.gateway import StorageGateway

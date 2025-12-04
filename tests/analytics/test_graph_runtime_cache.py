@@ -9,7 +9,7 @@ from typing import cast
 import networkx as nx
 from networkx.readwrite import json_graph
 
-from codeintel.analytics.graph_runtime import GraphRuntime, GraphRuntimeOptions
+from codeintel.analytics.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphEngine
 

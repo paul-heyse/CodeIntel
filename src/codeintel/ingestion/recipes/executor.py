@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from codeintel.ingestion.change_tracker import ChangeTracker
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.ingestion.plugins.protocol import (
     IngestPluginPlan,
@@ -40,15 +39,16 @@ from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
 from codeintel.ingestion.resources.tracker import TrackerConfig, TrackerProvider
+from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.storage.run_tracking import PipelineStatus, PipelineStepRecord, StepStatus
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.ingestion.core.runs import IngestRunSink
+    from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.tools.infrastructure import ToolRunner
     from codeintel.ingestion.tools.service import ToolService
-    from codeintel.ingestion.utilities.scanning import ScanProfile
     from codeintel.runtime import RunContext
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.run_tracking import PipelineRunTracking

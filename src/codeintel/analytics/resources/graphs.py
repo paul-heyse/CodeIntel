@@ -12,14 +12,14 @@ from typing import TYPE_CHECKING, ClassVar
 
 import networkx as nx
 
-from codeintel.analytics.graph_runtime import (
+from codeintel.analytics.resources.protocol import LazyResource
+from codeintel.analytics.runtime import (
     GraphRuntimeOptions,
     build_graph_runtime,
 )
-from codeintel.analytics.resources.protocol import LazyResource
 
 if TYPE_CHECKING:
-    from codeintel.analytics.graph_runtime import GraphRuntime
+    from codeintel.analytics.runtime import GraphRuntime
     from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -131,7 +131,7 @@ class GraphProvider(LazyResource[GraphResources]):
 
         Example
         -------
-        >>> from codeintel.analytics.graph_runtime import GraphRuntimeOptions
+        >>> from codeintel.analytics.runtime import GraphRuntimeOptions
         >>> from codeintel.graphs.engine import GraphKind
         >>>
         >>> # With default options

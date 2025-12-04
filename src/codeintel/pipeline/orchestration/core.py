@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from codeintel.analytics.graph_runtime import (
+from codeintel.analytics.runtime import (
     GraphKind,
     GraphRuntime,
     GraphRuntimeOptions,
@@ -30,16 +30,16 @@ from codeintel.graphs.catalog import (
     FunctionCatalogService,
 )
 from codeintel.graphs.engine import GraphEngine
-from codeintel.ingestion.change_tracker import ChangeTracker
+from codeintel.ingestion.compute.scip_ingest import ScipIngestResult
 from codeintel.ingestion.core.execution_context import IngestExecutionContext
+from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.ingestion.plugins.protocol import IngestRuntimeScratch
 from codeintel.ingestion.resources.modules import ModuleProvider
 from codeintel.ingestion.resources.registry import ResourceRegistry
 from codeintel.ingestion.resources.tools import ToolsProvider
-from codeintel.ingestion.steps.scip_ingest import ScipIngestResult
 from codeintel.ingestion.tools.infrastructure import ToolRunner
 from codeintel.ingestion.tools.service import ToolService
-from codeintel.ingestion.utilities.scanning import ScanProfile
+from codeintel.ingestion.tracker import ChangeTracker
 from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:

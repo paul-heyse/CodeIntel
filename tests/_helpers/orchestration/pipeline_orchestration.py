@@ -17,16 +17,15 @@ from codeintel.graphs.plugins.builders.callgraph import get_callgraph_builder_pl
 from codeintel.graphs.plugins.builders.cfg_dfg import build_cfg_and_dfg
 from codeintel.graphs.plugins.builders.symbol_uses import build_symbol_use_edges
 from codeintel.graphs.plugins.runner import GraphPluginRunner
-from codeintel.ingestion.utilities.scanning import (
+from codeintel.ingestion.infrastructure.scanning import (
     default_code_profile,
     default_config_profile,
 )
 from codeintel.pipeline.orchestration.core import PipelineContext
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
-from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow
+from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.pipeline_config import COMMIT, REPO, PipelineEnv
 from tests._helpers.orchestration.tooling import generate_coverage_for_function
-from tests._helpers.row_protocol import insert_rows
 
 
 def create_pipeline_env(tmp_path: Path) -> PipelineEnv:

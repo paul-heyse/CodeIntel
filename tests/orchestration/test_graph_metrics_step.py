@@ -11,10 +11,10 @@ from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.catalog import FunctionCatalogService
 from codeintel.graphs.recipes import METRICS_ONLY_RECIPE, RecipeExecutor, RecipeExecutorContext
-from codeintel.ingestion.utilities.scanning import ScanProfile
+from codeintel.ingestion.infrastructure.scanning import ScanProfile
 from codeintel.pipeline.orchestration.core import ensure_graph_runtime
 from codeintel.pipeline.orchestration.steps import PipelineContext
-from tests._helpers.architecture import open_seeded_architecture_gateway
+from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
 def _scan_profile(repo_root: Path) -> ScanProfile:

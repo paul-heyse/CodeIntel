@@ -16,12 +16,12 @@ from typing import TYPE_CHECKING
 import yaml
 
 from codeintel.analytics.ast_features.model import FunctionAstFeatures
-from codeintel.analytics.ast_utils import resolve_call_target, safe_unparse, snippet_from_lines
-from codeintel.analytics.evidence import EvidenceCollector
-from codeintel.analytics.function_ast_cache import FunctionAst
+from codeintel.analytics.compute.evidence.collection import EvidenceCollector
+from codeintel.analytics.parsing.ast_cache import FunctionAst
+from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse, snippet_from_lines
 from codeintel.config import ExternalDependenciesStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
-from codeintel.ingestion.utilities.paths import normalize_rel_path
+from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from codeintel.storage.sql_helpers import ensure_schema
 

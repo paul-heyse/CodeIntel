@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, TypedDict, TypeVar, Unpack
 from uuid import uuid4
 
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     AnalyticsPluginProtocol,
     PluginInputSpec,
     PluginIsolation,
@@ -30,7 +30,7 @@ from codeintel.analytics.core.plugin_protocol import (
 from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
-    from codeintel.analytics.core.execution_context import PluginExecutionContext
+    from codeintel.analytics.core.context import PluginExecutionContext
 
 log = logging.getLogger(__name__)
 

@@ -16,7 +16,7 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
     RepoScanStep,
 )
-from codeintel.ingestion.utilities.scanning import (
+from codeintel.ingestion.infrastructure.scanning import (
     ScanProfile,
     default_code_profile,
 )

@@ -16,7 +16,7 @@ import contextlib
 import logging
 from dataclasses import dataclass
 
-from codeintel.analytics.graph_runtime import GraphRuntimeOptions, resolve_graph_runtime
+from codeintel.analytics.runtime import GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.plugins.result import PluginResult
 from codeintel.graphs.core import (

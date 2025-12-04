@@ -16,7 +16,7 @@ from codeintel.ingestion.adapters import (
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
 )
-from codeintel.ingestion.change_tracker import ChangeTracker
+from codeintel.ingestion.compute.repo_scan import RepoScanStep
 from codeintel.ingestion.core.base import BaseIngestPlugin
 from codeintel.ingestion.core.traits import WithDependencyData, WithRowCounts
 from codeintel.ingestion.plugins.protocol import (
@@ -25,7 +25,7 @@ from codeintel.ingestion.plugins.protocol import (
     IngestStage,
 )
 from codeintel.ingestion.ports.change_detection import ChangeRequest
-from codeintel.ingestion.steps.repo_scan import RepoScanStep
+from codeintel.ingestion.tracker import ChangeTracker
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext

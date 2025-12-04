@@ -34,6 +34,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, cast
 
+from codeintel.ingestion.infrastructure.db_queries import safe_count
 from codeintel.ingestion.plugins.protocol import (
     IngestIsolationKind,
     IngestPluginMetadata,
@@ -43,11 +44,10 @@ from codeintel.ingestion.plugins.protocol import (
     IngestStage,
 )
 from codeintel.ingestion.resources.tracker import TrackerProvider
-from codeintel.ingestion.utilities.db_queries import safe_count
 
 if TYPE_CHECKING:
-    from codeintel.ingestion.change_tracker import ChangeTracker
     from codeintel.ingestion.core.execution_context import IngestExecutionContext
+    from codeintel.ingestion.tracker import ChangeTracker
 
 log = logging.getLogger(__name__)
 

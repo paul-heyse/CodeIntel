@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.ingestion.utilities.macros import (
+from codeintel.ingestion.infrastructure.macros import (
     INGEST_MACRO_TABLES,
     macro_exists,
 )

@@ -12,7 +12,7 @@ from typing import cast
 import pytest
 
 from codeintel.analytics.profiles import files, functions, modules, writer_guard
-from codeintel.analytics.tests_profiles import rows as test_rows
+from codeintel.analytics.testing.profiles import rows as test_rows
 from codeintel.config import (
     BehavioralCoverageStepConfig,
     ProfilesAnalyticsStepConfig,

@@ -14,11 +14,7 @@ from datetime import UTC, datetime
 import networkx as nx
 
 from codeintel.analytics.adapters.base import DeleteScope
-from codeintel.analytics.datasets import (
-    get_analytics_dataset_contract,
-    insert_analytics_rows,
-)
-from codeintel.analytics.graph_rows import (
+from codeintel.analytics.adapters.graphs import (
     FunctionGraphMetricInputs,
     ModuleGraphMetricInputs,
     build_function_graph_metric_rows,
@@ -27,18 +23,25 @@ from codeintel.analytics.graph_rows import (
     load_symbol_module_edges,
     merge_component_metadata,
 )
-from codeintel.analytics.graph_runtime import (
-    GraphRuntime,
-    GraphRuntimeOptions,
-    resolve_graph_runtime,
-)
-from codeintel.analytics.graph_service import (
-    GraphContext,
+from codeintel.analytics.compute.graphs import (
     centrality_directed,
     component_metadata,
     neighbor_stats,
 )
-from codeintel.analytics.graphs.runtime import GraphContextSpec, resolve_graph_context
+from codeintel.analytics.graphs.runtime import (
+    GraphContext,
+    GraphContextSpec,
+    resolve_graph_context,
+)
+from codeintel.analytics.runtime import (
+    GraphRuntime,
+    GraphRuntimeOptions,
+    resolve_graph_runtime,
+)
+from codeintel.analytics.utilities.datasets import (
+    get_analytics_dataset_contract,
+    insert_analytics_rows,
+)
 from codeintel.config import GraphMetricsStepConfig
 from codeintel.graphs.catalog import FunctionCatalogProvider
 from codeintel.storage.gateway import StorageGateway

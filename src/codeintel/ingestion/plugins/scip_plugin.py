@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, ToolRunnerAdapter
+from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestStep
 from codeintel.ingestion.core.base import (
     ToolDependentIngestPlugin,
     TrackerRequiringPlugin,
@@ -24,7 +25,6 @@ from codeintel.ingestion.plugins.protocol import (
     IngestStage,
 )
 from codeintel.ingestion.resources import ModuleProvider, ToolsProvider
-from codeintel.ingestion.steps.scip_ingest import ScipIngestConfig, ScipIngestStep
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext

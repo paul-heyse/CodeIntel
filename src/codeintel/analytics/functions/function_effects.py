@@ -11,19 +11,19 @@ from datetime import UTC, datetime
 
 import networkx as nx
 
-from codeintel.analytics.ast_utils import call_name, snippet_from_lines
-from codeintel.analytics.evidence import EvidenceCollector
-from codeintel.analytics.function_ast_cache import (
+from codeintel.analytics.compute.evidence.collection import EvidenceCollector
+from codeintel.analytics.compute.graphs import normalize_decimal_id
+from codeintel.analytics.parsing.ast_cache import (
     FunctionAst,
     FunctionAstLoadRequest,
     load_function_asts,
 )
-from codeintel.analytics.graph_runtime import (
+from codeintel.analytics.runtime import (
     GraphRuntime,
     GraphRuntimeOptions,
     resolve_graph_runtime,
 )
-from codeintel.analytics.graph_service import normalize_decimal_id
+from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.config import FunctionEffectsStepConfig
 from codeintel.graphs.catalog import (
     FunctionCatalogProvider,

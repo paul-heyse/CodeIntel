@@ -98,6 +98,7 @@ from codeintel.graphs.core.registry import (
     list_graph_plugins,
     plan_graph_plugins,
     register_graph_plugin,
+    reset_graph_registry,
     unregister_graph_plugin,
 )
 
@@ -137,5 +138,6 @@ __all__ = [
     "make_validation_plugin",
     "plan_graph_plugins",
     "register_graph_plugin",
+    "reset_graph_registry",
     "unregister_graph_plugin",
 ]

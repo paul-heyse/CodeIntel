@@ -12,21 +12,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.core.execution_context import (
+from codeintel.analytics.core.context import (
     PluginExecutionContextBuilder,
     PluginScratch,
 )
 from codeintel.analytics.core.executor import ExecutionPolicy, PluginExecutor
-from codeintel.analytics.core.plugins.middleware.logging import LoggingMiddleware
-from codeintel.analytics.core.plugins.middleware.metrics import MetricsMiddleware
-from codeintel.analytics.core.plugins.registration import ensure_plugins_registered
 from codeintel.analytics.core.registry import PluginPlan, get_registry
-from codeintel.analytics.graph_runtime import GraphRuntime
+from codeintel.analytics.plugins.middleware.logging import LoggingMiddleware
+from codeintel.analytics.plugins.middleware.metrics import MetricsMiddleware
+from codeintel.analytics.plugins.registration import ensure_plugins_registered
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.graphs import GraphProvider
-from codeintel.analytics.runtime_manifest import (
+from codeintel.analytics.runtime import GraphRuntime
+from codeintel.analytics.runtime.manifest import (
     AnalyticsPlanInfo,
     AnalyticsRunRecord,
     AnalyticsRunReport,

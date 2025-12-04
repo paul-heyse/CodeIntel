@@ -15,7 +15,7 @@ from codeintel.storage.gateway import StorageGateway
 from codeintel.storage.sql_builder import QueryBuilder, SafeColumn, SafeTable, render_sql
 
 if TYPE_CHECKING:
-    from codeintel.analytics.core.plugin_protocol import (
+    from codeintel.analytics.core.protocol import (
         AnalyticsPluginProtocol,
         PluginMetadata,
         PluginOutputSpec,

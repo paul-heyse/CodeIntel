@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.analytics.core.plugins.registration import (
+from codeintel.analytics.core.registry import get_registry
+from codeintel.analytics.plugins.registration import (
     ALL_PLUGINS,
     ensure_plugins_registered,
 )
-from codeintel.analytics.core.registry import get_registry
 
 # Minimum count for multi-plugin tests
 MIN_MULTI_PLUGIN_COUNT = 2

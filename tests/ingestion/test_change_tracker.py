@@ -14,13 +14,13 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
     RepoScanStep,
 )
-from codeintel.ingestion.change_tracker import (
+from codeintel.ingestion.infrastructure.scanning import ScanProfile
+from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
+from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.ingestion.tracker import (
     ChangeTracker,
     IncrementalIngestPolicy,
 )
-from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
-from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.ingestion.utilities.scanning import ScanProfile
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 

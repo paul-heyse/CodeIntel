@@ -10,8 +10,8 @@ import duckdb
 import pytest
 from coverage import Coverage
 
+from codeintel.ingestion.core.execution_context import IngestExecutionContext
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.architecture import open_seeded_architecture_gateway
 from tests._helpers.assertions import assert_single_edge
 from tests._helpers.configs import (
     CoverageEdgeEnv,
@@ -24,6 +24,7 @@ from tests._helpers.configs import (
 )
 from tests._helpers.context import TestContext, create_test_context
 from tests._helpers.gateway import memory_con_with_macros
+from tests._helpers.harnesses import IngestTestSetup
 from tests._helpers.orchestration import (
     compute_coverage_edges,
     create_coverage_edge_env,
@@ -44,6 +45,7 @@ from tests._helpers.seeds import (
     GRAPH_PACK,
     METRICS_PACK,
 )
+from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 
 
 @pytest.fixture
@@ -536,3 +538,52 @@ def scenario_builder() -> type[TestScenario]:
         The TestScenario class for building custom scenarios.
     """
     return TestScenario
+
+
+# =============================================================================
+# Ingestion Test Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def ingest_setup(tmp_path: Path, fresh_gateway: StorageGateway) -> IngestTestSetup:
+    """Provide bundled IngestTestSetup ready for plugin testing.
+
+    This fixture combines a fresh gateway with standard paths and profiles,
+    reducing boilerplate for ingestion plugin tests.
+
+    Parameters
+    ----------
+    tmp_path
+        Pytest temporary directory.
+    fresh_gateway
+        Gateway with schema applied.
+
+    Returns
+    -------
+    IngestTestSetup
+        Fully configured setup for ingestion tests.
+    """
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    return IngestTestSetup.from_repo(repo_root, gateway=fresh_gateway)
+
+
+@pytest.fixture
+def ingest_ctx(ingest_setup: IngestTestSetup) -> IngestExecutionContext:
+    """Provide pre-built IngestExecutionContext for tests.
+
+    This fixture provides a ready-to-use execution context built from the
+    standard ingest_setup fixture.
+
+    Parameters
+    ----------
+    ingest_setup
+        Bundled ingestion test setup.
+
+    Returns
+    -------
+    IngestExecutionContext
+        Execution context with standard configuration.
+    """
+    return ingest_setup.build_context("test")

@@ -8,7 +8,7 @@ import pytest
 from duckdb import DuckDBPyConnection
 
 from codeintel.analytics.adapters.base import DeleteScope
-from codeintel.analytics.datasets import (
+from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )

@@ -13,9 +13,9 @@ import ast
 import json
 from pathlib import Path
 
-from codeintel.ingestion.steps import config_ingest, typing_ingest
-from codeintel.ingestion.steps.tests_ingest import TestsIngestStep
-from codeintel.ingestion.steps.typing_ingest import AnnotationInfo
+from codeintel.ingestion.compute import config_ingest, typing_ingest
+from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
+from codeintel.ingestion.compute.typing_ingest import AnnotationInfo
 from tests._helpers.fakes import FakeIngestStorage
 
 # Test constants

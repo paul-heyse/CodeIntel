@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from codeintel.analytics.data_model_usage import compute_data_model_usage
+from codeintel.analytics.compute.data_models.usage import compute_data_model_usage
 from codeintel.analytics.data_models import compute_data_models
-from codeintel.analytics.function_ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.analytics.graphs import compute_config_data_flow
+from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.config import ConfigBuilder
 from codeintel.config.primitives import SnapshotRef
@@ -26,9 +26,9 @@ from tests._helpers.builders import (
     FunctionTypesRow,
     GoidRow,
     ModuleRow,
+    insert_rows,
 )
 from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
-from tests._helpers.row_protocol import insert_rows
 
 REPO = "test/repo"
 COMMIT = "deadbeef"

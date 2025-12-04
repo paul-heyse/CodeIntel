@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar, Literal, Protocol, cast, runtime_checkable
 
-from codeintel.ingestion.utilities.db_queries import safe_count
+from codeintel.ingestion.infrastructure.db_queries import safe_count
 
 if TYPE_CHECKING:
     from codeintel.ingestion.core.execution_context import IngestExecutionContext

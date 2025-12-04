@@ -24,8 +24,8 @@ from tests._helpers.builders import (
     SubsystemModuleRow,
     SubsystemRow,
     SymbolUseEdgeRow,
+    insert_rows,
 )
-from tests._helpers.row_protocol import insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
 )

@@ -19,8 +19,6 @@ from typing import ClassVar
 
 import pytest
 
-from codeintel.config.models import ToolsConfig
-from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion.core.base import (
     BaseIngestPlugin,
     TableWriterIngestPlugin,
@@ -48,12 +46,11 @@ from codeintel.ingestion.plugins.registry import (
     IngestPluginRegistry,
     PlanOptions,
 )
-from codeintel.ingestion.resources.registry import ResourceRegistry
-from codeintel.ingestion.utilities.scanning import (
-    default_code_profile,
-    default_config_profile,
+from tests._helpers.harnesses import (
+    IngestPluginTestHarness,
+    IngestTestSetup,
+    assert_ingest_result,
 )
-from tests._helpers.gateway import open_ingestion_gateway_with_macros as open_ingestion_gateway
 
 # =============================================================================
 # Test Constants
@@ -223,16 +220,8 @@ def test_disabled_plugins_are_skipped() -> None:
     assert "typing_ingest" in skipped_names
 
 
-def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
+def test_custom_plugin_registry_execution(ingest_setup: IngestTestSetup) -> None:
     """Smoke test exercising dependency expansion with custom plugins."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    paths = BuildPaths.from_repo_root(repo_root)
-    snapshot = SnapshotRef.from_args(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
-    code_profile = default_code_profile(repo_root)
-    config_profile = default_config_profile(repo_root)
-    tools = ToolsConfig.default()
-
     executed: list[str] = []
 
     @dataclass
@@ -283,25 +272,11 @@ def test_custom_plugin_registry_execution(tmp_path: Path) -> None:
         )
     )
 
-    gateway = open_ingestion_gateway()
-    try:
-        scratch = IngestRuntimeScratch()
-        resources = ResourceRegistry()
-        for plugin in plan.plugins:
-            ctx = IngestExecutionContext(
-                gateway=gateway,
-                snapshot=snapshot,
-                paths=paths,
-                tools=tools,
-                code_profile=code_profile,
-                config_profile=config_profile,
-                resources=resources,
-                scratch=scratch,
-                plugin_name=plugin.metadata.name,
-            )
-            plugin.execute(ctx)
-    finally:
-        gateway.close()
+    # Use IngestTestSetup to build context for each plugin
+    for plugin in plan.plugins:
+        setup = ingest_setup.with_fresh_scratch()
+        ctx = setup.build_context(plugin.metadata.name)
+        plugin.execute(ctx)
 
     assert executed == ["alpha", "bravo", "charlie"], f"Unexpected order: {executed}"
 
@@ -777,3 +752,83 @@ def test_ingest_isolation_values(isolation: IngestIsolationKind) -> None:
         isolation_kind=isolation,
     )
     assert metadata.isolation_kind == isolation
+
+
+# =============================================================================
+# IngestPluginTestHarness Examples
+# =============================================================================
+# These tests demonstrate the fluent harness pattern for plugin testing.
+
+
+def test_harness_pattern_example(ingest_setup: IngestTestSetup) -> None:
+    """Demonstrate the fluent IngestPluginTestHarness pattern.
+
+    This test shows how to use the harness for plugin testing with
+    minimal boilerplate. The harness handles context setup and provides
+    a fluent API for configuration.
+    """
+
+    @dataclass
+    class NoOpPlugin(BaseIngestPlugin):
+        """Minimal plugin that returns success."""
+
+        plugin_name: ClassVar[str] = "noop"
+        plugin_description: ClassVar[str] = "Does nothing"
+        plugin_stage: ClassVar[IngestStage] = "parse"
+
+        def compute(self, ctx: IngestExecutionContext) -> Mapping[str, int] | None:
+            _ = self, ctx
+            return {"test.table": 0}
+
+    # Use the harness pattern - cleaner than manual context construction
+    result = (
+        IngestPluginTestHarness.for_plugin(NoOpPlugin())
+        .with_gateway(ingest_setup.gateway)
+        .with_snapshot(
+            ingest_setup.snapshot.repo,
+            ingest_setup.snapshot.commit,
+            ingest_setup.snapshot.repo_root,
+        )
+        .execute()
+    )
+
+    # Use fluent assertions
+    assert_ingest_result(result).succeeded().has_no_error()
+
+
+def test_harness_with_scratch_data(ingest_setup: IngestTestSetup) -> None:
+    """Demonstrate harness with pre-populated scratch data.
+
+    This pattern is useful for testing plugins that depend on
+    data from upstream plugins.
+    """
+
+    @dataclass
+    class ScratchConsumerPlugin(BaseIngestPlugin):
+        """Plugin that reads from scratch."""
+
+        plugin_name: ClassVar[str] = "scratch_consumer"
+        plugin_description: ClassVar[str] = "Consumes scratch data"
+        plugin_stage: ClassVar[IngestStage] = "enrich"
+
+        def compute(self, ctx: IngestExecutionContext) -> Mapping[str, int] | None:
+            _ = self
+            value = ctx.scratch.consume("upstream_data")
+            if value != "expected_value":
+                return None  # Signal failure implicitly
+            return {"test.consumed": 1}
+
+    # Pre-populate scratch data for testing downstream plugins
+    result = (
+        IngestPluginTestHarness.for_plugin(ScratchConsumerPlugin())
+        .with_gateway(ingest_setup.gateway)
+        .with_snapshot(
+            ingest_setup.snapshot.repo,
+            ingest_setup.snapshot.commit,
+            ingest_setup.snapshot.repo_root,
+        )
+        .with_scratch("upstream_data", "expected_value")
+        .execute()
+    )
+
+    assert_ingest_result(result).succeeded().has_row_count("test.consumed", exact=1)

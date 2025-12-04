@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
 import networkx as nx
 import pytest
 
-from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.engine import views as nx_views
 from codeintel.graphs.engine.cache import GraphCache
 from tests._helpers.context import TestContext
+from tests._helpers.factories import make_snapshot
 from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
 
 
@@ -42,7 +41,7 @@ def test_engine_matches_nx_views_for_core_graphs(test_ctx: TestContext) -> None:
 
     engine = NxGraphEngine(
         gateway=gateway,
-        snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=Path()),
+        snapshot=make_snapshot(repo=repo, commit=commit),
     )
 
     comparisons: list[tuple[str, Callable[[], nx.Graph], Callable[[], nx.Graph]]] = [

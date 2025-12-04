@@ -17,8 +17,8 @@ from tests._helpers.builders import (
     ModuleRow,
     RiskFactorRow,
     SymbolUseEdgeRow,
+    insert_rows,
 )
-from tests._helpers.row_protocol import insert_rows
 
 # Test constants
 EXPECTED_SUBSYSTEMS = 2
@@ -341,9 +341,7 @@ def test_subsystems_cluster_and_risk_aggregation(test_ctx: TestContext) -> None:
         pytest.fail(f"Expected one high-risk function, got {high_count}")
 
     # Verify all modules are assigned
-    memberships = test_ctx.query(
-        "SELECT subsystem_id, module FROM analytics.subsystem_modules"
-    )
+    memberships = test_ctx.query("SELECT subsystem_id, module FROM analytics.subsystem_modules")
     if len(memberships) != EXPECTED_MEMBERSHIPS:
         pytest.fail(f"Expected {EXPECTED_MEMBERSHIPS} memberships, got {len(memberships)}")
     members = {str(row.module) for row in memberships}

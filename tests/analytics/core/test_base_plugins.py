@@ -21,7 +21,7 @@ from codeintel.analytics.core.base import (
     ResolvedConfig,
     TableWriterPlugin,
 )
-from codeintel.analytics.core.plugin_protocol import (
+from codeintel.analytics.core.protocol import (
     PluginResult,
     PluginStage,
     ValidationResult,
