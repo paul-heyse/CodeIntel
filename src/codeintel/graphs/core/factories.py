@@ -31,7 +31,7 @@ from codeintel.graphs.core.protocol import (
     create_graph_metadata,
 )
 from codeintel.graphs.engine import GraphKind
-from codeintel.storage.db_helpers import safe_row_counts
+from codeintel.storage.helpers import safe_row_counts
 
 if TYPE_CHECKING:
     from pydantic import BaseModel

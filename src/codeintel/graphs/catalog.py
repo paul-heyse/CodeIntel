@@ -34,7 +34,7 @@ from typing import Protocol
 
 from codeintel.ingestion.infrastructure.paths import normalize_rel_path
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.module_index import load_module_map
+from codeintel.storage.helpers.module_index import load_module_map
 
 # =============================================================================
 # Function Span Types (from function_index.py)

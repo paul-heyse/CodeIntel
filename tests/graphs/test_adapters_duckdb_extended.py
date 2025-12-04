@@ -18,7 +18,7 @@ import pytest
 
 from codeintel.graphs.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.storage.gateway import DuckDBError, StorageGateway
-from codeintel.storage.sql_builder import QueryBuilder, SafeTable, render_sql
+from codeintel.storage.sql import QueryBuilder, SafeTable, render_sql
 
 # ---------------------------------------------------------------------------
 # Constants

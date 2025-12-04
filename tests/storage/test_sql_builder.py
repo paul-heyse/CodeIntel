@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.storage.sql_builder import quote_identifier, quote_table_key, safe_macro_call
+from codeintel.storage.sql import quote_identifier, quote_table_key, safe_macro_call
 
 
 def test_quote_identifier_validates_simple_names() -> None:

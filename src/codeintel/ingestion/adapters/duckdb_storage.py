@@ -21,18 +21,18 @@ from codeintel.config.datasets import (
     load_columns_by_table,
 )
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
-from codeintel.storage.ingest_macros import (
+from codeintel.storage.macros import (
     assert_ingest_macros_present,
     ensure_ingest_macros,
     list_ingest_macros,
 )
-from codeintel.storage.schemas import apply_all_schemas
-from codeintel.storage.sql_builder import (
+from codeintel.storage.schema import apply_all_schemas
+from codeintel.storage.sql import render_sql
+from codeintel.storage.sql.builder import (
     ensure_schema as _ensure_schema,
 )
-from codeintel.storage.sql_builder import (
+from codeintel.storage.sql.builder import (
     prepared_statements_dynamic,
-    render_sql,
 )
 
 if TYPE_CHECKING:

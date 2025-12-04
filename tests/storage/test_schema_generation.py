@@ -5,7 +5,7 @@ from __future__ import annotations
 import typing
 from typing import TypedDict
 
-from codeintel.storage.schema_generation import json_schema_from_typeddict, validate_row_with_schema
+from codeintel.storage.schema.json_schema import json_schema_from_typeddict, validate_row_with_schema
 
 
 class SampleRow(TypedDict):

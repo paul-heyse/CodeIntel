@@ -17,8 +17,8 @@ import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
-from codeintel.storage.ingest_macros import ensure_ingest_macros
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.macros import ensure_ingest_macros
+from codeintel.storage.schema import apply_all_schemas
 
 # =============================================================================
 # Constants

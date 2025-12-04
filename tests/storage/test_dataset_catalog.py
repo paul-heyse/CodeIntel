@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from codeintel.config.datasets import DatasetContract, get_dataset_contracts_by_table_key
-from codeintel.storage.catalog import (
+from codeintel.storage.datasets.catalog import (
     SamplingConfig,
     build_catalog,
     write_html_catalog,

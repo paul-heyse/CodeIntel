@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.runtime import TriggerKind
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.run_tracking import PipelineRunRecord
+    from codeintel.storage.tracking import PipelineRunRecord
 
 log = logging.getLogger(__name__)
 

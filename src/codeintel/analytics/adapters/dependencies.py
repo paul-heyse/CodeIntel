@@ -14,7 +14,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from codeintel.analytics.adapters.base import BatchAdapter
-from codeintel.storage.sql_builder import ensure_schema
+from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

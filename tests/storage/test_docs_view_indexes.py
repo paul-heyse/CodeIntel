@@ -5,7 +5,7 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.gateway import memory_con_with_macros
 
 

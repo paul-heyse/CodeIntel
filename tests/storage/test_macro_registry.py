@@ -7,7 +7,7 @@ import re
 
 from codeintel.config.datasets import get_dataset_contracts_by_table_key
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.metadata_bootstrap import METADATA_SCHEMA_DDL, NORMALIZED_MACROS
+from codeintel.storage.metadata import METADATA_SCHEMA_DDL, NORMALIZED_MACROS
 
 
 def _canonicalize_ddl(stmt: str) -> str:

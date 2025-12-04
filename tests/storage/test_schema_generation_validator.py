@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.storage.schema_generation import build_validator, validate_row_with_schema
+from codeintel.storage.schema.json_schema import build_validator, validate_row_with_schema
 
 
 def test_build_validator_accepts_mapping() -> None:

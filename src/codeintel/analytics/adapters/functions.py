@@ -18,7 +18,7 @@ from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
     insert_analytics_rows,
 )
-from codeintel.storage.sql_builder import ensure_schema
+from codeintel.storage.sql.builder import ensure_schema
 
 if TYPE_CHECKING:
     from codeintel.config.datasets import FunctionMetricsRow, FunctionTypesRow

@@ -29,15 +29,15 @@ from codeintel.pipeline.op_planner import (
 )
 from codeintel.runtime import TriggerKind
 from codeintel.serving.operations.catalog import get_operation
-from codeintel.storage.data_checks import table_has_rows_for_snapshot
-from codeintel.storage.run_tracking import PipelineRunRecord
+from codeintel.storage.tracking import PipelineRunRecord
+from codeintel.storage.validation import table_has_rows_for_snapshot
 
 if TYPE_CHECKING:
     from codeintel.config.datasets import DatasetContract
     from codeintel.config.serving_models import ServingConfig
     from codeintel.serving.mcp.backend import QueryBackend
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.run_tracking import PipelineRunTracking
+    from codeintel.storage.tracking import PipelineRunTracking
 
 LOG = logging.getLogger(__name__)
 

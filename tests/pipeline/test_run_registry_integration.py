@@ -10,7 +10,7 @@ import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.runtime import RunContext, new_run_context
-from codeintel.storage.run_tracking import PipelineStepRecord
+from codeintel.storage.tracking import PipelineStepRecord
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
 
 if TYPE_CHECKING:

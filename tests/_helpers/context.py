@@ -25,8 +25,8 @@ from codeintel.storage.gateway import (
     open_gateway,
     open_memory_gateway,
 )
-from codeintel.storage.ingest_macros import ensure_ingest_macros
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.macros import ensure_ingest_macros
+from codeintel.storage.schema import apply_all_schemas
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

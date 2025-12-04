@@ -9,12 +9,12 @@ import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from codeintel.runtime import RunContext
-from codeintel.storage.metadata_bootstrap import (
+from codeintel.storage.metadata import (
     PIPELINE_INDEXES_DDL,
     PIPELINE_RUNS_DDL,
     PIPELINE_STEPS_DDL,
 )
-from codeintel.storage.run_tracking import (
+from codeintel.storage.tracking import (
     PipelineRunRecord,
     PipelineRunTracking,
     PipelineStepRecord,

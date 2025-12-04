@@ -9,6 +9,16 @@ from codeintel.storage.repositories.base import (
     fetch_paginated,
     row_exists,
 )
+from codeintel.storage.repositories.data_models import (
+    DataModelFieldRow,
+    DataModelRelationshipRow,
+    DataModelRow,
+    NormalizedDataModel,
+    fetch_fields,
+    fetch_models,
+    fetch_models_normalized,
+    fetch_relationships,
+)
 from codeintel.storage.repositories.dataflow import DataflowRepository
 from codeintel.storage.repositories.datasets import DatasetReadRepository
 from codeintel.storage.repositories.functions import FunctionRepository
@@ -19,17 +29,25 @@ from codeintel.storage.repositories.tests import TestRepository
 
 __all__ = [
     "BaseRepository",
+    "DataModelFieldRow",
+    "DataModelRelationshipRow",
+    "DataModelRow",
     "DataflowRepository",
     "DatasetReadRepository",
     "FunctionRepository",
     "GraphRepository",
     "ModuleRepository",
+    "NormalizedDataModel",
     "PaginatedRows",
     "RowDict",
     "SubsystemRepository",
     "TestRepository",
     "fetch_all_dicts",
+    "fetch_fields",
+    "fetch_models",
+    "fetch_models_normalized",
     "fetch_one_dict",
     "fetch_paginated",
+    "fetch_relationships",
     "row_exists",
 ]

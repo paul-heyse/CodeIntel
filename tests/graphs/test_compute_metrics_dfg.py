@@ -547,20 +547,15 @@ def test_path_lengths_various_chains(chain_length: int, expected_max_from_first:
 
 
 @pytest.mark.parametrize(
-    ("cycle_size", "expected_cycle_found"),
-    [
-        (2, True),
-        (3, True),
-        (5, True),
-        (10, True),
-    ],
+    "cycle_size",
+    [2, 3, 5, 10],
 )
-def test_cycles_detected_various_sizes(cycle_size: int, expected_cycle_found: bool) -> None:
+def test_cycles_detected_various_sizes(cycle_size: int) -> None:
     """Cycles of various sizes are detected."""
     graph = cyclic_graph(cycle_size)
     result = find_dfg_cycles(graph)
 
-    assert (len(result) > 0) == expected_cycle_found
+    assert len(result) > 0
 
 
 @pytest.mark.parametrize(

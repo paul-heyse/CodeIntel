@@ -8,7 +8,7 @@ import logging.handlers
 import pytest
 
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.module_index import load_module_map
+from codeintel.storage.helpers.module_index import load_module_map
 
 
 def test_load_module_map_returns_normalized_paths(

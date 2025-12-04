@@ -38,7 +38,7 @@ from codeintel.config import BehavioralCoverageStepConfig, TestProfileStepConfig
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 from codeintel.ingestion.infrastructure.paths import relpath_to_module
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql_builder import ensure_schema
+from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

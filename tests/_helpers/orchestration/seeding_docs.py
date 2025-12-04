@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.builders import (
     AstMetricsRow,
     CallGraphEdgeRow,

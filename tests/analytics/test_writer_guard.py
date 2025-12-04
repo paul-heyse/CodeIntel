@@ -9,7 +9,7 @@ import pytest
 from codeintel.analytics.profiles.writer_guard import WriterContext, write_rows_with_registry_guard
 from codeintel.config.datasets import get_table_schemas
 from codeintel.storage.gateway import DuckDBConnection
-from codeintel.storage.sql_builder import PreparedStatements, QueryBuilder, SafeColumn, SafeTable
+from codeintel.storage.sql import PreparedStatements, QueryBuilder, SafeColumn, SafeTable
 
 
 class _FakeCon:

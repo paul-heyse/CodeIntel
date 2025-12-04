@@ -37,8 +37,7 @@ from pydantic import BaseModel, Field
 from codeintel.config.models import CliPathsInput, CodeIntelConfig, RepoConfig, ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.config.serving_models import ServingConfig
-from codeintel.storage.config import StorageConfig
-from codeintel.storage.gateway import StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 LOG = logging.getLogger(__name__)
 

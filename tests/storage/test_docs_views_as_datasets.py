@@ -7,9 +7,9 @@ import pytest
 
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.gateway import open_memory_gateway
-from codeintel.storage.metadata_bootstrap import bootstrap_metadata_datasets
+from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.repositories.datasets import DatasetReadRepository
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.views import DERIVED_DOCS_VIEWS, create_all_views
 from tests._helpers.gateway import memory_con_with_macros
 

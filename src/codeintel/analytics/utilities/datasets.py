@@ -37,7 +37,7 @@ from codeintel.config.datasets import (
 from codeintel.ingestion.adapters import IngestStorageService
 from codeintel.storage.datasets import DatasetRegistry, load_dataset_registry
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_builder import QueryBuilder, SafeTable
+from codeintel.storage.sql import QueryBuilder, SafeTable
 
 type RowType = Mapping[str, object]
 RowT = TypeVar("RowT", bound=RowType)

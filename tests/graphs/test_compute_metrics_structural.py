@@ -38,9 +38,11 @@ CLUSTERING_ZERO: Final[float] = 0.0
 CLUSTERING_ONE: Final[float] = 1.0
 TRIANGLES_ZERO: Final[int] = 0
 TRIANGLES_ONE: Final[int] = 1
+TRIANGLES_K4: Final[int] = 3  # C(3,2) triangles per node in K4
 CORE_NUMBER_ZERO: Final[int] = 0
 CORE_NUMBER_ONE: Final[int] = 1
 CORE_NUMBER_TWO: Final[int] = 2
+CORE_NUMBER_K4: Final[int] = 3  # K4 is a 3-core
 CONSTRAINT_ZERO: Final[float] = 0.0
 
 
@@ -168,7 +170,7 @@ def test_triangles_complete_graph() -> None:
 
     # In K4, each node participates in C(3,2) = 3 triangles
     for count in result.values():
-        assert count == 3
+        assert count == TRIANGLES_K4
 
 
 def test_triangles_star_graph() -> None:
@@ -226,7 +228,7 @@ def test_core_number_complete_graph() -> None:
 
     # K4 is a 3-core (each node has 3 neighbors)
     for core in result.values():
-        assert core == 3
+        assert core == CORE_NUMBER_K4
 
 
 def test_core_number_star_graph() -> None:
@@ -416,8 +418,8 @@ def test_all_structural_complete_graph() -> None:
 
     for metrics in result.values():
         assert abs(metrics.clustering - CLUSTERING_ONE) < TOLERANCE
-        assert metrics.triangles == 3  # C(3,2)
-        assert metrics.core_number == 3  # K4 is 3-core
+        assert metrics.triangles == TRIANGLES_K4  # C(3,2)
+        assert metrics.core_number == CORE_NUMBER_K4  # K4 is 3-core
 
 
 def test_all_structural_star_graph() -> None:
@@ -539,4 +541,3 @@ def test_chain_core_numbers(chain_length: int, expected_core: int) -> None:
 
     for core in result.values():
         assert core == expected_core
-

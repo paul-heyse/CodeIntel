@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from codeintel.storage.db_helpers import (
+from codeintel.storage.helpers import (
     row_counts_for_tables,
     safe_row_counts,
 )

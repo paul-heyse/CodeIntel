@@ -17,9 +17,8 @@ from typing import Annotated
 import typer
 
 from codeintel.cli.commands._common import VerboseOpt, setup_logging
-from codeintel.storage.config import StorageConfig
-from codeintel.storage.gateway import open_gateway
-from codeintel.storage.metadata_bootstrap import (
+from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.metadata import (
     _assert_macro_coverage,
     dataset_rows_only_entries,
     ingest_macro_coverage,
@@ -161,7 +160,7 @@ def storage_generate_macros(
     import sys
 
     from codeintel.config.datasets import get_dataset_contracts_by_table_key
-    from codeintel.storage.normalized_macros import render_macro
+    from codeintel.storage.macros.generation import render_macro
 
     setup_logging(verbose)
 
@@ -235,7 +234,7 @@ def storage_profile_views(
         # Custom paths
         codeintel storage profile-views --db-path my.duckdb --output-dir profiles/
     """
-    from codeintel.storage.docs_view_profiling import run_profile
+    from codeintel.storage.helpers.profiling import run_profile
 
     setup_logging(verbose)
 

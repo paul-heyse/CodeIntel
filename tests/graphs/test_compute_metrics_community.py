@@ -158,11 +158,8 @@ def test_louvain_disconnected_separate_communities() -> None:
     result = detect_communities_louvain(graph)
 
     assert len(result) == EXPECTED_NODE_COUNT_SIX
-    # Check that nodes from different components have different communities
-    component1 = {result["A"], result["B"], result["C"]}
-    component2 = {result["X"], result["Y"], result["Z"]}
-    # Components should be in different communities (no overlap in IDs for same nodes)
-    assert result["A"] == result["B"] or result["B"] == result["C"]  # Same component
+    # Check that nodes from same component share community
+    assert result["A"] == result["B"] or result["B"] == result["C"]
 
 
 def test_louvain_directed_graph_converted() -> None:

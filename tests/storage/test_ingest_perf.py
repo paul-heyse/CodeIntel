@@ -8,7 +8,7 @@ import pytest
 
 from codeintel.ingestion.adapters.duckdb_storage import DuckDBStorageAdapter
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-from codeintel.storage.sql_builder import prepared_statements_dynamic
+from codeintel.storage.sql.builder import prepared_statements_dynamic
 
 
 def _sample_rows(con: DuckDBConnection, table_key: str, count: int) -> list[tuple[object, ...]]:

@@ -8,7 +8,7 @@ from pathlib import Path
 from codeintel.config.primitives import SnapshotRef
 from codeintel.runtime import RunContext
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.run_tracking import (
+from codeintel.storage.tracking import (
     PipelineRunRecord,
     PipelineRunTracking,
     PipelineStepRecord,

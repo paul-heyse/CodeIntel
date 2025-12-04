@@ -6,7 +6,7 @@ import pytest
 
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.gateway import StorageGateway, open_memory_gateway
-from codeintel.storage.metadata_bootstrap import (
+from codeintel.storage.metadata import (
     bootstrap_metadata_datasets,
     dataset_rows_only_entries,
     ingest_macro_coverage,

@@ -12,7 +12,7 @@ API via `gateway.runs.*` instead of importing from this module.
 from __future__ import annotations
 
 # Re-export all types and constants from the storage layer
-from codeintel.storage.run_tracking import (
+from codeintel.storage.tracking import (
     ModuleKind,
     PipelineRunRecord,
     PipelineRunTracking,

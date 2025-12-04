@@ -8,7 +8,7 @@ from codeintel.analytics.runtime import GraphRuntimeOptions, build_graph_runtime
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.graphs.engine.backend import maybe_enable_nx_gpu
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
 
 

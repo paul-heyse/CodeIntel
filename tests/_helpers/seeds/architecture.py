@@ -17,9 +17,9 @@ from codeintel.config.datasets import (
     GraphMetricsModulesRow,
 )
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
-from codeintel.storage.ingest_macros import ensure_ingest_macros, list_ingest_macros
-from codeintel.storage.metadata_bootstrap import INGEST_MACROS
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
+from codeintel.storage.metadata import INGEST_MACROS
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.gateway import gateway_with_macros
 from tests._helpers.orchestration import seed_coverage_rows

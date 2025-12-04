@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from codeintel.storage.gateway import open_memory_gateway
-from codeintel.storage.ingest_macros import (
+from codeintel.storage.macros import (
     assert_ingest_macros_present,
     clear_macro_cache_for_connection,
     ensure_ingest_macros,
 )
-from codeintel.storage.metadata_bootstrap import INGEST_MACROS
+from codeintel.storage.metadata import INGEST_MACROS
 
 
 def test_ingest_macros_re_register_on_cache_hit_after_close() -> None:

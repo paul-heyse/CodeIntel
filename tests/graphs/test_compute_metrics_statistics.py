@@ -42,12 +42,23 @@ EXPECTED_NODE_COUNT_FIVE: Final[int] = 5
 EXPECTED_NODE_COUNT_SIX: Final[int] = 6
 EXPECTED_EDGE_COUNT_THREE: Final[int] = 3
 EXPECTED_EDGE_COUNT_FOUR: Final[int] = 4
+EXPECTED_EDGE_COUNT_TWELVE: Final[int] = 12
 EXPECTED_LAYER_COUNT_ONE: Final[int] = 1
+EXPECTED_LAYER_COUNT_THREE: Final[int] = 3
 EXPECTED_LAYER_COUNT_FOUR: Final[int] = 4
 EXPECTED_SCC_ONE: Final[int] = 1
+EXPECTED_SCC_THREE: Final[int] = 3
 EXPECTED_WCC_ONE: Final[int] = 1
 EXPECTED_WCC_TWO: Final[int] = 2
+EXPECTED_DEGREE_ONE: Final[int] = 1
+EXPECTED_DEGREE_TWO: Final[int] = 2
+EXPECTED_DEGREE_FOUR: Final[int] = 4
 TOLERANCE: Final[float] = 0.01
+DIAMETER_CHAIN_FIVE: Final[float] = 4.0
+DIAMETER_COMPLETE: Final[float] = 1.0
+DIAMETER_STAR: Final[float] = 2.0
+AVG_PATH_CHAIN_FOUR: Final[float] = 4 / 3
+AVG_PATH_COMPLETE: Final[float] = 1.0
 DENSITY_COMPLETE_FOUR: Final[float] = 1.0
 DENSITY_CHAIN_FOUR: Final[float] = 3 / 12  # 3 edges, max 12
 
@@ -106,7 +117,7 @@ def test_in_degrees_diamond_graph() -> None:
     assert in_degree_dict["A"] == 0
     assert in_degree_dict["B"] == 1
     assert in_degree_dict["C"] == 1
-    assert in_degree_dict["D"] == 2
+    assert in_degree_dict["D"] == EXPECTED_DEGREE_TWO
 
 
 # ===========================================================================
@@ -139,7 +150,7 @@ def test_out_degrees_star_graph() -> None:
     result = get_out_degrees(graph)
 
     out_degree_dict = dict(result)
-    assert out_degree_dict["hub"] == 3
+    assert out_degree_dict["hub"] == EXPECTED_NODE_COUNT_THREE
     for i in range(1, 4):
         assert out_degree_dict[f"spoke{i}"] == 0
 
@@ -150,9 +161,9 @@ def test_out_degrees_diamond_graph() -> None:
     result = get_out_degrees(graph)
 
     out_degree_dict = dict(result)
-    assert out_degree_dict["A"] == 2
-    assert out_degree_dict["B"] == 1
-    assert out_degree_dict["C"] == 1
+    assert out_degree_dict["A"] == EXPECTED_DEGREE_TWO
+    assert out_degree_dict["B"] == EXPECTED_DEGREE_ONE
+    assert out_degree_dict["C"] == EXPECTED_DEGREE_ONE
     assert out_degree_dict["D"] == 0
 
 
@@ -174,10 +185,10 @@ def test_degrees_chain_undirected() -> None:
     result = get_degrees(graph)
 
     degree_dict = dict(result)
-    assert degree_dict["A"] == 1  # End node
-    assert degree_dict["B"] == 2  # Middle node
-    assert degree_dict["C"] == 2  # Middle node
-    assert degree_dict["D"] == 1  # End node
+    assert degree_dict["A"] == EXPECTED_DEGREE_ONE  # End node
+    assert degree_dict["B"] == EXPECTED_DEGREE_TWO  # Middle node
+    assert degree_dict["C"] == EXPECTED_DEGREE_TWO  # Middle node
+    assert degree_dict["D"] == EXPECTED_DEGREE_ONE  # End node
 
 
 def test_degrees_complete_graph() -> None:
@@ -186,7 +197,7 @@ def test_degrees_complete_graph() -> None:
     result = get_degrees(graph)
 
     for _, degree in result:
-        assert degree == 4  # n-1 for complete graph
+        assert degree == EXPECTED_DEGREE_FOUR  # n-1 for complete graph
 
 
 # ===========================================================================
@@ -201,7 +212,7 @@ def test_in_degree_values() -> None:
 
     assert len(result) == EXPECTED_NODE_COUNT_THREE
     assert 0 in result  # A has in-degree 0
-    assert result.count(1) >= 2  # B, C have in-degree 1
+    assert result.count(EXPECTED_DEGREE_ONE) >= EXPECTED_DEGREE_TWO  # B, C have in-degree 1
 
 
 def test_out_degree_values() -> None:
@@ -219,8 +230,8 @@ def test_degree_values() -> None:
     result = get_degree_values(graph)
 
     assert len(result) == EXPECTED_NODE_COUNT_THREE
-    assert 1 in result  # End nodes have degree 1
-    assert 2 in result  # Middle node has degree 2
+    assert EXPECTED_DEGREE_ONE in result  # End nodes have degree 1
+    assert EXPECTED_DEGREE_TWO in result  # Middle node has degree 2
 
 
 # ===========================================================================
@@ -249,7 +260,7 @@ def test_diameter_chain_graph() -> None:
     result = compute_diameter_estimate(graph)
 
     # Diameter of path with 5 nodes is 4
-    assert result == 4.0
+    assert result == DIAMETER_CHAIN_FIVE
 
 
 def test_diameter_complete_graph() -> None:
@@ -257,7 +268,7 @@ def test_diameter_complete_graph() -> None:
     graph = nx.complete_graph(5, create_using=nx.DiGraph())
     result = compute_diameter_estimate(graph)
 
-    assert result == 1.0
+    assert result == DIAMETER_COMPLETE
 
 
 def test_diameter_disconnected_uses_largest_component() -> None:
@@ -266,7 +277,7 @@ def test_diameter_disconnected_uses_largest_component() -> None:
     result = compute_diameter_estimate(graph)
 
     # Both components are chains of length 3 (diameter 2)
-    assert result == 2.0
+    assert result == DIAMETER_STAR
 
 
 def test_diameter_star_graph() -> None:
@@ -275,7 +286,7 @@ def test_diameter_star_graph() -> None:
     result = compute_diameter_estimate(graph)
 
     # Undirected: spoke -> hub -> spoke = 2
-    assert result == 2.0
+    assert result == DIAMETER_STAR
 
 
 # ===========================================================================
@@ -303,9 +314,9 @@ def test_avg_path_length_chain_graph() -> None:
     graph = chain_graph(4)
     result = compute_avg_shortest_path_length(graph)
 
-    # For undirected path of 4 nodes, avg path length is 4/3 ≈ 1.33
+    # For undirected path of 4 nodes, avg path length is 4/3
     assert result is not None
-    assert abs(result - 4 / 3) < TOLERANCE
+    assert abs(result - AVG_PATH_CHAIN_FOUR) < TOLERANCE
 
 
 def test_avg_path_length_complete_graph() -> None:
@@ -314,7 +325,7 @@ def test_avg_path_length_complete_graph() -> None:
     result = compute_avg_shortest_path_length(graph)
 
     assert result is not None
-    assert abs(result - 1.0) < TOLERANCE
+    assert abs(result - AVG_PATH_COMPLETE) < TOLERANCE
 
 
 def test_avg_path_length_disconnected_uses_largest() -> None:
@@ -365,7 +376,7 @@ def test_condensation_layers_diamond_graph() -> None:
     result = compute_condensation_layer_count(graph)
 
     # A -> {B, C} -> D = 3 layers
-    assert result == 3
+    assert result == EXPECTED_LAYER_COUNT_THREE
 
 
 def test_condensation_layers_mixed_graph() -> None:
@@ -379,7 +390,7 @@ def test_condensation_layers_mixed_graph() -> None:
     result = compute_condensation_layer_count(graph)
 
     # SCC {A,B,C} -> D -> E = 3 layers
-    assert result == 3
+    assert result == EXPECTED_LAYER_COUNT_THREE
 
 
 # ===========================================================================
@@ -447,7 +458,7 @@ def test_statistics_complete_graph() -> None:
     result = compute_graph_statistics(graph)
 
     assert result.node_count == EXPECTED_NODE_COUNT_FOUR
-    assert result.edge_count == 12  # n*(n-1)
+    assert result.edge_count == EXPECTED_EDGE_COUNT_TWELVE  # n*(n-1)
     assert abs(result.density - DENSITY_COMPLETE_FOUR) < TOLERANCE
     assert result.strongly_connected_components == EXPECTED_SCC_ONE
     assert result.is_dag is False
@@ -561,18 +572,15 @@ def test_cycle_single_scc(cycle_size: int) -> None:
 
 
 @pytest.mark.parametrize(
-    ("node_count", "expected_is_dag"),
-    [
-        (3, True),  # Chain is DAG
-        (5, True),
-    ],
+    "node_count",
+    [3, 5],
 )
-def test_chain_is_dag(node_count: int, expected_is_dag: bool) -> None:
+def test_chain_is_dag(node_count: int) -> None:
     """Chain graphs are DAGs."""
     graph = chain_graph(node_count)
     result = compute_graph_statistics(graph)
 
-    assert result.is_dag == expected_is_dag
+    assert result.is_dag is True
 
 
 @pytest.mark.parametrize(

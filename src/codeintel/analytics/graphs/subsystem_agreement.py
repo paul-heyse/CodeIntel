@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime
 
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.sql_builder import ensure_schema
+from codeintel.storage.sql.builder import ensure_schema
 
 log = logging.getLogger(__name__)
 

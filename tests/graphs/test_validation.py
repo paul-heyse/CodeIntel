@@ -22,7 +22,7 @@ from codeintel.graphs.validation.checks import (
     symbol_graph_findings,
 )
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers import seed_graph_validation_gaps
 from tests._helpers.factories import make_snapshot
 

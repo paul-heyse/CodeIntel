@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schemas import (
+from codeintel.storage.schema import (
     assert_schema_alignment,
     create_schemas,
     ensure_schemas_preserve,

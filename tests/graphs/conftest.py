@@ -30,7 +30,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.core.plugins.context import PluginScratch
 from codeintel.graphs.core.context import GraphPluginExecutionContext
 from codeintel.storage.gateway import StorageGateway
-from codeintel.storage.schemas import apply_all_schemas
+from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.graph_contexts import (
     GraphExecutorTestEnv,

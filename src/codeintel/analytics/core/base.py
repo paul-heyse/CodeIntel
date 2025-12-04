@@ -47,7 +47,7 @@ from codeintel.analytics.core.protocol import (
     PluginStage,
     ValidationResult,
 )
-from codeintel.storage.db_helpers import safe_row_counts
+from codeintel.storage.helpers import safe_row_counts
 
 if TYPE_CHECKING:
     from codeintel.analytics.core.context import PluginExecutionContext

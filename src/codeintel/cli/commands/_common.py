@@ -29,8 +29,7 @@ from codeintel.config.primitives import (
     GraphFeatureFlags,
     SnapshotRef,
 )
-from codeintel.storage.config import StorageConfig
-from codeintel.storage.gateway import StorageGateway, open_gateway
+from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 
 if TYPE_CHECKING:
     from codeintel.analytics.runtime import GraphRuntime
