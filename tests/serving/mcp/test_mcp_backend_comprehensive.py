@@ -12,7 +12,8 @@ from pydantic import ValidationError
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
-from codeintel.serving.mcp.backend import DuckDBBackend, create_backend
+from codeintel.serving.bootstrap import build_backend_resource
+from codeintel.serving.mcp.backend import DuckDBBackend
 from codeintel.serving.mcp.errors import McpError
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageGateway
@@ -1307,14 +1308,14 @@ def test_duckdb_backend_dataset_schema_nonexistent(
 
 
 # =============================================================================
-# Create Backend Factory Tests
+# Build Backend Resource Factory Tests
 # =============================================================================
 
 
-def test_create_backend_local_db_mode(
+def test_build_backend_resource_local_db_mode(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify create_backend creates DuckDBBackend in local_db mode.
+    """Verify build_backend_resource creates DuckDBBackend in local_db mode.
 
     Parameters
     ----------
@@ -1327,9 +1328,9 @@ def test_create_backend_local_db_mode(
         commit=provisioned_repo.commit,
     )
 
-    backend = create_backend(cfg, gateway=provisioned_repo.gateway)
+    resource = build_backend_resource(cfg, gateway=provisioned_repo.gateway)
 
-    assert isinstance(backend, DuckDBBackend)
+    assert isinstance(resource.backend, DuckDBBackend)
 
 
 def test_serving_config_remote_api_missing_url_raises(

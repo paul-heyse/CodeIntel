@@ -28,16 +28,14 @@ if not _PREFECT_PYTHON_313_ISSUE:
     try:
         from prefect.server.api import server as _prefect_server
 
-        # pyrefly: ignore[missing-module-attribute]  # Prefect settings are runtime-dynamic
+        # Prefect settings are runtime-dynamic, pyrefly can't verify them
         from prefect.settings import (
-            PREFECT_API_KEY as _PREFECT_API_KEY,
+            PREFECT_API_KEY as _PREFECT_API_KEY,  # pyrefly: ignore[missing-module-attribute]
         )
         from prefect.settings import (
-            PREFECT_API_URL as _PREFECT_API_URL,
+            PREFECT_API_URL as _PREFECT_API_URL,  # pyrefly: ignore[missing-module-attribute]
         )
-        from prefect.settings import (
-            temporary_settings as _temporary_settings,
-        )
+        from prefect.settings import temporary_settings as _temporary_settings
         from prefect.testing.utilities import prefect_test_harness as _prefect_test_harness
     except ImportError:
         # Prefect not installed or import failed
@@ -90,14 +88,15 @@ def prefect_quiet_env() -> Iterator[None]:
     This fixture is skipped on Python 3.13+ due to Prefect server API
     incompatibility with string annotation evaluation.
     """
-    if (
-        _PREFECT_PYTHON_313_ISSUE
-        or _prefect_server is None
+    # Check if Prefect is available
+    prefect_unavailable = (
+        _prefect_server is None
         or _temporary_settings is None
         or _prefect_test_harness is None
-        or _PREFECT_API_URL is None
-        or _PREFECT_API_KEY is None
-    ):
+    )
+    prefect_settings_unavailable = _PREFECT_API_URL is None or _PREFECT_API_KEY is None
+
+    if _PREFECT_PYTHON_313_ISSUE or prefect_unavailable or prefect_settings_unavailable:
         pytest.skip(
             "Prefect server API incompatible with Python 3.13 (PrefectDBInterface NameError)"
         )

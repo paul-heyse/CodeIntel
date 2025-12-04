@@ -24,9 +24,8 @@ from tests._helpers.configs.provisioning_config import (
     ProvisionedGateway,
     ProvisioningConfig,
 )
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 from tests._helpers.context import (
-    DEFAULT_COMMIT,
-    DEFAULT_REPO,
     QueryRow,
     SeedPack,
     TestContext,
@@ -100,6 +99,7 @@ __all__ = [
     "DATA_MODELS_PACK",
     "DEFAULT_COMMIT",
     "DEFAULT_REPO",
+    "DEFAULT_RUN_ID",
     "FUNCTION_TYPES_PACK",
     "GRAPH_PACK",
     "METRICS_PACK",

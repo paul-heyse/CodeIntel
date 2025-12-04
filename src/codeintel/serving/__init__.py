@@ -2,25 +2,59 @@
 
 Architecture Overview
 ---------------------
-The serving layer is organized into these key components:
+The serving layer follows a layered architecture:
 
-**backend/** - Core query services and response building
-    - `duckdb_service.py` - DuckDB query service implementation
-    - `pagination.py` - Pagination utilities and types
-    - `domain_builders.py` - Row-to-domain transformation functions
-    - `operations.py` - Operation contracts registry
+::
 
-**services/** - Business logic and service abstractions
-    - `query_service.py` - QueryService protocol and implementations
-    - `factory.py` - Service construction factories
+    ┌─────────────────────────────────────────────────────────┐
+    │                   Transport Layer                        │
+    │    (HTTP/FastAPI routes, MCP tools, CLI commands)       │
+    └────────────────────────────┬────────────────────────────┘
+                                 │
+    ┌────────────────────────────▼────────────────────────────┐
+    │                   Service Layer                          │
+    │    QueryService (LocalQueryService, HttpQueryService)   │
+    │    - Transport-agnostic business logic                  │
+    │    - Observability integration                           │
+    └────────────────────────────┬────────────────────────────┘
+                                 │
+    ┌────────────────────────────▼────────────────────────────┐
+    │                    Query Layer                           │
+    │    DuckDBQueryService (or graph engine queries)         │
+    │    - Data access coordination                            │
+    │    - Graph engine integration                            │
+    └────────────────────────────┬────────────────────────────┘
+                                 │
+    ┌────────────────────────────▼────────────────────────────┐
+    │                  Repository Layer                        │
+    │    DuckDBRepositories (function, module, subsystem...)  │
+    │    - Direct database access                              │
+    │    - SQL execution                                       │
+    └─────────────────────────────────────────────────────────┘
+
+
+Key Modules
+-----------
+**bootstrap.py** - Service construction entry points
+    - ``build_service_stack()`` - Complete service stack for servers
+    - ``build_backend_resource()`` - Backend + service bundle
+    - ``build_service_from_config()`` - Service from configuration
+
+**backend/** - Query services and domain building
+    - ``duckdb_service.py`` - DuckDB query service implementation
+    - ``pagination.py`` - Pagination utilities and BackendLimits
+
+**services/** - Business logic layer
+    - ``query_service.py`` - QueryService protocol and implementations
+
+**operations/** - Operation catalog and dataflow
+    - ``catalog.py`` - Canonical operation definitions
+    - Dataflow graph building for serving operations
 
 **http/** - FastAPI routes and handlers
 
 **mcp/** - MCP protocol implementation
-
-**New Modules (v2 architecture):**
-    - `types.py` - Shared protocols to avoid import cycles
-    - `bootstrap.py` - Unified service stack construction
+    - ``backend.py`` - QueryBackend implementations (DuckDBBackend, HttpBackend)
 """
 
 from __future__ import annotations
@@ -62,23 +96,23 @@ if TYPE_CHECKING:
     build_service_stack: object
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
+    # Backend implementations
     "DuckDBBackend": ("codeintel.serving.mcp.backend", "DuckDBBackend"),
     "HttpBackend": ("codeintel.serving.mcp.backend", "HttpBackend"),
     "QueryBackend": ("codeintel.serving.mcp.backend", "QueryBackend"),
+    # Type protocols
     "HasModelDump": ("codeintel.serving.types", "HasModelDump"),
-    "BackendResource": ("codeintel.serving.services.factory", "BackendResource"),
-    "build_backend_resource": ("codeintel.serving.services.factory", "build_backend_resource"),
-    "build_service_from_config": (
-        "codeintel.serving.services.factory",
-        "build_service_from_config",
-    ),
+    # Service layer
     "HttpQueryService": ("codeintel.serving.services.query_service", "HttpQueryService"),
     "LocalQueryService": ("codeintel.serving.services.query_service", "LocalQueryService"),
     "QueryService": ("codeintel.serving.services.query_service", "QueryService"),
-    # New v2 architecture exports
+    # Bootstrap and wiring (canonical location)
+    "BackendResource": ("codeintel.serving.bootstrap", "BackendResource"),
+    "BootstrapOptions": ("codeintel.serving.bootstrap", "BootstrapOptions"),
     "PaginatedFetch": ("codeintel.serving.backend.pagination", "PaginatedFetch"),
     "ServiceStack": ("codeintel.serving.bootstrap", "ServiceStack"),
-    "BootstrapOptions": ("codeintel.serving.bootstrap", "BootstrapOptions"),
+    "build_backend_resource": ("codeintel.serving.bootstrap", "build_backend_resource"),
+    "build_service_from_config": ("codeintel.serving.bootstrap", "build_service_from_config"),
     "build_service_stack": ("codeintel.serving.bootstrap", "build_service_stack"),
 }
 

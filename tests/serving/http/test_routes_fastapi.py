@@ -16,10 +16,9 @@ from fastapi.testclient import TestClient
 
 from codeintel.config.serving_models import ServingConfig
 from codeintel.serving.backend import BackendLimits
+from codeintel.serving.bootstrap import BackendResource, build_backend_resource
 from codeintel.serving.http.fastapi import (
-    BackendResource,
     create_app,
-    create_backend_resource,
     load_api_config,
     problem_response,
 )
@@ -167,14 +166,14 @@ def test_problem_response_defaults_status_500() -> None:
 
 
 # =============================================================================
-# create_backend_resource Tests
+# build_backend_resource Tests
 # =============================================================================
 
 
-def test_create_backend_resource_raises_mcp_error_on_failure(
+def test_build_backend_resource_raises_error_on_failure(
     tmp_path: Path,
 ) -> None:
-    """Verify create_backend_resource wraps exceptions in McpError.
+    """Verify build_backend_resource raises ValueError when gateway is missing.
 
     Parameters
     ----------
@@ -189,14 +188,14 @@ def test_create_backend_resource_raises_mcp_error_on_failure(
         repo_root=tmp_path,
     )
 
-    with pytest.raises(mcp_errors.McpError):
-        create_backend_resource(cfg)
+    with pytest.raises(ValueError, match="StorageGateway is required"):
+        build_backend_resource(cfg)
 
 
-def test_create_backend_resource_with_gateway(
+def test_build_backend_resource_with_gateway(
     provisioned_repo: ProvisionedGateway,
 ) -> None:
-    """Verify create_backend_resource returns BackendResource with gateway.
+    """Verify build_backend_resource returns BackendResource with gateway.
 
     Parameters
     ----------
@@ -211,7 +210,7 @@ def test_create_backend_resource_with_gateway(
         repo_root=provisioned_repo.repo_root,
     )
 
-    resource = create_backend_resource(cfg, gateway=provisioned_repo.gateway)
+    resource = build_backend_resource(cfg, gateway=provisioned_repo.gateway)
 
     assert resource.backend is not None
     assert callable(resource.close)

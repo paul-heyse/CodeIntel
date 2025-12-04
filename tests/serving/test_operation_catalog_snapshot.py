@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.serving.operations import iter_operations
-from codeintel.serving.registry import iter_registry_operations
+from codeintel.serving.operations.catalog import iter_registry_operations
 
 # Expected counts for snapshot verification
 EXPECTED_OPERATION_COUNT = 26

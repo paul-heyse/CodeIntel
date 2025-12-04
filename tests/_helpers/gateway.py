@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from types import SimpleNamespace
 from typing import cast
 
 import duckdb
@@ -24,18 +23,261 @@ from codeintel.serving.backend import (
 from codeintel.serving.backend.pagination import BackendLimits
 from codeintel.serving.backend.query_api import DuckDBQueryApi
 from codeintel.serving.mcp.backend import DuckDBBackend
-from codeintel.serving.mcp.models import FunctionSummaryResponse
 from codeintel.serving.services.query_service import LocalQueryService
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
 from codeintel.storage.macros import ensure_ingest_macros, list_ingest_macros
 from codeintel.storage.metadata import INGEST_MACROS
+from tests._helpers.fakes.serving import ScopeRecordingQuery
 
 # Type alias for DuckDB connections (originally from duckdb.py)
 DuckDBConnection = duckdb.DuckDBPyConnection
 
 # Expected macros that must be registered for tests (originally from duckdb.py)
 MACROS_EXPECTED = {m.lower() for m in INGEST_MACROS.values()}
+
+
+# =============================================================================
+# Gateway Factory
+# =============================================================================
+
+
+class GatewayFactory:
+    """Unified gateway creation with composable options.
+
+    Provide a fluent builder interface for creating test gateways with
+    consistent configuration. This consolidates the various gateway creation
+    functions into a single, composable interface.
+
+    Example
+    -------
+    >>> gateway = GatewayFactory().with_macros().open()
+    >>> gateway = GatewayFactory().file_backed(db_path).with_schema().open()
+    """
+
+    def __init__(self) -> None:
+        """Initialize factory with defaults."""
+        self._apply_schema: bool = True
+        self._ensure_views: bool = True
+        self._ensure_macros: bool = True
+        self._validate_schema: bool = True
+        self._strict_schema: bool = True
+        self._file_backed: bool = False
+        self._db_path: Path | None = None
+        self._repo: str | None = None
+        self._commit: str | None = None
+
+    def with_schema(self) -> GatewayFactory:
+        """Enable schema application (default).
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._apply_schema = True
+        return self
+
+    def without_schema(self) -> GatewayFactory:
+        """Disable schema application.
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._apply_schema = False
+        return self
+
+    def with_views(self) -> GatewayFactory:
+        """Enable view creation (default).
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._ensure_views = True
+        return self
+
+    def without_views(self) -> GatewayFactory:
+        """Disable view creation.
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._ensure_views = False
+        return self
+
+    def with_macros(self) -> GatewayFactory:
+        """Enable macro registration (default).
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._ensure_macros = True
+        return self
+
+    def without_macros(self) -> GatewayFactory:
+        """Disable macro registration.
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._ensure_macros = False
+        return self
+
+    def with_validation(self) -> GatewayFactory:
+        """Enable schema validation (default).
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._validate_schema = True
+        return self
+
+    def without_validation(self) -> GatewayFactory:
+        """Disable schema validation.
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._validate_schema = False
+        return self
+
+    def strict(self) -> GatewayFactory:
+        """Enable strict schema mode (default).
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._strict_schema = True
+        return self
+
+    def relaxed(self) -> GatewayFactory:
+        """Disable strict schema mode.
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._strict_schema = False
+        return self
+
+    def file_backed(self, db_path: Path) -> GatewayFactory:
+        """Use a file-backed database instead of in-memory.
+
+        Parameters
+        ----------
+        db_path
+            Path to the database file.
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._file_backed = True
+        self._db_path = db_path
+        return self
+
+    def in_memory(self) -> GatewayFactory:
+        """Use an in-memory database (default).
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._file_backed = False
+        self._db_path = None
+        return self
+
+    def with_snapshot(self, repo: str, commit: str) -> GatewayFactory:
+        """Set the repository snapshot.
+
+        Parameters
+        ----------
+        repo
+            Repository identifier.
+        commit
+            Commit hash.
+
+        Returns
+        -------
+        GatewayFactory
+            Self for chaining.
+        """
+        self._repo = repo
+        self._commit = commit
+        return self
+
+    def open(self) -> StorageGateway:
+        """Create and return the configured gateway.
+
+        Returns
+        -------
+        StorageGateway
+            Configured gateway ready for use.
+
+        Raises
+        ------
+        ValueError
+            If db_path is not set for file-backed gateway.
+        RuntimeError
+            If macros cannot be registered.
+        """
+        if self._file_backed:
+            if self._db_path is None:
+                msg = "db_path must be set for file-backed gateway"
+                raise ValueError(msg)
+            self._db_path.parent.mkdir(parents=True, exist_ok=True)
+            cfg = StorageConfig(
+                db_path=self._db_path,
+                read_only=False,
+                apply_schema=self._apply_schema,
+                ensure_views=self._ensure_views,
+                validate_schema=self._validate_schema,
+            )
+            gateway = open_gateway(cfg)
+        else:
+            effective_ensure_views = self._ensure_views or self._strict_schema
+            effective_validate_schema = self._validate_schema or self._strict_schema
+            gateway = _open_memory_gateway(
+                apply_schema=self._apply_schema,
+                ensure_views=effective_ensure_views,
+                validate_schema=effective_validate_schema,
+                repo=self._repo,
+                commit=self._commit,
+            )
+
+        if self._ensure_macros:
+            ensure_ingest_macros(gateway.con)
+            registered = list_ingest_macros(gateway.con)
+            missing = MACROS_EXPECTED - registered
+            if missing:
+                ensure_ingest_macros(gateway.con)
+                registered = list_ingest_macros(gateway.con)
+                missing = MACROS_EXPECTED - registered
+            if missing:
+                gateway.close()
+                message = f"Missing ingest macros on gateway: {sorted(missing)}"
+                raise RuntimeError(message)
+
+        return gateway
 
 
 def memory_con_with_macros() -> DuckDBConnection:
@@ -63,6 +305,9 @@ def gateway_with_macros(
     """
     Create an in-memory StorageGateway with schemas/views/macros ensured.
 
+    Prefer using ``GatewayFactory`` for new code. Delegate to ``GatewayFactory.open()``
+    which may raise ``RuntimeError`` if ingest macros cannot be registered.
+
     Parameters
     ----------
     apply_schema
@@ -80,36 +325,24 @@ def gateway_with_macros(
     -------
     StorageGateway
         Gateway backed by an in-memory DuckDB connection with ingest macros present.
-
-    Raises
-    ------
-    RuntimeError
-        If ingest macros could not be registered.
     """
-    gateway = _open_memory_gateway(
-        apply_schema=apply_schema,
-        ensure_views=ensure_views,
-        validate_schema=validate_schema,
-        repo=repo,
-        commit=commit,
-    )
-    ensure_ingest_macros(gateway.con)
-    registered = list_ingest_macros(gateway.con)
-    missing = MACROS_EXPECTED - registered
-    if missing:
-        ensure_ingest_macros(gateway.con)
-        registered = list_ingest_macros(gateway.con)
-        missing = MACROS_EXPECTED - registered
-    if missing:
-        gateway.close()
-        message = f"Missing ingest macros on gateway: {sorted(missing)}"
-        raise RuntimeError(message)
-    return gateway
+    factory = GatewayFactory()
+    if not apply_schema:
+        factory = factory.without_schema()
+    if not ensure_views:
+        factory = factory.without_views()
+    if not validate_schema:
+        factory = factory.without_validation()
+    if repo is not None and commit is not None:
+        factory = factory.with_snapshot(repo, commit)
+    return factory.open()
 
 
 def open_fresh_duckdb(db_path: Path) -> StorageGateway:
     """
     Return a fresh DuckDB connection for tests.
+
+    Prefer using ``GatewayFactory().file_backed(db_path).open()`` for new code.
 
     Parameters
     ----------
@@ -121,15 +354,7 @@ def open_fresh_duckdb(db_path: Path) -> StorageGateway:
     StorageGateway
         Open gateway (caller must close).
     """
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg = StorageConfig(
-        db_path=db_path,
-        read_only=False,
-        apply_schema=True,
-        ensure_views=True,
-        validate_schema=True,
-    )
-    return open_gateway(cfg)
+    return GatewayFactory().file_backed(db_path).open()
 
 
 def seed_tables(gateway: StorageGateway, ddl: list[str]) -> None:
@@ -148,8 +373,7 @@ def open_ingestion_gateway(
     """
     Return an in-memory gateway prepped for ingestion runners.
 
-    Parameters mirror `open_memory_gateway`; schema application is enabled by default so
-    ingestion steps can write tables without extra setup.
+    Prefer using ``GatewayFactory`` for new code.
 
     Parameters
     ----------
@@ -167,52 +391,18 @@ def open_ingestion_gateway(
     StorageGateway
         Gateway configured for ingestion tests.
     """
-    effective_ensure_views = ensure_views or strict_schema
-    effective_validate_schema = validate_schema or strict_schema
-    gateway = _open_memory_gateway(
-        apply_schema=apply_schema,
-        ensure_views=effective_ensure_views,
-        validate_schema=effective_validate_schema,
-    )
-    ensure_ingest_macros(gateway.con)
-    return gateway
+    factory = GatewayFactory()
+    if not apply_schema:
+        factory = factory.without_schema()
+    factory = factory.with_views() if ensure_views else factory.without_views()
+    if not validate_schema:
+        factory = factory.without_validation()
+    factory = factory.strict() if strict_schema else factory.relaxed()
+    return factory.open()
 
 
-def open_ingestion_gateway_with_macros(
-    *,
-    apply_schema: bool = True,
-    ensure_views: bool = True,
-    validate_schema: bool = True,
-    strict_schema: bool = True,
-) -> StorageGateway:
-    """
-    Return an in-memory gateway with schemas/views/macros ensured for ingestion/graph tests.
-
-    This helper always registers ingest macros and ensures views to avoid missing
-    metadata.* table-function errors in graph and analytics tests.
-
-    Parameters
-    ----------
-    apply_schema
-        Whether to apply database schema.
-    ensure_views
-        Whether to ensure views are created.
-    validate_schema
-        Whether to validate schema.
-    strict_schema
-        Whether to enforce strict schema mode.
-
-    Returns
-    -------
-    StorageGateway
-        Gateway configured for ingestion/graph tests with macros registered.
-    """
-    return open_ingestion_gateway(
-        apply_schema=apply_schema,
-        ensure_views=ensure_views,
-        validate_schema=validate_schema,
-        strict_schema=strict_schema,
-    )
+# Backward compatibility alias
+open_ingestion_gateway_with_macros = open_ingestion_gateway
 
 
 def build_duckdb_backend(
@@ -251,65 +441,6 @@ def build_duckdb_backend(
     )
 
 
-class ScopeCapturingQuery:
-    """Minimal query stub that delegates to a provided callable and records scopes."""
-
-    def __init__(self, delegate: Callable[..., object]) -> None:
-        self._delegate = delegate
-        self.gateway = cast(
-            "StorageGateway", SimpleNamespace(datasets=SimpleNamespace(mapping={}), config={})
-        )
-        self.repo = "demo/repo"
-        self.commit = "deadbeef"
-        self.limits = BackendLimits()
-        self.graph_engine = None
-        self.functions = self
-        self.modules = self
-        self.subsystems = self
-        self.datasets = self
-
-    def get_function_summary(
-        self,
-        *,
-        urn: str | None = None,
-        goid_h128: int | None = None,
-        rel_path: str | None = None,
-        qualname: str | None = None,
-        scope: object | None = None,
-    ) -> FunctionSummaryResponse:
-        """
-        Get function summary via delegate.
-
-        Parameters
-        ----------
-        urn
-            Function URN.
-        goid_h128
-            GOID hash.
-        rel_path
-            Relative path.
-        qualname
-            Qualified name.
-        scope
-            Query scope.
-
-        Returns
-        -------
-        FunctionSummaryResponse
-            Response from delegate.
-        """
-        result = self._delegate(
-            urn=urn,
-            goid_h128=goid_h128,
-            rel_path=rel_path,
-            qualname=qualname,
-            scope=scope,
-        )
-        if isinstance(result, FunctionSummaryResponse):
-            return result
-        return FunctionSummaryResponse.model_validate(result)
-
-
 def build_scope_parsing_service(delegate: Callable[..., object]) -> LocalQueryService:
     """
     Build a LocalQueryService that forwards to the provided delegate while preserving scope.
@@ -324,7 +455,7 @@ def build_scope_parsing_service(delegate: Callable[..., object]) -> LocalQuerySe
     LocalQueryService
         Service that can be used to validate scope parsing behavior.
     """
-    query = cast("DuckDBQueryApi", ScopeCapturingQuery(delegate=delegate))
+    query = cast("DuckDBQueryApi", ScopeRecordingQuery(delegate=delegate))
     return LocalQueryService(query=query)
 
 
@@ -377,7 +508,8 @@ def build_duckdb_query_service(
 __all__ = [
     "MACROS_EXPECTED",
     "DuckDBConnection",
-    "ScopeCapturingQuery",
+    "GatewayFactory",
+    "ScopeRecordingQuery",  # Re-exported from fakes.serving
     "build_duckdb_backend",
     "build_duckdb_query_service",
     "build_scope_parsing_service",
@@ -385,6 +517,6 @@ __all__ = [
     "memory_con_with_macros",
     "open_fresh_duckdb",
     "open_ingestion_gateway",
-    "open_ingestion_gateway_with_macros",
+    "open_ingestion_gateway_with_macros",  # Alias for backward compatibility
     "seed_tables",
 ]

@@ -21,7 +21,7 @@ from codeintel.serving.mcp.models import (
     ProblemDetail,
 )
 from codeintel.serving.mcp.tool_utils import QueryBackendOrService, _wrap
-from codeintel.serving.registry import (
+from codeintel.serving.operations.catalog import (
     build_dataset_meta,
     build_serving_dataflow_graph,
     iter_registry_operations,

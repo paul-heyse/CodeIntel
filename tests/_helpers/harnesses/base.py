@@ -17,6 +17,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 from uuid import uuid4
 
+from tests._helpers.assertions.common import (
+    assert_failure,
+    assert_has_error,
+    assert_no_error,
+    assert_row_count,
+    assert_success,
+)
+
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
@@ -92,41 +100,37 @@ class BaseResultAssertions[TResult: ResultLike](ABC):
     def succeeded(self) -> Self:
         """Assert that execution succeeded.
 
+        Delegate to ``assert_success`` for the actual assertion logic.
+
         Returns
         -------
         Self
             Self for chaining.
-
-        Raises
-        ------
-        AssertionError
-            If execution failed.
         """
-        if not self._result.success:
-            msg = f"{self._message_prefix}Expected success but got failure: {self._result.error}"
-            raise AssertionError(msg.strip())
+        assert_success(
+            success=self._result.success,
+            error=self._result.error,
+            message_prefix=self._message_prefix,
+        )
         return self
 
     def failed(self) -> Self:
         """Assert that execution failed.
 
+        Delegate to ``assert_failure`` for the actual assertion logic.
+
         Returns
         -------
         Self
             Self for chaining.
-
-        Raises
-        ------
-        AssertionError
-            If execution succeeded.
         """
-        if self._result.success:
-            msg = f"{self._message_prefix}Expected failure but got success"
-            raise AssertionError(msg.strip())
+        assert_failure(success=self._result.success, message_prefix=self._message_prefix)
         return self
 
     def has_error(self, containing: str | None = None) -> Self:
         """Assert that there is an error message.
+
+        Delegate to ``assert_has_error`` for the actual assertion logic.
 
         Parameters
         ----------
@@ -137,41 +141,25 @@ class BaseResultAssertions[TResult: ResultLike](ABC):
         -------
         Self
             Self for chaining.
-
-        Raises
-        ------
-        AssertionError
-            If no error or substring not found.
         """
-        if self._result.error is None:
-            msg = f"{self._message_prefix}Expected error but got none"
-            raise AssertionError(msg.strip())
-
-        if containing is not None and containing not in self._result.error:
-            msg = (
-                f"{self._message_prefix}Expected error containing '{containing}' "
-                f"but got: {self._result.error}"
-            )
-            raise AssertionError(msg.strip())
-
+        assert_has_error(
+            self._result.error,
+            containing=containing,
+            message_prefix=self._message_prefix,
+        )
         return self
 
     def has_no_error(self) -> Self:
         """Assert that there is no error message.
 
+        Delegate to ``assert_no_error`` for the actual assertion logic.
+
         Returns
         -------
         Self
             Self for chaining.
-
-        Raises
-        ------
-        AssertionError
-            If there is an error.
         """
-        if self._result.error is not None:
-            msg = f"{self._message_prefix}Expected no error but got: {self._result.error}"
-            raise AssertionError(msg.strip())
+        assert_no_error(self._result.error, message_prefix=self._message_prefix)
         return self
 
     def has_row_count(
@@ -183,6 +171,8 @@ class BaseResultAssertions[TResult: ResultLike](ABC):
         exact: int | None = None,
     ) -> Self:
         """Assert row count for a table.
+
+        Delegate to ``assert_row_count`` for the actual assertion logic.
 
         Parameters
         ----------
@@ -199,35 +189,14 @@ class BaseResultAssertions[TResult: ResultLike](ABC):
         -------
         Self
             Self for chaining.
-
-        Raises
-        ------
-        AssertionError
-            If row count doesn't match expectations.
         """
-        row_counts = self._result.row_counts or {}
-        actual = row_counts.get(table, 0)
-
-        if exact is not None:
-            if actual != exact:
-                msg = f"{self._message_prefix}Expected {table} to have {exact} rows, got {actual}"
-                raise AssertionError(msg.strip())
-            return self
-
-        if min_rows is not None and actual < min_rows:
-            msg = (
-                f"{self._message_prefix}Expected {table} to have at least "
-                f"{min_rows} rows, got {actual}"
-            )
-            raise AssertionError(msg.strip())
-
-        if max_rows is not None and actual > max_rows:
-            msg = (
-                f"{self._message_prefix}Expected {table} to have at most "
-                f"{max_rows} rows, got {actual}"
-            )
-            raise AssertionError(msg.strip())
-
+        assert_row_count(
+            self._result.row_counts,
+            table,
+            min_rows=min_rows,
+            max_rows=max_rows,
+            exact=exact,
+        )
         return self
 
 

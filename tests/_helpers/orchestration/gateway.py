@@ -9,7 +9,7 @@ from __future__ import annotations
 from tests._helpers.gateway import (
     MACROS_EXPECTED,
     DuckDBConnection,
-    ScopeCapturingQuery,
+    ScopeRecordingQuery,
     build_duckdb_backend,
     build_duckdb_query_service,
     build_scope_parsing_service,
@@ -24,7 +24,7 @@ from tests._helpers.gateway import (
 __all__ = [
     "MACROS_EXPECTED",
     "DuckDBConnection",
-    "ScopeCapturingQuery",
+    "ScopeRecordingQuery",
     "build_duckdb_backend",
     "build_duckdb_query_service",
     "build_scope_parsing_service",

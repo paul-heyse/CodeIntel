@@ -11,8 +11,6 @@ from tests._helpers.configs.graph_config import GraphEngineSeed, SpanSnapshot, S
 from tests._helpers.configs.history_config import SnapshotSpec
 from tests._helpers.configs.pipeline_config import PipelineEnv
 from tests._helpers.configs.provisioning_config import (
-    DEFAULT_COMMIT,
-    DEFAULT_REPO,
     CallgraphFixtureOptions,
     GatewayOptions,
     GraphMetricsGatewayOptions,
@@ -22,6 +20,7 @@ from tests._helpers.configs.provisioning_config import (
     ProvisionOptions,
     RepoContext,
 )
+from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 __all__ = [
     "DEFAULT_COMMIT",

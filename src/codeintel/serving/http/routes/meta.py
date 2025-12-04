@@ -21,10 +21,10 @@ from codeintel.serving.mcp.models import (
     OperationPrereqDebugResponse,
     OperationPrereqRunSummary,
 )
-from codeintel.serving.operations.catalog import get_operation
-from codeintel.serving.registry import (
+from codeintel.serving.operations.catalog import (
     build_dataset_meta,
     build_serving_dataflow_graph,
+    get_operation,
     iter_registry_operations,
 )
 from codeintel.storage.gateway import StorageGateway
