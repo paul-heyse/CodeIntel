@@ -14,7 +14,7 @@ from codeintel.config.datasets import (
     module_profile_row_to_tuple,
     serialize_test_profile_row,
 )
-from tests._helpers.row_factories import (
+from tests._helpers.factories import (
     blank_behavioral_coverage_row,
     blank_file_profile_row,
     blank_module_profile_row,

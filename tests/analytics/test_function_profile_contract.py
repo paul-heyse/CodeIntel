@@ -32,7 +32,7 @@ from codeintel.config.datasets import (
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageGateway
-from tests._helpers.row_factories import (
+from tests._helpers.factories import (
     blank_behavioral_coverage_row,
     blank_file_profile_row,
     blank_function_profile_row,

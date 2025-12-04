@@ -17,11 +17,9 @@ from codeintel.analytics.tests.coverage_edges import (
 )
 from codeintel.config import ConfigBuilder, TestCoverageStepConfig
 from codeintel.storage.gateway import DuckDBConnection
-from tests._helpers.coverage_env import CoverageEdgeEnv, assert_single_edge, compute_coverage_edges
-from tests._helpers.fixtures import (
-    ProvisionOptions,
-    provision_graph_ready_repo,
-)
+from tests._helpers.assertions import assert_single_edge
+from tests._helpers.configs import CoverageEdgeEnv, ProvisionOptions
+from tests._helpers.orchestration import compute_coverage_edges, provision_graph_ready_repo
 
 
 def _insert_goids(con: DuckDBConnection, cfg: TestCoverageStepConfig) -> None:

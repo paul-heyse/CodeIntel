@@ -34,8 +34,8 @@ from codeintel.ingestion import (
 from codeintel.ingestion.infrastructure_utilities.source_scanner import default_code_profile
 from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 from tests._helpers.builders import CoverageFunctionRow, insert_coverage_functions
-from tests._helpers.coverage_env import CoverageSeedConfig
-from tests._helpers.fixtures import provision_gateway_with_repo
+from tests._helpers.configs import CoverageSeedConfig
+from tests._helpers.orchestration import provision_gateway_with_repo
 
 HTTP_CREATED = 201
 COVERAGE_TOLERANCE = 1e-6

@@ -1,10 +1,9 @@
-"""Shared helpers for pipeline graph/coverage integration tests."""
+"""Pipeline test environment orchestration functions."""
 
 from __future__ import annotations
 
 import importlib.util
 import sys
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -24,25 +23,19 @@ from codeintel.ingestion.infrastructure_utilities.source_scanner import (
 )
 from codeintel.pipeline.orchestration.core import PipelineContext
 from codeintel.storage.gateway import StorageConfig, StorageGateway, open_gateway
+from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow
+from tests._helpers.configs.pipeline_config import COMMIT, REPO, PipelineEnv
+from tests._helpers.row_protocol import insert_rows
 from tests._helpers.tooling import generate_coverage_for_function
-
-REPO = "demo/repo"
-COMMIT = "deadbeef"
-
-
-@dataclass
-class PipelineEnv:
-    """Reusable environment for pipeline graph/coverage assertions."""
-
-    repo_root: Path
-    build_paths: BuildPaths
-    gateway: StorageGateway
-    ctx: PipelineContext
-    caller_lines: tuple[int, int]
 
 
 def create_pipeline_env(tmp_path: Path) -> PipelineEnv:
     """Construct a pipeline environment with seeded catalog rows.
+
+    Parameters
+    ----------
+    tmp_path
+        Temporary directory for test artifacts.
 
     Returns
     -------
@@ -59,12 +52,19 @@ def create_pipeline_env(tmp_path: Path) -> PipelineEnv:
             validate_schema=True,
         )
     )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.test_catalog (test_id, rel_path, qualname, repo, commit, status, created_at)
-        VALUES ('tests/test_sample.py::test_caller', 'pkg/b.py', 'pkg.b.caller', ?, ?, 'passed', ?)
-        """,
-        [REPO, COMMIT, datetime.now(UTC)],
+    insert_rows(
+        gateway,
+        [
+            TestCatalogRow(
+                test_id="tests/test_sample.py::test_caller",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path="pkg/b.py",
+                qualname="pkg.b.caller",
+                status="passed",
+                created_at=datetime.now(UTC),
+            )
+        ],
     )
     snapshot = SnapshotRef(repo_root=repo_root, repo=REPO, commit=COMMIT)
     profiles = ScanProfiles(
@@ -95,7 +95,13 @@ def create_pipeline_env(tmp_path: Path) -> PipelineEnv:
 
 
 def build_graph_and_symbols(env: PipelineEnv) -> None:
-    """Run pipeline graph steps and symbol-use generation."""
+    """Run pipeline graph steps and symbol-use generation.
+
+    Parameters
+    ----------
+    env
+        Pipeline environment.
+    """
     _seed_modules_and_goids(env.gateway, env.caller_lines)
 
     builder = env.ctx.config_builder()
@@ -136,6 +142,11 @@ def build_graph_and_symbols(env: PipelineEnv) -> None:
 def generate_pipeline_coverage(env: PipelineEnv) -> Path:
     """Generate coverage artifact for the pipeline test.
 
+    Parameters
+    ----------
+    env
+        Pipeline environment.
+
     Returns
     -------
     Path
@@ -161,6 +172,13 @@ def generate_pipeline_coverage(env: PipelineEnv) -> Path:
 
 def load_coverage(coverage_file: Path, _cfg: TestCoverageStepConfig | None = None) -> Coverage:
     """Load a Coverage object from disk for test coverage processing.
+
+    Parameters
+    ----------
+    coverage_file
+        Path to the coverage data file.
+    _cfg
+        Optional configuration (unused, for signature compatibility).
 
     Returns
     -------
@@ -188,55 +206,45 @@ def _write_repo(repo_root: Path) -> tuple[int, int]:
 def _seed_modules_and_goids(gateway: StorageGateway, caller_lines: tuple[int, int]) -> None:
     caller_start, caller_end = caller_lines
     now = datetime.now(UTC)
-    gateway.con.executemany(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES (?, ?, ?, ?, 'python', '[]', '[]')
-        """,
+    insert_rows(
+        gateway,
         [
-            ("pkg.a", "pkg/a.py", REPO, COMMIT),
-            ("pkg.b", "pkg/b.py", REPO, COMMIT),
+            ModuleRow(module="pkg.a", path="pkg/a.py", repo=REPO, commit=COMMIT),
+            ModuleRow(module="pkg.b", path="pkg/b.py", repo=REPO, commit=COMMIT),
         ],
     )
-    gateway.con.executemany(
-        """
-        INSERT INTO core.goids (
-            goid_h128, urn, repo, commit, rel_path, language, kind, qualname, start_line, end_line, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+    insert_rows(
+        gateway,
         [
-            (
-                100,
-                "urn:pkg.a.callee",
-                REPO,
-                COMMIT,
-                "pkg/a.py",
-                "python",
-                "function",
-                "pkg.a.callee",
-                1,
-                2,
-                now,
+            GoidRow(
+                goid_h128=100,
+                urn="urn:pkg.a.callee",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path="pkg/a.py",
+                kind="function",
+                qualname="pkg.a.callee",
+                start_line=1,
+                end_line=2,
+                created_at=now,
             ),
-            (
-                200,
-                "urn:pkg.b.caller",
-                REPO,
-                COMMIT,
-                "pkg/b.py",
-                "python",
-                "function",
-                "pkg.b.caller",
-                caller_start,
-                caller_end,
-                now,
+            GoidRow(
+                goid_h128=200,
+                urn="urn:pkg.b.caller",
+                repo=REPO,
+                commit=COMMIT,
+                rel_path="pkg/b.py",
+                kind="function",
+                qualname="pkg.b.caller",
+                start_line=caller_start,
+                end_line=caller_end,
+                created_at=now,
             ),
         ],
     )
 
 
 __all__ = [
-    "PipelineEnv",
     "build_graph_and_symbols",
     "create_pipeline_env",
     "generate_pipeline_coverage",

@@ -37,7 +37,7 @@ from codeintel.graphs.recipes.executor import (
 )
 from codeintel.storage.schemas import apply_all_schemas
 from tests._helpers.gateway import open_ingestion_gateway_with_macros
-from tests._helpers.golden_graphs import (
+from tests._helpers.seeds.golden_graphs import (
     GOLDEN_COMMIT,
     GOLDEN_MODULE_COUNT,
     GOLDEN_REPO,

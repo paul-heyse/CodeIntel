@@ -11,7 +11,7 @@ simulate a multi-package Python codebase with:
 
 Usage
 -----
->>> from tests._helpers.golden_graphs import seed_golden_graphs
+>>> from tests._helpers.seeds.golden_graphs import seed_golden_graphs
 >>> seed_golden_graphs(gateway, repo="test/repo", commit="abc123")
 """
 
@@ -29,14 +29,8 @@ from tests._helpers.builders import (
     ImportGraphEdgeRow,
     ModuleRow,
     SymbolUseEdgeRow,
-    insert_call_graph_edges,
-    insert_call_graph_nodes,
-    insert_config_values,
-    insert_goids,
-    insert_import_graph_edges,
-    insert_modules,
-    insert_symbol_use_edges,
 )
+from tests._helpers.row_protocol import insert_rows
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -711,13 +705,13 @@ def seed_golden_graphs(
     config_values = _build_config_values(repo, commit)
 
     # Insert data
-    insert_modules(gateway, modules)
-    insert_goids(gateway, goids)
-    insert_call_graph_nodes(gateway, call_nodes)
-    insert_call_graph_edges(gateway, call_edges)
-    insert_import_graph_edges(gateway, import_edges)
-    insert_symbol_use_edges(gateway, symbol_edges)
-    insert_config_values(gateway, config_values)
+    insert_rows(gateway, modules)
+    insert_rows(gateway, goids)
+    insert_rows(gateway, call_nodes)
+    insert_rows(gateway, call_edges)
+    insert_rows(gateway, import_edges)
+    insert_rows(gateway, symbol_edges)
+    insert_rows(gateway, config_values)
 
     return GoldenGraphStats(
         module_count=len(modules),

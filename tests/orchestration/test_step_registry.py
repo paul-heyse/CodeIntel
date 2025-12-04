@@ -16,7 +16,7 @@ from codeintel.pipeline.orchestration.core import (
 )
 from codeintel.pipeline.orchestration.registry import build_registry
 from codeintel.pipeline.orchestration.steps import REGISTRY
-from tests._helpers.expect import (
+from tests._helpers.assertions import (
     expect_equal,
     expect_in,
     expect_is_instance,

@@ -9,7 +9,7 @@ from codeintel.config.datasets import (
     FunctionProfileRowModel,
     function_profile_row_to_tuple,
 )
-from tests._helpers.row_factories import blank_function_profile_row
+from tests._helpers.factories import blank_function_profile_row
 
 
 def test_function_profile_tuple_length_matches_columns() -> None:

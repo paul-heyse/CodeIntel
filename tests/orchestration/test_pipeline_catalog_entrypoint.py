@@ -10,11 +10,8 @@ from coverage import Coverage
 from codeintel.analytics.tests import compute_test_coverage_edges
 from codeintel.config import TestCoverageStepConfig
 from codeintel.graphs.catalog import load_function_catalog
-from tests._helpers.pipeline_env import (
-    PipelineEnv,
-    build_graph_and_symbols,
-    load_coverage,
-)
+from tests._helpers.configs import PipelineEnv
+from tests._helpers.orchestration import build_graph_and_symbols, load_coverage
 
 REPO: Final = "demo/repo"
 COMMIT: Final = "deadbeef"

@@ -13,33 +13,29 @@ from coverage import Coverage
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.architecture import open_seeded_architecture_gateway
 from tests._helpers.context import TestContext, create_test_context
-from tests._helpers.coverage_env import (
+from tests._helpers.assertions import assert_single_edge
+from tests._helpers.configs import (
     CoverageEdgeEnv,
     CoverageSeedConfig,
-    assert_single_edge,
-    compute_coverage_edges,
-    create_coverage_edge_env,
-    generate_coverage_artifact,
-)
-from tests._helpers.duckdb import memory_con_with_macros
-from tests._helpers.fixtures import (
     GatewayOptions,
+    PipelineEnv,
     ProvisionedGateway,
     ProvisioningConfig,
+    SpanTestEnv,
+)
+from tests._helpers.duckdb import memory_con_with_macros
+from tests._helpers.orchestration import (
+    compute_coverage_edges,
+    create_coverage_edge_env,
+    create_pipeline_env,
+    create_span_test_env,
+    generate_coverage_artifact,
+    generate_pipeline_coverage,
+    generate_span_coverage,
     provision_docs_export_ready,
     provision_graph_ready_repo,
     provision_ingested_repo,
     provisioned_gateway,
-)
-from tests._helpers.graph_env import (
-    SpanTestEnv,
-    create_span_test_env,
-    generate_span_coverage,
-)
-from tests._helpers.pipeline_env import (
-    PipelineEnv,
-    create_pipeline_env,
-    generate_pipeline_coverage,
 )
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds import (

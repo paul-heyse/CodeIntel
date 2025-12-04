@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from codeintel.cli import app
-from tests._helpers.expect import (
+from tests._helpers.assertions import (
     expect_equal,
     expect_in,
     expect_is_instance,
